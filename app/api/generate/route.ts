@@ -13,6 +13,9 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
+const DEFAULT_NEARBY_RADIUS_MILES = 15;
+const ZIP_SEARCH_RADIUS_MILES = 12;
+const AREA_SEARCH_RADIUS_MILES = 18;
 
 const OFF_TOPIC_REPLY =
   "I can only help with RoseOut outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
@@ -196,6 +199,36 @@ function normalizeQuery(input: string) {
     .replace(/\s+/g, " ");
 }
 
+function detectZipCodes(input: string) {
+  return Array.from(new Set(normalizeQuery(input).match(/\b\d{5}\b/g) || []));
+}
+
+function averageCoordinates(items: any[]) {
+  const points = items
+    .map((item) => ({
+      latitude: Number(item.latitude),
+      longitude: Number(item.longitude),
+    }))
+    .filter(
+      (point) =>
+        Number.isFinite(point.latitude) &&
+        Number.isFinite(point.longitude) &&
+        point.latitude !== 0 &&
+        point.longitude !== 0,
+    );
+
+  if (points.length === 0) return null;
+
+  return {
+    latitude:
+      points.reduce((total, point) => total + point.latitude, 0) /
+      points.length,
+    longitude:
+      points.reduce((total, point) => total + point.longitude, 0) /
+      points.length,
+  };
+}
+
 async function logSearchQuery(input: string) {
   const query = normalizeQuery(input);
 
@@ -299,7 +332,7 @@ function buildMatchedLocationResults(locations: any[], input: string) {
     .filter((item: any) => item.location_name_match_score > 0)
     .sort(
       (a: any, b: any) =>
-        b.location_name_match_score - a.location_name_match_score
+        b.location_name_match_score - a.location_name_match_score,
     )
     .slice(0, 10);
 }
@@ -545,6 +578,8 @@ function detectLocation(input: string, locations: any[]) {
     }
   });
 
+  detectZipCodes(input).forEach((zipCode) => found.add(zipCode));
+
   return Array.from(found);
 }
 
@@ -599,7 +634,9 @@ function isRoseOutRelated(input: string) {
     "long island",
   ];
 
-  return allowedWords.some((word) => text.includes(word));
+  return (
+    /\b\d{5}\b/.test(text) || allowedWords.some((word) => text.includes(word))
+  );
 }
 
 function isUnsafeOrOffTopic(input: string) {
@@ -636,10 +673,10 @@ function detectFromMap(input: string, map: Record<string, string[]>) {
     new Set(
       Object.entries(map)
         .filter(([, keywords]) =>
-          keywords.some((keyword) => text.includes(keyword))
+          keywords.some((keyword) => text.includes(keyword)),
         )
-        .map(([key]) => key)
-    )
+        .map(([key]) => key),
+    ),
   );
 }
 
@@ -712,7 +749,7 @@ function matchesFoodIntent(item: any, foodIntent: string) {
 
 function matchesActivityIntent(item: any, activityIntent: string) {
   const activityName = String(
-    item.activity_name || item.name || ""
+    item.activity_name || item.name || "",
   ).toLowerCase();
 
   const normalizedIntent = activityIntent.replace(/_/g, " ");
@@ -827,7 +864,12 @@ function budgetBoost(item: any, budget: ReturnType<typeof detectBudget>) {
   return 0;
 }
 
-function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) {
   const toRad = (value: number) => (value * Math.PI) / 180;
   const r = 3958.8;
 
@@ -836,9 +878,7 @@ function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) 
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -850,39 +890,157 @@ function isWithinRoseOutServiceArea(item: any) {
   if (!lat || !lng) return true;
 
   // NYC + Long Island + Westchester + North Jersey
-  return (
-    lat >= 40.4 &&
-    lat <= 41.2 &&
-    lng >= -74.3 &&
-    lng <= -73.5
+  return lat >= 40.4 && lat <= 41.2 && lng >= -74.3 && lng <= -73.5;
+}
+
+function getItemDistanceMiles(item: any, userLat?: number, userLng?: number) {
+  if (!userLat || !userLng || !item.latitude || !item.longitude) return null;
+
+  const miles = haversineMiles(
+    Number(userLat),
+    Number(userLng),
+    Number(item.latitude),
+    Number(item.longitude),
   );
+
+  item.distance_miles = Number(miles.toFixed(1));
+  return miles;
 }
 
 function distanceBoost(
   item: any,
   userLat?: number,
   userLng?: number,
-  maxMiles?: number | null
+  maxMiles?: number | null,
 ) {
-  if (!userLat || !userLng || !item.latitude || !item.longitude) return 0;
+  const miles = getItemDistanceMiles(item, userLat, userLng);
 
-  const miles = haversineMiles(
-    Number(userLat),
-    Number(userLng),
-    Number(item.latitude),
-    Number(item.longitude)
+  if (miles === null) return 0;
+
+  if (maxMiles && miles > maxMiles) return -450;
+
+  if (miles <= 1) return PRIORITY_WEIGHTS.distance + 120;
+  if (miles <= 2) return PRIORITY_WEIGHTS.distance + 80;
+  if (miles <= 5) return 150;
+  if (miles <= 10) return 95;
+  if (miles <= 15) return 40;
+  if (miles <= 20) return 5;
+
+  return -140;
+}
+
+function hasCoordinateContext(intent: ReturnType<typeof detectIntent>) {
+  return Boolean(intent.userLat && intent.userLng);
+}
+
+function resolveZipCoordinates(input: string, locations: any[]) {
+  const zipCodes = detectZipCodes(input);
+
+  if (zipCodes.length === 0) return null;
+
+  const exactZipMatches = locations.filter((item: any) =>
+    zipCodes.includes(String(item.zip_code || "").trim()),
   );
 
-  item.distance_miles = Number(miles.toFixed(1));
+  return averageCoordinates(exactZipMatches);
+}
 
-  if (maxMiles && miles > maxMiles) return -200;
+function resolveAreaCoordinates(
+  intent: ReturnType<typeof detectIntent>,
+  locations: any[],
+) {
+  const areaLocations = intent.locations.filter(
+    (location) => !/^\d{5}$/.test(location),
+  );
 
-  if (miles <= 2) return PRIORITY_WEIGHTS.distance;
-  if (miles <= 5) return 100;
-  if (miles <= 10) return 55;
-  if (miles <= 20) return 15;
+  if (areaLocations.length === 0) return null;
 
-  return -40;
+  const areaMatches = locations.filter((item: any) =>
+    matchesLocation(item, areaLocations),
+  );
+
+  return averageCoordinates(areaMatches);
+}
+
+function applyLocationCoordinateContext(
+  input: string,
+  intent: ReturnType<typeof detectIntent>,
+  locations: any[],
+) {
+  if (intent.userLat && intent.userLng) {
+    intent.maxMiles = intent.maxMiles || DEFAULT_NEARBY_RADIUS_MILES;
+    return;
+  }
+
+  const zipCoordinates = resolveZipCoordinates(input, locations);
+
+  if (zipCoordinates) {
+    intent.userLat = zipCoordinates.latitude;
+    intent.userLng = zipCoordinates.longitude;
+    intent.maxMiles = intent.maxMiles || ZIP_SEARCH_RADIUS_MILES;
+    return;
+  }
+
+  const areaCoordinates = resolveAreaCoordinates(intent, locations);
+
+  if (areaCoordinates) {
+    intent.userLat = areaCoordinates.latitude;
+    intent.userLng = areaCoordinates.longitude;
+    intent.maxMiles = intent.maxMiles || AREA_SEARCH_RADIUS_MILES;
+  }
+}
+
+function filterByCoordinateRadius(
+  items: any[],
+  intent: ReturnType<typeof detectIntent>,
+  minimumResults = 3,
+) {
+  if (!hasCoordinateContext(intent)) return items;
+
+  const radius = intent.maxMiles || DEFAULT_NEARBY_RADIUS_MILES;
+
+  const withDistance = items.map((item: any) => {
+    getItemDistanceMiles(item, intent.userLat, intent.userLng);
+    return item;
+  });
+
+  const nearbyItems = withDistance.filter(
+    (item: any) =>
+      typeof item.distance_miles !== "number" || item.distance_miles <= radius,
+  );
+
+  if (nearbyItems.length >= minimumResults) return nearbyItems;
+
+  const expandedNearbyItems = withDistance.filter(
+    (item: any) =>
+      typeof item.distance_miles !== "number" ||
+      item.distance_miles <= radius * 1.75,
+  );
+
+  return expandedNearbyItems.length > 0 ? expandedNearbyItems : withDistance;
+}
+
+function locationAwareCompare(
+  a: any,
+  b: any,
+  intent: ReturnType<typeof detectIntent>,
+) {
+  if (hasCoordinateContext(intent)) {
+    const aDistance =
+      typeof a.distance_miles === "number"
+        ? a.distance_miles
+        : Number.POSITIVE_INFINITY;
+    const bDistance =
+      typeof b.distance_miles === "number"
+        ? b.distance_miles
+        : Number.POSITIVE_INFINITY;
+
+    if (Math.abs(aDistance - bDistance) > 1) {
+      return aDistance - bDistance;
+    }
+  }
+
+  return b.roseout_score - a.roseout_score;
 }
 
 function detectDistance(input: string) {
@@ -956,7 +1114,7 @@ function weightedTagBoost(item: any, requestedTags: string[]) {
   return requestedTags.reduce(
     (total, tag) =>
       total + (itemHasTag(item, tag) ? PRIORITY_WEIGHTS.tagExact : 0),
-    0
+    0,
   );
 }
 
@@ -964,7 +1122,7 @@ function weightedVibeBoost(item: any, vibes: string[]) {
   return vibes.reduce(
     (total, vibe) =>
       total + (itemHasTag(item, vibe) ? PRIORITY_WEIGHTS.vibeExact : 0),
-    0
+    0,
   );
 }
 
@@ -994,7 +1152,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const wantsFoodMap = buildWantsMap(Object.keys(FOOD_INTENTS), foodIntents);
   const wantsActivityMap = buildWantsMap(
     Object.keys(ACTIVITY_INTENTS),
-    activityIntents
+    activityIntents,
   );
 
   const wantsFood =
@@ -1011,7 +1169,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   ];
 
   const mentionsAnyRoseOutOption = allOptions.some((option) =>
-    text.includes(option)
+    text.includes(option),
   );
 
   const wantsFullOuting =
@@ -1046,7 +1204,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
           "nightlife",
           "scenic",
           "birthday",
-        ].includes(tag)
+        ].includes(tag),
       ),
       ...(text.includes("romantic") ? ["romantic"] : []),
       ...(text.includes("fun") ? ["fun"] : []),
@@ -1054,7 +1212,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
         ? ["luxury"]
         : []),
       ...(text.includes("chill") ? ["chill"] : []),
-    ])
+    ]),
   );
 
   const budget = detectBudget(input);
@@ -1107,7 +1265,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
 function scoreRestaurant(
   item: any,
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   let score = 0;
 
@@ -1162,7 +1320,7 @@ function scoreRestaurant(
 function scoreActivity(
   item: any,
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   let score = 0;
 
@@ -1242,18 +1400,18 @@ function scoreActivity(
 
 function filterRestaurantsByFoodIntent(
   restaurants: any[],
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   if (intent.foodIntents.length === 0) return restaurants;
 
   const exactMatches = restaurants.filter((restaurant: any) =>
-    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food))
+    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food)),
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = restaurants.filter((restaurant: any) =>
-    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food))
+    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food)),
   );
 
   return partialMatches.length > 0 ? partialMatches : restaurants;
@@ -1261,22 +1419,22 @@ function filterRestaurantsByFoodIntent(
 
 function filterActivitiesByActivityIntent(
   activities: any[],
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   if (intent.activityIntents.length === 0) return activities;
 
   const exactMatches = activities.filter((activity: any) =>
     intent.activityIntents.every((activityIntent) =>
-      matchesActivityIntent(activity, activityIntent)
-    )
+      matchesActivityIntent(activity, activityIntent),
+    ),
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = activities.filter((activity: any) =>
     intent.activityIntents.some((activityIntent) =>
-      matchesActivityIntent(activity, activityIntent)
-    )
+      matchesActivityIntent(activity, activityIntent),
+    ),
   );
 
   if (partialMatches.length > 0) return partialMatches;
@@ -1308,7 +1466,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
             Number(restaurant.latitude),
             Number(restaurant.longitude),
             Number(activity.latitude),
-            Number(activity.longitude)
+            Number(activity.longitude),
           );
         }
 
@@ -1348,7 +1506,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
           same_neighborhood: Boolean(sameNeighborhood),
           pair_score: pairScore,
         };
-      })
+      }),
     )
     .sort((a, b) => b.pair_score - a.pair_score);
 
@@ -1358,11 +1516,11 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
   const bestPairs = pairs
     .filter((pair) => {
       const restaurantId = String(
-        pair.restaurant.id || pair.restaurant.restaurant_name || ""
+        pair.restaurant.id || pair.restaurant.restaurant_name || "",
       );
 
       const activityId = String(
-        pair.activity.id || pair.activity.activity_name || ""
+        pair.activity.id || pair.activity.activity_name || "",
       );
 
       if (
@@ -1452,7 +1610,7 @@ export async function POST(req: Request) {
     if (restaurantsError) {
       return Response.json(
         { error: restaurantsError.message },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -1478,12 +1636,13 @@ export async function POST(req: Request) {
 
     const locations = mergedLocations.map(normalizeLocation);
     const intent = detectIntent(input, body, locations);
+    applyLocationCoordinateContext(input, intent, locations);
 
-   const cacheKey = normalizeQuery(
-  `roseout-${getSmartMatchVersion()}-contact-v1-${input}-${intent.userLat || ""}-${
-    intent.userLng || ""
-  }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
-);
+    const cacheKey = normalizeQuery(
+      `roseout-${getSmartMatchVersion()}-contact-v2-${input}-${intent.userLat || ""}-${
+        intent.userLng || ""
+      }-${intent.maxMiles || ""}-${intent.locations.join("-")}`,
+    );
 
     const { data: cached } = await supabase
       .from("ai_response_cache")
@@ -1499,21 +1658,21 @@ export async function POST(req: Request) {
       }
     }
 
-const usableLocations = locations.filter((item: any) => {
-  const status = String(item.status || "approved").toLowerCase();
+    const usableLocations = locations.filter((item: any) => {
+      const status = String(item.status || "approved").toLowerCase();
 
-  const isApproved =
-    status === "approved" || status === "active" || status === "";
+      const isApproved =
+        status === "approved" || status === "active" || status === "";
 
-  return isApproved && isWithinRoseOutServiceArea(item);
-});
+      return isApproved && isWithinRoseOutServiceArea(item);
+    });
 
     const sourceLocations =
       usableLocations.length > 0 ? usableLocations : locations;
 
     const matchedLocationResults = buildMatchedLocationResults(
       sourceLocations,
-      input
+      input,
     );
 
     let restaurants = sourceLocations.filter((item: any) => {
@@ -1535,7 +1694,7 @@ const usableLocations = locations.filter((item: any) => {
         Boolean(item.activity_name) ||
         Boolean(item.activity_type) ||
         intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
+          matchesActivityIntent(item, activityIntent),
         )
       );
     });
@@ -1543,13 +1702,20 @@ const usableLocations = locations.filter((item: any) => {
     restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
     activities = filterActivitiesByActivityIntent(activities, intent);
 
-    if (intent.locations.length > 0) {
+    restaurants = filterByCoordinateRadius(restaurants, intent, 3);
+    activities = filterByCoordinateRadius(activities, intent, 3);
+
+    const textLocations = intent.locations.filter(
+      (location) => !/^\d{5}$/.test(location),
+    );
+
+    if (textLocations.length > 0) {
       const locationRestaurants = restaurants.filter((item: any) =>
-        matchesLocation(item, intent.locations)
+        matchesLocation(item, textLocations),
       );
 
       const locationActivities = activities.filter((item: any) =>
-        matchesLocation(item, intent.locations)
+        matchesLocation(item, textLocations),
       );
 
       if (locationRestaurants.length > 0) {
@@ -1562,15 +1728,15 @@ const usableLocations = locations.filter((item: any) => {
     }
 
     if (intent.activityIntents.length > 0) {
-      let forcedActivityMatches = locations.filter((item: any) =>
+      let forcedActivityMatches = sourceLocations.filter((item: any) =>
         intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
+          matchesActivityIntent(item, activityIntent),
+        ),
       );
 
-      if (intent.locations.length > 0) {
+      if (textLocations.length > 0) {
         const locationFiltered = forcedActivityMatches.filter((item: any) =>
-          matchesLocation(item, intent.locations)
+          matchesLocation(item, textLocations),
         );
 
         if (locationFiltered.length > 0) {
@@ -1579,7 +1745,7 @@ const usableLocations = locations.filter((item: any) => {
       }
 
       if (forcedActivityMatches.length > 0) {
-        activities = forcedActivityMatches;
+        activities = filterByCoordinateRadius(forcedActivityMatches, intent, 3);
       }
     }
 
@@ -1594,7 +1760,7 @@ const usableLocations = locations.filter((item: any) => {
           location_name_match_score: locationNameMatchScore(restaurant, input),
         };
       })
-      .sort((a: any, b: any) => b.roseout_score - a.roseout_score);
+      .sort((a: any, b: any) => locationAwareCompare(a, b, intent));
 
     const rankedActivities = activities
       .map((activity: any) => {
@@ -1607,12 +1773,12 @@ const usableLocations = locations.filter((item: any) => {
           location_name_match_score: locationNameMatchScore(activity, input),
         };
       })
-      .sort((a: any, b: any) => b.roseout_score - a.roseout_score);
+      .sort((a: any, b: any) => locationAwareCompare(a, b, intent));
 
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
       rankedActivities,
-      smartIntent
+      smartIntent,
     );
 
     if (
@@ -1817,13 +1983,14 @@ STRICT RULES:
           item.activity_type || item.category || item.subcategory || null,
         website: item.website,
         phone: item.phone || null,
-google_maps_url: item.google_maps_url || null,
+        google_maps_url: item.google_maps_url || null,
         image_url: item.image_url || null,
         reservation_url: item.reservation_url || item.booking_url || null,
         location_name_match_score: item.location_name_match_score,
       })),
       pairs: pairedResults.pairs.map((pair: any) => ({
-        restaurant_name: pair.restaurant.restaurant_name || pair.restaurant.name,
+        restaurant_name:
+          pair.restaurant.restaurant_name || pair.restaurant.name,
         activity_name: pair.activity.activity_name || pair.activity.name,
         distance_miles: pair.distance_miles,
         same_city: pair.same_city,
@@ -1903,7 +2070,7 @@ google_maps_url: item.google_maps_url || null,
 
     return Response.json(
       { error: error.message || "Server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

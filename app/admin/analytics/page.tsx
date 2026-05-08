@@ -1,8 +1,13 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminAnalyticsPage() {
   await requireAdminRole(["superuser", "admin", "viewer"]);
+
+  const refreshedAt = new Date();
 
   const { data: restaurants } = await supabase
     .from("restaurants")
@@ -55,7 +60,7 @@ export default async function AdminAnalyticsPage() {
       ? Math.round(
           ((reservationStats.arrived + reservationStats.completed) /
             reservationStats.total) *
-            100
+            100,
         )
       : 0;
 
@@ -71,18 +76,35 @@ export default async function AdminAnalyticsPage() {
 
   return (
     <div>
-      <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-500">
-        RoseOut Admin
-      </p>
+      <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-500">
+            RoseOut Admin
+          </p>
 
-      <h1 className="text-4xl font-extrabold tracking-tight">
-        Analytics Dashboard
-      </h1>
+          <h1 className="text-4xl font-extrabold tracking-tight">
+            Analytics Dashboard
+          </h1>
 
-      <p className="mt-3 text-neutral-400">
-        View discovery performance, reservation activity, arrival trends, and
-        recent analytics events.
-      </p>
+          <p className="mt-3 text-neutral-400">
+            View discovery performance, reservation activity, arrival trends,
+            and recent analytics events.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm shadow-lg shadow-black/20">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-300">
+            Live Dashboard
+          </p>
+          <p className="mt-1 font-bold text-white">No cached analytics page</p>
+          <p className="mt-1 text-xs font-semibold text-white/45">
+            Refreshed{" "}
+            {refreshedAt.toLocaleString("en-US", {
+              timeZone: "America/New_York",
+            })}
+          </p>
+        </div>
+      </div>
 
       <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="rounded-[2rem] bg-white p-6 text-black">
@@ -109,7 +131,10 @@ export default async function AdminAnalyticsPage() {
 
           <div className="mt-7 grid gap-4 md:grid-cols-4">
             <MiniMetric label="Restaurant Views" value={totalRestaurantViews} />
-            <MiniMetric label="Restaurant Clicks" value={totalRestaurantClicks} />
+            <MiniMetric
+              label="Restaurant Clicks"
+              value={totalRestaurantClicks}
+            />
             <MiniMetric label="Activity Views" value={totalActivityViews} />
             <MiniMetric label="Activity Clicks" value={totalActivityClicks} />
           </div>

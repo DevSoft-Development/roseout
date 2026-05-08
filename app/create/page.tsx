@@ -6,7 +6,6 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
-import { clampScore } from "@/lib/clampScore";
 
 type RestaurantCard = {
   id: string;
@@ -83,6 +82,10 @@ type UserLocation = {
 
 const LOCATION_KEY = "roseout_user_location";
 
+function wantsNearbySearch(input: string) {
+  return /\b(near me|nearby|close by|around me)\b/i.test(input);
+}
+
 const typingSearches = [
   "Steak dinner with bowling in Queens",
   "Romantic Italian dinner in Brooklyn",
@@ -112,20 +115,22 @@ export default function CreatePage() {
   const [error, setError] = useState("");
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<RestaurantCard | null>(null);
-  const [selectedActivity, setSelectedActivity] =
-    useState<ActivityCard | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityCard | null>(
+    null,
+  );
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const curatedResultsRef = useRef<HTMLDivElement | null>(null);
+  const loadingResultsRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const viewedItems = useRef<Set<string>>(new Set());
 
   const latestAssistant = useMemo(
     () =>
       [...messages].reverse().find((message) => message.role === "assistant"),
-    [messages]
+    [messages],
   );
 
   const hasSelection = Boolean(selectedRestaurant || selectedActivity);
@@ -189,6 +194,19 @@ export default function CreatePage() {
   }, [loading]);
 
   useEffect(() => {
+    if (!loading) return;
+
+    const scrollTimer = window.setTimeout(() => {
+      loadingResultsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 80);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [loading]);
+
+  useEffect(() => {
     const latest = latestAssistant;
     if (!latest) return;
 
@@ -206,7 +224,7 @@ export default function CreatePage() {
           itemType,
           eventType: "view",
         });
-      }
+      },
     );
   }, [latestAssistant]);
 
@@ -232,28 +250,50 @@ export default function CreatePage() {
     }
   }
 
-  function requestUserLocation() {
-    if (!navigator.geolocation) {
-      setError("Location is not supported on this device.");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const userLocation: UserLocation = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-
-        localStorage.setItem(LOCATION_KEY, JSON.stringify(userLocation));
-        setLocationSaved(true);
-        setError("");
-      },
-      () => {
-        setLocationSaved(false);
-        setError("Please allow location access or search by neighborhood.");
+  function getBrowserLocation(): Promise<UserLocation> {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Location is not supported on this device."));
+        return;
       }
-    );
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        () => {
+          reject(
+            new Error(
+              "Please allow location access or search by neighborhood.",
+            ),
+          );
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000 * 60 * 10,
+          timeout: 10000,
+        },
+      );
+    });
+  }
+
+  async function requestUserLocation() {
+    try {
+      const userLocation = await getBrowserLocation();
+
+      localStorage.setItem(LOCATION_KEY, JSON.stringify(userLocation));
+      setLocationSaved(true);
+      setError("");
+    } catch (locationError: any) {
+      setLocationSaved(false);
+      setError(
+        locationError?.message ||
+          "Please allow location access or search by neighborhood.",
+      );
+    }
   }
 
   function resetSearch() {
@@ -317,6 +357,19 @@ export default function CreatePage() {
 
     try {
       const savedLocation = getSavedLocation();
+      let searchLocation = savedLocation;
+
+      if (!searchLocation && wantsNearbySearch(cleanInput)) {
+        try {
+          searchLocation = await getBrowserLocation();
+          localStorage.setItem(LOCATION_KEY, JSON.stringify(searchLocation));
+          setLocationSaved(true);
+        } catch {
+          setError(
+            "Turn on location or include a zip code so RoseOut can rank nearby places first.",
+          );
+        }
+      }
 
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -326,12 +379,12 @@ export default function CreatePage() {
         body: JSON.stringify({
           input: cleanInput,
           messages: [...messages, userMessage],
-          ...(savedLocation
+          ...(searchLocation
             ? {
-                latitude: savedLocation.latitude,
-                longitude: savedLocation.longitude,
-                lat: savedLocation.latitude,
-                lng: savedLocation.longitude,
+                latitude: searchLocation.latitude,
+                longitude: searchLocation.longitude,
+                lat: searchLocation.latitude,
+                lng: searchLocation.longitude,
               }
             : {}),
         }),
@@ -355,7 +408,7 @@ export default function CreatePage() {
       setMessages((current) => [...current, assistantMessage]);
 
       setTimeout(() => {
-        resultsRef.current?.scrollIntoView({
+        curatedResultsRef.current?.scrollIntoView({
           behavior: "smooth",
           block: "start",
         });
@@ -507,10 +560,7 @@ export default function CreatePage() {
         </div>
       </section>
 
-      <section
-        ref={resultsRef}
-        className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 sm:py-8"
-      >
+      <section className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 sm:py-8">
         {error && (
           <div className="mb-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 sm:mb-5">
             {error}
@@ -550,7 +600,10 @@ export default function CreatePage() {
             return (
               <div
                 key={index}
-                className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-4"
+                ref={
+                  index === messages.length - 1 ? curatedResultsRef : undefined
+                }
+                className="w-full max-w-full scroll-mt-24 overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:scroll-mt-28 sm:rounded-[1.25rem] sm:p-4"
               >
                 <div className="mb-4 flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
                   <div className="min-w-0">
@@ -565,6 +618,14 @@ export default function CreatePage() {
                       the night.
                     </p>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={resetSearch}
+                    className="w-full shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/65 transition hover:border-[#e1062a]/50 hover:bg-[#e1062a]/10 hover:text-white sm:w-auto sm:px-5 sm:text-xs"
+                  >
+                    New Search
+                  </button>
                 </div>
 
                 {restaurants.length > 0 && (
@@ -605,10 +666,6 @@ export default function CreatePage() {
                             ...(restaurant.date_style_tags || []),
                           ]}
                           distance={restaurant.distance_miles}
-                          score={
-                            restaurant.smart_match_score ||
-                            restaurant.roseout_score
-                          }
                           selected={isSelected}
                           priority={restaurantIndex === 0}
                           selectLabel={isSelected ? "Selected" : "Select"}
@@ -631,15 +688,17 @@ export default function CreatePage() {
                 )}
 
                 {activities.length > 0 && (
-                  <div ref={activitySectionRef} className="scroll-mt-24 sm:scroll-mt-28">
+                  <div
+                    ref={activitySectionRef}
+                    className="scroll-mt-24 sm:scroll-mt-28"
+                  >
                     <ResultSection
                       title="Experience Picks"
                       subtitle="Activities matched to your outing plan"
                     >
                       {activities.map((activity, activityIndex) => {
                         const activityId = String(activity.id);
-                        const isSelected =
-                          selectedActivity?.id === activity.id;
+                        const isSelected = selectedActivity?.id === activity.id;
                         const reservationUrl =
                           activity.reservation_url ||
                           activity.reservation_link ||
@@ -662,10 +721,6 @@ export default function CreatePage() {
                             primaryTag={activity.primary_tag}
                             tags={activity.date_style_tags || []}
                             distance={activity.distance_miles}
-                            score={
-                              activity.smart_match_score ||
-                              activity.roseout_score
-                            }
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -676,9 +731,7 @@ export default function CreatePage() {
                             onWebsite={() => trackActivityClick(activityId)}
                             reservationUrl={reservationUrl}
                             reservationLabel="Book"
-                            onReservation={() =>
-                              trackActivityClick(activityId)
-                            }
+                            onReservation={() => trackActivityClick(activityId)}
                           />
                         );
                       })}
@@ -689,7 +742,12 @@ export default function CreatePage() {
             );
           })}
 
-          {loading && <LoadingResults label={loadingLines[loadingIndex]} />}
+          {loading && (
+            <LoadingResults
+              label={loadingLines[loadingIndex]}
+              panelRef={loadingResultsRef}
+            />
+          )}
         </div>
       </section>
 
@@ -1068,7 +1126,6 @@ function ResultCard({
   primaryTag,
   tags,
   distance,
-  score,
   selected,
   priority,
   selectLabel,
@@ -1095,7 +1152,6 @@ function ResultCard({
   primaryTag?: string | null;
   tags?: string[] | null;
   distance?: number | null;
-  score: number;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1108,7 +1164,6 @@ function ResultCard({
   reservationLabel?: string;
   onReservation?: () => void;
 }) {
-  const safeScore = clampScore(score || 0);
   const cleanTags = getDisplayTags({
     type,
     eyebrow,
@@ -1158,21 +1213,12 @@ function ResultCard({
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
-        <div className="absolute left-2.5 top-2.5 rounded-full border border-white/10 bg-black/75 px-2.5 py-1.5 backdrop-blur-xl sm:left-3 sm:top-3 sm:px-3">
-          <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/45 sm:text-[10px] sm:tracking-[0.18em]">
-            Match
-          </p>
-          <p className="text-xs font-black text-white sm:text-sm">
-            {Math.round(safeScore)}
-          </p>
-        </div>
-
         <div className="absolute right-2.5 top-2.5 flex max-w-[64%] flex-wrap justify-end gap-1 sm:right-3 sm:top-3 sm:gap-1.5">
           {cleanTags.slice(0, 2).map((tag) => (
             <span
               key={`${tag.label}-${tag.tone}`}
               className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.06em] backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.08em] ${tagToneClass(
-                tag.tone
+                tag.tone,
               )}`}
             >
               {tag.label}
@@ -1259,11 +1305,11 @@ function ResultCard({
           ) : null}
         </div>
 
-        <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+        <div className="mt-auto grid min-h-[94px] grid-cols-2 gap-2 border-t border-white/10 pt-3">
           <button
             type="button"
             onClick={onSelect}
-            className={`rounded-full px-3 py-2.5 text-xs font-black transition ${
+            className={`flex h-10 items-center justify-center rounded-full px-3 text-center text-xs font-black transition ${
               selected
                 ? "bg-[#e1062a] text-white"
                 : "border border-white/12 text-white/85 hover:bg-white hover:text-black"
@@ -1275,7 +1321,7 @@ function ResultCard({
           <Link
             href={detailsHref}
             onClick={onDetails}
-            className="rounded-full bg-white px-3 py-2.5 text-center text-xs font-black text-black transition hover:bg-red-100"
+            className="flex h-10 items-center justify-center rounded-full bg-white px-3 text-center text-xs font-black text-black transition hover:bg-red-100"
           >
             Details
           </Link>
@@ -1286,11 +1332,13 @@ function ResultCard({
               target="_blank"
               rel="noopener noreferrer"
               onClick={onWebsite}
-              className="rounded-full border border-white/12 px-3 py-2.5 text-center text-xs font-black text-white/80 transition hover:bg-white hover:text-black"
+              className="flex h-10 items-center justify-center rounded-full border border-white/12 px-3 text-center text-xs font-black text-white/80 transition hover:bg-white hover:text-black"
             >
               Website
             </a>
-          ) : null}
+          ) : (
+            <span aria-hidden="true" className="h-10" />
+          )}
 
           {reservationUrl ? (
             <a
@@ -1298,20 +1346,31 @@ function ResultCard({
               target="_blank"
               rel="noopener noreferrer"
               onClick={onReservation}
-              className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white"
+              className="flex h-10 items-center justify-center rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white"
             >
               {reservationLabel || "Book"}
             </a>
-          ) : null}
+          ) : (
+            <span aria-hidden="true" className="h-10" />
+          )}
         </div>
       </div>
     </article>
   );
 }
 
-function LoadingResults({ label }: { label: string }) {
+function LoadingResults({
+  label,
+  panelRef,
+}: {
+  label: string;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+}) {
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-4">
+    <div
+      ref={panelRef}
+      className="w-full max-w-full scroll-mt-24 overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:scroll-mt-28 sm:rounded-[1.25rem] sm:p-4"
+    >
       <div className="mb-4">
         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.25em]">
           RoseOut is searching
@@ -1417,9 +1476,7 @@ function getDisplayTags({
 
   const add = (label: string, tone: "rose" | "gold" | "purple") => {
     if (
-      !results.some(
-        (item) => item.label.toLowerCase() === label.toLowerCase()
-      )
+      !results.some((item) => item.label.toLowerCase() === label.toLowerCase())
     ) {
       results.push({ label, tone });
     }
@@ -1538,7 +1595,7 @@ function getWhyPicked({
 
 function buildDistanceText(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (!restaurant || !activity) return "Dinner → Activity";
 
