@@ -244,6 +244,16 @@ export default function AdminTopBar() {
             </button>
           )}
 
+          {canViewAnalytics && (
+            <button
+              type="button"
+              onClick={() => goTo("/admin/analytics")}
+              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
+            >
+              Analytics
+            </button>
+          )}
+
           {canViewLocations && (
             <button
               type="button"
@@ -460,12 +470,6 @@ export default function AdminTopBar() {
                 {canViewClaims && (
                   <MenuButton onClick={() => goTo("/admin/claims")}>
                     Claims
-                  </MenuButton>
-                )}
-
-                {canViewAnalytics && (
-                  <MenuButton onClick={() => goTo("/admin/live-sessions")}>
-                    Live Sessions
                   </MenuButton>
                 )}
 

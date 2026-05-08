@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type EventItem = {
   id: string;
@@ -10,7 +9,7 @@ type EventItem = {
   event_type: string;
   event_name: string | null;
   page_path: string | null;
-  metadata: any;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -57,12 +56,24 @@ type RestaurantStat = {
   last_clicked: string;
 };
 
-export default function AdminLiveSessionsClient() {
+type TopPage = {
+  page: string;
+  count: number;
+};
+
+export default function AdminAnalyticsClient() {
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [liveNow, setLiveNow] = useState(0);
   const [conversions, setConversions] = useState(0);
   const [conversionRate, setConversionRate] = useState(0);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [totalEvents, setTotalEvents] = useState(0);
+  const [searches, setSearches] = useState(0);
+  const [clicks, setClicks] = useState(0);
+  const [views, setViews] = useState(0);
+  const [topPages, setTopPages] = useState<TopPage[]>([]);
+  const [now, setNow] = useState(() => Date.now());
   const [mostActiveUsers, setMostActiveUsers] = useState<ActiveUser[]>([]);
   const [likelyToConvert, setLikelyToConvert] = useState<ActiveUser[]>([]);
   const [mostClickedRestaurants, setMostClickedRestaurants] = useState<
@@ -73,9 +84,9 @@ export default function AdminLiveSessionsClient() {
     null
   );
 
-  async function loadSessions() {
+  const loadSessions = useCallback(async function loadSessions() {
     try {
-      const res = await fetch("/api/admin/live-sessions", {
+      const res = await fetch("/api/admin/analytics/live", {
         cache: "no-store",
       });
 
@@ -86,23 +97,32 @@ export default function AdminLiveSessionsClient() {
       setLiveNow(data.live_now || 0);
       setConversions(data.conversions || 0);
       setConversionRate(data.conversion_rate || 0);
+      setTotalSessions(data.total_sessions || data.sessions?.length || 0);
+      setTotalEvents(data.total_events || data.events?.length || 0);
+      setSearches(data.searches || 0);
+      setClicks(data.clicks || 0);
+      setViews(data.views || 0);
+      setTopPages(data.top_pages || []);
+      setNow(Date.now());
       setMostActiveUsers(data.most_active_users || []);
       setLikelyToConvert(data.likely_to_convert || []);
       setMostClickedRestaurants(data.most_clicked_restaurants || []);
 
-      if (selectedSession) {
+      setSelectedSession((current) => {
+        if (!current) return current;
+
         const updated = (data.sessions || []).find(
-          (s: LiveSession) =>
-            s.session_id === selectedSession.session_id ||
-            s.user_id === selectedSession.user_id
+          (session: LiveSession) =>
+            session.session_id === current.session_id ||
+            session.user_id === current.user_id
         );
 
-        if (updated) setSelectedSession(updated);
-      }
+        return updated || current;
+      });
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadSessions();
@@ -110,26 +130,88 @@ export default function AdminLiveSessionsClient() {
     const timer = setInterval(loadSessions, 5000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [loadSessions]);
+
+  const statCards = useMemo(
+    () => [
+      {
+        label: "Live Now",
+        value: liveNow,
+        tone: "rose" as const,
+        helper: "Active in last 5 minutes",
+      },
+      {
+        label: "Sessions 24h",
+        value: totalSessions,
+        helper: "Unique tracked sessions",
+      },
+      {
+        label: "Events 24h",
+        value: totalEvents,
+        helper: "All tracked event sources",
+      },
+      {
+        label: "Views",
+        value: views,
+        helper: "Discovery impressions",
+      },
+      {
+        label: "Searches",
+        value: searches,
+        helper: "Planner queries submitted",
+      },
+      {
+        label: "Clicks",
+        value: clicks,
+        helper: "CTA and listing actions",
+      },
+      {
+        label: "Conversions",
+        value: conversions,
+        tone: "green" as const,
+        helper: "Saved plans + reservations",
+      },
+      {
+        label: "Conv. Rate",
+        value: `${conversionRate}%`,
+        helper: "Conversions per action",
+      },
+    ],
+    [
+      clicks,
+      conversionRate,
+      conversions,
+      liveNow,
+      searches,
+      totalEvents,
+      totalSessions,
+      views,
+    ]
+  );
 
   const activePages = useMemo(() => {
+    if (topPages.length > 0) return topPages.slice(0, 5);
+
     const counts = new Map<string, number>();
 
-    sessions.forEach((session) => {
-      const page = session.current_page || "Unknown";
-      counts.set(page, (counts.get(page) || 0) + 1);
-    });
+    [
+      ...sessions.map((session) => session.current_page),
+      ...events.map((event) => event.page_path),
+    ]
+      .filter(Boolean)
+      .forEach((page) => {
+        const safePage = page || "Unknown page";
+        counts.set(safePage, (counts.get(safePage) || 0) + 1);
+      });
 
     return Array.from(counts.entries())
       .map(([page, count]) => ({ page, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-  }, [sessions]);
+  }, [events, sessions, topPages]);
 
   return (
     <main className="min-h-screen bg-[#080407] text-white">
-      <AdminTopBar />
-
       <section className="relative overflow-hidden border-b border-white/10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(244,63,94,0.25),transparent_35%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.18),transparent_30%)]" />
 
@@ -141,11 +223,11 @@ export default function AdminLiveSessionsClient() {
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h1 className="text-4xl font-black tracking-tight md:text-6xl">
-                Live User Command Center
+                Analytics Command Center
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/55">
-                Track active users, restaurant clicks, searches, conversions,
+                Track live users, discovery views, searches, clicks, conversions,
                 and users most likely to book or save a plan.
               </p>
             </div>
@@ -161,12 +243,16 @@ export default function AdminLiveSessionsClient() {
       </section>
 
       <section className="mx-auto max-w-7xl px-6 py-8">
-        <div className="grid gap-4 md:grid-cols-5">
-          <StatCard label="Live Now" value={liveNow} tone="rose" />
-          <StatCard label="Sessions 24h" value={sessions.length} />
-          <StatCard label="Events 24h" value={events.length} />
-          <StatCard label="Conversions" value={conversions} tone="green" />
-          <StatCard label="Conversion Rate" value={`${conversionRate}%`} />
+        <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {statCards.map((stat) => (
+            <StatCard
+              key={stat.label}
+              label={stat.label}
+              value={stat.value}
+              tone={stat.tone}
+              helper={stat.helper}
+            />
+          ))}
         </div>
 
         <div className="mt-8 grid gap-6 xl:grid-cols-4">
@@ -185,7 +271,7 @@ export default function AdminLiveSessionsClient() {
               <div className="space-y-3">
                 {sessions.slice(0, 12).map((session) => {
                   const isLive =
-                    Date.now() - new Date(session.last_seen).getTime() <=
+                    now - new Date(session.last_seen).getTime() <=
                     1000 * 60 * 5;
 
                   return (
@@ -365,32 +451,36 @@ export default function AdminLiveSessionsClient() {
             <SectionHeader eyebrow="Stream" title="Recent Events" />
 
             <div className="mt-5 max-h-[520px] space-y-3 overflow-y-auto">
-              {events.slice(0, 20).map((event) => (
-                <div
-                  key={event.id}
-                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black">
-                        {event.event_name || event.event_type}
-                      </p>
+              {events.length === 0 ? (
+                <p className="text-sm text-white/45">No recent events yet.</p>
+              ) : (
+                events.slice(0, 20).map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black">
+                          {event.event_name || event.event_type}
+                        </p>
 
-                      <p className="mt-1 truncate text-xs text-white/45">
-                        {event.page_path || "Unknown page"}
-                      </p>
+                        <p className="mt-1 truncate text-xs text-white/45">
+                          {event.page_path || "Unknown page"}
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-white/50">
+                        {event.event_type}
+                      </span>
                     </div>
 
-                    <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-white/50">
-                      {event.event_type}
-                    </span>
+                    <p className="mt-2 text-xs text-white/30">
+                      {timeAgo(event.created_at)}
+                    </p>
                   </div>
-
-                  <p className="mt-2 text-xs text-white/30">
-                    {timeAgo(event.created_at)}
-                  </p>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -505,26 +595,39 @@ function StatCard({
   label,
   value,
   tone,
+  helper,
 }: {
   label: string;
   value: string | number;
   tone?: "rose" | "green";
+  helper: string;
 }) {
-  return (
-    <div
-      className={`rounded-[1.5rem] border p-5 shadow-xl shadow-black/20 ${
-        tone === "rose"
-          ? "border-rose-400/25 bg-rose-500/15"
-          : tone === "green"
-            ? "border-emerald-400/25 bg-emerald-500/15"
-            : "border-white/10 bg-white/[0.05]"
-      }`}
-    >
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/35">
-        {label}
-      </p>
+  const accentClass =
+    tone === "rose"
+      ? "bg-rose-400"
+      : tone === "green"
+        ? "bg-emerald-400"
+        : "bg-white/35";
 
-      <h2 className="mt-3 text-4xl font-black">{value}</h2>
+  return (
+    <div className="flex min-h-[142px] flex-col justify-between rounded-2xl border border-white/10 bg-[#111014] p-5 shadow-xl shadow-black/20 ring-1 ring-white/[0.03]">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate text-[11px] font-black uppercase tracking-[0.18em] text-white/45">
+            {label}
+          </p>
+
+          <span className={`h-2 w-2 rounded-full ${accentClass}`} />
+        </div>
+
+        <h2 className="mt-5 text-4xl font-black leading-none tracking-[-0.04em] text-white tabular-nums">
+          {typeof value === "number" ? value.toLocaleString() : value}
+        </h2>
+      </div>
+
+      <p className="mt-4 border-t border-white/10 pt-3 text-xs font-semibold leading-5 text-white/40">
+        {helper}
+      </p>
     </div>
   );
 }
