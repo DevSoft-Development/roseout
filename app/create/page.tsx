@@ -446,7 +446,7 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
+                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
                     {typedPlaceholder
                       ? `${typedPlaceholder}|`
                       : "Tell RoseOut what you want..."}
