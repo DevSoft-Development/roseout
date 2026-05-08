@@ -6,7 +6,6 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
-import { clampScore } from "@/lib/clampScore";
 
 type RestaurantCard = {
   id: string;
@@ -101,6 +100,15 @@ const loadingLines = [
   "Finding the best fit...",
 ];
 
+const TYPE_SPEED_MS = 28;
+const BACKSPACE_SPEED_MS = 18;
+const PROMPT_PAUSE_MS = 1400;
+const NEXT_PROMPT_DELAY_MS = 120;
+
+function formatTypingPrompt(prompt: string) {
+  return `${prompt}....`;
+}
+
 export default function CreatePage() {
   const router = useRouter();
 
@@ -112,8 +120,9 @@ export default function CreatePage() {
   const [error, setError] = useState("");
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<RestaurantCard | null>(null);
-  const [selectedActivity, setSelectedActivity] =
-    useState<ActivityCard | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityCard | null>(
+    null,
+  );
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
 
@@ -125,7 +134,7 @@ export default function CreatePage() {
   const latestAssistant = useMemo(
     () =>
       [...messages].reverse().find((message) => message.role === "assistant"),
-    [messages]
+    [messages],
   );
 
   const hasSelection = Boolean(selectedRestaurant || selectedActivity);
@@ -149,28 +158,33 @@ export default function CreatePage() {
     let timeout: ReturnType<typeof setTimeout>;
 
     function typeLoop() {
-      const currentSearch = typingSearches[searchIndex];
+      const currentPrompt = formatTypingPrompt(typingSearches[searchIndex]);
 
-      if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
-        charIndex++;
-
-        if (charIndex === currentSearch.length) {
-          deleting = true;
-          timeout = setTimeout(typeLoop, 1300);
-          return;
-        }
-      } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
-        charIndex--;
+      if (deleting) {
+        charIndex = Math.max(charIndex - 1, 0);
+        setTypedPlaceholder(currentPrompt.slice(0, charIndex));
 
         if (charIndex === 0) {
           deleting = false;
           searchIndex = (searchIndex + 1) % typingSearches.length;
+          timeout = setTimeout(typeLoop, NEXT_PROMPT_DELAY_MS);
+          return;
         }
+
+        timeout = setTimeout(typeLoop, BACKSPACE_SPEED_MS);
+        return;
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      charIndex = Math.min(charIndex + 1, currentPrompt.length);
+      setTypedPlaceholder(currentPrompt.slice(0, charIndex));
+
+      if (charIndex === currentPrompt.length) {
+        deleting = true;
+        timeout = setTimeout(typeLoop, PROMPT_PAUSE_MS);
+        return;
+      }
+
+      timeout = setTimeout(typeLoop, TYPE_SPEED_MS);
     }
 
     typeLoop();
@@ -206,7 +220,7 @@ export default function CreatePage() {
           itemType,
           eventType: "view",
         });
-      }
+      },
     );
   }, [latestAssistant]);
 
@@ -252,7 +266,7 @@ export default function CreatePage() {
       () => {
         setLocationSaved(false);
         setError("Please allow location access or search by neighborhood.");
-      }
+      },
     );
   }
 
@@ -270,6 +284,15 @@ export default function CreatePage() {
 
   function handleInputChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(event.target.value);
+  }
+
+  function scrollResultsIntoView(delay = 80) {
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, delay);
   }
 
   function selectRestaurantAndMaybeScroll(restaurant: RestaurantCard) {
@@ -314,6 +337,7 @@ export default function CreatePage() {
 
     setMessages((current) => [...current, userMessage]);
     setInput("");
+    scrollResultsIntoView();
 
     try {
       const savedLocation = getSavedLocation();
@@ -354,12 +378,7 @@ export default function CreatePage() {
 
       setMessages((current) => [...current, assistantMessage]);
 
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 250);
+      scrollResultsIntoView(250);
     } catch (err: any) {
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
@@ -446,10 +465,13 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell RoseOut what you want..."}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-3 top-3.5 z-10 h-6 overflow-hidden text-sm font-semibold leading-6 text-white sm:inset-x-4 sm:top-4 sm:h-7 sm:text-base sm:leading-7"
+                  >
+                    <span className="block max-w-full truncate whitespace-nowrap">
+                      {typedPlaceholder}
+                    </span>
                   </div>
                 )}
 
@@ -509,7 +531,7 @@ export default function CreatePage() {
 
       <section
         ref={resultsRef}
-        className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 sm:py-8"
+        className="scroll-mt-24 mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:scroll-mt-28 sm:px-6 sm:py-8"
       >
         {error && (
           <div className="mb-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 sm:mb-5">
@@ -522,8 +544,22 @@ export default function CreatePage() {
         <div className="space-y-4 sm:space-y-5">
           {messages.map((message, index) => {
             const isUser = message.role === "user";
-            const restaurants = message.restaurants || [];
-            const activities = message.activities || [];
+            const restaurants = dedupeLocationCards(
+              message.restaurants || [],
+              (restaurant) => restaurant.restaurant_name,
+            );
+            const restaurantNames = new Set(
+              restaurants.map((restaurant) =>
+                getDedupeKey([restaurant.restaurant_name]),
+              ),
+            );
+            const activities = dedupeLocationCards(
+              message.activities || [],
+              (activity) => activity.activity_name,
+            ).filter(
+              (activity) =>
+                !restaurantNames.has(getDedupeKey([activity.activity_name])),
+            );
             const hasCards = restaurants.length > 0 || activities.length > 0;
 
             if (isUser) {
@@ -586,7 +622,6 @@ export default function CreatePage() {
                           key={restaurantId || restaurantIndex}
                           index={restaurantIndex}
                           type="restaurant"
-                          id={restaurantId}
                           imageUrl={restaurant.image_url || undefined}
                           title={restaurant.restaurant_name}
                           eyebrow={
@@ -596,19 +631,10 @@ export default function CreatePage() {
                           }
                           address={formatAddress(restaurant)}
                           rating={restaurant.rating}
-                          reviewCount={restaurant.review_count}
                           reviewKeywords={restaurant.review_keywords}
                           reviewSnippet={restaurant.review_snippet}
                           primaryTag={restaurant.primary_tag}
-                          tags={[
-                            ...(restaurant.cuisine_tags || []),
-                            ...(restaurant.date_style_tags || []),
-                          ]}
                           distance={restaurant.distance_miles}
-                          score={
-                            restaurant.smart_match_score ||
-                            restaurant.roseout_score
-                          }
                           selected={isSelected}
                           priority={restaurantIndex === 0}
                           selectLabel={isSelected ? "Selected" : "Select"}
@@ -631,15 +657,17 @@ export default function CreatePage() {
                 )}
 
                 {activities.length > 0 && (
-                  <div ref={activitySectionRef} className="scroll-mt-24 sm:scroll-mt-28">
+                  <div
+                    ref={activitySectionRef}
+                    className="scroll-mt-24 sm:scroll-mt-28"
+                  >
                     <ResultSection
                       title="Experience Picks"
                       subtitle="Activities matched to your outing plan"
                     >
                       {activities.map((activity, activityIndex) => {
                         const activityId = String(activity.id);
-                        const isSelected =
-                          selectedActivity?.id === activity.id;
+                        const isSelected = selectedActivity?.id === activity.id;
                         const reservationUrl =
                           activity.reservation_url ||
                           activity.reservation_link ||
@@ -650,22 +678,15 @@ export default function CreatePage() {
                             key={activityId || activityIndex}
                             index={activityIndex}
                             type="activity"
-                            id={activityId}
                             imageUrl={activity.image_url || undefined}
                             title={activity.activity_name}
                             eyebrow={activity.activity_type || "Activity"}
                             address={formatAddress(activity)}
                             rating={activity.rating}
-                            reviewCount={activity.review_count}
                             reviewKeywords={activity.review_keywords}
                             reviewSnippet={activity.review_snippet}
                             primaryTag={activity.primary_tag}
-                            tags={activity.date_style_tags || []}
                             distance={activity.distance_miles}
-                            score={
-                              activity.smart_match_score ||
-                              activity.roseout_score
-                            }
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -676,9 +697,7 @@ export default function CreatePage() {
                             onWebsite={() => trackActivityClick(activityId)}
                             reservationUrl={reservationUrl}
                             reservationLabel="Book"
-                            onReservation={() =>
-                              trackActivityClick(activityId)
-                            }
+                            onReservation={() => trackActivityClick(activityId)}
                           />
                         );
                       })}
@@ -1056,19 +1075,15 @@ function ResultSection({
 function ResultCard({
   index,
   type,
-  id,
   imageUrl,
   title,
   eyebrow,
   address,
   rating,
-  reviewCount,
   reviewKeywords,
   reviewSnippet,
   primaryTag,
-  tags,
   distance,
-  score,
   selected,
   priority,
   selectLabel,
@@ -1083,19 +1098,15 @@ function ResultCard({
 }: {
   index: number;
   type: "restaurant" | "activity";
-  id: string;
   imageUrl?: string;
   title: string;
   eyebrow: string;
   address: string;
   rating?: number | null;
-  reviewCount?: number | null;
   reviewKeywords?: string[] | null;
   reviewSnippet?: string | null;
   primaryTag?: string | null;
-  tags?: string[] | null;
   distance?: number | null;
-  score: number;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1108,25 +1119,23 @@ function ResultCard({
   reservationLabel?: string;
   onReservation?: () => void;
 }) {
-  const safeScore = clampScore(score || 0);
-  const cleanTags = getDisplayTags({
-    type,
-    eyebrow,
-    primaryTag,
-    tags,
-    reviewKeywords,
-    reviewSnippet,
-    title,
-  });
-
   const whyPicked = getWhyPicked({
+    index,
     primaryTag,
     reviewKeywords,
     reviewSnippet,
     type,
+    title,
+    distance,
   });
 
-  const cleanReviewKeywords = toArray(reviewKeywords).slice(0, 2);
+  const selectedDistanceText =
+    selected &&
+    type === "restaurant" &&
+    distance !== null &&
+    distance !== undefined
+      ? `${title} is ${formatMiles(distance)} away.`
+      : null;
 
   return (
     <article
@@ -1158,28 +1167,6 @@ function ResultCard({
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
-        <div className="absolute left-2.5 top-2.5 rounded-full border border-white/10 bg-black/75 px-2.5 py-1.5 backdrop-blur-xl sm:left-3 sm:top-3 sm:px-3">
-          <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/45 sm:text-[10px] sm:tracking-[0.18em]">
-            Match
-          </p>
-          <p className="text-xs font-black text-white sm:text-sm">
-            {Math.round(safeScore)}
-          </p>
-        </div>
-
-        <div className="absolute right-2.5 top-2.5 flex max-w-[64%] flex-wrap justify-end gap-1 sm:right-3 sm:top-3 sm:gap-1.5">
-          {cleanTags.slice(0, 2).map((tag) => (
-            <span
-              key={`${tag.label}-${tag.tone}`}
-              className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.06em] backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.08em] ${tagToneClass(
-                tag.tone
-              )}`}
-            >
-              {tag.label}
-            </span>
-          ))}
-        </div>
-
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 sm:bottom-3 sm:right-3 sm:gap-1.5">
           {distance !== null && distance !== undefined ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
@@ -1201,12 +1188,6 @@ function ResultCard({
             <p className="line-clamp-1 min-w-0 text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
               {titleCase(eyebrow || type)}
             </p>
-
-            {reviewCount ? (
-              <p className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[9px] font-black uppercase text-white/40 sm:px-2.5 sm:py-1 sm:text-[10px]">
-                {formatCount(reviewCount)}
-              </p>
-            ) : null}
           </div>
 
           <Link href={detailsHref} onClick={onDetails}>
@@ -1219,16 +1200,11 @@ function ResultCard({
             {address || "Location details available on the listing."}
           </p>
 
-          <div className="mt-2 flex min-h-[22px] flex-wrap gap-1 sm:min-h-[24px] sm:gap-1.5">
-            {cleanTags.slice(0, 3).map((tag) => (
-              <span
-                key={`mini-${tag.label}-${tag.tone}`}
-                className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold text-white/56 sm:px-2.5 sm:py-1 sm:text-[11px]"
-              >
-                {tag.label}
-              </span>
-            ))}
-          </div>
+          {selectedDistanceText ? (
+            <p className="mt-2 rounded-full bg-[#e1062a]/12 px-3 py-1.5 text-xs font-black text-red-100">
+              {selectedDistanceText}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
@@ -1238,25 +1214,6 @@ function ResultCard({
           <p className="mt-1.5 line-clamp-2 break-words text-[11px] font-semibold leading-4 text-white/62 sm:text-xs sm:leading-5">
             {whyPicked}
           </p>
-        </div>
-
-        <div className="mt-2 min-h-[24px] sm:min-h-[26px]">
-          {cleanReviewKeywords.length > 0 ? (
-            <div className="flex flex-wrap gap-1 sm:gap-1.5">
-              {cleanReviewKeywords.map((keyword) => (
-                <span
-                  key={keyword}
-                  className="rounded-full border border-[#e1062a]/20 bg-[#e1062a]/10 px-2 py-0.5 text-[10px] font-bold text-red-100/85 sm:px-2.5 sm:py-1 sm:text-[11px]"
-                >
-                  {keyword}
-                </span>
-              ))}
-            </div>
-          ) : primaryTag ? (
-            <p className="line-clamp-1 text-xs font-black text-white/65">
-              ✨ {titleCase(primaryTag)}
-            </p>
-          ) : null}
         </div>
 
         <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
@@ -1354,9 +1311,45 @@ function formatAddress(item: {
     .join(", ");
 }
 
-function formatCount(value: number) {
-  if (value >= 1000) return `${Math.round(value / 100) / 10}k`;
-  return String(value);
+function formatMiles(value: number) {
+  return `${Number(value).toFixed(1)} miles`;
+}
+
+function getDedupeKey(parts: Array<string | null | undefined>) {
+  return parts
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function dedupeLocationCards<
+  T extends {
+    id?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+  },
+>(items: T[], getName: (item: T) => string | null | undefined) {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    const nameKey = getDedupeKey([getName(item)]);
+    const locationKey = getDedupeKey([
+      getName(item),
+      item.address,
+      item.city,
+      item.state,
+    ]);
+    const dedupeKey =
+      nameKey || locationKey || (item.id ? `id:${item.id}` : "");
+
+    if (!dedupeKey || seen.has(dedupeKey)) return false;
+
+    seen.add(dedupeKey);
+    return true;
+  });
 }
 
 function titleCase(value: string) {
@@ -1383,162 +1376,81 @@ function toArray(value: any): string[] {
   return [];
 }
 
-function getDisplayTags({
-  type,
-  eyebrow,
-  primaryTag,
-  tags,
-  reviewKeywords,
-  reviewSnippet,
-  title,
-}: {
-  type: "restaurant" | "activity";
-  eyebrow?: string | null;
-  primaryTag?: string | null;
-  tags?: string[] | null;
-  reviewKeywords?: string[] | null;
-  reviewSnippet?: string | null;
-  title?: string | null;
-}) {
-  const sourceText = [
-    type,
-    eyebrow,
-    primaryTag,
-    ...(tags || []),
-    ...(reviewKeywords || []),
-    reviewSnippet,
-    title,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  const results: { label: string; tone: "rose" | "gold" | "purple" }[] = [];
-
-  const add = (label: string, tone: "rose" | "gold" | "purple") => {
-    if (
-      !results.some(
-        (item) => item.label.toLowerCase() === label.toLowerCase()
-      )
-    ) {
-      results.push({ label, tone });
-    }
-  };
-
-  if (sourceText.includes("luxury") || sourceText.includes("upscale")) {
-    add("Luxury", "gold");
-  }
-
-  if (
-    sourceText.includes("fine dining") ||
-    sourceText.includes("steak") ||
-    sourceText.includes("restaurant") ||
-    sourceText.includes("dinner") ||
-    sourceText.includes("food")
-  ) {
-    add("Full Dining", "rose");
-  }
-
-  if (
-    sourceText.includes("nightlife") ||
-    sourceText.includes("lounge") ||
-    sourceText.includes("cocktail") ||
-    sourceText.includes("bar") ||
-    sourceText.includes("club")
-  ) {
-    add("Nightlife", "purple");
-  }
-
-  if (
-    sourceText.includes("romantic") ||
-    sourceText.includes("intimate") ||
-    sourceText.includes("anniversary")
-  ) {
-    add("Romantic", "rose");
-  }
-
-  if (sourceText.includes("birthday") || sourceText.includes("celebration")) {
-    add("Birthday", "rose");
-  }
-
-  if (sourceText.includes("rooftop") || sourceText.includes("skyline")) {
-    add("Rooftop", "gold");
-  }
-
-  if (sourceText.includes("brunch") || sourceText.includes("breakfast")) {
-    add("Brunch", "rose");
-  }
-
-  if (
-    sourceText.includes("bowling") ||
-    sourceText.includes("arcade") ||
-    sourceText.includes("karaoke") ||
-    sourceText.includes("comedy") ||
-    sourceText.includes("fun")
-  ) {
-    add("Fun", "purple");
-  }
-
-  if (sourceText.includes("hookah") || sourceText.includes("shisha")) {
-    add("Hookah", "purple");
-  }
-
-  if (sourceText.includes("cigar")) {
-    add("Cigar", "gold");
-  }
-
-  if (results.length === 0) {
-    add(titleCase(primaryTag || eyebrow || type), "rose");
-  }
-
-  return results.slice(0, 3);
-}
-
-function tagToneClass(tone: "rose" | "gold" | "purple") {
-  if (tone === "gold") {
-    return "border-amber-300/40 bg-amber-300/20 text-amber-100";
-  }
-
-  if (tone === "purple") {
-    return "border-fuchsia-400/35 bg-fuchsia-500/18 text-fuchsia-100";
-  }
-
-  return "border-[#e1062a]/45 bg-[#e1062a]/22 text-red-50";
-}
-
 function getWhyPicked({
+  index,
   primaryTag,
   reviewKeywords,
-  reviewSnippet,
   type,
+  title,
+  distance,
 }: {
+  index: number;
   primaryTag?: string | null;
   reviewKeywords?: string[] | null;
   reviewSnippet?: string | null;
   type: "restaurant" | "activity";
+  title: string;
+  distance?: number | null;
 }) {
-  const keywords = toArray(reviewKeywords).slice(0, 2);
+  const keywords = toArray(reviewKeywords)
+    .map((keyword) => titleCase(keyword))
+    .filter((keyword) => !isGenericRecommendation(keyword))
+    .slice(0, 2);
+  const primary =
+    primaryTag && !isGenericRecommendation(primaryTag)
+      ? titleCase(primaryTag).toLowerCase()
+      : null;
+  const distanceText =
+    distance !== null && distance !== undefined
+      ? ` about ${formatMiles(distance)} away`
+      : " near your search area";
 
-  if (keywords.length > 0) {
-    return `Matched for ${keywords.join(" and ")} signals.`;
+  if (type === "restaurant") {
+    const reasons = [
+      `${title} fits the food style you asked for and sits${distanceText}.`,
+      `${title} adds a strong dining option for the area without repeating the same pick.`,
+      primary
+        ? `${title} brings a ${primary} angle that matches the outing request.`
+        : `${title} gives you another route for dinner while keeping the plan focused.`,
+    ];
+
+    if (keywords.length > 0 && index === 0) {
+      return `${title} lines up with ${keywords.join(" and ").toLowerCase()} signals${distanceText}.`;
+    }
+
+    return reasons[index % reasons.length];
   }
 
-  if (reviewSnippet) {
-    return reviewSnippet;
+  const reasons = [
+    `${title} works as the next stop after dinner and stays${distanceText}.`,
+    primary
+      ? `${title} adds a ${primary} experience so the plan has a clear second act.`
+      : `${title} adds variety after the meal without pulling the outing off track.`,
+    `${title} rounds out the night with an activity matched to the request.`,
+  ];
+
+  if (keywords.length > 0 && index === 0) {
+    return `${title} matches ${keywords.join(" and ").toLowerCase()} signals for the experience side.`;
   }
 
-  if (primaryTag) {
-    return `Matched for its ${titleCase(primaryTag).toLowerCase()} fit.`;
-  }
+  return reasons[index % reasons.length];
+}
 
-  return type === "restaurant"
-    ? "Matched to your food, location, and vibe."
-    : "Matched to your activity and outing vibe.";
+function isGenericRecommendation(value: string) {
+  const normalized = value.toLowerCase();
+
+  return (
+    normalized.includes("best for") ||
+    normalized.includes("highly rated experience") ||
+    normalized === "luxury" ||
+    normalized === "nightlife" ||
+    normalized === "full dining"
+  );
 }
 
 function buildDistanceText(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (!restaurant || !activity) return "Dinner → Activity";
 
