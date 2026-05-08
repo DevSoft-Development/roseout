@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
 import { sendNotification } from "@/lib/notifications";
+import { getAdminNotifyEmail } from "@/lib/adminEmail";
 
 export type SupportActor = "creator" | "admin" | "system";
 
@@ -553,7 +554,7 @@ export async function closeSupportTicket(ticketId: string) {
     ticket_id: ticket.id,
     actor_type: "system",
     author_name: "RoseOut Support",
-    author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
+    author_email: getAdminNotifyEmail(),
     author_phone: null,
     body: "Ticket closed by RoseOut Support.",
     created_at: closedAt,
@@ -602,7 +603,7 @@ export async function createSupportReply(input: CreateSupportReplyInput) {
 
   const createdAt = new Date().toISOString();
   const authorName = clean(input.authorName) || (adminActor ? "RoseOut Support" : ticket.requester_name || "Ticket requester");
-  const authorEmail = normalizeEmail(input.authorEmail) || (adminActor ? process.env.ADMIN_NOTIFY_EMAIL || null : ticket.requester_email);
+  const authorEmail = normalizeEmail(input.authorEmail) || (adminActor ? getAdminNotifyEmail() : ticket.requester_email);
   const authorPhone = clean(input.authorPhone) || null;
   const fallbackMessage = {
     id: crypto.randomUUID(),
@@ -655,7 +656,7 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
   const adminTicketUrl = makeAdminTicketUrl(ticket.id);
   const replyTo = makeSupportReplyAddress(ticket);
 
-  const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+  const adminEmail = getAdminNotifyEmail();
   const adminPhone = process.env.ADMIN_NOTIFY_PHONE;
 
   if (adminEmail || adminPhone) {
@@ -709,7 +710,7 @@ async function notifySupportReply(ticket: SupportTicket, message: string, actorT
   const ticketUrl = makeTicketUrl(ticket);
   const adminTicketUrl = makeAdminTicketUrl(ticket.id);
   const replyTo = makeSupportReplyAddress(ticket);
-  const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+  const adminEmail = getAdminNotifyEmail();
   const adminPhone = process.env.ADMIN_NOTIFY_PHONE;
   const creatorIsRecipient = actorType === "admin";
 

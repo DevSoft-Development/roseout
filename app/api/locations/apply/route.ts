@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
+import { getAdminNotifyEmail } from "@/lib/adminEmail";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
       return Response.json({ error: error.message }, { status: 500 });
     }
 
-    const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+    const adminEmail = getAdminNotifyEmail();
 
     if (adminEmail) {
       await sendNotification({
