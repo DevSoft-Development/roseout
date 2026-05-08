@@ -297,7 +297,7 @@ function shouldSkipPlace(place: GooglePlace) {
   return false;
 }
 
-function getRoseOutScore(place: GooglePlace) {
+function getTheOutHavenScore(place: GooglePlace) {
   const ratingScore = Number(place.rating || 0) * 14;
   const reviewScore = Math.min(25, Math.log10(getReviewCount(place) + 1) * 10);
   const photoScore = place.photos?.length ? 6 : 0;
@@ -536,7 +536,7 @@ async function upsertRestaurant(place: GooglePlace, query: string) {
   const addressParts = parseAddressParts(formattedAddress);
   const photoReference = merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
   const cuisine = inferCuisine(`${merged.name} ${query} ${(merged.types || []).join(" ")}`);
-  const score = getRoseOutScore(merged);
+  const score = getTheOutHavenScore(merged);
   const existing = await findExistingLocation("restaurants", place.place_id);
 
   const row = await addClaimFields({
@@ -551,7 +551,7 @@ async function upsertRestaurant(place: GooglePlace, query: string) {
     longitude: merged.geometry?.location?.lng || null,
     rating: Number(merged.rating || 0),
     review_count: getReviewCount(merged),
-    roseout_score: score,
+    theouthaven_score: score,
     quality_score: score,
     popularity_score: Math.min(100, Math.round(Math.log10(getReviewCount(merged) + 1) * 35)),
     review_score: Number(merged.rating || 0) * 20,
@@ -587,7 +587,7 @@ async function upsertActivity(place: GooglePlace, query: string) {
   const photoReference = merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
   const text = `${merged.name} ${query} ${(merged.types || []).join(" ")}`;
   const activityType = inferActivityType(text);
-  const score = getRoseOutScore(merged);
+  const score = getTheOutHavenScore(merged);
   const existing = await findExistingLocation("activities", place.place_id);
 
   const row = await addClaimFields({
@@ -602,7 +602,7 @@ async function upsertActivity(place: GooglePlace, query: string) {
     longitude: merged.geometry?.location?.lng || null,
     rating: Number(merged.rating || 0),
     review_count: getReviewCount(merged),
-    roseout_score: score,
+    theouthaven_score: score,
     quality_score: score,
     popularity_score: Math.min(100, Math.round(Math.log10(getReviewCount(merged) + 1) * 35)),
     review_score: Number(merged.rating || 0) * 20,
@@ -610,7 +610,7 @@ async function upsertActivity(place: GooglePlace, query: string) {
     primary_tag: activityType,
     search_keywords: buildKeywords(merged, query, [activityType]),
     date_style_tags: uniqueArray([activityType, "date night", "group-friendly", "fun"]),
-    atmosphere: "RoseOut-friendly outing, date-night, social, and group-friendly",
+    atmosphere: "TheOutHaven-friendly outing, date-night, social, and group-friendly",
     phone: merged.formatted_phone_number || merged.international_phone_number || null,
     website: merged.website || null,
     google_maps_url: merged.url || null,

@@ -36,7 +36,7 @@ export default function AdminRankingsPage() {
 
       <section className="mx-auto max-w-7xl px-6 py-10">
         <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">
-          RoseOut Intelligence
+          TheOutHaven Intelligence
         </p>
 
         <h1 className="mt-3 text-5xl font-black tracking-tight">
@@ -44,7 +44,7 @@ export default function AdminRankingsPage() {
         </h1>
 
         <p className="mt-4 max-w-2xl text-sm leading-7 text-white/55">
-          Recalculate RoseOut scores, trend scores, conversion scores, and
+          Recalculate TheOutHaven scores, trend scores, conversion scores, and
           ranking badges from real user activity.
         </p>
 

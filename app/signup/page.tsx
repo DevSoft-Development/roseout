@@ -203,7 +203,7 @@ export default function SignupPage() {
             marketing_opt_in: marketingOptIn,
             sms_opt_in: smsOptIn,
             sms_consent_text: smsOptIn
-              ? "I agree to receive SMS messages from RoseOut about account updates, outing recommendations, reminders, promotions, and offers. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a condition of purchase."
+              ? "I agree to receive SMS messages from TheOutHaven about account updates, outing recommendations, reminders, promotions, and offers. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. Consent is not a condition of purchase."
               : null,
             sms_consent_date: smsOptIn ? new Date().toISOString() : null,
           },
@@ -218,7 +218,7 @@ export default function SignupPage() {
       }
 
       sessionStorage.setItem(
-        "roseout_pending_signup",
+        "theouthaven_pending_signup",
         JSON.stringify({
           email: userEmail,
           password,
@@ -251,7 +251,7 @@ export default function SignupPage() {
             href="/"
             className="text-sm font-black uppercase tracking-[0.55em] text-red-400"
           >
-            RoseOut
+            TheOutHaven
           </Link>
 
           <Link
@@ -265,7 +265,7 @@ export default function SignupPage() {
         <section className="grid flex-1 items-center gap-8 lg:grid-cols-[1fr_500px]">
           <div className="hidden lg:block">
             <div className="mb-4 inline-flex rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.28em] text-red-300">
-              Curated by RoseOut AI
+              Curated by TheOutHaven AI
             </div>
 
             <h1 className="max-w-3xl text-5xl font-black leading-[0.95] tracking-tight text-white xl:text-6xl">
@@ -273,7 +273,7 @@ export default function SignupPage() {
             </h1>
 
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/55">
-              From breakfast dates to late-night reservations, RoseOut helps you
+              From breakfast dates to late-night reservations, TheOutHaven helps you
               discover polished restaurants, activities, and experiences that
               match your mood, budget, and style.
             </p>
@@ -468,7 +468,7 @@ export default function SignupPage() {
                     className="mt-1 h-4 w-4 accent-red-600"
                   />
                   <span>
-                    Send me RoseOut updates, recommendations, and offers by email.
+                    Send me TheOutHaven updates, recommendations, and offers by email.
                   </span>
                 </label>
 
@@ -481,7 +481,7 @@ export default function SignupPage() {
                   />
                   <span>
                     I agree to receive SMS messages from{" "}
-                    <strong className="text-white">RoseOut</strong> about
+                    <strong className="text-white">TheOutHaven</strong> about
                     account updates, outing recommendations, reminders,
                     promotions, and offers. Message frequency varies. Message
                     and data rates may apply. Reply{" "}

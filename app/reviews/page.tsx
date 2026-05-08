@@ -52,7 +52,7 @@ export default function ReviewsPage() {
       <div className="mx-auto max-w-3xl">
         <div className="mb-8 rounded-3xl border border-red-900/40 bg-black/40 p-6 shadow-2xl">
           <p className="mb-2 text-sm uppercase tracking-[0.3em] text-red-300">
-            RoseOut Review AI
+            TheOutHaven Review AI
           </p>
 
           <h1 className="text-3xl font-bold md:text-5xl">
@@ -60,7 +60,7 @@ export default function ReviewsPage() {
           </h1>
 
           <p className="mt-3 text-sm text-white/70">
-            Submit a review and RoseOut will analyze the vibe, service, food,
+            Submit a review and TheOutHaven will analyze the vibe, service, food,
             noise level, date-night fit, keywords, and score boost.
           </p>
         </div>

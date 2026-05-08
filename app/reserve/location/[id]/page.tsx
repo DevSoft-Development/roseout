@@ -15,7 +15,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 type Slot = {
   time: string;
@@ -207,7 +207,7 @@ export default function ReserveLocationPage() {
 
   return (
     <>
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <main className="min-h-screen bg-black pt-24 text-white">
         <section className="relative overflow-hidden px-5 py-8 sm:px-8">
@@ -220,7 +220,7 @@ export default function ReserveLocationPage() {
               className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
             >
               <ArrowLeft size={16} />
-              Back to RoseOut
+              Back to TheOutHaven
             </Link>
 
             <div className="mt-7 grid gap-8 lg:grid-cols-[1.05fr_520px]">
@@ -243,7 +243,7 @@ export default function ReserveLocationPage() {
                 <div className="relative z-10 flex min-h-[660px] flex-col justify-between p-6 sm:p-8">
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white">
-                      RoseOut Reserve
+                      TheOutHaven Reserve
                     </span>
 
                     {rescheduleToken && (

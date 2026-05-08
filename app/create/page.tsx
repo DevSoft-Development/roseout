@@ -20,7 +20,7 @@ type RestaurantCard = {
   cuisine_tags?: string[] | null;
   atmosphere?: string | null;
   price_range?: string | null;
-  roseout_score: number;
+  theouthaven_score: number;
   smart_match_score?: number | null;
   reservation_link?: string | null;
   reservation_url?: string | null;
@@ -47,7 +47,7 @@ type ActivityCard = {
   price_range?: string | null;
   atmosphere?: string | null;
   group_friendly?: boolean | null;
-  roseout_score: number;
+  theouthaven_score: number;
   smart_match_score?: number | null;
   reservation_link?: string | null;
   reservation_url?: string | null;
@@ -81,7 +81,7 @@ type UserLocation = {
   longitude: number;
 };
 
-const LOCATION_KEY = "roseout_user_location";
+const LOCATION_KEY = "theouthaven_user_location";
 
 const typingSearches = [
   "Steak dinner with bowling in Queens",
@@ -97,7 +97,7 @@ const typingSearches = [
 const loadingLines = [
   "Matching your vibe...",
   "Checking food and activity signals...",
-  "Building tighter RoseOut picks...",
+  "Building tighter TheOutHaven picks...",
   "Finding the best fit...",
 ];
 
@@ -138,7 +138,7 @@ export default function CreatePage() {
     .join(" + ");
 
   useEffect(() => {
-    document.title = "Create Your Outing | RoseOut";
+    document.title = "Create Your Outing | TheOutHaven";
     setLocationSaved(Boolean(getSavedLocation()));
   }, []);
 
@@ -340,14 +340,14 @@ export default function CreatePage() {
       const data: ApiResponse & { error?: string } = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "RoseOut could not create results.");
+        throw new Error(data.error || "TheOutHaven could not create results.");
       }
 
       const assistantMessage: Message = {
         role: "assistant",
         content:
           data.reply ||
-          "Here are strong RoseOut matches based on your outing request.",
+          "Here are strong TheOutHaven matches based on your outing request.",
         restaurants: data.restaurants || [],
         activities: data.activities || [],
       };
@@ -393,7 +393,7 @@ export default function CreatePage() {
       savedAt: Date.now(),
     };
 
-    localStorage.setItem("roseout_plan", JSON.stringify(plan));
+    localStorage.setItem("theouthaven_plan", JSON.stringify(plan));
 
     const params = new URLSearchParams();
 
@@ -418,11 +418,11 @@ export default function CreatePage() {
             </div>
 
             <h1 className="max-w-full break-words text-[2.45rem] font-black leading-[0.92] tracking-[-0.055em] text-white xs:text-4xl sm:text-6xl lg:text-7xl">
-              Plan less. <span className="text-[#e1062a]">RoseOut</span> more.
+              Plan less. <span className="text-[#e1062a]">TheOutHaven</span> more.
             </h1>
 
             <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:mt-4 sm:text-base">
-              Type exactly what you want. RoseOut matches food, activities,
+              Type exactly what you want. TheOutHaven matches food, activities,
               location, vibe, and budget into a tighter outing plan.
             </p>
           </div>
@@ -449,7 +449,7 @@ export default function CreatePage() {
                   <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
                     {typedPlaceholder
                       ? `${typedPlaceholder}|`
-                      : "Tell RoseOut what you want..."}
+                      : "Tell TheOutHaven what you want..."}
                   </div>
                 )}
 
@@ -607,7 +607,7 @@ export default function CreatePage() {
                           distance={restaurant.distance_miles}
                           score={
                             restaurant.smart_match_score ||
-                            restaurant.roseout_score
+                            restaurant.theouthaven_score
                           }
                           selected={isSelected}
                           priority={restaurantIndex === 0}
@@ -664,7 +664,7 @@ export default function CreatePage() {
                             distance={activity.distance_miles}
                             score={
                               activity.smart_match_score ||
-                              activity.roseout_score
+                              activity.theouthaven_score
                             }
                             selected={isSelected}
                             priority={activityIndex === 0}
@@ -698,7 +698,7 @@ export default function CreatePage() {
           <div className="mx-auto flex max-w-7xl flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
             <div className="min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.2em]">
-                Your RoseOut Plan
+                Your TheOutHaven Plan
               </p>
 
               <p className="max-w-full truncate text-sm font-bold text-white sm:max-w-[52vw]">
@@ -715,7 +715,7 @@ export default function CreatePage() {
               onClick={() => setShowPlanSummary(true)}
               className="w-full shrink-0 rounded-full bg-[#e1062a] px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-900/40 transition hover:bg-[#ff1744] sm:w-auto sm:px-5 sm:text-xs sm:tracking-[0.12em]"
             >
-              Review Your RoseOut →
+              Review Your TheOutHaven →
             </button>
           </div>
         </div>
@@ -837,7 +837,7 @@ function PlanSummarySheet({
               description={
                 restaurant
                   ? "Start with the food pick that best matches your outing."
-                  : "Select a restaurant to complete the first part of your RoseOut."
+                  : "Select a restaurant to complete the first part of your TheOutHaven."
               }
               imageUrl={restaurant?.image_url || null}
               active={Boolean(restaurant)}
@@ -985,11 +985,11 @@ function TimelineStep({
 function StartPanel() {
   const items = [
     {
-      title: "Tell RoseOut the full idea",
+      title: "Tell TheOutHaven the full idea",
       body: "Use a natural sentence with food, activity, location, budget, or vibe.",
     },
     {
-      title: "RoseOut separates the intent",
+      title: "TheOutHaven separates the intent",
       body: "A steak request is treated differently from bowling, karaoke, lounges, or brunch.",
     },
     {
@@ -1233,7 +1233,7 @@ function ResultCard({
 
         <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
           <p className="text-[8px] font-black uppercase tracking-[0.18em] text-white/32 sm:text-[9px] sm:tracking-[0.22em]">
-            Why RoseOut picked this
+            Why TheOutHaven picked this
           </p>
           <p className="mt-1.5 line-clamp-2 break-words text-[11px] font-semibold leading-4 text-white/62 sm:text-xs sm:leading-5">
             {whyPicked}
@@ -1314,7 +1314,7 @@ function LoadingResults({ label }: { label: string }) {
     <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-4">
       <div className="mb-4">
         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.25em]">
-          RoseOut is searching
+          TheOutHaven is searching
         </p>
         <h2 className="mt-1 text-xl font-black tracking-[-0.04em] sm:text-2xl">
           {label}

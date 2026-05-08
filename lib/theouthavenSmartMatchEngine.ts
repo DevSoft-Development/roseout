@@ -28,7 +28,7 @@ export type SmartMatchItem = {
   neighborhood?: string | null;
   address?: string | null;
   price_range?: string | null;
-  roseout_score?: number | null;
+  theouthaven_score?: number | null;
   rating?: number | null;
   review_count?: number | null;
   tags?: string[] | null;
@@ -466,7 +466,7 @@ export function scoreRestaurant(
   restaurant: SmartMatchItem,
   intent: SmartMatchIntent
 ) {
-  let score = Number(restaurant.roseout_score || 0);
+  let score = Number(restaurant.theouthaven_score || 0);
   const text = getSearchText(restaurant);
 
   if (matchesFoodIntent(restaurant, intent)) score += 30;
@@ -519,7 +519,7 @@ export function scoreActivity(
   activity: SmartMatchItem,
   intent: SmartMatchIntent
 ) {
-  let score = Number(activity.roseout_score || 0);
+  let score = Number(activity.theouthaven_score || 0);
   const text = getSearchText(activity);
 
   if (matchesActivityIntent(activity, intent)) score += 35;
@@ -646,5 +646,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "roseout-smart-match-engine-v3";
+  return "theouthaven-smart-match-engine-v3";
 }

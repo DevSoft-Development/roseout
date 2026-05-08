@@ -24,7 +24,7 @@ type AdminLocation = {
   rating: number | null;
   view_count: number | null;
   click_count: number | null;
-  roseout_score: number | null;
+  theouthaven_score: number | null;
   image_url: string | null;
   created_at: string | null;
 };
@@ -114,7 +114,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, roseout_score, image_url, created_at"
+      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -122,7 +122,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, roseout_score, image_url, created_at"
+      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -179,7 +179,7 @@ export default async function AdminLocationsPage({
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      roseout_score: item.roseout_score,
+      theouthaven_score: item.theouthaven_score,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
@@ -199,7 +199,7 @@ export default async function AdminLocationsPage({
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      roseout_score: item.roseout_score,
+      theouthaven_score: item.theouthaven_score,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
@@ -235,7 +235,7 @@ export default async function AdminLocationsPage({
           <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                RoseOut Admin
+                TheOutHaven Admin
               </p>
 
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
@@ -490,7 +490,7 @@ export default async function AdminLocationsPage({
                         {location.image_url ? (
                           <img
                             src={location.image_url}
-                            alt={location.name || "RoseOut location"}
+                            alt={location.name || "TheOutHaven location"}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />
                         ) : (
@@ -580,7 +580,7 @@ export default async function AdminLocationsPage({
                           Score
                         </p>
                         <p className="mt-1 text-sm font-black">
-                          {location.roseout_score || 0}
+                          {location.theouthaven_score || 0}
                         </p>
                       </div>
                     </div>

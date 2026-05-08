@@ -299,7 +299,7 @@ export default function ImportHistoryPage() {
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-rose-300">
-                  RoseOut Admin
+                  TheOutHaven Admin
                 </p>
                 <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
                   Premium Import Dashboard

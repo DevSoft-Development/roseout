@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-    const priceId = process.env.STRIPE_ROSEOUT_PRO_PRICE_ID;
+    const priceId = process.env.STRIPE_THEOUTHAVEN_PRO_PRICE_ID;
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
     if (!stripeSecretKey) {
       return NextResponse.json(
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     if (!priceId) {
       return NextResponse.json(
-        { error: "Missing STRIPE_ROSEOUT_PRO_PRICE_ID" },
+        { error: "Missing STRIPE_THEOUTHAVEN_PRO_PRICE_ID" },
         { status: 500 }
       );
     }
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
       customer_email: email,
 
-      "metadata[plan]": "roseout_pro",
+      "metadata[plan]": "theouthaven_pro",
       "metadata[businessName]": businessName,
       "metadata[contactName]": contactName,
       "metadata[email]": email,
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       "metadata[businessType]": businessType,
       "metadata[goal]": goal,
 
-      "subscription_data[metadata][plan]": "roseout_pro",
+      "subscription_data[metadata][plan]": "theouthaven_pro",
       "subscription_data[metadata][businessName]": businessName,
       "subscription_data[metadata][contactName]": contactName,
       "subscription_data[metadata][email]": email,

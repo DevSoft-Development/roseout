@@ -61,10 +61,10 @@ export async function POST(req: Request) {
         );
       }
 
-      cookieStore.delete("roseout_impersonate_location_id");
-      cookieStore.delete("roseout_impersonate_location_type");
+      cookieStore.delete("theouthaven_impersonate_location_id");
+      cookieStore.delete("theouthaven_impersonate_location_type");
 
-      cookieStore.set("roseout_impersonate_user_id", targetUser.id, {
+      cookieStore.set("theouthaven_impersonate_user_id", targetUser.id, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
@@ -111,9 +111,9 @@ export async function POST(req: Request) {
       );
     }
 
-    cookieStore.delete("roseout_impersonate_user_id");
+    cookieStore.delete("theouthaven_impersonate_user_id");
 
-    cookieStore.set("roseout_impersonate_location_id", String(location.id), {
+    cookieStore.set("theouthaven_impersonate_location_id", String(location.id), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
       maxAge: 60 * 30,
     });
 
-    cookieStore.set("roseout_impersonate_location_type", table, {
+    cookieStore.set("theouthaven_impersonate_location_type", table, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

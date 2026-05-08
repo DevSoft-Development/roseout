@@ -1,15 +1,15 @@
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const metadata = {
-  title: "Privacy Policy – RoseOut",
+  title: "Privacy Policy – TheOutHaven",
   description:
-    "Read RoseOut's Privacy Policy, including how RoseOut collects, uses, protects, and manages user information, location data, AI prompts, email, and SMS consent.",
+    "Read TheOutHaven's Privacy Policy, including how TheOutHaven collects, uses, protects, and manages user information, location data, AI prompts, email, and SMS consent.",
 };
 
 export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-black pb-28 text-white">
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <section className="relative overflow-hidden px-6 pt-28 pb-12">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(225,6,42,0.24),transparent_32%),linear-gradient(180deg,#050505,#000)]" />
@@ -28,7 +28,7 @@ export default function PrivacyPage() {
           </p>
 
           <p className="mt-6 max-w-2xl text-base leading-7 text-white/60">
-            This Privacy Policy explains how RoseOut collects, uses, discloses,
+            This Privacy Policy explains how TheOutHaven collects, uses, discloses,
             and protects information when you use our website, applications,
             AI outing planner, account features, restaurant and activity
             recommendations, and related services.
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-xl font-black text-white">1. Overview</h2>
               <p className="mt-2">
-                RoseOut respects your privacy. This Privacy Policy explains how
+                TheOutHaven respects your privacy. This Privacy Policy explains how
                 we collect, use, disclose, and protect information when you use
                 our website, applications, AI outing planner, account features,
                 restaurant and activity recommendations, and related services.
@@ -58,7 +58,7 @@ export default function PrivacyPage() {
                 name, email address, phone number, password, city or borough,
                 outing preferences, budget range, preferred vibe, account
                 details, and any messages, searches, or prompts you submit to
-                RoseOut.
+                TheOutHaven.
               </p>
               <p className="mt-2">
                 We may also collect usage information such as pages viewed,
@@ -73,7 +73,7 @@ export default function PrivacyPage() {
                 3. How We Use Information
               </h2>
               <p className="mt-2">
-                We use information to provide and improve RoseOut, create and
+                We use information to provide and improve TheOutHaven, create and
                 manage accounts, personalize outing recommendations, generate AI
                 responses, save preferences, improve search results,
                 communicate with users, protect the platform, prevent fraud,
@@ -88,7 +88,7 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 If you provide your phone number and opt in, you agree to
-                receive SMS messages from RoseOut about account updates, outing
+                receive SMS messages from TheOutHaven about account updates, outing
                 recommendations, reminders, promotions, and offers.
               </p>
               <p className="mt-2">
@@ -122,7 +122,7 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 We may share information with service providers who help us
-                operate RoseOut, including hosting, authentication, analytics,
+                operate TheOutHaven, including hosting, authentication, analytics,
                 email delivery, SMS delivery, payments, fraud prevention,
                 customer support, and database services.
               </p>
@@ -139,7 +139,7 @@ export default function PrivacyPage() {
                 7. No Sale of Personal Information
               </h2>
               <p className="mt-2">
-                RoseOut does not sell your personal information. RoseOut does
+                TheOutHaven does not sell your personal information. TheOutHaven does
                 not sell, rent, or share SMS opt-in data or mobile numbers with
                 third parties for marketing purposes.
               </p>
@@ -165,7 +165,7 @@ export default function PrivacyPage() {
               <p className="mt-2">
                 When you submit prompts, preferences, or outing requests, we may
                 process that information to generate recommendations and improve
-                RoseOut. Do not submit sensitive information that you do not
+                TheOutHaven. Do not submit sensitive information that you do not
                 want processed by our systems or service providers.
               </p>
             </section>
@@ -211,7 +211,7 @@ export default function PrivacyPage() {
                 13. Children’s Privacy
               </h2>
               <p className="mt-2">
-                RoseOut is not intended for children under 13. We do not
+                TheOutHaven is not intended for children under 13. We do not
                 knowingly collect personal information from children under 13.
                 If we learn that we collected such information, we will take
                 appropriate steps to delete it.
@@ -223,7 +223,7 @@ export default function PrivacyPage() {
                 14. Third-Party Links
               </h2>
               <p className="mt-2">
-                RoseOut may link to restaurants, venues, reservation platforms,
+                TheOutHaven may link to restaurants, venues, reservation platforms,
                 maps, event websites, and other third-party services. Their
                 privacy practices are governed by their own policies, not this
                 Privacy Policy.
@@ -236,7 +236,7 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 We may update this Privacy Policy from time to time. Continued
-                use of RoseOut after updates means you acknowledge the revised
+                use of TheOutHaven after updates means you acknowledge the revised
                 policy.
               </p>
             </section>
@@ -247,11 +247,11 @@ export default function PrivacyPage() {
                 Questions about this Privacy Policy may be sent to:
               </p>
               <p className="mt-2 font-bold text-white">
-                RoseOut
+                TheOutHaven
                 <br />
-                Email: hello@roseout.com
+                Email: hello@theouthaven.com
                 <br />
-                Website: https://roseout.com
+                Website: https://theouthaven.com
               </p>
             </section>
           </div>

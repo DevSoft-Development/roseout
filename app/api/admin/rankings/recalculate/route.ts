@@ -13,7 +13,7 @@ type RankingSignal = {
   reservation_clicks: number;
   saves: number;
   searches_matched: number;
-  roseout_score: number;
+  theouthaven_score: number;
   trend_score: number;
   conversion_score: number;
   ranking_badge: string;
@@ -97,7 +97,7 @@ export async function POST() {
           reservation_clicks: 0,
           saves: 0,
           searches_matched: 0,
-          roseout_score: 0,
+          theouthaven_score: 0,
           trend_score: 0,
           conversion_score: 0,
           ranking_badge: "Standard",
@@ -198,17 +198,17 @@ export async function POST() {
           Math.sqrt(hoursSinceLastActivity)
       );
 
-      const roseoutScore = clampScore(
+      const theouthavenScore = clampScore(
         35 + engagementScore + actionScore * 0.8 + conversionScore * 0.25
       );
 
       const trendScore = clampScore(velocityScore);
 
-      const badge = getBadge(roseoutScore, trendScore, conversionScore);
+      const badge = getBadge(theouthavenScore, trendScore, conversionScore);
 
       return {
         ...signal,
-        roseout_score: roseoutScore,
+        theouthaven_score: theouthavenScore,
         trend_score: trendScore,
         conversion_score: conversionScore,
         ranking_badge: badge,
@@ -241,7 +241,7 @@ export async function POST() {
       await supabase
         .from("restaurants")
         .update({
-          roseout_score: row.roseout_score,
+          theouthaven_score: row.theouthaven_score,
           trend_score: row.trend_score,
           conversion_score: row.conversion_score,
           ranking_badge: row.ranking_badge,
@@ -253,7 +253,7 @@ export async function POST() {
       await supabase
         .from("activities")
         .update({
-          roseout_score: row.roseout_score,
+          theouthaven_score: row.theouthaven_score,
           trend_score: row.trend_score,
           conversion_score: row.conversion_score,
           ranking_badge: row.ranking_badge,

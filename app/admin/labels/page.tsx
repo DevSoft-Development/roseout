@@ -76,7 +76,7 @@ export default function AdminLabelsPage() {
             ${r.city || ""}, ${r.state || ""} ${r.zip_code || ""}
           </p>
 
-          <p class="brand">Powered by RoseOut</p>
+          <p class="brand">Powered by TheOutHaven</p>
         </div>
       </div>
     `
@@ -86,7 +86,7 @@ export default function AdminLabelsPage() {
     printWindow.document.write(`
       <html>
         <head>
-          <title>RoseOut Restaurant Labels</title>
+          <title>TheOutHaven Restaurant Labels</title>
           <style>
             <style>
   body {

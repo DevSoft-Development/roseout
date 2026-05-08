@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export default function RoseOutFooter() {
+export default function TheOutHavenFooter() {
   return (
     <footer className="relative overflow-hidden border-t border-white/10 bg-[#050505] px-6 py-14 text-white">
       {/* BACKGROUND */}
@@ -14,7 +14,7 @@ export default function RoseOutFooter() {
               R
             </span>
             <span className="text-2xl font-black tracking-tight">
-              RoseOut
+              TheOutHaven
             </span>
           </Link>
 
@@ -73,7 +73,7 @@ export default function RoseOutFooter() {
 
       {/* BOTTOM */}
       <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35 md:flex-row md:items-center md:justify-between">
-        <p>© {new Date().getFullYear()} RoseOut. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} TheOutHaven. All rights reserved.</p>
 
         <p className="max-w-xl leading-6 md:text-right">
           Recommendations may include third-party listings. Always confirm

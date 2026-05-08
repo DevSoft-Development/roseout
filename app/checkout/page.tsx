@@ -31,7 +31,7 @@ declare global {
 
 const proBenefits = [
   "Priority AI discovery in customer outing plans",
-  "RoseOut Reserve booking tools",
+  "TheOutHaven Reserve booking tools",
   "Advanced analytics dashboard",
   "QR Growth Tools for in-restaurant traffic",
   "Up to 10 photos and full listing customization",
@@ -156,7 +156,7 @@ export default function CheckoutInfoPage() {
         <div className="mx-auto mb-10 max-w-3xl text-center">
           <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-rose-200">
             <Sparkles className="h-4 w-4" />
-            RoseOut Pro Enrollment
+            TheOutHaven Pro Enrollment
           </div>
 
           <h1 className="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
@@ -184,7 +184,7 @@ export default function CheckoutInfoPage() {
                   Business Details
                 </p>
                 <h2 className="mt-2 text-2xl font-black">
-                  Set up your RoseOut Pro profile
+                  Set up your TheOutHaven Pro profile
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-zinc-400">
                   Choose your location address from Google to improve accuracy
@@ -260,7 +260,7 @@ export default function CheckoutInfoPage() {
 
               <div>
                 <label className="mb-2 block text-sm font-semibold text-zinc-300">
-                  What do you want RoseOut to help with most?
+                  What do you want TheOutHaven to help with most?
                 </label>
 
                 <textarea
@@ -279,7 +279,7 @@ export default function CheckoutInfoPage() {
                   <div>
                     <h3 className="font-black">Create a secure password</h3>
                     <p className="text-sm text-zinc-500">
-                      This will be used for your RoseOut business account.
+                      This will be used for your TheOutHaven business account.
                     </p>
                   </div>
                 </div>
@@ -373,7 +373,7 @@ export default function CheckoutInfoPage() {
                     className="mt-1 h-4 w-4 rounded border-white/20 bg-black accent-rose-600"
                   />
                   <span>
-                    I understand RoseOut Pro is a $99/month subscription and I
+                    I understand TheOutHaven Pro is a $99/month subscription and I
                     will be redirected to Stripe to complete secure checkout.
                   </span>
                 </label>
@@ -388,7 +388,7 @@ export default function CheckoutInfoPage() {
               </button>
 
               <p className="text-center text-xs leading-5 text-zinc-500">
-                Your payment is completed on Stripe. RoseOut does not store your
+                Your payment is completed on Stripe. TheOutHaven does not store your
                 card information.
               </p>
             </form>
@@ -402,7 +402,7 @@ export default function CheckoutInfoPage() {
                   Most Popular
                 </div>
 
-                <h2 className="text-3xl font-black">RoseOut Pro</h2>
+                <h2 className="text-3xl font-black">TheOutHaven Pro</h2>
 
                 <div className="mt-4 flex items-end gap-2">
                   <span className="text-5xl font-black">$99</span>
@@ -412,7 +412,7 @@ export default function CheckoutInfoPage() {
                 <p className="mt-5 text-sm leading-7 text-zinc-300">
                   Built for businesses that want priority AI discovery,
                   reservations, analytics, and stronger visibility inside
-                  RoseOut.
+                  TheOutHaven.
                 </p>
 
                 <div className="mt-7 space-y-4">
@@ -446,7 +446,7 @@ export default function CheckoutInfoPage() {
                 </Step>
 
                 <Step number="03" title="Complete Stripe checkout">
-                  Stripe securely processes your RoseOut Pro subscription.
+                  Stripe securely processes your TheOutHaven Pro subscription.
                 </Step>
               </div>
             </div>

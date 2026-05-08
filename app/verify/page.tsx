@@ -41,7 +41,7 @@ function VerifyPageContent() {
 
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem("roseout_pending_signup");
+      const saved = sessionStorage.getItem("theouthaven_pending_signup");
 
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -88,7 +88,7 @@ function VerifyPageContent() {
         await supabase.auth.updateUser({ password });
       }
 
-      sessionStorage.removeItem("roseout_pending_signup");
+      sessionStorage.removeItem("theouthaven_pending_signup");
 
       router.replace("/login?verified=1");
     } catch (err: any) {
@@ -138,7 +138,7 @@ function VerifyPageContent() {
             href="/"
             className="text-sm font-black uppercase tracking-[0.55em] text-red-400"
           >
-            RoseOut
+            TheOutHaven
           </Link>
 
           <Link
@@ -161,7 +161,7 @@ function VerifyPageContent() {
 
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/55">
               Enter the verification code sent to your email to activate your
-              RoseOut account.
+              TheOutHaven account.
             </p>
           </div>
 
@@ -178,7 +178,7 @@ function VerifyPageContent() {
             </h2>
 
             <p className="mt-2 text-sm leading-6 text-white/50">
-              Check your inbox for the code from RoseOut.
+              Check your inbox for the code from TheOutHaven.
             </p>
 
             {message && (

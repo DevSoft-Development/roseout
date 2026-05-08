@@ -187,7 +187,7 @@ export default async function AdminUsersPage({
           <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                RoseOut Admin
+                TheOutHaven Admin
               </p>
 
               <h1 className="mt-2 text-4xl font-black">Users</h1>

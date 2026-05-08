@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = `
-You are helping optimize a RoseOut location profile so it appears better in AI outing recommendations.
+You are helping optimize a TheOutHaven location profile so it appears better in AI outing recommendations.
 
 Location type: ${type}
 Name: ${name}
@@ -72,7 +72,7 @@ Return ONLY valid JSON with this shape:
         {
           role: "system",
           content:
-            "You are a concise location profile optimization assistant for RoseOut. Return only valid JSON.",
+            "You are a concise location profile optimization assistant for TheOutHaven. Return only valid JSON.",
         },
         {
           role: "user",

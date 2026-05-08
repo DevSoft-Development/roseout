@@ -135,7 +135,7 @@ export default function AdminLiveSessionsClient() {
 
         <div className="relative mx-auto max-w-7xl px-6 py-10">
           <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">
-            RoseOut Intelligence
+            TheOutHaven Intelligence
           </p>
 
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

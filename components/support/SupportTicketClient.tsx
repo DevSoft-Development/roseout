@@ -98,7 +98,7 @@ export default function SupportTicketClient({
         </p>
         <h2 className="mt-2 text-2xl font-black">How can we help?</h2>
         <p className="mt-2 text-sm leading-6 text-white/50">
-          Anyone can create a RoseOut support ticket. You will receive a private
+          Anyone can create a TheOutHaven support ticket. You will receive a private
           ticket link by email and text if a phone number is provided.
         </p>
 

@@ -38,7 +38,7 @@ type FormState = {
   owner_email: string;
   owner_phone: string;
   claim_status: string;
-  roseout_score: string | number;
+  theouthaven_score: string | number;
   latitude: string | number;
   longitude: string | number;
 };
@@ -130,7 +130,7 @@ export default function EditLocationPage() {
     owner_email: "",
     owner_phone: "",
     claim_status: "",
-    roseout_score: "",
+    theouthaven_score: "",
     latitude: "",
     longitude: "",
   });
@@ -199,7 +199,7 @@ export default function EditLocationPage() {
           owner_email: data.owner_email || "",
           owner_phone: data.owner_phone || "",
           claim_status: data.claim_status || "",
-          roseout_score: clampScore(data.roseout_score ?? data.quality_score ?? 0),
+          theouthaven_score: clampScore(data.theouthaven_score ?? data.quality_score ?? 0),
           latitude: data.latitude ?? "",
           longitude: data.longitude ?? "",
         });
@@ -330,7 +330,7 @@ export default function EditLocationPage() {
     if (type === "activities") payload.activity_type = form.activity_type;
 
     const calculatedScore = calculateUpdatedScore(payload);
-    payload.roseout_score = calculatedScore;
+    payload.theouthaven_score = calculatedScore;
 
     try {
       const res = await fetch("/api/locations/edit-context", {
@@ -357,10 +357,10 @@ export default function EditLocationPage() {
 
       setForm((prev) => ({
         ...prev,
-        roseout_score: calculatedScore,
+        theouthaven_score: calculatedScore,
       }));
 
-      setMessage(`✅ Saved successfully. RoseOut Score: ${calculatedScore}/100`);
+      setMessage(`✅ Saved successfully. TheOutHaven Score: ${calculatedScore}/100`);
     } catch {
       setMessage("Failed to save location.");
     } finally {
@@ -368,7 +368,7 @@ export default function EditLocationPage() {
     }
   };
 
-  const safeScore = clampScore(form.roseout_score);
+  const safeScore = clampScore(form.theouthaven_score);
 
   const isSuccess =
     message.includes("✅") ||
@@ -449,7 +449,7 @@ export default function EditLocationPage() {
           <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-end">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-200/70">
-                RoseOut Reserve
+                TheOutHaven Reserve
               </p>
 
               <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
@@ -458,7 +458,7 @@ export default function EditLocationPage() {
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">
                 Refine this listing, improve search matching, and preview the
-                way it appears across RoseOut.
+                way it appears across TheOutHaven.
               </p>
             </div>
 
@@ -494,7 +494,7 @@ export default function EditLocationPage() {
 
               <TextArea
                 label="Short Description"
-                helper="This helps RoseOut understand what makes the location special."
+                helper="This helps TheOutHaven understand what makes the location special."
                 value={form.description}
                 onChange={(v) => update("description", v)}
               />
@@ -568,7 +568,7 @@ export default function EditLocationPage() {
               <Field label="Search Keywords" helper="Separate with commas." value={form.search_keywords} onChange={(v) => update("search_keywords", v)} />
 
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="RoseOut Score" value={String(safeScore)} onChange={(v) => update("roseout_score", v)} helper="This updates automatically when you save." />
+                <Field label="TheOutHaven Score" value={String(safeScore)} onChange={(v) => update("theouthaven_score", v)} helper="This updates automatically when you save." />
                 <Field label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} />
               </div>
             </Panel>

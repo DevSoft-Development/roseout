@@ -91,10 +91,10 @@ export async function POST(req: Request) {
     if (adminEmail) {
       await sendNotification({
         toEmail: adminEmail,
-        subject: `New RoseOut location request: ${location_name}`,
+        subject: `New TheOutHaven location request: ${location_name}`,
         emailHtml: `
           <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
-            <h2>New RoseOut Location Request</h2>
+            <h2>New TheOutHaven Location Request</h2>
             <p><strong>Location:</strong> ${location_name}</p>
             <p><strong>Type:</strong> ${location_type}</p>
             <p><strong>Request:</strong> ${request_type}</p>
@@ -114,12 +114,12 @@ export async function POST(req: Request) {
 
     await sendNotification({
       toEmail: owner_email,
-      subject: "RoseOut received your location request",
+      subject: "TheOutHaven received your location request",
       emailHtml: `
         <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
-          <h2>We received your RoseOut request</h2>
+          <h2>We received your TheOutHaven request</h2>
           <p>Hi ${owner_name},</p>
-          <p>Thanks for submitting <strong>${location_name}</strong> to RoseOut.</p>
+          <p>Thanks for submitting <strong>${location_name}</strong> to TheOutHaven.</p>
           <p>Our team will review your request and follow up if more information is needed.</p>
           <p style="color:#555">Request ID: ${data.id}</p>
         </div>

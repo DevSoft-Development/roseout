@@ -1,4 +1,4 @@
-export type RoseOutLocationType =
+export type TheOutHavenLocationType =
   | "restaurant"
   | "restaurants"
   | "activity"

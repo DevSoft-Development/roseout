@@ -59,7 +59,7 @@ export default function LocationReviewForm({
         },
         body: JSON.stringify({
           location_id: locationId,
-          customer_name: customerName || "RoseOut Guest",
+          customer_name: customerName || "TheOutHaven Guest",
           rating,
           review_text: reviewText,
           turnstileToken,
@@ -76,11 +76,11 @@ export default function LocationReviewForm({
         return;
       }
 
-      setMessage("Thank you — your review helped update this RoseOut score.");
+      setMessage("Thank you — your review helped update this TheOutHaven score.");
 
       onReviewSubmitted?.({
         ...data,
-        customer_name: customerName || "RoseOut Guest",
+        customer_name: customerName || "TheOutHaven Guest",
         rating,
         review_text: reviewText,
       });
@@ -107,7 +107,7 @@ export default function LocationReviewForm({
     >
       <div className="border-b border-white/10 bg-gradient-to-r from-red-950/70 via-black to-black px-6 py-5">
         <p className="text-xs font-black uppercase tracking-[0.3em] text-red-300">
-          RoseOut Review
+          TheOutHaven Review
         </p>
 
         <h3 className="mt-2 text-3xl font-black tracking-tight text-white">

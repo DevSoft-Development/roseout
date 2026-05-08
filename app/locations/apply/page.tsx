@@ -3,13 +3,13 @@
 import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 declare global {
   interface Window {
     turnstile?: any;
-    onRoseOutTurnstileSuccess?: (token: string) => void;
-    onRoseOutTurnstileExpired?: () => void;
+    onTheOutHavenTurnstileSuccess?: (token: string) => void;
+    onTheOutHavenTurnstileExpired?: () => void;
   }
 }
 
@@ -52,19 +52,19 @@ export default function LocationApplyPage() {
   const [scanError, setScanError] = useState("");
 
   useEffect(() => {
-    document.title = "Claim or Add Your Location | RoseOut";
+    document.title = "Claim or Add Your Location | TheOutHaven";
 
-    window.onRoseOutTurnstileSuccess = (token: string) => {
+    window.onTheOutHavenTurnstileSuccess = (token: string) => {
       setCaptchaToken(token);
     };
 
-    window.onRoseOutTurnstileExpired = () => {
+    window.onTheOutHavenTurnstileExpired = () => {
       setCaptchaToken("");
     };
 
     return () => {
-      delete window.onRoseOutTurnstileSuccess;
-      delete window.onRoseOutTurnstileExpired;
+      delete window.onTheOutHavenTurnstileSuccess;
+      delete window.onTheOutHavenTurnstileExpired;
     };
   }, []);
 
@@ -141,15 +141,15 @@ export default function LocationApplyPage() {
             const url = String(codes[0].rawValue || "");
 
             if (
-              url.includes("roseout.com") ||
-              url.includes("roseout.vercel.app")
+              url.includes("theouthaven.com") ||
+              url.includes("theouthaven.vercel.app")
             ) {
               closeQrScanner();
               window.location.href = url;
               return;
             }
 
-            setScanError("This QR code is not a RoseOut claim link.");
+            setScanError("This QR code is not a TheOutHaven claim link.");
             return;
           }
         } catch {
@@ -238,7 +238,7 @@ export default function LocationApplyPage() {
         defer
       />
 
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <section className="relative overflow-hidden px-6 pt-32 pb-20">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(225,6,42,0.2),transparent_35%),linear-gradient(180deg,#050505,#000)]" />
@@ -250,13 +250,13 @@ export default function LocationApplyPage() {
             </p>
 
             <h1 className="mt-5 text-5xl font-black leading-tight md:text-6xl">
-              Manage how your location appears on RoseOut.
+              Manage how your location appears on TheOutHaven.
             </h1>
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-white/60">
               This page is for restaurants, activities, lounges, venues, and
               experience-based businesses that want to claim or submit a
-              location on RoseOut.
+              location on TheOutHaven.
             </p>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -284,7 +284,7 @@ export default function LocationApplyPage() {
               </h2>
 
               <p className="mt-3 text-sm leading-7 text-white/50">
-                Open your camera to scan your RoseOut claim QR code. If the code
+                Open your camera to scan your TheOutHaven claim QR code. If the code
                 is valid, you’ll be taken directly to your claim page.
               </p>
 
@@ -453,8 +453,8 @@ export default function LocationApplyPage() {
                 <div
                   className="cf-turnstile"
                   data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
-                  data-callback="onRoseOutTurnstileSuccess"
-                  data-expired-callback="onRoseOutTurnstileExpired"
+                  data-callback="onTheOutHavenTurnstileSuccess"
+                  data-expired-callback="onTheOutHavenTurnstileExpired"
                   data-theme="dark"
                 />
               </div>

@@ -21,7 +21,7 @@ async function backfillTable({
   type: "restaurant" | "activity";
 }) {
   const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
   const path = type === "activity" ? "claim-activity" : "claim";
 

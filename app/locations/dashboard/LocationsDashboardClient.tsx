@@ -34,7 +34,7 @@ type LocationItem = {
   city?: string;
   state?: string;
   image_url?: string;
-  roseout_score?: number;
+  theouthaven_score?: number;
   quality_score?: number;
   claim_status?: string;
   owner_name?: string;
@@ -87,7 +87,7 @@ export default function LocationsDashboardClient({
               locations.reduce(
                 (sum, item) =>
                   sum +
-                  clampScore(item.roseout_score ?? item.quality_score ?? 0),
+                  clampScore(item.theouthaven_score ?? item.quality_score ?? 0),
                 0
               ) / locations.length
             )
@@ -149,7 +149,7 @@ export default function LocationsDashboardClient({
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-[#f5b700]">
                 <Sparkles size={14} />
-                RoseOut Reserve
+                TheOutHaven Reserve
               </div>
 
               <h1 className="max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
@@ -202,7 +202,7 @@ export default function LocationsDashboardClient({
           <div className="max-h-[68vh] space-y-3 overflow-y-auto pr-1">
             {filteredLocations.map((loc) => {
               const active = selected?.id === loc.id;
-              const score = clampScore(loc.roseout_score ?? loc.quality_score ?? 0);
+              const score = clampScore(loc.theouthaven_score ?? loc.quality_score ?? 0);
 
               return (
                 <button
@@ -316,7 +316,7 @@ export default function LocationsDashboardClient({
                   <div className="mb-6 flex flex-wrap items-center gap-3">
                     <ScoreBadge
                       score={clampScore(
-                        selected.roseout_score ?? selected.quality_score ?? 0
+                        selected.theouthaven_score ?? selected.quality_score ?? 0
                       )}
                     />
 

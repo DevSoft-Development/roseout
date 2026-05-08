@@ -205,7 +205,7 @@ export default function AdminTopBar() {
 
           <div className="text-left">
             <p className="text-lg font-black tracking-tight text-white">
-              RoseOut
+              TheOutHaven
             </p>
             <p className="text-[11px] font-black uppercase tracking-[0.28em] text-rose-200/70">
               Admin

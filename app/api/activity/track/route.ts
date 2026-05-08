@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
     const cookieStore = await cookies();
     const impersonatedUserId = cookieStore.get(
-      "roseout_impersonate_user_id"
+      "theouthaven_impersonate_user_id"
     )?.value;
 
     const supabase = adminSupabase();

@@ -1,8 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import RoseOutHeader from "@/components/RoseOutHeader";
-import RoseOutFooter from "@/components/RoseOutFooter";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import TheOutHavenFooter from "@/components/TheOutHavenFooter";
 
 export default function AppShell({
   children,
@@ -17,9 +17,9 @@ export default function AppShell({
 
   return (
     <>
-      {!isAdmin && <RoseOutHeader />}
+      {!isAdmin && <TheOutHavenHeader />}
       {children}
-      {!isAdmin && <RoseOutFooter />}
+      {!isAdmin && <TheOutHavenFooter />}
     </>
   );
 }

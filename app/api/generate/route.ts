@@ -5,7 +5,7 @@ import {
   detectSmartMatchIntent,
   balanceSmartMatches,
   getSmartMatchVersion,
-} from "@/lib/roseoutSmartMatchEngine";
+} from "@/lib/theouthavenSmartMatchEngine";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -15,7 +15,7 @@ const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 
 const OFF_TOPIC_REPLY =
-  "I can only help with RoseOut outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
+  "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
 
 const LOCATION_NAME_MATCH_WEIGHT = 500;
 
@@ -566,7 +566,7 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   return detectedLocations.some((location) => searchable.includes(location));
 }
 
-function isRoseOutRelated(input: string) {
+function isTheOutHavenRelated(input: string) {
   const text = normalizeQuery(input);
 
   const allowedWords = [
@@ -843,7 +843,7 @@ function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) 
   return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function isWithinRoseOutServiceArea(item: any) {
+function isWithinTheOutHavenServiceArea(item: any) {
   const lat = Number(item.latitude);
   const lng = Number(item.longitude);
 
@@ -1010,7 +1010,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     ...Object.values(TAG_KEYWORDS).flat(),
   ];
 
-  const mentionsAnyRoseOutOption = allOptions.some((option) =>
+  const mentionsAnyTheOutHavenOption = allOptions.some((option) =>
     text.includes(option)
   );
 
@@ -1030,7 +1030,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     text.includes("and") ||
     (wantsFood && wantsActivity) ||
     (foodIntents.length > 0 && activityIntents.length > 0) ||
-    (mentionsAnyRoseOutOption && text.includes("date"));
+    (mentionsAnyTheOutHavenOption && text.includes("date"));
 
   const wantsRestaurant =
     wantsFood || wantsFullOuting || (!wantsFood && !wantsActivity);
@@ -1151,7 +1151,7 @@ function scoreRestaurant(
       : PRIORITY_WEIGHTS.mismatchPenalty;
   }
 
-  score += clampScore(item.roseout_score || 0) * 0.25;
+  score += clampScore(item.theouthaven_score || 0) * 0.25;
   score += clampScore(item.quality_score || 0) * 0.15;
   score += clampScore(item.popularity_score || 0) * 0.1;
   score += clampScore(item.review_score || 0) * 0.2;
@@ -1232,7 +1232,7 @@ function scoreActivity(
     score += PRIORITY_WEIGHTS.nightlife;
   }
 
-  score += clampScore(item.roseout_score || 0) * 0.25;
+  score += clampScore(item.theouthaven_score || 0) * 0.25;
   score += clampScore(item.quality_score || 0) * 0.15;
   score += clampScore(item.popularity_score || 0) * 0.1;
   score += clampScore(item.review_score || 0) * 0.2;
@@ -1325,8 +1325,8 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
             String(activity.neighborhood).toLowerCase();
 
         let pairScore =
-          Number(restaurant.roseout_score || 0) +
-          Number(activity.roseout_score || 0);
+          Number(restaurant.theouthaven_score || 0) +
+          Number(activity.theouthaven_score || 0);
 
         if (sameNeighborhood) pairScore += 80;
         if (sameCity) pairScore += 50;
@@ -1411,7 +1411,7 @@ export async function POST(req: Request) {
     const smartIntent = detectSmartMatchIntent(input);
     console.log("SMART MATCH INTENT:", smartIntent);
 
-    if (isUnsafeOrOffTopic(input) || !isRoseOutRelated(input)) {
+    if (isUnsafeOrOffTopic(input) || !isTheOutHavenRelated(input)) {
       return Response.json({
         success: false,
         version: getSmartMatchVersion(),
@@ -1480,7 +1480,7 @@ export async function POST(req: Request) {
     const intent = detectIntent(input, body, locations);
 
    const cacheKey = normalizeQuery(
-  `roseout-${getSmartMatchVersion()}-contact-v1-${input}-${intent.userLat || ""}-${
+  `theouthaven-${getSmartMatchVersion()}-contact-v1-${input}-${intent.userLat || ""}-${
     intent.userLng || ""
   }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
 );
@@ -1505,7 +1505,7 @@ const usableLocations = locations.filter((item: any) => {
   const isApproved =
     status === "approved" || status === "active" || status === "";
 
-  return isApproved && isWithinRoseOutServiceArea(item);
+  return isApproved && isWithinTheOutHavenServiceArea(item);
 });
 
     const sourceLocations =
@@ -1589,12 +1589,12 @@ const usableLocations = locations.filter((item: any) => {
 
         return {
           ...restaurant,
-          roseout_score: score,
+          theouthaven_score: score,
           smart_match_score: score,
           location_name_match_score: locationNameMatchScore(restaurant, input),
         };
       })
-      .sort((a: any, b: any) => b.roseout_score - a.roseout_score);
+      .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
 
     const rankedActivities = activities
       .map((activity: any) => {
@@ -1602,12 +1602,12 @@ const usableLocations = locations.filter((item: any) => {
 
         return {
           ...activity,
-          roseout_score: score,
+          theouthaven_score: score,
           smart_match_score: score,
           location_name_match_score: locationNameMatchScore(activity, input),
         };
       })
-      .sort((a: any, b: any) => b.roseout_score - a.roseout_score);
+      .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
 
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
@@ -1660,7 +1660,7 @@ const usableLocations = locations.filter((item: any) => {
       name: r.restaurant_name || r.name,
       city: r.city,
       cuisine: r.cuisine || r.cuisine_type,
-      score: clampScore(r.roseout_score),
+      score: clampScore(r.theouthaven_score),
       location_name_match_score: r.location_name_match_score || 0,
       tag: r.primary_tag,
       rating: r.rating,
@@ -1673,7 +1673,7 @@ const usableLocations = locations.filter((item: any) => {
       name: a.activity_name || a.name,
       city: a.city,
       type: a.activity_type || a.category || a.subcategory,
-      score: clampScore(a.roseout_score),
+      score: clampScore(a.theouthaven_score),
       location_name_match_score: a.location_name_match_score || 0,
       tag: a.primary_tag,
       rating: a.rating,
@@ -1688,7 +1688,7 @@ const usableLocations = locations.filter((item: any) => {
       .join("\n");
 
     const prompt = `
-You are RoseOut, a concise AI outing planner.
+You are TheOutHaven, a concise AI outing planner.
 
 Conversation:
 ${shortConversation}
@@ -1696,7 +1696,7 @@ ${shortConversation}
 Latest user request:
 "${input}"
 
-RoseOut Smart Match Engine:
+TheOutHaven Smart Match Engine:
 ${JSON.stringify({
   version: getSmartMatchVersion(),
   mode: smartBalanced.mode,
@@ -1726,7 +1726,7 @@ ${JSON.stringify({
   locations: intent.locations,
 })}
 
-Matched location/business names from RoseOut database:
+Matched location/business names from TheOutHaven database:
 ${JSON.stringify(slimMatchedLocations)}
 
 Restaurants:
@@ -1736,8 +1736,8 @@ Activities:
 ${JSON.stringify(slimActivities)}
 
 STRICT RULES:
-- Only answer RoseOut-related outing, date, restaurant, activity, nightlife, brunch, birthday, budget, distance, or location-planning requests.
-- If the user asks anything outside RoseOut, respond exactly: "${OFF_TOPIC_REPLY}"
+- Only answer TheOutHaven-related outing, date, restaurant, activity, nightlife, brunch, birthday, budget, distance, or location-planning requests.
+- If the user asks anything outside TheOutHaven, respond exactly: "${OFF_TOPIC_REPLY}"
 - Keep the answer short and direct.
 - Use ONLY the listed restaurants and activities.
 - If the user typed a specific business/location name and it appears in "Matched location/business names", prioritize it.
@@ -1793,7 +1793,7 @@ STRICT RULES:
       },
       reply:
         response?.output_text ||
-        "Here are strong RoseOut matches based on your vibe.",
+        "Here are strong TheOutHaven matches based on your vibe.",
       intent: {
         requestedTags: intent.requestedTags,
         foodIntents: intent.foodIntents,
@@ -1840,8 +1840,8 @@ google_maps_url: item.google_maps_url || null,
         cuisine: r.cuisine || r.cuisine_type || null,
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
-        roseout_score: clampScore(r.roseout_score),
-        smart_match_score: clampScore(r.smart_match_score || r.roseout_score),
+        theouthaven_score: clampScore(r.theouthaven_score),
+        smart_match_score: clampScore(r.smart_match_score || r.theouthaven_score),
         location_name_match_score: r.location_name_match_score || 0,
         paired_activity_name: r.paired_activity_name || null,
         pair_distance_miles: r.pair_distance_miles || null,
@@ -1870,8 +1870,8 @@ google_maps_url: item.google_maps_url || null,
         price_range: a.price_range,
         atmosphere: a.atmosphere,
         group_friendly: a.group_friendly,
-        roseout_score: clampScore(a.roseout_score),
-        smart_match_score: clampScore(a.smart_match_score || a.roseout_score),
+        theouthaven_score: clampScore(a.theouthaven_score),
+        smart_match_score: clampScore(a.smart_match_score || a.theouthaven_score),
         location_name_match_score: a.location_name_match_score || 0,
         paired_restaurant_name: a.paired_restaurant_name || null,
         pair_distance_miles: a.pair_distance_miles || null,

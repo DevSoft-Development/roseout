@@ -35,10 +35,10 @@ export async function GET(req: Request) {
     const cookieStore = await cookies();
 
     const impersonatedLocationId =
-      cookieStore.get("roseout_impersonate_location_id")?.value;
+      cookieStore.get("theouthaven_impersonate_location_id")?.value;
 
     const impersonatedLocationType =
-      cookieStore.get("roseout_impersonate_location_type")?.value;
+      cookieStore.get("theouthaven_impersonate_location_type")?.value;
 
     const isLocationImpersonation =
       impersonatedLocationId &&
@@ -97,10 +97,10 @@ export async function PATCH(req: Request) {
     const cookieStore = await cookies();
 
     const impersonatedLocationId =
-      cookieStore.get("roseout_impersonate_location_id")?.value;
+      cookieStore.get("theouthaven_impersonate_location_id")?.value;
 
     const impersonatedLocationType =
-      cookieStore.get("roseout_impersonate_location_type")?.value;
+      cookieStore.get("theouthaven_impersonate_location_type")?.value;
 
     const isLocationImpersonation =
       impersonatedLocationId &&

@@ -29,7 +29,7 @@ type PlanLocation = {
   reservation_url?: string | null;
   reservation_link?: string | null;
   booking_url?: string | null;
-  roseout_score?: number | null;
+  theouthaven_score?: number | null;
   smart_match_score?: number | null;
 };
 
@@ -40,7 +40,7 @@ type SavedPlan = {
   savedAt?: number;
 };
 
-const PLAN_KEY = "roseout_plan";
+const PLAN_KEY = "theouthaven_plan";
 
 export default function PlanPage() {
   return (
@@ -59,7 +59,7 @@ function PlanPageInner() {
   const activityId = searchParams.get("activityId");
 
   useEffect(() => {
-    document.title = "Your RoseOut Plan | RoseOut";
+    document.title = "Your TheOutHaven Plan | TheOutHaven";
     setMounted(true);
 
     try {
@@ -83,7 +83,7 @@ function PlanPageInner() {
       activity?.activity_name || activity?.name,
     ].filter(Boolean);
 
-    return names.length ? names.join(" + ") : "Your RoseOut Plan";
+    return names.length ? names.join(" + ") : "Your TheOutHaven Plan";
   }, [restaurant, activity]);
 
   if (!mounted) return <PlanLoading />;
@@ -95,7 +95,7 @@ function PlanPageInner() {
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div>
             <div className="mb-3 inline-flex rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100 sm:px-4 sm:py-2 sm:text-[11px]">
-              RoseOut Plan
+              TheOutHaven Plan
             </div>
 
             <h1 className="text-[2.35rem] font-black leading-[0.95] tracking-[-0.055em] sm:text-6xl lg:text-7xl">
@@ -175,7 +175,7 @@ function PlanPageInner() {
                   Timeline
                 </p>
                 <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] sm:text-3xl">
-                  Your RoseOut flow
+                  Your TheOutHaven flow
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-white/40">
                   Start with dinner, then continue into the experience.
@@ -514,7 +514,7 @@ function EmptyPlan() {
       </p>
 
       <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">
-        Build your RoseOut first
+        Build your TheOutHaven first
       </h2>
 
       <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-white/45">

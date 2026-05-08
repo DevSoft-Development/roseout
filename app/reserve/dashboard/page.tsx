@@ -188,7 +188,7 @@ export default async function ReserveDashboardPage() {
           <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                RoseOut Reserve
+                TheOutHaven Reserve
               </p>
 
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">

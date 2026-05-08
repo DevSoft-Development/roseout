@@ -370,7 +370,7 @@ function buildSearchKeywords(place: any, query: string) {
   const text = normalizeText(`${place.name} ${query} ${(place.types || []).join(" ")}`);
 
   const keywords = [
-    "roseout",
+    "theouthaven",
     "activity",
     "specialty activity",
     "date idea",
@@ -509,7 +509,7 @@ function buildDateStyleTags(place: any, query: string) {
   return uniqueArray(tags);
 }
 
-function getRoseOutScore(place: any) {
+function getTheOutHavenScore(place: any) {
   const rating = Number(place.rating || 0);
   const reviews = getReviewCount(place);
 
@@ -624,7 +624,7 @@ async function upsertSpecialtyActivity(place: any, query: string) {
   const text = `${merged.name} ${query} ${(merged.types || []).join(" ")}`;
   const primaryTag = inferPrimaryTag(text);
   const activityType = inferActivityType(text);
-  const score = getRoseOutScore(merged);
+  const score = getTheOutHavenScore(merged);
   const qr = await createClaimQr("activity");
 
   const row = {
@@ -639,7 +639,7 @@ async function upsertSpecialtyActivity(place: any, query: string) {
 
     rating: Number(merged.rating || 0),
     review_count: getReviewCount(merged),
-    roseout_score: score,
+    theouthaven_score: score,
     quality_score: score,
     popularity_score: Math.min(
       100,

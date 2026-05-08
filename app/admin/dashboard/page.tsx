@@ -82,7 +82,7 @@ export default async function CentralDashboardPage() {
           <div className="relative z-10 grid gap-6 lg:grid-cols-[1.2fr_420px] lg:items-end">
             <div>
               <p className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-rose-300">
-                RoseOut Control Center
+                TheOutHaven Control Center
               </p>
 
               <h1 className="max-w-4xl text-4xl font-black tracking-tight sm:text-5xl">
@@ -91,7 +91,7 @@ export default async function CentralDashboardPage() {
 
               <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
                 A premium command center for managing locations, reservations,
-                claims, and the full RoseOut customer journey.
+                claims, and the full TheOutHaven customer journey.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -238,7 +238,7 @@ export default async function CentralDashboardPage() {
                 Quick Actions
               </p>
               <h2 className="mt-2 text-2xl font-black">
-                Manage your RoseOut flow
+                Manage your TheOutHaven flow
               </h2>
             </div>
 

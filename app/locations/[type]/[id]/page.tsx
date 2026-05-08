@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase-browser";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
 import { trackActivity } from "@/lib/trackActivity";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
 
 function toArray(value: any): string[] {
@@ -132,7 +132,7 @@ if (error || !data) {
     location?.restaurant_name ||
     location?.activity_name ||
     location?.name ||
-    "RoseOut Location";
+    "TheOutHaven Location";
 
   const category = isActivity
     ? location?.activity_type || "Activity"
@@ -140,7 +140,7 @@ if (error || !data) {
 
   const score = clampScore(
     location?.review_score ??
-      location?.roseout_score ??
+      location?.theouthaven_score ??
       location?.quality_score ??
       0
   );
@@ -204,7 +204,7 @@ if (error || !data) {
   function handleReviewSubmitted(data: any) {
     const newReview = {
       id: `temp-${Date.now()}`,
-      customer_name: data.customer_name || "RoseOut Guest",
+      customer_name: data.customer_name || "TheOutHaven Guest",
       rating: data.rating || 5,
       review_text: data.review_text || "Review submitted successfully.",
       created_at: new Date().toISOString(),
@@ -236,14 +236,14 @@ if (error || !data) {
   if (loading) {
     return (
       <>
-        <RoseOutHeader />
+        <TheOutHavenHeader />
 
         <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black px-5 pt-20 text-white">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(225,6,42,0.3),transparent_32%),radial-gradient(circle_at_80%_10%,rgba(127,29,29,0.35),transparent_28%),#000]" />
 
           <div className="relative z-10 rounded-[2rem] border border-white/10 bg-white/5 px-8 py-6 text-center shadow-2xl backdrop-blur-xl">
             <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-              RoseOut
+              TheOutHaven
             </p>
             <p className="mt-3 text-sm font-bold text-white/70">
               Loading location...
@@ -257,14 +257,14 @@ if (error || !data) {
   if (!location) {
     return (
       <>
-        <RoseOutHeader />
+        <TheOutHavenHeader />
 
         <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black px-5 pt-20 text-white">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(225,6,42,0.3),transparent_32%),#000]" />
 
           <div className="relative z-10 max-w-md rounded-[2rem] border border-white/10 bg-white/5 p-7 text-center shadow-2xl backdrop-blur-xl">
             <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-              RoseOut
+              TheOutHaven
             </p>
 
             <h1 className="mt-4 text-3xl font-black">Location Not Found</h1>
@@ -287,7 +287,7 @@ if (error || !data) {
 
   return (
     <>
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <DynamicLocationHeader
         scrolled={scrolled}
@@ -320,7 +320,7 @@ if (error || !data) {
             <div className="mt-auto grid items-end gap-8 pb-8 lg:grid-cols-[1fr_330px]">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-                  RoseOut Location
+                  TheOutHaven Location
                 </p>
 
                 <div className="mt-5 flex flex-wrap gap-2">
@@ -357,7 +357,7 @@ if (error || !data) {
 
                 <p className="mt-6 max-w-3xl text-base leading-8 text-white/75 md:text-lg">
                   {location.description ||
-                    "A curated RoseOut location selected for memorable outings, quality experiences, and strong match potential."}
+                    "A curated TheOutHaven location selected for memorable outings, quality experiences, and strong match potential."}
                 </p>
 
                 {reviewKeywords.length > 0 && (
@@ -411,7 +411,7 @@ if (error || !data) {
                 <ScoreBadge score={score} />
 
                 <p className="mt-4 text-sm leading-6 text-white/65">
-                  RoseOut uses location details, review words, vibe signals, and
+                  TheOutHaven uses location details, review words, vibe signals, and
                   experience quality to improve recommendations.
                 </p>
 
@@ -431,12 +431,12 @@ if (error || !data) {
           <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_380px]">
             <div className="space-y-6">
               <LuxuryCard
-                eyebrow="Why RoseOut Recommends It"
+                eyebrow="Why TheOutHaven Recommends It"
                 title="Built for better matches."
               >
                 <p className="text-sm leading-7 text-white/60">
                   {location.description ||
-                    "This location includes signals that help RoseOut understand the vibe, atmosphere, and best use cases for customers searching in full sentences."}
+                    "This location includes signals that help TheOutHaven understand the vibe, atmosphere, and best use cases for customers searching in full sentences."}
                 </p>
 
                 {[...tags, ...reviewKeywords].length > 0 && (
@@ -482,7 +482,7 @@ if (error || !data) {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <p className="font-black text-white">
-                            {review.customer_name || "RoseOut Guest"}
+                            {review.customer_name || "TheOutHaven Guest"}
                           </p>
 
                           <p className="rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
@@ -694,7 +694,7 @@ function DynamicLocationHeader({
                   : "max-w-[180px] text-sm text-white/70 sm:max-w-[420px]"
               }`}
             >
-              {scrolled ? name : "RoseOut Pick"}
+              {scrolled ? name : "TheOutHaven Pick"}
             </p>
           </div>
         </div>

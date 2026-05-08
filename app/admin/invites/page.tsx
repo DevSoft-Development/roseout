@@ -156,7 +156,7 @@ setQrLink(data.qrLink);
 
               <p className="mt-4 break-all text-sm">{qrLink}</p>
 
-              <a href={qrCode} download="roseout-restaurant-qr.png">
+              <a href={qrCode} download="theouthaven-restaurant-qr.png">
                 <button className="mt-4 rounded-xl bg-black px-6 py-3 font-semibold text-white">
                   Download QR Code
                 </button>

@@ -17,7 +17,7 @@ type Restaurant = {
   cuisine?: string | null;
   description?: string | null;
   image_url?: string | null;
-  roseout_score?: number | null;
+  theouthaven_score?: number | null;
   view_count?: number | null;
   click_count?: number | null;
   created_at?: string | null;
@@ -58,7 +58,7 @@ export default function RestaurantsAdminClient({
       cuisine: restaurant.cuisine ?? "",
       description: restaurant.description ?? "",
       image_url: restaurant.image_url ?? "",
-      roseout_score: restaurant.roseout_score ?? 0,
+      theouthaven_score: restaurant.theouthaven_score ?? 0,
       view_count: restaurant.view_count ?? 0,
       click_count: restaurant.click_count ?? 0,
     });
@@ -95,10 +95,10 @@ export default function RestaurantsAdminClient({
         cuisine: form.cuisine ?? null,
         description: form.description ?? null,
         image_url: form.image_url ?? null,
-        roseout_score:
-          form.roseout_score === undefined || form.roseout_score === null
+        theouthaven_score:
+          form.theouthaven_score === undefined || form.theouthaven_score === null
             ? null
-            : Number(form.roseout_score),
+            : Number(form.theouthaven_score),
       };
 
       const res = await fetch(`/api/admin/restaurants/${id}`, {
@@ -132,10 +132,10 @@ export default function RestaurantsAdminClient({
                 cuisine: form.cuisine ?? r.cuisine,
                 description: form.description ?? r.description,
                 image_url: form.image_url ?? r.image_url,
-                roseout_score:
-                  form.roseout_score === undefined
-                    ? r.roseout_score
-                    : Number(form.roseout_score),
+                theouthaven_score:
+                  form.theouthaven_score === undefined
+                    ? r.theouthaven_score
+                    : Number(form.theouthaven_score),
                 view_count: r.view_count,
                 click_count: r.click_count,
               }
@@ -177,12 +177,12 @@ export default function RestaurantsAdminClient({
       <div className="mx-auto max-w-7xl">
         <div className="mb-8">
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#b66a3c]">
-            RoseOut Admin
+            TheOutHaven Admin
           </p>
           <h1 className="mt-2 text-4xl font-bold">Restaurants CMS</h1>
           <p className="mt-2 text-sm text-[#6f5c50]">
             Manage restaurant listings, details, images, reservation links, and
-            RoseOut scores.
+            TheOutHaven scores.
           </p>
         </div>
 
@@ -267,7 +267,7 @@ export default function RestaurantsAdminClient({
                       </p>
 
                       <div className="mt-4 flex flex-wrap gap-3 text-xs font-semibold text-[#6f5c50]">
-                        <span>Score: {restaurant.roseout_score ?? 0}</span>
+                        <span>Score: {restaurant.theouthaven_score ?? 0}</span>
                         <span>Views: {restaurant.view_count ?? 0}</span>
                         <span>Clicks: {restaurant.click_count ?? 0}</span>
                       </div>
@@ -371,11 +371,11 @@ export default function RestaurantsAdminClient({
                       />
 
                       <Input
-                        label="RoseOut Score"
+                        label="TheOutHaven Score"
                         type="number"
-                        value={String(form.roseout_score ?? 0)}
+                        value={String(form.theouthaven_score ?? 0)}
                         onChange={(value) =>
-                          updateForm("roseout_score", Number(value))
+                          updateForm("theouthaven_score", Number(value))
                         }
                       />
 
