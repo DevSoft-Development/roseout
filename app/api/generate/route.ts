@@ -1858,6 +1858,8 @@ google_maps_url: item.google_maps_url || null,
         primary_tag: r.primary_tag || null,
         date_style_tags: toArray(r.date_style_tags),
         distance_miles: r.distance_miles || null,
+        latitude: r.latitude || null,
+        longitude: r.longitude || null,
       })),
       activities: topActivities.map((a: any) => ({
         id: String(a.id),
@@ -1888,6 +1890,8 @@ google_maps_url: item.google_maps_url || null,
         primary_tag: a.primary_tag || null,
         date_style_tags: toArray(a.date_style_tags),
         distance_miles: a.distance_miles || null,
+        latitude: a.latitude || null,
+        longitude: a.longitude || null,
       })),
     };
 
