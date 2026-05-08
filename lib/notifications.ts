@@ -3,6 +3,12 @@ import twilio from "twilio";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+export const DEFAULT_ADMIN_NOTIFY_EMAIL = "nick@theouthaven.com";
+
+export function getAdminNotifyEmail() {
+  return process.env.ADMIN_NOTIFY_EMAIL?.trim() || DEFAULT_ADMIN_NOTIFY_EMAIL;
+}
+
 const twilioClient =
   process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
     ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)

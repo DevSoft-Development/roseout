@@ -1,3 +1,4 @@
+import { getAdminNotifyEmail } from "@/lib/notifications";
 import { createSupportReply, extractTicketReplyAddress } from "@/lib/support";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     const reply = await createSupportReply({
       ticketId: parsed.ticketId,
       token: parsed.token,
-      actorType: from.toLowerCase().includes((process.env.ADMIN_NOTIFY_EMAIL || "__admin__").toLowerCase()) ? "admin" : "creator",
+      actorType: from.toLowerCase().includes(getAdminNotifyEmail().toLowerCase()) ? "admin" : "creator",
       authorEmail: from,
       message: text,
     });
