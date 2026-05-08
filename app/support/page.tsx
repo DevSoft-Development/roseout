@@ -1,5 +1,13 @@
 import SupportTicketClient from "@/components/support/SupportTicketClient";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Support Center",
+  description:
+    "Contact TheOutHaven support, submit a ticket, and get help with accounts, listings, reservations, or outing plans.",
+  path: "/support",
+  noIndex: true,
+});
 export default function SupportPage() {
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
@@ -13,8 +21,8 @@ export default function SupportPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
             Create a ticket for account, reservation, owner, listing, billing,
-            or general TheOutHaven help. We send email and text updates to you and
-            the TheOutHaven admin team.
+            or general TheOutHaven help. We send email and text updates to you
+            and the TheOutHaven admin team.
           </p>
         </section>
 

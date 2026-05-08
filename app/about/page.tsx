@@ -1,12 +1,13 @@
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { createMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "About TheOutHaven – AI Outing & Date Night Planner",
+export const metadata = createMetadata({
+  title: "About TheOutHaven",
   description:
-    "TheOutHaven helps people plan date nights, birthdays, restaurants, activities, and outings faster with AI-powered recommendations.",
-};
-
+    "Learn how TheOutHaven helps people plan date nights, birthdays, restaurants, activities, and outings faster with AI-powered recommendations.",
+  path: "/about",
+});
 export default function AboutPage() {
   return (
     <main className="min-h-screen bg-black text-white">
@@ -27,9 +28,9 @@ export default function AboutPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-white/60">
-            TheOutHaven is an AI-powered outing planner built to help you discover
-            restaurants, activities, and experiences that match your vibe,
-            location, budget, and mood.
+            TheOutHaven is an AI-powered outing planner built to help you
+            discover restaurants, activities, and experiences that match your
+            vibe, location, budget, and mood.
           </p>
 
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -59,8 +60,7 @@ export default function AboutPage() {
 
             <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
               One sentence in.
-              <br />
-              A better plan out.
+              <br />A better plan out.
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-white/60">
@@ -185,7 +185,8 @@ export default function AboutPage() {
             </p>
 
             <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              TheOutHaven helps you decide. Businesses still control the details.
+              TheOutHaven helps you decide. Businesses still control the
+              details.
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-white/60">
@@ -216,9 +217,9 @@ export default function AboutPage() {
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-white/60">
-              TheOutHaven helps people discover where to go. Businesses can benefit
-              from stronger visibility, better listing details, and a clearer
-              path from discovery to action.
+              TheOutHaven helps people discover where to go. Businesses can
+              benefit from stronger visibility, better listing details, and a
+              clearer path from discovery to action.
             </p>
           </div>
 
@@ -327,7 +328,6 @@ export default function AboutPage() {
           </Link>
         </div>
       </section>
-
     </main>
   );
 }

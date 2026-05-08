@@ -2,7 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Reserve a Location",
+  description:
+    "Check availability and reserve a restaurant or activity through TheOutHaven.",
+  path: "/reserve",
+});
 type LocationRow = {
   id: string;
   city: string | null;

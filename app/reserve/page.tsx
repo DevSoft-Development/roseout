@@ -1,10 +1,16 @@
 import Link from "next/link";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Reserve Experiences",
+  description:
+    "Book restaurants, activities, and unforgettable experiences through TheOutHaven Reserve.",
+  path: "/reserve",
+});
 export default function ReserveLandingPage() {
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
-
         {/* HEADER */}
         <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.25),transparent_35%),linear-gradient(135deg,#160b0b,#090706_55%,#140f0a)] p-8 shadow-2xl">
           <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-rose-500/20 blur-3xl" />
@@ -20,7 +26,8 @@ export default function ReserveLandingPage() {
 
             <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
               Discover restaurants, activities, and experiences — then reserve
-              your time instantly with smart availability powered by TheOutHaven.
+              your time instantly with smart availability powered by
+              TheOutHaven.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -47,9 +54,7 @@ export default function ReserveLandingPage() {
             <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
               Step 1
             </p>
-            <h3 className="mt-2 text-lg font-black">
-              Find a place
-            </h3>
+            <h3 className="mt-2 text-lg font-black">Find a place</h3>
             <p className="mt-2 text-sm text-white/60">
               Search restaurants, activities, and curated experiences.
             </p>
@@ -59,9 +64,7 @@ export default function ReserveLandingPage() {
             <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
               Step 2
             </p>
-            <h3 className="mt-2 text-lg font-black">
-              Pick your time
-            </h3>
+            <h3 className="mt-2 text-lg font-black">Pick your time</h3>
             <p className="mt-2 text-sm text-white/60">
               Only real available times are shown — no double booking.
             </p>
@@ -71,9 +74,7 @@ export default function ReserveLandingPage() {
             <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
               Step 3
             </p>
-            <h3 className="mt-2 text-lg font-black">
-              Reserve instantly
-            </h3>
+            <h3 className="mt-2 text-lg font-black">Reserve instantly</h3>
             <p className="mt-2 text-sm text-white/60">
               Lock in your experience in seconds.
             </p>
@@ -106,7 +107,6 @@ export default function ReserveLandingPage() {
             </Link>
           </div>
         </section>
-
       </div>
     </main>
   );

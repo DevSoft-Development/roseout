@@ -1,18 +1,29 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Analytics Admin",
+  description: "Review TheOutHaven analytics and performance metrics.",
+  path: "/admin/analytics",
+  noIndex: true,
+});
 export default async function AdminAnalyticsPage() {
   await requireAdminRole(["superuser", "admin", "viewer"]);
 
   const { data: restaurants } = await supabase
     .from("restaurants")
-    .select("id, restaurant_name, city, view_count, click_count, theouthaven_score")
+    .select(
+      "id, restaurant_name, city, view_count, click_count, theouthaven_score",
+    )
     .order("view_count", { ascending: false })
     .limit(10);
 
   const { data: activities } = await supabase
     .from("activities")
-    .select("id, activity_name, city, view_count, click_count, theouthaven_score")
+    .select(
+      "id, activity_name, city, view_count, click_count, theouthaven_score",
+    )
     .order("view_count", { ascending: false })
     .limit(10);
 
@@ -55,7 +66,7 @@ export default async function AdminAnalyticsPage() {
       ? Math.round(
           ((reservationStats.arrived + reservationStats.completed) /
             reservationStats.total) *
-            100
+            100,
         )
       : 0;
 
@@ -109,7 +120,10 @@ export default async function AdminAnalyticsPage() {
 
           <div className="mt-7 grid gap-4 md:grid-cols-4">
             <MiniMetric label="Restaurant Views" value={totalRestaurantViews} />
-            <MiniMetric label="Restaurant Clicks" value={totalRestaurantClicks} />
+            <MiniMetric
+              label="Restaurant Clicks"
+              value={totalRestaurantClicks}
+            />
             <MiniMetric label="Activity Views" value={totalActivityViews} />
             <MiniMetric label="Activity Clicks" value={totalActivityClicks} />
           </div>

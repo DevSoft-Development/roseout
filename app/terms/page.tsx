@@ -1,11 +1,12 @@
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { createMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Terms of Service – TheOutHaven",
+export const metadata = createMetadata({
+  title: "Terms of Service",
   description:
-    "Read TheOutHaven's Terms of Service for using the AI-powered outing planner, restaurant and activity recommendations, accounts, communications, and business listings.",
-};
-
+    "Review the terms for using TheOutHaven's AI-powered outing planner, restaurant and activity recommendations, accounts, communications, and business listings.",
+  path: "/terms",
+});
 export default function TermsPage() {
   return (
     <main className="min-h-screen bg-black pb-28 text-white">
@@ -44,10 +45,10 @@ export default function TermsPage() {
                 1. Agreement to Terms
               </h2>
               <p className="mt-2">
-                These Terms of Service govern your access to and use of TheOutHaven,
-                including our website, applications, AI-powered outing planning
-                tools, restaurant and activity recommendations, account
-                features, and related services.
+                These Terms of Service govern your access to and use of
+                TheOutHaven, including our website, applications, AI-powered
+                outing planning tools, restaurant and activity recommendations,
+                account features, and related services.
               </p>
               <p className="mt-2">
                 By using TheOutHaven, you agree to these Terms. If you do not
@@ -97,10 +98,10 @@ export default function TermsPage() {
                 5. Third-Party Links and Services
               </h2>
               <p className="mt-2">
-                TheOutHaven may link to restaurants, venues, reservation platforms,
-                maps, event websites, payment processors, and other third-party
-                services. We do not control and are not responsible for
-                third-party websites, bookings, cancellations, charges,
+                TheOutHaven may link to restaurants, venues, reservation
+                platforms, maps, event websites, payment processors, and other
+                third-party services. We do not control and are not responsible
+                for third-party websites, bookings, cancellations, charges,
                 experiences, or policies.
               </p>
             </section>
@@ -111,11 +112,11 @@ export default function TermsPage() {
               </h2>
               <p className="mt-2">
                 If you provide your phone number and opt in, you agree to
-                receive SMS messages from TheOutHaven about account updates, outing
-                recommendations, reminders, promotions, and offers. Message
-                frequency varies. Message and data rates may apply. Reply STOP
-                to opt out. Reply HELP for help. Consent to receive SMS
-                marketing messages is not a condition of purchase.
+                receive SMS messages from TheOutHaven about account updates,
+                outing recommendations, reminders, promotions, and offers.
+                Message frequency varies. Message and data rates may apply.
+                Reply STOP to opt out. Reply HELP for help. Consent to receive
+                SMS marketing messages is not a condition of purchase.
               </p>
               <p className="mt-2">
                 You may also receive emails related to your account, activity,
@@ -141,10 +142,10 @@ export default function TermsPage() {
                 8. Restaurant and Business Listings
               </h2>
               <p className="mt-2">
-                TheOutHaven may display restaurant, venue, and activity listings.
-                Business owners or authorized representatives may request to
-                claim or update listings. We may review, approve, reject, edit,
-                or remove listings at our discretion.
+                TheOutHaven may display restaurant, venue, and activity
+                listings. Business owners or authorized representatives may
+                request to claim or update listings. We may review, approve,
+                reject, edit, or remove listings at our discretion.
               </p>
             </section>
 
@@ -190,8 +191,8 @@ export default function TermsPage() {
                 12. Limitation of Liability
               </h2>
               <p className="mt-2">
-                To the fullest extent allowed by law, TheOutHaven is not liable for
-                indirect, incidental, special, consequential, or punitive
+                To the fullest extent allowed by law, TheOutHaven is not liable
+                for indirect, incidental, special, consequential, or punitive
                 damages, or for losses arising from your use of the service,
                 third-party services, bookings, recommendations, or user
                 decisions.
@@ -202,8 +203,9 @@ export default function TermsPage() {
               <h2 className="text-xl font-black text-white">13. Termination</h2>
               <p className="mt-2">
                 We may suspend or terminate your access to TheOutHaven if you
-                violate these Terms, misuse the service, create risk for TheOutHaven
-                or other users, or if we discontinue part of the service.
+                violate these Terms, misuse the service, create risk for
+                TheOutHaven or other users, or if we discontinue part of the
+                service.
               </p>
             </section>
 
@@ -219,7 +221,9 @@ export default function TermsPage() {
 
             <section>
               <h2 className="text-xl font-black text-white">15. Contact</h2>
-              <p className="mt-2">Questions about these Terms may be sent to:</p>
+              <p className="mt-2">
+                Questions about these Terms may be sent to:
+              </p>
               <p className="mt-2 font-bold text-white">
                 TheOutHaven
                 <br />
