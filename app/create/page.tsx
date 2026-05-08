@@ -145,32 +145,24 @@ export default function CreatePage() {
   useEffect(() => {
     let searchIndex = 0;
     let charIndex = 0;
-    let deleting = false;
     let timeout: ReturnType<typeof setTimeout>;
 
     function typeLoop() {
       const currentSearch = typingSearches[searchIndex];
 
-      if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
-        charIndex++;
+      setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
+      charIndex++;
 
-        if (charIndex === currentSearch.length) {
-          deleting = true;
-          timeout = setTimeout(typeLoop, 1300);
-          return;
-        }
-      } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
-        charIndex--;
-
-        if (charIndex === 0) {
-          deleting = false;
+      if (charIndex >= currentSearch.length) {
+        timeout = setTimeout(() => {
           searchIndex = (searchIndex + 1) % typingSearches.length;
-        }
+          charIndex = 0;
+          typeLoop();
+        }, 650);
+        return;
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      timeout = setTimeout(typeLoop, 38);
     }
 
     typeLoop();
@@ -445,14 +437,6 @@ export default function CreatePage() {
               </div>
 
               <div className="relative">
-                {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell RoseOut what you want..."}
-                  </div>
-                )}
-
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -464,8 +448,10 @@ export default function CreatePage() {
                     }
                   }}
                   rows={2}
-                  placeholder=""
-                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
+                  placeholder={
+                    typedPlaceholder || "Tell RoseOut what you want..."
+                  }
+                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition placeholder:text-white focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
                 />
               </div>
             </div>
