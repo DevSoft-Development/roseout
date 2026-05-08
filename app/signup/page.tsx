@@ -217,6 +217,25 @@ export default function SignupPage() {
         return;
       }
 
+      try {
+        const passwordEmailResponse = await fetch("/api/signup/password-setup-email", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: userEmail,
+            fullName: fullName.trim(),
+          }),
+        });
+
+        if (!passwordEmailResponse.ok) {
+          console.error("Password setup email could not be sent.");
+        }
+      } catch (passwordEmailError) {
+        console.error("Password setup email request failed", passwordEmailError);
+      }
+
       sessionStorage.setItem(
         "roseout_pending_signup",
         JSON.stringify({
