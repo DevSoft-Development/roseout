@@ -165,7 +165,7 @@ export default function AdminClaimsPage() {
           <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                RoseOut Admin
+                TheOutHaven Admin
               </p>
 
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">

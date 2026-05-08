@@ -67,7 +67,7 @@ export default function ResetPasswordPage() {
         className="w-full max-w-md rounded-[2rem] bg-white p-8 text-black shadow-2xl"
       >
         <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-600">
-          RoseOut Admin
+          TheOutHaven Admin
         </p>
 
         <h1 className="text-3xl font-extrabold">Reset Password</h1>

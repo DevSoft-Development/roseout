@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return new Response("Reply added to your RoseOut support ticket.", {
+    return new Response("Reply added to your TheOutHaven support ticket.", {
       status: 200,
       headers: { "Content-Type": "text/plain" },
     });

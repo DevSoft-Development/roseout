@@ -1,4 +1,4 @@
--- RoseOut support ticket system tables.
+-- TheOutHaven support ticket system tables.
 -- Run this in Supabase SQL before enabling support tickets in production.
 
 create extension if not exists pgcrypto;

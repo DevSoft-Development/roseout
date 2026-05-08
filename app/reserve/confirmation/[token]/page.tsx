@@ -14,7 +14,7 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 type Reservation = {
   id: string;
@@ -124,7 +124,7 @@ export default function ReservationConfirmationPage() {
 
   return (
     <>
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <main className="min-h-screen bg-black pt-24 text-white">
         <section className="relative overflow-hidden px-5 py-10 sm:px-8">
@@ -137,7 +137,7 @@ export default function ReservationConfirmationPage() {
               className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
             >
               <ArrowLeft size={16} />
-              Back to RoseOut
+              Back to TheOutHaven
             </Link>
 
             <div className="mt-8 rounded-[2.5rem] border border-white/10 bg-white/[0.06] p-6 shadow-2xl backdrop-blur-xl sm:p-8">
@@ -163,7 +163,7 @@ export default function ReservationConfirmationPage() {
               ) : reservation ? (
                 <>
                   <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-                    RoseOut Reserve
+                    TheOutHaven Reserve
                   </p>
 
                   <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

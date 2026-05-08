@@ -96,11 +96,11 @@ function nl2br(value: string) {
 export function supportEmailFrom() {
   if (process.env.SUPPORT_EMAIL_FROM) return process.env.SUPPORT_EMAIL_FROM;
 
-  const configuredFrom = process.env.EMAIL_FROM || "hello@roseout.com";
+  const configuredFrom = process.env.EMAIL_FROM || "hello@theouthaven.com";
   const emailMatch = configuredFrom.match(/<([^>]+)>/);
   const email = emailMatch ? emailMatch[1] : configuredFrom;
 
-  return `RoseOut Support <${email}>`;
+  return `TheOutHaven Support <${email}>`;
 }
 
 export function renderSupportEmail({
@@ -109,7 +109,7 @@ export function renderSupportEmail({
   bodyHtml,
   ctaUrl,
   ctaLabel,
-  footerText = "Sent by the RoseOut admin team.",
+  footerText = "Sent by the TheOutHaven admin team.",
 }: {
   title: string;
   greeting?: string;
@@ -126,12 +126,12 @@ export function renderSupportEmail({
     <div style="margin:0;padding:0;background:#ffffff;color:#141414;font-family:Arial,Helvetica,sans-serif;">
       <div style="max-width:920px;margin:0 auto;padding:24px 56px 44px;">
         <h1 style="margin:0 0 150px;font-size:64px;line-height:1.05;font-weight:900;letter-spacing:-0.06em;color:#000000;">${htmlEscape(title)}</h1>
-        <p style="margin:0 0 72px;font-size:28px;line-height:1;font-weight:900;letter-spacing:0.16em;color:#e11d48;">ROSEOUT</p>
+        <p style="margin:0 0 72px;font-size:28px;line-height:1;font-weight:900;letter-spacing:0.16em;color:#e11d48;">THEOUTHAVEN</p>
         <p style="margin:0 0 150px;font-size:48px;line-height:1.2;font-weight:400;color:#141414;">${htmlEscape(greeting)}</p>
         <div style="font-size:48px;line-height:1.55;font-weight:400;color:#141414;letter-spacing:-0.035em;">
           ${bodyHtml}
           ${cta}
-          <p style="margin:150px 0 0;">— RoseOut Team</p>
+          <p style="margin:150px 0 0;">— TheOutHaven Team</p>
         </div>
         <hr style="border:0;border-top:3px solid #eeeeee;margin:78px 0 44px;" />
         <p style="margin:0;font-size:36px;line-height:1.4;color:#777777;">${htmlEscape(footerText)}</p>
@@ -552,10 +552,10 @@ export async function closeSupportTicket(ticketId: string) {
     id: crypto.randomUUID(),
     ticket_id: ticket.id,
     actor_type: "system",
-    author_name: "RoseOut Support",
+    author_name: "TheOutHaven Support",
     author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
     author_phone: null,
-    body: "Ticket closed by RoseOut Support.",
+    body: "Ticket closed by TheOutHaven Support.",
     created_at: closedAt,
   } satisfies SupportMessage;
 
@@ -601,7 +601,7 @@ export async function createSupportReply(input: CreateSupportReplyInput) {
   }
 
   const createdAt = new Date().toISOString();
-  const authorName = clean(input.authorName) || (adminActor ? "RoseOut Support" : ticket.requester_name || "Ticket requester");
+  const authorName = clean(input.authorName) || (adminActor ? "TheOutHaven Support" : ticket.requester_name || "Ticket requester");
   const authorEmail = normalizeEmail(input.authorEmail) || (adminActor ? process.env.ADMIN_NOTIFY_EMAIL || null : ticket.requester_email);
   const authorPhone = clean(input.authorPhone) || null;
   const fallbackMessage = {
@@ -680,7 +680,7 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
         ctaUrl: adminTicketUrl,
         ctaLabel: "Open admin ticket",
       }),
-      smsBody: `RoseOut support ${ticket.ticket_number || ticket.id}: ${ticket.subject}. Open: ${adminTicketUrl}`,
+      smsBody: `TheOutHaven support ${ticket.ticket_number || ticket.id}: ${ticket.subject}. Open: ${adminTicketUrl}`,
     });
   }
 
@@ -688,7 +688,7 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
     toEmail: ticket.requester_email,
     toPhone: ticket.requester_phone,
     replyTo,
-    subject: `We received your RoseOut ticket ${ticket.ticket_number || ""}`,
+    subject: `We received your TheOutHaven ticket ${ticket.ticket_number || ""}`,
     from: supportEmailFrom(),
     emailHtml: renderSupportEmail({
       title: "We received your ticket",
@@ -701,7 +701,7 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
       ctaUrl: ticketUrl,
       ctaLabel: "View or reply to ticket",
     }),
-    smsBody: `RoseOut: We received ticket ${ticket.ticket_number || ticket.id}. View/reply: ${ticketUrl}`,
+    smsBody: `TheOutHaven: We received ticket ${ticket.ticket_number || ticket.id}. View/reply: ${ticketUrl}`,
   });
 }
 
@@ -717,20 +717,20 @@ async function notifySupportReply(ticket: SupportTicket, message: string, actorT
     toEmail: creatorIsRecipient ? ticket.requester_email : adminEmail,
     toPhone: creatorIsRecipient ? ticket.requester_phone : adminPhone,
     replyTo,
-    subject: `New reply on RoseOut ticket ${ticket.ticket_number || ""}`,
+    subject: `New reply on TheOutHaven ticket ${ticket.ticket_number || ""}`,
     from: supportEmailFrom(),
     emailHtml: renderSupportEmail({
       title: "New ticket reply",
       greeting: creatorIsRecipient ? `Hi ${ticket.requester_name || "there"},` : "Hi team,",
       bodyHtml: `
-        <p style="margin:0 0 44px;">There is a new reply on this RoseOut support ticket. Reply to this email to continue the conversation.</p>
+        <p style="margin:0 0 44px;">There is a new reply on this TheOutHaven support ticket. Reply to this email to continue the conversation.</p>
         <p style="margin:0 0 18px;"><strong>Ticket:</strong> ${htmlEscape(ticket.ticket_number || ticket.id)}</p>
         <p style="margin:0;">${nl2br(message)}</p>
       `,
       ctaUrl: creatorIsRecipient ? ticketUrl : adminTicketUrl,
       ctaLabel: "Open ticket",
     }),
-    smsBody: `RoseOut ticket ${ticket.ticket_number || ticket.id} has a new reply. Open: ${creatorIsRecipient ? ticketUrl : adminTicketUrl}`,
+    smsBody: `TheOutHaven ticket ${ticket.ticket_number || ticket.id} has a new reply. Open: ${creatorIsRecipient ? ticketUrl : adminTicketUrl}`,
   });
 }
 

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
     const { error } = await supabaseAdmin.auth.signInWithOtp({
       email: body.email,

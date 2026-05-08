@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
   const res = await fetch(`${siteUrl}/api/admin/restaurants/backfill-qr`, {
     method: "GET",
@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
   const res = await fetch(`${siteUrl}/api/admin/restaurants/backfill-qr`, {
     method: "POST",

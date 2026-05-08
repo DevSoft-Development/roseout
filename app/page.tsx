@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -22,16 +22,16 @@ export default async function HomePage() {
   const { data: topRestaurants } = await supabase
     .from("restaurants")
     .select(
-      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,roseout_score,ranking_badge,trend_score,conversion_score"
+      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score"
     )
     .eq("ranking_badge", "Top 10%")
-    .order("roseout_score", { ascending: false })
+    .order("theouthaven_score", { ascending: false })
     .limit(4);
 
   const { data: trendingRestaurants } = await supabase
     .from("restaurants")
     .select(
-      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,roseout_score,ranking_badge,trend_score,conversion_score"
+      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score"
     )
     .order("trend_score", { ascending: false })
     .limit(4);
@@ -39,14 +39,14 @@ export default async function HomePage() {
   const { data: highIntentPicks } = await supabase
     .from("restaurants")
     .select(
-      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,roseout_score,ranking_badge,trend_score,conversion_score"
+      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score"
     )
     .order("conversion_score", { ascending: false })
     .limit(4);
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <section className="relative min-h-screen overflow-hidden pt-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(225,6,42,0.24),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(225,6,42,0.18),transparent_30%),linear-gradient(180deg,#050505,#000)]" />
@@ -124,7 +124,7 @@ export default async function HomePage() {
           <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-red-500">
-                Live RoseOut Rankings
+                Live TheOutHaven Rankings
               </p>
               <h2 className="mt-3 text-4xl font-black tracking-tight">
                 What people are loving now
@@ -148,7 +148,7 @@ export default async function HomePage() {
 
             <CompactRankingSection
               title="Top 10%"
-              subtitle="Best of RoseOut"
+              subtitle="Best of TheOutHaven"
               restaurants={topRestaurants || []}
             />
 
@@ -165,14 +165,14 @@ export default async function HomePage() {
         <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-3">
           <FeatureBlock
             number="01"
-            title="Tell RoseOut the vibe"
+            title="Tell TheOutHaven the vibe"
             text="Type what you want in plain English — romantic, casual, rooftop, quiet, fun, budget-friendly, or luxury."
           />
 
           <FeatureBlock
             number="02"
             title="Get a curated plan"
-            text="RoseOut matches restaurants, activities, location, timing, and intent into one polished outing."
+            text="TheOutHaven matches restaurants, activities, location, timing, and intent into one polished outing."
           />
 
           <FeatureBlock
@@ -195,7 +195,7 @@ export default async function HomePage() {
             </h2>
 
             <p className="mt-5 text-lg leading-8 text-black/65">
-              RoseOut ranks places by real behavior — what people view, click,
+              TheOutHaven ranks places by real behavior — what people view, click,
               save, reserve, and return to. That means better recommendations
               and faster decisions.
             </p>
@@ -223,7 +223,7 @@ export default async function HomePage() {
           </h2>
 
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/55">
-            Stop scrolling. Tell RoseOut what you want and get a polished plan
+            Stop scrolling. Tell TheOutHaven what you want and get a polished plan
             in seconds.
           </p>
 
@@ -292,7 +292,7 @@ function CompactRankingSection({
                     <h3 className="truncate text-sm font-black">{name}</h3>
 
                     <span className="rounded-full bg-[#e1062a] px-2 py-0.5 text-[10px] font-black text-white">
-                      {Math.round(restaurant.roseout_score || 0)}
+                      {Math.round(restaurant.theouthaven_score || 0)}
                     </span>
                   </div>
 

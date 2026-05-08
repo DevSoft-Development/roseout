@@ -4,7 +4,7 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ export default async function UserDashboardPage() {
   const cookieStore = await cookies();
 
   const impersonatedUserId = cookieStore.get(
-    "roseout_impersonate_user_id"
+    "theouthaven_impersonate_user_id"
   )?.value;
 
   const supabase = adminSupabase();
@@ -65,7 +65,7 @@ export default async function UserDashboardPage() {
   return (
     <main className="min-h-screen bg-[#080407] text-white">
       <ActivityTracker userId={userId} />
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <section className="relative overflow-hidden border-b border-white/10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(244,63,94,0.28),transparent_34%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.18),transparent_30%)]" />
@@ -74,13 +74,13 @@ export default async function UserDashboardPage() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">
-                RoseOut Portal
+                TheOutHaven Portal
               </p>
 
               <h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">
                 Welcome back,
                 <span className="block text-rose-200">
-                  {profile.full_name || "RoseOut User"}
+                  {profile.full_name || "TheOutHaven User"}
                 </span>
               </h1>
 
@@ -207,7 +207,7 @@ export default async function UserDashboardPage() {
 
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">
                   Start with a restaurant, activity, or full date-night plan.
-                  Your saved RoseOut results will show here.
+                  Your saved TheOutHaven results will show here.
                 </p>
 
                 <TrackedButton
@@ -234,7 +234,7 @@ export default async function UserDashboardPage() {
                         </p>
 
                         <h3 className="mt-3 line-clamp-2 text-xl font-black">
-                          {plan.title || "RoseOut Plan"}
+                          {plan.title || "TheOutHaven Plan"}
                         </h3>
                       </div>
 
@@ -244,7 +244,7 @@ export default async function UserDashboardPage() {
                     </div>
 
                     <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/50">
-                      {plan.summary || "Your saved RoseOut outing plan."}
+                      {plan.summary || "Your saved TheOutHaven outing plan."}
                     </p>
 
                     <div className="mt-5 flex items-center justify-between gap-3">
@@ -260,7 +260,7 @@ export default async function UserDashboardPage() {
                         eventName="View Saved Plan Clicked"
                         metadata={{
                           plan_id: plan.id,
-                          plan_title: plan.title || "RoseOut Plan",
+                          plan_title: plan.title || "TheOutHaven Plan",
                           source: "user_dashboard_saved_plan_card",
                         }}
                         className="rounded-full bg-white px-4 py-2 text-xs font-black text-black transition hover:bg-rose-100"
@@ -313,7 +313,7 @@ export default async function UserDashboardPage() {
 
               <p className="mt-3 text-sm leading-6 text-white/55">
                 Submit a ticket, view your private ticket link, or reply to an
-                open RoseOut support conversation.
+                open TheOutHaven support conversation.
               </p>
 
               <Link
@@ -334,7 +334,7 @@ export default async function UserDashboardPage() {
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-white/55">
-                Tell RoseOut what mood, borough, budget, and vibe you want. Get
+                Tell TheOutHaven what mood, borough, budget, and vibe you want. Get
                 a polished plan in seconds.
               </p>
 

@@ -6,13 +6,13 @@ export default async function AdminAnalyticsPage() {
 
   const { data: restaurants } = await supabase
     .from("restaurants")
-    .select("id, restaurant_name, city, view_count, click_count, roseout_score")
+    .select("id, restaurant_name, city, view_count, click_count, theouthaven_score")
     .order("view_count", { ascending: false })
     .limit(10);
 
   const { data: activities } = await supabase
     .from("activities")
-    .select("id, activity_name, city, view_count, click_count, roseout_score")
+    .select("id, activity_name, city, view_count, click_count, theouthaven_score")
     .order("view_count", { ascending: false })
     .limit(10);
 
@@ -72,7 +72,7 @@ export default async function AdminAnalyticsPage() {
   return (
     <div>
       <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-500">
-        RoseOut Admin
+        TheOutHaven Admin
       </p>
 
       <h1 className="text-4xl font-extrabold tracking-tight">
@@ -125,7 +125,7 @@ export default async function AdminAnalyticsPage() {
           </h2>
 
           <p className="mt-2 text-sm font-semibold text-white/65">
-            Total reservations captured through RoseOut Reserve.
+            Total reservations captured through TheOutHaven Reserve.
           </p>
 
           <div className="mt-7 grid grid-cols-2 gap-3">
@@ -192,8 +192,8 @@ export default async function AdminAnalyticsPage() {
 
           <p className="mt-3 text-sm leading-6 text-neutral-500">
             {reservationStats.total === 0
-              ? "Once locations start using RoseOut Reserve, this section will show booking quality and no-show trends."
-              : `RoseOut has a ${arrivalRate}% arrival rate and ${noShowRate}% no-show rate across current reservations.`}
+              ? "Once locations start using TheOutHaven Reserve, this section will show booking quality and no-show trends."
+              : `TheOutHaven has a ${arrivalRate}% arrival rate and ${noShowRate}% no-show rate across current reservations.`}
           </p>
 
           <div className="mt-6 rounded-2xl bg-neutral-100 p-4">
@@ -201,7 +201,7 @@ export default async function AdminAnalyticsPage() {
               Best Sales Angle
             </p>
             <p className="mt-2 text-sm font-bold text-neutral-800">
-              “RoseOut does not just send clicks. It tracks reservations,
+              “TheOutHaven does not just send clicks. It tracks reservations,
               arrivals, and no-shows.”
             </p>
           </div>
@@ -231,7 +231,7 @@ export default async function AdminAnalyticsPage() {
                 <td className="px-5 py-4">{r.city || "N/A"}</td>
                 <td className="px-5 py-4">{r.view_count || 0}</td>
                 <td className="px-5 py-4">{r.click_count || 0}</td>
-                <td className="px-5 py-4">{r.roseout_score || 0}</td>
+                <td className="px-5 py-4">{r.theouthaven_score || 0}</td>
               </tr>
             ))}
           </tbody>
@@ -261,7 +261,7 @@ export default async function AdminAnalyticsPage() {
                 <td className="px-5 py-4">{a.city || "N/A"}</td>
                 <td className="px-5 py-4">{a.view_count || 0}</td>
                 <td className="px-5 py-4">{a.click_count || 0}</td>
-                <td className="px-5 py-4">{a.roseout_score || 0}</td>
+                <td className="px-5 py-4">{a.theouthaven_score || 0}</td>
               </tr>
             ))}
           </tbody>

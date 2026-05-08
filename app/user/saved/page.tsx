@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export default async function SavedPlansPage() {
   const {
@@ -20,12 +20,12 @@ export default async function SavedPlansPage() {
 
   return (
     <main className="min-h-screen bg-[#0b0507] px-6 py-10 text-white">
-       <RoseOutHeader />
+       <TheOutHavenHeader />
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-rose-300">
-              RoseOut
+              TheOutHaven
             </p>
             <h1 className="mt-2 text-4xl font-bold">Saved Plans</h1>
           </div>
@@ -53,10 +53,10 @@ export default async function SavedPlansPage() {
                 className="rounded-3xl border border-white/10 bg-white/[0.05] p-6"
               >
                 <h2 className="text-xl font-bold">
-                  {plan.title || "RoseOut Plan"}
+                  {plan.title || "TheOutHaven Plan"}
                 </h2>
                 <p className="mt-3 line-clamp-4 text-sm text-white/60">
-                  {plan.summary || "Saved RoseOut outing."}
+                  {plan.summary || "Saved TheOutHaven outing."}
                 </p>
 
                 <Link

@@ -40,14 +40,14 @@ export async function POST() {
   for (const restaurant of restaurants || []) {
     await supabaseAdmin
       .from("restaurants")
-      .update({ roseout_score: calculateScore(restaurant) })
+      .update({ theouthaven_score: calculateScore(restaurant) })
       .eq("id", restaurant.id);
   }
 
   for (const activity of activities || []) {
     await supabaseAdmin
       .from("activities")
-      .update({ roseout_score: calculateScore(activity) })
+      .update({ theouthaven_score: calculateScore(activity) })
       .eq("id", activity.id);
   }
 

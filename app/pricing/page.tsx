@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 const freeFeatures = [
-  "Basic RoseOut listing",
+  "Basic TheOutHaven listing",
   "1 restaurant photo",
   "Appears in search results",
   "Limited AI discovery",
@@ -23,7 +23,7 @@ const freeFeatures = [
 
 const proFeatures = [
   "Everything in Free",
-  "RoseOut Reserve bookings",
+  "TheOutHaven Reserve bookings",
   "Priority AI discovery",
   "Boosted search placement",
   "Advanced analytics dashboard",
@@ -35,7 +35,7 @@ const proFeatures = [
 const comparison = [
   ["AI Discovery", "Limited", "Priority Boost"],
   ["Search Ranking", "Standard", "Boosted"],
-  ["RoseOut Reserve", "No", "Yes"],
+  ["TheOutHaven Reserve", "No", "Yes"],
   ["Photos", "1 Photo", "Up to 10"],
   ["Analytics", "Views Only", "Views, Clicks & Bookings"],
   ["QR Tools", "No", "Yes"],
@@ -63,7 +63,7 @@ export default function PricingPage() {
           </h1>
 
           <p className="mt-6 text-zinc-400">
-            RoseOut connects restaurants with customers through AI-powered discovery and bookings.
+            TheOutHaven connects restaurants with customers through AI-powered discovery and bookings.
           </p>
 
           <div className="mt-8 flex gap-4 justify-center">
@@ -117,7 +117,7 @@ export default function PricingPage() {
               MOST POPULAR
             </div>
 
-            <h2 className="text-2xl font-bold">RoseOut Pro</h2>
+            <h2 className="text-2xl font-bold">TheOutHaven Pro</h2>
             <p className="text-4xl mt-2">$99</p>
 
             <form action="/api/checkout" method="POST">

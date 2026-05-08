@@ -89,9 +89,9 @@ export async function analyzeReview(
     }
 
     const prompt = `
-You are RoseOut's review intelligence engine.
+You are TheOutHaven's review intelligence engine.
 
-RoseOut is an AI date night and outing planner. Your job is to understand the customer's real experience and turn it into structured scoring data.
+TheOutHaven is an AI date night and outing planner. Your job is to understand the customer's real experience and turn it into structured scoring data.
 
 Return valid JSON only. No markdown. No explanation.
 
@@ -151,7 +151,7 @@ Customer review:
         {
           role: "system",
           content:
-            "You are RoseOut's review intelligence engine. Return ONLY valid JSON.",
+            "You are TheOutHaven's review intelligence engine. Return ONLY valid JSON.",
         },
         {
           role: "user",

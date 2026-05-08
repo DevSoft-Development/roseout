@@ -17,7 +17,7 @@ export default function ImpersonationBanner() {
 
   return (
     <div className="fixed left-0 right-0 top-0 z-[9999] flex items-center justify-center gap-4 bg-red-600 px-4 py-3 text-center text-sm font-bold text-white shadow-lg">
-      <span>You are viewing RoseOut as another user.</span>
+      <span>You are viewing TheOutHaven as another user.</span>
 
       <button
         onClick={stop}

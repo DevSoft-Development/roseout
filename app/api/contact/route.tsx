@@ -39,7 +39,7 @@ async function sendContactFallback({
 
   await sendNotification({
     toEmail: adminEmail,
-    subject: `New RoseOut contact message: ${topic || "General"}`,
+    subject: `New TheOutHaven contact message: ${topic || "General"}`,
     from: supportEmailFrom(),
     emailHtml: renderSupportEmail({
       title: "New contact message",

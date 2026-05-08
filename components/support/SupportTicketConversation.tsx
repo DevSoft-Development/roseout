@@ -123,7 +123,7 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
                 }`}
               >
                 <div className="flex flex-wrap justify-between gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/40">
-                  <span>{admin ? "RoseOut Support" : message.author_name || "Requester"}</span>
+                  <span>{admin ? "TheOutHaven Support" : message.author_name || "Requester"}</span>
                   <time>{new Date(message.created_at).toLocaleString()}</time>
                 </div>
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-white/75">{message.body}</p>

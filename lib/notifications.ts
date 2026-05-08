@@ -38,7 +38,7 @@ export async function sendNotification({
   if (toEmail && emailHtml && process.env.RESEND_API_KEY) {
     try {
       const email = await resend.emails.send({
-        from: from || process.env.EMAIL_FROM || "RoseOut <hello@roseout.com>",
+        from: from || process.env.EMAIL_FROM || "TheOutHaven <hello@theouthaven.com>",
         to: toEmail,
         subject,
         html: emailHtml,
@@ -82,10 +82,10 @@ export async function sendLocationClaimApproved({
   return sendNotification({
     toEmail: email,
     toPhone: phone,
-    subject: "Your RoseOut location claim was approved",
+    subject: "Your TheOutHaven location claim was approved",
     emailHtml: `
       <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
-        <h2>Your RoseOut location claim was approved 🎉</h2>
+        <h2>Your TheOutHaven location claim was approved 🎉</h2>
         <p>Your claim for <strong>${locationName}</strong> has been approved.</p>
         <p>You can now create your owner account and manage your listing.</p>
         ${
@@ -96,7 +96,7 @@ export async function sendLocationClaimApproved({
       </div>
     `,
     smsBody: signupUrl
-      ? `RoseOut: Your claim for ${locationName} was approved. Create your owner account: ${signupUrl}`
-      : `RoseOut: Your claim for ${locationName} was approved.`,
+      ? `TheOutHaven: Your claim for ${locationName} was approved. Create your owner account: ${signupUrl}`
+      : `TheOutHaven: Your claim for ${locationName} was approved.`,
   });
 }

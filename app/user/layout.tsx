@@ -7,7 +7,7 @@ export default async function UserLayout({
   children: React.ReactNode;
 }) {
   const cookieStore = await cookies();
-  const impersonating = cookieStore.get("roseout_impersonate_user_id");
+  const impersonating = cookieStore.get("theouthaven_impersonate_user_id");
 
   return (
     <>

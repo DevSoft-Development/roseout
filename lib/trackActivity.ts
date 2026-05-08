@@ -12,11 +12,11 @@ export async function trackActivity({
   metadata?: Record<string, any>;
 }) {
   try {
-    let sessionId = localStorage.getItem("roseout_session_id");
+    let sessionId = localStorage.getItem("theouthaven_session_id");
 
     if (!sessionId) {
       sessionId = crypto.randomUUID();
-      localStorage.setItem("roseout_session_id", sessionId);
+      localStorage.setItem("theouthaven_session_id", sessionId);
     }
 
     await fetch("/api/activity/track", {

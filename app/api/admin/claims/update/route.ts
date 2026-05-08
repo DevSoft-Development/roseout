@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
     const signupToken = status === "approved" ? crypto.randomUUID() : null;
     const signupUrl =
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
           locationName: getJoinedValue(
             claim.restaurants,
             "restaurant_name",
-            "your RoseOut location"
+            "your TheOutHaven location"
           ),
           signupUrl,
         });
@@ -192,7 +192,7 @@ export async function POST(req: Request) {
           locationName: getJoinedValue(
             claim.activities,
             "activity_name",
-            "your RoseOut location"
+            "your TheOutHaven location"
           ),
           signupUrl,
         });

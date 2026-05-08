@@ -90,7 +90,7 @@ export default function ClaimActivityPage() {
         <div className="max-w-md rounded-3xl bg-white p-6 text-center text-black">
           <h1 className="text-2xl font-bold">Location Claim Submitted</h1>
           <p className="mt-3 text-neutral-600">
-            Thank you. RoseOut will review your location claim and contact you
+            Thank you. TheOutHaven will review your location claim and contact you
             soon.
           </p>
         </div>
@@ -102,19 +102,19 @@ export default function ClaimActivityPage() {
     <main className="min-h-screen bg-black px-6 py-12 text-white">
       <div className="mx-auto max-w-xl">
         <p className="text-sm font-semibold uppercase tracking-[0.25em] text-red-400">
-          RoseOut
+          TheOutHaven
         </p>
 
         <h1 className="mt-3 text-4xl font-black">Claim This Location</h1>
 
         <p className="mt-3 text-sm leading-6 text-white/60">
-          Verify ownership or management access to update this RoseOut activity
+          Verify ownership or management access to update this TheOutHaven activity
           listing.
         </p>
 
         <div className="mt-8 rounded-3xl bg-white p-6 text-black">
           <h2 className="text-2xl font-bold">
-            {activity?.activity_name || activity?.name || "RoseOut Location"}
+            {activity?.activity_name || activity?.name || "TheOutHaven Location"}
           </h2>
 
           <p className="mt-2 text-neutral-600">

@@ -95,7 +95,7 @@ export default function LoginPage() {
         <div className="hidden min-h-[620px] flex-col justify-center border-r border-white/10 bg-[radial-gradient(circle_at_20%_20%,rgba(225,6,42,0.22),transparent_35%),#080808] p-10 lg:flex">
           
           <div className="inline-flex w-fit rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-red-200">
-            RoseOut
+            TheOutHaven
           </div>
 
           <h1 className="mt-10 text-6xl font-black leading-[0.95] tracking-tight">
@@ -105,7 +105,7 @@ export default function LoginPage() {
           </h1>
 
           <p className="mt-6 max-w-md text-sm leading-7 text-white/55">
-            Sign in to continue planning your next experience with RoseOut.
+            Sign in to continue planning your next experience with TheOutHaven.
           </p>
         </div>
 
@@ -120,7 +120,7 @@ export default function LoginPage() {
           </Link>
 
           <p className="text-xs font-black uppercase tracking-[0.3em] text-red-400">
-            RoseOut
+            TheOutHaven
           </p>
 
           <h2 className="mt-3 text-4xl font-black tracking-tight">

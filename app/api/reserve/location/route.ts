@@ -22,7 +22,7 @@ function getTableName(type: string) {
 }
 
 function getLocationName(location: any, type: string) {
-  if (!location) return "RoseOut Location";
+  if (!location) return "TheOutHaven Location";
 
   if (type === "activity") {
     return (
@@ -30,7 +30,7 @@ function getLocationName(location: any, type: string) {
       location.location_name ||
       location.business_name ||
       location.title ||
-      "RoseOut Activity"
+      "TheOutHaven Activity"
     );
   }
 
@@ -39,7 +39,7 @@ function getLocationName(location: any, type: string) {
     location.name ||
     location.location_name ||
     location.business_name ||
-    "RoseOut Location"
+    "TheOutHaven Location"
   );
 }
 
@@ -121,7 +121,7 @@ async function sendEmail({
     body: JSON.stringify({
       from:
         process.env.RESERVE_FROM_EMAIL ||
-        "RoseOut Reserve <hello@roseout.com>",
+        "TheOutHaven Reserve <hello@theouthaven.com>",
       to,
       subject,
       html,
@@ -164,7 +164,7 @@ async function notifyReservation({
   reservation: any;
 }) {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.com";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
   const locationName = getLocationName(location, locationType);
   const locationEmail = getLocationEmail(location);
@@ -179,7 +179,7 @@ async function notifyReservation({
 
   const customerHtml = `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;background:#fff;padding:24px;">
-      <h2 style="margin:0 0 12px;color:#111;">RoseOut Reserve</h2>
+      <h2 style="margin:0 0 12px;color:#111;">TheOutHaven Reserve</h2>
       <p>Hi ${reservation.customer_name}, your reservation at <strong>${locationName}</strong> has been <strong>${statusText}</strong>.</p>
 
       <div style="background:#f8f8f8;border-radius:16px;padding:16px;margin:18px 0;">
@@ -202,13 +202,13 @@ async function notifyReservation({
       </p>
 
       <p style="font-size:13px;color:#666;">Use this link to view your reservation or cancel if needed.</p>
-      <p>Thank you for using RoseOut.</p>
+      <p>Thank you for using TheOutHaven.</p>
     </div>
   `;
 
   const ownerHtml = `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;background:#fff;padding:24px;">
-      <h2 style="margin:0 0 12px;color:#111;">New RoseOut Reservation</h2>
+      <h2 style="margin:0 0 12px;color:#111;">New TheOutHaven Reservation</h2>
       <p><strong>${reservation.customer_name}</strong> submitted a reservation for <strong>${locationName}</strong>.</p>
 
       <div style="background:#f8f8f8;border-radius:16px;padding:16px;margin:18px 0;">
@@ -557,7 +557,7 @@ export async function POST(request: NextRequest) {
 
         special_request: specialRequest || null,
         status,
-        source: "roseout",
+        source: "theouthaven",
 
         customer_token: customerToken,
       })

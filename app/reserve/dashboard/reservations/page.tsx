@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { supabase } from "@/lib/supabase";
 
 type ReservationStatus =
@@ -236,7 +236,7 @@ function ReservePortalReservationsContent() {
 
   return (
     <>
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <main className="min-h-screen bg-black pt-24 text-white">
         <section className="relative overflow-hidden px-5 py-10 sm:px-8">
@@ -264,7 +264,7 @@ function ReservePortalReservationsContent() {
 
             <div className="mt-8">
               <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-                RoseOut Reserve Portal
+                TheOutHaven Reserve Portal
               </p>
 
               <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">
@@ -450,7 +450,7 @@ function ReservePortalReservationsContent() {
                       No reservations found.
                     </h2>
                     <p className="mt-2 text-sm text-neutral-500">
-                      New RoseOut Reserve requests will appear here in realtime.
+                      New TheOutHaven Reserve requests will appear here in realtime.
                     </p>
                   </div>
                 </div>

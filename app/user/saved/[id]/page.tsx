@@ -40,11 +40,11 @@ export default async function SavedPlanDetailPage({ params }: PageProps) {
 
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-8">
           <p className="text-sm uppercase tracking-[0.3em] text-rose-300">
-            Saved RoseOut Plan
+            Saved TheOutHaven Plan
           </p>
 
           <h1 className="mt-3 text-4xl font-bold">
-            {plan.title || "Your RoseOut Plan"}
+            {plan.title || "Your TheOutHaven Plan"}
           </h1>
 
           <p className="mt-4 text-white/60">

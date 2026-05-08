@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export default function RoseOutHeader() {
+export default function TheOutHavenHeader() {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -46,7 +46,7 @@ export default function RoseOutHeader() {
           </span>
 
           <span className="truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
-            RoseOut
+            TheOutHaven
           </span>
         </Link>
 

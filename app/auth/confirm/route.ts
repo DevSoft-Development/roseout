@@ -9,7 +9,7 @@ const supabaseAdmin = createClient(
 
 export async function GET(request: NextRequest) {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
   const url = new URL(request.url);
   const tokenHash = url.searchParams.get("token_hash");

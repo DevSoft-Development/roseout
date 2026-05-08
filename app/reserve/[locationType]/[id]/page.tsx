@@ -12,7 +12,7 @@ type LocationRow = {
   restaurant_name?: string | null;
   activity_name?: string | null;
   rating?: number | null;
-  roseout_score?: number | null;
+  theouthaven_score?: number | null;
 };
 
 export default async function ReserveLocationPage({
@@ -26,8 +26,8 @@ export default async function ReserveLocationPage({
   const tableName = isActivity ? "activities" : "restaurants";
 
   const selectFields = isActivity
-    ? "id, activity_name, city, state, image_url, default_duration_minutes, rating, roseout_score"
-    : "id, restaurant_name, city, state, image_url, default_duration_minutes, rating, roseout_score";
+    ? "id, activity_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score"
+    : "id, restaurant_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score";
 
   const { data, error } = await supabase
     .from(tableName)
@@ -57,7 +57,7 @@ export default async function ReserveLocationPage({
           </Link>
 
           <div className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-rose-200">
-            RoseOut Reserve
+            TheOutHaven Reserve
           </div>
         </div>
 
@@ -117,7 +117,7 @@ export default async function ReserveLocationPage({
                       Score
                     </p>
                     <p className="mt-1 text-xl font-black">
-                      {location.roseout_score || 0}
+                      {location.theouthaven_score || 0}
                     </p>
                   </div>
                 </div>
@@ -137,7 +137,7 @@ export default async function ReserveLocationPage({
                 </h2>
 
                 <p className="mt-3 text-sm leading-6 text-white/55">
-                  RoseOut checks existing bookings and only shows available
+                  TheOutHaven checks existing bookings and only shows available
                   reservation times based on this location’s booking duration.
                 </p>
 

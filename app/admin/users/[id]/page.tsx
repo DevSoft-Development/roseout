@@ -154,7 +154,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
                     className="rounded-2xl border border-white/10 bg-black/30 p-4"
                   >
                     <h3 className="font-bold">
-                      {plan.title || "RoseOut Plan"}
+                      {plan.title || "TheOutHaven Plan"}
                     </h3>
                     <p className="mt-2 line-clamp-2 text-sm text-white/50">
                       {plan.summary || "Saved outing plan."}

@@ -159,7 +159,7 @@ export default function ContactPage() {
         <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-              Contact RoseOut
+              Contact TheOutHaven
             </p>
 
             <h1 className="mt-5 text-5xl font-black leading-tight md:text-6xl">
@@ -168,11 +168,11 @@ export default function ContactPage() {
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-white/60">
               Send us a message for support, partnerships, business listings,
-              corrections, or general RoseOut questions.
+              corrections, or general TheOutHaven questions.
             </p>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <InfoBox title="Support" text="Questions about using RoseOut." />
+              <InfoBox title="Support" text="Questions about using TheOutHaven." />
               <InfoBox
                 title="Business Listings"
                 text="Claim, add, or update a location."

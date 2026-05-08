@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import RoseOutHeader from "@/components/RoseOutHeader";
+import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export default function BusinessPage() {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
@@ -10,7 +10,7 @@ export default function BusinessPage() {
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <RoseOutHeader />
+      <TheOutHavenHeader />
 
       <section className="relative overflow-hidden px-6 pt-32 pb-24 text-center">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,6,42,0.22),transparent_42%),linear-gradient(180deg,#050505,#000)]" />
@@ -25,7 +25,7 @@ export default function BusinessPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-white/60">
-            RoseOut helps restaurants, activities, lounges, venues, and
+            TheOutHaven helps restaurants, activities, lounges, venues, and
             experience-based locations connect with users actively planning date
             nights, birthdays, dinners, and outings.
           </p>
@@ -51,7 +51,7 @@ export default function BusinessPage() {
       <section className="px-6 py-20">
         <div className="mx-auto grid max-w-7xl gap-6 md:grid-cols-4">
           <Stat value="AI Discovery" label="Appear in outing recommendations" />
-          <Stat value="RoseOut Reserve" label="Turn interest into bookings" />
+          <Stat value="TheOutHaven Reserve" label="Turn interest into bookings" />
           <Stat value="QR Ready" label="Drive scans to your profile" />
           <Stat value="Trackable" label="Views, clicks, and customer interest" />
         </div>
@@ -72,7 +72,7 @@ export default function BusinessPage() {
             </h2>
 
             <p className="mt-5 text-lg leading-8 text-white/60">
-              RoseOut is designed to help users find locations that match their
+              TheOutHaven is designed to help users find locations that match their
               intent — and help businesses turn that attention into visits,
               bookings, and customer interest.
             </p>
@@ -82,7 +82,7 @@ export default function BusinessPage() {
             <Feature
               number="01"
               title="Choose your package"
-              text="Start with free Basic AI discovery or upgrade to RoseOut Pro for priority discovery, reservations, analytics, and QR growth tools."
+              text="Start with free Basic AI discovery or upgrade to TheOutHaven Pro for priority discovery, reservations, analytics, and QR growth tools."
             />
 
             <Feature
@@ -94,13 +94,13 @@ export default function BusinessPage() {
             <Feature
               number="03"
               title="Get discovered by AI"
-              text="RoseOut recommends your business to users planning date nights, birthdays, dinners, brunch, nightlife, and outings."
+              text="TheOutHaven recommends your business to users planning date nights, birthdays, dinners, brunch, nightlife, and outings."
             />
 
             <Feature
               number="04"
               title="Turn interest into action"
-              text="Use booking links, RoseOut Reserve, QR tools, and analytics to convert discovery into visits and reservations."
+              text="Use booking links, TheOutHaven Reserve, QR tools, and analytics to convert discovery into visits and reservations."
             />
           </div>
         </div>
@@ -114,12 +114,12 @@ export default function BusinessPage() {
             </p>
 
             <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Start free or grow with RoseOut Pro.
+              Start free or grow with TheOutHaven Pro.
             </h2>
 
             <p className="mt-6 text-lg leading-8 text-white/60">
-              The free plan gives your business Basic AI discovery on RoseOut.
-              RoseOut Pro gives your listing stronger placement, booking tools,
+              The free plan gives your business Basic AI discovery on TheOutHaven.
+              TheOutHaven Pro gives your listing stronger placement, booking tools,
               analytics, QR growth tools, and more control over how customers
               discover you.
             </p>
@@ -156,7 +156,7 @@ export default function BusinessPage() {
             <p className="mt-4 text-sm font-semibold text-white/45">
               {isYearly
                 ? "Yearly billing gives Pro businesses two months free."
-                : "Switch to yearly to save 20% on RoseOut Pro."}
+                : "Switch to yearly to save 20% on TheOutHaven Pro."}
             </p>
           </div>
 
@@ -165,7 +165,7 @@ export default function BusinessPage() {
               title="Free"
               price="$0"
               period="/mo"
-              text="Basic visibility for businesses that want to appear in RoseOut AI discovery."
+              text="Basic visibility for businesses that want to appear in TheOutHaven AI discovery."
               cta="Start Free"
               href="/locations/apply?plan=free"
               features={[
@@ -179,7 +179,7 @@ export default function BusinessPage() {
 
             <PlanCard
               featured
-              title="RoseOut Pro"
+              title="TheOutHaven Pro"
               price={isYearly ? "$79" : "$99"}
               period="/mo"
               yearlyNote={isYearly ? "Billed yearly at $948/year" : undefined}
@@ -188,7 +188,7 @@ export default function BusinessPage() {
               href={`/checkout?plan=pro&billing=${billing}`}
               features={[
                 "Priority AI discovery",
-                "RoseOut Reserve",
+                "TheOutHaven Reserve",
                 "Advanced analytics",
                 "QR Growth Tools",
                 "Up to 10 photos",
@@ -207,7 +207,7 @@ export default function BusinessPage() {
             </p>
 
             <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              RoseOut is for experience-driven locations.
+              TheOutHaven is for experience-driven locations.
             </h2>
           </div>
 
@@ -237,7 +237,7 @@ export default function BusinessPage() {
 
         <div className="relative mx-auto max-w-4xl">
           <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-            Grow with RoseOut
+            Grow with TheOutHaven
           </p>
 
           <h2 className="mt-4 text-5xl font-black tracking-tight md:text-6xl">

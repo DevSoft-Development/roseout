@@ -60,7 +60,7 @@ export default function AdminUsersClient() {
   return (
     <div>
       <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-500">
-        RoseOut Admin
+        TheOutHaven Admin
       </p>
 
       <h1 className="text-4xl font-extrabold tracking-tight">

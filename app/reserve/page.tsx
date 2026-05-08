@@ -11,7 +11,7 @@ export default function ReserveLandingPage() {
 
           <div className="relative z-10">
             <p className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-rose-300">
-              RoseOut Reserve
+              TheOutHaven Reserve
             </p>
 
             <h1 className="text-4xl font-black tracking-tight sm:text-5xl">
@@ -20,7 +20,7 @@ export default function ReserveLandingPage() {
 
             <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
               Discover restaurants, activities, and experiences — then reserve
-              your time instantly with smart availability powered by RoseOut.
+              your time instantly with smart availability powered by TheOutHaven.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">

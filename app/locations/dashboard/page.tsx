@@ -16,7 +16,7 @@ type LocationItem = {
   city?: string;
   state?: string;
   image_url?: string;
-  roseout_score?: number;
+  theouthaven_score?: number;
   quality_score?: number;
   claim_status?: string;
   owner_name?: string;
@@ -41,15 +41,15 @@ export default async function DashboardPage() {
   const cookieStore = await cookies();
 
   const impersonatedLocationId =
-    cookieStore.get("roseout_impersonate_location_id")?.value;
+    cookieStore.get("theouthaven_impersonate_location_id")?.value;
 
   const impersonatedLocationType =
-    cookieStore.get("roseout_impersonate_location_type")?.value;
+    cookieStore.get("theouthaven_impersonate_location_type")?.value;
 
   const impersonatedUserId =
-    cookieStore.get("roseout_impersonate_user_id")?.value;
+    cookieStore.get("theouthaven_impersonate_user_id")?.value;
 
-  const adminUserId = cookieStore.get("roseout_admin_user_id")?.value;
+  const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
 
   const supabase = adminSupabase();
 

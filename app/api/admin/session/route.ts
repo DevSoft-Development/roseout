@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
   const cookieStore = await cookies();
 
-  cookieStore.set("roseout_admin_user_id", userId, {
+  cookieStore.set("theouthaven_admin_user_id", userId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
