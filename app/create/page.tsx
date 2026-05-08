@@ -101,11 +101,17 @@ const loadingLines = [
   "Finding the best fit...",
 ];
 
+function formatTypingPrompt(prompt: string) {
+  return `${prompt}....`;
+}
+
 export default function CreatePage() {
   const router = useRouter();
 
   const [input, setInput] = useState("");
-  const [typedPlaceholder, setTypedPlaceholder] = useState("");
+  const [typedPlaceholder, setTypedPlaceholder] = useState(() =>
+    formatTypingPrompt(typingSearches[0])
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
@@ -144,38 +150,13 @@ export default function CreatePage() {
 
   useEffect(() => {
     let searchIndex = 0;
-    let charIndex = 0;
-    let deleting = false;
-    let timeout: ReturnType<typeof setTimeout>;
 
-    function typeLoop() {
-      const currentSearch = typingSearches[searchIndex];
+    const interval = window.setInterval(() => {
+      searchIndex = (searchIndex + 1) % typingSearches.length;
+      setTypedPlaceholder(formatTypingPrompt(typingSearches[searchIndex]));
+    }, 900);
 
-      if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
-        charIndex++;
-
-        if (charIndex === currentSearch.length) {
-          deleting = true;
-          timeout = setTimeout(typeLoop, 1300);
-          return;
-        }
-      } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
-        charIndex--;
-
-        if (charIndex === 0) {
-          deleting = false;
-          searchIndex = (searchIndex + 1) % typingSearches.length;
-        }
-      }
-
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
-    }
-
-    typeLoop();
-
-    return () => clearTimeout(timeout);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -445,14 +426,6 @@ export default function CreatePage() {
               </div>
 
               <div className="relative">
-                {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell RoseOut what you want..."}
-                  </div>
-                )}
-
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -464,8 +437,10 @@ export default function CreatePage() {
                     }
                   }}
                   rows={2}
-                  placeholder=""
-                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
+                  placeholder={
+                    typedPlaceholder || "Tell RoseOut what you want..."
+                  }
+                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition placeholder:text-white focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
                 />
               </div>
             </div>
