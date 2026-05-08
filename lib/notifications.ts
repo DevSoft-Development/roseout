@@ -38,7 +38,7 @@ export async function sendNotification({
   if (toEmail && emailHtml && process.env.RESEND_API_KEY) {
     try {
       const email = await resend.emails.send({
-        from: from || process.env.EMAIL_FROM || "RoseOut <hello@roseout.com>",
+        from: from || process.env.EMAIL_FROM || "RoseOut <hello@theouthaven.com>",
         to: toEmail,
         subject,
         html: emailHtml,

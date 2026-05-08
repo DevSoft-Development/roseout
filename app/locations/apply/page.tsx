@@ -140,10 +140,7 @@ export default function LocationApplyPage() {
           if (codes.length > 0) {
             const url = String(codes[0].rawValue || "");
 
-            if (
-              url.includes("roseout.com") ||
-              url.includes("roseout.vercel.app")
-            ) {
+            if (url.includes("theouthaven.com")) {
               closeQrScanner();
               window.location.href = url;
               return;

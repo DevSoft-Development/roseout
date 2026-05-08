@@ -121,7 +121,7 @@ async function sendEmail({
     body: JSON.stringify({
       from:
         process.env.RESERVE_FROM_EMAIL ||
-        "RoseOut Reserve <hello@roseout.com>",
+        "RoseOut Reserve <hello@theouthaven.com>",
       to,
       subject,
       html,
@@ -164,7 +164,7 @@ async function notifyReservation({
   reservation: any;
 }) {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.com";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
   const locationName = getLocationName(location, locationType);
   const locationEmail = getLocationEmail(location);

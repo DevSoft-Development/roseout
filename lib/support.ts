@@ -96,7 +96,7 @@ function nl2br(value: string) {
 export function supportEmailFrom() {
   if (process.env.SUPPORT_EMAIL_FROM) return process.env.SUPPORT_EMAIL_FROM;
 
-  const configuredFrom = process.env.EMAIL_FROM || "hello@roseout.com";
+  const configuredFrom = process.env.EMAIL_FROM || "hello@theouthaven.com";
   const emailMatch = configuredFrom.match(/<([^>]+)>/);
   const email = emailMatch ? emailMatch[1] : configuredFrom;
 

@@ -5,7 +5,7 @@ export type ClaimLocationType = "restaurant" | "activity";
 
 export async function createClaimQr(type: ClaimLocationType) {
   const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
   const claimToken = crypto.randomUUID();
 

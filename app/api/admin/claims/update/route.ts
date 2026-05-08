@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
     const signupToken = status === "approved" ? crypto.randomUUID() : null;
     const signupUrl =

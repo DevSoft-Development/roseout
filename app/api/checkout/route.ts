@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
     const priceId = process.env.STRIPE_ROSEOUT_PRO_PRICE_ID;
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
     if (!stripeSecretKey) {
       return NextResponse.json(
