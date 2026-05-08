@@ -223,9 +223,9 @@ export default function TermsPage() {
               <p className="mt-2 font-bold text-white">
                 RoseOut
                 <br />
-                Email: hello@roseout.com
+                Email: hello@theouthaven.com
                 <br />
-                Website: https://roseout.com
+                Website: https://theouthaven.com
               </p>
             </section>
           </div>

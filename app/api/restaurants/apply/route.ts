@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     }
 
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://roseout.vercel.app";
+      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
     // Create or find user
     const tempPassword = Math.random().toString(36).slice(-10) + "Aa1!";
