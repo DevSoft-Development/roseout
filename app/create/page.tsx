@@ -101,6 +101,15 @@ const loadingLines = [
   "Finding the best fit...",
 ];
 
+const TYPE_SPEED_MS = 28;
+const BACKSPACE_SPEED_MS = 18;
+const PROMPT_PAUSE_MS = 1400;
+const NEXT_PROMPT_DELAY_MS = 120;
+
+function formatTypingPrompt(prompt: string) {
+  return `${prompt}....`;
+}
+
 export default function CreatePage() {
   const router = useRouter();
 
@@ -149,28 +158,33 @@ export default function CreatePage() {
     let timeout: ReturnType<typeof setTimeout>;
 
     function typeLoop() {
-      const currentSearch = typingSearches[searchIndex];
+      const currentPrompt = formatTypingPrompt(typingSearches[searchIndex]);
 
-      if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
-        charIndex++;
-
-        if (charIndex === currentSearch.length) {
-          deleting = true;
-          timeout = setTimeout(typeLoop, 1300);
-          return;
-        }
-      } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
-        charIndex--;
+      if (deleting) {
+        charIndex = Math.max(charIndex - 1, 0);
+        setTypedPlaceholder(currentPrompt.slice(0, charIndex));
 
         if (charIndex === 0) {
           deleting = false;
           searchIndex = (searchIndex + 1) % typingSearches.length;
+          timeout = setTimeout(typeLoop, NEXT_PROMPT_DELAY_MS);
+          return;
         }
+
+        timeout = setTimeout(typeLoop, BACKSPACE_SPEED_MS);
+        return;
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      charIndex = Math.min(charIndex + 1, currentPrompt.length);
+      setTypedPlaceholder(currentPrompt.slice(0, charIndex));
+
+      if (charIndex === currentPrompt.length) {
+        deleting = true;
+        timeout = setTimeout(typeLoop, PROMPT_PAUSE_MS);
+        return;
+      }
+
+      timeout = setTimeout(typeLoop, TYPE_SPEED_MS);
     }
 
     typeLoop();
@@ -446,10 +460,13 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell RoseOut what you want..."}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-3 top-3.5 z-10 h-6 overflow-hidden text-sm font-semibold leading-6 text-white sm:inset-x-4 sm:top-4 sm:h-7 sm:text-base sm:leading-7"
+                  >
+                    <span className="block max-w-full truncate whitespace-nowrap">
+                      {typedPlaceholder}
+                    </span>
                   </div>
                 )}
 
