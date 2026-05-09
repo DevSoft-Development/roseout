@@ -713,6 +713,71 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   );
 }
 
+const NON_OUTING_LOCATION_KEYWORDS = [
+  "hospital",
+  "medical center",
+  "medical clinic",
+  "urgent care",
+  "doctor",
+  "dentist",
+  "dental",
+  "pharmacy",
+  "health clinic",
+  "healthcare",
+  "pediatric",
+  "therapy",
+  "physical therapy",
+  "rehab",
+  "veterinary",
+  "animal hospital",
+  "funeral home",
+  "cemetery",
+  "school",
+  "daycare",
+  "university",
+  "church",
+  "mosque",
+  "synagogue",
+  "place of worship",
+  "courthouse",
+  "police",
+  "fire station",
+  "post office",
+  "bank",
+  "atm",
+  "insurance agency",
+  "law office",
+  "lawyer",
+  "real estate agency",
+  "storage facility",
+  "parking garage",
+  "gas station",
+  "car repair",
+  "laundromat",
+];
+
+function isOutingEligibleLocation(item: any) {
+  const disqualifyingText = normalizeQuery(
+    [
+      item.activity_name,
+      item.name,
+      item.category,
+      item.categories,
+      item.subcategory,
+      item.activity_type,
+      item.primary_tag,
+      ...toArray(item.google_types),
+      ...toArray(item.types),
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return !NON_OUTING_LOCATION_KEYWORDS.some((keyword) =>
+    disqualifyingText.includes(keyword)
+  );
+}
+
 function isTheOutHavenRelated(input: string) {
   const text = normalizeQuery(input);
 
@@ -1627,7 +1692,7 @@ export async function POST(req: Request) {
     const intent = detectIntent(input, body, locations);
 
    const cacheKey = normalizeQuery(
-  `theouthaven-${getSmartMatchVersion()}-contact-v1-${input}-${intent.userLat || ""}-${
+  `theouthaven-${getSmartMatchVersion()}-contact-v2-${input}-${intent.userLat || ""}-${
     intent.userLng || ""
   }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
 );
@@ -1659,7 +1724,7 @@ const usableLocations = locations.filter((item: any) => {
       usableLocations.length > 0 ? usableLocations : locations;
 
     const matchedLocationResults = buildMatchedLocationResults(
-      sourceLocations,
+      sourceLocations.filter(isOutingEligibleLocation),
       input
     );
 
@@ -1678,12 +1743,13 @@ const usableLocations = locations.filter((item: any) => {
       const type = String(item.location_type || "").toLowerCase();
 
       return (
-        type === "activity" ||
-        Boolean(item.activity_name) ||
-        Boolean(item.activity_type) ||
-        intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
+        isOutingEligibleLocation(item) &&
+        (type === "activity" ||
+          Boolean(item.activity_name) ||
+          Boolean(item.activity_type) ||
+          intent.activityIntents.some((activityIntent) =>
+            matchesActivityIntent(item, activityIntent)
+          ))
       );
     });
 
@@ -1709,10 +1775,12 @@ const usableLocations = locations.filter((item: any) => {
     }
 
     if (intent.activityIntents.length > 0) {
-      let forcedActivityMatches = locations.filter((item: any) =>
-        intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
+      let forcedActivityMatches = locations.filter(
+        (item: any) =>
+          isOutingEligibleLocation(item) &&
+          intent.activityIntents.some((activityIntent) =>
+            matchesActivityIntent(item, activityIntent)
+          )
       );
 
       if (intent.locations.length > 0) {
