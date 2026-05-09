@@ -13,6 +13,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
+const RESPONSE_CACHE_VERSION = "contact-v3";
 
 const OFF_TOPIC_REPLY =
   "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
@@ -325,6 +326,146 @@ function normalizeLocation(item: any) {
   };
 }
 
+const QUEENS_LOCATION_ALIASES = [
+  "astoria",
+  "long island city",
+  "lic",
+  "sunnyside",
+  "woodside",
+  "jackson heights",
+  "elmhurst",
+  "east elmhurst",
+  "corona",
+  "flushing",
+  "bayside",
+  "whitestone",
+  "college point",
+  "forest hills",
+  "rego park",
+  "kew gardens",
+  "fresh meadows",
+  "jamaica",
+  "jamaica estates",
+  "hollis",
+  "queens village",
+  "laurelton",
+  "cambria heights",
+  "st albans",
+  "springfield gardens",
+  "ozone park",
+  "south ozone park",
+  "richmond hill",
+  "south richmond hill",
+  "woodhaven",
+  "ridgewood",
+  "middle village",
+  "maspeth",
+  "glendale",
+  "bellerose",
+  "briarwood",
+  "douglaston",
+  "little neck",
+  "howard beach",
+  "rockaway",
+  "far rockaway",
+  "belle harbor",
+  "rockaway beach",
+  "arverne",
+];
+
+const NASSAU_LOCATION_ALIASES = [
+  "hempstead",
+  "north hempstead",
+  "oyster bay",
+  "garden city",
+  "mineola",
+  "freeport",
+  "long beach",
+  "rockville centre",
+  "valley stream",
+  "elmont",
+  "uniondale",
+  "westbury",
+  "hicksville",
+  "massapequa",
+  "levittown",
+  "bethpage",
+  "farmingdale",
+  "great neck",
+  "manhasset",
+  "port washington",
+  "roslyn",
+  "syosset",
+  "plainview",
+  "woodbury",
+  "jericho",
+  "wantagh",
+  "merrick",
+  "bellmore",
+  "oceanside",
+  "lynbrook",
+  "malverne",
+];
+
+const SUFFOLK_LOCATION_ALIASES = [
+  "babylon",
+  "deer park",
+  "ronkonkoma",
+  "patchogue",
+  "huntington",
+  "island park",
+  "smithtown",
+  "commack",
+  "bay shore",
+  "islip",
+  "east islip",
+  "sayville",
+  "hauppauge",
+  "melville",
+  "riverhead",
+  "hampton bays",
+  "southampton",
+  "east hampton",
+  "montauk",
+  "greenport",
+];
+
+const LONG_ISLAND_LOCATION_ALIASES = [
+  "nassau",
+  "nassau county",
+  "suffolk",
+  "suffolk county",
+  ...NASSAU_LOCATION_ALIASES,
+  ...SUFFOLK_LOCATION_ALIASES,
+];
+
+const LOCATION_AREA_ALIASES: Record<string, string[]> = {
+  queens: QUEENS_LOCATION_ALIASES,
+  "long island": LONG_ISLAND_LOCATION_ALIASES,
+  nassau: ["nassau county", ...NASSAU_LOCATION_ALIASES],
+  "nassau county": ["nassau", ...NASSAU_LOCATION_ALIASES],
+  suffolk: ["suffolk county", ...SUFFOLK_LOCATION_ALIASES],
+  "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
+};
+
+function expandDetectedLocations(detectedLocations: Iterable<string>) {
+  const expanded = new Set<string>();
+
+  Array.from(detectedLocations).forEach((location) => {
+    const normalizedLocation = normalizeQuery(location);
+
+    if (!normalizedLocation) return;
+
+    expanded.add(normalizedLocation);
+
+    (LOCATION_AREA_ALIASES[normalizedLocation] || []).forEach((alias) => {
+      expanded.add(normalizeQuery(alias));
+    });
+  });
+
+  return Array.from(expanded);
+}
+
 function detectLocation(input: string, locations: any[]) {
   const text = normalizeQuery(input);
   const found = new Set<string>();
@@ -545,25 +686,97 @@ function detectLocation(input: string, locations: any[]) {
     }
   });
 
-  return Array.from(found);
+  if (found.has("long island city") || found.has("lic")) {
+    found.delete("long island");
+  }
+
+  return expandDetectedLocations(found);
 }
 
 function matchesLocation(item: any, detectedLocations: string[]) {
   if (!detectedLocations || detectedLocations.length === 0) return true;
 
-  const searchable = [
-    item.city,
-    item.neighborhood,
-    item.borough,
-    item.state,
-    item.zip_code,
-    item.address,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const searchable = normalizeQuery(
+    [
+      item.city,
+      item.neighborhood,
+      item.borough,
+      item.state,
+      item.zip_code,
+      item.address,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
 
-  return detectedLocations.some((location) => searchable.includes(location));
+  return detectedLocations.some((location) =>
+    searchable.includes(normalizeQuery(location))
+  );
+}
+
+const NON_OUTING_LOCATION_KEYWORDS = [
+  "hospital",
+  "medical center",
+  "medical clinic",
+  "urgent care",
+  "doctor",
+  "dentist",
+  "dental",
+  "pharmacy",
+  "health clinic",
+  "healthcare",
+  "pediatric",
+  "therapy",
+  "physical therapy",
+  "rehab",
+  "veterinary",
+  "animal hospital",
+  "funeral home",
+  "cemetery",
+  "school",
+  "daycare",
+  "university",
+  "church",
+  "mosque",
+  "synagogue",
+  "place of worship",
+  "courthouse",
+  "police",
+  "fire station",
+  "post office",
+  "bank",
+  "atm",
+  "insurance agency",
+  "law office",
+  "lawyer",
+  "real estate agency",
+  "storage facility",
+  "parking garage",
+  "gas station",
+  "car repair",
+  "laundromat",
+];
+
+function isOutingEligibleLocation(item: any) {
+  const disqualifyingText = normalizeQuery(
+    [
+      item.activity_name,
+      item.name,
+      item.category,
+      item.categories,
+      item.subcategory,
+      item.activity_type,
+      item.primary_tag,
+      ...toArray(item.google_types),
+      ...toArray(item.types),
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return !NON_OUTING_LOCATION_KEYWORDS.some((keyword) =>
+    disqualifyingText.includes(keyword)
+  );
 }
 
 function isTheOutHavenRelated(input: string) {
@@ -1480,7 +1693,7 @@ export async function POST(req: Request) {
     const intent = detectIntent(input, body, locations);
 
    const cacheKey = normalizeQuery(
-  `theouthaven-${getSmartMatchVersion()}-contact-v1-${input}-${intent.userLat || ""}-${
+  `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${intent.userLat || ""}-${
     intent.userLng || ""
   }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
 );
@@ -1512,7 +1725,7 @@ const usableLocations = locations.filter((item: any) => {
       usableLocations.length > 0 ? usableLocations : locations;
 
     const matchedLocationResults = buildMatchedLocationResults(
-      sourceLocations,
+      sourceLocations.filter(isOutingEligibleLocation),
       input
     );
 
@@ -1531,12 +1744,13 @@ const usableLocations = locations.filter((item: any) => {
       const type = String(item.location_type || "").toLowerCase();
 
       return (
-        type === "activity" ||
-        Boolean(item.activity_name) ||
-        Boolean(item.activity_type) ||
-        intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
+        isOutingEligibleLocation(item) &&
+        (type === "activity" ||
+          Boolean(item.activity_name) ||
+          Boolean(item.activity_type) ||
+          intent.activityIntents.some((activityIntent) =>
+            matchesActivityIntent(item, activityIntent)
+          ))
       );
     });
 
@@ -1562,10 +1776,12 @@ const usableLocations = locations.filter((item: any) => {
     }
 
     if (intent.activityIntents.length > 0) {
-      let forcedActivityMatches = locations.filter((item: any) =>
-        intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
+      let forcedActivityMatches = locations.filter(
+        (item: any) =>
+          isOutingEligibleLocation(item) &&
+          intent.activityIntents.some((activityIntent) =>
+            matchesActivityIntent(item, activityIntent)
+          )
       );
 
       if (intent.locations.length > 0) {
