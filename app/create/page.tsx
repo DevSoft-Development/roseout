@@ -91,11 +91,16 @@ const loadingLines = [
   "Finding the best fit...",
 ];
 
+const nativeTextareaPlaceholder = "Tell TheOutHaven what you want...";
+const initialTypedPlaceholder = typingSearches[0]?.slice(0, 1) ?? "";
+
 export default function CreatePage() {
   const router = useRouter();
 
   const [input, setInput] = useState("");
-  const [typedPlaceholder, setTypedPlaceholder] = useState("");
+  const [typedPlaceholder, setTypedPlaceholder] = useState(
+    initialTypedPlaceholder
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
@@ -134,7 +139,7 @@ export default function CreatePage() {
 
   useEffect(() => {
     let searchIndex = 0;
-    let charIndex = 0;
+    let charIndex = initialTypedPlaceholder.length;
     let deleting = false;
     let timeout: ReturnType<typeof setTimeout>;
 
@@ -436,10 +441,12 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell TheOutHaven what you want..."}
+                  <div className="pointer-events-none absolute inset-px z-10 rounded-2xl bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white/30 sm:px-4 sm:py-4 sm:text-base sm:leading-7">
+                    <span className="block max-w-full truncate">
+                      {typedPlaceholder
+                        ? `${typedPlaceholder}|`
+                        : nativeTextareaPlaceholder}
+                    </span>
                   </div>
                 )}
 
@@ -454,8 +461,8 @@ export default function CreatePage() {
                     }
                   }}
                   rows={2}
-                  placeholder=""
-                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
+                  placeholder={nativeTextareaPlaceholder}
+                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition placeholder:text-white focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
                 />
               </div>
             </div>
