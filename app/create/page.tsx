@@ -136,32 +136,24 @@ export default function CreatePage() {
   useEffect(() => {
     let searchIndex = 0;
     let charIndex = 0;
-    let deleting = false;
     let timeout: ReturnType<typeof setTimeout>;
 
     function typeLoop() {
       const currentSearch = typingSearches[searchIndex];
 
-      if (!deleting) {
+      if (charIndex < currentSearch.length) {
         setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
         charIndex++;
-
-        if (charIndex === currentSearch.length) {
-          deleting = true;
-          timeout = setTimeout(typeLoop, 1300);
-          return;
-        }
-      } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
-        charIndex--;
-
-        if (charIndex === 0) {
-          deleting = false;
-          searchIndex = (searchIndex + 1) % typingSearches.length;
-        }
+        timeout = setTimeout(typeLoop, 55);
+        return;
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      timeout = setTimeout(() => {
+        setTypedPlaceholder("");
+        charIndex = 0;
+        searchIndex = (searchIndex + 1) % typingSearches.length;
+        timeout = setTimeout(typeLoop, 260);
+      }, 1300);
     }
 
     typeLoop();
@@ -437,10 +429,11 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell TheOutHaven what you want..."}
+                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
+                    <span>
+                      {typedPlaceholder || "Tell TheOutHaven what you want"}
+                    </span>
+                    <span className="text-white"> ....</span>
                   </div>
                 )}
 
@@ -959,38 +952,75 @@ function TimelineStep({
 function StartPanel() {
   const items = [
     {
-      title: "Tell TheOutHaven the full idea",
-      body: "Use a natural sentence with food, activity, location, budget, or vibe.",
+      icon: "💬",
+      step: "01",
+      title: "Describe the whole outing",
+      body: "Type the food, activity, neighborhood, budget, or vibe in one sentence.",
+      example: "Example: romantic dinner and karaoke in Queens",
     },
     {
-      title: "TheOutHaven separates the intent",
-      body: "A steak request is treated differently from bowling, karaoke, lounges, or brunch.",
+      icon: "✨",
+      step: "02",
+      title: "Let TheOutHaven sort the fit",
+      body: "We separate dinner, activities, location, and vibe so the results feel intentional.",
+      example: "Try: affordable birthday brunch with games",
     },
     {
-      title: "Get tighter matched cards",
-      body: "Results are ranked for fit, quality, distance, and outing flow.",
+      icon: "🗺️",
+      step: "03",
+      title: "Pick your plan faster",
+      body: "Choose a restaurant, add an experience, then review the full outing flow.",
+      example: "Tip: add a borough, city, or nearby request",
     },
   ];
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#0b0b0b] p-4 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-5">
+    <div className="w-full max-w-full overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.18),transparent_34%),linear-gradient(135deg,#101010_0%,#060606_100%)] p-4 shadow-2xl shadow-black/45 sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
+            How it works
+          </p>
+          <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
+            Plan the night in one search.
+          </h2>
+        </div>
+
+        <p className="max-w-xl text-sm font-semibold leading-6 text-white/48">
+          Use TheOutHaven like a concierge: tell it what you want, where you
+          want it, and the kind of mood you are going for.
+        </p>
+      </div>
+
       <div className="grid w-full min-w-0 gap-3 sm:gap-4 md:grid-cols-3">
-        {items.map((item, index) => (
+        {items.map((item) => (
           <div
-            key={item.title}
-            className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            key={item.step}
+            className="group min-w-0 rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/20 transition hover:border-[#e1062a]/35 hover:bg-white/[0.065] sm:p-5"
           >
-            <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black text-white sm:mb-4 sm:h-9 sm:w-9">
-              {index + 1}
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/45 text-xl shadow-inner shadow-white/5">
+                {item.icon}
+              </div>
+
+              <span className="rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-100/75">
+                {item.step}
+              </span>
             </div>
 
-            <h3 className="break-words text-base font-black tracking-[-0.02em] text-white">
+            <h3 className="break-words text-lg font-black tracking-[-0.03em] text-white">
               {item.title}
             </h3>
 
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/55">
               {item.body}
             </p>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
+              <p className="text-xs font-bold leading-5 text-white/62">
+                {item.example}
+              </p>
+            </div>
           </div>
         ))}
       </div>
