@@ -16,22 +16,17 @@ type RestaurantCard = {
   zip_code?: string | null;
   cuisine?: string | null;
   food_type?: string | null;
-  cuisine_tags?: string[] | null;
   atmosphere?: string | null;
   price_range?: string | null;
-  theouthaven_score: number;
-  smart_match_score?: number | null;
   reservation_link?: string | null;
   reservation_url?: string | null;
   website?: string | null;
   image_url?: string | null;
   rating?: number | null;
-  review_count?: number | null;
   review_score?: number | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
   primary_tag?: string | null;
-  date_style_tags?: string[] | null;
   distance_miles?: number | null;
 };
 
@@ -46,19 +41,15 @@ type ActivityCard = {
   price_range?: string | null;
   atmosphere?: string | null;
   group_friendly?: boolean | null;
-  theouthaven_score: number;
-  smart_match_score?: number | null;
   reservation_link?: string | null;
   reservation_url?: string | null;
   website?: string | null;
   image_url?: string | null;
   rating?: number | null;
-  review_count?: number | null;
   review_score?: number | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
   primary_tag?: string | null;
-  date_style_tags?: string[] | null;
   distance_miles?: number | null;
 };
 
