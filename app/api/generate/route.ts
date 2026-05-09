@@ -13,7 +13,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = "contact-v3";
+const RESPONSE_CACHE_VERSION = "contact-v4";
 
 const OFF_TOPIC_REPLY =
   "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
@@ -712,6 +712,86 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   return detectedLocations.some((location) =>
     searchable.includes(normalizeQuery(location))
   );
+}
+
+
+function locationIdentityKey(item: any) {
+  const placeId = item.google_place_id || item.place_id;
+
+  if (placeId) return normalizeQuery(String(placeId));
+
+  const nameAddressKey = normalizeQuery(
+    [
+      item.restaurant_name || item.activity_name || item.name,
+      item.address,
+      item.city,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return nameAddressKey || normalizeQuery(String(item.id || ""));
+}
+
+function isLoungeStyleLocation(item: any) {
+  const searchable = itemText(item);
+
+  return (
+    searchable.includes("lounge") ||
+    searchable.includes("hookah") ||
+    searchable.includes("shisha") ||
+    searchable.includes("cigar") ||
+    searchable.includes("nightclub") ||
+    searchable.includes("night club")
+  );
+}
+
+function isExplicitFoodAtLoungeRequest(intent: ReturnType<typeof detectIntent>) {
+  const text = intent.text;
+
+  if (!intent.wantsLounge) return false;
+
+  return (
+    text.includes("food") ||
+    text.includes("eat") ||
+    text.includes("dinner") ||
+    text.includes("lunch") ||
+    text.includes("brunch") ||
+    text.includes("restaurant") ||
+    text.includes("dining") ||
+    text.includes("kitchen") ||
+    text.includes("serve food") ||
+    text.includes("with food")
+  );
+}
+
+function isLoungeActivityOnlyRequest(intent: ReturnType<typeof detectIntent>) {
+  return intent.wantsLounge && !isExplicitFoodAtLoungeRequest(intent);
+}
+
+function removeDuplicateLocationsAcrossTypes(
+  restaurants: any[],
+  activities: any[],
+  prefer: "restaurants" | "activities" = "activities"
+) {
+  const restaurantKeys = new Set(restaurants.map(locationIdentityKey));
+  const activityKeys = new Set(activities.map(locationIdentityKey));
+
+  if (prefer === "restaurants") {
+    return {
+      restaurants,
+      activities: activities.filter(
+        (activity) => !restaurantKeys.has(locationIdentityKey(activity))
+      ),
+    };
+  }
+
+  return {
+    restaurants: restaurants.filter(
+      (restaurant) => !activityKeys.has(locationIdentityKey(restaurant))
+    ),
+    activities,
+  };
 }
 
 const NON_OUTING_LOCATION_KEYWORDS = [
@@ -1771,6 +1851,22 @@ const usableLocations = locations.filter((item: any) => {
     restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
     activities = filterActivitiesByActivityIntent(activities, intent);
 
+    if (isLoungeActivityOnlyRequest(intent)) {
+      restaurants = [];
+      activities = sourceLocations.filter(
+        (item: any) =>
+          isOutingEligibleLocation(item) &&
+          isLoungeStyleLocation(item) &&
+          intent.activityIntents.some((activityIntent) =>
+            matchesActivityIntent(item, activityIntent)
+          )
+      );
+    }
+
+    if (isExplicitFoodAtLoungeRequest(intent)) {
+      restaurants = restaurants.filter(isLoungeStyleLocation);
+    }
+
     if (intent.locations.length > 0) {
       const locationRestaurants = restaurants.filter((item: any) =>
         matchesLocation(item, intent.locations)
@@ -1812,6 +1908,19 @@ const usableLocations = locations.filter((item: any) => {
         activities = forcedActivityMatches;
       }
     }
+
+    if (isLoungeActivityOnlyRequest(intent)) {
+      restaurants = [];
+    }
+
+    const dedupedLocationResults = removeDuplicateLocationsAcrossTypes(
+      restaurants,
+      activities,
+      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities"
+    );
+
+    restaurants = dedupedLocationResults.restaurants;
+    activities = dedupedLocationResults.activities;
 
     const rankedRestaurants = restaurants
       .map((restaurant: any) => {
@@ -2067,6 +2176,8 @@ google_maps_url: item.google_maps_url || null,
         city: r.city,
         state: r.state,
         zip_code: r.zip_code,
+        latitude: r.latitude || null,
+        longitude: r.longitude || null,
         cuisine: r.cuisine || r.cuisine_type || null,
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
@@ -2097,6 +2208,8 @@ google_maps_url: item.google_maps_url || null,
         city: a.city,
         state: a.state,
         zip_code: a.zip_code,
+        latitude: a.latitude || null,
+        longitude: a.longitude || null,
         price_range: a.price_range,
         atmosphere: a.atmosphere,
         group_friendly: a.group_friendly,

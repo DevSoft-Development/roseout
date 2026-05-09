@@ -14,6 +14,8 @@ type RestaurantCard = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   cuisine?: string | null;
   food_type?: string | null;
   atmosphere?: string | null;
@@ -38,6 +40,8 @@ type ActivityCard = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   price_range?: string | null;
   atmosphere?: string | null;
   group_friendly?: boolean | null;
@@ -267,6 +271,18 @@ export default function CreatePage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function scrollToResultsPanel() {
+    if (!resultsRef.current) return;
+
+    const top =
+      resultsRef.current.getBoundingClientRect().top + window.scrollY - 118;
+
+    window.scrollTo({
+      top: Math.max(top, 0),
+      behavior: "smooth",
+    });
+  }
+
   function handleInputChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(event.target.value);
   }
@@ -314,6 +330,8 @@ export default function CreatePage() {
     setMessages((current) => [...current, userMessage]);
     setInput("");
 
+    setTimeout(scrollToResultsPanel, 100);
+
     try {
       const savedLocation = getSavedLocation();
 
@@ -353,12 +371,7 @@ export default function CreatePage() {
 
       setMessages((current) => [...current, assistantMessage]);
 
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 250);
+      setTimeout(scrollToResultsPanel, 250);
     } catch (err: any) {
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
@@ -633,6 +646,9 @@ export default function CreatePage() {
                           activity.reservation_url ||
                           activity.reservation_link ||
                           undefined;
+                        const distanceFromRestaurant = selectedRestaurant
+                          ? distanceBetweenLocations(selectedRestaurant, activity)
+                          : null;
 
                         return (
                           <ResultCard
@@ -647,7 +663,14 @@ export default function CreatePage() {
                             reviewKeywords={activity.review_keywords}
                             reviewSnippet={activity.review_snippet}
                             primaryTag={activity.primary_tag}
-                            distance={activity.distance_miles}
+                            distance={
+                              distanceFromRestaurant ?? activity.distance_miles
+                            }
+                            distanceLabel={
+                              distanceFromRestaurant !== null
+                                ? `${distanceFromRestaurant} mi from dinner`
+                                : undefined
+                            }
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -761,6 +784,9 @@ function PlanSummarySheet({
   onClose: () => void;
   onContinue: () => void;
 }) {
+  const summaryDescription = getPlanSummaryDescription(restaurant, activity);
+  const nextStepText = getPlanNextStepText(restaurant, activity);
+
   return (
     <div className="fixed inset-0 z-[999] flex items-end justify-center overflow-hidden bg-black/70 px-2 pb-2 backdrop-blur-sm sm:px-6 sm:pb-6">
       <button
@@ -783,11 +809,10 @@ function PlanSummarySheet({
                 Plan Summary
               </p>
               <h3 className="mt-1 break-words text-xl font-black tracking-[-0.04em] text-white sm:text-2xl">
-                Your night is almost ready
+                Your outing is almost ready
               </h3>
               <p className="mt-1 text-xs font-semibold leading-5 text-white/45 sm:text-sm sm:leading-6">
-                Review your dinner-to-activity flow before moving to the full
-                plan.
+                {summaryDescription}
               </p>
             </div>
 
@@ -819,7 +844,9 @@ function PlanSummarySheet({
               description={
                 restaurant
                   ? "Start with the food pick that best matches your outing."
-                  : "Select a restaurant to complete the first part of your TheOutHaven."
+                  : activity
+                    ? "No restaurant selected yet — you can continue with the activity or add dinner later."
+                    : "Select a restaurant to complete the first part of your TheOutHaven."
               }
               imageUrl={restaurant?.image_url || null}
               active={Boolean(restaurant)}
@@ -830,9 +857,7 @@ function PlanSummarySheet({
                 Then
               </p>
               <p className="mt-1 text-xs font-bold leading-5 text-white/60 sm:text-sm">
-                {restaurant && activity
-                  ? buildDistanceText(restaurant, activity)
-                  : "Add the activity that completes the night."}
+                {buildDistanceText(restaurant, activity)}
               </p>
             </div>
 
@@ -849,8 +874,12 @@ function PlanSummarySheet({
                 .join(" • ")}
               description={
                 activity
-                  ? "This gives the outing a second stop and a clearer plan."
-                  : "Select an experience to build the full dinner-to-activity timeline."
+                  ? restaurant
+                    ? "This gives the outing a second stop and a clearer plan."
+                    : "This activity can anchor your outing on its own."
+                  : restaurant
+                    ? "Add an experience if you want to turn dinner into a full outing."
+                    : "Select an experience to build the full dinner-to-activity timeline."
               }
               imageUrl={activity?.image_url || null}
               active={Boolean(activity)}
@@ -862,8 +891,7 @@ function PlanSummarySheet({
               Next Step
             </p>
             <p className="mt-1 text-xs font-bold leading-5 text-white sm:text-sm sm:leading-6">
-              Continue to your full plan to review the selected locations,
-              details, and next actions.
+              {nextStepText}
             </p>
           </div>
         </div>
@@ -1079,6 +1107,7 @@ function ResultCard({
   reviewSnippet,
   primaryTag,
   distance,
+  distanceLabel,
   selected,
   priority,
   selectLabel,
@@ -1102,6 +1131,7 @@ function ResultCard({
   reviewSnippet?: string | null;
   primaryTag?: string | null;
   distance?: number | null;
+  distanceLabel?: string;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1155,7 +1185,7 @@ function ResultCard({
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 sm:bottom-3 sm:right-3 sm:gap-1.5">
           {distance !== null && distance !== undefined ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
-              {distance} mi
+              {distanceLabel || `${distance} mi`}
             </span>
           ) : null}
 
@@ -1345,15 +1375,118 @@ function getWhyPicked({
     : "Matched to your activity and outing vibe.";
 }
 
+function getPlanSummaryDescription(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && activity) {
+    return "Review your restaurant and activity flow before moving to the full plan.";
+  }
+
+  if (restaurant) {
+    return "Review your restaurant pick before moving to the full plan.";
+  }
+
+  if (activity) {
+    return "Review your activity pick before moving to the full plan.";
+  }
+
+  return "Choose a restaurant, an activity, or both to build your outing.";
+}
+
+function getPlanNextStepText(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && activity) {
+    return "Open the full plan to confirm the route, timing, booking links, and final details.";
+  }
+
+  if (restaurant) {
+    return "Open the full plan to review the restaurant details, reservation options, and next actions.";
+  }
+
+  if (activity) {
+    return "Open the full plan to review the activity details, booking options, and next actions.";
+  }
+
+  return "Add a pick or continue to review the details you have so far.";
+}
+
+function getLocationCoordinates(item: {
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+}) {
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (!latitude || !longitude) return null;
+
+  return { latitude, longitude };
+}
+
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const radius = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distanceBetweenLocations(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return null;
+
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
+
+  if (!restaurantCoords || !activityCoords) return null;
+
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude
+    ).toFixed(1)
+  );
+}
+
 function buildDistanceText(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null
 ) {
-  if (!restaurant || !activity) return "Dinner → Activity";
+  if (restaurant && activity) {
+    const distance = distanceBetweenLocations(restaurant, activity);
 
-  if (restaurant.city && activity.city && restaurant.city === activity.city) {
-    return `Same city flow • ${restaurant.city}`;
+    if (distance !== null) {
+      return `${distance} miles between locations`;
+    }
+
+    if (restaurant.city && activity.city && restaurant.city === activity.city) {
+      return `Same city flow • ${restaurant.city}`;
+    }
+
+    return "Restaurant → Activity timeline";
   }
 
-  return "Dinner → Activity timeline";
+  if (restaurant) return "Restaurant selected • Add an activity if you want one.";
+  if (activity) return "Activity selected • Add dinner if you want one.";
+
+  return "Choose a restaurant or activity to start your outing.";
 }
