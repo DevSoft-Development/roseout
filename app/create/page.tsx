@@ -115,6 +115,8 @@ export default function CreatePage() {
   const [selectedActivity, setSelectedActivity] =
     useState<ActivityCard | null>(null);
   const [locationSaved, setLocationSaved] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationStatus, setLocationStatus] = useState("");
   const [showPlanSummary, setShowPlanSummary] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -139,7 +141,10 @@ export default function CreatePage() {
 
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
-    setLocationSaved(Boolean(getSavedLocation()));
+
+    window.queueMicrotask(() => {
+      setLocationSaved(Boolean(getSavedLocation()));
+    });
   }, []);
 
   useEffect(() => {
@@ -149,28 +154,35 @@ export default function CreatePage() {
     let timeout: ReturnType<typeof setTimeout>;
 
     function typeLoop() {
-      const currentSearch = typingSearches[searchIndex];
+      const currentSearch = `${typingSearches[searchIndex]}....`;
 
-      if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
-        charIndex++;
-
-        if (charIndex === currentSearch.length) {
-          deleting = true;
-          timeout = setTimeout(typeLoop, 1300);
-          return;
-        }
-      } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
+      if (deleting) {
+        const nextText = currentSearch.slice(0, charIndex - 1);
+        setTypedPlaceholder(nextText);
         charIndex--;
 
-        if (charIndex === 0) {
-          deleting = false;
-          searchIndex = (searchIndex + 1) % typingSearches.length;
+        if (charIndex > 0) {
+          timeout = setTimeout(typeLoop, 32);
+          return;
         }
+
+        deleting = false;
+        searchIndex = (searchIndex + 1) % typingSearches.length;
+        timeout = setTimeout(typeLoop, 260);
+        return;
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      const nextText = currentSearch.slice(0, charIndex + 1);
+      setTypedPlaceholder(nextText);
+      charIndex++;
+
+      if (charIndex < currentSearch.length) {
+        timeout = setTimeout(typeLoop, 70);
+        return;
+      }
+
+      deleting = true;
+      timeout = setTimeout(typeLoop, 1300);
     }
 
     typeLoop();
@@ -193,8 +205,9 @@ export default function CreatePage() {
     if (!latest) return;
 
     [...(latest.restaurants || []), ...(latest.activities || [])].forEach(
-      (item: any) => {
-        const itemType = item.restaurant_name ? "restaurant" : "activity";
+      (item: RestaurantCard | ActivityCard) => {
+        const itemType =
+          "restaurant_name" in item ? "restaurant" : "activity";
         const key = `${itemType}-${item.id}`;
 
         if (!item.id || viewedItems.current.has(key)) return;
@@ -232,10 +245,49 @@ export default function CreatePage() {
     }
   }
 
-  function requestUserLocation() {
-    if (!navigator.geolocation) {
-      setError("Location is not supported on this device.");
+  async function requestUserLocation() {
+    if (typeof window === "undefined") return;
+
+    if (!window.isSecureContext) {
+      setLocationSaved(false);
+      setLocationStatus("");
+      setError(
+        "Location needs a secure browser connection. Search by neighborhood instead."
+      );
       return;
+    }
+
+    if (!navigator.geolocation) {
+      setLocationSaved(false);
+      setLocationStatus("");
+      setError(
+        "Location is not supported on this device. Search by neighborhood instead."
+      );
+      return;
+    }
+
+    setLocationLoading(true);
+    setLocationStatus("Requesting your browser location...");
+    setError("");
+
+    try {
+      if (navigator.permissions?.query) {
+        const permission = await navigator.permissions.query({
+          name: "geolocation" as PermissionName,
+        });
+
+        if (permission.state === "denied") {
+          setLocationSaved(false);
+          setLocationLoading(false);
+          setLocationStatus("");
+          setError(
+            "Location is blocked for this site. Enable it in your browser settings or search by neighborhood."
+          );
+          return;
+        }
+      }
+    } catch {
+      // Some browsers do not support querying geolocation permission.
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -247,11 +299,28 @@ export default function CreatePage() {
 
         localStorage.setItem(LOCATION_KEY, JSON.stringify(userLocation));
         setLocationSaved(true);
+        setLocationLoading(false);
+        setLocationStatus("");
         setError("");
       },
-      () => {
+      (geoError) => {
         setLocationSaved(false);
-        setError("Please allow location access or search by neighborhood.");
+        setLocationLoading(false);
+        setLocationStatus("");
+
+        const message =
+          geoError.code === geoError.PERMISSION_DENIED
+            ? "Please allow location access, then tap Use My Location again."
+            : geoError.code === geoError.TIMEOUT
+              ? "Location took too long. Try again or search by neighborhood."
+              : "We could not get your location. Try again or search by neighborhood.";
+
+        setError(message);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 5 * 60 * 1000,
+        timeout: 12000,
       }
     );
   }
@@ -360,8 +429,12 @@ export default function CreatePage() {
           block: "start",
         });
       }, 250);
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -444,12 +517,12 @@ export default function CreatePage() {
                 ) : null}
               </div>
 
-              <div className="relative">
-                {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell TheOutHaven what you want..."}
+              <div className="group/search relative overflow-hidden rounded-2xl bg-black">
+                <div className="pointer-events-none absolute inset-0 z-20 rounded-2xl border border-white/10 transition duration-200 group-focus-within/search:border-[#e1062a] group-focus-within/search:shadow-[inset_0_0_0_1px_rgba(225,6,42,0.82),0_0_24px_rgba(225,6,42,0.16)]" />
+
+                {!input && typedPlaceholder && (
+                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] overflow-hidden whitespace-nowrap text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
+                    <span>{typedPlaceholder}</span>
                   </div>
                 )}
 
@@ -465,7 +538,7 @@ export default function CreatePage() {
                   }}
                   rows={2}
                   placeholder=""
-                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
+                  className="relative z-0 h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border-0 bg-transparent px-3 py-3.5 text-sm font-semibold leading-6 text-white caret-[#e1062a] outline-none transition placeholder:text-white sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
                 />
               </div>
             </div>
@@ -483,14 +556,25 @@ export default function CreatePage() {
                 <button
                   type="button"
                   onClick={requestUserLocation}
-                  className={`w-full rounded-full border px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] transition sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em] ${
+                  disabled={locationLoading}
+                  className={`w-full rounded-full border px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] transition disabled:cursor-wait disabled:opacity-70 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em] ${
                     locationSaved
                       ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
                       : "border-white/10 bg-white/[0.04] text-white/65 hover:border-white/25 hover:text-white"
                   }`}
                 >
-                  {locationSaved ? "Location On" : "Use My Location"}
+                  {locationLoading
+                    ? "Finding Location..."
+                    : locationSaved
+                      ? "Location On"
+                      : "Use My Location"}
                 </button>
+
+                {locationStatus && (
+                  <p className="w-full text-center text-[11px] font-bold text-emerald-100/80 sm:w-auto sm:text-left">
+                    {locationStatus}
+                  </p>
+                )}
 
                 {messages.length > 0 && (
                   <button
@@ -586,7 +670,6 @@ export default function CreatePage() {
                           key={restaurantId || restaurantIndex}
                           index={restaurantIndex}
                           type="restaurant"
-                          id={restaurantId}
                           imageUrl={restaurant.image_url || undefined}
                           title={restaurant.restaurant_name}
                           eyebrow={
@@ -650,7 +733,6 @@ export default function CreatePage() {
                             key={activityId || activityIndex}
                             index={activityIndex}
                             type="activity"
-                            id={activityId}
                             imageUrl={activity.image_url || undefined}
                             title={activity.activity_name}
                             eyebrow={activity.activity_type || "Activity"}
@@ -985,38 +1067,72 @@ function TimelineStep({
 function StartPanel() {
   const items = [
     {
-      title: "Tell TheOutHaven the full idea",
-      body: "Use a natural sentence with food, activity, location, budget, or vibe.",
+      icon: "✍️",
+      title: "Describe the night",
+      body: "Type one clear request with your food, activity, neighborhood, budget, and vibe.",
+      example: "Example: sushi and karaoke near Brooklyn for under $80",
     },
     {
-      title: "TheOutHaven separates the intent",
-      body: "A steak request is treated differently from bowling, karaoke, lounges, or brunch.",
+      icon: "📍",
+      title: "Add location context",
+      body: "Tap Use My Location for nearby picks, or include the city or area right in your search.",
+      example: "TheOutHaven uses that context to tighten distance and flow.",
     },
     {
-      title: "Get tighter matched cards",
-      body: "Results are ranked for fit, quality, distance, and outing flow.",
+      icon: "🌹",
+      title: "Pick your outing",
+      body: "Choose a restaurant card, then select the activity that best completes the plan.",
+      example: "Save the combo to review details and next actions.",
     },
   ];
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#0b0b0b] p-4 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-5">
+    <div className="relative w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.2),transparent_32%),#0b0b0b] p-4 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:mb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
+            How it works
+          </p>
+          <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
+            Build a better outing in 3 steps
+          </h2>
+        </div>
+        <p className="max-w-xl text-sm font-semibold leading-6 text-white/45">
+          Start broad, add location, then let TheOutHaven turn your idea into
+          dinner and experience cards you can actually use.
+        </p>
+      </div>
+
       <div className="grid w-full min-w-0 gap-3 sm:gap-4 md:grid-cols-3">
         {items.map((item, index) => (
           <div
             key={item.title}
-            className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            className="group relative min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] p-4 transition duration-300 hover:-translate-y-1 hover:border-[#e1062a]/45 hover:bg-white/[0.055] hover:shadow-[0_18px_44px_rgba(225,6,42,0.12)]"
           >
-            <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black text-white sm:mb-4 sm:h-9 sm:w-9">
-              {index + 1}
+            <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#e1062a]/10 blur-2xl transition group-hover:bg-[#e1062a]/20" />
+
+            <div className="relative mb-4 flex items-center justify-between gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#e1062a]/25 bg-[#e1062a]/15 text-xl shadow-lg shadow-red-950/20">
+                {item.icon}
+              </div>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black text-white ring-4 ring-[#e1062a]/15">
+                {index + 1}
+              </div>
             </div>
 
-            <h3 className="break-words text-base font-black tracking-[-0.02em] text-white">
+            <h3 className="relative break-words text-lg font-black tracking-[-0.03em] text-white">
               {item.title}
             </h3>
 
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
+            <p className="relative mt-2 text-sm font-semibold leading-6 text-white/58">
               {item.body}
             </p>
+
+            <div className="relative mt-4 rounded-xl border border-white/10 bg-black/35 px-3 py-2.5">
+              <p className="text-xs font-bold leading-5 text-red-50/75">
+                {item.example}
+              </p>
+            </div>
           </div>
         ))}
       </div>
@@ -1056,7 +1172,6 @@ function ResultSection({
 function ResultCard({
   index,
   type,
-  id,
   imageUrl,
   title,
   eyebrow,
@@ -1083,7 +1198,6 @@ function ResultCard({
 }: {
   index: number;
   type: "restaurant" | "activity";
-  id: string;
   imageUrl?: string;
   title: string;
   eyebrow: string;
@@ -1370,7 +1484,7 @@ function titleCase(value: string) {
     .join(" ");
 }
 
-function toArray(value: any): string[] {
+function toArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
