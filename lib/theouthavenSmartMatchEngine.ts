@@ -100,6 +100,7 @@ export const ACTIVITY_INTENTS: Record<string, string[]> = {
   spa: ["spa", "massage"],
   live_music: ["live music", "jazz", "concert", "music venue"],
   nightclub: ["nightclub", "night club", "club", "dance club"],
+  lounge: ["lounge", "cocktail lounge", "hookah lounge", "music lounge"],
   pool: ["pool", "billiards", "pool hall"],
   hookah: ["hookah", "hookah lounge", "shisha", "hookah bar"],
   cigar: ["cigar", "cigar lounge", "cigar bar", "smoke lounge"],
