@@ -1,7 +1,15 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import LocationsDashboardClient from "./LocationsDashboardClient";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Locations Dashboard",
+  description:
+    "Manage location listings, recommendations, and owner tools on TheOutHaven.",
+  path: "/locations/dashboard",
+  noIndex: true,
+});
 export const dynamic = "force-dynamic";
 
 type LocationType = "restaurant" | "activity";
@@ -33,21 +41,24 @@ function adminSupabase() {
       auth: {
         persistSession: false,
       },
-    }
+    },
   );
 }
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
 
-  const impersonatedLocationId =
-    cookieStore.get("theouthaven_impersonate_location_id")?.value;
+  const impersonatedLocationId = cookieStore.get(
+    "theouthaven_impersonate_location_id",
+  )?.value;
 
-  const impersonatedLocationType =
-    cookieStore.get("theouthaven_impersonate_location_type")?.value;
+  const impersonatedLocationType = cookieStore.get(
+    "theouthaven_impersonate_location_type",
+  )?.value;
 
-  const impersonatedUserId =
-    cookieStore.get("theouthaven_impersonate_user_id")?.value;
+  const impersonatedUserId = cookieStore.get(
+    "theouthaven_impersonate_user_id",
+  )?.value;
 
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
 

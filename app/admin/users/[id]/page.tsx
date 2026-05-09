@@ -2,7 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import LoginAsUserButton from "./LoginAsUserButton";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "User Admin Details",
+  description: "Review and update a TheOutHaven user in admin.",
+  path: "/admin/users",
+  noIndex: true,
+});
 export const dynamic = "force-dynamic";
 
 type PageProps = {
@@ -17,7 +24,7 @@ function adminSupabase() {
       auth: {
         persistSession: false,
       },
-    }
+    },
   );
 }
 
@@ -145,7 +152,9 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
             <h2 className="text-2xl font-bold">Saved Plans</h2>
 
             {!savedPlans || savedPlans.length === 0 ? (
-              <p className="mt-6 text-white/50">This user has no saved plans.</p>
+              <p className="mt-6 text-white/50">
+                This user has no saved plans.
+              </p>
             ) : (
               <div className="mt-6 space-y-4">
                 {savedPlans.map((plan: any) => (

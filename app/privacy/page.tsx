@@ -1,11 +1,12 @@
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { createMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Privacy Policy – TheOutHaven",
+export const metadata = createMetadata({
+  title: "Privacy Policy",
   description:
-    "Read TheOutHaven's Privacy Policy, including how TheOutHaven collects, uses, protects, and manages user information, location data, AI prompts, email, and SMS consent.",
-};
-
+    "Read TheOutHaven's Privacy Policy for details about how we collect, use, share, and protect information across our outing planner and business tools.",
+  path: "/privacy",
+});
 export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-black pb-28 text-white">
@@ -28,10 +29,10 @@ export default function PrivacyPage() {
           </p>
 
           <p className="mt-6 max-w-2xl text-base leading-7 text-white/60">
-            This Privacy Policy explains how TheOutHaven collects, uses, discloses,
-            and protects information when you use our website, applications,
-            AI outing planner, account features, restaurant and activity
-            recommendations, and related services.
+            This Privacy Policy explains how TheOutHaven collects, uses,
+            discloses, and protects information when you use our website,
+            applications, AI outing planner, account features, restaurant and
+            activity recommendations, and related services.
           </p>
         </div>
       </section>
@@ -42,10 +43,11 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-xl font-black text-white">1. Overview</h2>
               <p className="mt-2">
-                TheOutHaven respects your privacy. This Privacy Policy explains how
-                we collect, use, disclose, and protect information when you use
-                our website, applications, AI outing planner, account features,
-                restaurant and activity recommendations, and related services.
+                TheOutHaven respects your privacy. This Privacy Policy explains
+                how we collect, use, disclose, and protect information when you
+                use our website, applications, AI outing planner, account
+                features, restaurant and activity recommendations, and related
+                services.
               </p>
             </section>
 
@@ -73,9 +75,9 @@ export default function PrivacyPage() {
                 3. How We Use Information
               </h2>
               <p className="mt-2">
-                We use information to provide and improve TheOutHaven, create and
-                manage accounts, personalize outing recommendations, generate AI
-                responses, save preferences, improve search results,
+                We use information to provide and improve TheOutHaven, create
+                and manage accounts, personalize outing recommendations,
+                generate AI responses, save preferences, improve search results,
                 communicate with users, protect the platform, prevent fraud,
                 analyze usage, and send updates or promotional messages where
                 permitted.
@@ -88,8 +90,8 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 If you provide your phone number and opt in, you agree to
-                receive SMS messages from TheOutHaven about account updates, outing
-                recommendations, reminders, promotions, and offers.
+                receive SMS messages from TheOutHaven about account updates,
+                outing recommendations, reminders, promotions, and offers.
               </p>
               <p className="mt-2">
                 Message frequency varies. Message and data rates may apply.
@@ -122,9 +124,9 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 We may share information with service providers who help us
-                operate TheOutHaven, including hosting, authentication, analytics,
-                email delivery, SMS delivery, payments, fraud prevention,
-                customer support, and database services.
+                operate TheOutHaven, including hosting, authentication,
+                analytics, email delivery, SMS delivery, payments, fraud
+                prevention, customer support, and database services.
               </p>
               <p className="mt-2">
                 We may also disclose information if required by law, to protect
@@ -139,9 +141,9 @@ export default function PrivacyPage() {
                 7. No Sale of Personal Information
               </h2>
               <p className="mt-2">
-                TheOutHaven does not sell your personal information. TheOutHaven does
-                not sell, rent, or share SMS opt-in data or mobile numbers with
-                third parties for marketing purposes.
+                TheOutHaven does not sell your personal information. TheOutHaven
+                does not sell, rent, or share SMS opt-in data or mobile numbers
+                with third parties for marketing purposes.
               </p>
             </section>
 
@@ -223,10 +225,10 @@ export default function PrivacyPage() {
                 14. Third-Party Links
               </h2>
               <p className="mt-2">
-                TheOutHaven may link to restaurants, venues, reservation platforms,
-                maps, event websites, and other third-party services. Their
-                privacy practices are governed by their own policies, not this
-                Privacy Policy.
+                TheOutHaven may link to restaurants, venues, reservation
+                platforms, maps, event websites, and other third-party services.
+                Their privacy practices are governed by their own policies, not
+                this Privacy Policy.
               </p>
             </section>
 
@@ -236,8 +238,8 @@ export default function PrivacyPage() {
               </h2>
               <p className="mt-2">
                 We may update this Privacy Policy from time to time. Continued
-                use of TheOutHaven after updates means you acknowledge the revised
-                policy.
+                use of TheOutHaven after updates means you acknowledge the
+                revised policy.
               </p>
             </section>
 

@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Saved Plan Details",
+  description: "View a saved TheOutHaven outing plan.",
+  path: "/user/saved",
+  noIndex: true,
+});
 type PageProps = {
   params: Promise<{ id: string }>;
 };

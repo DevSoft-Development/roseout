@@ -2,7 +2,15 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ReserveLiveRefresh from "@/components/ReserveLiveRefresh";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Reservations Dashboard",
+  description:
+    "Manage reservations and booking activity on TheOutHaven Reserve.",
+  path: "/reserve/dashboard",
+  noIndex: true,
+});
 type ReservationItem = {
   id: string;
   name: string | null;
@@ -57,7 +65,7 @@ function getReservationDay(value: string) {
 
 function getDuration(
   reservation: ReservationItem,
-  durationMap: Record<string, number>
+  durationMap: Record<string, number>,
 ) {
   if (reservation.duration_minutes) return reservation.duration_minutes;
 
@@ -100,7 +108,7 @@ export default async function ReserveDashboardPage() {
   const { data: reservations } = await supabase
     .from("reservations")
     .select(
-      "id, name, party_size, reservation_time, status, duration_minutes, location_id, location_type"
+      "id, name, party_size, reservation_time, status, duration_minutes, location_id, location_type",
     )
     .gte("reservation_time", todayStart.toISOString())
     .lte("reservation_time", weekEnd.toISOString())
@@ -144,7 +152,7 @@ export default async function ReserveDashboardPage() {
   const todaysReservations = safeReservations.filter(
     (item) =>
       new Date(item.reservation_time) >= todayStart &&
-      new Date(item.reservation_time) <= todayEnd
+      new Date(item.reservation_time) <= todayEnd,
   );
 
   const capacityBookedNow = todaysReservations
@@ -153,7 +161,7 @@ export default async function ReserveDashboardPage() {
       const duration = getDuration(item, durationMap);
 
       const reservationEnd = new Date(
-        reservationTime.getTime() + duration * 60000
+        reservationTime.getTime() + duration * 60000,
       );
 
       return now >= reservationTime && now <= reservationEnd;
@@ -162,22 +170,21 @@ export default async function ReserveDashboardPage() {
 
   const availableCapacitySlots = Math.max(
     0,
-    totalCapacitySlots - capacityBookedNow
+    totalCapacitySlots - capacityBookedNow,
   );
 
   const availabilityPercentage = Math.round(
-    (availableCapacitySlots / totalCapacitySlots) * 100
+    (availableCapacitySlots / totalCapacitySlots) * 100,
   );
 
-  const groupedByDay = safeReservations.reduce<Record<string, ReservationItem[]>>(
-    (acc, item) => {
-      const key = getReservationDay(item.reservation_time);
-      acc[key] = acc[key] || [];
-      acc[key].push(item);
-      return acc;
-    },
-    {}
-  );
+  const groupedByDay = safeReservations.reduce<
+    Record<string, ReservationItem[]>
+  >((acc, item) => {
+    const key = getReservationDay(item.reservation_time);
+    acc[key] = acc[key] || [];
+    acc[key].push(item);
+    return acc;
+  }, {});
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
@@ -334,7 +341,7 @@ export default async function ReserveDashboardPage() {
                       <div>
                         <span
                           className={`inline-flex rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(
-                            item.status
+                            item.status,
                           )}`}
                         >
                           {item.status || "pending"}
@@ -407,7 +414,9 @@ export default async function ReserveDashboardPage() {
                 className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
                 <p className="font-black">Support Tickets</p>
-                <p className="mt-1 text-xs text-white/45">Submit, reply, view</p>
+                <p className="mt-1 text-xs text-white/45">
+                  Submit, reply, view
+                </p>
               </Link>
             </div>
           </div>

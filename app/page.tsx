@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "AI Outing Planner for Dates, Dining & Activities",
+  description:
+    "Discover restaurants, activities, and experiences tailored to your vibe, budget, mood, and location with TheOutHaven.",
+  path: "/",
+});
 export const dynamic = "force-dynamic";
 
 function adminSupabase() {
@@ -12,7 +19,7 @@ function adminSupabase() {
       auth: {
         persistSession: false,
       },
-    }
+    },
   );
 }
 
@@ -22,7 +29,7 @@ export default async function HomePage() {
   const { data: topRestaurants } = await supabase
     .from("restaurants")
     .select(
-      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score"
+      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score",
     )
     .eq("ranking_badge", "Top 10%")
     .order("theouthaven_score", { ascending: false })
@@ -31,7 +38,7 @@ export default async function HomePage() {
   const { data: trendingRestaurants } = await supabase
     .from("restaurants")
     .select(
-      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score"
+      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score",
     )
     .order("trend_score", { ascending: false })
     .limit(4);
@@ -39,7 +46,7 @@ export default async function HomePage() {
   const { data: highIntentPicks } = await supabase
     .from("restaurants")
     .select(
-      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score"
+      "id,restaurant_name,name,cuisine,city,state,image_url,photo_url,theouthaven_score,ranking_badge,trend_score,conversion_score",
     )
     .order("conversion_score", { ascending: false })
     .limit(4);
@@ -195,9 +202,9 @@ export default async function HomePage() {
             </h2>
 
             <p className="mt-5 text-lg leading-8 text-black/65">
-              TheOutHaven ranks places by real behavior — what people view, click,
-              save, reserve, and return to. That means better recommendations
-              and faster decisions.
+              TheOutHaven ranks places by real behavior — what people view,
+              click, save, reserve, and return to. That means better
+              recommendations and faster decisions.
             </p>
           </div>
 
@@ -223,8 +230,8 @@ export default async function HomePage() {
           </h2>
 
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/55">
-            Stop scrolling. Tell TheOutHaven what you want and get a polished plan
-            in seconds.
+            Stop scrolling. Tell TheOutHaven what you want and get a polished
+            plan in seconds.
           </p>
 
           <Link
@@ -235,12 +242,9 @@ export default async function HomePage() {
           </Link>
         </div>
       </section>
-
-    
     </main>
   );
 }
-
 
 function CompactRankingSection({
   title,

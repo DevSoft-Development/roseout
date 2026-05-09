@@ -2,7 +2,15 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Saved Plans",
+  description:
+    "Review the outing plans and recommendations you saved on TheOutHaven.",
+  path: "/user/saved",
+  noIndex: true,
+});
 export default async function SavedPlansPage() {
   const {
     data: { user },
@@ -20,7 +28,7 @@ export default async function SavedPlansPage() {
 
   return (
     <main className="min-h-screen bg-[#0b0507] px-6 py-10 text-white">
-       <TheOutHavenHeader />
+      <TheOutHavenHeader />
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex items-center justify-between">
           <div>

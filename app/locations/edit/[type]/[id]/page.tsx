@@ -1,5 +1,12 @@
 import { redirect } from "next/navigation";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Edit Location",
+  description: "Update location listing details on TheOutHaven.",
+  path: "/locations/edit",
+  noIndex: true,
+});
 type RedirectPageProps = {
   params: Promise<{
     type: string;
@@ -17,7 +24,9 @@ function canonicalLocationType(value: string) {
   return value;
 }
 
-function buildQueryString(searchParams: Record<string, string | string[] | undefined>) {
+function buildQueryString(
+  searchParams: Record<string, string | string[] | undefined>,
+) {
   const query = new URLSearchParams();
 
   Object.entries(searchParams).forEach(([key, value]) => {
@@ -42,7 +51,7 @@ export default async function LegacyEditLocationRedirect({
 
   redirect(
     `/locations/${canonicalLocationType(type)}/${encodeURIComponent(id)}/edit${buildQueryString(
-      resolvedSearchParams
-    )}`
+      resolvedSearchParams,
+    )}`,
   );
 }

@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Dashboard",
+  description: "Manage TheOutHaven activity from your dashboard.",
+  path: "/dashboard",
+  noIndex: true,
+});
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString();
 }

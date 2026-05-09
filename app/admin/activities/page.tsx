@@ -1,5 +1,12 @@
 import { redirect } from "next/navigation";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Activities Admin",
+  description: "Manage activity listings in TheOutHaven admin.",
+  path: "/admin/activities",
+  noIndex: true,
+});
 export const dynamic = "force-dynamic";
 
 type PageProps = {

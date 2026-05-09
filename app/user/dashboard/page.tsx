@@ -5,7 +5,15 @@ import { createClient } from "@supabase/supabase-js";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "User Dashboard",
+  description:
+    "View your TheOutHaven profile, saved plans, and personalized outing activity.",
+  path: "/user/dashboard",
+  noIndex: true,
+});
 export const dynamic = "force-dynamic";
 
 type SavedPlan = {
@@ -15,7 +23,6 @@ type SavedPlan = {
   created_at?: string | null;
 };
 
-
 function adminSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,7 +31,7 @@ function adminSupabase() {
       auth: {
         persistSession: false,
       },
-    }
+    },
   );
 }
 
@@ -32,7 +39,7 @@ export default async function UserDashboardPage() {
   const cookieStore = await cookies();
 
   const impersonatedUserId = cookieStore.get(
-    "theouthaven_impersonate_user_id"
+    "theouthaven_impersonate_user_id",
   )?.value;
 
   const supabase = adminSupabase();
@@ -201,9 +208,7 @@ export default async function UserDashboardPage() {
                   🌹
                 </div>
 
-                <h3 className="mt-5 text-2xl font-black">
-                  No saved plans yet
-                </h3>
+                <h3 className="mt-5 text-2xl font-black">No saved plans yet</h3>
 
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">
                   Start with a restaurant, activity, or full date-night plan.
@@ -334,8 +339,8 @@ export default async function UserDashboardPage() {
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-white/55">
-                Tell TheOutHaven what mood, borough, budget, and vibe you want. Get
-                a polished plan in seconds.
+                Tell TheOutHaven what mood, borough, budget, and vibe you want.
+                Get a polished plan in seconds.
               </p>
 
               <TrackedButton

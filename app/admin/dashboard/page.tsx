@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import { createMetadata } from "@/lib/seo";
 
+export const metadata = createMetadata({
+  title: "Admin Dashboard",
+  description: "Manage TheOutHaven operations from the admin dashboard.",
+  path: "/admin/dashboard",
+  noIndex: true,
+});
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString();
 }
@@ -31,8 +38,10 @@ export default async function CentralDashboardPage() {
     .select("id", { count: "exact", head: true })
     .eq("claimed", true);
 
-  const totalLocations = Number(totalRestaurants || 0) + Number(totalActivities || 0);
-  const totalClaimed = Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
+  const totalLocations =
+    Number(totalRestaurants || 0) + Number(totalActivities || 0);
+  const totalClaimed =
+    Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
 
   const navCards = [
     {
