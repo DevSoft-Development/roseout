@@ -6,7 +6,6 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
-import { clampScore } from "@/lib/clampScore";
 
 type RestaurantCard = {
   id: string;
@@ -17,22 +16,17 @@ type RestaurantCard = {
   zip_code?: string | null;
   cuisine?: string | null;
   food_type?: string | null;
-  cuisine_tags?: string[] | null;
   atmosphere?: string | null;
   price_range?: string | null;
-  theouthaven_score: number;
-  smart_match_score?: number | null;
   reservation_link?: string | null;
   reservation_url?: string | null;
   website?: string | null;
   image_url?: string | null;
   rating?: number | null;
-  review_count?: number | null;
   review_score?: number | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
   primary_tag?: string | null;
-  date_style_tags?: string[] | null;
   distance_miles?: number | null;
 };
 
@@ -47,19 +41,15 @@ type ActivityCard = {
   price_range?: string | null;
   atmosphere?: string | null;
   group_friendly?: boolean | null;
-  theouthaven_score: number;
-  smart_match_score?: number | null;
   reservation_link?: string | null;
   reservation_url?: string | null;
   website?: string | null;
   image_url?: string | null;
   rating?: number | null;
-  review_count?: number | null;
   review_score?: number | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
   primary_tag?: string | null;
-  date_style_tags?: string[] | null;
   distance_miles?: number | null;
 };
 
@@ -82,6 +72,7 @@ type UserLocation = {
 };
 
 const LOCATION_KEY = "theouthaven_user_location";
+const RESULT_CARD_UI_VERSION = "results-card-clean-v2";
 
 const typingSearches = [
   "Steak dinner with bowling in Queens",
@@ -94,6 +85,9 @@ const typingSearches = [
   "Fun date night with arcade games",
 ];
 
+const formatTypingPrompt = (prompt: string) => `${prompt} ....`;
+const INITIAL_TYPING_PROMPT = formatTypingPrompt(typingSearches[0]);
+
 const loadingLines = [
   "Matching your vibe...",
   "Checking food and activity signals...",
@@ -105,7 +99,9 @@ export default function CreatePage() {
   const router = useRouter();
 
   const [input, setInput] = useState("");
-  const [typedPlaceholder, setTypedPlaceholder] = useState("");
+  const [typedPlaceholder, setTypedPlaceholder] = useState(
+    INITIAL_TYPING_PROMPT
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
@@ -150,27 +146,30 @@ export default function CreatePage() {
 
     function typeLoop() {
       const currentSearch = typingSearches[searchIndex];
+      const fullPrompt = formatTypingPrompt(currentSearch);
 
       if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
+        setTypedPlaceholder(fullPrompt.slice(0, charIndex + 1));
         charIndex++;
 
-        if (charIndex === currentSearch.length) {
+        if (charIndex === fullPrompt.length) {
           deleting = true;
           timeout = setTimeout(typeLoop, 1300);
           return;
         }
       } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
+        setTypedPlaceholder(fullPrompt.slice(0, charIndex - 1));
         charIndex--;
 
         if (charIndex === 0) {
           deleting = false;
           searchIndex = (searchIndex + 1) % typingSearches.length;
+          timeout = setTimeout(typeLoop, 260);
+          return;
         }
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      timeout = setTimeout(typeLoop, deleting ? 32 : 55);
     }
 
     typeLoop();
@@ -418,7 +417,7 @@ export default function CreatePage() {
             </div>
 
             <h1 className="max-w-full break-words text-[2.45rem] font-black leading-[0.92] tracking-[-0.055em] text-white xs:text-4xl sm:text-6xl lg:text-7xl">
-              Plan less. <span className="text-[#e1062a]">TheOutHaven</span> more.
+              Your next outing, planned smarter.
             </h1>
 
             <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:mt-4 sm:text-base">
@@ -446,10 +445,10 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell TheOutHaven what you want..."}
+                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
+                    <span>
+                      {typedPlaceholder}
+                    </span>
                   </div>
                 )}
 
@@ -586,7 +585,6 @@ export default function CreatePage() {
                           key={restaurantId || restaurantIndex}
                           index={restaurantIndex}
                           type="restaurant"
-                          id={restaurantId}
                           imageUrl={restaurant.image_url || undefined}
                           title={restaurant.restaurant_name}
                           eyebrow={
@@ -596,19 +594,10 @@ export default function CreatePage() {
                           }
                           address={formatAddress(restaurant)}
                           rating={restaurant.rating}
-                          reviewCount={restaurant.review_count}
                           reviewKeywords={restaurant.review_keywords}
                           reviewSnippet={restaurant.review_snippet}
                           primaryTag={restaurant.primary_tag}
-                          tags={[
-                            ...(restaurant.cuisine_tags || []),
-                            ...(restaurant.date_style_tags || []),
-                          ]}
                           distance={restaurant.distance_miles}
-                          score={
-                            restaurant.smart_match_score ||
-                            restaurant.theouthaven_score
-                          }
                           selected={isSelected}
                           priority={restaurantIndex === 0}
                           selectLabel={isSelected ? "Selected" : "Select"}
@@ -650,22 +639,15 @@ export default function CreatePage() {
                             key={activityId || activityIndex}
                             index={activityIndex}
                             type="activity"
-                            id={activityId}
                             imageUrl={activity.image_url || undefined}
                             title={activity.activity_name}
                             eyebrow={activity.activity_type || "Activity"}
                             address={formatAddress(activity)}
                             rating={activity.rating}
-                            reviewCount={activity.review_count}
                             reviewKeywords={activity.review_keywords}
                             reviewSnippet={activity.review_snippet}
                             primaryTag={activity.primary_tag}
-                            tags={activity.date_style_tags || []}
                             distance={activity.distance_miles}
-                            score={
-                              activity.smart_match_score ||
-                              activity.theouthaven_score
-                            }
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -985,38 +967,70 @@ function TimelineStep({
 function StartPanel() {
   const items = [
     {
-      title: "Tell TheOutHaven the full idea",
-      body: "Use a natural sentence with food, activity, location, budget, or vibe.",
+      icon: "💬",
+      step: "01",
+      title: "Describe the whole outing",
+      body: "Type the food, activity, neighborhood, budget, or vibe in one sentence.",
+      example: "Example: romantic dinner and karaoke in Queens",
     },
     {
-      title: "TheOutHaven separates the intent",
-      body: "A steak request is treated differently from bowling, karaoke, lounges, or brunch.",
+      icon: "✨",
+      step: "02",
+      title: "Let TheOutHaven sort the fit",
+      body: "We separate dinner, activities, location, and vibe so the results feel intentional.",
+      example: "Try: affordable birthday brunch with games",
     },
     {
-      title: "Get tighter matched cards",
-      body: "Results are ranked for fit, quality, distance, and outing flow.",
+      icon: "🗺️",
+      step: "03",
+      title: "Pick your plan faster",
+      body: "Choose a restaurant, add an experience, then review the full outing flow.",
+      example: "Tip: add a borough, city, or nearby request",
     },
   ];
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#0b0b0b] p-4 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-5">
+    <div className="w-full max-w-full overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.18),transparent_34%),linear-gradient(135deg,#101010_0%,#060606_100%)] p-4 shadow-2xl shadow-black/45 sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
+            How it works
+          </p>
+          <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
+            Plan your outing in one serach.
+          </h2>
+        </div>
+      </div>
+
       <div className="grid w-full min-w-0 gap-3 sm:gap-4 md:grid-cols-3">
-        {items.map((item, index) => (
+        {items.map((item) => (
           <div
-            key={item.title}
-            className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            key={item.step}
+            className="group min-w-0 rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/20 transition hover:border-[#e1062a]/35 hover:bg-white/[0.065] sm:p-5"
           >
-            <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black text-white sm:mb-4 sm:h-9 sm:w-9">
-              {index + 1}
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/45 text-xl shadow-inner shadow-white/5">
+                {item.icon}
+              </div>
+
+              <span className="rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-100/75">
+                {item.step}
+              </span>
             </div>
 
-            <h3 className="break-words text-base font-black tracking-[-0.02em] text-white">
+            <h3 className="break-words text-lg font-black tracking-[-0.03em] text-white">
               {item.title}
             </h3>
 
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/55">
               {item.body}
             </p>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
+              <p className="text-xs font-bold leading-5 text-white/62">
+                {item.example}
+              </p>
+            </div>
           </div>
         ))}
       </div>
@@ -1056,19 +1070,15 @@ function ResultSection({
 function ResultCard({
   index,
   type,
-  id,
   imageUrl,
   title,
   eyebrow,
   address,
   rating,
-  reviewCount,
   reviewKeywords,
   reviewSnippet,
   primaryTag,
-  tags,
   distance,
-  score,
   selected,
   priority,
   selectLabel,
@@ -1083,19 +1093,15 @@ function ResultCard({
 }: {
   index: number;
   type: "restaurant" | "activity";
-  id: string;
   imageUrl?: string;
   title: string;
   eyebrow: string;
   address: string;
   rating?: number | null;
-  reviewCount?: number | null;
   reviewKeywords?: string[] | null;
   reviewSnippet?: string | null;
   primaryTag?: string | null;
-  tags?: string[] | null;
   distance?: number | null;
-  score: number;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1108,17 +1114,6 @@ function ResultCard({
   reservationLabel?: string;
   onReservation?: () => void;
 }) {
-  const safeScore = clampScore(score || 0);
-  const cleanTags = getDisplayTags({
-    type,
-    eyebrow,
-    primaryTag,
-    tags,
-    reviewKeywords,
-    reviewSnippet,
-    title,
-  });
-
   const whyPicked = getWhyPicked({
     primaryTag,
     reviewKeywords,
@@ -1126,10 +1121,9 @@ function ResultCard({
     type,
   });
 
-  const cleanReviewKeywords = toArray(reviewKeywords).slice(0, 2);
-
   return (
     <article
+      data-ui-version={RESULT_CARD_UI_VERSION}
       className={`group relative flex h-full min-h-[420px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.05rem] border bg-[#101010] shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[445px] sm:rounded-[1.1rem] ${
         selected
           ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
@@ -1158,28 +1152,6 @@ function ResultCard({
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
-        <div className="absolute left-2.5 top-2.5 rounded-full border border-white/10 bg-black/75 px-2.5 py-1.5 backdrop-blur-xl sm:left-3 sm:top-3 sm:px-3">
-          <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/45 sm:text-[10px] sm:tracking-[0.18em]">
-            Match
-          </p>
-          <p className="text-xs font-black text-white sm:text-sm">
-            {Math.round(safeScore)}
-          </p>
-        </div>
-
-        <div className="absolute right-2.5 top-2.5 flex max-w-[64%] flex-wrap justify-end gap-1 sm:right-3 sm:top-3 sm:gap-1.5">
-          {cleanTags.slice(0, 2).map((tag) => (
-            <span
-              key={`${tag.label}-${tag.tone}`}
-              className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.06em] backdrop-blur-md sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.08em] ${tagToneClass(
-                tag.tone
-              )}`}
-            >
-              {tag.label}
-            </span>
-          ))}
-        </div>
-
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 sm:bottom-3 sm:right-3 sm:gap-1.5">
           {distance !== null && distance !== undefined ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
@@ -1201,12 +1173,6 @@ function ResultCard({
             <p className="line-clamp-1 min-w-0 text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
               {titleCase(eyebrow || type)}
             </p>
-
-            {reviewCount ? (
-              <p className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[9px] font-black uppercase text-white/40 sm:px-2.5 sm:py-1 sm:text-[10px]">
-                {formatCount(reviewCount)}
-              </p>
-            ) : null}
           </div>
 
           <Link href={detailsHref} onClick={onDetails}>
@@ -1218,17 +1184,6 @@ function ResultCard({
           <p className="mt-1.5 line-clamp-2 min-h-[36px] break-words text-xs font-semibold leading-5 text-white/42 sm:min-h-[38px]">
             {address || "Location details available on the listing."}
           </p>
-
-          <div className="mt-2 flex min-h-[22px] flex-wrap gap-1 sm:min-h-[24px] sm:gap-1.5">
-            {cleanTags.slice(0, 3).map((tag) => (
-              <span
-                key={`mini-${tag.label}-${tag.tone}`}
-                className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold text-white/56 sm:px-2.5 sm:py-1 sm:text-[11px]"
-              >
-                {tag.label}
-              </span>
-            ))}
-          </div>
         </div>
 
         <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
@@ -1238,25 +1193,6 @@ function ResultCard({
           <p className="mt-1.5 line-clamp-2 break-words text-[11px] font-semibold leading-4 text-white/62 sm:text-xs sm:leading-5">
             {whyPicked}
           </p>
-        </div>
-
-        <div className="mt-2 min-h-[24px] sm:min-h-[26px]">
-          {cleanReviewKeywords.length > 0 ? (
-            <div className="flex flex-wrap gap-1 sm:gap-1.5">
-              {cleanReviewKeywords.map((keyword) => (
-                <span
-                  key={keyword}
-                  className="rounded-full border border-[#e1062a]/20 bg-[#e1062a]/10 px-2 py-0.5 text-[10px] font-bold text-red-100/85 sm:px-2.5 sm:py-1 sm:text-[11px]"
-                >
-                  {keyword}
-                </span>
-              ))}
-            </div>
-          ) : primaryTag ? (
-            <p className="line-clamp-1 text-xs font-black text-white/65">
-              ✨ {titleCase(primaryTag)}
-            </p>
-          ) : null}
         </div>
 
         <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
@@ -1354,10 +1290,6 @@ function formatAddress(item: {
     .join(", ");
 }
 
-function formatCount(value: number) {
-  if (value >= 1000) return `${Math.round(value / 100) / 10}k`;
-  return String(value);
-}
 
 function titleCase(value: string) {
   return value
@@ -1381,129 +1313,6 @@ function toArray(value: any): string[] {
   }
 
   return [];
-}
-
-function getDisplayTags({
-  type,
-  eyebrow,
-  primaryTag,
-  tags,
-  reviewKeywords,
-  reviewSnippet,
-  title,
-}: {
-  type: "restaurant" | "activity";
-  eyebrow?: string | null;
-  primaryTag?: string | null;
-  tags?: string[] | null;
-  reviewKeywords?: string[] | null;
-  reviewSnippet?: string | null;
-  title?: string | null;
-}) {
-  const sourceText = [
-    type,
-    eyebrow,
-    primaryTag,
-    ...(tags || []),
-    ...(reviewKeywords || []),
-    reviewSnippet,
-    title,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  const results: { label: string; tone: "rose" | "gold" | "purple" }[] = [];
-
-  const add = (label: string, tone: "rose" | "gold" | "purple") => {
-    if (
-      !results.some(
-        (item) => item.label.toLowerCase() === label.toLowerCase()
-      )
-    ) {
-      results.push({ label, tone });
-    }
-  };
-
-  if (sourceText.includes("luxury") || sourceText.includes("upscale")) {
-    add("Luxury", "gold");
-  }
-
-  if (
-    sourceText.includes("fine dining") ||
-    sourceText.includes("steak") ||
-    sourceText.includes("restaurant") ||
-    sourceText.includes("dinner") ||
-    sourceText.includes("food")
-  ) {
-    add("Full Dining", "rose");
-  }
-
-  if (
-    sourceText.includes("nightlife") ||
-    sourceText.includes("lounge") ||
-    sourceText.includes("cocktail") ||
-    sourceText.includes("bar") ||
-    sourceText.includes("club")
-  ) {
-    add("Nightlife", "purple");
-  }
-
-  if (
-    sourceText.includes("romantic") ||
-    sourceText.includes("intimate") ||
-    sourceText.includes("anniversary")
-  ) {
-    add("Romantic", "rose");
-  }
-
-  if (sourceText.includes("birthday") || sourceText.includes("celebration")) {
-    add("Birthday", "rose");
-  }
-
-  if (sourceText.includes("rooftop") || sourceText.includes("skyline")) {
-    add("Rooftop", "gold");
-  }
-
-  if (sourceText.includes("brunch") || sourceText.includes("breakfast")) {
-    add("Brunch", "rose");
-  }
-
-  if (
-    sourceText.includes("bowling") ||
-    sourceText.includes("arcade") ||
-    sourceText.includes("karaoke") ||
-    sourceText.includes("comedy") ||
-    sourceText.includes("fun")
-  ) {
-    add("Fun", "purple");
-  }
-
-  if (sourceText.includes("hookah") || sourceText.includes("shisha")) {
-    add("Hookah", "purple");
-  }
-
-  if (sourceText.includes("cigar")) {
-    add("Cigar", "gold");
-  }
-
-  if (results.length === 0) {
-    add(titleCase(primaryTag || eyebrow || type), "rose");
-  }
-
-  return results.slice(0, 3);
-}
-
-function tagToneClass(tone: "rose" | "gold" | "purple") {
-  if (tone === "gold") {
-    return "border-amber-300/40 bg-amber-300/20 text-amber-100";
-  }
-
-  if (tone === "purple") {
-    return "border-fuchsia-400/35 bg-fuchsia-500/18 text-fuchsia-100";
-  }
-
-  return "border-[#e1062a]/45 bg-[#e1062a]/22 text-red-50";
 }
 
 function getWhyPicked({
