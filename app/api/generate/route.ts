@@ -325,6 +325,146 @@ function normalizeLocation(item: any) {
   };
 }
 
+const QUEENS_LOCATION_ALIASES = [
+  "astoria",
+  "long island city",
+  "lic",
+  "sunnyside",
+  "woodside",
+  "jackson heights",
+  "elmhurst",
+  "east elmhurst",
+  "corona",
+  "flushing",
+  "bayside",
+  "whitestone",
+  "college point",
+  "forest hills",
+  "rego park",
+  "kew gardens",
+  "fresh meadows",
+  "jamaica",
+  "jamaica estates",
+  "hollis",
+  "queens village",
+  "laurelton",
+  "cambria heights",
+  "st albans",
+  "springfield gardens",
+  "ozone park",
+  "south ozone park",
+  "richmond hill",
+  "south richmond hill",
+  "woodhaven",
+  "ridgewood",
+  "middle village",
+  "maspeth",
+  "glendale",
+  "bellerose",
+  "briarwood",
+  "douglaston",
+  "little neck",
+  "howard beach",
+  "rockaway",
+  "far rockaway",
+  "belle harbor",
+  "rockaway beach",
+  "arverne",
+];
+
+const NASSAU_LOCATION_ALIASES = [
+  "hempstead",
+  "north hempstead",
+  "oyster bay",
+  "garden city",
+  "mineola",
+  "freeport",
+  "long beach",
+  "rockville centre",
+  "valley stream",
+  "elmont",
+  "uniondale",
+  "westbury",
+  "hicksville",
+  "massapequa",
+  "levittown",
+  "bethpage",
+  "farmingdale",
+  "great neck",
+  "manhasset",
+  "port washington",
+  "roslyn",
+  "syosset",
+  "plainview",
+  "woodbury",
+  "jericho",
+  "wantagh",
+  "merrick",
+  "bellmore",
+  "oceanside",
+  "lynbrook",
+  "malverne",
+];
+
+const SUFFOLK_LOCATION_ALIASES = [
+  "babylon",
+  "deer park",
+  "ronkonkoma",
+  "patchogue",
+  "huntington",
+  "island park",
+  "smithtown",
+  "commack",
+  "bay shore",
+  "islip",
+  "east islip",
+  "sayville",
+  "hauppauge",
+  "melville",
+  "riverhead",
+  "hampton bays",
+  "southampton",
+  "east hampton",
+  "montauk",
+  "greenport",
+];
+
+const LONG_ISLAND_LOCATION_ALIASES = [
+  "nassau",
+  "nassau county",
+  "suffolk",
+  "suffolk county",
+  ...NASSAU_LOCATION_ALIASES,
+  ...SUFFOLK_LOCATION_ALIASES,
+];
+
+const LOCATION_AREA_ALIASES: Record<string, string[]> = {
+  queens: QUEENS_LOCATION_ALIASES,
+  "long island": LONG_ISLAND_LOCATION_ALIASES,
+  nassau: ["nassau county", ...NASSAU_LOCATION_ALIASES],
+  "nassau county": ["nassau", ...NASSAU_LOCATION_ALIASES],
+  suffolk: ["suffolk county", ...SUFFOLK_LOCATION_ALIASES],
+  "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
+};
+
+function expandDetectedLocations(detectedLocations: Iterable<string>) {
+  const expanded = new Set<string>();
+
+  Array.from(detectedLocations).forEach((location) => {
+    const normalizedLocation = normalizeQuery(location);
+
+    if (!normalizedLocation) return;
+
+    expanded.add(normalizedLocation);
+
+    (LOCATION_AREA_ALIASES[normalizedLocation] || []).forEach((alias) => {
+      expanded.add(normalizeQuery(alias));
+    });
+  });
+
+  return Array.from(expanded);
+}
+
 function detectLocation(input: string, locations: any[]) {
   const text = normalizeQuery(input);
   const found = new Set<string>();
@@ -545,25 +685,32 @@ function detectLocation(input: string, locations: any[]) {
     }
   });
 
-  return Array.from(found);
+  if (found.has("long island city") || found.has("lic")) {
+    found.delete("long island");
+  }
+
+  return expandDetectedLocations(found);
 }
 
 function matchesLocation(item: any, detectedLocations: string[]) {
   if (!detectedLocations || detectedLocations.length === 0) return true;
 
-  const searchable = [
-    item.city,
-    item.neighborhood,
-    item.borough,
-    item.state,
-    item.zip_code,
-    item.address,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  const searchable = normalizeQuery(
+    [
+      item.city,
+      item.neighborhood,
+      item.borough,
+      item.state,
+      item.zip_code,
+      item.address,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
 
-  return detectedLocations.some((location) => searchable.includes(location));
+  return detectedLocations.some((location) =>
+    searchable.includes(normalizeQuery(location))
+  );
 }
 
 function isTheOutHavenRelated(input: string) {
