@@ -13,6 +13,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
+const RESPONSE_CACHE_VERSION = "contact-v4";
 
 const OFF_TOPIC_REPLY =
   "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
@@ -740,6 +741,14 @@ const NON_OUTING_LOCATION_KEYWORDS = [
   "synagogue",
   "place of worship",
   "courthouse",
+  "city hall",
+  "government office",
+  "local government",
+  "municipal",
+  "police",
+  "fire station",
+  "post office",
+  "library",
   "police",
   "fire station",
   "post office",
@@ -1316,6 +1325,52 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   };
 }
 
+type NearbySortableLocation = {
+  distance_miles?: unknown;
+  theouthaven_score?: unknown;
+};
+
+function resultDistanceValue(item: NearbySortableLocation) {
+  const distance = Number(item.distance_miles);
+
+  return Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY;
+}
+
+function resultScoreValue(item: NearbySortableLocation) {
+  const score = Number(item.theouthaven_score);
+
+  return Number.isFinite(score) ? score : 0;
+}
+
+function sortLocationsNearFirst<T extends NearbySortableLocation>(
+  items: T[],
+  intent: ReturnType<typeof detectIntent>
+) {
+  const shouldPrioritizeNearby = Boolean(
+    (intent.userLat && intent.userLng) ||
+      intent.maxMiles ||
+      intent.locations.length
+  );
+
+  if (!shouldPrioritizeNearby) return items;
+
+  return [...items].sort((a, b) => {
+    const aMatchesLocation = matchesLocation(a, intent.locations);
+    const bMatchesLocation = matchesLocation(b, intent.locations);
+
+    if (aMatchesLocation !== bMatchesLocation) {
+      return aMatchesLocation ? -1 : 1;
+    }
+
+    const aDistance = resultDistanceValue(a);
+    const bDistance = resultDistanceValue(b);
+
+    if (aDistance !== bDistance) return aDistance - bDistance;
+
+    return resultScoreValue(b) - resultScoreValue(a);
+  });
+}
+
 function scoreRestaurant(
   item: any,
   input: string,
@@ -1756,6 +1811,22 @@ const usableLocations = locations.filter((item: any) => {
     restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
     activities = filterActivitiesByActivityIntent(activities, intent);
 
+    if (isLoungeActivityOnlyRequest(intent)) {
+      restaurants = [];
+      activities = sourceLocations.filter(
+        (item: any) =>
+          isOutingEligibleLocation(item) &&
+          isLoungeStyleLocation(item) &&
+          intent.activityIntents.some((activityIntent) =>
+            matchesActivityIntent(item, activityIntent)
+          )
+      );
+    }
+
+    if (isExplicitFoodAtLoungeRequest(intent)) {
+      restaurants = restaurants.filter(isLoungeStyleLocation);
+    }
+
     if (intent.locations.length > 0) {
       const locationRestaurants = restaurants.filter((item: any) =>
         matchesLocation(item, intent.locations)
@@ -1797,6 +1868,19 @@ const usableLocations = locations.filter((item: any) => {
         activities = forcedActivityMatches;
       }
     }
+
+    if (isLoungeActivityOnlyRequest(intent)) {
+      restaurants = [];
+    }
+
+    const dedupedLocationResults = removeDuplicateLocationsAcrossTypes(
+      restaurants,
+      activities,
+      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities"
+    );
+
+    restaurants = dedupedLocationResults.restaurants;
+    activities = dedupedLocationResults.activities;
 
     const rankedRestaurants = restaurants
       .map((restaurant: any) => {
@@ -1856,8 +1940,20 @@ const usableLocations = locations.filter((item: any) => {
             pairs: [],
           };
 
-    const topRestaurants = pairedResults.restaurants;
-    const topActivities = pairedResults.activities;
+    const finalDedupedResults = removeDuplicateLocationsAcrossTypes(
+      pairedResults.restaurants,
+      pairedResults.activities,
+      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities"
+    );
+
+    const topRestaurants = sortLocationsNearFirst(
+      finalDedupedResults.restaurants,
+      intent
+    );
+    const topActivities = sortLocationsNearFirst(
+      finalDedupedResults.activities,
+      intent
+    );
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
@@ -2052,6 +2148,8 @@ google_maps_url: item.google_maps_url || null,
         city: r.city,
         state: r.state,
         zip_code: r.zip_code,
+        latitude: r.latitude || null,
+        longitude: r.longitude || null,
         cuisine: r.cuisine || r.cuisine_type || null,
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
@@ -2082,6 +2180,8 @@ google_maps_url: item.google_maps_url || null,
         city: a.city,
         state: a.state,
         zip_code: a.zip_code,
+        latitude: a.latitude || null,
+        longitude: a.longitude || null,
         price_range: a.price_range,
         atmosphere: a.atmosphere,
         group_friendly: a.group_friendly,

@@ -14,6 +14,8 @@ type RestaurantCard = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   cuisine?: string | null;
   food_type?: string | null;
   atmosphere?: string | null;
@@ -38,6 +40,8 @@ type ActivityCard = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   price_range?: string | null;
   atmosphere?: string | null;
   group_friendly?: boolean | null;
@@ -66,23 +70,29 @@ type ApiResponse = {
   activities?: ActivityCard[];
 };
 
+type AddOnTarget = "restaurant" | "activity";
+
 type UserLocation = {
   latitude: number;
   longitude: number;
 };
 
 const LOCATION_KEY = "theouthaven_user_location";
+const RESULT_CARD_UI_VERSION = "results-card-clean-v2";
 
 const typingSearches = [
-  "Steak dinner with bowling in Queens",
-  "Romantic Italian dinner in Brooklyn",
+  "Steak restaurant with bowling in Queens",
+  "Romantic Italian restaurant in Brooklyn",
   "Birthday brunch with rooftop vibes",
   "Affordable date night near me",
-  "Sushi with karaoke after dinner",
-  "Luxury seafood dinner in Manhattan",
+  "Sushi with karaoke after the restaurant",
+  "Luxury seafood restaurant in Manhattan",
   "Hookah lounge with food nearby",
   "Fun date night with arcade games",
 ];
+
+const formatTypingPrompt = (prompt: string) => `${prompt}....`;
+const INITIAL_TYPING_PROMPT = formatTypingPrompt(typingSearches[0]);
 
 const loadingLines = [
   "Matching your vibe...",
@@ -95,10 +105,15 @@ export default function CreatePage() {
   const router = useRouter();
 
   const [input, setInput] = useState("");
-  const [typedPlaceholder, setTypedPlaceholder] = useState("");
+  const [addOnInput, setAddOnInput] = useState("");
+  const [typedPlaceholder, setTypedPlaceholder] = useState(
+    INITIAL_TYPING_PROMPT
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
+  const [activeAddOnTarget, setActiveAddOnTarget] =
+    useState<AddOnTarget | null>(null);
   const [error, setError] = useState("");
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<RestaurantCard | null>(null);
@@ -108,7 +123,12 @@ export default function CreatePage() {
   const [showPlanSummary, setShowPlanSummary] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const addOnInputRef = useRef<HTMLTextAreaElement | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
+  const addOnSearchRef = useRef<HTMLDivElement | null>(null);
+  const addOnLoadingRef = useRef<HTMLDivElement | null>(null);
+  const addOnRestaurantSectionRef = useRef<HTMLDivElement | null>(null);
+  const addOnActivitySectionRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const viewedItems = useRef<Set<string>>(new Set());
 
@@ -119,6 +139,10 @@ export default function CreatePage() {
   );
 
   const hasSelection = Boolean(selectedRestaurant || selectedActivity);
+  const hasResults = Boolean(
+    (latestAssistant?.restaurants?.length || 0) +
+      (latestAssistant?.activities?.length || 0)
+  );
 
   const selectedPlanText = [
     selectedRestaurant?.restaurant_name,
@@ -140,27 +164,30 @@ export default function CreatePage() {
 
     function typeLoop() {
       const currentSearch = typingSearches[searchIndex];
+      const fullPrompt = formatTypingPrompt(currentSearch);
 
       if (!deleting) {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex + 1));
+        setTypedPlaceholder(fullPrompt.slice(0, charIndex + 1));
         charIndex++;
 
-        if (charIndex === currentSearch.length) {
+        if (charIndex === fullPrompt.length) {
           deleting = true;
           timeout = setTimeout(typeLoop, 1300);
           return;
         }
       } else {
-        setTypedPlaceholder(currentSearch.slice(0, charIndex - 1));
+        setTypedPlaceholder(fullPrompt.slice(0, charIndex - 1));
         charIndex--;
 
         if (charIndex === 0) {
           deleting = false;
           searchIndex = (searchIndex + 1) % typingSearches.length;
+          timeout = setTimeout(typeLoop, 260);
+          return;
         }
       }
 
-      timeout = setTimeout(typeLoop, deleting ? 35 : 55);
+      timeout = setTimeout(typeLoop, deleting ? 32 : 55);
     }
 
     typeLoop();
@@ -258,8 +285,55 @@ export default function CreatePage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function scrollToResultsPanel() {
+    if (!resultsRef.current) return;
+
+    const top =
+      resultsRef.current.getBoundingClientRect().top + window.scrollY - 118;
+
+    window.scrollTo({
+      top: Math.max(top, 0),
+      behavior: "smooth",
+    });
+  }
+
+  function scrollToElement(element: HTMLElement | null) {
+    if (!element) return;
+
+    const top = element.getBoundingClientRect().top + window.scrollY - 118;
+
+    window.scrollTo({
+      top: Math.max(top, 0),
+      behavior: "smooth",
+    });
+  }
+
+  function scrollToAddOnSearchPanel() {
+    scrollToElement(addOnSearchRef.current);
+    window.setTimeout(() => addOnInputRef.current?.focus(), 300);
+  }
+
+  function scrollToAddOnLoadingCards() {
+    scrollToElement(addOnLoadingRef.current || addOnSearchRef.current);
+  }
+
+  function scrollToAddOnResultsSection(addOnTarget: AddOnTarget) {
+    const targetElement =
+      addOnTarget === "activity"
+        ? addOnActivitySectionRef.current
+        : addOnRestaurantSectionRef.current;
+
+    scrollToElement(targetElement || addOnSearchRef.current);
+  }
+
   function handleInputChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(event.target.value);
+  }
+
+  function handleAddOnInputChange(
+    event: React.ChangeEvent<HTMLTextAreaElement>
+  ) {
+    setAddOnInput(event.target.value);
   }
 
   function selectRestaurantAndMaybeScroll(restaurant: RestaurantCard) {
@@ -284,26 +358,36 @@ export default function CreatePage() {
     setShowPlanSummary(false);
   }
 
-  async function handleSubmit(event?: React.FormEvent) {
-    event?.preventDefault();
-
-    const cleanInput = input.trim();
-
+  async function submitSearch(
+    cleanInput: string,
+    options: { addOnTarget?: AddOnTarget; preservePlan?: boolean } = {}
+  ) {
     if (!cleanInput || loading) return;
 
+    const { addOnTarget, preservePlan = false } = options;
+    const previousAssistant = latestAssistant;
+
     setLoading(true);
+    setActiveAddOnTarget(addOnTarget || null);
     setError("");
     setShowPlanSummary(false);
-    setSelectedRestaurant(null);
-    setSelectedActivity(null);
+
+    if (!preservePlan) {
+      setSelectedRestaurant(null);
+      setSelectedActivity(null);
+    }
 
     const userMessage: Message = {
       role: "user",
-      content: cleanInput,
+      content: addOnTarget ? `Add-on search: ${cleanInput}` : cleanInput,
     };
 
     setMessages((current) => [...current, userMessage]);
-    setInput("");
+
+    setTimeout(
+      addOnTarget ? scrollToAddOnLoadingCards : scrollToResultsPanel,
+      140
+    );
 
     try {
       const savedLocation = getSavedLocation();
@@ -333,28 +417,76 @@ export default function CreatePage() {
         throw new Error(data.error || "TheOutHaven could not create results.");
       }
 
+      const previousRestaurants = previousAssistant?.restaurants || [];
+      const previousActivities = previousAssistant?.activities || [];
+      const responseRestaurants = data.restaurants || [];
+      const responseActivities = data.activities || [];
+
+      const dedupedResults = dedupeSearchResults({
+        restaurants:
+          addOnTarget === "activity" && previousRestaurants.length
+            ? previousRestaurants
+            : responseRestaurants,
+        activities:
+          addOnTarget === "restaurant" && previousActivities.length
+            ? previousActivities
+            : responseActivities,
+      });
+
       const assistantMessage: Message = {
         role: "assistant",
         content:
           data.reply ||
-          "Here are strong TheOutHaven matches based on your outing request.",
-        restaurants: data.restaurants || [],
-        activities: data.activities || [],
+          (addOnTarget
+            ? "Here are add-on matches while keeping your previous outing options visible."
+            : "Here are strong TheOutHaven matches based on your outing request."),
+        restaurants: dedupedResults.restaurants,
+        activities: dedupedResults.activities,
       };
 
       setMessages((current) => [...current, assistantMessage]);
 
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 250);
+      setTimeout(
+        () =>
+          addOnTarget
+            ? scrollToAddOnResultsSection(addOnTarget)
+            : scrollToResultsPanel(),
+        250
+      );
     } catch (err: any) {
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
+      setActiveAddOnTarget(null);
     }
+  }
+
+  async function handleSubmit(event?: React.FormEvent) {
+    event?.preventDefault();
+
+    const cleanInput = input.trim();
+
+    if (!cleanInput || loading) return;
+
+    setInput("");
+    await submitSearch(cleanInput);
+  }
+
+  async function handleAddOnSubmit(event?: React.FormEvent) {
+    event?.preventDefault();
+
+    const cleanInput = addOnInput.trim();
+
+    if (!cleanInput || loading) return;
+
+    const addOnTarget = inferAddOnTarget(
+      cleanInput,
+      selectedRestaurant,
+      selectedActivity
+    );
+
+    setAddOnInput("");
+    await submitSearch(cleanInput, { addOnTarget, preservePlan: true });
   }
 
   function trackRestaurantClick(id: string) {
@@ -408,7 +540,7 @@ export default function CreatePage() {
             </div>
 
             <h1 className="max-w-full break-words text-[2.45rem] font-black leading-[0.92] tracking-[-0.055em] text-white xs:text-4xl sm:text-6xl lg:text-7xl">
-              Plan less. <span className="text-[#e1062a]">TheOutHaven</span> more.
+              Your next outing, planned smarter.
             </h1>
 
             <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:mt-4 sm:text-base">
@@ -436,10 +568,10 @@ export default function CreatePage() {
 
               <div className="relative">
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white/30 sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    {typedPlaceholder
-                      ? `${typedPlaceholder}|`
-                      : "Tell TheOutHaven what you want..."}
+                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
+                    <span>
+                      {typedPlaceholder}
+                    </span>
                   </div>
                 )}
 
@@ -515,6 +647,9 @@ export default function CreatePage() {
             const restaurants = message.restaurants || [];
             const activities = message.activities || [];
             const hasCards = restaurants.length > 0 || activities.length > 0;
+            const isAddOnResults =
+              messages[index - 1]?.role === "user" &&
+              messages[index - 1]?.content.startsWith("Add-on search:");
 
             if (isUser) {
               return (
@@ -551,17 +686,21 @@ export default function CreatePage() {
                       Tight matches for your outing
                     </h2>
                     <p className="mt-1 text-sm font-semibold leading-5 text-white/40">
-                      Select dinner, then choose the experience that completes
-                      the night.
+                      Select a restaurant, then choose the experience that completes
+                      the outing.
                     </p>
                   </div>
                 </div>
 
                 {restaurants.length > 0 && (
-                  <ResultSection
-                    title="Restaurant Picks"
-                    subtitle="Food spots matched to cuisine, vibe, and location"
+                  <div
+                    ref={isAddOnResults ? addOnRestaurantSectionRef : null}
+                    className="scroll-mt-24 sm:scroll-mt-28"
                   >
+                    <ResultSection
+                      title="Restaurant Picks"
+                      subtitle="Food spots matched to cuisine, vibe, and location"
+                    >
                     {restaurants.map((restaurant, restaurantIndex) => {
                       const restaurantId = String(restaurant.id);
                       const isSelected =
@@ -607,11 +746,21 @@ export default function CreatePage() {
                         />
                       );
                     })}
-                  </ResultSection>
+                    </ResultSection>
+                  </div>
                 )}
 
                 {activities.length > 0 && (
-                  <div ref={activitySectionRef} className="scroll-mt-24 sm:scroll-mt-28">
+                  <div
+                    ref={(element) => {
+                      activitySectionRef.current = element;
+
+                      if (isAddOnResults) {
+                        addOnActivitySectionRef.current = element;
+                      }
+                    }}
+                    className="scroll-mt-24 sm:scroll-mt-28"
+                  >
                     <ResultSection
                       title="Experience Picks"
                       subtitle="Activities matched to your outing plan"
@@ -624,6 +773,12 @@ export default function CreatePage() {
                           activity.reservation_url ||
                           activity.reservation_link ||
                           undefined;
+                        const distanceFromRestaurantLabel = selectedRestaurant
+                          ? buildDistanceFromRestaurantLabel(
+                              selectedRestaurant,
+                              activity
+                            )
+                          : undefined;
 
                         return (
                           <ResultCard
@@ -662,8 +817,38 @@ export default function CreatePage() {
             );
           })}
 
-          {loading && <LoadingResults label={loadingLines[loadingIndex]} />}
+          {loading && !activeAddOnTarget ? (
+            <LoadingResults label={loadingLines[loadingIndex]} />
+          ) : null}
+
+          {hasResults && !loading ? (
+            <AddOnSearchPrompt onOpen={scrollToAddOnSearchPanel} />
+          ) : null}
         </div>
+
+        {hasResults ? (
+          <>
+            <AddOnSearchPanel
+              refEl={addOnSearchRef}
+              inputRef={addOnInputRef}
+              value={addOnInput}
+              loading={loading}
+              selectedRestaurant={selectedRestaurant}
+              selectedActivity={selectedActivity}
+              onChange={handleAddOnInputChange}
+              onSubmit={handleAddOnSubmit}
+            />
+
+            {loading && activeAddOnTarget ? (
+              <div
+                ref={addOnLoadingRef}
+                className="mt-4 scroll-mt-24 sm:mt-5 sm:scroll-mt-28"
+              >
+                <LoadingResults label={loadingLines[loadingIndex]} />
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </section>
 
       {hasSelection && (
@@ -679,7 +864,7 @@ export default function CreatePage() {
               </p>
 
               <p className="hidden text-xs font-semibold text-white/40 sm:block">
-                Review your dinner-to-activity timeline before continuing.
+                Review your restaurant-to-activity timeline before continuing.
               </p>
             </div>
 
@@ -700,6 +885,14 @@ export default function CreatePage() {
           activity={selectedActivity}
           onClose={() => setShowPlanSummary(false)}
           onContinue={savePlan}
+          onAddRestaurant={() => {
+            setShowPlanSummary(false);
+            window.setTimeout(scrollToAddOnSearchPanel, 120);
+          }}
+          onAddActivity={() => {
+            setShowPlanSummary(false);
+            window.setTimeout(scrollToAddOnSearchPanel, 120);
+          }}
         />
       )}
 
@@ -741,17 +934,181 @@ export default function CreatePage() {
   );
 }
 
+function normalizeResultIdentityValue(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function resultIdentityKey(item: RestaurantCard | ActivityCard) {
+  const name =
+    "restaurant_name" in item ? item.restaurant_name : item.activity_name;
+  const nameAddressKey = normalizeResultIdentityValue(
+    [name, item.address, item.city, item.state, item.zip_code]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return nameAddressKey || normalizeResultIdentityValue(String(item.id || ""));
+}
+
+function dedupeResultList<T extends RestaurantCard | ActivityCard>(items: T[]) {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    const key = resultIdentityKey(item);
+
+    if (!key) return true;
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function resultDistanceValue(item: RestaurantCard | ActivityCard) {
+  const distance = Number(item.distance_miles);
+
+  return Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY;
+}
+
+function sortResultsNearFirst<T extends RestaurantCard | ActivityCard>(
+  items: T[]
+) {
+  if (!items.some((item) => Number.isFinite(Number(item.distance_miles)))) {
+    return items;
+  }
+
+  return [...items].sort(
+    (a, b) => resultDistanceValue(a) - resultDistanceValue(b)
+  );
+}
+
+function dedupeSearchResults({
+  restaurants,
+  activities,
+}: {
+  restaurants: RestaurantCard[];
+  activities: ActivityCard[];
+}) {
+  const dedupedRestaurants = dedupeResultList(restaurants);
+  const restaurantKeys = new Set(dedupedRestaurants.map(resultIdentityKey));
+  const dedupedActivities = dedupeResultList(activities).filter(
+    (activity) => !restaurantKeys.has(resultIdentityKey(activity))
+  );
+
+  return {
+    restaurants: sortResultsNearFirst(dedupedRestaurants),
+    activities: sortResultsNearFirst(dedupedActivities),
+  };
+}
+
+function AddOnSearchPrompt({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div className="rounded-[1.1rem] border border-[#e1062a]/25 bg-[#e1062a]/10 p-3 text-center shadow-xl shadow-red-950/10 sm:rounded-[1.25rem] sm:p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100/70">
+        Need one more stop?
+      </p>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="mt-2 rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] sm:text-xs"
+      >
+        Add-On Search
+      </button>
+    </div>
+  );
+}
+
+function AddOnSearchPanel({
+  refEl,
+  inputRef,
+  value,
+  loading,
+  selectedRestaurant,
+  selectedActivity,
+  onChange,
+  onSubmit,
+}: {
+  refEl: React.RefObject<HTMLDivElement | null>;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  value: string;
+  loading: boolean;
+  selectedRestaurant: RestaurantCard | null;
+  selectedActivity: ActivityCard | null;
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (event?: React.FormEvent) => void;
+}) {
+  const targetLabel = getAddOnTargetLabel(selectedRestaurant, selectedActivity);
+
+  return (
+    <div
+      ref={refEl}
+      className="mt-5 scroll-mt-24 rounded-[1.15rem] border border-white/10 bg-[#0b0b0b] p-3 shadow-2xl shadow-black/30 sm:mt-6 sm:rounded-[1.25rem] sm:p-4"
+    >
+      <div className="mb-3">
+        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#e1062a] sm:text-[10px]">
+          Add-On Search
+        </p>
+        <h3 className="mt-1 text-xl font-black tracking-[-0.03em] text-white sm:text-2xl">
+          Add a {targetLabel} to this outing
+        </h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-white/45 sm:text-sm">
+          Search for one more restaurant or activity. TheOutHaven will keep the
+          matching results from your previous search visible while showing the
+          new add-on results.
+        </p>
+      </div>
+
+      <form onSubmit={onSubmit} className="space-y-3">
+        <textarea
+          ref={inputRef}
+          value={value}
+          onChange={onChange}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+          rows={2}
+          placeholder={`Search for an add-on ${targetLabel}, like rooftop lounge, karaoke, sushi, or brunch`}
+          className="h-[94px] w-full resize-none rounded-2xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold leading-6 text-white outline-none transition placeholder:text-white/30 focus:border-[#e1062a]/70 sm:px-4 sm:text-base"
+        />
+
+        <button
+          type="submit"
+          disabled={loading || !value.trim()}
+          className="w-full rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-red-950/35 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:text-xs"
+        >
+          {loading ? "Finding Add-Ons..." : "Search Add-Ons"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function PlanSummarySheet({
   restaurant,
   activity,
   onClose,
   onContinue,
+  onAddRestaurant,
+  onAddActivity,
 }: {
   restaurant: RestaurantCard | null;
   activity: ActivityCard | null;
   onClose: () => void;
   onContinue: () => void;
+  onAddRestaurant: () => void;
+  onAddActivity: () => void;
 }) {
+  const summaryDescription = getPlanSummaryDescription(restaurant, activity);
+  const nextStepText = getPlanNextStepText(restaurant, activity);
+
   return (
     <div className="fixed inset-0 z-[999] flex items-end justify-center overflow-hidden bg-black/70 px-2 pb-2 backdrop-blur-sm sm:px-6 sm:pb-6">
       <button
@@ -774,11 +1131,10 @@ function PlanSummarySheet({
                 Plan Summary
               </p>
               <h3 className="mt-1 break-words text-xl font-black tracking-[-0.04em] text-white sm:text-2xl">
-                Your night is almost ready
+                Your outing is almost ready
               </h3>
               <p className="mt-1 text-xs font-semibold leading-5 text-white/45 sm:text-sm sm:leading-6">
-                Review your dinner-to-activity flow before moving to the full
-                plan.
+                {summaryDescription}
               </p>
             </div>
 
@@ -798,8 +1154,8 @@ function PlanSummarySheet({
 
             <TimelineStep
               step="1"
-              label="Dinner"
-              title={restaurant?.restaurant_name || "Choose a dinner spot"}
+              label="Restaurant"
+              title={restaurant?.restaurant_name || "Choose a restaurant"}
               meta={[
                 restaurant?.cuisine || restaurant?.food_type || "Restaurant",
                 restaurant?.city || null,
@@ -810,22 +1166,28 @@ function PlanSummarySheet({
               description={
                 restaurant
                   ? "Start with the food pick that best matches your outing."
-                  : "Select a restaurant to complete the first part of your TheOutHaven."
+                  : activity
+                    ? "No restaurant selected yet — you can continue with the activity or add one later."
+                    : "Select a restaurant to complete the first part of your TheOutHaven."
               }
               imageUrl={restaurant?.image_url || null}
               active={Boolean(restaurant)}
+              actionLabel={
+                activity && !restaurant ? "Add Restaurant" : undefined
+              }
+              onAction={activity && !restaurant ? onAddRestaurant : undefined}
             />
 
-            <div className="my-2 ml-[46px] rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-3 sm:ml-[52px] sm:px-4">
-              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/30 sm:text-[10px] sm:tracking-[0.2em]">
-                Then
-              </p>
-              <p className="mt-1 text-xs font-bold leading-5 text-white/60 sm:text-sm">
-                {restaurant && activity
-                  ? buildDistanceText(restaurant, activity)
-                  : "Add the activity that completes the night."}
-              </p>
-            </div>
+            {restaurant && activity ? (
+              <div className="my-2 ml-[46px] rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-3 sm:ml-[52px] sm:px-4">
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/30 sm:text-[10px] sm:tracking-[0.2em]">
+                  Distance
+                </p>
+                <p className="mt-1 text-xs font-bold leading-5 text-white/60 sm:text-sm">
+                  {buildDistanceText(restaurant, activity)}
+                </p>
+              </div>
+            ) : null}
 
             <TimelineStep
               step="2"
@@ -840,11 +1202,19 @@ function PlanSummarySheet({
                 .join(" • ")}
               description={
                 activity
-                  ? "This gives the outing a second stop and a clearer plan."
-                  : "Select an experience to build the full dinner-to-activity timeline."
+                  ? restaurant
+                    ? "This pairs your restaurant with an experience that completes the outing."
+                    : "This activity can anchor your outing on its own."
+                  : restaurant
+                    ? "Add an experience if you want to turn the restaurant into a full outing."
+                    : "Select an experience to build the full restaurant-to-activity timeline."
               }
               imageUrl={activity?.image_url || null}
               active={Boolean(activity)}
+              actionLabel={
+                restaurant && !activity ? "Add Activity" : undefined
+              }
+              onAction={restaurant && !activity ? onAddActivity : undefined}
             />
           </div>
 
@@ -853,8 +1223,7 @@ function PlanSummarySheet({
               Next Step
             </p>
             <p className="mt-1 text-xs font-bold leading-5 text-white sm:text-sm sm:leading-6">
-              Continue to your full plan to review the selected locations,
-              details, and next actions.
+              {nextStepText}
             </p>
           </div>
         </div>
@@ -873,7 +1242,9 @@ function PlanSummarySheet({
             onClick={onContinue}
             className="rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] sm:text-xs sm:tracking-[0.12em]"
           >
-            Continue to Full Plan →
+            {restaurant && activity
+              ? "Continue to Full Plan →"
+              : "Continue With Current Pick →"}
           </button>
         </div>
       </div>
@@ -889,6 +1260,8 @@ function TimelineStep({
   description,
   imageUrl,
   active,
+  actionLabel,
+  onAction,
 }: {
   step: string;
   label: string;
@@ -897,6 +1270,8 @@ function TimelineStep({
   description: string;
   imageUrl?: string | null;
   active: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="relative flex min-w-0 gap-2 py-3 sm:gap-3">
@@ -930,7 +1305,7 @@ function TimelineStep({
               />
             ) : (
               <div className="flex h-full items-center justify-center text-lg">
-                {label === "Dinner" ? "🍽️" : "✨"}
+                {label === "Restaurant" ? "🍽️" : "✨"}
               </div>
             )}
           </div>
@@ -948,6 +1323,16 @@ function TimelineStep({
             <p className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-4 text-white/55 sm:mt-2 sm:text-xs sm:leading-5">
               {description}
             </p>
+
+            {actionLabel && onAction ? (
+              <button
+                type="button"
+                onClick={onAction}
+                className="mt-3 rounded-full border border-white/12 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-white/80 transition hover:bg-white hover:text-black sm:text-[11px]"
+              >
+                {actionLabel}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -958,38 +1343,70 @@ function TimelineStep({
 function StartPanel() {
   const items = [
     {
-      title: "Tell TheOutHaven the full idea",
-      body: "Use a natural sentence with food, activity, location, budget, or vibe.",
+      icon: "💬",
+      step: "01",
+      title: "Describe the whole outing",
+      body: "Type the food, activity, neighborhood, budget, or vibe in one sentence.",
+      example: "Example: romantic restaurant and karaoke in Queens",
     },
     {
-      title: "TheOutHaven separates the intent",
-      body: "A steak request is treated differently from bowling, karaoke, lounges, or brunch.",
+      icon: "✨",
+      step: "02",
+      title: "Let TheOutHaven sort the fit",
+      body: "We separate restaurants, activities, location, and vibe so the results feel intentional.",
+      example: "Try: affordable birthday brunch with games",
     },
     {
-      title: "Get tighter matched cards",
-      body: "Results are ranked for fit, quality, distance, and outing flow.",
+      icon: "🗺️",
+      step: "03",
+      title: "Pick your plan faster",
+      body: "Choose a restaurant, add an experience, then review the full outing flow.",
+      example: "Tip: add a borough, city, or nearby request",
     },
   ];
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#0b0b0b] p-4 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-5">
+    <div className="w-full max-w-full overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.18),transparent_34%),linear-gradient(135deg,#101010_0%,#060606_100%)] p-4 shadow-2xl shadow-black/45 sm:p-5">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
+            How it works
+          </p>
+          <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
+            Plan your outing in one serach.
+          </h2>
+        </div>
+      </div>
+
       <div className="grid w-full min-w-0 gap-3 sm:gap-4 md:grid-cols-3">
-        {items.map((item, index) => (
+        {items.map((item) => (
           <div
-            key={item.title}
-            className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            key={item.step}
+            className="group min-w-0 rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/20 transition hover:border-[#e1062a]/35 hover:bg-white/[0.065] sm:p-5"
           >
-            <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black text-white sm:mb-4 sm:h-9 sm:w-9">
-              {index + 1}
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/45 text-xl shadow-inner shadow-white/5">
+                {item.icon}
+              </div>
+
+              <span className="rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-100/75">
+                {item.step}
+              </span>
             </div>
 
-            <h3 className="break-words text-base font-black tracking-[-0.02em] text-white">
+            <h3 className="break-words text-lg font-black tracking-[-0.03em] text-white">
               {item.title}
             </h3>
 
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/55">
               {item.body}
             </p>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
+              <p className="text-xs font-bold leading-5 text-white/62">
+                {item.example}
+              </p>
+            </div>
           </div>
         ))}
       </div>
@@ -1082,6 +1499,7 @@ function ResultCard({
 
   return (
     <article
+      data-ui-version={RESULT_CARD_UI_VERSION}
       className={`group relative flex h-full min-h-[420px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.05rem] border bg-[#101010] shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[445px] sm:rounded-[1.1rem] ${
         selected
           ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
@@ -1111,7 +1529,7 @@ function ResultCard({
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 sm:bottom-3 sm:right-3 sm:gap-1.5">
-          {distance !== null && distance !== undefined ? (
+          {!distanceLabel && distance !== null && distance !== undefined ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
               {distance} mi
             </span>
@@ -1139,7 +1557,7 @@ function ResultCard({
             </h3>
           </Link>
 
-          <p className="mt-1.5 line-clamp-2 min-h-[36px] break-words text-xs font-semibold leading-5 text-white/42 sm:min-h-[38px]">
+          <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
             {address || "Location details available on the listing."}
           </p>
         </div>
@@ -1286,32 +1704,62 @@ function getWhyPicked({
 }) {
   const keywords = toArray(reviewKeywords).slice(0, 2);
 
-  if (keywords.length > 0) {
-    return `Matched for ${keywords.join(" and ")} signals.`;
-  }
+function distanceBetweenLocations(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return null;
 
-  if (reviewSnippet) {
-    return reviewSnippet;
-  }
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
 
-  if (primaryTag) {
-    return `Matched for its ${titleCase(primaryTag).toLowerCase()} fit.`;
-  }
+  if (!restaurantCoords || !activityCoords) return null;
 
-  return type === "restaurant"
-    ? "Matched to your food, location, and vibe."
-    : "Matched to your activity and outing vibe.";
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude
+    ).toFixed(1)
+  );
+}
+
+function buildDistanceFromRestaurantLabel(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return undefined;
+
+  const distance = distanceBetweenLocations(restaurant, activity);
+
+  if (distance === null) return undefined;
+
+  return `${distance} miles from ${restaurant.restaurant_name}`;
 }
 
 function buildDistanceText(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null
 ) {
-  if (!restaurant || !activity) return "Dinner → Activity";
+  if (restaurant && activity) {
+    const distanceLabel = buildDistanceFromRestaurantLabel(restaurant, activity);
 
-  if (restaurant.city && activity.city && restaurant.city === activity.city) {
-    return `Same city flow • ${restaurant.city}`;
+    if (distanceLabel) {
+      return activity.activity_name
+        ? `${distanceLabel} to ${activity.activity_name}`
+        : distanceLabel;
+    }
+
+    if (restaurant.city && activity.city && restaurant.city === activity.city) {
+      return `Same city flow • ${restaurant.city}`;
+    }
+
+    return "Restaurant → Activity timeline";
   }
 
-  return "Dinner → Activity timeline";
+  if (restaurant) return "Restaurant selected • Add an activity if you want one.";
+  if (activity) return "Activity selected • Add a restaurant if you want one.";
+
+  return "Choose a restaurant or activity to start your outing.";
 }
