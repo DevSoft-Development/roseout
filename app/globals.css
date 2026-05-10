@@ -165,3 +165,19 @@ div {
     font-size: 16px !important;
   }
 }
+@keyframes testimonial-left-to-right {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.testimonial-track {
+  animation: testimonial-left-to-right 34s linear infinite;
+}
+
+.testimonial-track:hover {
+  animation-play-state: paused;
+}
