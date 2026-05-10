@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-const HOMEPAGE_VERSION = "home-redesign-conversion-vercel-Cz6Zo1PoX-2026-05-10";
+const HOMEPAGE_VERSION = "home-redesign-conversion-2026-05-10";
 
 const featuredDateIdeas = [
   {
