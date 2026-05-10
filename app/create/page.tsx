@@ -793,6 +793,15 @@ export default function CreatePage() {
                             reviewKeywords={activity.review_keywords}
                             reviewSnippet={activity.review_snippet}
                             primaryTag={activity.primary_tag}
+                            distance={
+                              selectedRestaurant
+                                ? distanceBetweenLocations(
+                                    selectedRestaurant,
+                                    activity
+                                  ) ?? activity.distance_miles
+                                : activity.distance_miles
+                            }
+                            distanceLabel={distanceFromRestaurantLabel}
                             distance={activity.distance_miles}
                             selected={isSelected}
                             priority={activityIndex === 0}
@@ -1455,6 +1464,7 @@ function ResultCard({
   reviewSnippet,
   primaryTag,
   distance,
+  distanceLabel,
   selected,
   priority,
   selectLabel,
@@ -1478,6 +1488,7 @@ function ResultCard({
   reviewSnippet?: string | null;
   primaryTag?: string | null;
   distance?: number | null;
+  distanceLabel?: string;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1560,6 +1571,12 @@ function ResultCard({
           <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
             {address || "Location details available on the listing."}
           </p>
+
+          {distanceLabel ? (
+            <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
+              {distanceLabel}
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
@@ -1703,6 +1720,167 @@ function getWhyPicked({
   type: "restaurant" | "activity";
 }) {
   const keywords = toArray(reviewKeywords).slice(0, 2);
+
+  if (keywords.length > 0) {
+    return `Matched for ${keywords.join(" and ")} signals.`;
+  }
+
+  if (reviewSnippet) {
+    return reviewSnippet;
+  }
+
+  if (primaryTag) {
+    return `Matched for its ${titleCase(primaryTag).toLowerCase()} fit.`;
+  }
+
+  return type === "restaurant"
+    ? "Matched to your food, location, and vibe."
+    : "Matched to your activity and outing vibe.";
+}
+
+function getAddOnTargetLabel(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && !activity) return "activity";
+  if (activity && !restaurant) return "restaurant";
+  return "restaurant or activity";
+}
+
+function inferAddOnTarget(
+  input: string,
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+): AddOnTarget {
+  if (restaurant && !activity) return "activity";
+  if (activity && !restaurant) return "restaurant";
+
+  const normalized = input.toLowerCase();
+  const activityWords = [
+    "activity",
+    "activities",
+    "arcade",
+    "bowling",
+    "club",
+    "comedy",
+    "experience",
+    "hookah",
+    "karaoke",
+    "lounge",
+    "museum",
+    "nightlife",
+    "paint",
+    "rooftop",
+    "show",
+  ];
+
+  return activityWords.some((word) => normalized.includes(word))
+    ? "activity"
+    : "restaurant";
+}
+
+function getPlanSummaryDescription(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && activity) {
+    return "Review your restaurant and activity flow before moving to the full plan.";
+  }
+
+  if (restaurant) {
+    return "Review your restaurant pick before moving to the full plan.";
+  }
+
+  if (activity) {
+    return "Review your activity pick before moving to the full plan.";
+  }
+
+  return "Choose a restaurant, an activity, or both to build your outing.";
+}
+
+function getPlanNextStepText(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && activity) {
+    return "Open the full plan to confirm the route, timing, booking links, and final details.";
+  }
+
+  if (restaurant) {
+    return "Open the full plan to review the restaurant details, reservation options, and next actions.";
+  }
+
+  if (activity) {
+    return "Open the full plan to review the activity details, booking options, and next actions.";
+  }
+
+  return "Add a pick or continue to review the details you have so far.";
+}
+
+function getLocationCoordinates(item: {
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+}) {
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (!latitude || !longitude) return null;
+
+  return { latitude, longitude };
+}
+
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const radius = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distanceBetweenLocations(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return null;
+
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
+
+  if (!restaurantCoords || !activityCoords) return null;
+
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude
+    ).toFixed(1)
+  );
+}
+
+function buildDistanceFromRestaurantLabel(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return undefined;
+
+  const distance = distanceBetweenLocations(restaurant, activity);
+
+  if (distance === null) return undefined;
+
 
 function distanceBetweenLocations(
   restaurant: RestaurantCard | null,

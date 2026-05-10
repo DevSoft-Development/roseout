@@ -714,6 +714,154 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   );
 }
 
+
+function locationIdentityKey(item: any) {
+  const placeId = item.google_place_id || item.place_id;
+
+  if (placeId) return normalizeQuery(String(placeId));
+
+  const nameAddressKey = normalizeQuery(
+    [
+      item.restaurant_name || item.activity_name || item.name,
+      item.address,
+      item.city,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return nameAddressKey || normalizeQuery(String(item.id || ""));
+}
+
+function isLoungeStyleLocation(item: any) {
+  const searchable = itemText(item);
+
+  return (
+    searchable.includes("lounge") ||
+    searchable.includes("hookah") ||
+    searchable.includes("shisha") ||
+    searchable.includes("cigar") ||
+    searchable.includes("nightclub") ||
+    searchable.includes("night club")
+  );
+}
+
+function isExplicitFoodAtLoungeRequest(intent: ReturnType<typeof detectIntent>) {
+  const text = intent.text;
+
+  if (!intent.wantsLounge) return false;
+
+  return (
+    text.includes("food") ||
+    text.includes("eat") ||
+    text.includes("dinner") ||
+    text.includes("lunch") ||
+    text.includes("brunch") ||
+    text.includes("restaurant") ||
+    text.includes("dining") ||
+    text.includes("kitchen") ||
+    text.includes("serve food") ||
+    text.includes("with food")
+  );
+}
+
+function isLoungeActivityOnlyRequest(intent: ReturnType<typeof detectIntent>) {
+  return intent.wantsLounge && !isExplicitFoodAtLoungeRequest(intent);
+}
+
+function removeDuplicateLocationsWithinType<T>(items: T[]) {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    const key = locationIdentityKey(item);
+
+    if (!key) return true;
+    if (seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function removeDuplicateLocationsAcrossTypes(
+  restaurants: any[],
+  activities: any[],
+  prefer: "restaurants" | "activities" = "activities"
+) {
+  const uniqueRestaurants = removeDuplicateLocationsWithinType(restaurants);
+  const uniqueActivities = removeDuplicateLocationsWithinType(activities);
+  const restaurantKeys = new Set(uniqueRestaurants.map(locationIdentityKey));
+  const activityKeys = new Set(uniqueActivities.map(locationIdentityKey));
+
+  if (prefer === "restaurants") {
+    return {
+      restaurants: uniqueRestaurants,
+      activities: uniqueActivities.filter(
+        (activity) => !restaurantKeys.has(locationIdentityKey(activity))
+      ),
+    };
+  }
+
+  return {
+    restaurants: uniqueRestaurants.filter(
+      (restaurant) => !activityKeys.has(locationIdentityKey(restaurant))
+    ),
+    activities: uniqueActivities,
+  };
+}
+
+const NON_OUTING_LOCATION_KEYWORDS = [
+  "hospital",
+  "medical center",
+  "medical clinic",
+  "urgent care",
+  "doctor",
+  "dentist",
+  "dental",
+  "pharmacy",
+  "health clinic",
+  "healthcare",
+  "pediatric",
+  "therapy",
+  "physical therapy",
+  "rehab",
+  "veterinary",
+  "animal hospital",
+  "funeral home",
+  "cemetery",
+  "school",
+  "daycare",
+  "university",
+  "church",
+  "mosque",
+  "synagogue",
+  "place of worship",
+  "courthouse",
+  "city hall",
+  "government office",
+  "local government",
+  "municipal",
+  "police",
+  "fire station",
+  "post office",
+  "library",
+  "bank",
+  "atm",
+  "insurance agency",
+  "law office",
+  "lawyer",
+  "accounting",
+  "tax service",
+  "consultant",
+  "office",
+  "real estate agency",
+  "storage facility",
+  "parking garage",
+  "gas station",
+  "car repair",
+  "laundromat",
+];
+
 const NON_OUTING_LOCATION_KEYWORDS = [
   "hospital",
   "medical center",
@@ -775,6 +923,13 @@ function isOutingEligibleLocation(item: any) {
       item.subcategory,
       item.activity_type,
       item.primary_tag,
+      item.description,
+      item.address,
+      item.business_status,
+      ...toArray(item.google_types),
+      ...toArray(item.types),
+      ...toArray(item.search_keywords),
+      ...toArray(item.categories),
       ...toArray(item.google_types),
       ...toArray(item.types),
     ]
@@ -1747,6 +1902,7 @@ export async function POST(req: Request) {
     const intent = detectIntent(input, body, locations);
 
    const cacheKey = normalizeQuery(
+  `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${intent.userLat || ""}-${
   `theouthaven-${getSmartMatchVersion()}-contact-v2-${input}-${intent.userLat || ""}-${
     intent.userLng || ""
   }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
