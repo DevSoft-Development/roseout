@@ -802,6 +802,7 @@ export default function CreatePage() {
                                 : activity.distance_miles
                             }
                             distanceLabel={distanceFromRestaurantLabel}
+                            distance={activity.distance_miles}
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -977,6 +978,24 @@ function dedupeResultList<T extends RestaurantCard | ActivityCard>(items: T[]) {
   });
 }
 
+function resultDistanceValue(item: RestaurantCard | ActivityCard) {
+  const distance = Number(item.distance_miles);
+
+  return Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY;
+}
+
+function sortResultsNearFirst<T extends RestaurantCard | ActivityCard>(
+  items: T[]
+) {
+  if (!items.some((item) => Number.isFinite(Number(item.distance_miles)))) {
+    return items;
+  }
+
+  return [...items].sort(
+    (a, b) => resultDistanceValue(a) - resultDistanceValue(b)
+  );
+}
+
 function dedupeSearchResults({
   restaurants,
   activities,
@@ -991,8 +1010,8 @@ function dedupeSearchResults({
   );
 
   return {
-    restaurants: dedupedRestaurants,
-    activities: dedupedActivities,
+    restaurants: sortResultsNearFirst(dedupedRestaurants),
+    activities: sortResultsNearFirst(dedupedActivities),
   };
 }
 
@@ -1830,6 +1849,38 @@ function haversineMiles(
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+function distanceBetweenLocations(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return null;
+
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
+
+  if (!restaurantCoords || !activityCoords) return null;
+
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude
+    ).toFixed(1)
+  );
+}
+
+function buildDistanceFromRestaurantLabel(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return undefined;
+
+  const distance = distanceBetweenLocations(restaurant, activity);
+
+  if (distance === null) return undefined;
+
 
 function distanceBetweenLocations(
   restaurant: RestaurantCard | null,

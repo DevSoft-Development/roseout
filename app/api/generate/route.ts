@@ -862,6 +862,57 @@ const NON_OUTING_LOCATION_KEYWORDS = [
   "laundromat",
 ];
 
+const NON_OUTING_LOCATION_KEYWORDS = [
+  "hospital",
+  "medical center",
+  "medical clinic",
+  "urgent care",
+  "doctor",
+  "dentist",
+  "dental",
+  "pharmacy",
+  "health clinic",
+  "healthcare",
+  "pediatric",
+  "therapy",
+  "physical therapy",
+  "rehab",
+  "veterinary",
+  "animal hospital",
+  "funeral home",
+  "cemetery",
+  "school",
+  "daycare",
+  "university",
+  "church",
+  "mosque",
+  "synagogue",
+  "place of worship",
+  "courthouse",
+  "city hall",
+  "government office",
+  "local government",
+  "municipal",
+  "police",
+  "fire station",
+  "post office",
+  "library",
+  "police",
+  "fire station",
+  "post office",
+  "bank",
+  "atm",
+  "insurance agency",
+  "law office",
+  "lawyer",
+  "real estate agency",
+  "storage facility",
+  "parking garage",
+  "gas station",
+  "car repair",
+  "laundromat",
+];
+
 function isOutingEligibleLocation(item: any) {
   const disqualifyingText = normalizeQuery(
     [
@@ -879,6 +930,8 @@ function isOutingEligibleLocation(item: any) {
       ...toArray(item.types),
       ...toArray(item.search_keywords),
       ...toArray(item.categories),
+      ...toArray(item.google_types),
+      ...toArray(item.types),
     ]
       .filter(Boolean)
       .join(" ")
@@ -1427,6 +1480,52 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   };
 }
 
+type NearbySortableLocation = {
+  distance_miles?: unknown;
+  theouthaven_score?: unknown;
+};
+
+function resultDistanceValue(item: NearbySortableLocation) {
+  const distance = Number(item.distance_miles);
+
+  return Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY;
+}
+
+function resultScoreValue(item: NearbySortableLocation) {
+  const score = Number(item.theouthaven_score);
+
+  return Number.isFinite(score) ? score : 0;
+}
+
+function sortLocationsNearFirst<T extends NearbySortableLocation>(
+  items: T[],
+  intent: ReturnType<typeof detectIntent>
+) {
+  const shouldPrioritizeNearby = Boolean(
+    (intent.userLat && intent.userLng) ||
+      intent.maxMiles ||
+      intent.locations.length
+  );
+
+  if (!shouldPrioritizeNearby) return items;
+
+  return [...items].sort((a, b) => {
+    const aMatchesLocation = matchesLocation(a, intent.locations);
+    const bMatchesLocation = matchesLocation(b, intent.locations);
+
+    if (aMatchesLocation !== bMatchesLocation) {
+      return aMatchesLocation ? -1 : 1;
+    }
+
+    const aDistance = resultDistanceValue(a);
+    const bDistance = resultDistanceValue(b);
+
+    if (aDistance !== bDistance) return aDistance - bDistance;
+
+    return resultScoreValue(b) - resultScoreValue(a);
+  });
+}
+
 function scoreRestaurant(
   item: any,
   input: string,
@@ -1804,6 +1903,7 @@ export async function POST(req: Request) {
 
    const cacheKey = normalizeQuery(
   `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${intent.userLat || ""}-${
+  `theouthaven-${getSmartMatchVersion()}-contact-v2-${input}-${intent.userLat || ""}-${
     intent.userLng || ""
   }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
 );
@@ -2002,8 +2102,14 @@ const usableLocations = locations.filter((item: any) => {
       isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities"
     );
 
-    const topRestaurants = finalDedupedResults.restaurants;
-    const topActivities = finalDedupedResults.activities;
+    const topRestaurants = sortLocationsNearFirst(
+      finalDedupedResults.restaurants,
+      intent
+    );
+    const topActivities = sortLocationsNearFirst(
+      finalDedupedResults.activities,
+      intent
+    );
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
