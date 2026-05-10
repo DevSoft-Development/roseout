@@ -156,6 +156,8 @@ export default function CreatePage() {
     useState<ActivityCard | null>(null);
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
+  const [selectedFallback, setSelectedFallback] =
+    useState<FallbackOption | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const addOnInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -174,7 +176,9 @@ export default function CreatePage() {
     [messages]
   );
 
-  const hasSelection = Boolean(selectedRestaurant || selectedActivity);
+  const hasSelection = Boolean(
+    selectedRestaurant || selectedActivity || selectedFallback
+  );
   const hasResults = Boolean(
     (latestAssistant?.restaurants?.length || 0) +
       (latestAssistant?.activities?.length || 0)
@@ -183,6 +187,7 @@ export default function CreatePage() {
   const selectedPlanText = [
     selectedRestaurant?.restaurant_name,
     selectedActivity?.activity_name,
+    selectedFallback?.title,
   ]
     .filter(Boolean)
     .join(" + ");
@@ -330,6 +335,7 @@ export default function CreatePage() {
     setMessages([]);
     setSelectedRestaurant(null);
     setSelectedActivity(null);
+    setSelectedFallback(null);
     setShowPlanSummary(false);
     setError("");
 
@@ -548,7 +554,12 @@ export default function CreatePage() {
   async function handleFallbackSelect(option: FallbackOption) {
     if (loading) return;
 
-    setAddOnInput("");
+    setSelectedFallback(option);
+    setShowPlanSummary(false);
+    setAddOnInput(option.prompt);
+
+    window.setTimeout(scrollToAddOnSearchPanel, 80);
+
     await submitSearch(option.prompt, {
       addOnTarget: option.addOnTarget,
       preservePlan: true,
@@ -577,6 +588,7 @@ export default function CreatePage() {
     const plan = {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
+      fallback: selectedFallback,
       locations: [selectedRestaurant, selectedActivity].filter(Boolean),
       savedAt: Date.now(),
     };
@@ -890,6 +902,7 @@ export default function CreatePage() {
 
                 <FallbackPlanCard
                   loading={loading}
+                  selectedFallback={selectedFallback}
                   onSelect={handleFallbackSelect}
                 />
               </div>
@@ -962,6 +975,7 @@ export default function CreatePage() {
         <PlanSummarySheet
           restaurant={selectedRestaurant}
           activity={selectedActivity}
+          fallback={selectedFallback}
           onClose={() => setShowPlanSummary(false)}
           onContinue={savePlan}
           onAddRestaurant={() => {
@@ -1173,6 +1187,7 @@ function AddOnSearchPanel({
 function PlanSummarySheet({
   restaurant,
   activity,
+  fallback,
   onClose,
   onContinue,
   onAddRestaurant,
@@ -1180,6 +1195,7 @@ function PlanSummarySheet({
 }: {
   restaurant: RestaurantCard | null;
   activity: ActivityCard | null;
+  fallback: FallbackOption | null;
   onClose: () => void;
   onContinue: () => void;
   onAddRestaurant: () => void;
@@ -1299,11 +1315,19 @@ function PlanSummarySheet({
             <TimelineStep
               step="3"
               label="Fallback"
-              title={getFallbackTitle(restaurant, activity)}
-              meta="Backup move • easy pivot"
-              description="Keep one flexible fallback ready in case timing, availability, or the vibe changes after your first stop."
+              title={fallback?.title || getFallbackTitle(restaurant, activity)}
+              meta={
+                fallback
+                  ? `${fallback.label} • selected`
+                  : "Backup move • easy pivot"
+              }
+              description={
+                fallback
+                  ? fallback.description
+                  : "Keep one flexible fallback ready in case timing, availability, or the vibe changes after your first stop."
+              }
               imageUrl={null}
-              active={Boolean(restaurant || activity)}
+              active={Boolean(fallback || restaurant || activity)}
             />
           </div>
 
@@ -1506,9 +1530,11 @@ function StartPanel() {
 
 function FallbackPlanCard({
   loading,
+  selectedFallback,
   onSelect,
 }: {
   loading: boolean;
+  selectedFallback: FallbackOption | null;
   onSelect: (option: FallbackOption) => void;
 }) {
   return (
@@ -1527,13 +1553,21 @@ function FallbackPlanCard({
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        {fallbackOptions.map((option) => (
-          <button
+        {fallbackOptions.map((option) => {
+          const isSelected = selectedFallback?.title === option.title;
+
+          return (
+            <button
             key={option.title}
             type="button"
             disabled={loading}
+            aria-pressed={isSelected}
             onClick={() => onSelect(option)}
-            className="group rounded-3xl border border-white/10 bg-black/45 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#e1062a]/45 hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`group rounded-3xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-[#e1062a]/45 hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50 ${
+              isSelected
+                ? "border-[#e1062a] bg-[#e1062a]/15 ring-2 ring-[#e1062a]/25"
+                : "border-white/10 bg-black/45"
+            }`}
           >
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">
               {option.label}
@@ -1545,10 +1579,15 @@ function FallbackPlanCard({
               {option.description}
             </p>
             <span className="mt-4 inline-flex text-xs font-black uppercase tracking-[0.14em] text-[#e1062a] transition group-hover:text-red-200">
-              {loading ? "Searching..." : "Search this fallback →"}
+              {loading
+                ? "Searching..."
+                : isSelected
+                  ? "Selected fallback ✓"
+                  : "Search this fallback →"}
             </span>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
