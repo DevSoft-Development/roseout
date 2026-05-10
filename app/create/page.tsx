@@ -74,6 +74,8 @@ type FallbackOption = {
   title: string;
   label: string;
   description: string;
+  prompt: string;
+  addOnTarget: AddOnTarget;
 };
 
 type AddOnTarget = "restaurant" | "activity";
@@ -113,18 +115,24 @@ const fallbackOptions: FallbackOption[] = [
     label: "Easy pivot",
     description:
       "Keep a casual dessert stop ready if the main plan wraps early or you want one more move.",
+    prompt: "dessert counter or casual sweets nearby",
+    addOnTarget: "restaurant",
   },
   {
     title: "Walkable lounge",
     label: "Second option",
     description:
       "Use a nearby drinks or lounge option when the first experience is full, loud, or not the vibe.",
+    prompt: "walkable lounge or drinks backup nearby",
+    addOnTarget: "activity",
   },
   {
     title: "Simple reset",
     label: "Low pressure",
     description:
       "Save a coffee, scenic walk, or quick bite fallback so the outing still feels intentional.",
+    prompt: "low pressure coffee walk or quick bite fallback nearby",
+    addOnTarget: "activity",
   },
 ];
 
@@ -537,6 +545,16 @@ export default function CreatePage() {
     await submitSearch(cleanInput, { addOnTarget, preservePlan: true });
   }
 
+  async function handleFallbackSelect(option: FallbackOption) {
+    if (loading) return;
+
+    setAddOnInput("");
+    await submitSearch(option.prompt, {
+      addOnTarget: option.addOnTarget,
+      preservePlan: true,
+    });
+  }
+
   function trackRestaurantClick(id: string) {
     trackAnalytics({
       itemId: id,
@@ -870,7 +888,10 @@ export default function CreatePage() {
                   </div>
                 )}
 
-                <FallbackPlanCard />
+                <FallbackPlanCard
+                  loading={loading}
+                  onSelect={handleFallbackSelect}
+                />
               </div>
             );
           })}
@@ -1483,7 +1504,13 @@ function StartPanel() {
 }
 
 
-function FallbackPlanCard() {
+function FallbackPlanCard({
+  loading,
+  onSelect,
+}: {
+  loading: boolean;
+  onSelect: (option: FallbackOption) => void;
+}) {
   return (
     <section className="mt-5 rounded-[1.15rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.16),transparent_36%),#101010] p-4 shadow-xl shadow-black/25 sm:rounded-[1.25rem] sm:p-5">
       <div className="mb-4 max-w-2xl">
@@ -1501,9 +1528,12 @@ function FallbackPlanCard() {
 
       <div className="grid gap-3 md:grid-cols-3">
         {fallbackOptions.map((option) => (
-          <article
+          <button
             key={option.title}
-            className="rounded-3xl border border-white/10 bg-black/45 p-4"
+            type="button"
+            disabled={loading}
+            onClick={() => onSelect(option)}
+            className="group rounded-3xl border border-white/10 bg-black/45 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#e1062a]/45 hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">
               {option.label}
@@ -1514,7 +1544,10 @@ function FallbackPlanCard() {
             <p className="mt-2 text-sm font-semibold leading-6 text-white/50">
               {option.description}
             </p>
-          </article>
+            <span className="mt-4 inline-flex text-xs font-black uppercase tracking-[0.14em] text-[#e1062a] transition group-hover:text-red-200">
+              {loading ? "Searching..." : "Search this fallback →"}
+            </span>
+          </button>
         ))}
       </div>
     </section>
