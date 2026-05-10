@@ -802,6 +802,7 @@ export default function CreatePage() {
                                 : activity.distance_miles
                             }
                             distanceLabel={distanceFromRestaurantLabel}
+                            distance={activity.distance_miles}
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -1848,6 +1849,38 @@ function haversineMiles(
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+function distanceBetweenLocations(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return null;
+
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
+
+  if (!restaurantCoords || !activityCoords) return null;
+
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude
+    ).toFixed(1)
+  );
+}
+
+function buildDistanceFromRestaurantLabel(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (!restaurant || !activity) return undefined;
+
+  const distance = distanceBetweenLocations(restaurant, activity);
+
+  if (distance === null) return undefined;
+
 
 function distanceBetweenLocations(
   restaurant: RestaurantCard | null,

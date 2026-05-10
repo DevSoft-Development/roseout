@@ -862,6 +862,57 @@ const NON_OUTING_LOCATION_KEYWORDS = [
   "laundromat",
 ];
 
+const NON_OUTING_LOCATION_KEYWORDS = [
+  "hospital",
+  "medical center",
+  "medical clinic",
+  "urgent care",
+  "doctor",
+  "dentist",
+  "dental",
+  "pharmacy",
+  "health clinic",
+  "healthcare",
+  "pediatric",
+  "therapy",
+  "physical therapy",
+  "rehab",
+  "veterinary",
+  "animal hospital",
+  "funeral home",
+  "cemetery",
+  "school",
+  "daycare",
+  "university",
+  "church",
+  "mosque",
+  "synagogue",
+  "place of worship",
+  "courthouse",
+  "city hall",
+  "government office",
+  "local government",
+  "municipal",
+  "police",
+  "fire station",
+  "post office",
+  "library",
+  "police",
+  "fire station",
+  "post office",
+  "bank",
+  "atm",
+  "insurance agency",
+  "law office",
+  "lawyer",
+  "real estate agency",
+  "storage facility",
+  "parking garage",
+  "gas station",
+  "car repair",
+  "laundromat",
+];
+
 function isOutingEligibleLocation(item: any) {
   const disqualifyingText = normalizeQuery(
     [
@@ -879,6 +930,8 @@ function isOutingEligibleLocation(item: any) {
       ...toArray(item.types),
       ...toArray(item.search_keywords),
       ...toArray(item.categories),
+      ...toArray(item.google_types),
+      ...toArray(item.types),
     ]
       .filter(Boolean)
       .join(" ")
@@ -1850,6 +1903,7 @@ export async function POST(req: Request) {
 
    const cacheKey = normalizeQuery(
   `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${intent.userLat || ""}-${
+  `theouthaven-${getSmartMatchVersion()}-contact-v2-${input}-${intent.userLat || ""}-${
     intent.userLng || ""
   }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
 );

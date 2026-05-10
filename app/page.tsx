@@ -5,7 +5,7 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 export const metadata: Metadata = {
   title: "TheOutHaven | Plan Your Outing in One Search",
   description:
-    "Plan restaurants, lounges, activities, and date ideas from TheOutHaven’s clean conversion-focused homepage.",
+    "Plan restaurants, lounges, activities, and date ideas from the fresh redesigned TheOutHaven homepage.",
   alternates: {
     canonical: "https://www.theouthaven.com",
   },
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-const HOMEPAGE_VERSION = "home-redesign-v7-fresh-homepage-2026-05-10";
+const HOMEPAGE_VERSION = "home-redesign-v6-fresh-commit-2026-05-10";
 
 const featuredDateIdeas = [
   {
@@ -145,7 +145,7 @@ export default function HomePage() {
         <div className="mx-auto grid max-w-7xl items-center gap-12 lg:min-h-[calc(100vh-9rem)] lg:grid-cols-[0.92fr_1.08fr]">
           <div className="max-w-3xl">
             <p className="inline-flex rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-red-200">
-              Plan outings faster
+              AI-powered outing planner
             </p>
 
             <h1 className="mt-7 text-5xl font-black leading-[0.94] tracking-tight sm:text-6xl lg:text-7xl">
@@ -154,7 +154,7 @@ export default function HomePage() {
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl">
               Tell TheOutHaven what you want, where you want it, and the mood
-              you are going for. Get a clean restaurant-and-activity plan in
+              you are going for. Get a cleaner restaurant-and-activity plan in
               seconds.
             </p>
 
