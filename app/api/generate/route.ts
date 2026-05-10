@@ -1868,7 +1868,11 @@ export async function POST(req: Request) {
     const locations = mergedLocations.map(normalizeLocation);
     const intent = detectIntent(input, body, locations);
 
-    const cacheKey = buildResponseCacheKey(input, intent);
+    const cacheKey = normalizeQuery(
+      `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${
+        intent.userLat || ""
+      }-${intent.userLng || ""}-${intent.maxMiles || ""}-${intent.locations.join("-")}`
+    );
 
     const { data: cached } = await supabase
       .from("ai_response_cache")

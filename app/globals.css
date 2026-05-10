@@ -165,7 +165,6 @@ div {
     font-size: 16px !important;
   }
 }
-
 @keyframes testimonial-left-to-right {
   0% {
     transform: translateX(-50%);
@@ -181,11 +180,4 @@ div {
 
 .testimonial-track:hover {
   animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .testimonial-track {
-    animation: none;
-    transform: translateX(0);
-  }
 }
