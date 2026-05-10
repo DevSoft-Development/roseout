@@ -70,6 +70,12 @@ type ApiResponse = {
   activities?: ActivityCard[];
 };
 
+type FallbackOption = {
+  title: string;
+  label: string;
+  description: string;
+};
+
 type AddOnTarget = "restaurant" | "activity";
 
 type UserLocation = {
@@ -99,6 +105,27 @@ const loadingLines = [
   "Checking food and activity signals...",
   "Building tighter TheOutHaven picks...",
   "Finding the best fit...",
+];
+
+const fallbackOptions: FallbackOption[] = [
+  {
+    title: "Dessert counter",
+    label: "Easy pivot",
+    description:
+      "Keep a casual dessert stop ready if the main plan wraps early or you want one more move.",
+  },
+  {
+    title: "Walkable lounge",
+    label: "Second option",
+    description:
+      "Use a nearby drinks or lounge option when the first experience is full, loud, or not the vibe.",
+  },
+  {
+    title: "Simple reset",
+    label: "Low pressure",
+    description:
+      "Save a coffee, scenic walk, or quick bite fallback so the outing still feels intentional.",
+  },
 ];
 
 export default function CreatePage() {
@@ -842,6 +869,8 @@ export default function CreatePage() {
                     </ResultSection>
                   </div>
                 )}
+
+                <FallbackPlanCard />
               </div>
             );
           })}
@@ -1245,6 +1274,16 @@ function PlanSummarySheet({
               }
               onAction={restaurant && !activity ? onAddActivity : undefined}
             />
+
+            <TimelineStep
+              step="3"
+              label="Fallback"
+              title={getFallbackTitle(restaurant, activity)}
+              meta="Backup move • easy pivot"
+              description="Keep one flexible fallback ready in case timing, availability, or the vibe changes after your first stop."
+              imageUrl={null}
+              active={Boolean(restaurant || activity)}
+            />
           </div>
 
           <div className="mt-4 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-3 sm:mt-5 sm:p-4">
@@ -1440,6 +1479,45 @@ function StartPanel() {
         ))}
       </div>
     </div>
+  );
+}
+
+
+function FallbackPlanCard() {
+  return (
+    <section className="mt-5 rounded-[1.15rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.16),transparent_36%),#101010] p-4 shadow-xl shadow-black/25 sm:rounded-[1.25rem] sm:p-5">
+      <div className="mb-4 max-w-2xl">
+        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.25em]">
+          Fallback options
+        </p>
+        <h3 className="mt-1 text-xl font-black tracking-[-0.035em] text-white sm:text-2xl">
+          Keep a backup move ready.
+        </h3>
+        <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
+          If a spot is booked, too far, or not the vibe, use one of these
+          flexible pivots to keep the outing easy.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {fallbackOptions.map((option) => (
+          <article
+            key={option.title}
+            className="rounded-3xl border border-white/10 bg-black/45 p-4"
+          >
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">
+              {option.label}
+            </p>
+            <h4 className="mt-5 text-base font-black text-white">
+              {option.title}
+            </h4>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/50">
+              {option.description}
+            </p>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1816,6 +1894,18 @@ function getPlanSummaryDescription(
   }
 
   return "Choose a restaurant, an activity, or both to build your outing.";
+}
+
+
+function getFallbackTitle(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && activity) return "Save a nearby dessert or lounge backup";
+  if (restaurant) return "Save a simple second-stop backup";
+  if (activity) return "Save a quick food or dessert backup";
+
+  return "Save a flexible backup option";
 }
 
 function getPlanNextStepText(

@@ -166,21 +166,22 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="bg-[#0b0b0b] px-5 py-14 sm:px-6 lg:py-20">
+      <section className="bg-white px-5 py-14 text-[#19110e] sm:px-6 lg:py-20">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Featured outing ideas"
             title="Start from a plan that already has momentum."
             text="Each idea opens /create with a focused prompt so users can move from inspiration to decision faster."
+            light
           />
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
             {featuredOutingIdeas.map((idea) => (
               <Link
                 key={idea.title}
                 href={`/create?prompt=${encodeURIComponent(idea.prompt)}`}
-                className={`group min-h-[20rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#111]/90 p-6 shadow-xl shadow-black/[0.04] transition hover:-translate-y-1 hover:border-[#e1062a]/40 hover:shadow-2xl hover:shadow-red-950/10`}
+                className={`group min-h-[20rem] overflow-hidden rounded-[2rem] border border-[#19110e]/10 bg-[#f8f8f8] p-6 shadow-xl shadow-black/[0.04] transition hover:-translate-y-1 hover:border-[#e1062a]/40 hover:shadow-2xl hover:shadow-red-950/10`}
               >
-                <div className="flex h-full flex-col justify-between rounded-[1.5rem] border border-white/10 bg-black/55 p-5 backdrop-blur">
+                <div className="flex h-full flex-col justify-between rounded-[1.5rem] border border-[#19110e]/10 bg-white p-5 backdrop-blur">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
                       {idea.tag}
@@ -188,11 +189,11 @@ export default function HomePage() {
                     <h2 className="mt-7 text-3xl font-black leading-none tracking-[-0.045em]">
                       {idea.title}
                     </h2>
-                    <p className="mt-4 text-sm leading-7 text-white/55">
+                    <p className="mt-4 text-sm leading-7 text-[#19110e]/60">
                       {idea.description}
                     </p>
                   </div>
-                  <p className="mt-8 text-sm font-black text-white transition group-hover:text-red-200">
+                  <p className="mt-8 text-sm font-black text-[#19110e] transition group-hover:text-[#e1062a]">
                     Try this idea →
                   </p>
                 </div>
@@ -202,24 +203,25 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-black px-5 py-14 sm:px-6 lg:py-20">
+      <section className="border-y border-[#19110e]/10 bg-[#f7f7f7] px-5 py-14 text-[#19110e] sm:px-6 lg:py-20">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Categories"
             title="Pick the lane. We connect the stops."
             text="Make the first decision simple, then let the planner shape the restaurant, activity, lounge, dessert, or group route."
+            light
           />
           <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
             {categories.map((category) => (
               <Link
                 key={category.label}
                 href={`/create?prompt=${encodeURIComponent(category.prompt)}`}
-                className="group rounded-[1.5rem] border border-white/10 bg-[#0b0b0b] p-4 text-center shadow-sm transition hover:-translate-y-1 hover:border-[#e1062a]/40 hover:bg-[#e1062a]/10"
+                className="group rounded-[1.5rem] border border-[#19110e]/10 bg-white p-4 text-center shadow-sm transition hover:-translate-y-1 hover:border-[#e1062a]/40 hover:bg-red-50"
               >
-                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-black text-2xl shadow-sm transition group-hover:scale-110">
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f7f7f7] text-2xl shadow-sm transition group-hover:scale-110">
                   {category.icon}
                 </span>
-                <span className="mt-3 block text-sm font-black text-white/70 group-hover:text-white">
+                <span className="mt-3 block text-sm font-black text-[#19110e]/70 group-hover:text-[#19110e]">
                   {category.label}
                 </span>
               </Link>
@@ -288,12 +290,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="bg-[#0b0b0b] px-5 py-16 sm:px-6 lg:py-24">
+      <section className="bg-white px-5 py-16 text-[#19110e] sm:px-6 lg:py-24">
         <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.82fr_1.18fr]">
           <SectionIntro
             eyebrow="Preview /create"
             title="Preview the outcome before you click."
             text="Users see the exact promise: type one prompt, get a structured outing route with an anchor, next move, and backup."
+            light
           />
           <CreateExperiencePreview />
         </div>
@@ -328,11 +331,13 @@ function SectionIntro({
   title,
   text,
   dark = false,
+  light = false,
 }: {
   eyebrow: string;
   title: string;
   text: string;
   dark?: boolean;
+  light?: boolean;
 }) {
   return (
     <div className="max-w-3xl">
@@ -348,7 +353,7 @@ function SectionIntro({
       </h2>
       <p
         className={`mt-4 text-base leading-8 sm:text-lg ${
-          dark ? "text-white/60" : "text-white/58"
+          dark ? "text-white/60" : light ? "text-[#19110e]/58" : "text-white/58"
         }`}
       >
         {text}
@@ -377,8 +382,8 @@ function HeroPlannerMockup() {
                 Dinner first. A smarter second move included.
               </h2>
             </div>
-            <span className="rounded-full bg-green-400/10 px-3 py-1 text-xs font-black text-green-300">
-              Set
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-green-400/10 px-4 py-2 text-xs font-black text-green-300">
+              Built
             </span>
           </div>
           <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.06] p-4">
@@ -413,8 +418,8 @@ function HeroPlannerMockup() {
 
 function CreateExperiencePreview() {
   return (
-    <div className="rounded-[2.25rem] border border-white/10 bg-black p-4 shadow-2xl shadow-black/[0.06]">
-      <div className="rounded-[1.75rem] border border-white/10 bg-[#0b0b0b] p-5">
+    <div className="rounded-[2.25rem] border border-[#19110e]/10 bg-white p-4 shadow-2xl shadow-black/[0.08]">
+      <div className="rounded-[1.75rem] border border-[#19110e]/10 bg-[#f7f7f7] p-5">
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
@@ -426,23 +431,23 @@ function CreateExperiencePreview() {
           </div>
           <Link
             href="/create"
-            className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+            className="rounded-full border border-[#19110e]/15 px-5 py-3 text-center text-sm font-black text-[#19110e] transition hover:bg-[#19110e] hover:text-white"
           >
             Open create →
           </Link>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-white/10 bg-black p-4">
+        <div className="mt-6 rounded-3xl border border-[#19110e]/10 bg-white p-4">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-red-400" />
             <span className="h-3 w-3 rounded-full bg-yellow-300" />
             <span className="h-3 w-3 rounded-full bg-green-400" />
           </div>
-          <p className="mt-5 text-sm text-white/45">What you type</p>
-          <p className="mt-2 text-sm font-black text-white sm:text-base">
+          <p className="mt-5 text-sm text-[#19110e]/45">What you type</p>
+          <p className="mt-2 text-sm font-black text-[#19110e] sm:text-base">
             fun dinner, dessert, and something active nearby
           </p>
-          <div className="mt-4 h-2 rounded-full bg-white/10">
+          <div className="mt-4 h-2 rounded-full bg-[#19110e]/10">
             <div className="h-2 w-3/4 rounded-full bg-[#e1062a]" />
           </div>
         </div>
@@ -451,34 +456,34 @@ function CreateExperiencePreview() {
           {createPreviewResults.map((result) => (
             <div
               key={result.name}
-              className="rounded-3xl border border-white/10 bg-black p-4"
+              className="rounded-3xl border border-[#19110e]/10 bg-white p-4"
             >
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-[#19110e]/35">
                 {result.type}
               </p>
-              <p className="mt-8 text-base font-black text-white">
+              <p className="mt-8 text-base font-black text-[#19110e]">
                 {result.name}
               </p>
-              <p className="mt-2 text-sm leading-6 text-white/48">
+              <p className="mt-2 text-sm leading-6 text-[#19110e]/48">
                 {result.note}
               </p>
             </div>
           ))}
         </div>
 
-        <div className="mt-5 grid gap-3 rounded-3xl border border-[#e1062a]/25 bg-[#e1062a]/10 p-5 sm:grid-cols-[1fr_1.15fr]">
+        <div className="mt-5 grid gap-3 rounded-3xl border border-[#e1062a]/25 bg-red-50 p-5 sm:grid-cols-[1fr_1.15fr]">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
               What you get
             </p>
-            <p className="mt-3 text-sm leading-7 text-white/68">
+            <p className="mt-3 text-sm leading-7 text-[#19110e]/68">
               A short plan summary that explains the best order, the easy
               pivot, and why each stop fits the outing.
             </p>
           </div>
           <ul className="space-y-3">
             {createPreviewChecklist.map((item) => (
-              <li key={item} className="flex gap-3 text-sm font-bold text-white/68">
+              <li key={item} className="flex gap-3 text-sm font-bold text-[#19110e]/68">
                 <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-[10px] text-white">
                   ✓
                 </span>
