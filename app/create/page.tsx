@@ -131,6 +131,7 @@ export default function CreatePage() {
   const addOnActivitySectionRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const viewedItems = useRef<Set<string>>(new Set());
+  const processedPromptRef = useRef<string | null>(null);
 
   const latestAssistant = useMemo(
     () =>
@@ -153,7 +154,23 @@ export default function CreatePage() {
 
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
-    setLocationSaved(Boolean(getSavedLocation()));
+
+    const timer = window.setTimeout(() => {
+      setLocationSaved(Boolean(getSavedLocation()));
+
+      const prompt = new URLSearchParams(window.location.search).get("prompt");
+      const cleanPrompt = prompt?.trim();
+
+      if (!cleanPrompt || processedPromptRef.current === cleanPrompt) return;
+
+      processedPromptRef.current = cleanPrompt;
+      setInput(cleanPrompt);
+      void submitSearch(cleanPrompt);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+    // The query prompt should only hydrate the first landing from homepage cards.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -210,8 +227,8 @@ export default function CreatePage() {
     if (!latest) return;
 
     [...(latest.restaurants || []), ...(latest.activities || [])].forEach(
-      (item: any) => {
-        const itemType = item.restaurant_name ? "restaurant" : "activity";
+      (item: RestaurantCard | ActivityCard) => {
+        const itemType = "restaurant_name" in item ? "restaurant" : "activity";
         const key = `${itemType}-${item.id}`;
 
         if (!item.id || viewedItems.current.has(key)) return;
@@ -453,8 +470,12 @@ export default function CreatePage() {
             : scrollToResultsPanel(),
         250
       );
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
       setActiveAddOnTarget(null);
@@ -1694,7 +1715,7 @@ function titleCase(value: string) {
     .join(" ");
 }
 
-function toArray(value: any): string[] {
+function toArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
