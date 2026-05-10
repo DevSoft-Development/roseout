@@ -15,6 +15,23 @@ const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION = "contact-v4";
 
+type DetectedIntent = ReturnType<typeof detectIntent>;
+
+function buildResponseCacheKey(input: string, intent: DetectedIntent) {
+  const keyParts = [
+    "theouthaven",
+    getSmartMatchVersion(),
+    RESPONSE_CACHE_VERSION,
+    input,
+    intent.userLat || "",
+    intent.userLng || "",
+    intent.maxMiles || "",
+    intent.locations.join("-"),
+  ];
+
+  return normalizeQuery(keyParts.join("-"));
+}
+
 const OFF_TOPIC_REPLY =
   "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
 
