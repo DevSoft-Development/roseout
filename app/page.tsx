@@ -3,48 +3,45 @@ import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const metadata: Metadata = {
-  title: "TheOutHaven | Plan Your Outing in One Search",
+  title: "TheOutHaven | Plan Your Next Outing",
   description:
-    "Plan restaurants, lounges, activities, and date ideas from the fresh redesigned TheOutHaven homepage.",
+    "Find date ideas, restaurants, activities, lounges, and a cleaner plan for your next outing with TheOutHaven.",
   alternates: {
     canonical: "https://www.theouthaven.com",
   },
   openGraph: {
-    title: "TheOutHaven | Plan Your Outing in One Search",
+    title: "TheOutHaven | Plan Your Next Outing",
     description:
-      "Tell TheOutHaven the vibe, location, and occasion, then get a clean restaurant-and-activity plan.",
+      "Start with a vibe and preview a simple outing plan before opening the /create experience.",
     url: "https://www.theouthaven.com",
     siteName: "TheOutHaven",
     type: "website",
   },
 };
 
-const HOMEPAGE_VERSION = "home-redesign-v6-fresh-commit-2026-05-10";
+const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-10-fresh";
 
 const featuredDateIdeas = [
   {
-    title: "Rooftop drinks + late-night bite",
-    area: "NYC area",
+    title: "Dinner + drinks nearby",
+    tag: "Classic date night",
     description:
-      "A stylish first stop with a nearby restaurant option so the night feels planned, not random.",
-    prompt: "rooftop drinks and food near me",
-    accent: "from-red-500/25 to-white/5",
+      "Choose a restaurant first, then add a lounge or cocktail bar close enough to keep the night moving.",
+    prompt: "dinner and drinks nearby",
   },
   {
-    title: "Restaurant + bowling after",
-    area: "Queens",
+    title: "Activity first, food after",
+    tag: "Fun and easy",
     description:
-      "Start with a restaurant, then add an activity close enough to keep the energy moving.",
-    prompt: "restaurant with bowling in Queens",
-    accent: "from-amber-400/20 to-red-500/10",
+      "Start with bowling, comedy, games, or live music, then find a restaurant that fits the route.",
+    prompt: "activity first and food after",
   },
   {
-    title: "Lounge night + food nearby",
-    area: "Long Island",
+    title: "Rooftop + dessert stop",
+    tag: "Views and something sweet",
     description:
-      "Find the lounge vibe you want and pair it with a restaurant that makes sense for the outing.",
-    prompt: "lounge with food in Long Island",
-    accent: "from-fuchsia-500/20 to-red-500/10",
+      "Pair a scenic rooftop with a late dessert option so the plan feels intentional from start to finish.",
+    prompt: "rooftop and dessert date",
   },
 ];
 
@@ -52,81 +49,66 @@ const categories = [
   { label: "Restaurants", icon: "🍽️", prompt: "restaurants near me" },
   { label: "Lounges", icon: "🍸", prompt: "lounges near me" },
   { label: "Activities", icon: "🎯", prompt: "activities near me" },
-  { label: "Rooftops", icon: "🌇", prompt: "rooftop drinks" },
-  { label: "Bowling", icon: "🎳", prompt: "bowling and food" },
+  { label: "Rooftops", icon: "🌇", prompt: "rooftop date ideas" },
   { label: "Comedy", icon: "🎤", prompt: "comedy show and restaurant" },
+  { label: "Bowling", icon: "🎳", prompt: "bowling and dinner" },
   { label: "Dessert", icon: "🍰", prompt: "dessert date ideas" },
   { label: "Live music", icon: "🎶", prompt: "live music and food" },
 ];
 
 const steps = [
   {
-    number: "01",
-    title: "Tell it the vibe",
-    text: "Search the way you would text a friend: location, mood, food, activity, budget, or occasion.",
-    icon: "💬",
+    title: "Tell us the vibe",
+    text: "Enter the neighborhood, occasion, food craving, activity, budget, or mood in one simple prompt.",
   },
   {
-    number: "02",
-    title: "Review the best matches",
-    text: "TheOutHaven organizes restaurant and activity options, prioritizes nearby picks, and avoids duplicate results.",
-    icon: "✨",
+    title: "Review curated options",
+    text: "See restaurants and experiences organized into a clean plan instead of scattered search results.",
   },
   {
-    number: "03",
-    title: "Build the outing",
-    text: "Choose a restaurant, add an activity if you want one, compare distance between stops, and continue with confidence.",
-    icon: "🗺️",
+    title: "Pick your outing",
+    text: "Choose your favorite match, add a nearby second stop, and move forward with confidence.",
   },
 ];
 
 const betaFeedback = [
   {
-    quote:
-      "I did not have to bounce between apps. It gave me restaurants and the thing to do after.",
-    context: "Beta feedback · Queens",
+    quote: "It helped me stop overthinking and actually pick a plan.",
+    source: "Beta feedback · date night",
   },
   {
-    quote:
-      "The add-on search is what I needed. I could start with a lounge and then find food around it.",
-    context: "Beta feedback · Long Island",
+    quote: "I liked seeing food and the thing to do after in the same place.",
+    source: "Beta feedback · Queens",
   },
   {
-    quote:
-      "It feels like the site understands the plan, not just the words I typed.",
-    context: "Beta feedback · Date night",
+    quote: "The add-on suggestions made the night feel complete.",
+    source: "Beta feedback · Long Island",
   },
   {
-    quote:
-      "The preview cards made it simple to pick one place and keep going instead of overthinking.",
-    context: "Beta feedback · Activity first",
+    quote: "Cleaner than bouncing between maps, reviews, and group chats.",
+    source: "Beta feedback · friends night",
   },
   {
-    quote:
-      "This is cleaner than search. I can see the outing before I commit to anything.",
-    context: "Beta feedback · Restaurant first",
+    quote: "The preview showed exactly what I was going to get before I clicked.",
+    source: "Beta feedback · first-time user",
   },
 ];
 
-const previewRestaurants = [
+const createPreviewCards = [
   {
-    name: "Modern Italian spot",
-    detail: "Restaurant · Astoria",
+    label: "Prompt",
+    title: "romantic dinner and something fun nearby",
+    detail: "The flow starts with plain language, not filters.",
   },
   {
-    name: "Cozy sushi counter",
-    detail: "Restaurant · 1.8 miles away",
-  },
-];
-
-const previewActivities = [
-  {
-    name: "Cocktail lounge",
-    detail: "0.7 miles from restaurant",
+    label: "Results",
+    title: "Restaurant + activity matches",
+    detail: "Cards separate food, experiences, and nearby add-ons.",
   },
   {
-    name: "Bowling + arcade",
-    detail: "Activity · nearby match",
+    label: "Plan",
+    title: "Dinner → lounge → dessert backup",
+    detail: "A compact summary helps you choose the next step.",
   },
 ];
 
@@ -138,85 +120,70 @@ export default function HomePage() {
     >
       <TheOutHavenHeader />
 
-      <section className="relative isolate px-5 pb-20 pt-32 sm:px-6 sm:pt-36 lg:pb-28">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_15%,rgba(225,6,42,0.25),transparent_30%),radial-gradient(circle_at_82%_10%,rgba(255,255,255,0.08),transparent_25%),linear-gradient(180deg,#0a0a0a_0%,#050505_58%,#000_100%)]" />
-        <div className="absolute left-1/2 top-20 -z-10 h-[40rem] w-[40rem] -translate-x-1/2 rounded-full border border-white/10 bg-white/[0.02] blur-3xl" />
+      <section className="relative isolate px-5 pb-20 pt-36 text-center sm:px-6 lg:pb-28 lg:pt-40">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_0%,rgba(225,6,42,0.30),transparent_34%),linear-gradient(180deg,#0f0f0f_0%,#050505_70%)]" />
+        <div className="mx-auto max-w-5xl">
+          <p className="mx-auto inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-red-200">
+            Outings made simple
+          </p>
 
-        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:min-h-[calc(100vh-9rem)] lg:grid-cols-[0.92fr_1.08fr]">
-          <div className="max-w-3xl">
-            <p className="inline-flex rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-red-200">
-              AI-powered outing planner
-            </p>
+          <h1 className="mx-auto mt-7 max-w-4xl text-5xl font-black leading-[0.92] tracking-tight sm:text-7xl lg:text-8xl">
+            Plan the date night without the chaos.
+          </h1>
 
-            <h1 className="mt-7 text-5xl font-black leading-[0.94] tracking-tight sm:text-6xl lg:text-7xl">
-              Plan your outing in one search.
-            </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/64 sm:text-xl">
+            Tell TheOutHaven your vibe and location. Get a clean restaurant,
+            activity, and add-on plan you can actually choose.
+          </p>
 
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl">
-              Tell TheOutHaven what you want, where you want it, and the mood
-              you are going for. Get a cleaner restaurant-and-activity plan in
-              seconds.
-            </p>
-
-            <Link
-              href="/create"
-              className="mt-9 inline-flex items-center justify-center rounded-2xl bg-[#e1062a] px-10 py-5 text-base font-black text-white shadow-2xl shadow-red-600/30 transition hover:-translate-y-0.5 hover:bg-red-500"
-            >
-              Plan My Outing
-            </Link>
-          </div>
-
-          <CreatePreviewCard />
+          <Link
+            href="/create"
+            className="mt-9 inline-flex items-center justify-center rounded-full bg-[#e1062a] px-10 py-5 text-base font-black text-white shadow-2xl shadow-red-600/30 transition hover:-translate-y-0.5 hover:bg-red-500"
+          >
+            Plan My Outing
+          </Link>
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-black px-5 py-16 sm:px-6">
+      <section className="border-y border-white/10 bg-black px-5 py-20 sm:px-6">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Featured date ideas"
-            title="Start with the kind of night you want."
-            text="Pick a direction, then let TheOutHaven shape it around your area, distance, and the stops that make sense together."
+            title="Start with a plan that already works."
+            text="Pick an idea, then let /create personalize it around your area, timing, and mood."
           />
 
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
             {featuredDateIdeas.map((idea) => (
-              <article
+              <Link
                 key={idea.title}
-                className="group relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-6 shadow-2xl shadow-black/30 transition hover:-translate-y-1 hover:border-red-500/45"
+                href={`/create?prompt=${encodeURIComponent(idea.prompt)}`}
+                className="group rounded-[2rem] border border-white/10 bg-white/[0.04] p-7 transition hover:-translate-y-1 hover:border-red-500/50 hover:bg-red-500/10"
               >
-                <div
-                  className={`absolute inset-0 bg-gradient-to-br ${idea.accent} opacity-80 transition group-hover:opacity-100`}
-                />
-                <div className="relative">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-black">
-                      {idea.area}
-                    </span>
-                    <span className="text-2xl">♡</span>
-                  </div>
-
-                  <h2 className="mt-16 text-2xl font-black tracking-tight">
-                    {idea.title}
-                  </h2>
-                  <p className="mt-3 text-sm leading-7 text-white/62">
-                    {idea.description}
-                  </p>
-                  <p className="mt-5 rounded-2xl border border-white/10 bg-black/35 p-3 text-xs font-bold text-white/50">
-                    Try: “{idea.prompt}”
-                  </p>
-                </div>
-              </article>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-red-300">
+                  {idea.tag}
+                </p>
+                <h2 className="mt-10 text-2xl font-black tracking-tight">
+                  {idea.title}
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-white/58">
+                  {idea.description}
+                </p>
+                <p className="mt-6 text-sm font-black text-white transition group-hover:text-red-200">
+                  Open this idea →
+                </p>
+              </Link>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="bg-[#070707] px-5 py-16 sm:px-6">
+      <section className="bg-[#070707] px-5 py-20 sm:px-6">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Categories"
-            title="Search by food, activity, place, or mood."
-            text="TheOutHaven is built for plain-language outing searches, from quick restaurant ideas to full date-night plans."
+            title="Choose the starting point."
+            text="Begin with food, a place, an activity, or the mood you want. Each category opens /create with a helpful prompt."
           />
 
           <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -224,7 +191,7 @@ export default function HomePage() {
               <Link
                 key={category.label}
                 href={`/create?prompt=${encodeURIComponent(category.prompt)}`}
-                className="group rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-center transition hover:-translate-y-1 hover:border-red-500/45 hover:bg-red-500/10"
+                className="group rounded-3xl border border-white/10 bg-black p-4 text-center transition hover:-translate-y-1 hover:border-red-500/50 hover:bg-white/[0.06]"
               >
                 <span className="block text-3xl transition group-hover:scale-110">
                   {category.icon}
@@ -242,26 +209,21 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="How it works"
-            title="A three-step flow for faster plans."
-            text="No endless tabs. No messy duplicate lists. Just a simple path from idea to outing."
+            title="Three steps. One cleaner outing."
+            text="The flow keeps decisions simple so you can move from an idea to a plan faster."
             light
           />
 
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
-            {steps.map((step) => (
+            {steps.map((step, index) => (
               <article
-                key={step.number}
+                key={step.title}
                 className="rounded-[2rem] border border-black/10 bg-[#f7f7f7] p-7 shadow-xl shadow-black/5"
               >
-                <div className="flex items-center justify-between gap-4">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-2xl">
-                    {step.icon}
-                  </span>
-                  <span className="text-sm font-black text-[#e1062a]">
-                    {step.number}
-                  </span>
-                </div>
-                <h2 className="mt-6 text-2xl font-black tracking-tight">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-sm font-black text-white">
+                  0{index + 1}
+                </span>
+                <h2 className="mt-8 text-2xl font-black tracking-tight">
                   {step.title}
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-black/60">
@@ -273,28 +235,30 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="bg-black px-5 py-16 sm:px-6">
+      <section className="bg-black px-5 py-20 sm:px-6">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Beta feedback"
-            title="People want a plan, not another search rabbit hole."
-            text="Early feedback has shaped a cleaner flow for building outings around restaurants, lounges, and activities."
+            title="People want a plan, not another search tab."
+            text="A left-to-right reel of early feedback from people testing the planning flow."
           />
+        </div>
 
-          <div className="mt-10 flex snap-x gap-4 overflow-x-auto pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {betaFeedback.map((item) => (
+        <div className="mt-10 overflow-hidden">
+          <div className="testimonial-track flex w-max gap-4">
+            {[...betaFeedback, ...betaFeedback].map((item, index) => (
               <article
-                key={item.quote}
-                className="min-w-[19rem] snap-start rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-6 sm:min-w-[25rem]"
+                key={`${item.quote}-${index}`}
+                className="w-[20rem] shrink-0 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 sm:w-[25rem]"
               >
-                <div className="text-red-400" aria-label="5-star feedback">
-                  ★★★★★
-                </div>
+                <p className="text-sm font-black uppercase tracking-[0.25em] text-red-300">
+                  Beta feedback
+                </p>
                 <p className="mt-5 text-lg font-semibold leading-8 text-white/82">
                   “{item.quote}”
                 </p>
-                <p className="mt-6 border-t border-white/10 pt-4 text-sm font-black uppercase tracking-[0.2em] text-white/38">
-                  {item.context}
+                <p className="mt-6 border-t border-white/10 pt-4 text-xs font-black uppercase tracking-[0.2em] text-white/38">
+                  {item.source}
                 </p>
               </article>
             ))}
@@ -303,40 +267,33 @@ export default function HomePage() {
       </section>
 
       <section className="bg-[#070707] px-5 py-20 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-red-400">
-              Before you click
-            </p>
-            <h2 className="mt-4 text-4xl font-black tracking-tight sm:text-5xl">
-              Preview the /create experience.
-            </h2>
-            <p className="mt-5 max-w-xl text-lg leading-8 text-white/58">
-              See how one prompt becomes organized result cards, add-on search,
-              and a simple plan summary before you move forward.
-            </p>
-          </div>
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+          <SectionIntro
+            eyebrow="Create preview"
+            title="Preview the /create experience before you click."
+            text="See how one sentence becomes organized options, nearby add-ons, and a simple outing summary."
+          />
 
-          <CreatePreviewCard compact />
+          <CreateExperiencePreview />
         </div>
       </section>
 
       <section className="relative overflow-hidden bg-black px-5 py-24 text-center sm:px-6">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,6,42,0.22),transparent_42%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,6,42,0.22),transparent_44%)]" />
         <div className="relative mx-auto max-w-4xl">
-          <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-            Ready to plan?
+          <p className="text-xs font-black uppercase tracking-[0.35em] text-red-300">
+            Ready to go out?
           </p>
           <h2 className="mt-4 text-4xl font-black tracking-tight sm:text-6xl">
-            Turn one sentence into your next outing.
+            Make the plan in one place.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/58">
-            Start with a restaurant, an activity, a lounge, or just a vibe.
-            TheOutHaven will help shape the rest.
+            Start with the first thing you know: the vibe, the area, the food,
+            or the activity. TheOutHaven will help with the rest.
           </p>
           <Link
             href="/create"
-            className="mt-10 inline-flex rounded-2xl bg-[#e1062a] px-10 py-5 text-lg font-black text-white shadow-2xl shadow-red-600/30 transition hover:-translate-y-0.5 hover:bg-red-500"
+            className="mt-10 inline-flex rounded-full bg-[#e1062a] px-10 py-5 text-lg font-black text-white shadow-2xl shadow-red-600/30 transition hover:-translate-y-0.5 hover:bg-red-500"
           >
             Plan My Outing
           </Link>
@@ -361,7 +318,7 @@ function SectionIntro({
     <div className="max-w-3xl">
       <p
         className={`text-xs font-black uppercase tracking-[0.3em] ${
-          light ? "text-[#e1062a]" : "text-red-400"
+          light ? "text-[#e1062a]" : "text-red-300"
         }`}
       >
         {eyebrow}
@@ -380,93 +337,61 @@ function SectionIntro({
   );
 }
 
-function CreatePreviewCard({ compact = false }: { compact?: boolean }) {
+function CreateExperiencePreview() {
   return (
-    <div
-      className={`relative rounded-[2rem] border border-white/10 bg-white/[0.05] p-4 shadow-2xl shadow-black/45 backdrop-blur ${
-        compact ? "" : "lg:rotate-1"
-      }`}
-    >
-      <div className="rounded-[1.5rem] border border-white/10 bg-[#0b0b0b] p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
+    <div className="rounded-[2rem] border border-white/10 bg-white/[0.05] p-4 shadow-2xl shadow-black/45">
+      <div className="rounded-[1.5rem] border border-white/10 bg-black p-5">
+        <div className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-red-400">
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-red-300">
               /create preview
             </p>
-            <p className="mt-1 text-sm font-bold text-white/45">
-              One prompt, two clear columns
-            </p>
+            <h3 className="mt-2 text-2xl font-black tracking-tight">
+              One prompt → one clean plan
+            </h3>
           </div>
-          <span className="rounded-full bg-green-400/10 px-3 py-1 text-xs font-black text-green-300">
-            Live flow
+          <span className="rounded-full bg-green-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-green-300">
+            Preview
           </span>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black p-4">
+        <div className="mt-5 rounded-3xl border border-white/10 bg-[#0b0b0b] p-4">
           <p className="text-sm font-black text-white">
-            “A fun restaurant and lounge near Astoria....”
+            “romantic dinner and something fun nearby”
           </p>
           <div className="mt-4 h-2 rounded-full bg-white/10">
             <div className="h-2 w-4/5 rounded-full bg-[#e1062a]" />
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <PreviewColumn title="Restaurants" items={previewRestaurants} />
-          <PreviewColumn title="Activities" items={previewActivities} />
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {createPreviewCards.map((card) => (
+            <article
+              key={card.label}
+              className="rounded-3xl border border-white/10 bg-white/[0.04] p-4"
+            >
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">
+                {card.label}
+              </p>
+              <h4 className="mt-8 text-base font-black text-white">
+                {card.title}
+              </h4>
+              <p className="mt-2 text-sm leading-6 text-white/45">
+                {card.detail}
+              </p>
+            </article>
+          ))}
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">
-              Selected
-            </p>
-            <p className="mt-2 text-sm font-black text-white">
-              Modern Italian spot
-            </p>
-          </div>
-          <div className="text-center text-xs font-black uppercase tracking-[0.18em] text-red-300">
-            0.7 mi
-          </div>
-          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-red-200">
-              Add-on
-            </p>
-            <p className="mt-2 text-sm font-black text-white">
-              Cocktail lounge nearby
-            </p>
-          </div>
+        <div className="mt-5 rounded-3xl border border-red-500/30 bg-red-500/10 p-5">
+          <p className="text-xs font-black uppercase tracking-[0.24em] text-red-200">
+            What you get
+          </p>
+          <p className="mt-3 text-sm leading-7 text-white/70">
+            A focused shortlist, a suggested second stop, distance context, and
+            a plan summary you can use before texting the group.
+          </p>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewColumn({
-  title,
-  items,
-}: {
-  title: string;
-  items: { name: string; detail: string }[];
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-      <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-        {title}
-      </p>
-      <div className="mt-3 space-y-2">
-        {items.map((item) => (
-          <div
-            key={item.name}
-            className="rounded-xl border border-white/10 bg-black/50 p-3"
-          >
-            <div className="h-2 w-16 rounded-full bg-red-500/70" />
-            <p className="mt-3 text-sm font-black text-white/82">
-              {item.name}
-            </p>
-            <p className="mt-1 text-xs text-white/38">{item.detail}</p>
-          </div>
-        ))}
       </div>
     </div>
   );
