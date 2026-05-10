@@ -15,6 +15,23 @@ const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION = "contact-v4";
 
+type DetectedIntent = ReturnType<typeof detectIntent>;
+
+function buildResponseCacheKey(input: string, intent: DetectedIntent) {
+  const keyParts = [
+    "theouthaven",
+    getSmartMatchVersion(),
+    RESPONSE_CACHE_VERSION,
+    input,
+    intent.userLat || "",
+    intent.userLng || "",
+    intent.maxMiles || "",
+    intent.locations.join("-"),
+  ];
+
+  return normalizeQuery(keyParts.join("-"));
+}
+
 const OFF_TOPIC_REPLY =
   "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
 
@@ -862,56 +879,6 @@ const NON_OUTING_LOCATION_KEYWORDS = [
   "laundromat",
 ];
 
-const NON_OUTING_LOCATION_KEYWORDS = [
-  "hospital",
-  "medical center",
-  "medical clinic",
-  "urgent care",
-  "doctor",
-  "dentist",
-  "dental",
-  "pharmacy",
-  "health clinic",
-  "healthcare",
-  "pediatric",
-  "therapy",
-  "physical therapy",
-  "rehab",
-  "veterinary",
-  "animal hospital",
-  "funeral home",
-  "cemetery",
-  "school",
-  "daycare",
-  "university",
-  "church",
-  "mosque",
-  "synagogue",
-  "place of worship",
-  "courthouse",
-  "city hall",
-  "government office",
-  "local government",
-  "municipal",
-  "police",
-  "fire station",
-  "post office",
-  "library",
-  "police",
-  "fire station",
-  "post office",
-  "bank",
-  "atm",
-  "insurance agency",
-  "law office",
-  "lawyer",
-  "real estate agency",
-  "storage facility",
-  "parking garage",
-  "gas station",
-  "car repair",
-  "laundromat",
-];
 
 function isOutingEligibleLocation(item: any) {
   const disqualifyingText = normalizeQuery(
@@ -1901,12 +1868,7 @@ export async function POST(req: Request) {
     const locations = mergedLocations.map(normalizeLocation);
     const intent = detectIntent(input, body, locations);
 
-   const cacheKey = normalizeQuery(
-  `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${intent.userLat || ""}-${
-  `theouthaven-${getSmartMatchVersion()}-contact-v2-${input}-${intent.userLat || ""}-${
-    intent.userLng || ""
-  }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
-);
+    const cacheKey = buildResponseCacheKey(input, intent);
 
     const { data: cached } = await supabase
       .from("ai_response_cache")
