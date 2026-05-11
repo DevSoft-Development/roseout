@@ -22,5 +22,5 @@ export default async function AdminActivitiesRedirectPage({
 
   query.set("type", "activities");
 
-  redirect(`/admin/locations?${query.toString()}`);
+  redirect(`/admin/dashboard/locations?${query.toString()}`);
 }

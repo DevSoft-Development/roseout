@@ -2,9 +2,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabase } from "@/lib/supabase-server";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import AccountProfileForm from "@/components/AccountProfileForm";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,21 @@ type SavedPlan = {
   created_at?: string | null;
 };
 
+type UserProfile = {
+  id?: string;
+  email?: string | null;
+  full_name?: string | null;
+  phone?: string | null;
+  username?: string | null;
+  bio?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip_code?: string | null;
+  role?: string | null;
+  subscription_status?: string | null;
+  created_at?: string | null;
+};
 
 function adminSupabase() {
   return createClient(
@@ -35,23 +52,45 @@ export default async function UserDashboardPage() {
     "theouthaven_impersonate_user_id"
   )?.value;
 
+  const sessionSupabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await sessionSupabase.auth.getUser();
+
   const supabase = adminSupabase();
 
-  const userId = impersonatedUserId || null;
+  const userId = impersonatedUserId || user?.id || null;
 
   if (!userId) {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const { data: profileData } = await supabase
     .from("users")
     .select("*")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
-  if (!profile) {
-    redirect("/login");
-  }
+  const profile: UserProfile =
+    profileData ||
+    (user
+      ? {
+          id: user.id,
+          email: user.email,
+          full_name:
+            (user.user_metadata?.full_name as string | undefined) || null,
+          phone: (user.user_metadata?.phone as string | undefined) || null,
+          username: (user.user_metadata?.username as string | undefined) || null,
+          bio: (user.user_metadata?.bio as string | undefined) || null,
+          address: (user.user_metadata?.address as string | undefined) || null,
+          city: (user.user_metadata?.city as string | undefined) || null,
+          state: (user.user_metadata?.state as string | undefined) || null,
+          zip_code: (user.user_metadata?.zip_code as string | undefined) || null,
+          role: (user.user_metadata?.role as string | undefined) || "user",
+          subscription_status: "free",
+          created_at: user.created_at,
+        }
+      : {});
 
   const { data: savedPlans } = await supabase
     .from("saved_plans")
@@ -109,6 +148,16 @@ export default async function UserDashboardPage() {
                 className="rounded-full border border-white/15 bg-white/[0.06] px-6 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
               >
                 Support Tickets
+              </TrackedButton>
+
+              <TrackedButton
+                href="/user/account"
+                eventType="button_click"
+                eventName="Edit Account Clicked"
+                metadata={{ source: "user_dashboard_hero" }}
+                className="rounded-full border border-white/15 bg-white/[0.06] px-6 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+              >
+                Edit Account
               </TrackedButton>
 
               <TrackedButton
@@ -282,26 +331,18 @@ export default async function UserDashboardPage() {
 
               <h2 className="mt-2 text-2xl font-black">Profile Details</h2>
 
-              <div className="mt-6 space-y-4 text-sm">
-                <div>
-                  <p className="text-white/35">Name</p>
-                  <p className="mt-1 font-bold">
-                    {profile.full_name || "Not provided"}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-white/35">Email</p>
-                  <p className="mt-1 break-all font-bold">{profile.email}</p>
-                </div>
-
-                <div>
-                  <p className="text-white/35">Phone</p>
-                  <p className="mt-1 font-bold">
-                    {profile.phone || "Not provided"}
-                  </p>
-                </div>
-              </div>
+              <AccountProfileForm
+                fullName={profile.full_name}
+                email={profile.email}
+                phone={profile.phone}
+                username={profile.username}
+                bio={profile.bio}
+                address={profile.address}
+                city={profile.city}
+                state={profile.state}
+                zipCode={profile.zip_code}
+                compact
+              />
             </div>
 
             <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/25">
