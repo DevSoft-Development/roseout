@@ -1,16 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase-browser";
 
 const LOGIN_PAGE_VERSION = "login-refresh-2026-05-11";
 
 export default function LoginPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -32,52 +27,29 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { data, error: loginError } =
-        await supabase.auth.signInWithPassword({
+      const loginResponse = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
-        });
+        }),
+        credentials: "same-origin",
+      });
 
-      if (loginError) {
-        setError(loginError.message);
+      const loginData = await loginResponse.json();
+
+      if (!loginResponse.ok) {
+        setError(loginData?.error || "Login failed. Please try again.");
         return;
       }
 
-      if (!data.user?.email) {
-        setError("Login failed. Please try again.");
-        return;
-      }
-
-      const userEmail = data.user.email.toLowerCase();
-
-      const { data: adminUser, error: adminError } = await supabase
-        .from("admin_users")
-        .select("id, role")
-        .eq("email", userEmail)
-        .maybeSingle();
-
-      if (adminError) {
-        setError(adminError.message);
-        return;
-      }
-
-      const roleRedirects: Record<string, string> = {
-        superuser: "/admin",
-        admin: "/admin",
-        editor: "/admin/restaurants",
-        reviewer: "/admin/claims",
-        viewer: "/admin/import-history",
-      };
-
-      const redirectPath = adminUser
-        ? roleRedirects[adminUser.role] || "/admin"
-        : "/create";
+      const redirectPath = loginData?.redirectPath || "/user/dashboard";
 
       setMessage("Login successful. Redirecting...");
-
-      setTimeout(() => {
-        router.replace(redirectPath);
-      }, 500);
+      window.location.replace(redirectPath);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
