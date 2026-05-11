@@ -8,6 +8,8 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const dynamic = "force-dynamic";
 
+const USER_DASHBOARD_VERSION = "user-dashboard-refresh-2026-05-11";
+
 type SavedPlan = {
   id: string;
   title?: string | null;
@@ -63,7 +65,10 @@ export default async function UserDashboardPage() {
   const totalSavedPlans = savedPlans?.length || 0;
 
   return (
-    <main className="min-h-screen bg-[#080407] text-white">
+    <main
+      data-page-version={USER_DASHBOARD_VERSION}
+      className="min-h-screen bg-[#080407] text-white"
+    >
       <ActivityTracker userId={userId} />
       <TheOutHavenHeader />
 

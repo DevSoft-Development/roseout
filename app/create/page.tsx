@@ -30,12 +30,15 @@ type RestaurantCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_walking_minutes?: number | null;
+  pair_walking_label?: string | null;
 };
 
 type ActivityCard = {
   id: string;
   activity_name: string;
   activity_type?: string | null;
+  detail_location_type?: "restaurants" | "activities" | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -55,6 +58,8 @@ type ActivityCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_walking_minutes?: number | null;
+  pair_walking_label?: string | null;
 };
 
 type Message = {
@@ -79,6 +84,7 @@ type UserLocation = {
 
 const LOCATION_KEY = "theouthaven_user_location";
 const RESULT_CARD_UI_VERSION = "results-card-clean-v2";
+const WALKING_MINUTES_PER_MILE = 20;
 
 const typingSearches = [
   "Steak restaurant with bowling in Queens",
@@ -131,6 +137,7 @@ export default function CreatePage() {
   const addOnActivitySectionRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const viewedItems = useRef<Set<string>>(new Set());
+  const initialPromptHandled = useRef(false);
 
   const latestAssistant = useMemo(
     () =>
@@ -153,7 +160,25 @@ export default function CreatePage() {
 
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
-    setLocationSaved(Boolean(getSavedLocation()));
+
+    window.setTimeout(() => {
+      setLocationSaved(Boolean(getSavedLocation()));
+    }, 0);
+
+    if (initialPromptHandled.current) return;
+
+    const prompt = new URLSearchParams(window.location.search)
+      .get("prompt")
+      ?.trim();
+
+    if (!prompt) return;
+
+    initialPromptHandled.current = true;
+    window.setTimeout(() => {
+      setInput(prompt);
+      submitSearch(prompt);
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -210,8 +235,8 @@ export default function CreatePage() {
     if (!latest) return;
 
     [...(latest.restaurants || []), ...(latest.activities || [])].forEach(
-      (item: any) => {
-        const itemType = item.restaurant_name ? "restaurant" : "activity";
+      (item: RestaurantCard | ActivityCard) => {
+        const itemType = "restaurant_name" in item ? "restaurant" : "activity";
         const key = `${itemType}-${item.id}`;
 
         if (!item.id || viewedItems.current.has(key)) return;
@@ -453,8 +478,12 @@ export default function CreatePage() {
             : scrollToResultsPanel(),
         250
       );
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
       setActiveAddOnTarget(null);
@@ -806,7 +835,7 @@ export default function CreatePage() {
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
                             onSelect={() => selectActivity(activity)}
-                            detailsHref={`/locations/activities/${activityId}?from=/create`}
+                            detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
                             onDetails={() => trackActivityClick(activityId)}
                             websiteUrl={activity.website || undefined}
                             onWebsite={() => trackActivityClick(activityId)}
@@ -1694,7 +1723,7 @@ function titleCase(value: string) {
     .join(" ");
 }
 
-function toArray(value: any): string[] {
+function toArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
@@ -1870,17 +1899,26 @@ function distanceBetweenLocations(
   );
 }
 
+function walkingMinutesFromMiles(distanceMiles: number | null) {
+  if (distanceMiles === null || !Number.isFinite(distanceMiles)) return null;
+
+  return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
+}
+
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null
 ) {
   if (!restaurant || !activity) return undefined;
 
+  if (activity.pair_walking_label) return activity.pair_walking_label;
+
   const distance = distanceBetweenLocations(restaurant, activity);
+  const walkingMinutes = walkingMinutesFromMiles(distance);
 
-  if (distance === null) return undefined;
+  if (!walkingMinutes) return undefined;
 
-  return `${distance} miles from ${restaurant.restaurant_name}`;
+  return `${walkingMinutes} min walk from ${restaurant.restaurant_name}`;
 }
 
 function buildDistanceText(
@@ -1892,7 +1930,7 @@ function buildDistanceText(
 
     if (distanceLabel) {
       return activity.activity_name
-        ? `${distanceLabel} to ${activity.activity_name}`
+        ? `${activity.activity_name} is ${distanceLabel}.`
         : distanceLabel;
     }
 
