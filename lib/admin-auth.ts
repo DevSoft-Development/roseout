@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
+import { getAppSession } from "@/lib/app-session";
+import { getAdminDashboardAccess } from "@/lib/account-permissions";
 
 export type AdminRole =
   | "superuser"
@@ -15,21 +17,23 @@ export async function getCurrentAdmin() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email) {
+  const appSession = await getAppSession();
+  const adminAccess = await getAdminDashboardAccess({
+    id: user?.id || appSession?.id || null,
+    email: user?.email || appSession?.email || null,
+    role: user?.user_metadata?.role || appSession?.role || null,
+  });
+
+  if (!adminAccess) {
     redirect("/login");
   }
 
-  const { data: adminUser } = await supabase
-    .from("admin_users")
-    .select("id, email, full_name, role")
-    .eq("email", user.email.toLowerCase())
-    .maybeSingle();
-
-  if (!adminUser) {
-    redirect("/login");
-  }
-
-  return adminUser;
+  return {
+    id: user?.id || appSession?.id || adminAccess.email,
+    email: adminAccess.email,
+    full_name: adminAccess.fullName,
+    role: adminAccess.role,
+  };
 }
 
 export async function requireAdminRole(allowedRoles: AdminRole[]) {

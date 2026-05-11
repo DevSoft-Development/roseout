@@ -6,13 +6,13 @@ export default async function AdminAnalyticsPage() {
 
   const { data: restaurants } = await supabase
     .from("restaurants")
-    .select("id, restaurant_name, city, view_count, click_count, theouthaven_score")
+    .select("id, restaurant_name, city, view_count, click_count, rating")
     .order("view_count", { ascending: false })
     .limit(10);
 
   const { data: activities } = await supabase
     .from("activities")
-    .select("id, activity_name, city, view_count, click_count, theouthaven_score")
+    .select("id, activity_name, city, view_count, click_count, rating")
     .order("view_count", { ascending: false })
     .limit(10);
 
@@ -231,7 +231,7 @@ export default async function AdminAnalyticsPage() {
                 <td className="px-5 py-4">{r.city || "N/A"}</td>
                 <td className="px-5 py-4">{r.view_count || 0}</td>
                 <td className="px-5 py-4">{r.click_count || 0}</td>
-                <td className="px-5 py-4">{r.theouthaven_score || 0}</td>
+                <td className="px-5 py-4">{r.rating ? Math.round(Number(r.rating) * 20) : 0}</td>
               </tr>
             ))}
           </tbody>
@@ -261,7 +261,7 @@ export default async function AdminAnalyticsPage() {
                 <td className="px-5 py-4">{a.city || "N/A"}</td>
                 <td className="px-5 py-4">{a.view_count || 0}</td>
                 <td className="px-5 py-4">{a.click_count || 0}</td>
-                <td className="px-5 py-4">{a.theouthaven_score || 0}</td>
+                <td className="px-5 py-4">{a.rating ? Math.round(Number(a.rating) * 20) : 0}</td>
               </tr>
             ))}
           </tbody>

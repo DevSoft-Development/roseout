@@ -9,7 +9,7 @@ function formatNumber(value: number | null | undefined) {
 }
 
 export default async function CentralDashboardPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superuser", "admin"]);
 
   const { count: totalRestaurants } = await supabase
     .from("restaurants")
@@ -33,8 +33,10 @@ export default async function CentralDashboardPage() {
     .select("id", { count: "exact", head: true })
     .eq("claimed", true);
 
-  const totalLocations = Number(totalRestaurants || 0) + Number(totalActivities || 0);
-  const totalClaimed = Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
+  const totalLocations =
+    Number(totalRestaurants || 0) + Number(totalActivities || 0);
+  const totalClaimed =
+    Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
 
   const navCards = [
     {
