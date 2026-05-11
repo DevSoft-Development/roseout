@@ -70,6 +70,14 @@ type ApiResponse = {
   activities?: ActivityCard[];
 };
 
+type FallbackOption = {
+  title: string;
+  label: string;
+  description: string;
+  prompt: string;
+  addOnTarget: AddOnTarget;
+};
+
 type AddOnTarget = "restaurant" | "activity";
 
 type UserLocation = {
@@ -101,6 +109,33 @@ const loadingLines = [
   "Finding the best fit...",
 ];
 
+const fallbackOptions: FallbackOption[] = [
+  {
+    title: "Dessert counter",
+    label: "Easy pivot",
+    description:
+      "Keep a casual dessert stop ready if the main plan wraps early or you want one more move.",
+    prompt: "dessert counter or casual sweets nearby",
+    addOnTarget: "restaurant",
+  },
+  {
+    title: "Walkable lounge",
+    label: "Second option",
+    description:
+      "Use a nearby drinks or lounge option when the first experience is full, loud, or not the vibe.",
+    prompt: "walkable lounge or drinks backup nearby",
+    addOnTarget: "activity",
+  },
+  {
+    title: "Simple reset",
+    label: "Low pressure",
+    description:
+      "Save a coffee, scenic walk, or quick bite fallback so the outing still feels intentional.",
+    prompt: "low pressure coffee walk or quick bite fallback nearby",
+    addOnTarget: "activity",
+  },
+];
+
 export default function CreatePage() {
   const router = useRouter();
 
@@ -121,6 +156,8 @@ export default function CreatePage() {
     useState<ActivityCard | null>(null);
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
+  const [selectedFallback, setSelectedFallback] =
+    useState<FallbackOption | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const addOnInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -131,6 +168,7 @@ export default function CreatePage() {
   const addOnActivitySectionRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const viewedItems = useRef<Set<string>>(new Set());
+  const processedPromptRef = useRef<string | null>(null);
 
   const latestAssistant = useMemo(
     () =>
@@ -138,7 +176,9 @@ export default function CreatePage() {
     [messages]
   );
 
-  const hasSelection = Boolean(selectedRestaurant || selectedActivity);
+  const hasSelection = Boolean(
+    selectedRestaurant || selectedActivity || selectedFallback
+  );
   const hasResults = Boolean(
     (latestAssistant?.restaurants?.length || 0) +
       (latestAssistant?.activities?.length || 0)
@@ -147,13 +187,30 @@ export default function CreatePage() {
   const selectedPlanText = [
     selectedRestaurant?.restaurant_name,
     selectedActivity?.activity_name,
+    selectedFallback?.title,
   ]
     .filter(Boolean)
     .join(" + ");
 
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
-    setLocationSaved(Boolean(getSavedLocation()));
+
+    const timer = window.setTimeout(() => {
+      setLocationSaved(Boolean(getSavedLocation()));
+
+      const prompt = new URLSearchParams(window.location.search).get("prompt");
+      const cleanPrompt = prompt?.trim();
+
+      if (!cleanPrompt || processedPromptRef.current === cleanPrompt) return;
+
+      processedPromptRef.current = cleanPrompt;
+      setInput(cleanPrompt);
+      void submitSearch(cleanPrompt);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+    // The query prompt should only hydrate the first landing from homepage cards.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -210,8 +267,8 @@ export default function CreatePage() {
     if (!latest) return;
 
     [...(latest.restaurants || []), ...(latest.activities || [])].forEach(
-      (item: any) => {
-        const itemType = item.restaurant_name ? "restaurant" : "activity";
+      (item: RestaurantCard | ActivityCard) => {
+        const itemType = "restaurant_name" in item ? "restaurant" : "activity";
         const key = `${itemType}-${item.id}`;
 
         if (!item.id || viewedItems.current.has(key)) return;
@@ -278,6 +335,7 @@ export default function CreatePage() {
     setMessages([]);
     setSelectedRestaurant(null);
     setSelectedActivity(null);
+    setSelectedFallback(null);
     setShowPlanSummary(false);
     setError("");
 
@@ -400,6 +458,7 @@ export default function CreatePage() {
         body: JSON.stringify({
           input: cleanInput,
           messages: [...messages, userMessage],
+          ...(addOnTarget ? { addOnTarget } : {}),
           ...(savedLocation
             ? {
                 latitude: savedLocation.latitude,
@@ -453,8 +512,12 @@ export default function CreatePage() {
             : scrollToResultsPanel(),
         250
       );
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
       setActiveAddOnTarget(null);
@@ -489,6 +552,21 @@ export default function CreatePage() {
     await submitSearch(cleanInput, { addOnTarget, preservePlan: true });
   }
 
+  async function handleFallbackSelect(option: FallbackOption) {
+    if (loading) return;
+
+    setSelectedFallback(option);
+    setShowPlanSummary(false);
+    setAddOnInput(option.prompt);
+
+    window.setTimeout(scrollToAddOnSearchPanel, 80);
+
+    await submitSearch(option.prompt, {
+      addOnTarget: option.addOnTarget,
+      preservePlan: true,
+    });
+  }
+
   function trackRestaurantClick(id: string) {
     trackAnalytics({
       itemId: id,
@@ -511,6 +589,7 @@ export default function CreatePage() {
     const plan = {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
+      fallback: selectedFallback,
       locations: [selectedRestaurant, selectedActivity].filter(Boolean),
       savedAt: Date.now(),
     };
@@ -776,7 +855,12 @@ export default function CreatePage() {
                         const distanceFromRestaurantLabel = selectedRestaurant
                           ? buildDistanceFromRestaurantLabel(
                               selectedRestaurant,
-                              activity
+                              activity,
+                              {
+                                includeWalkTime: isWalkingDistanceRequest(
+                                  messages[index - 1]?.content || ""
+                                ),
+                              }
                             )
                           : undefined;
 
@@ -821,6 +905,12 @@ export default function CreatePage() {
                     </ResultSection>
                   </div>
                 )}
+
+                <FallbackPlanCard
+                  loading={loading}
+                  selectedFallback={selectedFallback}
+                  onSelect={handleFallbackSelect}
+                />
               </div>
             );
           })}
@@ -891,6 +981,7 @@ export default function CreatePage() {
         <PlanSummarySheet
           restaurant={selectedRestaurant}
           activity={selectedActivity}
+          fallback={selectedFallback}
           onClose={() => setShowPlanSummary(false)}
           onContinue={savePlan}
           onAddRestaurant={() => {
@@ -1102,6 +1193,7 @@ function AddOnSearchPanel({
 function PlanSummarySheet({
   restaurant,
   activity,
+  fallback,
   onClose,
   onContinue,
   onAddRestaurant,
@@ -1109,6 +1201,7 @@ function PlanSummarySheet({
 }: {
   restaurant: RestaurantCard | null;
   activity: ActivityCard | null;
+  fallback: FallbackOption | null;
   onClose: () => void;
   onContinue: () => void;
   onAddRestaurant: () => void;
@@ -1223,6 +1316,24 @@ function PlanSummarySheet({
                 restaurant && !activity ? "Add Activity" : undefined
               }
               onAction={restaurant && !activity ? onAddActivity : undefined}
+            />
+
+            <TimelineStep
+              step="3"
+              label="Fallback"
+              title={fallback?.title || getFallbackTitle(restaurant, activity)}
+              meta={
+                fallback
+                  ? `${fallback.label} • selected`
+                  : "Backup move • easy pivot"
+              }
+              description={
+                fallback
+                  ? fallback.description
+                  : "Keep one flexible fallback ready in case timing, availability, or the vibe changes after your first stop."
+              }
+              imageUrl={null}
+              active={Boolean(fallback || restaurant || activity)}
             />
           </div>
 
@@ -1422,6 +1533,72 @@ function StartPanel() {
   );
 }
 
+
+function FallbackPlanCard({
+  loading,
+  selectedFallback,
+  onSelect,
+}: {
+  loading: boolean;
+  selectedFallback: FallbackOption | null;
+  onSelect: (option: FallbackOption) => void;
+}) {
+  return (
+    <section className="mt-5 rounded-[1.15rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.16),transparent_36%),#101010] p-4 shadow-xl shadow-black/25 sm:rounded-[1.25rem] sm:p-5">
+      <div className="mb-4 max-w-2xl">
+        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.25em]">
+          Fallback options
+        </p>
+        <h3 className="mt-1 text-xl font-black tracking-[-0.035em] text-white sm:text-2xl">
+          Keep a backup move ready.
+        </h3>
+        <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
+          If a spot is booked, too far, or not the vibe, use one of these
+          flexible pivots to keep the outing easy.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {fallbackOptions.map((option) => {
+          const isSelected = selectedFallback?.title === option.title;
+
+          return (
+            <button
+            key={option.title}
+            type="button"
+            disabled={loading}
+            aria-pressed={isSelected}
+            onClick={() => onSelect(option)}
+            className={`group rounded-3xl border p-4 text-left transition hover:-translate-y-0.5 hover:border-[#e1062a]/45 hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-50 ${
+              isSelected
+                ? "border-[#e1062a] bg-[#e1062a]/15 ring-2 ring-[#e1062a]/25"
+                : "border-white/10 bg-black/45"
+            }`}
+          >
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">
+              {option.label}
+            </p>
+            <h4 className="mt-5 text-base font-black text-white">
+              {option.title}
+            </h4>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/50">
+              {option.description}
+            </p>
+            <span className="mt-4 inline-flex text-xs font-black uppercase tracking-[0.14em] text-[#e1062a] transition group-hover:text-red-200">
+              {loading
+                ? "Searching..."
+                : isSelected
+                  ? "Selected fallback ✓"
+                  : "Search this fallback →"}
+            </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ResultSection({
   title,
   subtitle,
@@ -1567,15 +1744,15 @@ function ResultCard({
             </h3>
           </Link>
 
-          <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
-            {address || "Location details available on the listing."}
-          </p>
-
           {distanceLabel ? (
             <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
               {distanceLabel}
             </div>
           ) : null}
+
+          <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
+            {address || "Location details available on the listing."}
+          </p>
         </div>
 
         <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
@@ -1694,7 +1871,7 @@ function titleCase(value: string) {
     .join(" ");
 }
 
-function toArray(value: any): string[] {
+function toArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
@@ -1768,7 +1945,10 @@ function inferAddOnTarget(
     "lounge",
     "museum",
     "nightlife",
+    "next stop",
+    "one more stop",
     "paint",
+    "second stop",
     "rooftop",
     "show",
   ];
@@ -1795,6 +1975,18 @@ function getPlanSummaryDescription(
   }
 
   return "Choose a restaurant, an activity, or both to build your outing.";
+}
+
+
+function getFallbackTitle(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null
+) {
+  if (restaurant && activity) return "Save a nearby dessert or lounge backup";
+  if (restaurant) return "Save a simple second-stop backup";
+  if (activity) return "Save a quick food or dessert backup";
+
+  return "Save a flexible backup option";
 }
 
 function getPlanNextStepText(
@@ -1870,9 +2062,28 @@ function distanceBetweenLocations(
   );
 }
 
+function isWalkingDistanceRequest(input: string) {
+  const normalized = input.toLowerCase();
+
+  return (
+    normalized.includes("walk") ||
+    normalized.includes("walking") ||
+    normalized.includes("walkable")
+  );
+}
+
+function formatMilesLabel(distance: number) {
+  return `${distance} ${distance === 1 ? "mile" : "miles"}`;
+}
+
+function estimateWalkMinutes(distance: number) {
+  return Math.max(1, Math.round(distance * 20));
+}
+
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
+  options: { includeWalkTime?: boolean } = {}
 ) {
   if (!restaurant || !activity) return undefined;
 
@@ -1880,7 +2091,11 @@ function buildDistanceFromRestaurantLabel(
 
   if (distance === null) return undefined;
 
-  return `${distance} miles from ${restaurant.restaurant_name}`;
+  const milesLabel = `${formatMilesLabel(distance)} from ${restaurant.restaurant_name}`;
+
+  if (!options.includeWalkTime) return milesLabel;
+
+  return `${milesLabel} • ~${estimateWalkMinutes(distance)} min walk`;
 }
 
 function buildDistanceText(
