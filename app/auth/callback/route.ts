@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${siteUrl}/restaurants/apply`);
   }
 
-  let response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
+  let response = NextResponse.redirect(`${siteUrl}/locations/dashboard`);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   const user = data.user;
 
   if (user.user_metadata?.role === "superuser") {
-    response = NextResponse.redirect(`${siteUrl}/admin`);
+    response = NextResponse.redirect(`${siteUrl}/admin/dashboard`);
   }
 
   const email = user.email?.toLowerCase();
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
+    response = NextResponse.redirect(`${siteUrl}/locations/dashboard`);
   }
 
   return response;
