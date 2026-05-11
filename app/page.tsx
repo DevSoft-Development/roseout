@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "TheOutHaven | Plan a Better Outing Faster",
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-10";
+const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-11-runtime";
 
 const featuredDateIdeas = [
   {
@@ -53,7 +53,11 @@ const categories = [
   { label: "Rooftops", icon: "🌇", prompt: "rooftop drinks and dinner" },
   { label: "Comedy", icon: "🎤", prompt: "comedy show and dinner" },
   { label: "Live music", icon: "🎶", prompt: "live music and dinner" },
-  { label: "Group plans", icon: "✨", prompt: "group outing with food and activity" },
+  {
+    label: "Group plans",
+    icon: "✨",
+    prompt: "group outing with food and activity",
+  },
 ];
 
 const steps = [
@@ -112,7 +116,9 @@ const createPreviewResults = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  await connection();
+
   return (
     <main
       data-homepage-version={HOMEPAGE_VERSION}
@@ -124,8 +130,6 @@ export default function HomePage() {
           100% { transform: translateX(0); }
         }
       `}</style>
-      <TheOutHavenHeader />
-
       <section className="relative isolate px-5 pb-16 pt-32 sm:px-6 lg:pb-24 lg:pt-40">
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_18%,rgba(225,6,42,0.18),transparent_30%),radial-gradient(circle_at_88%_8%,rgba(23,17,15,0.10),transparent_24%),linear-gradient(180deg,#fffaf3_0%,#fbf7f1_70%)]" />
         <div className="absolute left-1/2 top-20 -z-10 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-white/70 blur-3xl" />
