@@ -19,11 +19,11 @@ export default function AddUserPage() {
   const [useManual, setUseManual] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
 
-    const form = new FormData(e.target);
+    const form = new FormData(e.currentTarget);
 
     const res = await fetch("/api/admin/create-user", {
       method: "POST",
