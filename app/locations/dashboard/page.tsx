@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabase } from "@/lib/supabase-server";
 import LocationsDashboardClient from "./LocationsDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,38 @@ type LocationItem = {
   owner_phone?: string;
   primary_tag?: string;
 };
+
+type RestaurantLocationRow = Omit<
+  LocationItem,
+  "display_name" | "location_type"
+> & {
+  restaurant_name?: string | null;
+};
+
+type ActivityLocationRow = Omit<
+  LocationItem,
+  "display_name" | "location_type"
+> & {
+  activity_name?: string | null;
+};
+
+function toRestaurantLocation(restaurant: RestaurantLocationRow): LocationItem {
+  return {
+    ...restaurant,
+    restaurant_name: restaurant.restaurant_name || undefined,
+    location_type: "restaurant",
+    display_name: restaurant.restaurant_name || "Untitled restaurant",
+  };
+}
+
+function toActivityLocation(activity: ActivityLocationRow): LocationItem {
+  return {
+    ...activity,
+    activity_name: activity.activity_name || undefined,
+    location_type: "activity",
+    display_name: activity.activity_name || "Untitled activity",
+  };
+}
 
 function adminSupabase() {
   return createClient(
@@ -51,6 +84,11 @@ export default async function DashboardPage() {
 
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
 
+  const sessionSupabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await sessionSupabase.auth.getUser();
+
   const supabase = adminSupabase();
 
   let locations: LocationItem[] = [];
@@ -70,14 +108,9 @@ export default async function DashboardPage() {
 
     if (data) {
       locations = [
-        {
-          ...data,
-          location_type: table === "restaurants" ? "restaurant" : "activity",
-          display_name:
-            table === "restaurants"
-              ? data.restaurant_name || "Untitled restaurant"
-              : data.activity_name || "Untitled activity",
-        },
+        table === "restaurants"
+          ? toRestaurantLocation(data as RestaurantLocationRow)
+          : toActivityLocation(data as ActivityLocationRow),
       ];
 
       impersonationLabel = `Viewing as ${locations[0].display_name}`;
@@ -94,16 +127,10 @@ export default async function DashboardPage() {
       .eq("owner_user_id", impersonatedUserId);
 
     locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
-      })),
+      ...((restaurants || []) as RestaurantLocationRow[]).map(
+        toRestaurantLocation
+      ),
+      ...((activities || []) as ActivityLocationRow[]).map(toActivityLocation),
     ];
 
     impersonationLabel = "Viewing as location owner";
@@ -119,16 +146,29 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false });
 
     locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
-      })),
+      ...((restaurants || []) as RestaurantLocationRow[]).map(
+        toRestaurantLocation
+      ),
+      ...((activities || []) as ActivityLocationRow[]).map(toActivityLocation),
+    ];
+  } else if (user?.id) {
+    const { data: restaurants } = await supabase
+      .from("restaurants")
+      .select("*")
+      .eq("owner_user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    const { data: activities } = await supabase
+      .from("activities")
+      .select("*")
+      .eq("owner_user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    locations = [
+      ...((restaurants || []) as RestaurantLocationRow[]).map(
+        toRestaurantLocation
+      ),
+      ...((activities || []) as ActivityLocationRow[]).map(toActivityLocation),
     ];
   }
 
