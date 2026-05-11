@@ -10,6 +10,25 @@ type SearchParams = {
   page?: string;
 };
 
+type LocationQueryRow = {
+  id: string;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
+  status: string | null;
+  claimed: boolean | null;
+  cuisine_type?: string | null;
+  activity_type?: string | null;
+  rating: number | null;
+  view_count: number | null;
+  click_count: number | null;
+  image_url: string | null;
+  created_at: string | null;
+};
+
 type AdminLocation = {
   id: string;
   locationType: "restaurants" | "activities";
@@ -89,7 +108,7 @@ function buildQueryUrl({
   if (claim !== "all") params.set("claim", claim);
   params.set("page", String(page));
 
-  return `/admin/locations?${params.toString()}`;
+  return `/admin/dashboard/locations?${params.toString()}`;
 }
 
 export default async function AdminLocationsPage({
@@ -114,7 +133,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -122,7 +141,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -165,41 +184,41 @@ export default async function AdminLocationsPage({
     ]);
 
   const restaurantRows: AdminLocation[] =
-    restaurantsResult.data?.map((item: any) => ({
+    (restaurantsResult.data as LocationQueryRow[] | null)?.map((item) => ({
       id: item.id,
       locationType: "restaurants",
-      name: item.restaurant_name,
+      name: item.restaurant_name || null,
       address: item.address,
       city: item.city,
       state: item.state,
       zip_code: item.zip_code,
-      category: item.cuisine_type,
+      category: item.cuisine_type || null,
       status: item.status,
       claimed: item.claimed,
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      theouthaven_score: item.theouthaven_score,
+      theouthaven_score: null,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
 
   const activityRows: AdminLocation[] =
-    activitiesResult.data?.map((item: any) => ({
+    (activitiesResult.data as LocationQueryRow[] | null)?.map((item) => ({
       id: item.id,
       locationType: "activities",
-      name: item.activity_name,
+      name: item.activity_name || null,
       address: item.address,
       city: item.city,
       state: item.state,
       zip_code: item.zip_code,
-      category: item.activity_type,
+      category: item.activity_type || null,
       status: item.status,
       claimed: item.claimed,
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      theouthaven_score: item.theouthaven_score,
+      theouthaven_score: null,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
@@ -221,8 +240,6 @@ export default async function AdminLocationsPage({
   const totalActivities = totalActivitiesResult.count || 0;
   const totalAllLocations = totalRestaurants + totalActivities;
 
-  const claimedCount = allLocations.filter((item) => item.claimed).length;
-  const unclaimedCount = allLocations.filter((item) => !item.claimed).length;
 
   const error = restaurantsResult.error || activitiesResult.error;
 
@@ -483,7 +500,7 @@ export default async function AdminLocationsPage({
                 >
                   <div className="grid gap-4 xl:grid-cols-[1fr_420px_140px] xl:items-center">
                     <Link
-                      href={`/locations/${location.locationType}/${location.id}?from=/admin/locations`}
+                      href={`/locations/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                       className="flex min-w-0 items-center gap-4"
                     >
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
@@ -587,14 +604,14 @@ export default async function AdminLocationsPage({
 
                     <div className="flex gap-2 xl:flex-col">
                       <Link
-                        href={`/locations/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/locations/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         View
                       </Link>
 
                       <Link
-                        href={`/locations/edit/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/admin/dashboard/locations/edit/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit

@@ -39,13 +39,18 @@ export default function AdminTopBar() {
       setUser(currentUser);
 
       if (currentUser?.email) {
-        const { data: adminUser } = await supabase
-          .from("admin_users")
-          .select("role")
-          .eq("email", currentUser.email.toLowerCase())
-          .maybeSingle();
+        const response = await fetch("/api/admin/session", {
+          cache: "no-store",
+        });
 
-        setRole(adminUser?.role || null);
+        if (response.ok) {
+          const session = (await response.json()) as { role?: string };
+          setRole(session.role || null);
+        } else {
+          setRole(null);
+        }
+      } else {
+        setRole(null);
       }
     };
 
@@ -171,25 +176,25 @@ export default function AdminTopBar() {
   const email = user?.email || "";
   const initial = name?.charAt(0)?.toUpperCase() || "A";
 
-  const canViewDashboard = ["superuser", "admin", "editor", "viewer"].includes(
+  const canViewDashboard = ["superuser", "superadmin", "admin", "editor", "viewer"].includes(
     role || ""
   );
 
-  const canViewLocations = ["superuser", "admin", "editor", "viewer"].includes(
+  const canViewLocations = ["superuser", "superadmin", "admin", "editor", "viewer"].includes(
     role || ""
   );
 
-  const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
+  const canViewClaims = ["superuser", "superadmin", "admin", "reviewer"].includes(role || "");
 
-  const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
+  const canViewAnalytics = ["superuser", "superadmin", "admin", "viewer"].includes(
     role || ""
   );
 
-  const canViewImportHistory = ["superuser", "admin", "viewer"].includes(
+  const canViewImportHistory = ["superuser", "superadmin", "admin", "viewer"].includes(
     role || ""
   );
 
-  const canViewUsers = ["superuser", "admin"].includes(role || "");
+  const canViewUsers = ["superuser", "superadmin", "admin"].includes(role || "");
 
   return (
     <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
@@ -247,7 +252,7 @@ export default function AdminTopBar() {
           {canViewLocations && (
             <button
               type="button"
-              onClick={() => goTo("/admin/locations")}
+              onClick={() => goTo("/admin/dashboard/locations")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Locations
@@ -257,7 +262,7 @@ export default function AdminTopBar() {
           {canViewUsers && (
             <button
               type="button"
-              onClick={() => goTo("/admin/users")}
+              onClick={() => goTo("/admin/dashboard/users")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Users
@@ -342,14 +347,14 @@ export default function AdminTopBar() {
                 )}
 
                 {canViewLocations && (
-                  <MenuButton onClick={() => goTo("/admin/locations")}>
+                  <MenuButton onClick={() => goTo("/admin/dashboard/locations")}>
                     Locations
                   </MenuButton>
                 )}
 
                 {canViewUsers && (
                   <>
-                    <MenuButton onClick={() => goTo("/admin/users")}>
+                    <MenuButton onClick={() => goTo("/admin/dashboard/users")}>
                       Users Dashboard
                     </MenuButton>
 

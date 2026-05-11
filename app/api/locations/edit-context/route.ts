@@ -111,11 +111,19 @@ export async function PATCH(req: Request) {
       ? impersonatedLocationId
       : requestedId;
 
+    const updatePayload = { ...payload };
+
+    // Some Roseout location schemas do not include the legacy score columns.
+    // Scores are calculated for display on the client, but should not block
+    // saving owner/admin edits when the column is absent from Supabase.
+    delete updatePayload.theouthaven_score;
+    delete updatePayload.quality_score;
+
     const supabase = adminSupabase();
 
     const { error } = await supabase
       .from(requestedType)
-      .update(payload)
+      .update(updatePayload)
       .eq("id", finalId);
 
     if (error) {
