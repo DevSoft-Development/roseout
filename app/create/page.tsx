@@ -855,7 +855,12 @@ export default function CreatePage() {
                         const distanceFromRestaurantLabel = selectedRestaurant
                           ? buildDistanceFromRestaurantLabel(
                               selectedRestaurant,
-                              activity
+                              activity,
+                              {
+                                includeWalkTime: isWalkingDistanceRequest(
+                                  messages[index - 1]?.content || ""
+                                ),
+                              }
                             )
                           : undefined;
 
@@ -1739,15 +1744,15 @@ function ResultCard({
             </h3>
           </Link>
 
-          <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
-            {address || "Location details available on the listing."}
-          </p>
-
           {distanceLabel ? (
             <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
               {distanceLabel}
             </div>
           ) : null}
+
+          <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
+            {address || "Location details available on the listing."}
+          </p>
         </div>
 
         <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
@@ -2057,9 +2062,28 @@ function distanceBetweenLocations(
   );
 }
 
+function isWalkingDistanceRequest(input: string) {
+  const normalized = input.toLowerCase();
+
+  return (
+    normalized.includes("walk") ||
+    normalized.includes("walking") ||
+    normalized.includes("walkable")
+  );
+}
+
+function formatMilesLabel(distance: number) {
+  return `${distance} ${distance === 1 ? "mile" : "miles"}`;
+}
+
+function estimateWalkMinutes(distance: number) {
+  return Math.max(1, Math.round(distance * 20));
+}
+
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
+  options: { includeWalkTime?: boolean } = {}
 ) {
   if (!restaurant || !activity) return undefined;
 
@@ -2067,7 +2091,11 @@ function buildDistanceFromRestaurantLabel(
 
   if (distance === null) return undefined;
 
-  return `${distance} miles from ${restaurant.restaurant_name}`;
+  const milesLabel = `${formatMilesLabel(distance)} from ${restaurant.restaurant_name}`;
+
+  if (!options.includeWalkTime) return milesLabel;
+
+  return `${milesLabel} • ~${estimateWalkMinutes(distance)} min walk`;
 }
 
 function buildDistanceText(
