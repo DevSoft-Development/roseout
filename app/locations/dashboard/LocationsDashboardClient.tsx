@@ -16,12 +16,19 @@ import {
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
+import AccountProfileForm from "@/components/AccountProfileForm";
 
 type LocationType = "restaurant" | "activity";
 
 const locationTypePathSegment: Record<LocationType, "restaurants" | "activities"> = {
   restaurant: "restaurants",
   activity: "activities",
+};
+
+type OwnerProfile = {
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
 };
 
 type LocationItem = {
@@ -46,9 +53,11 @@ type LocationItem = {
 export default function LocationsDashboardClient({
   locations,
   impersonationLabel,
+  ownerProfile,
 }: {
   locations: LocationItem[];
   impersonationLabel?: string;
+  ownerProfile?: OwnerProfile | null;
 }) {
   const [selected, setSelected] = useState<LocationItem | null>(
     locations[0] || null
@@ -376,6 +385,20 @@ export default function LocationsDashboardClient({
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">
                     Quick Actions
                   </p>
+
+                  {ownerProfile && (
+                    <div className="mt-5 rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-white/40">
+                        Your Account
+                      </p>
+                      <AccountProfileForm
+                        fullName={ownerProfile.full_name}
+                        email={ownerProfile.email}
+                        phone={ownerProfile.phone}
+                        compact
+                      />
+                    </div>
+                  )}
 
                   <div className="mt-5 space-y-3">
                     <Link
