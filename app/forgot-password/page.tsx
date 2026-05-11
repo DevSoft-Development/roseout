@@ -2,11 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase-browser";
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -26,22 +23,22 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
+      const response = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const result = await response.json();
+
+      setMessage(
+        result.message || "If an account exists, we sent a reset link."
       );
-
-      if (resetError) {
-        setError(resetError.message);
-        return;
-      }
-
-      setMessage("Password reset link sent. Please check your email.");
       setEmail("");
-    } catch (err: any) {
-      setError(err.message || "Something went wrong.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -60,7 +57,8 @@ export default function ForgotPasswordPage() {
         <h1 className="text-3xl font-extrabold">Forgot Password</h1>
 
         <p className="mt-2 text-sm text-neutral-500">
-          Enter your admin email and we’ll send you a password reset link.
+          Enter your email and we’ll send a password reset link if an account
+          exists.
         </p>
 
         {error && (
