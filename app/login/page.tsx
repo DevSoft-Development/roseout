@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-browser";
 
+const LOGIN_PAGE_VERSION = "login-refresh-2026-05-11";
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -76,15 +78,18 @@ export default function LoginPage() {
       setTimeout(() => {
         router.replace(redirectPath);
       }, 500);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black px-5 py-10 text-white">
+    <main
+      data-page-version={LOGIN_PAGE_VERSION}
+      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black px-5 py-10 text-white"
+    >
       {/* Background Glow */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,0.32),transparent_32%),radial-gradient(circle_at_85%_5%,rgba(127,29,29,0.32),transparent_30%),linear-gradient(180deg,#050505,#000)]" />
       <div className="absolute left-1/2 top-10 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-red-600/10 blur-3xl" />
