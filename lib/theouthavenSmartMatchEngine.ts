@@ -124,6 +124,33 @@ export const ACTIVITY_INTENTS: Record<string, string[]> = {
   axe_throwing: ["axe throwing", "axe"],
   paintball: ["paintball"],
   golf: ["golf", "topgolf", "driving range", "indoor golf"],
+  second_stop: [
+    "second stop",
+    "second-stop",
+    "next stop",
+    "one more stop",
+    "another stop",
+    "after dinner",
+    "after food",
+    "after restaurant",
+    "post dinner",
+    "backup",
+    "backup option",
+    "fallback",
+    "fallback option",
+    "lounge",
+    "bar",
+    "rooftop",
+    "dessert",
+    "coffee",
+    "cafe",
+    "karaoke",
+    "arcade",
+    "bowling",
+    "comedy",
+    "live music",
+    "walk",
+  ],
 };
 
 export const VIBE_INTENTS: Record<string, string[]> = {
@@ -371,9 +398,21 @@ export function detectSmartMatchIntent(input: string): SmartMatchIntent {
 
   const wantsActivity =
     activityIntents.length > 0 ||
-    ["activity", "activities", "things to do", "date idea", "date ideas", "outing"].some(
-      (word) => phraseIncludes(text, word)
-    );
+    [
+      "activity",
+      "activities",
+      "things to do",
+      "date idea",
+      "date ideas",
+      "outing",
+      "second stop",
+      "next stop",
+      "one more stop",
+      "another stop",
+      "after dinner",
+      "backup",
+      "fallback",
+    ].some((word) => phraseIncludes(text, word));
 
   const wantsFullOuting =
     phraseIncludes(text, "with") ||

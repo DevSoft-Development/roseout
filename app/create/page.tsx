@@ -458,6 +458,7 @@ export default function CreatePage() {
         body: JSON.stringify({
           input: cleanInput,
           messages: [...messages, userMessage],
+          ...(addOnTarget ? { addOnTarget } : {}),
           ...(savedLocation
             ? {
                 latitude: savedLocation.latitude,
@@ -1939,7 +1940,10 @@ function inferAddOnTarget(
     "lounge",
     "museum",
     "nightlife",
+    "next stop",
+    "one more stop",
     "paint",
+    "second stop",
     "rooftop",
     "show",
   ];

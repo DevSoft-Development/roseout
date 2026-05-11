@@ -26,6 +26,7 @@ function buildResponseCacheKey(input: string, intent: DetectedIntent) {
     intent.userLat || "",
     intent.userLng || "",
     intent.maxMiles || "",
+    intent.addOnTarget || "",
     intent.locations.join("-"),
   ];
 
@@ -122,6 +123,19 @@ const ACTIVITY_KEYWORDS = [
   "nightclub",
   "night club",
   "dance club",
+  "second stop",
+  "second-stop",
+  "next stop",
+  "one more stop",
+  "another stop",
+  "after dinner",
+  "after food",
+  "after restaurant",
+  "post dinner",
+  "backup",
+  "backup option",
+  "fallback",
+  "fallback option",
 ];
 
 const TAG_KEYWORDS: Record<string, string[]> = {
@@ -189,6 +203,33 @@ const ACTIVITY_INTENTS: Record<string, string[]> = {
   live_music: ["live music", "jazz", "music venue"],
   spa: ["spa", "massage", "wellness"],
   pool: ["pool", "billiards", "billiard"],
+  second_stop: [
+    "second stop",
+    "second-stop",
+    "next stop",
+    "one more stop",
+    "another stop",
+    "after dinner",
+    "after food",
+    "after restaurant",
+    "post dinner",
+    "backup",
+    "backup option",
+    "fallback",
+    "fallback option",
+    "lounge",
+    "bar",
+    "rooftop",
+    "dessert",
+    "coffee",
+    "cafe",
+    "karaoke",
+    "arcade",
+    "bowling",
+    "comedy",
+    "live music",
+    "walk",
+  ],
 };
 
 const PRIORITY_WEIGHTS = {
@@ -1328,6 +1369,9 @@ function popularityBoost(item: any) {
 
 function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const text = normalizeQuery(input);
+  const addOnTarget = String(
+    body.addOnTarget || body.add_on_target || ""
+  ).toLowerCase();
 
   const requestedTags = detectFromMap(input, TAG_KEYWORDS);
   const foodIntents = detectFromMap(input, FOOD_INTENTS);
@@ -1341,9 +1385,12 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   );
 
   const wantsFood =
-    FOOD_KEYWORDS.some((word) => text.includes(word)) || foodIntents.length > 0;
+    addOnTarget === "restaurant" ||
+    FOOD_KEYWORDS.some((word) => text.includes(word)) ||
+    foodIntents.length > 0;
 
   const wantsActivity =
+    addOnTarget === "activity" ||
     ACTIVITY_KEYWORDS.some((word) => text.includes(word)) ||
     activityIntents.length > 0;
 
@@ -1376,7 +1423,9 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     (mentionsAnyTheOutHavenOption && text.includes("date"));
 
   const wantsRestaurant =
-    wantsFood || wantsFullOuting || (!wantsFood && !wantsActivity);
+    addOnTarget === "activity"
+      ? false
+      : wantsFood || wantsFullOuting || (!wantsFood && !wantsActivity);
 
   const vibes = Array.from(
     new Set([
@@ -1444,6 +1493,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     wantsLounge:
       foodIntents.includes("lounge") || activityIntents.includes("lounge"),
     wantsNightclub: activityIntents.includes("nightclub"),
+    addOnTarget,
   };
 }
 
@@ -1871,7 +1921,7 @@ export async function POST(req: Request) {
     const cacheKey = normalizeQuery(
       `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${
         intent.userLat || ""
-      }-${intent.userLng || ""}-${intent.maxMiles || ""}-${intent.locations.join("-")}`
+      }-${intent.userLng || ""}-${intent.maxMiles || ""}-${intent.addOnTarget || ""}-${intent.locations.join("-")}`
     );
 
     const { data: cached } = await supabase
