@@ -1,12 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { getCurrentAdmin } from "@/lib/admin-auth";
 import LoginAsUserButton from "./LoginAsUserButton";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type SavedPlan = {
+  id: string;
+  title?: string | null;
+  summary?: string | null;
+  created_at?: string | null;
+};
+
+type ImpersonationLog = {
+  id: string;
+  admin_id?: string | null;
+  created_at?: string | null;
 };
 
 function adminSupabase() {
@@ -22,17 +36,54 @@ function adminSupabase() {
 }
 
 export default async function AdminUserDetailPage({ params }: PageProps) {
+  const currentAdmin = await getCurrentAdmin();
+
+  if (!["superuser", "admin"].includes(currentAdmin.role)) {
+    notFound();
+  }
+
   const { id } = await params;
 
   const supabase = adminSupabase();
 
-  const { data: user } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", id)
-    .single();
+  const [{ data: profile }, { data: authUser }] = await Promise.all([
+    supabase.from("users").select("*").eq("id", id).maybeSingle(),
+    supabase.auth.admin.getUserById(id),
+  ]);
 
-  if (!user) notFound();
+  const user = {
+    ...(profile || {}),
+    id,
+    email: profile?.email || authUser.user?.email || null,
+    full_name:
+      profile?.full_name ||
+      (authUser.user?.user_metadata?.full_name as string | undefined) ||
+      (authUser.user?.user_metadata?.name as string | undefined) ||
+      null,
+    phone:
+      profile?.phone ||
+      (authUser.user?.user_metadata?.phone as string | undefined) ||
+      null,
+    role:
+      profile?.role ||
+      (authUser.user?.user_metadata?.role as string | undefined) ||
+      "user",
+    subscription_status: profile?.subscription_status || "free",
+    created_at: profile?.created_at || authUser.user?.created_at || null,
+    is_superadmin:
+      profile?.is_superadmin ||
+      Boolean(
+        authUser.user?.user_metadata?.is_superadmin ||
+          authUser.user?.app_metadata?.is_superadmin
+      ),
+  };
+
+  const userRole = String(user.role || "").toLowerCase();
+  const targetIsSuperuser =
+    Boolean(user.is_superadmin) || userRole === "superuser" || userRole === "superadmin";
+
+  if (!authUser.user && !profile) notFound();
+  if (currentAdmin.role !== "superuser" && targetIsSuperuser) notFound();
 
   const { data: savedPlans } = await supabase
     .from("saved_plans")
@@ -148,7 +199,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
               <p className="mt-6 text-white/50">This user has no saved plans.</p>
             ) : (
               <div className="mt-6 space-y-4">
-                {savedPlans.map((plan: any) => (
+                {(savedPlans as SavedPlan[]).map((plan) => (
                   <div
                     key={plan.id}
                     className="rounded-2xl border border-white/10 bg-black/30 p-4"
@@ -180,7 +231,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
             </p>
           ) : (
             <div className="mt-6 space-y-3">
-              {logs.map((log: any) => (
+              {(logs as ImpersonationLog[]).map((log) => (
                 <div
                   key={log.id}
                   className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm"

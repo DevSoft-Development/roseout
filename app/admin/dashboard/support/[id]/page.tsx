@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
@@ -7,6 +8,23 @@ import { getSupportTicket, getSupportTicketMessages } from "@/lib/support";
 type PageProps = {
   params: Promise<{ id: string }>;
 };
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params;
+  const ticket = await getSupportTicket(id);
+
+  if (!ticket) {
+    return {
+      title: "Support Ticket",
+      description: "Review a Roseout support ticket from the admin dashboard.",
+    };
+  }
+
+  return {
+    title: ticket.ticket_number || ticket.subject || "Support Ticket",
+    description: `Review ${ticket.subject} in the Roseout admin dashboard.`,
+  };
+}
 
 export default async function AdminSupportTicketPage({ params }: PageProps) {
   await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
