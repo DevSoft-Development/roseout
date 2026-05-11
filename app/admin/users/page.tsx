@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
+const ADMIN_USERS_VERSION = "admin-users-refresh-2026-05-11";
+
 type SearchParams = {
   q?: string;
   role?: string;
@@ -157,7 +159,10 @@ export default async function AdminUsersPage({
 
   if (error) {
     return (
-      <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white">
+      <main
+        data-page-version={ADMIN_USERS_VERSION}
+        className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white"
+      >
         <div className="mx-auto max-w-[1500px]">
           <div className="rounded-[1.75rem] border border-rose-500/30 bg-rose-500/10 p-6">
             <p className="text-sm font-black">Database Error</p>
@@ -179,7 +184,10 @@ export default async function AdminUsersPage({
   const regularUsers = fullUsers.filter((u) => u.role === "user").length;
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white">
+    <main
+      data-page-version={ADMIN_USERS_VERSION}
+      className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white"
+    >
       <div className="mx-auto max-w-[1500px]">
         <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_55%,#140f0a)] p-6 shadow-2xl">
           <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 
+const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
+
 type SearchParams = {
   q?: string;
   type?: string;
@@ -27,6 +29,22 @@ type AdminLocation = {
   theouthaven_score: number | null;
   image_url: string | null;
   created_at: string | null;
+};
+
+type AdminRestaurantRow = Omit<
+  AdminLocation,
+  "locationType" | "name" | "category"
+> & {
+  restaurant_name: string | null;
+  cuisine_type: string | null;
+};
+
+type AdminActivityRow = Omit<
+  AdminLocation,
+  "locationType" | "name" | "category"
+> & {
+  activity_name: string | null;
+  activity_type: string | null;
 };
 
 function formatNumber(value: number | null | undefined) {
@@ -165,7 +183,7 @@ export default async function AdminLocationsPage({
     ]);
 
   const restaurantRows: AdminLocation[] =
-    restaurantsResult.data?.map((item: any) => ({
+    (restaurantsResult.data as AdminRestaurantRow[] | null)?.map((item) => ({
       id: item.id,
       locationType: "restaurants",
       name: item.restaurant_name,
@@ -185,7 +203,7 @@ export default async function AdminLocationsPage({
     })) || [];
 
   const activityRows: AdminLocation[] =
-    activitiesResult.data?.map((item: any) => ({
+    (activitiesResult.data as AdminActivityRow[] | null)?.map((item) => ({
       id: item.id,
       locationType: "activities",
       name: item.activity_name,
@@ -221,13 +239,13 @@ export default async function AdminLocationsPage({
   const totalActivities = totalActivitiesResult.count || 0;
   const totalAllLocations = totalRestaurants + totalActivities;
 
-  const claimedCount = allLocations.filter((item) => item.claimed).length;
-  const unclaimedCount = allLocations.filter((item) => !item.claimed).length;
-
   const error = restaurantsResult.error || activitiesResult.error;
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
+    <main
+      data-page-version={ADMIN_LOCATIONS_VERSION}
+      className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8"
+    >
       <div className="mx-auto max-w-[1600px]">
         <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_55%,#140f0a)] p-5 shadow-2xl sm:p-6">
           <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />

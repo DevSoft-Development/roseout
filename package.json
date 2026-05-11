@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify:homepage": "node scripts/verify-homepage-lock.mjs"
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^2.0.2",

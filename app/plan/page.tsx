@@ -19,6 +19,7 @@ type PlanLocation = {
   cuisine_type?: string | null;
   cuisine_tags?: string[] | null;
   activity_type?: string | null;
+  detail_location_type?: "restaurants" | "activities" | null;
   primary_tag?: string | null;
   price_range?: string | null;
   atmosphere?: string | null;
@@ -31,6 +32,10 @@ type PlanLocation = {
   booking_url?: string | null;
   theouthaven_score?: number | null;
   smart_match_score?: number | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  pair_walking_minutes?: number | null;
+  pair_walking_label?: string | null;
 };
 
 type SavedPlan = {
@@ -41,6 +46,7 @@ type SavedPlan = {
 };
 
 const PLAN_KEY = "theouthaven_plan";
+const WALKING_MINUTES_PER_MILE = 20;
 
 export default function PlanPage() {
   return (
@@ -408,7 +414,7 @@ function PlanActionCard({
   const detailHref =
     type === "restaurant"
       ? `/locations/restaurants/${location.id}?from=/plan`
-      : `/locations/activities/${location.id}?from=/plan`;
+      : `/locations/${location.detail_location_type || "activities"}/${location.id}?from=/plan`;
 
   const reservationUrl =
     location.reservation_url || location.reservation_link || location.booking_url;
@@ -568,11 +574,78 @@ function titleCase(value?: string | null) {
     .join(" ");
 }
 
+function getLocationCoordinates(item: PlanLocation | null) {
+  if (!item) return null;
+
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (!latitude || !longitude) return null;
+
+  return { latitude, longitude };
+}
+
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const radius = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distanceBetweenLocations(
+  restaurant: PlanLocation | null,
+  activity: PlanLocation | null
+) {
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
+
+  if (!restaurantCoords || !activityCoords) return null;
+
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude
+    ).toFixed(1)
+  );
+}
+
+function walkingMinutesFromMiles(distanceMiles: number | null) {
+  if (distanceMiles === null || !Number.isFinite(distanceMiles)) return null;
+
+  return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
+}
+
 function buildFlowText(
   restaurant: PlanLocation | null,
   activity: PlanLocation | null
 ) {
   if (!restaurant || !activity) return "Dinner → Activity";
+
+  if (activity.pair_walking_label) return activity.pair_walking_label;
+
+  const distance = distanceBetweenLocations(restaurant, activity);
+  const walkingMinutes = walkingMinutesFromMiles(distance);
+  const restaurantName = restaurant.restaurant_name || restaurant.name;
+
+  if (walkingMinutes && restaurantName) {
+    return `${walkingMinutes} min walk from ${restaurantName}`;
+  }
 
   if (restaurant.city && activity.city && restaurant.city === activity.city) {
     return `Same city flow • ${restaurant.city}`;
