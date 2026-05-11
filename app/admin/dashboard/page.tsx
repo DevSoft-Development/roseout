@@ -9,7 +9,7 @@ function formatNumber(value: number | null | undefined) {
 }
 
 export default async function CentralDashboardPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superuser", "admin"]);
 
   const { count: totalRestaurants } = await supabase
     .from("restaurants")
@@ -33,22 +33,24 @@ export default async function CentralDashboardPage() {
     .select("id", { count: "exact", head: true })
     .eq("claimed", true);
 
-  const totalLocations = Number(totalRestaurants || 0) + Number(totalActivities || 0);
-  const totalClaimed = Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
+  const totalLocations =
+    Number(totalRestaurants || 0) + Number(totalActivities || 0);
+  const totalClaimed =
+    Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
 
   const navCards = [
     {
       eyebrow: "Inventory",
       title: "Locations",
       text: "Manage restaurants and activities from one unified admin page.",
-      href: "/admin/locations",
+      href: "/admin/dashboard/locations",
       cta: "Manage locations",
     },
     {
       eyebrow: "Reserve",
-      title: "Reservations",
+      title: "OutHaven Reserve",
       text: "View bookings, availability, live service flow, and requests.",
-      href: "/reserve/dashboard",
+      href: "/admin/dashboard/reserve",
       cta: "Open reserve",
     },
     {
@@ -60,7 +62,7 @@ export default async function CentralDashboardPage() {
     },
     {
       eyebrow: "Support",
-      title: "Tickets",
+      title: "OutHaven Support",
       text: "Submit, reply to, and view support tickets from the admin inbox.",
       href: "/admin/dashboard/support",
       cta: "Open support",
@@ -101,17 +103,17 @@ export default async function CentralDashboardPage() {
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
-                  href="/admin/locations"
+                  href="/admin/dashboard/locations"
                   className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03]"
                 >
                   Manage Locations
                 </Link>
 
                 <Link
-                  href="/reserve/dashboard"
+                  href="/admin/dashboard/reserve"
                   className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
                 >
-                  Open Reserve
+                  OutHaven Reserve
                 </Link>
 
                 <Link
@@ -125,7 +127,7 @@ export default async function CentralDashboardPage() {
                   href="/admin/dashboard/support"
                   className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
                 >
-                  Support Tickets
+                  OutHaven Support
                 </Link>
               </div>
             </div>
@@ -137,7 +139,7 @@ export default async function CentralDashboardPage() {
 
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <Link
-                  href="/admin/locations"
+                  href="/admin/dashboard/locations"
                   className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
                 >
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
@@ -149,7 +151,7 @@ export default async function CentralDashboardPage() {
                 </Link>
 
                 <Link
-                  href="/admin/locations?claim=claimed&page=1"
+                  href="/admin/dashboard/locations?claim=claimed&page=1"
                   className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
                 >
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
@@ -161,7 +163,7 @@ export default async function CentralDashboardPage() {
                 </Link>
 
                 <Link
-                  href="/reserve/dashboard"
+                  href="/admin/dashboard/reserve"
                   className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
                 >
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
@@ -188,7 +190,7 @@ export default async function CentralDashboardPage() {
 
         <section className="mt-5 grid gap-4 md:grid-cols-4">
           <Link
-            href="/admin/locations"
+            href="/admin/dashboard/locations"
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
@@ -200,7 +202,7 @@ export default async function CentralDashboardPage() {
           </Link>
 
           <Link
-            href="/admin/locations?type=restaurants&page=1"
+            href="/admin/dashboard/locations?type=restaurants&page=1"
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
@@ -212,7 +214,7 @@ export default async function CentralDashboardPage() {
           </Link>
 
           <Link
-            href="/admin/locations?type=activities&page=1"
+            href="/admin/dashboard/locations?type=activities&page=1"
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
@@ -224,7 +226,7 @@ export default async function CentralDashboardPage() {
           </Link>
 
           <Link
-            href="/admin/locations?claim=claimed&page=1"
+            href="/admin/dashboard/locations?claim=claimed&page=1"
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
@@ -283,7 +285,7 @@ export default async function CentralDashboardPage() {
 
             <div className="mt-5 space-y-3">
               <Link
-                href="/reserve/dashboard"
+                href="/admin/dashboard/reserve"
                 className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
                 <p className="font-black">Reservation System</p>
@@ -294,7 +296,7 @@ export default async function CentralDashboardPage() {
               </Link>
 
               <Link
-                href="/admin/locations"
+                href="/admin/dashboard/locations"
                 className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
                 <p className="font-black">Location Inventory</p>

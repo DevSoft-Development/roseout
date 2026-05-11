@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketConversation from "@/components/support/SupportTicketConversation";
 import { getSupportTicket, getSupportTicketMessages } from "@/lib/support";
+import { supabase } from "@/lib/supabase";
+import SupportTicketAssignmentForm from "@/components/admin/SupportTicketAssignmentForm";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -18,6 +20,23 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
 
   const messages = await getSupportTicketMessages(ticket.id);
 
+  const [{ data: adminUsers }, { data: routing }] = await Promise.all([
+    supabase.from("admin_users").select("email").in("role", ["superuser", "admin"]),
+    supabase.from("support_department_routing").select("department").eq("is_active", true),
+  ]);
+
+  const departments = Array.from(
+    new Set([
+      "Guest Care",
+      "OutHaven Reserve",
+      "Partner Success",
+      ...((routing || []) as { department?: string | null }[]).map((item) => item.department || "").filter(Boolean),
+    ])
+  );
+  const adminEmails = ((adminUsers || []) as { email?: string | null }[])
+    .map((item) => item.email || "")
+    .filter(Boolean);
+
   return (
     <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
@@ -29,6 +48,13 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
             Public ticket view
           </Link>
         </div>
+        <SupportTicketAssignmentForm
+          ticketId={ticket.id}
+          initialDepartment={ticket.department}
+          initialAssignedEmail={ticket.assigned_admin_email}
+          departments={departments}
+          adminEmails={adminEmails}
+        />
         <SupportTicketConversation ticket={ticket} messages={messages} accessKey={ticket.public_access_token} adminMode />
       </div>
     </main>

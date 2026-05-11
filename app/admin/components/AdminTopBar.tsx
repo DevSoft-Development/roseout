@@ -1,9 +1,14 @@
 "use client";
 
 import type React from "react";
-import type { User } from "@supabase/supabase-js";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
+
+type AdminProfile = {
+  id: string | null;
+  email: string;
+  full_name: string;
+};
 
 type SearchResult = {
   type: "user" | "location";
@@ -19,7 +24,7 @@ type SearchResult = {
 export default function AdminTopBar() {
   const supabase = createClient();
 
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AdminProfile | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -33,24 +38,26 @@ export default function AdminTopBar() {
 
   useEffect(() => {
     const loadUserAndRole = async () => {
-      const { data } = await supabase.auth.getUser();
-      const currentUser = data.user;
+      try {
+        const res = await fetch("/api/admin/me", { cache: "no-store" });
 
-      setUser(currentUser);
+        if (!res.ok) {
+          setUser(null);
+          setRole(null);
+          return;
+        }
 
-      if (currentUser?.email) {
-        const { data: adminUser } = await supabase
-          .from("admin_users")
-          .select("role")
-          .eq("email", currentUser.email.toLowerCase())
-          .maybeSingle();
-
-        setRole(adminUser?.role || null);
+        const data = await res.json();
+        setUser(data.user || null);
+        setRole(data.role || null);
+      } catch {
+        setUser(null);
+        setRole(null);
       }
     };
 
     loadUserAndRole();
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     const cleanQuery = query.trim();
@@ -165,29 +172,20 @@ export default function AdminTopBar() {
     window.location.href = "/login";
   };
 
-  const name =
-    user?.user_metadata?.full_name || user?.user_metadata?.name || "Admin";
+  const name = user?.full_name || "Admin";
 
   const email = user?.email || "";
   const initial = name?.charAt(0)?.toUpperCase() || "A";
 
-  const canViewDashboard = ["superuser", "admin", "editor", "viewer"].includes(
-    role || ""
-  );
+  const canViewDashboard = ["superuser", "admin"].includes(role || "");
 
-  const canViewLocations = ["superuser", "admin", "editor", "viewer"].includes(
-    role || ""
-  );
+  const canViewLocations = ["superuser", "admin"].includes(role || "");
 
-  const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
+  const canViewClaims = ["superuser", "admin"].includes(role || "");
 
-  const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
-    role || ""
-  );
+  const canViewAnalytics = ["superuser", "admin"].includes(role || "");
 
-  const canViewImportHistory = ["superuser", "admin", "viewer"].includes(
-    role || ""
-  );
+  const canViewImportHistory = ["superuser", "admin"].includes(role || "");
 
   const canViewUsers = ["superuser", "admin"].includes(role || "");
 
@@ -230,24 +228,24 @@ export default function AdminTopBar() {
               onClick={() => goTo("/admin/dashboard/support")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
-              Tickets
+              OutHaven Support
             </button>
           )}
 
           {canViewDashboard && (
             <button
               type="button"
-              onClick={() => goTo("/reserve/dashboard")}
+              onClick={() => goTo("/admin/dashboard/reserve")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
-              Reservations
+              OutHaven Reserve
             </button>
           )}
 
           {canViewLocations && (
             <button
               type="button"
-              onClick={() => goTo("/admin/locations")}
+              onClick={() => goTo("/admin/dashboard/locations")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Locations
@@ -257,7 +255,7 @@ export default function AdminTopBar() {
           {canViewUsers && (
             <button
               type="button"
-              onClick={() => goTo("/admin/users")}
+              onClick={() => goTo("/admin/dashboard/users")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Users
@@ -331,26 +329,26 @@ export default function AdminTopBar() {
 
                 {canViewDashboard && (
                   <MenuButton onClick={() => goTo("/admin/dashboard/support")}>
-                    Ticket System
+                    OutHaven Support
                   </MenuButton>
                 )}
 
                 {canViewDashboard && (
-                  <MenuButton onClick={() => goTo("/reserve/dashboard")}>
-                    Reservation System
+                  <MenuButton onClick={() => goTo("/admin/dashboard/reserve")}>
+                    OutHaven Reserve
                   </MenuButton>
                 )}
 
                 {canViewLocations && (
-                  <MenuButton onClick={() => goTo("/admin/locations")}>
+                  <MenuButton onClick={() => goTo("/admin/dashboard/locations")}>
                     Locations
                   </MenuButton>
                 )}
 
                 {canViewUsers && (
                   <>
-                    <MenuButton onClick={() => goTo("/admin/users")}>
-                      Users Dashboard
+                    <MenuButton onClick={() => goTo("/admin/dashboard/users")}>
+                      User Edit Dashboard
                     </MenuButton>
 
                     <button
