@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQr";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,10 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(request: NextRequest) {
+  const { error } = await requireAdminApiRole(["superuser", "admin"]);
+
+  if (error) return error;
+
   try {
     const body = await request.json();
 
@@ -54,9 +59,9 @@ export async function POST(request: NextRequest) {
       claim_url: data.claim_url,
       qr_code_data_url: data.qr_code_data_url,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error.message || "Could not create activity." },
+      { error: error instanceof Error ? error.message : "Could not create activity." },
       { status: 500 }
     );
   }
