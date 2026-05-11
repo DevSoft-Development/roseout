@@ -31,6 +31,10 @@ type PlanLocation = {
   booking_url?: string | null;
   theouthaven_score?: number | null;
   smart_match_score?: number | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  distance_miles?: number | null;
+  pair_distance_miles?: number | null;
 };
 
 type SavedPlan = {
@@ -76,6 +80,10 @@ function PlanPageInner() {
   const activity = plan?.activity || null;
 
   const hasPlan = Boolean(restaurant || activity);
+  const activityDistanceLabel = buildDistanceFromRestaurantLabel(
+    restaurant,
+    activity,
+  );
 
   const planTitle = useMemo(() => {
     const names = [
@@ -90,7 +98,6 @@ function PlanPageInner() {
 
   return (
     <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-black text-white">
-
       <section className="relative border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:pt-32">
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div>
@@ -158,6 +165,17 @@ function PlanPageInner() {
                 activity second, then action buttons.
               </p>
 
+              {activityDistanceLabel ? (
+                <div className="mt-4 rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/15 p-4 shadow-lg shadow-red-950/20">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100/70">
+                    Activity Distance
+                  </p>
+                  <p className="mt-1 text-sm font-black leading-6 text-white">
+                    {activityDistanceLabel}
+                  </p>
+                </div>
+              ) : null}
+
               <div className="mt-5 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100/70">
                   Next Step
@@ -212,6 +230,7 @@ function PlanPageInner() {
                   fallbackTitle="Choose an activity"
                   fallbackMeta="Experience"
                   type="activity"
+                  distanceLabel={activityDistanceLabel}
                 />
               </div>
             </div>
@@ -235,6 +254,7 @@ function PlanPageInner() {
                 label="Activity Pick"
                 type="activity"
                 location={activity}
+                distanceLabel={activityDistanceLabel}
               />
             )}
           </div>
@@ -301,6 +321,7 @@ function TimelineLocation({
   fallbackTitle,
   fallbackMeta,
   type,
+  distanceLabel,
 }: {
   step: string;
   label: string;
@@ -308,6 +329,7 @@ function TimelineLocation({
   fallbackTitle: string;
   fallbackMeta: string;
   type: "restaurant" | "activity";
+  distanceLabel?: string;
 }) {
   const active = Boolean(location);
   const title =
@@ -324,6 +346,7 @@ function TimelineLocation({
   ]
     .filter(Boolean)
     .join(" • ");
+  const address = location ? formatAddress(location) : "";
 
   return (
     <div className="relative flex min-w-0 gap-2 py-3 sm:gap-3">
@@ -375,6 +398,19 @@ function TimelineLocation({
               {meta || fallbackMeta}
             </p>
 
+            {address ? (
+              <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-white/42 sm:text-xs sm:leading-5">
+                {address}
+              </p>
+            ) : null}
+
+            {distanceLabel ? (
+              <DistanceFromRestaurantBadge
+                label={distanceLabel}
+                className="mt-2"
+              />
+            ) : null}
+
             <p className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-4 text-white/55 sm:mt-2 sm:text-xs sm:leading-5">
               {active
                 ? type === "restaurant"
@@ -395,10 +431,12 @@ function PlanActionCard({
   label,
   type,
   location,
+  distanceLabel,
 }: {
   label: string;
   type: "restaurant" | "activity";
   location: PlanLocation;
+  distanceLabel?: string;
 }) {
   const title =
     type === "restaurant"
@@ -411,7 +449,9 @@ function PlanActionCard({
       : `/locations/activities/${location.id}?from=/plan`;
 
   const reservationUrl =
-    location.reservation_url || location.reservation_link || location.booking_url;
+    location.reservation_url ||
+    location.reservation_link ||
+    location.booking_url;
 
   return (
     <article className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
@@ -454,7 +494,7 @@ function PlanActionCard({
                   location.food_type ||
                   location.cuisine_type ||
                   "Restaurant"
-              : location.activity_type || "Activity"
+              : location.activity_type || "Activity",
           )}
         </p>
 
@@ -465,6 +505,10 @@ function PlanActionCard({
         <p className="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-white/45">
           {formatAddress(location) || "Location details available on listing."}
         </p>
+
+        {distanceLabel ? (
+          <DistanceFromRestaurantBadge label={distanceLabel} className="mt-3" />
+        ) : null}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Link
@@ -503,6 +547,22 @@ function PlanActionCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function DistanceFromRestaurantBadge({
+  label,
+  className = "",
+}: {
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`${className} inline-flex w-fit items-center rounded-full border border-[#e1062a]/45 bg-[#e1062a]/20 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/25 sm:text-[11px]`}
+    >
+      {label}
+    </div>
   );
 }
 
@@ -568,11 +628,83 @@ function titleCase(value?: string | null) {
     .join(" ");
 }
 
+function getLocationCoordinates(item: PlanLocation | null) {
+  if (!item) return null;
+
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (!latitude || !longitude) return null;
+
+  return { latitude, longitude };
+}
+
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const radius = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distanceBetweenLocations(
+  restaurant: PlanLocation | null,
+  activity: PlanLocation | null,
+) {
+  const restaurantCoords = getLocationCoordinates(restaurant);
+  const activityCoords = getLocationCoordinates(activity);
+
+  if (!restaurantCoords || !activityCoords) return null;
+
+  return Number(
+    haversineMiles(
+      restaurantCoords.latitude,
+      restaurantCoords.longitude,
+      activityCoords.latitude,
+      activityCoords.longitude,
+    ).toFixed(1),
+  );
+}
+
+function buildDistanceFromRestaurantLabel(
+  restaurant: PlanLocation | null,
+  activity: PlanLocation | null,
+) {
+  if (!restaurant || !activity) return undefined;
+
+  const fallbackDistance = Number(
+    activity.pair_distance_miles ?? activity.distance_miles,
+  );
+  const distance =
+    distanceBetweenLocations(restaurant, activity) ??
+    (Number.isFinite(fallbackDistance) ? fallbackDistance : null);
+  const restaurantName = restaurant.restaurant_name || restaurant.name;
+
+  if (distance === null || !restaurantName) return undefined;
+
+  return `${Number(distance).toFixed(1)} miles from ${restaurantName}`;
+}
+
 function buildFlowText(
   restaurant: PlanLocation | null,
-  activity: PlanLocation | null
+  activity: PlanLocation | null,
 ) {
   if (!restaurant || !activity) return "Dinner → Activity";
+
+  const distanceLabel = buildDistanceFromRestaurantLabel(restaurant, activity);
+
+  if (distanceLabel) return distanceLabel;
 
   if (restaurant.city && activity.city && restaurant.city === activity.city) {
     return `Same city flow • ${restaurant.city}`;

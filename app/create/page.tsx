@@ -30,6 +30,7 @@ type RestaurantCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_distance_miles?: number | null;
 };
 
 type ActivityCard = {
@@ -55,6 +56,7 @@ type ActivityCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_distance_miles?: number | null;
 };
 
 type Message = {
@@ -107,7 +109,7 @@ export default function CreatePage() {
   const [input, setInput] = useState("");
   const [addOnInput, setAddOnInput] = useState("");
   const [typedPlaceholder, setTypedPlaceholder] = useState(
-    INITIAL_TYPING_PROMPT
+    INITIAL_TYPING_PROMPT,
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -117,8 +119,9 @@ export default function CreatePage() {
   const [error, setError] = useState("");
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<RestaurantCard | null>(null);
-  const [selectedActivity, setSelectedActivity] =
-    useState<ActivityCard | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityCard | null>(
+    null,
+  );
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
 
@@ -135,13 +138,13 @@ export default function CreatePage() {
   const latestAssistant = useMemo(
     () =>
       [...messages].reverse().find((message) => message.role === "assistant"),
-    [messages]
+    [messages],
   );
 
   const hasSelection = Boolean(selectedRestaurant || selectedActivity);
   const hasResults = Boolean(
     (latestAssistant?.restaurants?.length || 0) +
-      (latestAssistant?.activities?.length || 0)
+    (latestAssistant?.activities?.length || 0),
   );
 
   const selectedPlanText = [
@@ -223,7 +226,7 @@ export default function CreatePage() {
           itemType,
           eventType: "view",
         });
-      }
+      },
     );
   }, [latestAssistant]);
 
@@ -269,7 +272,7 @@ export default function CreatePage() {
       () => {
         setLocationSaved(false);
         setError("Please allow location access or search by neighborhood.");
-      }
+      },
     );
   }
 
@@ -331,7 +334,7 @@ export default function CreatePage() {
   }
 
   function handleAddOnInputChange(
-    event: React.ChangeEvent<HTMLTextAreaElement>
+    event: React.ChangeEvent<HTMLTextAreaElement>,
   ) {
     setAddOnInput(event.target.value);
   }
@@ -360,7 +363,7 @@ export default function CreatePage() {
 
   async function submitSearch(
     cleanInput: string,
-    options: { addOnTarget?: AddOnTarget; preservePlan?: boolean } = {}
+    options: { addOnTarget?: AddOnTarget; preservePlan?: boolean } = {},
   ) {
     if (!cleanInput || loading) return;
 
@@ -386,7 +389,7 @@ export default function CreatePage() {
 
     setTimeout(
       addOnTarget ? scrollToAddOnLoadingCards : scrollToResultsPanel,
-      140
+      140,
     );
 
     try {
@@ -451,7 +454,7 @@ export default function CreatePage() {
           addOnTarget
             ? scrollToAddOnResultsSection(addOnTarget)
             : scrollToResultsPanel(),
-        250
+        250,
       );
     } catch (err: any) {
       setError(err?.message || "Something went wrong. Please try again.");
@@ -482,7 +485,7 @@ export default function CreatePage() {
     const addOnTarget = inferAddOnTarget(
       cleanInput,
       selectedRestaurant,
-      selectedActivity
+      selectedActivity,
     );
 
     setAddOnInput("");
@@ -569,9 +572,7 @@ export default function CreatePage() {
               <div className="relative">
                 {!input && (
                   <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    <span>
-                      {typedPlaceholder}
-                    </span>
+                    <span>{typedPlaceholder}</span>
                   </div>
                 )}
 
@@ -686,8 +687,8 @@ export default function CreatePage() {
                       Tight matches for your outing
                     </h2>
                     <p className="mt-1 text-sm font-semibold leading-5 text-white/40">
-                      Select a restaurant, then choose the experience that completes
-                      the outing.
+                      Select a restaurant, then choose the experience that
+                      completes the outing.
                     </p>
                   </div>
                 </div>
@@ -701,51 +702,51 @@ export default function CreatePage() {
                       title="Restaurant Picks"
                       subtitle="Food spots matched to cuisine, vibe, and location"
                     >
-                    {restaurants.map((restaurant, restaurantIndex) => {
-                      const restaurantId = String(restaurant.id);
-                      const isSelected =
-                        selectedRestaurant?.id === restaurant.id;
-                      const reservationUrl =
-                        restaurant.reservation_url ||
-                        restaurant.reservation_link ||
-                        undefined;
+                      {restaurants.map((restaurant, restaurantIndex) => {
+                        const restaurantId = String(restaurant.id);
+                        const isSelected =
+                          selectedRestaurant?.id === restaurant.id;
+                        const reservationUrl =
+                          restaurant.reservation_url ||
+                          restaurant.reservation_link ||
+                          undefined;
 
-                      return (
-                        <ResultCard
-                          key={restaurantId || restaurantIndex}
-                          index={restaurantIndex}
-                          type="restaurant"
-                          imageUrl={restaurant.image_url || undefined}
-                          title={restaurant.restaurant_name}
-                          eyebrow={
-                            restaurant.cuisine ||
-                            restaurant.food_type ||
-                            "Restaurant"
-                          }
-                          address={formatAddress(restaurant)}
-                          rating={restaurant.rating}
-                          reviewKeywords={restaurant.review_keywords}
-                          reviewSnippet={restaurant.review_snippet}
-                          primaryTag={restaurant.primary_tag}
-                          distance={restaurant.distance_miles}
-                          selected={isSelected}
-                          priority={restaurantIndex === 0}
-                          selectLabel={isSelected ? "Selected" : "Select"}
-                          onSelect={() =>
-                            selectRestaurantAndMaybeScroll(restaurant)
-                          }
-                          detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
-                          onDetails={() => trackRestaurantClick(restaurantId)}
-                          websiteUrl={restaurant.website || undefined}
-                          onWebsite={() => trackRestaurantClick(restaurantId)}
-                          reservationUrl={reservationUrl}
-                          reservationLabel="Reserve"
-                          onReservation={() =>
-                            trackRestaurantClick(restaurantId)
-                          }
-                        />
-                      );
-                    })}
+                        return (
+                          <ResultCard
+                            key={restaurantId || restaurantIndex}
+                            index={restaurantIndex}
+                            type="restaurant"
+                            imageUrl={restaurant.image_url || undefined}
+                            title={restaurant.restaurant_name}
+                            eyebrow={
+                              restaurant.cuisine ||
+                              restaurant.food_type ||
+                              "Restaurant"
+                            }
+                            address={formatAddress(restaurant)}
+                            rating={restaurant.rating}
+                            reviewKeywords={restaurant.review_keywords}
+                            reviewSnippet={restaurant.review_snippet}
+                            primaryTag={restaurant.primary_tag}
+                            distance={restaurant.distance_miles}
+                            selected={isSelected}
+                            priority={restaurantIndex === 0}
+                            selectLabel={isSelected ? "Selected" : "Select"}
+                            onSelect={() =>
+                              selectRestaurantAndMaybeScroll(restaurant)
+                            }
+                            detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
+                            onDetails={() => trackRestaurantClick(restaurantId)}
+                            websiteUrl={restaurant.website || undefined}
+                            onWebsite={() => trackRestaurantClick(restaurantId)}
+                            reservationUrl={reservationUrl}
+                            reservationLabel="Reserve"
+                            onReservation={() =>
+                              trackRestaurantClick(restaurantId)
+                            }
+                          />
+                        );
+                      })}
                     </ResultSection>
                   </div>
                 )}
@@ -767,8 +768,7 @@ export default function CreatePage() {
                     >
                       {activities.map((activity, activityIndex) => {
                         const activityId = String(activity.id);
-                        const isSelected =
-                          selectedActivity?.id === activity.id;
+                        const isSelected = selectedActivity?.id === activity.id;
                         const reservationUrl =
                           activity.reservation_url ||
                           activity.reservation_link ||
@@ -776,7 +776,7 @@ export default function CreatePage() {
                         const distanceFromRestaurantLabel = selectedRestaurant
                           ? buildDistanceFromRestaurantLabel(
                               selectedRestaurant,
-                              activity
+                              activity,
                             )
                           : undefined;
 
@@ -795,10 +795,10 @@ export default function CreatePage() {
                             primaryTag={activity.primary_tag}
                             distance={
                               selectedRestaurant
-                                ? distanceBetweenLocations(
+                                ? (distanceBetweenLocations(
                                     selectedRestaurant,
-                                    activity
-                                  ) ?? activity.distance_miles
+                                    activity,
+                                  ) ?? activity.distance_miles)
                                 : activity.distance_miles
                             }
                             distanceLabel={distanceFromRestaurantLabel}
@@ -812,9 +812,7 @@ export default function CreatePage() {
                             onWebsite={() => trackActivityClick(activityId)}
                             reservationUrl={reservationUrl}
                             reservationLabel="Book"
-                            onReservation={() =>
-                              trackActivityClick(activityId)
-                            }
+                            onReservation={() => trackActivityClick(activityId)}
                           />
                         );
                       })}
@@ -957,7 +955,7 @@ function resultIdentityKey(item: RestaurantCard | ActivityCard) {
   const nameAddressKey = normalizeResultIdentityValue(
     [name, item.address, item.city, item.state, item.zip_code]
       .filter(Boolean)
-      .join(" ")
+      .join(" "),
   );
 
   return nameAddressKey || normalizeResultIdentityValue(String(item.id || ""));
@@ -984,14 +982,14 @@ function resultDistanceValue(item: RestaurantCard | ActivityCard) {
 }
 
 function sortResultsNearFirst<T extends RestaurantCard | ActivityCard>(
-  items: T[]
+  items: T[],
 ) {
   if (!items.some((item) => Number.isFinite(Number(item.distance_miles)))) {
     return items;
   }
 
   return [...items].sort(
-    (a, b) => resultDistanceValue(a) - resultDistanceValue(b)
+    (a, b) => resultDistanceValue(a) - resultDistanceValue(b),
   );
 }
 
@@ -1005,7 +1003,7 @@ function dedupeSearchResults({
   const dedupedRestaurants = dedupeResultList(restaurants);
   const restaurantKeys = new Set(dedupedRestaurants.map(resultIdentityKey));
   const dedupedActivities = dedupeResultList(activities).filter(
-    (activity) => !restaurantKeys.has(resultIdentityKey(activity))
+    (activity) => !restaurantKeys.has(resultIdentityKey(activity)),
   );
 
   return {
@@ -1171,6 +1169,7 @@ function PlanSummarySheet({
               ]
                 .filter(Boolean)
                 .join(" • ")}
+              address={restaurant ? formatAddress(restaurant) : undefined}
               description={
                 restaurant
                   ? "Start with the food pick that best matches your outing."
@@ -1208,6 +1207,11 @@ function PlanSummarySheet({
               ]
                 .filter(Boolean)
                 .join(" • ")}
+              address={activity ? formatAddress(activity) : undefined}
+              distanceLabel={buildDistanceFromRestaurantLabel(
+                restaurant,
+                activity,
+              )}
               description={
                 activity
                   ? restaurant
@@ -1219,9 +1223,7 @@ function PlanSummarySheet({
               }
               imageUrl={activity?.image_url || null}
               active={Boolean(activity)}
-              actionLabel={
-                restaurant && !activity ? "Add Activity" : undefined
-              }
+              actionLabel={restaurant && !activity ? "Add Activity" : undefined}
               onAction={restaurant && !activity ? onAddActivity : undefined}
             />
           </div>
@@ -1265,6 +1267,8 @@ function TimelineStep({
   label,
   title,
   meta,
+  address,
+  distanceLabel,
   description,
   imageUrl,
   active,
@@ -1275,6 +1279,8 @@ function TimelineStep({
   label: string;
   title: string;
   meta: string;
+  address?: string;
+  distanceLabel?: string;
   description: string;
   imageUrl?: string | null;
   active: boolean;
@@ -1328,6 +1334,17 @@ function TimelineStep({
             <p className="mt-1 line-clamp-1 text-[11px] font-semibold text-white/45 sm:text-xs">
               {meta}
             </p>
+            {address ? (
+              <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-white/42 sm:text-xs sm:leading-5">
+                {address}
+              </p>
+            ) : null}
+            {distanceLabel ? (
+              <DistanceFromRestaurantBadge
+                label={distanceLabel}
+                className="mt-2"
+              />
+            ) : null}
             <p className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-4 text-white/55 sm:mt-2 sm:text-xs sm:leading-5">
               {description}
             </p>
@@ -1572,9 +1589,10 @@ function ResultCard({
           </p>
 
           {distanceLabel ? (
-            <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
-              {distanceLabel}
-            </div>
+            <DistanceFromRestaurantBadge
+              label={distanceLabel}
+              className="mt-2"
+            />
           ) : null}
         </div>
 
@@ -1637,6 +1655,22 @@ function ResultCard({
   );
 }
 
+function DistanceFromRestaurantBadge({
+  label,
+  className = "",
+}: {
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`${className} inline-flex w-fit items-center rounded-full border border-[#e1062a]/45 bg-[#e1062a]/20 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/25 sm:text-[11px]`}
+    >
+      {label}
+    </div>
+  );
+}
+
 function LoadingResults({ label }: { label: string }) {
   return (
     <div className="w-full max-w-full overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:rounded-[1.25rem] sm:p-4">
@@ -1681,7 +1715,6 @@ function formatAddress(item: {
     .filter(Boolean)
     .join(", ");
 }
-
 
 function titleCase(value: string) {
   return value
@@ -1739,7 +1772,7 @@ function getWhyPicked({
 
 function getAddOnTargetLabel(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && !activity) return "activity";
   if (activity && !restaurant) return "restaurant";
@@ -1749,7 +1782,7 @@ function getAddOnTargetLabel(
 function inferAddOnTarget(
   input: string,
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ): AddOnTarget {
   if (restaurant && !activity) return "activity";
   if (activity && !restaurant) return "restaurant";
@@ -1780,7 +1813,7 @@ function inferAddOnTarget(
 
 function getPlanSummaryDescription(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && activity) {
     return "Review your restaurant and activity flow before moving to the full plan.";
@@ -1799,7 +1832,7 @@ function getPlanSummaryDescription(
 
 function getPlanNextStepText(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && activity) {
     return "Open the full plan to confirm the route, timing, booking links, and final details.";
@@ -1833,7 +1866,7 @@ function haversineMiles(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ) {
   const toRad = (value: number) => (value * Math.PI) / 180;
   const radius = 3958.8;
@@ -1842,16 +1875,14 @@ function haversineMiles(
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function distanceBetweenLocations(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (!restaurant || !activity) return null;
 
@@ -1865,30 +1896,38 @@ function distanceBetweenLocations(
       restaurantCoords.latitude,
       restaurantCoords.longitude,
       activityCoords.latitude,
-      activityCoords.longitude
-    ).toFixed(1)
+      activityCoords.longitude,
+    ).toFixed(1),
   );
 }
 
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (!restaurant || !activity) return undefined;
 
-  const distance = distanceBetweenLocations(restaurant, activity);
+  const fallbackDistance = Number(
+    activity.pair_distance_miles ?? activity.distance_miles,
+  );
+  const distance =
+    distanceBetweenLocations(restaurant, activity) ??
+    (Number.isFinite(fallbackDistance) ? fallbackDistance : null);
 
   if (distance === null) return undefined;
 
-  return `${distance} miles from ${restaurant.restaurant_name}`;
+  return `${Number(distance).toFixed(1)} miles from ${restaurant.restaurant_name}`;
 }
 
 function buildDistanceText(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && activity) {
-    const distanceLabel = buildDistanceFromRestaurantLabel(restaurant, activity);
+    const distanceLabel = buildDistanceFromRestaurantLabel(
+      restaurant,
+      activity,
+    );
 
     if (distanceLabel) {
       return activity.activity_name
@@ -1903,7 +1942,8 @@ function buildDistanceText(
     return "Restaurant → Activity timeline";
   }
 
-  if (restaurant) return "Restaurant selected • Add an activity if you want one.";
+  if (restaurant)
+    return "Restaurant selected • Add an activity if you want one.";
   if (activity) return "Activity selected • Add a restaurant if you want one.";
 
   return "Choose a restaurant or activity to start your outing.";
