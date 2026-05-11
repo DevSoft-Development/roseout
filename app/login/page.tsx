@@ -1,24 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-browser";
 
-type ProfileRole = string | null | undefined;
-
-function isLocationRole(role: ProfileRole) {
-  return [
-    "location",
-    "location_owner",
-    "owner",
-    "restaurant_owner",
-    "restaurants",
-  ].includes(String(role || "").toLowerCase());
-}
-
 export default function LoginPage() {
-  const router = useRouter();
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -58,81 +44,25 @@ export default function LoginPage() {
         return;
       }
 
-      const userEmail = data.user.email.toLowerCase();
+      const redirectResponse = await fetch("/api/auth/login-redirect", {
+        cache: "no-store",
+        headers: data.session?.access_token
+          ? { Authorization: `Bearer ${data.session.access_token}` }
+          : undefined,
+      });
 
-      const { data: adminUser, error: adminError } = await supabase
-        .from("admin_users")
-        .select("id, role")
-        .eq("email", userEmail)
-        .maybeSingle();
+      const redirectResult = (await redirectResponse.json()) as {
+        error?: string;
+        redirectPath?: string;
+      };
 
-      if (adminError) {
-        setError(adminError.message);
+      if (!redirectResponse.ok || !redirectResult.redirectPath) {
+        setError(redirectResult.error || "Unable to determine your dashboard.");
         return;
       }
 
-      const roleRedirects: Record<string, string> = {
-        superuser: "/admin/dashboard",
-        admin: "/admin/dashboard",
-        editor: "/admin/locations",
-        reviewer: "/admin/claims",
-        viewer: "/admin/import-history",
-      };
-
-      let redirectPath = adminUser
-        ? roleRedirects[adminUser.role] || "/admin/dashboard"
-        : "/user/dashboard";
-
-      if (!adminUser) {
-        const authRole = data.user.user_metadata?.role as ProfileRole;
-
-        const { data: profile, error: profileError } = await supabase
-          .from("users")
-          .select("role")
-          .eq("id", data.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          setError(profileError.message);
-          return;
-        }
-
-        const { count: ownedRestaurants, error: restaurantsError } =
-          await supabase.from("restaurants")
-          .select("id", { count: "exact", head: true })
-          .eq("owner_user_id", data.user.id);
-
-        if (restaurantsError) {
-          setError(restaurantsError.message);
-          return;
-        }
-
-        const { count: ownedActivities, error: activitiesError } =
-          await supabase.from("activities")
-          .select("id", { count: "exact", head: true })
-          .eq("owner_user_id", data.user.id);
-
-        if (activitiesError) {
-          setError(activitiesError.message);
-          return;
-        }
-
-        const ownsLocation =
-          Number(ownedRestaurants || 0) + Number(ownedActivities || 0) > 0;
-
-        redirectPath =
-          isLocationRole(authRole) ||
-          isLocationRole(profile?.role) ||
-          ownsLocation
-            ? "/locations/dashboard"
-            : "/user/dashboard";
-      }
-
       setMessage("Login successful. Redirecting...");
-
-      setTimeout(() => {
-        router.replace(redirectPath);
-      }, 500);
+      window.location.assign(redirectResult.redirectPath);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
