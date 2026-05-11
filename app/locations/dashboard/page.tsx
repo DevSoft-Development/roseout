@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
+import { getAppSession } from "@/lib/app-session";
 import LocationsDashboardClient from "./LocationsDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,20 @@ type LocationItem = {
   owner_phone?: string;
   primary_tag?: string;
 };
+
+type RawLocation = Partial<LocationItem> & Record<string, unknown>;
+
+function toLocationItem(location: RawLocation, locationType: LocationType) {
+  return {
+    ...location,
+    id: String(location.id || ""),
+    location_type: locationType,
+    display_name:
+      locationType === "restaurant"
+        ? String(location.restaurant_name || "Untitled restaurant")
+        : String(location.activity_name || "Untitled activity"),
+  } as LocationItem;
+}
 
 function adminSupabase() {
   return createClient(
@@ -50,6 +66,14 @@ export default async function DashboardPage() {
     cookieStore.get("theouthaven_impersonate_user_id")?.value;
 
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
+
+  const sessionSupabase = await createServerSupabaseClient();
+
+  const {
+    data: { user },
+  } = await sessionSupabase.auth.getUser();
+
+  const appSession = await getAppSession();
 
   const supabase = adminSupabase();
 
@@ -82,31 +106,62 @@ export default async function DashboardPage() {
 
       impersonationLabel = `Viewing as ${locations[0].display_name}`;
     }
-  } else if (impersonatedUserId) {
-    const { data: restaurants } = await supabase
+  } else if (impersonatedUserId || user?.id || appSession?.id) {
+    const ownerUserId = impersonatedUserId || user?.id || appSession?.id;
+
+    const ownerEmail =
+      user?.email?.trim().toLowerCase() || appSession?.email || null;
+
+    const { data: restaurantsByUserId } = await supabase
       .from("restaurants")
       .select("*")
-      .eq("owner_user_id", impersonatedUserId);
+      .eq("owner_user_id", ownerUserId);
 
-    const { data: activities } = await supabase
+    const { data: activitiesByUserId } = await supabase
       .from("activities")
       .select("*")
-      .eq("owner_user_id", impersonatedUserId);
+      .eq("owner_user_id", ownerUserId);
+
+    const { data: restaurantsByEmail } = ownerEmail
+      ? await supabase
+          .from("restaurants")
+          .select("*")
+          .ilike("owner_email", ownerEmail)
+      : { data: [] };
+
+    const { data: activitiesByEmail } = ownerEmail
+      ? await supabase
+          .from("activities")
+          .select("*")
+          .ilike("owner_email", ownerEmail)
+      : { data: [] };
+
+    const restaurants = ([
+      ...(restaurantsByUserId || []),
+      ...(restaurantsByEmail || []),
+    ] as RawLocation[]).filter(
+      (location, index, all) =>
+        all.findIndex((item) => item.id === location.id) === index
+    );
+
+    const activities = ([
+      ...(activitiesByUserId || []),
+      ...(activitiesByEmail || []),
+    ] as RawLocation[]).filter(
+      (location, index, all) =>
+        all.findIndex((item) => item.id === location.id) === index
+    );
 
     locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
-      })),
+      ...restaurants.map((restaurant) =>
+        toLocationItem(restaurant, "restaurant")
+      ),
+      ...activities.map((activity) => toLocationItem(activity, "activity")),
     ];
 
-    impersonationLabel = "Viewing as location owner";
+    impersonationLabel = impersonatedUserId
+      ? "Viewing as location owner"
+      : "Your locations";
   } else if (adminUserId) {
     const { data: restaurants } = await supabase
       .from("restaurants")
@@ -119,16 +174,12 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false });
 
     locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
-      })),
+      ...((restaurants || []) as RawLocation[]).map((restaurant) =>
+        toLocationItem(restaurant, "restaurant")
+      ),
+      ...((activities || []) as RawLocation[]).map((activity) =>
+        toLocationItem(activity, "activity")
+      ),
     ];
   }
 

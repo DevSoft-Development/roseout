@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { getAppSession } from "@/lib/app-session";
 
 export type AdminRole =
   | "superuser"
@@ -8,6 +10,18 @@ export type AdminRole =
   | "reviewer"
   | "viewer";
 
+function serviceSupabase() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        persistSession: false,
+      },
+    }
+  );
+}
+
 export async function getCurrentAdmin() {
   const supabase = await createClient();
 
@@ -15,14 +29,17 @@ export async function getCurrentAdmin() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email) {
+  const appSession = await getAppSession();
+  const email = user?.email || appSession?.email;
+
+  if (!email) {
     redirect("/login");
   }
 
-  const { data: adminUser } = await supabase
+  const { data: adminUser } = await serviceSupabase()
     .from("admin_users")
     .select("id, email, full_name, role")
-    .eq("email", user.email.toLowerCase())
+    .eq("email", email.toLowerCase())
     .maybeSingle();
 
   if (!adminUser) {
