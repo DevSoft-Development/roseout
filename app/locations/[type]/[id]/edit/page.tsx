@@ -330,7 +330,6 @@ export default function EditLocationPage() {
     if (type === "activities") payload.activity_type = form.activity_type;
 
     const calculatedScore = calculateUpdatedScore(payload);
-    payload.theouthaven_score = calculatedScore;
 
     try {
       const res = await fetch("/api/locations/edit-context", {
