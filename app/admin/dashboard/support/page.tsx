@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketClient from "@/components/support/SupportTicketClient";
 import { listSupportTickets } from "@/lib/support";
+
+export const metadata: Metadata = {
+  title: "Support Tickets",
+  description: "Review and respond to Roseout support tickets from the admin dashboard.",
+};
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
