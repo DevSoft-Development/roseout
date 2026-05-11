@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-11-runtime";
+const HOMEPAGE_VERSION = "home-create-theme-bright-2026-05-11";
 
 const featuredDateIdeas = [
   {
@@ -122,7 +122,7 @@ export default async function HomePage() {
   return (
     <main
       data-homepage-version={HOMEPAGE_VERSION}
-      className="min-h-screen overflow-hidden bg-[#fbf7f1] text-[#17110f]"
+      className="min-h-screen overflow-hidden bg-black text-white"
     >
       <style>{`
         @keyframes beta-marquee {
@@ -130,19 +130,19 @@ export default async function HomePage() {
           100% { transform: translateX(0); }
         }
       `}</style>
-      <section className="relative isolate px-5 pb-16 pt-32 sm:px-6 lg:pb-24 lg:pt-40">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_18%,rgba(225,6,42,0.18),transparent_30%),radial-gradient(circle_at_88%_8%,rgba(23,17,15,0.10),transparent_24%),linear-gradient(180deg,#fffaf3_0%,#fbf7f1_70%)]" />
-        <div className="absolute left-1/2 top-20 -z-10 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-white/70 blur-3xl" />
+      <section className="relative isolate border-b border-white/10 px-5 pb-16 pt-32 sm:px-6 lg:pb-24 lg:pt-40">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.24),transparent_34%),radial-gradient(circle_at_85%_8%,rgba(255,255,255,0.16),transparent_24%),linear-gradient(180deg,#050505_0%,#101010_58%,#000_100%)]" />
+        <div className="absolute left-1/2 top-20 -z-10 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
 
         <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
-            <p className="inline-flex rounded-full border border-[#17110f]/10 bg-white/70 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-[#e1062a] shadow-sm">
+            <p className="inline-flex rounded-full border border-[#e1062a]/30 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-[#e1062a] shadow-2xl shadow-red-950/20">
               Outings planned in minutes
             </p>
             <h1 className="mt-7 max-w-5xl text-5xl font-black leading-[0.9] tracking-[-0.06em] sm:text-7xl lg:text-8xl">
               Plan a better night out without the tab overload.
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#17110f]/65 sm:text-xl">
+            <p className="mt-6 max-w-2xl text-lg font-semibold leading-8 text-white/72 sm:text-xl">
               TheOutHaven turns one vibe into a clean restaurant, activity,
               second stop, and backup plan you can actually use tonight.
             </p>
@@ -153,7 +153,7 @@ export default async function HomePage() {
               >
                 Plan My Outing
               </Link>
-              <p className="text-sm font-bold text-[#17110f]/48">
+              <p className="text-sm font-bold text-white/55">
                 Clean picks. Clear route. One place to decide.
               </p>
             </div>
@@ -163,7 +163,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="px-5 py-16 sm:px-6 lg:py-20">
+      <section className="bg-white px-5 py-16 text-[#17110f] sm:px-6 lg:py-20">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Featured date ideas"
@@ -175,7 +175,7 @@ export default async function HomePage() {
               <Link
                 key={idea.title}
                 href={`/create?prompt=${encodeURIComponent(idea.prompt)}`}
-                className="group flex min-h-[18rem] flex-col justify-between rounded-[2rem] border border-[#17110f]/10 bg-white p-6 shadow-xl shadow-black/[0.04] transition hover:-translate-y-1 hover:border-[#e1062a]/45 hover:shadow-2xl hover:shadow-red-950/10"
+                className="group flex min-h-[18rem] flex-col justify-between rounded-[2rem] border border-[#17110f]/10 bg-white p-6 shadow-xl shadow-black/[0.06] transition hover:-translate-y-1 hover:border-[#e1062a]/45 hover:shadow-2xl hover:shadow-red-950/10"
               >
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
@@ -197,7 +197,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="border-y border-[#17110f]/10 bg-white px-5 py-16 sm:px-6 lg:py-20">
+      <section className="border-y border-[#17110f]/10 bg-[#f7f7f7] px-5 py-16 text-[#17110f] sm:px-6 lg:py-20">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="Categories"
@@ -209,7 +209,7 @@ export default async function HomePage() {
               <Link
                 key={category.label}
                 href={`/create?prompt=${encodeURIComponent(category.prompt)}`}
-                className="group rounded-3xl border border-[#17110f]/10 bg-[#fbf7f1] p-4 text-center transition hover:-translate-y-1 hover:border-[#e1062a]/45 hover:bg-red-50"
+                className="group rounded-3xl border border-[#17110f]/10 bg-white p-4 text-center shadow-lg shadow-black/[0.03] transition hover:-translate-y-1 hover:border-[#e1062a]/45 hover:bg-red-50"
               >
                 <span className="block text-3xl transition group-hover:scale-110">
                   {category.icon}
@@ -223,7 +223,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="bg-[#17110f] px-5 py-20 text-white sm:px-6">
+      <section className="border-y border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.20),transparent_28%),#0b0b0b] px-5 py-20 text-white sm:px-6">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
             eyebrow="How it works"
@@ -235,15 +235,15 @@ export default async function HomePage() {
             {steps.map((step, index) => (
               <article
                 key={step.title}
-                className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-7"
+                className="rounded-[2rem] border border-white/15 bg-white p-7 text-[#17110f] shadow-2xl shadow-black/20"
               >
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-sm font-black text-[#17110f]">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black text-white">
                   0{index + 1}
                 </span>
                 <h2 className="mt-8 text-2xl font-black tracking-[-0.03em]">
                   {step.title}
                 </h2>
-                <p className="mt-3 text-sm leading-7 text-white/62">
+                <p className="mt-3 text-sm font-semibold leading-7 text-[#17110f]/60">
                   {step.text}
                 </p>
               </article>
@@ -252,13 +252,12 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="bg-[#0b0807] py-16 text-white lg:py-20">
+      <section className="bg-white py-16 text-[#17110f] lg:py-20">
         <div className="mx-auto max-w-7xl px-5 sm:px-6">
           <SectionIntro
             eyebrow="Beta feedback"
             title="Early users want fewer tabs and faster decisions."
             text="A left-to-right reel from people testing TheOutHaven before date nights, birthdays, and casual plans."
-            dark
           />
         </div>
         <div className="relative mt-10 overflow-hidden [mask-image:linear-gradient(90deg,transparent,black_10%,black_90%,transparent)]">
@@ -266,12 +265,12 @@ export default async function HomePage() {
             {[...betaFeedback, ...betaFeedback].map((feedback, index) => (
               <figure
                 key={`${feedback.person}-${index}`}
-                className="w-[20rem] shrink-0 rounded-[1.75rem] border border-white/10 bg-white/[0.06] p-6 sm:w-[24rem]"
+                className="w-[20rem] shrink-0 rounded-[1.75rem] border border-[#17110f]/10 bg-[#f8f8f8] p-6 shadow-xl shadow-black/[0.04] sm:w-[24rem]"
               >
                 <blockquote className="text-lg font-black leading-7 tracking-[-0.02em]">
                   “{feedback.quote}”
                 </blockquote>
-                <figcaption className="mt-6 text-xs font-black uppercase tracking-[0.22em] text-red-200">
+                <figcaption className="mt-6 text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
                   {feedback.person}
                 </figcaption>
               </figure>
@@ -280,7 +279,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="px-5 py-16 sm:px-6 lg:py-24">
+      <section className="bg-[#f7f7f7] px-5 py-16 text-[#17110f] sm:px-6 lg:py-24">
         <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.85fr_1.15fr]">
           <SectionIntro
             eyebrow="Preview /create"
@@ -291,8 +290,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="px-5 pb-16 sm:px-6 lg:pb-24">
-        <div className="mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] bg-[#e1062a] px-6 py-16 text-center text-white shadow-2xl shadow-red-950/20 sm:px-10 lg:py-20">
+      <section className="bg-[#f7f7f7] px-5 pb-16 text-[#17110f] sm:px-6 lg:pb-24">
+        <div className="mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] border border-white/20 bg-[#e1062a] px-6 py-16 text-center text-white shadow-2xl shadow-red-950/20 sm:px-10 lg:py-20">
           <p className="text-xs font-black uppercase tracking-[0.35em] text-white/70">
             Ready when you are
           </p>
@@ -351,11 +350,11 @@ function SectionIntro({
 
 function HeroPlanCard() {
   return (
-    <div className="relative rounded-[2.35rem] border border-[#17110f]/10 bg-white/75 p-4 shadow-2xl shadow-black/10 backdrop-blur">
-      <div className="absolute -right-4 -top-4 hidden rounded-3xl bg-[#17110f] px-5 py-4 text-sm font-black text-white shadow-xl sm:block">
+    <div className="relative rounded-[2.35rem] border border-white/15 bg-white p-4 shadow-2xl shadow-red-950/20 backdrop-blur">
+      <div className="absolute -right-4 -top-4 hidden rounded-3xl bg-[#e1062a] px-5 py-4 text-sm font-black text-white shadow-xl shadow-red-950/25 sm:block">
         8 min plan
       </div>
-      <div className="rounded-[1.85rem] border border-[#17110f]/10 bg-[#17110f] p-5 text-white">
+      <div className="rounded-[1.85rem] border border-white/10 bg-[#101010] p-5 text-white">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-red-200">
@@ -400,8 +399,8 @@ function HeroPlanCard() {
 
 function CreatePreview() {
   return (
-    <div className="rounded-[2.25rem] border border-[#17110f]/10 bg-white p-4 shadow-2xl shadow-black/[0.06]">
-      <div className="rounded-[1.75rem] border border-[#17110f]/10 bg-[#fbf7f1] p-5">
+    <div className="rounded-[2.25rem] border border-[#17110f]/10 bg-white p-4 shadow-2xl shadow-black/[0.08]">
+      <div className="rounded-[1.75rem] border border-[#17110f]/10 bg-[#f8f8f8] p-5">
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
