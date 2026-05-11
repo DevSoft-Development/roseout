@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const tokenHash = url.searchParams.get("token_hash");
   const type = (url.searchParams.get("type") || "magiclink") as EmailOtpType;
 
-  const response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
+  const response = NextResponse.redirect(`${siteUrl}/locations/dashboard`);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
   const user = data.user;
 
   if (user.user_metadata?.role === "superuser") {
-    response.headers.set("Location", `${siteUrl}/admin`);
+    response.headers.set("Location", `${siteUrl}/admin/dashboard`);
     return response;
   }
 
@@ -107,6 +107,6 @@ await supabaseAdmin.from("restaurant_events").insert({
     },
   });
 
-  response.headers.set("Location", `${siteUrl}/restaurants/dashboard`);
+  response.headers.set("Location", `${siteUrl}/locations/dashboard`);
   return response;
 }
