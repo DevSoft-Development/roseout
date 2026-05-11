@@ -1,22 +1,43 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+type ImportType = "restaurants" | "activities" | "both";
+
+type ImportGroupMeta = {
+  checked?: unknown;
+  imported?: unknown;
+  skipped?: unknown;
+  failed?: unknown;
+  total_found_from_google?: unknown;
+  queries_used?: string[];
+};
+
+type ImportMeta = ImportGroupMeta & {
+  type?: string;
+  restaurant?: ImportGroupMeta;
+  activity?: ImportGroupMeta;
+};
 
 type ImportLog = {
   id: string;
   job_name: string;
   run_date: string;
   created_at?: string;
-  meta: any;
+  meta: ImportMeta | null;
   error: string | null;
 };
 
-function getNumber(value: any) {
+type ImportLogsResponse = {
+  logs?: ImportLog[];
+};
+
+function getNumber(value: unknown) {
   const num = Number(value ?? 0);
   return Number.isFinite(num) ? num : 0;
 }
 
-function getImported(meta: any) {
+function getImported(meta: ImportMeta) {
   if (meta?.imported !== undefined && meta?.imported !== null) {
     return getNumber(meta.imported);
   }
@@ -24,7 +45,7 @@ function getImported(meta: any) {
   return getNumber(meta?.restaurant?.imported) + getNumber(meta?.activity?.imported);
 }
 
-function getSkipped(meta: any) {
+function getSkipped(meta: ImportMeta) {
   if (meta?.skipped !== undefined && meta?.skipped !== null) {
     return getNumber(meta.skipped);
   }
@@ -32,7 +53,7 @@ function getSkipped(meta: any) {
   return getNumber(meta?.restaurant?.skipped) + getNumber(meta?.activity?.skipped);
 }
 
-function getFailed(meta: any) {
+function getFailed(meta: ImportMeta) {
   if (meta?.failed !== undefined && meta?.failed !== null) {
     return getNumber(meta.failed);
   }
@@ -40,7 +61,7 @@ function getFailed(meta: any) {
   return getNumber(meta?.restaurant?.failed) + getNumber(meta?.activity?.failed);
 }
 
-function getFound(meta: any) {
+function getFound(meta: ImportMeta) {
   return getNumber(
     meta?.total_found_from_google ??
       getNumber(meta?.restaurant?.total_found_from_google) +
@@ -48,11 +69,11 @@ function getFound(meta: any) {
   );
 }
 
-function getRestaurantImported(meta: any) {
+function getRestaurantImported(meta: ImportMeta) {
   return getNumber(meta?.restaurant?.imported);
 }
 
-function getActivityImported(meta: any) {
+function getActivityImported(meta: ImportMeta) {
   return getNumber(meta?.activity?.imported);
 }
 
@@ -62,8 +83,10 @@ export default function ImportHistoryPage() {
   const [running, setRunning] = useState(false);
   const [backfillingPhones, setBackfillingPhones] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [importType, setImportType] = useState<ImportType>("both");
+  const [importAmount, setImportAmount] = useState(2);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -71,7 +94,7 @@ export default function ImportHistoryPage() {
         cache: "no-store",
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as ImportLogsResponse;
 
       setLogs(data.logs || []);
     } catch (err) {
@@ -80,19 +103,20 @@ export default function ImportHistoryPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchLogs();
   }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchLogs();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [fetchLogs]);
+
+  useEffect(() => {
     if (!running) {
-      setProgress(0);
       return;
     }
-
-    setProgress(12);
 
     const timer = window.setInterval(() => {
       setProgress((prev) => {
@@ -191,6 +215,12 @@ export default function ImportHistoryPage() {
   }, [totals]);
 
   const handleRunImport = async () => {
+    const limit = Math.max(1, Math.min(Number(importAmount) || 1, 25));
+
+    if (limit !== importAmount) {
+      setImportAmount(limit);
+    }
+
     try {
       setRunning(true);
       setProgress(15);
@@ -201,8 +231,8 @@ export default function ImportHistoryPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          type: "both",
-          limit: 2,
+          type: importType,
+          limit,
           batch: "all",
           areas: "nyc",
           maxQueries: 2,
@@ -223,7 +253,7 @@ export default function ImportHistoryPage() {
         : "";
 
       alert(
-        `Imported: ${data.imported || 0}\nSkipped: ${
+        `Import type: ${importType}\nAmount: ${limit}\nImported: ${data.imported || 0}\nSkipped: ${
           data.skipped || 0
         }\nFailed: ${data.failed || 0}${
           errors ? `\n\nFirst errors:\n${errors}` : ""
@@ -310,26 +340,78 @@ export default function ImportHistoryPage() {
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={handlePhoneBackfill}
-                  disabled={running || backfillingPhones}
-                  className="rounded-full border border-rose-400/40 px-7 py-4 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+              <div className="w-full rounded-3xl border border-white/10 bg-black/30 p-4 lg:max-w-md">
+                <form
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleRunImport();
+                  }}
                 >
-                  {backfillingPhones
-                    ? "Backfilling Phones..."
-                    : "Backfill Missing Phones"}
-                </button>
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-[0.25em] text-rose-200">
+                      Run Import Now
+                    </h2>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Choose what to import and how many places to pull per
+                      query.
+                    </p>
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={handleRunImport}
-                  disabled={running || backfillingPhones}
-                  className="rounded-full bg-rose-600 px-7 py-4 text-sm font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
-                >
-                  {running ? "Import Running..." : "Run Google Import"}
-                </button>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">
+                      Type
+                      <select
+                        value={importType}
+                        onChange={(event) =>
+                          setImportType(event.target.value as ImportType)
+                        }
+                        disabled={running || backfillingPhones}
+                        className="mt-2 w-full rounded-2xl border border-white/10 bg-[#120b0d] px-4 py-3 text-sm font-semibold normal-case tracking-normal text-white outline-none transition focus:border-rose-400 disabled:cursor-not-allowed disabled:text-zinc-500"
+                      >
+                        <option value="restaurants">Restaurant</option>
+                        <option value="activities">Activities</option>
+                        <option value="both">Both</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">
+                      Amount
+                      <input
+                        type="number"
+                        min={1}
+                        max={25}
+                        value={importAmount}
+                        onChange={(event) =>
+                          setImportAmount(Number(event.target.value))
+                        }
+                        disabled={running || backfillingPhones}
+                        className="mt-2 w-full rounded-2xl border border-white/10 bg-[#120b0d] px-4 py-3 text-sm font-semibold normal-case tracking-normal text-white outline-none transition focus:border-rose-400 disabled:cursor-not-allowed disabled:text-zinc-500"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={handlePhoneBackfill}
+                      disabled={running || backfillingPhones}
+                      className="rounded-full border border-rose-400/40 px-5 py-3 text-xs font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+                    >
+                      {backfillingPhones
+                        ? "Backfilling Phones..."
+                        : "Backfill Missing Phones"}
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={running || backfillingPhones}
+                      className="rounded-full bg-rose-600 px-5 py-3 text-xs font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
+                    >
+                      {running ? "Import Running..." : "Run Import Now"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
 
@@ -350,8 +432,7 @@ export default function ImportHistoryPage() {
                 </div>
 
                 <p className="mt-3 text-xs text-zinc-500">
-                  Filtering restaurants and activities for higher-quality
-                  matches.
+                  Importing {importType} with an amount of {Math.max(1, Math.min(Number(importAmount) || 1, 25))}.
                 </p>
               </div>
             )}
@@ -498,9 +579,9 @@ export default function ImportHistoryPage() {
                             Restaurants
                           </p>
                           <p className="mt-2 text-sm text-zinc-300">
-                            Imported: {meta.restaurant?.imported ?? 0} ·
-                            Skipped: {meta.restaurant?.skipped ?? 0} · Failed:{" "}
-                            {meta.restaurant?.failed ?? 0}
+                            Imported: {getNumber(meta.restaurant?.imported)} ·
+                            Skipped: {getNumber(meta.restaurant?.skipped)} · Failed:{" "}
+                            {getNumber(meta.restaurant?.failed)}
                           </p>
                         </div>
 
@@ -509,9 +590,9 @@ export default function ImportHistoryPage() {
                             Activities
                           </p>
                           <p className="mt-2 text-sm text-zinc-300">
-                            Imported: {meta.activity?.imported ?? 0} · Skipped:{" "}
-                            {meta.activity?.skipped ?? 0} · Failed:{" "}
-                            {meta.activity?.failed ?? 0}
+                            Imported: {getNumber(meta.activity?.imported)} · Skipped:{" "}
+                            {getNumber(meta.activity?.skipped)} · Failed:{" "}
+                            {getNumber(meta.activity?.failed)}
                           </p>
                         </div>
                       </div>

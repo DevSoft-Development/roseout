@@ -28,12 +28,29 @@ function isCronAuthorized(request: NextRequest) {
   return Boolean(process.env.CRON_SECRET && bearerToken === process.env.CRON_SECRET);
 }
 
+function normalizeImportType(value: unknown): GooglePlacesImportOptions["type"] {
+  if (value === "restaurant") return "restaurants";
+  if (value === "activity") return "activities";
+  if (value === "restaurants" || value === "activities" || value === "both") {
+    return value;
+  }
+
+  return "both";
+}
+
+function normalizeLimit(value: unknown) {
+  const limit = Number(value || 10);
+  if (!Number.isFinite(limit)) return 10;
+
+  return Math.max(1, Math.min(limit, 25));
+}
+
 function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOptions {
   const { searchParams } = request.nextUrl;
 
   return {
-    type: (searchParams.get("type") as GooglePlacesImportOptions["type"]) || "both",
-    limit: Number(searchParams.get("limit") || 10),
+    type: normalizeImportType(searchParams.get("type")),
+    limit: normalizeLimit(searchParams.get("limit")),
     batch: searchParams.get("batch") || "all",
     areas: searchParams.get("areas") || searchParams.get("area") || "nyc",
     maxQueries: Number(searchParams.get("maxQueries") || 2),
@@ -61,8 +78,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
 
     const result = await runGooglePlacesImport({
-      type: body.type || "both",
-      limit: Number(body.limit || 10),
+      type: normalizeImportType(body.type),
+      limit: normalizeLimit(body.limit),
       batch: body.batch || "all",
       areas: body.areas || body.area || "nyc",
       maxQueries: Number(body.maxQueries || 2),
