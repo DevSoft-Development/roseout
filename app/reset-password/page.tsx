@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase-browser";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [token] = useState(() => {
+    if (typeof window === "undefined") return "";
+
+    return new URLSearchParams(window.location.search).get("token") || "";
+  });
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -20,6 +23,11 @@ export default function ResetPasswordPage() {
 
     setMessage("");
     setError("");
+
+    if (!token) {
+      setError("Invalid or expired reset link. Please request a new link.");
+      return;
+    }
 
     if (!password || !confirmPassword) {
       setError("Please enter and confirm your new password.");
@@ -39,12 +47,20 @@ export default function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
+      const response = await fetch("/api/auth/password-reset/confirm", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token, password }),
       });
 
-      if (updateError) {
-        setError(updateError.message);
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(
+          result.error || "Could not reset password. Please request a new link."
+        );
         return;
       }
 
@@ -53,8 +69,8 @@ export default function ResetPasswordPage() {
       setTimeout(() => {
         router.replace("/login");
       }, 1000);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -73,7 +89,7 @@ export default function ResetPasswordPage() {
         <h1 className="text-3xl font-extrabold">Reset Password</h1>
 
         <p className="mt-2 text-sm text-neutral-500">
-          Enter your new password below.
+          Enter your new password below. Reset links expire after 30 minutes.
         </p>
 
         {error && (
