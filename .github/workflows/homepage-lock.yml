@@ -1,0 +1,27 @@
+name: Homepage Lock
+
+on:
+  pull_request:
+    paths:
+      - "app/page.tsx"
+      - "scripts/verify-homepage-lock.mjs"
+      - "package.json"
+      - ".github/workflows/homepage-lock.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "app/page.tsx"
+      - "scripts/verify-homepage-lock.mjs"
+      - "package.json"
+      - ".github/workflows/homepage-lock.yml"
+
+jobs:
+  verify-homepage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run verify:homepage
