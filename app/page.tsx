@@ -256,7 +256,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-5 sm:px-6">
           <SectionIntro
             eyebrow="Feedback"
-            title="Early users want fewer tabs and faster decisions."
+            title="Real plans feel easier to choose."
             text="A left-to-right reel from people testing TheOutHaven before date nights, birthdays, and casual plans."
             dark
           />
@@ -356,7 +356,7 @@ function HeroPlanCard() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-red-200">
-              Tonight&apos;s route
+              Your outing route
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-[-0.03em]">
               Dinner, then somewhere worth staying out for.
@@ -402,7 +402,7 @@ function CreatePreview() {
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#e1062a]">
-              /create experience
+              Create experience
             </p>
             <p className="mt-2 text-xl font-bold tracking-[-0.03em]">
               Build a route from one prompt.
@@ -412,7 +412,7 @@ function CreatePreview() {
             href="/create"
             className="rounded-full border border-[#17110f]/15 px-5 py-3 text-center text-sm font-bold text-[#17110f] transition hover:bg-[#17110f] hover:text-white"
           >
-            Open create →
+            Plan My Outing
           </Link>
         </div>
         <div className="mt-6 rounded-3xl border border-[#17110f]/10 bg-white p-4">
