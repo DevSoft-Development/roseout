@@ -132,7 +132,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -140,7 +140,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -197,7 +197,7 @@ export default async function AdminLocationsPage({
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      theouthaven_score: item.theouthaven_score,
+      theouthaven_score: item.rating ? Math.round(Number(item.rating) * 20) : 0,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
@@ -217,7 +217,7 @@ export default async function AdminLocationsPage({
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      theouthaven_score: item.theouthaven_score,
+      theouthaven_score: item.rating ? Math.round(Number(item.rating) * 20) : 0,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];

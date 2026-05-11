@@ -1,9 +1,14 @@
 "use client";
 
 import type React from "react";
-import type { User } from "@supabase/supabase-js";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
+
+type AdminProfile = {
+  id: string | null;
+  email: string;
+  full_name: string;
+};
 
 type SearchResult = {
   type: "user" | "location";
@@ -19,7 +24,7 @@ type SearchResult = {
 export default function AdminTopBar() {
   const supabase = createClient();
 
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AdminProfile | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -33,24 +38,26 @@ export default function AdminTopBar() {
 
   useEffect(() => {
     const loadUserAndRole = async () => {
-      const { data } = await supabase.auth.getUser();
-      const currentUser = data.user;
+      try {
+        const res = await fetch("/api/admin/me", { cache: "no-store" });
 
-      setUser(currentUser);
+        if (!res.ok) {
+          setUser(null);
+          setRole(null);
+          return;
+        }
 
-      if (currentUser?.email) {
-        const { data: adminUser } = await supabase
-          .from("admin_users")
-          .select("role")
-          .eq("email", currentUser.email.toLowerCase())
-          .maybeSingle();
-
-        setRole(adminUser?.role || null);
+        const data = await res.json();
+        setUser(data.user || null);
+        setRole(data.role || null);
+      } catch {
+        setUser(null);
+        setRole(null);
       }
     };
 
     loadUserAndRole();
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     const cleanQuery = query.trim();
@@ -165,29 +172,20 @@ export default function AdminTopBar() {
     window.location.href = "/login";
   };
 
-  const name =
-    user?.user_metadata?.full_name || user?.user_metadata?.name || "Admin";
+  const name = user?.full_name || "Admin";
 
   const email = user?.email || "";
   const initial = name?.charAt(0)?.toUpperCase() || "A";
 
-  const canViewDashboard = ["superuser", "admin", "editor", "viewer"].includes(
-    role || ""
-  );
+  const canViewDashboard = ["superuser", "admin"].includes(role || "");
 
-  const canViewLocations = ["superuser", "admin", "editor", "viewer"].includes(
-    role || ""
-  );
+  const canViewLocations = ["superuser", "admin"].includes(role || "");
 
-  const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
+  const canViewClaims = ["superuser", "admin"].includes(role || "");
 
-  const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
-    role || ""
-  );
+  const canViewAnalytics = ["superuser", "admin"].includes(role || "");
 
-  const canViewImportHistory = ["superuser", "admin", "viewer"].includes(
-    role || ""
-  );
+  const canViewImportHistory = ["superuser", "admin"].includes(role || "");
 
   const canViewUsers = ["superuser", "admin"].includes(role || "");
 
