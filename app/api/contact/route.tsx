@@ -1,4 +1,4 @@
-import { sendNotification } from "@/lib/notifications";
+import { getAdminNotifyEmail, sendNotification } from "@/lib/notifications";
 import { createSupportTicket, renderSupportEmail, supportEmailFrom } from "@/lib/support";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +33,7 @@ async function sendContactFallback({
   message: string;
   errorMessage: string;
 }) {
-  const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
-
-  if (!adminEmail) return;
+  const adminEmail = getAdminNotifyEmail();
 
   await sendNotification({
     toEmail: adminEmail,

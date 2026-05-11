@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { headers } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
-import { sendNotification } from "@/lib/notifications";
+import { getAdminNotifyEmail, sendNotification } from "@/lib/notifications";
 
 export type SupportActor = "creator" | "admin" | "system";
 
@@ -553,7 +553,7 @@ export async function closeSupportTicket(ticketId: string) {
     ticket_id: ticket.id,
     actor_type: "system",
     author_name: "TheOutHaven Support",
-    author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
+    author_email: getAdminNotifyEmail(),
     author_phone: null,
     body: "Ticket closed by TheOutHaven Support.",
     created_at: closedAt,
@@ -602,7 +602,7 @@ export async function createSupportReply(input: CreateSupportReplyInput) {
 
   const createdAt = new Date().toISOString();
   const authorName = clean(input.authorName) || (adminActor ? "TheOutHaven Support" : ticket.requester_name || "Ticket requester");
-  const authorEmail = normalizeEmail(input.authorEmail) || (adminActor ? process.env.ADMIN_NOTIFY_EMAIL || null : ticket.requester_email);
+  const authorEmail = normalizeEmail(input.authorEmail) || (adminActor ? getAdminNotifyEmail() : ticket.requester_email);
   const authorPhone = clean(input.authorPhone) || null;
   const fallbackMessage = {
     id: crypto.randomUUID(),
@@ -655,7 +655,7 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
   const adminTicketUrl = makeAdminTicketUrl(ticket.id);
   const replyTo = makeSupportReplyAddress(ticket);
 
-  const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+  const adminEmail = getAdminNotifyEmail();
   const adminPhone = process.env.ADMIN_NOTIFY_PHONE;
 
   if (adminEmail || adminPhone) {
@@ -673,7 +673,8 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
           <p style="margin:0 0 18px;"><strong>Ticket:</strong> ${htmlEscape(ticket.ticket_number || ticket.id)}</p>
           <p style="margin:0 0 18px;"><strong>From:</strong> ${htmlEscape(ticket.requester_name || "")} &lt;${htmlEscape(ticket.requester_email)}&gt;</p>
           <p style="margin:0 0 18px;"><strong>Phone:</strong> ${htmlEscape(ticket.requester_phone || "Not provided")}</p>
-          <p style="margin:0 0 44px;"><strong>Topic:</strong> ${htmlEscape(ticket.topic || "General Support")}</p>
+          <p style="margin:0 0 18px;"><strong>Topic:</strong> ${htmlEscape(ticket.topic || "General Support")}</p>
+          <p style="margin:0 0 44px;"><strong>Subject:</strong> ${htmlEscape(ticket.subject)}</p>
           <p style="margin:0 0 18px;"><strong>Message:</strong></p>
           <p style="margin:0;">${nl2br(message)}</p>
         `,
@@ -709,7 +710,7 @@ async function notifySupportReply(ticket: SupportTicket, message: string, actorT
   const ticketUrl = makeTicketUrl(ticket);
   const adminTicketUrl = makeAdminTicketUrl(ticket.id);
   const replyTo = makeSupportReplyAddress(ticket);
-  const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+  const adminEmail = getAdminNotifyEmail();
   const adminPhone = process.env.ADMIN_NOTIFY_PHONE;
   const creatorIsRecipient = actorType === "admin";
 

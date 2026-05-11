@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { sendNotification } from "@/lib/notifications";
+import { getAdminNotifyEmail, sendNotification } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -86,13 +86,12 @@ export async function POST(req: Request) {
       return Response.json({ error: error.message }, { status: 500 });
     }
 
-    const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+    const adminEmail = getAdminNotifyEmail();
 
-    if (adminEmail) {
-      await sendNotification({
-        toEmail: adminEmail,
-        subject: `New TheOutHaven location request: ${location_name}`,
-        emailHtml: `
+    await sendNotification({
+      toEmail: adminEmail,
+      subject: `New TheOutHaven location request: ${location_name}`,
+      emailHtml: `
           <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
             <h2>New TheOutHaven Location Request</h2>
             <p><strong>Location:</strong> ${location_name}</p>
@@ -109,8 +108,7 @@ export async function POST(req: Request) {
             <p><strong>Request ID:</strong> ${data.id}</p>
           </div>
         `,
-      });
-    }
+    });
 
     await sendNotification({
       toEmail: owner_email,
@@ -131,9 +129,9 @@ export async function POST(req: Request) {
       message: "Request submitted. We’ll review and follow up shortly.",
       id: data.id,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return Response.json(
-      { error: error.message || "Server error" },
+      { error: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }
