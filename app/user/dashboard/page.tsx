@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -17,7 +18,7 @@ type SavedPlan = {
 
 
 function adminSupabase() {
-  return createClient(
+  return createSupabaseAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
@@ -36,8 +37,13 @@ export default async function UserDashboardPage() {
   )?.value;
 
   const supabase = adminSupabase();
+  const authSupabase = await createServerSupabaseClient();
 
-  const userId = impersonatedUserId || null;
+  const {
+    data: { user },
+  } = await authSupabase.auth.getUser();
+
+  const userId = impersonatedUserId || user?.id || null;
 
   if (!userId) {
     redirect("/login");

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
 import LocationsDashboardClient from "./LocationsDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -25,8 +26,34 @@ type LocationItem = {
   primary_tag?: string;
 };
 
+type LocationRecord = LocationItem & Record<string, unknown>;
+
+type RestaurantOwnerLink = {
+  restaurants?: LocationRecord | LocationRecord[] | null;
+};
+
+type ActivityOwnerLink = {
+  activities?: LocationRecord | LocationRecord[] | null;
+};
+
+function toRestaurantItem(restaurant: LocationRecord): LocationItem {
+  return {
+    ...restaurant,
+    location_type: "restaurant",
+    display_name: restaurant.restaurant_name || "Untitled restaurant",
+  };
+}
+
+function toActivityItem(activity: LocationRecord): LocationItem {
+  return {
+    ...activity,
+    location_type: "activity",
+    display_name: activity.activity_name || "Untitled activity",
+  };
+}
+
 function adminSupabase() {
-  return createClient(
+  return createSupabaseAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
@@ -52,6 +79,14 @@ export default async function DashboardPage() {
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
 
   const supabase = adminSupabase();
+  const authSupabase = await createServerSupabaseClient();
+
+  const {
+    data: { user },
+  } = await authSupabase.auth.getUser();
+
+  const currentUserId = user?.id || null;
+  const currentUserEmail = user?.email?.toLowerCase() || null;
 
   let locations: LocationItem[] = [];
   let impersonationLabel = "";
@@ -94,16 +129,8 @@ export default async function DashboardPage() {
       .eq("owner_user_id", impersonatedUserId);
 
     locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
-      })),
+      ...((restaurants || []) as LocationRecord[]).map(toRestaurantItem),
+      ...((activities || []) as LocationRecord[]).map(toActivityItem),
     ];
 
     impersonationLabel = "Viewing as location owner";
@@ -119,16 +146,68 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false });
 
     locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
-      })),
+      ...((restaurants || []) as LocationRecord[]).map(toRestaurantItem),
+      ...((activities || []) as LocationRecord[]).map(toActivityItem),
+    ];
+  } else if (currentUserId) {
+    const [restaurantsByUser, activitiesByUser, restaurantOwnerLinks, activityOwnerLinks] =
+      await Promise.all([
+        supabase.from("restaurants").select("*").eq("owner_user_id", currentUserId),
+        supabase.from("activities").select("*").eq("owner_user_id", currentUserId),
+        currentUserEmail
+          ? supabase
+              .from("restaurant_owners")
+              .select("restaurant_id, restaurants (*)")
+              .or(`user_id.eq.${currentUserId},email.ilike.${currentUserEmail}`)
+          : supabase
+              .from("restaurant_owners")
+              .select("restaurant_id, restaurants (*)")
+              .eq("user_id", currentUserId),
+        currentUserEmail
+          ? supabase
+              .from("activity_owners")
+              .select("activity_id, activities (*)")
+              .or(`user_id.eq.${currentUserId},email.ilike.${currentUserEmail}`)
+          : supabase
+              .from("activity_owners")
+              .select("activity_id, activities (*)")
+              .eq("user_id", currentUserId),
+      ]);
+
+    const restaurantMap = new Map<string, LocationRecord>();
+    const activityMap = new Map<string, LocationRecord>();
+
+    ((restaurantsByUser.data || []) as LocationRecord[]).forEach((restaurant) => {
+      restaurantMap.set(restaurant.id, restaurant);
+    });
+
+    ((activitiesByUser.data || []) as LocationRecord[]).forEach((activity) => {
+      activityMap.set(activity.id, activity);
+    });
+
+    ((restaurantOwnerLinks.data || []) as RestaurantOwnerLink[]).forEach((link) => {
+      const restaurant = Array.isArray(link.restaurants)
+        ? link.restaurants[0]
+        : link.restaurants;
+
+      if (restaurant?.id) {
+        restaurantMap.set(restaurant.id, restaurant);
+      }
+    });
+
+    ((activityOwnerLinks.data || []) as ActivityOwnerLink[]).forEach((link) => {
+      const activity = Array.isArray(link.activities)
+        ? link.activities[0]
+        : link.activities;
+
+      if (activity?.id) {
+        activityMap.set(activity.id, activity);
+      }
+    });
+
+    locations = [
+      ...Array.from(restaurantMap.values()).map(toRestaurantItem),
+      ...Array.from(activityMap.values()).map(toActivityItem),
     ];
   }
 

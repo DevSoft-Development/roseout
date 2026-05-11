@@ -7,7 +7,7 @@ function formatNumber(value: number | null | undefined) {
 }
 
 export default async function CentralDashboardPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
 
   const { count: totalRestaurants } = await supabase
     .from("restaurants")
