@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabase } from "@/lib/supabase-server";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -15,6 +16,15 @@ type SavedPlan = {
   created_at?: string | null;
 };
 
+type UserProfile = {
+  id?: string;
+  email?: string | null;
+  full_name?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  subscription_status?: string | null;
+  created_at?: string | null;
+};
 
 function adminSupabase() {
   return createClient(
@@ -35,23 +45,38 @@ export default async function UserDashboardPage() {
     "theouthaven_impersonate_user_id"
   )?.value;
 
+  const sessionSupabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await sessionSupabase.auth.getUser();
+
   const supabase = adminSupabase();
 
-  const userId = impersonatedUserId || null;
+  const userId = impersonatedUserId || user?.id || null;
 
   if (!userId) {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const { data: profileData } = await supabase
     .from("users")
     .select("*")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
-  if (!profile) {
-    redirect("/login");
-  }
+  const profile: UserProfile =
+    profileData ||
+    (user
+      ? {
+          id: user.id,
+          email: user.email,
+          full_name:
+            (user.user_metadata?.full_name as string | undefined) || null,
+          role: (user.user_metadata?.role as string | undefined) || "user",
+          subscription_status: "free",
+          created_at: user.created_at,
+        }
+      : {});
 
   const { data: savedPlans } = await supabase
     .from("saved_plans")
