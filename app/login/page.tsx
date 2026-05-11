@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-browser";
 
 const LOGIN_PAGE_VERSION = "login-refresh-2026-05-11";
 
 export default function LoginPage() {
-  const router = useRouter();
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -61,7 +59,7 @@ export default function LoginPage() {
       const redirectPath = redirectData?.redirectPath || "/user/dashboard";
 
       setMessage("Login successful. Redirecting...");
-      router.replace(redirectPath);
+      window.location.replace(redirectPath);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
