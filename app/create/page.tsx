@@ -131,6 +131,7 @@ export default function CreatePage() {
   const addOnActivitySectionRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const viewedItems = useRef<Set<string>>(new Set());
+  const hydratedPromptRef = useRef(false);
 
   const latestAssistant = useMemo(
     () =>
@@ -154,6 +155,20 @@ export default function CreatePage() {
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
     setLocationSaved(Boolean(getSavedLocation()));
+  }, []);
+
+  useEffect(() => {
+    if (hydratedPromptRef.current) return;
+
+    const prompt = new URLSearchParams(window.location.search)
+      .get("prompt")
+      ?.trim();
+
+    if (!prompt) return;
+
+    hydratedPromptRef.current = true;
+    setInput(prompt);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
   useEffect(() => {
