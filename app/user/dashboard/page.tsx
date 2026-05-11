@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -37,9 +38,15 @@ export default async function UserDashboardPage() {
     "theouthaven_impersonate_user_id"
   )?.value;
 
+  const sessionSupabase = await createServerSupabaseClient();
+
+  const {
+    data: { user },
+  } = await sessionSupabase.auth.getUser();
+
   const supabase = adminSupabase();
 
-  const userId = impersonatedUserId || null;
+  const userId = impersonatedUserId || user?.id || null;
 
   if (!userId) {
     redirect("/login");
@@ -49,9 +56,19 @@ export default async function UserDashboardPage() {
     .from("users")
     .select("*")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
-  if (!profile) {
+  const displayProfile =
+    profile ||
+    (user && user.id === userId
+      ? {
+          full_name: user.user_metadata?.full_name || user.email || null,
+          subscription_status: "free",
+          role: user.user_metadata?.role || "user",
+        }
+      : null);
+
+  if (!displayProfile) {
     redirect("/login");
   }
 
@@ -85,7 +102,7 @@ export default async function UserDashboardPage() {
               <h1 className="mt-3 text-4xl font-black tracking-tight md:text-6xl">
                 Welcome back,
                 <span className="block text-rose-200">
-                  {profile.full_name || "TheOutHaven User"}
+                  {displayProfile.full_name || "TheOutHaven User"}
                 </span>
               </h1>
 
@@ -144,7 +161,7 @@ export default async function UserDashboardPage() {
               Status
             </p>
             <h2 className="mt-3 text-3xl font-black capitalize">
-              {profile.subscription_status || "free"}
+              {displayProfile.subscription_status || "free"}
             </h2>
           </div>
 
@@ -153,7 +170,7 @@ export default async function UserDashboardPage() {
               Role
             </p>
             <h2 className="mt-3 text-3xl font-black capitalize">
-              {profile.role || "user"}
+              {displayProfile.role || "user"}
             </h2>
           </div>
 

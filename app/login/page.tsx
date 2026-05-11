@@ -48,36 +48,20 @@ export default function LoginPage() {
         return;
       }
 
-      const userEmail = data.user.email.toLowerCase();
+      const redirectResponse = await fetch("/api/auth/login-redirect", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ accessToken: data.session?.access_token }),
+      });
 
-      const { data: adminUser, error: adminError } = await supabase
-        .from("admin_users")
-        .select("id, role")
-        .eq("email", userEmail)
-        .maybeSingle();
+      const redirectData = await redirectResponse.json();
 
-      if (adminError) {
-        setError(adminError.message);
-        return;
-      }
-
-      const roleRedirects: Record<string, string> = {
-        superuser: "/admin",
-        admin: "/admin",
-        editor: "/admin/restaurants",
-        reviewer: "/admin/claims",
-        viewer: "/admin/import-history",
-      };
-
-      const redirectPath = adminUser
-        ? roleRedirects[adminUser.role] || "/admin"
-        : "/create";
+      const redirectPath = redirectData?.redirectPath || "/user/dashboard";
 
       setMessage("Login successful. Redirecting...");
-
-      setTimeout(() => {
-        router.replace(redirectPath);
-      }, 500);
+      router.replace(redirectPath);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
