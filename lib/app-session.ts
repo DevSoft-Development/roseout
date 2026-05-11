@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
+import { normalizeRole } from "@/lib/dashboard-permissions";
 
 export const APP_SESSION_COOKIE = "theouthaven_session";
 const APP_SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
@@ -45,16 +46,13 @@ function safeEqual(a: string, b: string) {
   return aBuffer.length === bBuffer.length && timingSafeEqual(aBuffer, bBuffer);
 }
 
-function normalizeRole(role: unknown) {
-  return typeof role === "string" ? role.trim().toLowerCase() : null;
-}
-
 function getUserRole(user: User) {
   return (
     normalizeRole(user.user_metadata?.role) ||
     normalizeRole(user.user_metadata?.account_type) ||
     normalizeRole(user.app_metadata?.role) ||
-    normalizeRole(user.app_metadata?.account_type)
+    normalizeRole(user.app_metadata?.account_type) ||
+    null
   );
 }
 

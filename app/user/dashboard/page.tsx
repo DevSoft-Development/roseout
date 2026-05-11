@@ -4,6 +4,11 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
 import { getAppSession } from "@/lib/app-session";
+import {
+  ADMIN_DASHBOARD_ROLES,
+  LOCATION_OWNER_ROLES,
+  normalizeRole,
+} from "@/lib/dashboard-permissions";
 import ActivityTracker from "@/components/ActivityTracker";
 import TrackedButton from "@/components/TrackedButton";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -19,6 +24,46 @@ type SavedPlan = {
   created_at?: string | null;
 };
 
+
+async function ownsLocation(
+  supabase: ReturnType<typeof adminSupabase>,
+  userId: string,
+  email: string | null
+) {
+  const { data: restaurants } = await supabase
+    .from("restaurants")
+    .select("id")
+    .eq("owner_user_id", userId)
+    .limit(1);
+
+  if (restaurants?.length) return true;
+
+  const { data: activities } = await supabase
+    .from("activities")
+    .select("id")
+    .eq("owner_user_id", userId)
+    .limit(1);
+
+  if (activities?.length) return true;
+
+  if (!email) return false;
+
+  const { data: restaurantsByEmail } = await supabase
+    .from("restaurants")
+    .select("id")
+    .ilike("owner_email", email)
+    .limit(1);
+
+  if (restaurantsByEmail?.length) return true;
+
+  const { data: activitiesByEmail } = await supabase
+    .from("activities")
+    .select("id")
+    .ilike("owner_email", email)
+    .limit(1);
+
+  return Boolean(activitiesByEmail?.length);
+}
 
 function adminSupabase() {
   return createClient(
@@ -50,9 +95,36 @@ export default async function UserDashboardPage() {
   const supabase = adminSupabase();
 
   const userId = impersonatedUserId || user?.id || appSession?.id || null;
+  const userEmail =
+    user?.email?.trim().toLowerCase() || appSession?.email || null;
+  const sessionRole = normalizeRole(
+    user?.user_metadata?.role || appSession?.role
+  );
 
   if (!userId) {
     redirect("/login");
+  }
+
+  if (!impersonatedUserId && userEmail) {
+    const { data: adminUser } = await supabase
+      .from("admin_users")
+      .select("role")
+      .eq("email", userEmail)
+      .maybeSingle();
+
+    if (
+      ADMIN_DASHBOARD_ROLES.has(normalizeRole(adminUser?.role || sessionRole))
+    ) {
+      redirect("/admin/dashboard");
+    }
+  }
+
+  if (
+    !impersonatedUserId &&
+    (LOCATION_OWNER_ROLES.has(sessionRole) ||
+      (await ownsLocation(supabase, userId, userEmail)))
+  ) {
+    redirect("/locations/dashboard");
   }
 
   const { data: profile } = await supabase

@@ -1,7 +1,13 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
 import { getAppSession } from "@/lib/app-session";
+import {
+  ADMIN_DASHBOARD_ROLES,
+  LOCATION_OWNER_ROLES,
+  normalizeRole,
+} from "@/lib/dashboard-permissions";
 import LocationsDashboardClient from "./LocationsDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +82,30 @@ export default async function DashboardPage() {
   const appSession = await getAppSession();
 
   const supabase = adminSupabase();
+  const sessionRole = normalizeRole(
+    user?.user_metadata?.role || appSession?.role
+  );
+  const sessionEmail =
+    user?.email?.trim().toLowerCase() || appSession?.email || null;
+
+  if (
+    !impersonatedLocationId &&
+    !impersonatedUserId &&
+    !adminUserId &&
+    sessionEmail
+  ) {
+    const { data: adminUser } = await supabase
+      .from("admin_users")
+      .select("role")
+      .eq("email", sessionEmail)
+      .maybeSingle();
+
+    if (
+      ADMIN_DASHBOARD_ROLES.has(normalizeRole(adminUser?.role || sessionRole))
+    ) {
+      redirect("/admin/dashboard");
+    }
+  }
 
   let locations: LocationItem[] = [];
   let impersonationLabel = "";
@@ -109,8 +139,7 @@ export default async function DashboardPage() {
   } else if (impersonatedUserId || user?.id || appSession?.id) {
     const ownerUserId = impersonatedUserId || user?.id || appSession?.id;
 
-    const ownerEmail =
-      user?.email?.trim().toLowerCase() || appSession?.email || null;
+    const ownerEmail = sessionEmail;
 
     const { data: restaurantsByUserId } = await supabase
       .from("restaurants")
@@ -181,6 +210,16 @@ export default async function DashboardPage() {
         toLocationItem(activity, "activity")
       ),
     ];
+  }
+
+  if (
+    !impersonatedLocationId &&
+    !impersonatedUserId &&
+    !adminUserId &&
+    !LOCATION_OWNER_ROLES.has(sessionRole) &&
+    locations.length === 0
+  ) {
+    redirect(user?.id || appSession?.id ? "/user/dashboard" : "/login");
   }
 
   return (
