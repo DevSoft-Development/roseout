@@ -19,6 +19,10 @@ function adminSupabase() {
   );
 }
 
+function appCookieNames(key: string) {
+  return [`theouthaven_${key}`, `roseout_${key}`];
+}
+
 export async function POST(req: Request) {
   try {
     const { error, adminUser } = await requireAdminApiRole([
@@ -61,16 +65,24 @@ export async function POST(req: Request) {
         );
       }
 
-      cookieStore.delete("theouthaven_impersonate_location_id");
-      cookieStore.delete("theouthaven_impersonate_location_type");
+      appCookieNames("impersonate_location_id").forEach((name) =>
+        cookieStore.delete(name)
+      );
+      appCookieNames("impersonate_location_type").forEach((name) =>
+        cookieStore.delete(name)
+      );
 
-      cookieStore.set("theouthaven_impersonate_user_id", targetUser.id, {
+      const options = {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: "lax" as const,
         path: "/",
         maxAge: 60 * 30,
-      });
+      };
+
+      appCookieNames("impersonate_user_id").forEach((name) =>
+        cookieStore.set(name, targetUser.id, options)
+      );
 
       await supabase.from("admin_impersonation_logs").insert({
         admin_id: adminUser?.id,
@@ -111,23 +123,25 @@ export async function POST(req: Request) {
       );
     }
 
-    cookieStore.delete("theouthaven_impersonate_user_id");
+    appCookieNames("impersonate_user_id").forEach((name) =>
+      cookieStore.delete(name)
+    );
 
-    cookieStore.set("theouthaven_impersonate_location_id", String(location.id), {
+    const options = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: "lax" as const,
       path: "/",
       maxAge: 60 * 30,
-    });
+    };
 
-    cookieStore.set("theouthaven_impersonate_location_type", table, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 30,
-    });
+    appCookieNames("impersonate_location_id").forEach((name) =>
+      cookieStore.set(name, String(location.id), options)
+    );
+
+    appCookieNames("impersonate_location_type").forEach((name) =>
+      cookieStore.set(name, table, options)
+    );
 
     await supabase.from("admin_impersonation_logs").insert({
       admin_id: adminUser?.id,
