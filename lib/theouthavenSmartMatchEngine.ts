@@ -81,7 +81,15 @@ export const FOOD_INTENTS: Record<string, string[]> = {
   halal: ["halal"],
   kosher: ["kosher"],
   gluten_free: ["gluten free", "gluten-free"],
-  dessert: ["dessert", "sweets", "cake", "bakery"],
+  dessert: [
+    "dessert",
+    "desserts",
+    "desert",
+    "deserts",
+    "sweets",
+    "cake",
+    "bakery",
+  ],
   ice_cream: ["ice cream", "gelato"],
   coffee: ["coffee", "cafe", "espresso", "latte"],
   hibachi: ["hibachi", "teppanyaki"],
@@ -301,6 +309,10 @@ export const LOCATION_INTENTS: string[] = [
 const MEAL_WORDS = [
   "restaurant",
   "restaurants",
+  "restuarant",
+  "restuarants",
+  "restaraunt",
+  "restaraunts",
   "dinner",
   "lunch",
   "brunch",
@@ -623,7 +635,7 @@ export function balanceSmartMatches(
 
   const finalActivities = smartActivities.length > 0 ? smartActivities : activities;
 
-  if (intent.wantsFood && !intent.wantsActivity) {
+  if (intent.wantsFood && !intent.wantsActivity && !intent.wantsFullOuting) {
     return {
       restaurants: finalRestaurants.slice(0, 6),
       activities: [],
@@ -631,7 +643,7 @@ export function balanceSmartMatches(
     };
   }
 
-  if (!intent.wantsFood && intent.wantsActivity) {
+  if (!intent.wantsFood && intent.wantsActivity && !intent.wantsFullOuting) {
     return {
       restaurants: [],
       activities: finalActivities.slice(0, 6),
@@ -647,5 +659,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v3";
+  return "theouthaven-smart-match-engine-v4";
 }

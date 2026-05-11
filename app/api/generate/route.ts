@@ -13,7 +13,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = "contact-v4";
+const RESPONSE_CACHE_VERSION = "food-add-on-walk-v1";
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -42,6 +42,10 @@ const FOOD_KEYWORDS = [
   "eat",
   "restaurant",
   "restaurants",
+  "restuarant",
+  "restuarants",
+  "restaraunt",
+  "restaraunts",
   "breakfast",
   "brunch",
   "lunch",
@@ -150,7 +154,15 @@ const FOOD_INTENTS: Record<string, string[]> = {
   brunch: ["brunch"],
   breakfast: ["breakfast"],
   cafe: ["cafe", "coffee"],
-  dessert: ["dessert", "ice cream", "bakery", "cake"],
+  dessert: [
+    "dessert",
+    "desserts",
+    "desert",
+    "deserts",
+    "ice cream",
+    "bakery",
+    "cake",
+  ],
   drinks: ["drinks", "cocktail", "cocktails", "wine", "bar"],
   rooftop: ["rooftop", "roof top", "view", "skyline"],
   lounge: ["lounge"],
@@ -205,6 +217,13 @@ const PRIORITY_WEIGHTS = {
   budget: 130,
   distance: 140,
 };
+
+const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
+const WALKING_MINUTES_PER_MILE = 20;
+
+function isFoodAddOnIntent(foodIntent: string) {
+  return FOOD_ADD_ON_INTENTS.has(foodIntent);
+}
 
 function normalizeQuery(input: string) {
   return input
@@ -1186,6 +1205,23 @@ function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) 
   return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function walkingMinutesFromMiles(distanceMiles: number | null) {
+  if (distanceMiles === null || !Number.isFinite(distanceMiles)) return null;
+
+  return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
+}
+
+function walkingLabelBetweenStops(
+  distanceMiles: number | null,
+  fromName?: string | null
+) {
+  const walkingMinutes = walkingMinutesFromMiles(distanceMiles);
+
+  if (!walkingMinutes || !fromName) return null;
+
+  return `${walkingMinutes} min walk from ${fromName}`;
+}
+
 function isWithinTheOutHavenServiceArea(item: any) {
   const lat = Number(item.latitude);
   const lng = Number(item.longitude);
@@ -1774,6 +1810,11 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
       paired_activity_name:
         pair.activity.activity_name || pair.activity.name || null,
       pair_distance_miles: pair.distance_miles,
+      pair_walking_minutes: walkingMinutesFromMiles(pair.distance_miles),
+      pair_walking_label: walkingLabelBetweenStops(
+        pair.distance_miles,
+        pair.activity.activity_name || pair.activity.name
+      ),
       pair_score: pair.pair_score,
     })),
     activities: bestPairs.map((pair) => ({
@@ -1781,6 +1822,11 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
       paired_restaurant_name:
         pair.restaurant.restaurant_name || pair.restaurant.name || null,
       pair_distance_miles: pair.distance_miles,
+      pair_walking_minutes: walkingMinutesFromMiles(pair.distance_miles),
+      pair_walking_label: walkingLabelBetweenStops(
+        pair.distance_miles,
+        pair.restaurant.restaurant_name || pair.restaurant.name
+      ),
       pair_score: pair.pair_score,
     })),
     pairs: bestPairs,
@@ -1930,8 +1976,66 @@ const usableLocations = locations.filter((item: any) => {
       );
     });
 
-    restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
-    activities = filterActivitiesByActivityIntent(activities, intent);
+    const foodAddOnIntents = intent.foodIntents.filter(isFoodAddOnIntent);
+    const mealFoodIntents = intent.foodIntents.filter(
+      (foodIntent) => !isFoodAddOnIntent(foodIntent)
+    );
+    const shouldSplitFoodAddOnStops =
+      intent.wantsFullOuting &&
+      foodAddOnIntents.length > 0 &&
+      (intent.text.includes("restaurant") ||
+        intent.text.includes("restuarant") ||
+        intent.text.includes("restaraunt") ||
+        intent.text.includes("dinner") ||
+        intent.text.includes("lunch") ||
+        intent.text.includes("brunch") ||
+        intent.text.includes("food") ||
+        intent.text.includes("eat"));
+
+    if (shouldSplitFoodAddOnStops) {
+      restaurants = filterRestaurantsByFoodIntent(restaurants, {
+        ...intent,
+        foodIntents: mealFoodIntents,
+      });
+
+      const foodAddOnActivities = sourceLocations
+        .filter(isOutingEligibleLocation)
+        .filter((item: any) =>
+          foodAddOnIntents.some((foodIntent) =>
+            matchesFoodIntent(item, foodIntent)
+          )
+        )
+        .map((item: any) => {
+          const originalType = String(item.location_type || "").toLowerCase();
+
+          return {
+            ...item,
+            location_type: "activity",
+            detail_location_type:
+              originalType === "restaurant" ? "restaurants" : "activities",
+            activity_name:
+              item.activity_name ||
+              item.restaurant_name ||
+              item.name ||
+              "Dessert stop",
+            activity_type:
+              item.activity_type ||
+              item.category ||
+              item.subcategory ||
+              foodAddOnIntents
+                .map((foodIntent) => foodIntent.replace(/_/g, " "))
+                .join(" / "),
+          };
+        });
+
+      activities = filterActivitiesByActivityIntent(
+        [...activities, ...foodAddOnActivities],
+        intent
+      );
+    } else {
+      restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
+      activities = filterActivitiesByActivityIntent(activities, intent);
+    }
 
     if (isLoungeActivityOnlyRequest(intent)) {
       restaurants = [];
@@ -2050,6 +2154,14 @@ const usableLocations = locations.filter((item: any) => {
       smartBalanced.restaurants.length === 0
     ) {
       smartBalanced.restaurants = rankedRestaurants.slice(0, 2);
+    }
+
+    if (
+      shouldSplitFoodAddOnStops &&
+      rankedActivities.length > 0 &&
+      smartBalanced.activities.length === 0
+    ) {
+      smartBalanced.activities = rankedActivities.slice(0, 2);
     }
 
     const pairedResults =
@@ -2185,6 +2297,7 @@ STRICT RULES:
 - Balance restaurant and activity perfectly when both are requested.
 - If budget is detected, recommend options that fit the budget first.
 - If distance is detected, prioritize closer options first.
+- When pairing two stops with a distance, say the walking time as “XX min walk from [restaurant or activity name]”.
 - Match the vibe, food intent, activity intent, and location together.
 - Do NOT recommend museums unless the user asked for museums, art, galleries, exhibits, or culture.
 - Do NOT suggest unrelated cuisines or unrelated activities.
@@ -2248,6 +2361,7 @@ STRICT RULES:
         cuisine: item.cuisine || item.cuisine_type || null,
         activity_type:
           item.activity_type || item.category || item.subcategory || null,
+        detail_location_type: item.detail_location_type || item.location_type,
         website: item.website,
         phone: item.phone || null,
 google_maps_url: item.google_maps_url || null,
@@ -2259,6 +2373,15 @@ google_maps_url: item.google_maps_url || null,
         restaurant_name: pair.restaurant.restaurant_name || pair.restaurant.name,
         activity_name: pair.activity.activity_name || pair.activity.name,
         distance_miles: pair.distance_miles,
+        walking_minutes: walkingMinutesFromMiles(pair.distance_miles),
+        walking_label_from_restaurant: walkingLabelBetweenStops(
+          pair.distance_miles,
+          pair.restaurant.restaurant_name || pair.restaurant.name
+        ),
+        walking_label_from_activity: walkingLabelBetweenStops(
+          pair.distance_miles,
+          pair.activity.activity_name || pair.activity.name
+        ),
         same_city: pair.same_city,
         same_neighborhood: pair.same_neighborhood,
         pair_score: clampScore(pair.pair_score),
@@ -2280,6 +2403,8 @@ google_maps_url: item.google_maps_url || null,
         location_name_match_score: r.location_name_match_score || 0,
         paired_activity_name: r.paired_activity_name || null,
         pair_distance_miles: r.pair_distance_miles || null,
+        pair_walking_minutes: r.pair_walking_minutes || null,
+        pair_walking_label: r.pair_walking_label || null,
         pair_score: r.pair_score ? clampScore(r.pair_score) : null,
         reservation_link: r.reservation_link,
         reservation_url: r.reservation_url || r.booking_url,
@@ -2298,6 +2423,7 @@ google_maps_url: item.google_maps_url || null,
         id: String(a.id),
         activity_name: a.activity_name || a.name,
         activity_type: a.activity_type || a.category || a.subcategory,
+        detail_location_type: a.detail_location_type || "activities",
         address: a.address,
         city: a.city,
         state: a.state,
@@ -2312,6 +2438,8 @@ google_maps_url: item.google_maps_url || null,
         location_name_match_score: a.location_name_match_score || 0,
         paired_restaurant_name: a.paired_restaurant_name || null,
         pair_distance_miles: a.pair_distance_miles || null,
+        pair_walking_minutes: a.pair_walking_minutes || null,
+        pair_walking_label: a.pair_walking_label || null,
         pair_score: a.pair_score ? clampScore(a.pair_score) : null,
         reservation_link: a.reservation_link,
         reservation_url: a.reservation_url || a.booking_url,

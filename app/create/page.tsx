@@ -30,12 +30,15 @@ type RestaurantCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_walking_minutes?: number | null;
+  pair_walking_label?: string | null;
 };
 
 type ActivityCard = {
   id: string;
   activity_name: string;
   activity_type?: string | null;
+  detail_location_type?: "restaurants" | "activities" | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -55,6 +58,8 @@ type ActivityCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_walking_minutes?: number | null;
+  pair_walking_label?: string | null;
 };
 
 type Message = {
@@ -79,6 +84,7 @@ type UserLocation = {
 
 const LOCATION_KEY = "theouthaven_user_location";
 const RESULT_CARD_UI_VERSION = "results-card-clean-v2";
+const WALKING_MINUTES_PER_MILE = 20;
 
 const typingSearches = [
   "Steak restaurant with bowling in Queens",
@@ -806,7 +812,7 @@ export default function CreatePage() {
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
                             onSelect={() => selectActivity(activity)}
-                            detailsHref={`/locations/activities/${activityId}?from=/create`}
+                            detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
                             onDetails={() => trackActivityClick(activityId)}
                             websiteUrl={activity.website || undefined}
                             onWebsite={() => trackActivityClick(activityId)}
@@ -1870,17 +1876,26 @@ function distanceBetweenLocations(
   );
 }
 
+function walkingMinutesFromMiles(distanceMiles: number | null) {
+  if (distanceMiles === null || !Number.isFinite(distanceMiles)) return null;
+
+  return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
+}
+
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null
 ) {
   if (!restaurant || !activity) return undefined;
 
+  if (activity.pair_walking_label) return activity.pair_walking_label;
+
   const distance = distanceBetweenLocations(restaurant, activity);
+  const walkingMinutes = walkingMinutesFromMiles(distance);
 
-  if (distance === null) return undefined;
+  if (!walkingMinutes) return undefined;
 
-  return `${distance} miles from ${restaurant.restaurant_name}`;
+  return `${walkingMinutes} min walk from ${restaurant.restaurant_name}`;
 }
 
 function buildDistanceText(
@@ -1892,7 +1907,7 @@ function buildDistanceText(
 
     if (distanceLabel) {
       return activity.activity_name
-        ? `${distanceLabel} to ${activity.activity_name}`
+        ? `${activity.activity_name} is ${distanceLabel}.`
         : distanceLabel;
     }
 
