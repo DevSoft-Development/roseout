@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
 };
 
-const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-11-fresh-copy";
+const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-11-locked";
 
 const featuredDateIdeas = [
   {
@@ -116,6 +116,7 @@ export default function HomePage() {
   return (
     <main
       data-homepage-version={HOMEPAGE_VERSION}
+      data-homepage-lock="2026-05-11"
       className="min-h-screen overflow-hidden bg-[#fbf7f1] text-[#17110f]"
     >
       <style>{`
