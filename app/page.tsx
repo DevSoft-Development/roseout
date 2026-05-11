@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export const metadata: Metadata = {
   title: "TheOutHaven | Plan a Better Outing Faster",
   description:
@@ -19,7 +22,8 @@ export const metadata: Metadata = {
   },
 };
 
-const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-10";
+const HOMEPAGE_VERSION = "home-clean-conversion-redesign-2026-05-11-locked-v2";
+const TODAY_HOME_BADGE = "Fresh May 11 update • Locked homepage";
 
 const featuredDateIdeas = [
   {
@@ -116,6 +120,7 @@ export default function HomePage() {
   return (
     <main
       data-homepage-version={HOMEPAGE_VERSION}
+      data-homepage-lock="2026-05-11"
       className="min-h-screen overflow-hidden bg-[#fbf7f1] text-[#17110f]"
     >
       <style>{`
@@ -132,8 +137,8 @@ export default function HomePage() {
 
         <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
-            <p className="inline-flex rounded-full border border-[#17110f]/10 bg-white/70 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-[#e1062a] shadow-sm">
-              Outings planned in minutes
+            <p className="inline-flex rounded-full border border-[#17110f]/10 bg-white/70 px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-[#e1062a] shadow-sm">
+              {TODAY_HOME_BADGE}
             </p>
             <h1 className="mt-7 max-w-5xl text-5xl font-black leading-[0.9] tracking-[-0.06em] sm:text-7xl lg:text-8xl">
               Plan a better night out without the tab overload.
