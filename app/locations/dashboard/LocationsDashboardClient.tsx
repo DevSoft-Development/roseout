@@ -17,6 +17,8 @@ import {
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
 
+const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-refresh-2026-05-11";
+
 type LocationType = "restaurant" | "activity";
 
 const locationTypePathSegment: Record<LocationType, "restaurants" | "activities"> = {
@@ -104,7 +106,10 @@ export default function LocationsDashboardClient({
   }
 
   return (
-    <main className="min-h-screen bg-[#090706] text-white">
+    <main
+      data-page-version={LOCATIONS_DASHBOARD_VERSION}
+      className="min-h-screen bg-[#090706] text-white"
+    >
       <section className="relative overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(190,24,93,0.24),_transparent_36%),linear-gradient(135deg,#130b0a,#090706_58%,#000)]">
         <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-rose-700/20 blur-3xl" />
         <div className="absolute bottom-[-160px] left-[-120px] h-96 w-96 rounded-full bg-[#f5b700]/10 blur-3xl" />
