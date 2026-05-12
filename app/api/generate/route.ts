@@ -13,7 +13,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = "food-cuisine-location-distance-v2";
+const RESPONSE_CACHE_VERSION = "food-cuisine-location-distance-v3";
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -494,6 +494,116 @@ const LOCATION_AREA_ALIASES: Record<string, string[]> = {
   "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
 };
 
+const LONG_ISLAND_LOCATION_TERMS = new Set([
+  "long island",
+  "nassau",
+  "nassau county",
+  "suffolk",
+  "suffolk county",
+  ...LONG_ISLAND_LOCATION_ALIASES,
+]);
+
+const NEW_JERSEY_LOCATION_TERMS = new Set([
+  "new jersey",
+  "north jersey",
+  "jersey city",
+  "hoboken",
+  "newark",
+  "edgewater",
+  "fort lee",
+  "union city",
+  "weehawken",
+  "secaucus",
+  "hackensack",
+  "paramus",
+  "englewood",
+]);
+
+function locationSearchText(item: any) {
+  return normalizeQuery(
+    [
+      item.city,
+      item.neighborhood,
+      item.borough,
+      ...toArray(item.location_tags),
+      ...toArray(item.neighborhood_tags),
+      ...toArray(item.area_tags),
+      item.state,
+      item.zip_code,
+      item.address,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function locationIntentIncludes(
+  detectedLocations: string[],
+  terms: Set<string>
+) {
+  return detectedLocations.some((location) =>
+    terms.has(normalizeQuery(location))
+  );
+}
+
+function hasCoordinateInBounds(
+  item: any,
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }
+) {
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+
+  return (
+    latitude >= bounds.minLat &&
+    latitude <= bounds.maxLat &&
+    longitude >= bounds.minLng &&
+    longitude <= bounds.maxLng
+  );
+}
+
+function matchesLongIslandLocation(item: any) {
+  const searchable = locationSearchText(item);
+  const state = normalizeQuery(String(item.state || ""));
+
+  if (state === "nj" || searchable.includes("new jersey")) return false;
+
+  if (
+    Array.from(LONG_ISLAND_LOCATION_TERMS).some((term) =>
+      searchable.includes(term)
+    )
+  ) {
+    return true;
+  }
+
+  return hasCoordinateInBounds(item, {
+    minLat: 40.5,
+    maxLat: 41.35,
+    minLng: -73.8,
+    maxLng: -71.75,
+  });
+}
+
+function matchesNewJerseyLocation(item: any) {
+  const searchable = locationSearchText(item);
+  const state = normalizeQuery(String(item.state || ""));
+
+  if (state === "nj" || searchable.includes("new jersey")) return true;
+
+  return (
+    Array.from(NEW_JERSEY_LOCATION_TERMS).some((term) =>
+      searchable.includes(term)
+    ) ||
+    hasCoordinateInBounds(item, {
+      minLat: 40.45,
+      maxLat: 41.25,
+      minLng: -74.35,
+      maxLng: -73.85,
+    })
+  );
+}
+
 function expandDetectedLocations(detectedLocations: Iterable<string>) {
   const expanded = new Set<string>();
 
@@ -745,21 +855,15 @@ function detectLocation(input: string, locations: any[]) {
 function matchesLocation(item: any, detectedLocations: string[]) {
   if (!detectedLocations || detectedLocations.length === 0) return true;
 
-  const searchable = normalizeQuery(
-    [
-      item.city,
-      item.neighborhood,
-      item.borough,
-      ...toArray(item.location_tags),
-      ...toArray(item.neighborhood_tags),
-      ...toArray(item.area_tags),
-      item.state,
-      item.zip_code,
-      item.address,
-    ]
-      .filter(Boolean)
-      .join(" ")
-  );
+  if (locationIntentIncludes(detectedLocations, LONG_ISLAND_LOCATION_TERMS)) {
+    return matchesLongIslandLocation(item);
+  }
+
+  if (locationIntentIncludes(detectedLocations, NEW_JERSEY_LOCATION_TERMS)) {
+    return matchesNewJerseyLocation(item);
+  }
+
+  const searchable = locationSearchText(item);
 
   return detectedLocations.some((location) =>
     searchable.includes(normalizeQuery(location))
@@ -2078,17 +2182,12 @@ const usableLocations = locations.filter((item: any) => {
         matchesLocation(item, intent.locations)
       );
 
-      if (locationRestaurants.length > 0) {
-        restaurants = locationRestaurants;
-      }
-
-      if (locationActivities.length > 0) {
-        activities = locationActivities;
-      }
+      restaurants = locationRestaurants;
+      activities = locationActivities;
     }
 
     if (intent.activityIntents.length > 0) {
-      let forcedActivityMatches = locations.filter(
+      let forcedActivityMatches = sourceLocations.filter(
         (item: any) =>
           isOutingEligibleLocation(item) &&
           intent.activityIntents.some((activityIntent) =>
@@ -2101,9 +2200,7 @@ const usableLocations = locations.filter((item: any) => {
           matchesLocation(item, intent.locations)
         );
 
-        if (locationFiltered.length > 0) {
-          forcedActivityMatches = locationFiltered;
-        }
+        forcedActivityMatches = locationFiltered;
       }
 
       if (forcedActivityMatches.length > 0) {
