@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { resolveAdminUser } from "@/lib/admin-user";
 import type { AdminRole } from "@/lib/admin-auth";
 
 export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
@@ -16,11 +17,7 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
     };
   }
 
-  const { data: adminUser } = await supabase
-    .from("admin_users")
-    .select("id, email, full_name, role")
-    .eq("email", user.email.toLowerCase())
-    .maybeSingle();
+  const adminUser = await resolveAdminUser(user);
 
   if (!adminUser || !allowedRoles.includes(adminUser.role as AdminRole)) {
     return {
