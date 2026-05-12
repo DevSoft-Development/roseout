@@ -165,7 +165,8 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
           <Detail label="Name" value={ticket.requester_name || "Not provided"} />
           <Detail label="Email" value={ticket.requester_email} />
           <Detail label="Phone" value={ticket.requester_phone || "Not provided"} />
-          <Detail label="Topic" value={ticket.topic || "General Support"} />
+          <Detail label="Category" value={ticket.topic || "General Support"} />
+          <Detail label="Department" value={ticket.department || "Support"} />
           <Detail label="Source" value={ticket.source || "support"} />
         </dl>
         <p className="mt-6 rounded-3xl border border-white/10 bg-black/35 p-4 text-sm leading-6 text-white/55">

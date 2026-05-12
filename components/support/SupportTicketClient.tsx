@@ -9,7 +9,7 @@ type SupportTicketClientProps = {
   compact?: boolean;
 };
 
-const topics = [
+const ticketCategories = [
   "General Support",
   "Account Help",
   "Reservation Help",
@@ -17,6 +17,16 @@ const topics = [
   "Billing",
   "Bug Report",
   "Listing Correction",
+];
+
+const departments = [
+  "Support",
+  "Reservations",
+  "Billing",
+  "Business Partnerships",
+  "Listings",
+  "Technical Support",
+  "Trust & Safety",
 ];
 
 export default function SupportTicketClient({
@@ -29,6 +39,7 @@ export default function SupportTicketClient({
     email: "",
     phone: "",
     topic: "General Support",
+    department: "Support",
     subject: "",
     message: "",
   });
@@ -121,21 +132,23 @@ export default function SupportTicketClient({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Phone for text updates" value={form.phone} onChange={(value) => update("phone", value)} placeholder="Optional" />
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-[0.22em] text-white/45">Topic</span>
-              <select
-                value={form.topic}
-                onChange={(event) => update("topic", event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-500"
-              >
-                {topics.map((topic) => (
-                  <option key={topic}>{topic}</option>
-                ))}
-              </select>
-            </label>
+            <SelectField
+              label="Ticket category"
+              value={form.topic}
+              options={ticketCategories}
+              onChange={(value) => update("topic", value)}
+            />
           </div>
 
-          <Field label="Subject" value={form.subject} onChange={(value) => update("subject", value)} placeholder="Optional short summary" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField
+              label="Department"
+              value={form.department}
+              options={departments}
+              onChange={(value) => update("department", value)}
+            />
+            <Field label="Subject" value={form.subject} onChange={(value) => update("subject", value)} placeholder="Optional short summary" />
+          </div>
 
           <label className="block">
             <span className="text-xs font-black uppercase tracking-[0.22em] text-white/45">Message</span>
@@ -193,6 +206,33 @@ export default function SupportTicketClient({
         </div>
       </aside>
     </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-[0.22em] text-white/45">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-500"
+      >
+        {options.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

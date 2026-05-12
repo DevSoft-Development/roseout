@@ -10,6 +10,7 @@ create table if not exists public.support_tickets (
   requester_email text not null,
   requester_phone text,
   topic text default 'General Support',
+  department text default 'Support',
   subject text not null,
   status text not null default 'open',
   priority text not null default 'normal',
@@ -49,6 +50,7 @@ alter table public.support_tickets
   add column if not exists requester_email text,
   add column if not exists requester_phone text,
   add column if not exists topic text default 'General Support',
+  add column if not exists department text default 'Support',
   add column if not exists subject text,
   add column if not exists status text not null default 'open',
   add column if not exists priority text not null default 'normal',
@@ -94,6 +96,9 @@ create unique index if not exists support_tickets_public_access_token_key
 
 create index if not exists support_tickets_requester_email_idx
   on public.support_tickets (requester_email);
+
+create index if not exists support_tickets_department_idx
+  on public.support_tickets (department);
 
 create index if not exists support_tickets_last_message_at_idx
   on public.support_tickets (last_message_at desc);
