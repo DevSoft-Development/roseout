@@ -45,8 +45,11 @@ export async function GET(request: NextRequest) {
 
   const user = data.user;
 
-  if (user.user_metadata?.role === "superuser") {
-    response = NextResponse.redirect(`${siteUrl}/admin`);
+  const userRole = String(user.user_metadata?.role || "").toLowerCase();
+  const isSuperUser = ["superuser", "superadmin"].includes(userRole);
+
+  if (isSuperUser) {
+    response = NextResponse.redirect(`${siteUrl}/admin/dashboard`);
   }
 
   const email = user.email?.toLowerCase();
@@ -61,7 +64,7 @@ export async function GET(request: NextRequest) {
     .ilike("email", email)
     .maybeSingle();
 
-  if (!restaurant && user.user_metadata?.role !== "superuser") {
+  if (!restaurant && !isSuperUser) {
     return NextResponse.redirect(`${siteUrl}/restaurants/apply`);
   }
 
