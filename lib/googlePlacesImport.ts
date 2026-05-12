@@ -227,11 +227,18 @@ function getErrorMessage(error: unknown) {
 
 
 export type GooglePlacesImportOptions = {
-  type?: ImportType;
+  type?: ImportType | "all";
   limit?: number;
   batch?: string | null;
   areas?: string | null;
+  primaryTag?: string | null;
+  minRating?: number;
   maxQueries?: number;
+  requirePhoto?: boolean;
+  requirePhone?: boolean;
+  requireWebsite?: boolean;
+  requireLocation?: boolean;
+  requireCuisineType?: boolean;
 };
 
 function getGoogleKey() {
@@ -285,13 +292,14 @@ function getPhotoUrl(photoReference?: string | null) {
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${photoReference}&key=${key}`;
 }
 
-function shouldSkipPlace(place: GooglePlace) {
+function shouldSkipPlace(place: GooglePlace, options: GooglePlacesImportOptions = {}) {
   const rating = Number(place.rating || 0);
   const reviews = getReviewCount(place);
+  const minRating = Number(options.minRating || 3.8);
 
   if (!place.place_id || !place.name) return true;
   if (place.business_status && place.business_status !== "OPERATIONAL") return true;
-  if (rating && rating < 3.8) return true;
+  if (rating && rating < minRating) return true;
   if (reviews && reviews < 10) return true;
 
   return false;
@@ -303,6 +311,26 @@ function getTheOutHavenScore(place: GooglePlace) {
   const photoScore = place.photos?.length ? 6 : 0;
   const websiteScore = place.website ? 5 : 0;
   return Math.max(50, Math.min(98, Math.round(ratingScore + reviewScore + photoScore + websiteScore)));
+}
+
+function hasRequiredImportFields(
+  place: GooglePlace,
+  addressParts: ReturnType<typeof parseAddressParts>,
+  options: GooglePlacesImportOptions = {}
+) {
+  const hasPhoto = Boolean(place.photos?.[0]?.photo_reference);
+  const hasPhone = Boolean(place.formatted_phone_number || place.international_phone_number);
+  const hasWebsite = Boolean(place.website);
+  const hasLocation = Boolean(
+    addressParts.address && addressParts.city && addressParts.state && addressParts.zip_code
+  );
+
+  if (options.requirePhoto !== false && !hasPhoto) return false;
+  if (options.requirePhone !== false && !hasPhone) return false;
+  if (options.requireWebsite !== false && !hasWebsite) return false;
+  if (options.requireLocation !== false && !hasLocation) return false;
+
+  return true;
 }
 
 function inferCuisine(textInput: string) {
@@ -524,18 +552,25 @@ async function googleDetails(placeId: string) {
   return data.status === "OK" ? data.result || null : null;
 }
 
-async function upsertRestaurant(place: GooglePlace, query: string) {
+async function upsertRestaurant(
+  place: GooglePlace,
+  query: string,
+  options: GooglePlacesImportOptions = {}
+) {
   if (!place.place_id) return { status: "skipped" as const };
-  if (shouldSkipPlace(place)) return { status: "skipped" as const };
+  if (shouldSkipPlace(place, options)) return { status: "skipped" as const };
 
   const details = await googleDetails(place.place_id);
   const merged = { ...place, ...(details || {}) };
-  if (shouldSkipPlace(merged)) return { status: "skipped" as const };
+  if (shouldSkipPlace(merged, options)) return { status: "skipped" as const };
 
   const formattedAddress = merged.formatted_address || merged.vicinity || "";
   const addressParts = parseAddressParts(formattedAddress);
   const photoReference = merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
+  if (!hasRequiredImportFields(merged, addressParts, options)) return { status: "skipped" as const };
+
   const cuisine = inferCuisine(`${merged.name} ${query} ${(merged.types || []).join(" ")}`);
+  if (options.requireCuisineType !== false && !cuisine.primary) return { status: "skipped" as const };
   const score = getTheOutHavenScore(merged);
   const existing = await findExistingLocation("restaurants", place.place_id);
 
@@ -574,17 +609,23 @@ async function upsertRestaurant(place: GooglePlace, query: string) {
   return { status: "imported" as const };
 }
 
-async function upsertActivity(place: GooglePlace, query: string) {
+async function upsertActivity(
+  place: GooglePlace,
+  query: string,
+  options: GooglePlacesImportOptions = {}
+) {
   if (!place.place_id) return { status: "skipped" as const };
-  if (shouldSkipPlace(place)) return { status: "skipped" as const };
+  if (shouldSkipPlace(place, options)) return { status: "skipped" as const };
 
   const details = await googleDetails(place.place_id);
   const merged = { ...place, ...(details || {}) };
-  if (shouldSkipPlace(merged)) return { status: "skipped" as const };
+  if (shouldSkipPlace(merged, options)) return { status: "skipped" as const };
 
   const formattedAddress = merged.formatted_address || merged.vicinity || "";
   const addressParts = parseAddressParts(formattedAddress);
   const photoReference = merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
+  if (!hasRequiredImportFields(merged, addressParts, options)) return { status: "skipped" as const };
+
   const text = `${merged.name} ${query} ${(merged.types || []).join(" ")}`;
   const activityType = inferActivityType(text);
   const score = getTheOutHavenScore(merged);
@@ -627,6 +668,9 @@ async function upsertActivity(place: GooglePlace, query: string) {
 function parseAreas(areas?: string | null) {
   const value = cleanText(areas || "nyc").toLowerCase();
   if (value === "nyc") return NYC_AREAS;
+  if (value === "ct" || value === "connecticut") return ["Stamford", "Norwalk", "Bridgeport", "New Haven", "Hartford"];
+  if (value === "nj" || value === "new_jersey" || value === "new jersey") return ["Jersey City", "Hoboken", "Newark", "Montclair", "Morristown"];
+  if (value === "long_island" || value === "long island") return ["Long Island", "Nassau County", "Suffolk County", "Garden City", "Huntington"];
   if (value === "extended" || value === "all") return EXTENDED_AREAS;
   return cleanText(areas)
     .split(",")
@@ -646,8 +690,12 @@ function filterQueries(queries: string[], batch?: string | null, maxQueries = 24
   const value = cleanText(batch).toLowerCase();
   if (!value || value === "all") return rotateQueries(queries, maxQueries);
   if (value === "fun") return rotateQueries(queries.filter((query) => /lounge|hookah|karaoke|arcade|bowling|escape|paint|golf|comedy|cruise|speakeasy|jazz|activity|party|interactive/.test(query)), maxQueries);
+  if (value === "birthday") return rotateQueries(queries.filter((query) => /birthday|party|group|brunch|dinner|restaurant|activity|interactive/.test(query)), maxQueries);
+  if (value === "romantic") return rotateQueries(queries.filter((query) => /rooftop|wine|cocktail|lounge|spa|cruise|candlelight|fine dining|tapas|jazz/.test(query)), maxQueries);
+  if (value === "luxury") return rotateQueries(queries.filter((query) => /fine dining|steakhouse|seafood|wine|cocktail|rooftop|spa|lounge/.test(query)), maxQueries);
+  if (value === "nightlife") return rotateQueries(queries.filter((query) => /lounge|speakeasy|cocktail|jazz|karaoke|latin|afrobeat|hookah|cigar|rooftop|club/.test(query)), maxQueries);
   if (value === "cuisine" || value === "food") return rotateQueries(CUISINE_QUERIES, maxQueries);
-  return rotateQueries(queries.filter((query) => query.toLowerCase().includes(value)), maxQueries);
+  return rotateQueries(queries.filter((query) => query.toLowerCase().includes(value.replace(/_/g, " "))), maxQueries);
 }
 
 async function runGroup(
@@ -655,7 +703,8 @@ async function runGroup(
   queries: string[],
   areas: string[],
   limit: number,
-  seenPlaceIds: Set<string>
+  seenPlaceIds: Set<string>,
+  options: GooglePlacesImportOptions = {}
 ) {
   const stats = { checked: 0, imported: 0, skipped: 0, failed: 0, errors: [] as string[], queries_used: [] as string[] };
 
@@ -674,8 +723,8 @@ async function runGroup(
 
           const result =
             kind === "restaurant"
-              ? await upsertRestaurant(place, query)
-              : await upsertActivity(place, query);
+              ? await upsertRestaurant(place, query, options)
+              : await upsertActivity(place, query, options);
           if (result.status === "imported") stats.imported += 1;
           if (result.status === "skipped") stats.skipped += 1;
           if (result.status === "failed") {
@@ -698,21 +747,22 @@ async function runGroup(
 }
 
 export async function runGooglePlacesImport(options: GooglePlacesImportOptions = {}) {
-  const type = options.type || "both";
+  const type = options.type === "all" ? "both" : options.type || "both";
   const limit = Math.max(1, Math.min(Number(options.limit || 10), 25));
   const maxQueries = Math.max(1, Math.min(Number(options.maxQueries || 2), 12));
   const areas = parseAreas(options.areas);
-  const restaurantQueries = filterQueries(CUISINE_QUERIES, options.batch, maxQueries);
-  const activityQueries = filterQueries(ACTIVITY_QUERIES, options.batch, maxQueries);
+  const primaryTag = options.primaryTag || options.batch || "all";
+  const restaurantQueries = filterQueries(CUISINE_QUERIES, primaryTag, maxQueries);
+  const activityQueries = filterQueries(ACTIVITY_QUERIES, primaryTag, maxQueries);
   const seenPlaceIds = new Set<string>();
 
   const restaurant = type === "activities"
     ? { checked: 0, imported: 0, skipped: 0, failed: 0, errors: [] as string[], queries_used: [] as string[] }
-    : await runGroup("restaurant", restaurantQueries, areas, limit, seenPlaceIds);
+    : await runGroup("restaurant", restaurantQueries, areas, limit, seenPlaceIds, options);
 
   const activity = type === "restaurants"
     ? { checked: 0, imported: 0, skipped: 0, failed: 0, errors: [] as string[], queries_used: [] as string[] }
-    : await runGroup("activity", activityQueries, areas, limit, seenPlaceIds);
+    : await runGroup("activity", activityQueries, areas, limit, seenPlaceIds, options);
 
   await supabaseAdmin.from("ai_response_cache").delete().gte("created_at", "2000-01-01");
 
@@ -725,7 +775,11 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
   const meta = {
     type,
     limit,
-    batch: options.batch || "all",
+    batch: primaryTag,
+    primaryTag,
+    minRating: Number(options.minRating || 3.8),
+    requiredFields: ["photo", "phone", "website", "type", "location"],
+    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
     maxQueries,
     areas,
     checked,
@@ -755,6 +809,6 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     restaurant,
     activity,
     errors: errors.slice(0, 30),
-    settings: { type, limit, batch: options.batch || "all", maxQueries, areas },
+    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
   };
 }

@@ -68,7 +68,7 @@ export default function LoginPage() {
         admin: "/admin/dashboard",
         editor: "/admin/restaurants",
         reviewer: "/admin/claims",
-        viewer: "/admin/import-history",
+        viewer: "/admin/dashboard/import",
       };
 
       const effectiveRole = adminUser?.role || metadataRole;

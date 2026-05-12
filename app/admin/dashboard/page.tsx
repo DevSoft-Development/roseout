@@ -139,6 +139,13 @@ export default async function CentralDashboardPage() {
       cta: "View analytics",
     },
     {
+      eyebrow: "Operations",
+      title: "Import",
+      text: "Run targeted Google imports for restaurants and activities by area, tag, and rating.",
+      href: "/admin/dashboard/import",
+      cta: "Open import",
+    },
+    {
       eyebrow: "Claims",
       title: "Print Claim QRs",
       text: "Print claim labels with QR codes, location names, and full addresses.",
@@ -214,6 +221,13 @@ export default async function CentralDashboardPage() {
                   className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
                 >
                   Print Claim QRs
+                </Link>
+
+                <Link
+                  href="/admin/dashboard/import"
+                  className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
+                >
+                  Import
                 </Link>
               </div>
             </div>
