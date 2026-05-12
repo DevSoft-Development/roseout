@@ -185,7 +185,7 @@ export default function AdminTopBar() {
     role || ""
   );
 
-  const canViewImportHistory = ["superuser", "admin", "viewer"].includes(
+  const canViewImport = ["superuser", "admin", "viewer"].includes(
     role || ""
   );
 
@@ -271,6 +271,16 @@ export default function AdminTopBar() {
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Claims
+            </button>
+          )}
+
+          {canViewImport && (
+            <button
+              type="button"
+              onClick={() => goTo("/admin/dashboard/import")}
+              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
+            >
+              Import
             </button>
           )}
         </div>
@@ -475,9 +485,9 @@ export default function AdminTopBar() {
                   </MenuButton>
                 )}
 
-                {canViewImportHistory && (
-                  <MenuButton onClick={() => goTo("/admin/import-history")}>
-                    Import History
+                {canViewImport && (
+                  <MenuButton onClick={() => goTo("/admin/dashboard/import")}>
+                    Import
                   </MenuButton>
                 )}
 

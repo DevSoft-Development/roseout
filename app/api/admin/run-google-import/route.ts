@@ -35,7 +35,14 @@ function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOption
     type: (searchParams.get("type") as GooglePlacesImportOptions["type"]) || "both",
     limit: Number(searchParams.get("limit") || 10),
     batch: searchParams.get("batch") || "all",
+    primaryTag: searchParams.get("primaryTag") || searchParams.get("batch") || "all",
     areas: searchParams.get("areas") || searchParams.get("area") || "nyc",
+    minRating: Number(searchParams.get("minRating") || 3.8),
+    requirePhoto: true,
+    requirePhone: true,
+    requireWebsite: true,
+    requireLocation: true,
+    requireCuisineType: true,
     maxQueries: Number(searchParams.get("maxQueries") || 2),
   };
 }
@@ -64,7 +71,14 @@ export async function POST(request: NextRequest) {
       type: body.type || "both",
       limit: Number(body.limit || 10),
       batch: body.batch || "all",
+      primaryTag: body.primaryTag || body.batch || "all",
       areas: body.areas || body.area || "nyc",
+      minRating: Number(body.minRating || 3.8),
+      requirePhoto: body.requirePhoto !== false,
+      requirePhone: body.requirePhone !== false,
+      requireWebsite: body.requireWebsite !== false,
+      requireLocation: body.requireLocation !== false,
+      requireCuisineType: body.requireCuisineType !== false,
       maxQueries: Number(body.maxQueries || 2),
     });
 
