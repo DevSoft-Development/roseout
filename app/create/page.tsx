@@ -30,6 +30,7 @@ type RestaurantCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_distance_miles?: number | null;
   pair_walking_minutes?: number | null;
   pair_walking_label?: string | null;
 };
@@ -58,15 +59,19 @@ type ActivityCard = {
   review_snippet?: string | null;
   primary_tag?: string | null;
   distance_miles?: number | null;
+  pair_distance_miles?: number | null;
   pair_walking_minutes?: number | null;
   pair_walking_label?: string | null;
 };
+
+type DistancePreference = "walking" | "miles";
 
 type Message = {
   role: "user" | "assistant";
   content: string;
   restaurants?: RestaurantCard[];
   activities?: ActivityCard[];
+  distancePreference?: DistancePreference;
 };
 
 type ApiResponse = {
@@ -150,6 +155,9 @@ export default function CreatePage() {
     (latestAssistant?.restaurants?.length || 0) +
       (latestAssistant?.activities?.length || 0)
   );
+
+  const latestDistancePreference =
+    latestAssistant?.distancePreference || "miles";
 
   const selectedPlanText = [
     selectedRestaurant?.restaurant_name,
@@ -460,6 +468,9 @@ export default function CreatePage() {
 
       const assistantMessage: Message = {
         role: "assistant",
+        distancePreference: queryRequestsWalkingDistance(cleanInput)
+          ? "walking"
+          : "miles",
         content:
           data.reply ||
           (addOnTarget
@@ -541,6 +552,7 @@ export default function CreatePage() {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
       locations: [selectedRestaurant, selectedActivity].filter(Boolean),
+      distancePreference: latestDistancePreference,
       savedAt: Date.now(),
     };
 
@@ -805,7 +817,8 @@ export default function CreatePage() {
                         const distanceFromRestaurantLabel = selectedRestaurant
                           ? buildDistanceFromRestaurantLabel(
                               selectedRestaurant,
-                              activity
+                              activity,
+                              latestDistancePreference
                             )
                           : undefined;
 
@@ -920,6 +933,7 @@ export default function CreatePage() {
         <PlanSummarySheet
           restaurant={selectedRestaurant}
           activity={selectedActivity}
+          distancePreference={latestDistancePreference}
           onClose={() => setShowPlanSummary(false)}
           onContinue={savePlan}
           onAddRestaurant={() => {
@@ -1131,6 +1145,7 @@ function AddOnSearchPanel({
 function PlanSummarySheet({
   restaurant,
   activity,
+  distancePreference,
   onClose,
   onContinue,
   onAddRestaurant,
@@ -1138,6 +1153,7 @@ function PlanSummarySheet({
 }: {
   restaurant: RestaurantCard | null;
   activity: ActivityCard | null;
+  distancePreference: DistancePreference;
   onClose: () => void;
   onContinue: () => void;
   onAddRestaurant: () => void;
@@ -1221,7 +1237,7 @@ function PlanSummarySheet({
                   Distance
                 </p>
                 <p className="mt-1 text-xs font-bold leading-5 text-white/60 sm:text-sm">
-                  {buildDistanceText(restaurant, activity)}
+                  {buildDistanceText(restaurant, activity, distancePreference)}
                 </p>
               </div>
             ) : null}
@@ -1905,33 +1921,58 @@ function walkingMinutesFromMiles(distanceMiles: number | null) {
   return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
 }
 
+function queryRequestsWalkingDistance(input: string) {
+  return /\b(walk|walking|walkable|walks)\b/i.test(input);
+}
+
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
+  distancePreference: DistancePreference
 ) {
   if (!restaurant || !activity) return undefined;
 
-  if (activity.pair_walking_label) return activity.pair_walking_label;
+  const distance =
+    distanceBetweenLocations(restaurant, activity) ??
+    activity.pair_distance_miles ??
+    null;
 
-  const distance = distanceBetweenLocations(restaurant, activity);
-  const walkingMinutes = walkingMinutesFromMiles(distance);
+  if (distance === null) return undefined;
 
-  if (!walkingMinutes) return undefined;
+  if (distancePreference === "walking") {
+    const walkingMinutes =
+      activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
-  return `${walkingMinutes} min walk from ${restaurant.restaurant_name}`;
+    return walkingMinutes
+      ? `${walkingMinutes} min walk from ${restaurant.restaurant_name}`
+      : undefined;
+  }
+
+  return `${distance} mi from ${restaurant.restaurant_name}`;
 }
 
 function buildDistanceText(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
+  distancePreference: DistancePreference
 ) {
   if (restaurant && activity) {
-    const distanceLabel = buildDistanceFromRestaurantLabel(restaurant, activity);
+    const distance =
+      distanceBetweenLocations(restaurant, activity) ??
+      activity.pair_distance_miles ??
+      null;
 
-    if (distanceLabel) {
-      return activity.activity_name
-        ? `${activity.activity_name} is ${distanceLabel}.`
-        : distanceLabel;
+    if (distance !== null) {
+      if (distancePreference === "walking") {
+        const walkingMinutes =
+          activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
+
+        if (walkingMinutes) {
+          return `${walkingMinutes} min walk between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+        }
+      }
+
+      return `${distance} miles between ${restaurant.restaurant_name} and ${activity.activity_name}`;
     }
 
     if (restaurant.city && activity.city && restaurant.city === activity.city) {

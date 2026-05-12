@@ -13,7 +13,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = "food-add-on-walk-v1";
+const RESPONSE_CACHE_VERSION = "food-cuisine-location-distance-v2";
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -144,9 +144,16 @@ const TAG_KEYWORDS: Record<string, string[]> = {
 const FOOD_INTENTS: Record<string, string[]> = {
   steak: ["steak", "steakhouse"],
   seafood: ["seafood", "fish", "lobster", "crab", "shrimp"],
+  sushi: ["sushi", "omakase", "japanese sushi"],
+  ramen: ["ramen"],
   italian: ["italian", "pasta"],
   mexican: ["mexican", "taco", "tacos"],
-  asian: ["asian", "sushi", "ramen", "thai", "chinese", "japanese", "korean"],
+  chinese: ["chinese", "dim sum", "dumpling", "dumplings"],
+  thai: ["thai", "pad thai", "thai food"],
+  indian: ["indian", "curry", "tikka", "masala"],
+  japanese: ["japanese"],
+  korean: ["korean", "korean bbq", "kbbq"],
+  asian: ["asian", "asian fusion"],
   caribbean: ["caribbean", "jamaican"],
   soul_food: ["soul food"],
   african: ["african"],
@@ -272,8 +279,11 @@ function itemText(item: any) {
     item.zip_code,
     item.neighborhood,
     item.borough,
+    item.location_tags,
     item.cuisine,
     item.cuisine_type,
+    item.food_type,
+    ...toArray(item.cuisine_tags),
     item.activity_type,
     item.category,
     item.categories,
@@ -511,6 +521,9 @@ function detectLocation(input: string, locations: any[]) {
       item.city,
       item.neighborhood,
       item.borough,
+      ...toArray(item.location_tags),
+      ...toArray(item.neighborhood_tags),
+      ...toArray(item.area_tags),
       item.state,
       item.zip_code,
     ]
@@ -737,6 +750,9 @@ function matchesLocation(item: any, detectedLocations: string[]) {
       item.city,
       item.neighborhood,
       item.borough,
+      ...toArray(item.location_tags),
+      ...toArray(item.neighborhood_tags),
+      ...toArray(item.area_tags),
       item.state,
       item.zip_code,
       item.address,
