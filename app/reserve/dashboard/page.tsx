@@ -5,13 +5,19 @@ import ReserveLiveRefresh from "@/components/ReserveLiveRefresh";
 
 type ReservationItem = {
   id: string;
-  name: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
   party_size: number | null;
+  reservation_date: string;
   reservation_time: string;
   status: string | null;
-  duration_minutes: number | null;
   location_id: string | null;
   location_type: string | null;
+  bookable_item_name: string | null;
+  bookable_item_type: string | null;
+  special_request: string | null;
+  created_at: string | null;
 };
 
 function formatNumber(value: number | null | undefined) {
@@ -19,14 +25,20 @@ function formatNumber(value: number | null | undefined) {
 }
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const clean = String(value || "").slice(0, 5);
+  const [hourRaw, minuteRaw = "00"] = clean.split(":");
+  const hour = Number(hourRaw);
+
+  if (!Number.isFinite(hour)) return clean || "—";
+
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+
+  return `${displayHour}:${minuteRaw.padStart(2, "0")} ${suffix}`;
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("en-US", {
+  return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -37,11 +49,27 @@ function statusClass(status?: string | null) {
   const value = status || "pending";
 
   if (value === "confirmed") return "bg-emerald-50 text-emerald-700";
-  if (value === "cancelled") return "bg-red-50 text-red-700";
-  if (value === "seated") return "bg-black text-white";
+  if (value === "arrived") return "bg-blue-50 text-blue-700";
+  if (value === "cancelled" || value === "declined") return "bg-red-50 text-red-700";
   if (value === "completed") return "bg-neutral-100 text-neutral-700";
+  if (value === "no_show") return "bg-zinc-900 text-white";
 
   return "bg-amber-50 text-amber-700";
+}
+
+function statusLabel(status?: string | null) {
+  return String(status || "pending")
+    .replace("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function dateKey(value: Date) {
+  return value.toISOString().split("T")[0];
+}
+
+function getReservationDateTime(reservation: ReservationItem) {
+  const time = String(reservation.reservation_time || "00:00").slice(0, 5);
+  return new Date(`${reservation.reservation_date}T${time}:00`);
 }
 
 function estimateCapacityNeeded(partySize: number | null | undefined) {
@@ -51,112 +79,70 @@ function estimateCapacityNeeded(partySize: number | null | undefined) {
   return Math.ceil(party / 4);
 }
 
-function getReservationDay(value: string) {
-  return new Date(value).toISOString().split("T")[0];
-}
-
-function getDuration(
-  reservation: ReservationItem,
-  durationMap: Record<string, number>
-) {
-  if (reservation.duration_minutes) return reservation.duration_minutes;
-
-  const key = `${reservation.location_type}:${reservation.location_id}`;
-  return durationMap[key] || 90;
-}
-
 export default async function ReserveDashboardPage() {
   await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
 
   const now = new Date();
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  const todayEnd = new Date();
-  todayEnd.setHours(23, 59, 59, 999);
-
-  const weekEnd = new Date();
+  const today = dateKey(now);
+  const weekEnd = new Date(now);
   weekEnd.setDate(weekEnd.getDate() + 7);
-  weekEnd.setHours(23, 59, 59, 999);
-
+  const weekEndKey = dateKey(weekEnd);
   const totalCapacitySlots = 20;
 
-  const { count: totalReservations } = await supabase
-    .from("reservations")
-    .select("id", { count: "exact", head: true });
+  const [
+    totalReservationsResult,
+    todayReservationsResult,
+    upcomingReservationsResult,
+    pendingReservationsResult,
+    confirmedReservationsResult,
+    reservationListResult,
+  ] = await Promise.all([
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .eq("reservation_date", today),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .gte("reservation_date", today),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "confirmed"),
+    supabase
+      .from("location_reservations")
+      .select(
+        "id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, status, location_id, location_type, bookable_item_name, bookable_item_type, special_request, created_at"
+      )
+      .gte("reservation_date", today)
+      .lte("reservation_date", weekEndKey)
+      .order("reservation_date", { ascending: true })
+      .order("reservation_time", { ascending: true })
+      .limit(60),
+  ]);
 
-  const { count: todayReservations } = await supabase
-    .from("reservations")
-    .select("id", { count: "exact", head: true })
-    .gte("reservation_time", todayStart.toISOString())
-    .lte("reservation_time", todayEnd.toISOString());
-
-  const { count: upcomingReservations } = await supabase
-    .from("reservations")
-    .select("id", { count: "exact", head: true })
-    .gte("reservation_time", now.toISOString());
-
-  const { data: reservations } = await supabase
-    .from("reservations")
-    .select(
-      "id, name, party_size, reservation_time, status, duration_minutes, location_id, location_type"
-    )
-    .gte("reservation_time", todayStart.toISOString())
-    .lte("reservation_time", weekEnd.toISOString())
-    .order("reservation_time", { ascending: true })
-    .limit(40);
-
-  const safeReservations = (reservations || []) as ReservationItem[];
-
-  const restaurantIds = safeReservations
-    .filter((item) => item.location_type === "restaurant" && item.location_id)
-    .map((item) => item.location_id as string);
-
-  const activityIds = safeReservations
-    .filter((item) => item.location_type === "activity" && item.location_id)
-    .map((item) => item.location_id as string);
-
-  const { data: restaurants } = restaurantIds.length
-    ? await supabase
-        .from("restaurants")
-        .select("id, default_duration_minutes")
-        .in("id", restaurantIds)
-    : { data: [] };
-
-  const { data: activities } = activityIds.length
-    ? await supabase
-        .from("activities")
-        .select("id, default_duration_minutes")
-        .in("id", activityIds)
-    : { data: [] };
-
-  const durationMap: Record<string, number> = {};
-
-  restaurants?.forEach((item) => {
-    durationMap[`restaurant:${item.id}`] = item.default_duration_minutes || 90;
-  });
-
-  activities?.forEach((item) => {
-    durationMap[`activity:${item.id}`] = item.default_duration_minutes || 90;
-  });
-
+  const safeReservations = (reservationListResult.data || []) as ReservationItem[];
   const todaysReservations = safeReservations.filter(
-    (item) =>
-      new Date(item.reservation_time) >= todayStart &&
-      new Date(item.reservation_time) <= todayEnd
+    (item) => item.reservation_date === today
   );
 
+  const activeStatuses = ["pending", "confirmed", "arrived"];
   const capacityBookedNow = todaysReservations
     .filter((item) => {
-      const reservationTime = new Date(item.reservation_time);
-      const duration = getDuration(item, durationMap);
-
-      const reservationEnd = new Date(
-        reservationTime.getTime() + duration * 60000
+      const reservationTime = getReservationDateTime(item);
+      const reservationEnd = new Date(reservationTime.getTime() + 90 * 60000);
+      return (
+        activeStatuses.includes(String(item.status || "pending")) &&
+        now >= reservationTime &&
+        now <= reservationEnd
       );
-
-      return now >= reservationTime && now <= reservationEnd;
     })
     .reduce((sum, item) => sum + estimateCapacityNeeded(item.party_size), 0);
 
@@ -171,13 +157,15 @@ export default async function ReserveDashboardPage() {
 
   const groupedByDay = safeReservations.reduce<Record<string, ReservationItem[]>>(
     (acc, item) => {
-      const key = getReservationDay(item.reservation_time);
-      acc[key] = acc[key] || [];
-      acc[key].push(item);
+      acc[item.reservation_date] = acc[item.reservation_date] || [];
+      acc[item.reservation_date].push(item);
       return acc;
     },
     {}
   );
+
+  const pendingReservations = Number(pendingReservationsResult.count || 0);
+  const confirmedReservations = Number(confirmedReservationsResult.count || 0);
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
@@ -196,8 +184,9 @@ export default async function ReserveDashboardPage() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Live booking overview, flexible duration settings, availability
-                tracking, and calendar-style reservation previews.
+                The latest Reserve command center uses the active
+                location-reservations pipeline, so admin counts, tickets, and
+                booking operations stay aligned with customer confirmations.
               </p>
             </div>
 
@@ -212,7 +201,7 @@ export default async function ReserveDashboardPage() {
               </Link>
 
               <Link
-                href="/support"
+                href="/admin/dashboard/support"
                 className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
               >
                 Support Tickets
@@ -221,13 +210,13 @@ export default async function ReserveDashboardPage() {
           </div>
         </section>
 
-        <section className="mt-5 grid gap-4 md:grid-cols-4">
+        <section className="mt-5 grid gap-4 md:grid-cols-5">
           <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Total Reservations
+              Total
             </p>
             <p className="mt-2 text-3xl font-black">
-              {formatNumber(totalReservations)}
+              {formatNumber(totalReservationsResult.count)}
             </p>
           </div>
 
@@ -236,7 +225,7 @@ export default async function ReserveDashboardPage() {
               Today
             </p>
             <p className="mt-2 text-3xl font-black text-rose-200">
-              {formatNumber(todayReservations)}
+              {formatNumber(todayReservationsResult.count)}
             </p>
           </div>
 
@@ -245,13 +234,22 @@ export default async function ReserveDashboardPage() {
               Upcoming
             </p>
             <p className="mt-2 text-3xl font-black text-emerald-300">
-              {formatNumber(upcomingReservations)}
+              {formatNumber(upcomingReservationsResult.count)}
             </p>
           </div>
 
           <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Availability Open Now
+              Pending
+            </p>
+            <p className="mt-2 text-3xl font-black text-amber-200">
+              {formatNumber(pendingReservations)}
+            </p>
+          </div>
+
+          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+              Open Now
             </p>
             <p className="mt-2 text-3xl font-black">
               {availableCapacitySlots}/{totalCapacitySlots}
@@ -259,127 +257,36 @@ export default async function ReserveDashboardPage() {
           </div>
         </section>
 
-        <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_420px]">
-          <div className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-black/10 bg-white/70 p-4">
-              <div>
-                <h2 className="text-lg font-black">Today’s Booking Flow</h2>
-                <p className="mt-1 text-xs font-medium text-black/50">
-                  Estimated availability uses each booking or location duration.
-                </p>
-              </div>
+        <section className="mt-5 grid gap-5 xl:grid-cols-[430px_1fr]">
+          <aside className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-5 shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
+              Live Capacity
+            </p>
+            <h2 className="mt-2 text-2xl font-black">Availability overview</h2>
+            <p className="mt-2 text-sm leading-6 text-white/50">
+              Estimated live capacity is based on active reservations happening
+              right now. Pending, confirmed, and arrived reservations count
+              toward in-use capacity.
+            </p>
 
-              <Link
-                href="/reserve/dashboard/reservations?filter=today"
-                className="rounded-full bg-black px-4 py-2 text-xs font-black text-white"
-              >
-                Today
-              </Link>
-            </div>
-
-            {!todaysReservations.length ? (
-              <div className="p-12 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-2xl">
-                  🌹
-                </div>
-                <p className="mt-4 text-lg font-black">No reservations today</p>
-                <p className="mt-1 text-sm text-black/50">
-                  Today’s bookings will appear here.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-black/10">
-                {todaysReservations.slice(0, 10).map((item) => {
-                  const duration = getDuration(item, durationMap);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="grid gap-3 p-4 transition hover:bg-rose-50/70 md:grid-cols-[110px_1fr_110px_110px_120px]"
-                    >
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-wide text-black/40">
-                          Time
-                        </p>
-                        <p className="mt-1 font-black">
-                          {formatTime(item.reservation_time)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="truncate font-black">
-                          {item.name || "Guest"}
-                        </p>
-                        <p className="mt-1 text-xs font-bold text-black/45">
-                          Party of {item.party_size || 0}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-wide text-black/40">
-                          Duration
-                        </p>
-                        <p className="mt-1 font-black">{duration} min</p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-wide text-black/40">
-                          Capacity
-                        </p>
-                        <p className="mt-1 font-black">
-                          {estimateCapacityNeeded(item.party_size)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(
-                            item.status
-                          )}`}
-                        >
-                          {item.status || "pending"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-black">Live Availability</h2>
-                <p className="mt-1 text-xs text-white/45">
-                  Based on active bookings and location duration settings.
-                </p>
-              </div>
-
-              <div className="rounded-full bg-white px-4 py-2 text-xs font-black text-black">
-                {availableCapacitySlots} Open
-              </div>
-            </div>
-
-            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5">
-              <div className="flex items-end justify-between">
+            <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5">
+              <div className="flex items-end justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-                    Current Availability
+                    Available
                   </p>
                   <p className="mt-2 text-4xl font-black">
                     {availabilityPercentage}%
                   </p>
                 </div>
-
-                <p className="text-sm font-bold text-white/50">
-                  {capacityBookedNow} booked now
+                <p className="text-sm font-bold text-white/45">
+                  {availableCapacitySlots} of {totalCapacitySlots} slots
                 </p>
               </div>
 
-              <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/10">
+              <div className="mt-4 h-3 overflow-hidden rounded-full bg-black/40">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-rose-500 to-emerald-400"
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-rose-400"
                   style={{ width: `${availabilityPercentage}%` }}
                 />
               </div>
@@ -387,111 +294,150 @@ export default async function ReserveDashboardPage() {
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Link
-                href="/reserve/dashboard/reservations?filter=upcoming"
+                href="/reserve/dashboard/reservations?status=pending"
                 className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
-                <p className="font-black">Upcoming</p>
-                <p className="mt-1 text-xs text-white/45">Future bookings</p>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">
+                  Pending
+                </p>
+                <p className="mt-2 text-2xl font-black text-amber-200">
+                  {formatNumber(pendingReservations)}
+                </p>
               </Link>
-
               <Link
-                href="/admin/activities"
+                href="/reserve/dashboard/reservations?status=confirmed"
                 className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
-                <p className="font-black">Location Durations</p>
-                <p className="mt-1 text-xs text-white/45">Edit defaults</p>
-              </Link>
-
-              <Link
-                href="/support"
-                className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
-              >
-                <p className="font-black">Support Tickets</p>
-                <p className="mt-1 text-xs text-white/45">Submit, reply, view</p>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">
+                  Confirmed
+                </p>
+                <p className="mt-2 text-2xl font-black text-emerald-300">
+                  {formatNumber(confirmedReservations)}
+                </p>
               </Link>
             </div>
-          </div>
-        </section>
+          </aside>
 
-        <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
-          <div className="flex flex-col gap-3 border-b border-black/10 bg-white/70 p-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-black">Reservation Calendar</h2>
-              <p className="mt-1 text-xs font-medium text-black/50">
-                Next 7 days grouped by booking date.
-              </p>
-            </div>
-
-            <Link
-              href="/reserve/dashboard/reservations"
-              className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-xs font-black text-white"
-            >
-              Manage All
-            </Link>
-          </div>
-
-          {!safeReservations.length ? (
-            <div className="p-12 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-2xl">
-                📅
+          <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white/75 p-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-700">
+                  Today&apos;s service flow
+                </p>
+                <h2 className="mt-2 text-2xl font-black">
+                  Reservations for {formatDate(today)}
+                </h2>
               </div>
-              <p className="mt-4 text-lg font-black">No upcoming bookings</p>
-              <p className="mt-1 text-sm text-black/50">
-                Upcoming reservations will appear here.
-              </p>
+              <Link
+                href="/reserve/dashboard/reservations?filter=today"
+                className="rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white transition hover:bg-rose-600"
+              >
+                Open today
+              </Link>
             </div>
-          ) : (
-            <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
-              {Object.entries(groupedByDay).map(([day, items]) => (
+
+            <div className="divide-y divide-black/10">
+              {todaysReservations.slice(0, 8).map((reservation) => (
                 <div
-                  key={day}
-                  className="rounded-[1.5rem] border border-black/10 bg-white p-4 shadow-sm"
+                  key={reservation.id}
+                  className="grid gap-4 p-5 md:grid-cols-[120px_1fr_130px] md:items-center"
                 >
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="font-black">{formatDate(day)}</p>
-                    <span className="rounded-full bg-black px-3 py-1 text-xs font-black text-white">
-                      {items.length}
-                    </span>
+                  <div>
+                    <p className="text-2xl font-black">
+                      {formatTime(reservation.reservation_time)}
+                    </p>
+                    <p className="mt-1 text-xs font-black uppercase tracking-[0.18em] text-black/35">
+                      Party {reservation.party_size || 1}
+                    </p>
                   </div>
 
-                  <div className="space-y-2">
-                    {items.slice(0, 5).map((item) => {
-                      const duration = getDuration(item, durationMap);
-                      const capacity = estimateCapacityNeeded(item.party_size);
-
-                      return (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl bg-[#f5eee8] p-3"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-black">
-                              {item.name || "Guest"}
-                            </p>
-                            <p className="shrink-0 text-xs font-black text-rose-700">
-                              {formatTime(item.reservation_time)}
-                            </p>
-                          </div>
-
-                          <p className="mt-1 text-xs font-bold text-black/45">
-                            Party of {item.party_size || 0} · {duration} min ·{" "}
-                            {capacity} capacity slot
-                            {capacity > 1 ? "s" : ""}
-                          </p>
-                        </div>
-                      );
-                    })}
-
-                    {items.length > 5 && (
-                      <p className="pt-1 text-xs font-black text-black/40">
-                        + {items.length - 5} more
+                  <div>
+                    <h3 className="text-lg font-black">
+                      {reservation.customer_name || "Guest reservation"}
+                    </h3>
+                    <p className="mt-1 text-sm text-black/50">
+                      {reservation.bookable_item_name || "General reservation"} · {reservation.location_type || "location"}
+                    </p>
+                    {reservation.special_request && (
+                      <p className="mt-2 rounded-2xl bg-black/[0.04] px-3 py-2 text-xs font-bold text-black/50">
+                        {reservation.special_request}
                       </p>
                     )}
                   </div>
+
+                  <span className={`rounded-full px-3 py-2 text-center text-xs font-black uppercase tracking-wide ${statusClass(reservation.status)}`}>
+                    {statusLabel(reservation.status)}
+                  </span>
                 </div>
               ))}
+
+              {todaysReservations.length === 0 && (
+                <div className="p-8 text-center">
+                  <p className="text-lg font-black">No reservations today</p>
+                  <p className="mt-2 text-sm text-black/45">
+                    New bookings from TheOutHaven Reserve will appear here.
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+          </section>
+        </section>
+
+        <section className="mt-5 overflow-hidden rounded-[2rem] border border-white/10 bg-[#120d0b] shadow-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-5">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
+                Seven-day calendar
+              </p>
+              <h2 className="mt-2 text-2xl font-black">Upcoming reservations</h2>
+            </div>
+            <Link
+              href="/reserve/dashboard/reservations?filter=upcoming"
+              className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white/10 hover:text-white"
+            >
+              View all
+            </Link>
+          </div>
+
+          <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-4">
+            {Object.entries(groupedByDay).map(([day, items]) => (
+              <div key={day} className="border-b border-white/10 p-5 md:border-r">
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-white/40">
+                  {formatDate(day)}
+                </p>
+                <p className="mt-1 text-2xl font-black">
+                  {formatNumber(items.length)}
+                </p>
+
+                <div className="mt-4 space-y-2">
+                  {items.slice(0, 4).map((item) => (
+                    <Link
+                      key={item.id}
+                      href="/reserve/dashboard/reservations"
+                      className="block rounded-2xl bg-white/[0.06] p-3 transition hover:bg-white/[0.1]"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-black">{formatTime(item.reservation_time)}</p>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${statusClass(item.status)}`}>
+                          {statusLabel(item.status)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-white/45">
+                        {item.customer_name || "Guest"} · party {item.party_size || 1}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {safeReservations.length === 0 && (
+              <div className="p-8 text-sm font-bold text-white/45">
+                Upcoming reservations will appear here when customers book
+                through TheOutHaven Reserve.
+              </div>
+            )}
+          </div>
         </section>
       </div>
     </main>

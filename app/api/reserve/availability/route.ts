@@ -1,32 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-function buildSlots(date: string, durationMinutes: number) {
+function normalizeType(value: string) {
+  const type = value.toLowerCase().trim();
+  if (["activity", "activities"].includes(type)) return "activity";
+  return "restaurant";
+}
+
+function buildSlots(durationMinutes: number) {
   const slots: string[] = [];
+  const startHour = 17;
+  const endHour = 22;
+  const slotMinutes = Math.min(Math.max(durationMinutes, 30), 120);
+  let minutes = startHour * 60;
+  const endMinutes = endHour * 60;
 
-  const start = new Date(`${date}T17:00:00`);
-  const end = new Date(`${date}T22:00:00`);
+  while (minutes < endMinutes) {
+    const hour = Math.floor(minutes / 60).toString().padStart(2, "0");
+    const minute = (minutes % 60).toString().padStart(2, "0");
+    slots.push(`${hour}:${minute}`);
+    minutes += 30;
 
-  let current = start;
-
-  while (current < end) {
-    slots.push(current.toISOString());
-    current = new Date(current.getTime() + 30 * 60000);
+    if (endMinutes - minutes < slotMinutes && minutes < endMinutes) {
+      break;
+    }
   }
 
   return slots;
 }
 
+function timeToMinutes(value: string) {
+  const [hourRaw, minuteRaw = "0"] = String(value || "00:00").slice(0, 5).split(":");
+  return Number(hourRaw) * 60 + Number(minuteRaw);
+}
+
 function overlaps(
-  slotStart: Date,
+  slotTime: string,
   slotDuration: number,
-  bookingStart: Date,
+  bookingTime: string,
   bookingDuration: number
 ) {
-  const slotEnd = new Date(slotStart.getTime() + slotDuration * 60000);
-  const bookingEnd = new Date(
-    bookingStart.getTime() + bookingDuration * 60000
-  );
+  const slotStart = timeToMinutes(slotTime);
+  const slotEnd = slotStart + slotDuration;
+  const bookingStart = timeToMinutes(bookingTime);
+  const bookingEnd = bookingStart + bookingDuration;
 
   return slotStart < bookingEnd && slotEnd > bookingStart;
 }
@@ -35,7 +52,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const locationId = searchParams.get("locationId");
-  const locationType = searchParams.get("locationType") || "restaurant";
+  const locationType = normalizeType(searchParams.get("locationType") || "restaurant");
   const date = searchParams.get("date");
 
   if (!locationId || !date) {
@@ -55,29 +72,23 @@ export async function GET(req: NextRequest) {
 
   const durationMinutes = location?.default_duration_minutes || 90;
 
-  const dayStart = new Date(`${date}T00:00:00`);
-  const dayEnd = new Date(`${date}T23:59:59`);
-
   const { data: reservations } = await supabase
-    .from("reservations")
-    .select("id, reservation_time, duration_minutes, status")
+    .from("location_reservations")
+    .select("id, reservation_time, status")
     .eq("location_id", locationId)
     .eq("location_type", locationType)
-    .gte("reservation_time", dayStart.toISOString())
-    .lte("reservation_time", dayEnd.toISOString())
-    .neq("status", "cancelled");
+    .eq("reservation_date", date)
+    .in("status", ["pending", "confirmed", "arrived"]);
 
-  const slots = buildSlots(date, durationMinutes);
+  const slots = buildSlots(durationMinutes);
 
   const availableSlots = slots.filter((slot) => {
-    const slotStart = new Date(slot);
-
     return !(reservations || []).some((reservation) =>
       overlaps(
-        slotStart,
+        slot,
         durationMinutes,
-        new Date(reservation.reservation_time),
-        reservation.duration_minutes || durationMinutes
+        String(reservation.reservation_time || "00:00"),
+        durationMinutes
       )
     );
   });

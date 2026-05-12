@@ -1,40 +1,99 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import { listSupportTickets } from "@/lib/support";
 
-const ADMIN_DASHBOARD_VERSION = "admin-dashboard-refresh-2026-05-11";
+const ADMIN_DASHBOARD_VERSION = "admin-dashboard-reserve-support-2026-05-12";
 
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString();
 }
 
+function todayKey() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function isOpenTicket(status: string | null | undefined) {
+  return !["closed", "resolved"].includes(String(status || "open").toLowerCase());
+}
+
 export default async function CentralDashboardPage() {
   await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
 
-  const { count: totalRestaurants } = await supabase
-    .from("restaurants")
-    .select("id", { count: "exact", head: true });
+  const today = todayKey();
 
-  const { count: totalActivities } = await supabase
-    .from("activities")
-    .select("id", { count: "exact", head: true });
+  const [
+    restaurantsResult,
+    activitiesResult,
+    claimedRestaurantsResult,
+    claimedActivitiesResult,
+    reservationsResult,
+    todayReservationsResult,
+    pendingReservationsResult,
+    supportTickets,
+  ] = await Promise.all([
+    supabase.from("restaurants").select("id", { count: "exact", head: true }),
+    supabase.from("activities").select("id", { count: "exact", head: true }),
+    supabase
+      .from("restaurants")
+      .select("id", { count: "exact", head: true })
+      .eq("claimed", true),
+    supabase
+      .from("activities")
+      .select("id", { count: "exact", head: true })
+      .eq("claimed", true),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .eq("reservation_date", today),
+    supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    listSupportTickets(12),
+  ]);
 
-  const { count: totalReservations } = await supabase
-    .from("reservations")
-    .select("id", { count: "exact", head: true });
-
-  const { count: claimedRestaurants } = await supabase
-    .from("restaurants")
-    .select("id", { count: "exact", head: true })
-    .eq("claimed", true);
-
-  const { count: claimedActivities } = await supabase
-    .from("activities")
-    .select("id", { count: "exact", head: true })
-    .eq("claimed", true);
+  const totalRestaurants = restaurantsResult.count;
+  const totalActivities = activitiesResult.count;
+  const claimedRestaurants = claimedRestaurantsResult.count;
+  const claimedActivities = claimedActivitiesResult.count;
+  const totalReservations = reservationsResult.count;
+  const todayReservations = todayReservationsResult.count;
+  const pendingReservations = pendingReservationsResult.count;
+  const openTickets = supportTickets.filter((ticket) => isOpenTicket(ticket.status)).length;
 
   const totalLocations = Number(totalRestaurants || 0) + Number(totalActivities || 0);
   const totalClaimed = Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
+
+  const platformStats = [
+    {
+      label: "Locations",
+      value: totalLocations,
+      href: "/admin/locations",
+      tone: "text-white",
+    },
+    {
+      label: "Reservations",
+      value: totalReservations,
+      href: "/reserve/dashboard",
+      tone: "text-rose-200",
+    },
+    {
+      label: "Today",
+      value: todayReservations,
+      href: "/reserve/dashboard/reservations?filter=today",
+      tone: "text-amber-200",
+    },
+    {
+      label: "Open Tickets",
+      value: openTickets,
+      href: "/admin/dashboard/support",
+      tone: "text-emerald-300",
+    },
+  ];
 
   const navCards = [
     {
@@ -47,23 +106,16 @@ export default async function CentralDashboardPage() {
     {
       eyebrow: "Reserve",
       title: "Reservations",
-      text: "View bookings, availability, live service flow, and requests.",
+      text: "Monitor bookings, pending requests, arrival flow, and live availability.",
       href: "/reserve/dashboard",
       cta: "Open reserve",
     },
     {
-      eyebrow: "Customer Flow",
-      title: "Create Plan",
-      text: "Test how customers search, discover, and select outing plans.",
-      href: "/create",
-      cta: "Test flow",
-    },
-    {
-      eyebrow: "Support",
-      title: "Tickets",
-      text: "Submit, reply to, and view support tickets from the admin inbox.",
+      eyebrow: "Tickets",
+      title: "Support Inbox",
+      text: "Review customer issues, reply to conversations, and create internal tickets.",
       href: "/admin/dashboard/support",
-      cta: "Open support",
+      cta: "Open inbox",
     },
     {
       eyebrow: "Claims",
@@ -71,6 +123,20 @@ export default async function CentralDashboardPage() {
       text: "Review business claims and connect owners to their locations.",
       href: "/admin/claims",
       cta: "Review claims",
+    },
+    {
+      eyebrow: "Analytics",
+      title: "Performance",
+      text: "Track reservation health, engagement signals, and platform conversion.",
+      href: "/admin/analytics",
+      cta: "View analytics",
+    },
+    {
+      eyebrow: "Customer Flow",
+      title: "Create Plan",
+      text: "Test how customers search, discover, and select outing plans.",
+      href: "/create",
+      cta: "Test flow",
     },
   ];
 
@@ -84,41 +150,28 @@ export default async function CentralDashboardPage() {
           <div className="absolute right-[-60px] top-[-60px] h-64 w-64 rounded-full bg-rose-500/20 blur-3xl" />
           <div className="absolute bottom-[-70px] left-24 h-48 w-48 rounded-full bg-amber-300/10 blur-3xl" />
 
-          <div className="relative z-10 grid gap-6 lg:grid-cols-[1.2fr_420px] lg:items-end">
+          <div className="relative z-10 grid gap-6 lg:grid-cols-[1.15fr_460px] lg:items-end">
             <div>
               <p className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-rose-300">
                 TheOutHaven Control Center
               </p>
 
               <h1 className="max-w-4xl text-4xl font-black tracking-tight sm:text-5xl">
-                Central Dashboard
+                Central dashboard for Reserve, tickets, and operations.
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">
-                A premium command center for managing locations, reservations,
-                claims, and the full TheOutHaven customer journey.
+                The latest admin hub is restored here: location inventory, live
+                reservations, support tickets, claims, and customer-flow testing
+                are all one click away.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
-                  href="/admin/locations"
+                  href="/reserve/dashboard"
                   className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03]"
                 >
-                  Manage Locations
-                </Link>
-
-                <Link
-                  href="/reserve/dashboard"
-                  className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
-                >
                   Open Reserve
-                </Link>
-
-                <Link
-                  href="/create"
-                  className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
-                >
-                  Test Customer Flow
                 </Link>
 
                 <Link
@@ -127,60 +180,51 @@ export default async function CentralDashboardPage() {
                 >
                   Support Tickets
                 </Link>
+
+                <Link
+                  href="/admin/locations"
+                  className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
+                >
+                  Manage Locations
+                </Link>
               </div>
             </div>
 
             <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.08] p-4 backdrop-blur">
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
-                Platform Snapshot
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
+                    Live Snapshot
+                  </p>
+                  <p className="mt-1 text-sm text-white/45">
+                    Reserve + support health
+                  </p>
+                </div>
+                {Number(pendingReservations || 0) > 0 && (
+                  <Link
+                    href="/reserve/dashboard/reservations?status=pending"
+                    className="rounded-full bg-amber-300 px-3 py-2 text-xs font-black text-black"
+                  >
+                    {formatNumber(pendingReservations)} pending
+                  </Link>
+                )}
+              </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
-                <Link
-                  href="/admin/locations"
-                  className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
-                >
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
-                    Locations
-                  </p>
-                  <p className="mt-1 text-3xl font-black">
-                    {formatNumber(totalLocations)}
-                  </p>
-                </Link>
-
-                <Link
-                  href="/admin/locations?claim=claimed&page=1"
-                  className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
-                >
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
-                    Claimed
-                  </p>
-                  <p className="mt-1 text-3xl font-black text-emerald-300">
-                    {formatNumber(totalClaimed)}
-                  </p>
-                </Link>
-
-                <Link
-                  href="/reserve/dashboard"
-                  className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
-                >
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
-                    Reservations
-                  </p>
-                  <p className="mt-1 text-3xl font-black text-rose-200">
-                    {formatNumber(totalReservations)}
-                  </p>
-                </Link>
-
-                <Link
-                  href="/admin/claims"
-                  className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
-                >
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
-                    Claim Center
-                  </p>
-                  <p className="mt-1 text-3xl font-black text-white">Open</p>
-                </Link>
+                {platformStats.map((stat) => (
+                  <Link
+                    key={stat.label}
+                    href={stat.href}
+                    className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
+                      {stat.label}
+                    </p>
+                    <p className={`mt-1 text-3xl font-black ${stat.tone}`}>
+                      {formatNumber(stat.value)}
+                    </p>
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
@@ -204,7 +248,7 @@ export default async function CentralDashboardPage() {
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Restaurant Filter
+              Restaurants
             </p>
             <p className="mt-2 text-3xl font-black text-rose-200">
               {formatNumber(totalRestaurants)}
@@ -216,7 +260,7 @@ export default async function CentralDashboardPage() {
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Activity Filter
+              Activities
             </p>
             <p className="mt-2 text-3xl font-black text-purple-200">
               {formatNumber(totalActivities)}
@@ -228,7 +272,7 @@ export default async function CentralDashboardPage() {
             className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl transition hover:-translate-y-1 hover:bg-white/[0.09]"
           >
             <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Claimed Locations
+              Claimed
             </p>
             <p className="mt-2 text-3xl font-black text-emerald-300">
               {formatNumber(totalClaimed)}
@@ -236,18 +280,18 @@ export default async function CentralDashboardPage() {
           </Link>
         </section>
 
-        <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_420px]">
+        <section className="mt-5 grid gap-5 xl:grid-cols-[1fr_430px]">
           <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
             <div className="border-b border-black/10 bg-white/75 p-5">
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-700">
-                Quick Actions
+                Latest Admin Tools
               </p>
               <h2 className="mt-2 text-2xl font-black">
-                Manage your TheOutHaven flow
+                Manage the full TheOutHaven flow
               </h2>
             </div>
 
-            <div className="grid gap-0 md:grid-cols-2">
+            <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-3">
               {navCards.map((card) => (
                 <Link
                   key={card.href}
@@ -260,7 +304,7 @@ export default async function CentralDashboardPage() {
 
                   <h3 className="mt-2 text-xl font-black">{card.title}</h3>
 
-                  <p className="mt-2 min-h-[48px] text-sm leading-6 text-black/50">
+                  <p className="mt-2 min-h-[72px] text-sm leading-6 text-black/50">
                     {card.text}
                   </p>
 
@@ -274,56 +318,43 @@ export default async function CentralDashboardPage() {
 
           <aside className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-5 shadow-2xl">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
-              Next Best Moves
+              Ticket Pulse
             </p>
 
             <h2 className="mt-2 text-2xl font-black">
-              Keep building like a real platform
+              Latest support activity
             </h2>
 
             <div className="mt-5 space-y-3">
-              <Link
-                href="/reserve/dashboard"
-                className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
-              >
-                <p className="font-black">Reservation System</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Manage live availability, bookings, and location duration
-                  settings.
-                </p>
-              </Link>
+              {supportTickets.slice(0, 5).map((ticket) => (
+                <Link
+                  key={ticket.id}
+                  href={`/admin/dashboard/support/${ticket.id}`}
+                  className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">
+                        {ticket.ticket_number || ticket.id}
+                      </p>
+                      <p className="mt-1 font-black">{ticket.subject}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black uppercase text-black">
+                      {ticket.status || "open"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-white/45">
+                    {ticket.requester_name || "Guest"} · {ticket.requester_email}
+                  </p>
+                </Link>
+              ))}
 
-              <Link
-                href="/admin/locations"
-                className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
-              >
-                <p className="font-black">Location Inventory</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Keep restaurants and activities polished, approved, claimed,
-                  and ready to book from one page.
-                </p>
-              </Link>
-
-              <Link
-                href="/create"
-                className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
-              >
-                <p className="font-black">Customer Experience</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Test search results, plan cards, and the Reserve button flow.
-                </p>
-              </Link>
-
-              <Link
-                href="/admin/dashboard/support"
-                className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
-              >
-                <p className="font-black">Support Ticket System</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Submit support requests and manage customer replies from the
-                  admin ticket inbox.
-                </p>
-              </Link>
+              {supportTickets.length === 0 && (
+                <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-5 text-sm font-bold text-white/45">
+                  No support tickets yet. New tickets will appear here as soon as
+                  customers or admins create them.
+                </div>
+              )}
             </div>
           </aside>
         </section>
