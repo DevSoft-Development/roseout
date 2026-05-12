@@ -48,30 +48,19 @@ export default function LoginPage() {
         return;
       }
 
-      const userEmail = data.user.email.toLowerCase();
+      const redirectResponse = await fetch("/api/auth/login-redirect", {
+        cache: "no-store",
+      });
 
-      const { data: adminUser, error: adminError } = await supabase
-        .from("admin_users")
-        .select("id, role")
-        .eq("email", userEmail)
-        .maybeSingle();
+      const redirectData: { redirectPath?: string; error?: string } =
+        await redirectResponse.json();
 
-      if (adminError) {
-        setError(adminError.message);
+      if (!redirectResponse.ok) {
+        setError(redirectData.error || "Could not determine login destination.");
         return;
       }
 
-      const roleRedirects: Record<string, string> = {
-        superuser: "/admin",
-        admin: "/admin",
-        editor: "/admin/restaurants",
-        reviewer: "/admin/claims",
-        viewer: "/admin/import-history",
-      };
-
-      const redirectPath = adminUser
-        ? roleRedirects[adminUser.role] || "/admin"
-        : "/create";
+      const redirectPath = redirectData.redirectPath || "/create";
 
       setMessage("Login successful. Redirecting...");
 
