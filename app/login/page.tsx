@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-browser";
 
 const LOGIN_PAGE_VERSION = "login-refresh-2026-05-11";
 
 export default function LoginPage() {
+  const router = useRouter();
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -46,29 +48,35 @@ export default function LoginPage() {
         return;
       }
 
-      const redirectResponse = await fetch("/api/auth/login-redirect", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          accessToken: data.session?.access_token,
-        }),
-      });
+      const userEmail = data.user.email.toLowerCase();
 
-      const redirectData = await redirectResponse.json();
+      const { data: adminUser, error: adminError } = await supabase
+        .from("admin_users")
+        .select("id, role")
+        .eq("email", userEmail)
+        .maybeSingle();
 
-      if (!redirectResponse.ok) {
-        setError(redirectData.error || "Unable to complete login redirect.");
+      if (adminError) {
+        setError(adminError.message);
         return;
       }
 
-      const redirectPath = redirectData.redirectPath || "/create";
+      const roleRedirects: Record<string, string> = {
+        superuser: "/admin",
+        admin: "/admin",
+        editor: "/admin/restaurants",
+        reviewer: "/admin/claims",
+        viewer: "/admin/import-history",
+      };
+
+      const redirectPath = adminUser
+        ? roleRedirects[adminUser.role] || "/admin"
+        : "/create";
 
       setMessage("Login successful. Redirecting...");
 
-      window.setTimeout(() => {
-        window.location.replace(redirectPath);
+      setTimeout(() => {
+        router.replace(redirectPath);
       }, 500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");

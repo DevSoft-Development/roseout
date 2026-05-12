@@ -11,18 +11,8 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
-            });
-          } catch {
-            // Server Components cannot always write response cookies. In those
-            // cases, proxy.ts refreshes the auth cookies before rendering.
-          }
+        get(name: string) {
+          return cookieStore.get(name)?.value;
         },
       },
     }

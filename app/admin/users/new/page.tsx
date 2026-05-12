@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
 import { useState } from "react";
 
 function generateStrongPassword() {
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
   let password = "";
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 18; i++) {
     password += chars[Math.floor(Math.random() * chars.length)];
   }
   return password;
@@ -19,11 +20,17 @@ export default function AddUserPage() {
   const [useManual, setUseManual] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
 
-    const form = new FormData(e.target);
+    if (!isStrongPassword(password)) {
+      alert(`Password must include: ${strongPasswordMessage()}.`);
+      setLoading(false);
+      return;
+    }
+
+    const form = new FormData(e.currentTarget);
 
     const res = await fetch("/api/admin/create-user", {
       method: "POST",
@@ -109,7 +116,7 @@ export default function AddUserPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   className="h-12 w-full rounded-xl border border-black/10 px-4 font-bold outline-none focus:border-rose-500"
-                  placeholder="Secure password"
+                  placeholder="12+ chars, upper/lowercase, number, symbol"
                 />
               </div>
 

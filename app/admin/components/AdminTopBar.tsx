@@ -1,18 +1,9 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-
-type AdminTopBarUser = {
-  email: string;
-  full_name: string | null;
-  role: string;
-};
-
-type AdminTopBarProps = {
-  adminUser?: AdminTopBarUser;
-};
 
 type SearchResult = {
   type: "user" | "location";
@@ -25,9 +16,11 @@ type SearchResult = {
   subscription_status?: string | null;
 };
 
-export default function AdminTopBar({ adminUser }: AdminTopBarProps) {
-  const supabase = useMemo(() => createClient(), []);
-  const role = adminUser?.role || "";
+export default function AdminTopBar() {
+  const supabase = createClient();
+
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
   const [showUserSearch, setShowUserSearch] = useState(false);
@@ -37,6 +30,27 @@ export default function AdminTopBar({ adminUser }: AdminTopBarProps) {
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const loadUserAndRole = async () => {
+      const { data } = await supabase.auth.getUser();
+      const currentUser = data.user;
+
+      setUser(currentUser);
+
+      if (currentUser?.email) {
+        const { data: adminUser } = await supabase
+          .from("admin_users")
+          .select("role")
+          .eq("email", currentUser.email.toLowerCase())
+          .maybeSingle();
+
+        setRole(adminUser?.role || null);
+      }
+    };
+
+    loadUserAndRole();
+  }, [supabase]);
 
   useEffect(() => {
     const cleanQuery = query.trim();
@@ -85,10 +99,6 @@ export default function AdminTopBar({ adminUser }: AdminTopBarProps) {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
-
-  if (!adminUser) {
-    return null;
-  }
 
   const goTo = (path: string) => {
     setOpen(false);
@@ -155,30 +165,31 @@ export default function AdminTopBar({ adminUser }: AdminTopBarProps) {
     window.location.href = "/login";
   };
 
-  const name = adminUser.full_name || "Admin";
+  const name =
+    user?.user_metadata?.full_name || user?.user_metadata?.name || "Admin";
 
-  const email = adminUser.email;
+  const email = user?.email || "";
   const initial = name?.charAt(0)?.toUpperCase() || "A";
 
   const canViewDashboard = ["superuser", "admin", "editor", "viewer"].includes(
-    role
+    role || ""
   );
 
   const canViewLocations = ["superuser", "admin", "editor", "viewer"].includes(
-    role
+    role || ""
   );
 
-  const canViewClaims = ["superuser", "admin", "reviewer"].includes(role);
+  const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
 
   const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
-    role
+    role || ""
   );
 
   const canViewImportHistory = ["superuser", "admin", "viewer"].includes(
-    role
+    role || ""
   );
 
-  const canViewUsers = ["superuser", "admin"].includes(role);
+  const canViewUsers = ["superuser", "admin"].includes(role || "");
 
   return (
     <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
