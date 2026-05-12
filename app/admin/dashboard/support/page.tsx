@@ -46,6 +46,9 @@ export default async function AdminSupportPage() {
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">{ticket.ticket_number || ticket.id}</p>
                   <h3 className="mt-1 text-lg font-black">{ticket.subject}</h3>
                   <p className="mt-1 text-sm text-white/45">{ticket.requester_name} · {ticket.requester_email}</p>
+                  <p className="mt-2 text-xs font-black uppercase tracking-[0.18em] text-white/35">
+                    {(ticket.topic || "General Support")} · {(ticket.department || "Support")}
+                  </p>
                 </div>
                 <span className="rounded-full bg-white px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-black">{ticket.status || "open"}</span>
                 <time className="text-sm font-bold text-white/45">{formatDate(ticket.last_message_at || ticket.created_at)}</time>

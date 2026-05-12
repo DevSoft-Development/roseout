@@ -10,6 +10,7 @@ export async function POST(req: Request) {
       email: body.email,
       phone: body.phone,
       topic: body.topic,
+      department: body.department,
       subject: body.subject,
       message: body.message,
       source: body.source,

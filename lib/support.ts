@@ -11,6 +11,7 @@ export type SupportTicket = {
   ticket_number: string | null;
   subject: string;
   topic: string | null;
+  department: string | null;
   status: string | null;
   priority: string | null;
   requester_name: string | null;
@@ -39,6 +40,7 @@ export type CreateSupportTicketInput = {
   email: string;
   phone?: string;
   topic?: string;
+  department?: string;
   subject?: string;
   message: string;
   source?: string;
@@ -158,6 +160,7 @@ function ticketFromEventRow(row: SupportEventRow): SupportTicket | null {
     ticket_number: ticket.ticket_number || null,
     subject: ticket.subject,
     topic: ticket.topic || null,
+    department: ticket.department || null,
     status: ticket.status || "open",
     priority: ticket.priority || "normal",
     requester_name: ticket.requester_name || null,
@@ -423,6 +426,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
   const requesterEmail = normalizeEmail(input.email);
   const requesterPhone = clean(input.phone);
   const topic = clean(input.topic) || "General Support";
+  const department = clean(input.department) || "Support";
   const message = clean(input.message);
   const subject = clean(input.subject) || `${topic}: ${message.slice(0, 72)}`;
   const source = clean(input.source) || "support_form";
@@ -441,6 +445,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
     requester_email: requesterEmail,
     requester_phone: requesterPhone || null,
     topic,
+    department,
     subject,
     status: "open",
     priority: "normal",
@@ -460,6 +465,7 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
       requester_email: requesterEmail,
       requester_phone: requesterPhone || null,
       topic,
+      department,
       subject,
       status: "open",
       priority: "normal",
@@ -673,7 +679,8 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
           <p style="margin:0 0 18px;"><strong>Ticket:</strong> ${htmlEscape(ticket.ticket_number || ticket.id)}</p>
           <p style="margin:0 0 18px;"><strong>From:</strong> ${htmlEscape(ticket.requester_name || "")} &lt;${htmlEscape(ticket.requester_email)}&gt;</p>
           <p style="margin:0 0 18px;"><strong>Phone:</strong> ${htmlEscape(ticket.requester_phone || "Not provided")}</p>
-          <p style="margin:0 0 44px;"><strong>Topic:</strong> ${htmlEscape(ticket.topic || "General Support")}</p>
+          <p style="margin:0 0 18px;"><strong>Category:</strong> ${htmlEscape(ticket.topic || "General Support")}</p>
+          <p style="margin:0 0 44px;"><strong>Department:</strong> ${htmlEscape(ticket.department || "Support")}</p>
           <p style="margin:0 0 18px;"><strong>Message:</strong></p>
           <p style="margin:0;">${nl2br(message)}</p>
         `,
