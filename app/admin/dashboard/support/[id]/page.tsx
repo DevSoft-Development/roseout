@@ -3,13 +3,15 @@ import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketConversation from "@/components/support/SupportTicketConversation";
 import { getSupportTicket, getSupportTicketMessages } from "@/lib/support";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
 export default async function AdminSupportTicketPage({ params }: PageProps) {
-  await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
+  const adminUser = await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
+  const canManageTicket = ["superuser", "admin"].includes(adminUser.role);
 
   const { id } = await params;
   const ticket = await getSupportTicket(id);
@@ -17,6 +19,13 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
   if (!ticket) notFound();
 
   const messages = await getSupportTicketMessages(ticket.id);
+  const { data: adminUsers } = canManageTicket
+    ? await supabaseAdmin
+        .from("admin_users")
+        .select("email, full_name, role")
+        .in("role", ["superuser", "admin", "editor", "reviewer", "viewer"])
+        .order("email", { ascending: true })
+    : { data: [] };
 
   return (
     <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
@@ -29,7 +38,14 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
             Public ticket view
           </Link>
         </div>
-        <SupportTicketConversation ticket={ticket} messages={messages} accessKey={ticket.public_access_token} adminMode />
+        <SupportTicketConversation
+          ticket={ticket}
+          messages={messages}
+          accessKey={ticket.public_access_token}
+          adminMode
+          canManageTicket={canManageTicket}
+          adminUsers={adminUsers || []}
+        />
       </div>
     </main>
   );

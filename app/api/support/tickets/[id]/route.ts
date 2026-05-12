@@ -1,8 +1,10 @@
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import {
-  closeSupportTicket,
+  assignSupportTicket,
   getSupportTicket,
   getSupportTicketMessages,
   isSupportRequestAdmin,
+  updateSupportTicketStatus,
 } from "@/lib/support";
 
 export const dynamic = "force-dynamic";
@@ -42,17 +44,17 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = await req.json();
-    const isAdmin = await isSupportRequestAdmin();
+    const { error } = await requireAdminApiRole(["superuser", "admin"]);
 
-    if (!isAdmin) {
-      return Response.json({ error: "Admin access is required." }, { status: 403 });
+    if (error) {
+      return error;
     }
 
-    if (body.status !== "closed") {
-      return Response.json({ error: "Unsupported ticket status." }, { status: 400 });
-    }
-
-    const result = await closeSupportTicket(id);
+    const assignedAdminEmail = String(body.assignedAdminEmail || "").trim();
+    const status = String(body.status || "").trim();
+    const result = assignedAdminEmail
+      ? await assignSupportTicket(id, assignedAdminEmail)
+      : await updateSupportTicketStatus(id, status);
 
     return Response.json({ success: true, ...result });
   } catch (error: unknown) {

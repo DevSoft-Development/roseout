@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminRole } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 const ADMIN_USERS_VERSION = "admin-users-refresh-2026-05-11";
+const ADMIN_USERS_BASE_PATH = "/admin/dashboard/users";
 
 type SearchParams = {
   q?: string;
@@ -14,9 +16,16 @@ type SearchParams = {
 type AppUser = {
   id: string;
   email: string | null;
+  full_name?: string | null;
   role: string | null;
   is_superadmin?: boolean | null;
   created_at: string | null;
+};
+
+type AdminUserRow = {
+  email: string | null;
+  full_name: string | null;
+  role: string | null;
 };
 
 const supabaseAdmin = createClient(
@@ -45,7 +54,7 @@ function formatDate(value: string | null) {
 }
 
 function roleBadge(role?: string | null, isSuperadmin?: boolean | null) {
-  if (isSuperadmin) return "border-rose-200 bg-rose-50 text-rose-700";
+  if (isSuperadmin || role === "superuser") return "border-rose-200 bg-rose-50 text-rose-700";
   if (role === "admin") return "border-rose-200 bg-rose-50 text-rose-700";
   if (role === "owner") return "border-black/10 bg-[#f5eee8] text-black/70";
   if (role === "disabled") return "border-red-200 bg-red-50 text-red-700";
@@ -62,9 +71,16 @@ async function updateUserRole(formData: FormData) {
   const q = String(formData.get("q") || "");
   const currentRole = String(formData.get("current_role") || "all");
 
-  if (!userId) redirect("/admin/users");
+  if (!userId) redirect(ADMIN_USERS_BASE_PATH);
 
-  await supabaseAdmin.from("users").update({ role }).eq("id", userId);
+  await supabaseAdmin.from("users").upsert(
+    {
+      id: userId,
+      role,
+      is_superadmin: role === "superuser",
+    },
+    { onConflict: "id" }
+  );
 
   await supabaseAdmin.auth.admin.updateUserById(userId, {
     user_metadata: {
@@ -73,7 +89,7 @@ async function updateUserRole(formData: FormData) {
   });
 
   redirect(
-    `/admin/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
+    `${ADMIN_USERS_BASE_PATH}?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
       currentRole
     )}`
   );
@@ -86,7 +102,7 @@ async function disableUser(formData: FormData) {
   const q = String(formData.get("q") || "");
   const currentRole = String(formData.get("current_role") || "all");
 
-  if (!userId) redirect("/admin/users");
+  if (!userId) redirect(ADMIN_USERS_BASE_PATH);
 
   await supabaseAdmin.auth.admin.updateUserById(userId, {
     ban_duration: "876000h",
@@ -105,7 +121,7 @@ async function disableUser(formData: FormData) {
     .eq("id", userId);
 
   redirect(
-    `/admin/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
+    `${ADMIN_USERS_BASE_PATH}?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
       currentRole
     )}`
   );
@@ -118,13 +134,13 @@ async function deleteUser(formData: FormData) {
   const q = String(formData.get("q") || "");
   const currentRole = String(formData.get("current_role") || "all");
 
-  if (!userId) redirect("/admin/users");
+  if (!userId) redirect(ADMIN_USERS_BASE_PATH);
 
   await supabaseAdmin.from("users").delete().eq("id", userId);
   await supabaseAdmin.auth.admin.deleteUser(userId);
 
   redirect(
-    `/admin/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
+    `${ADMIN_USERS_BASE_PATH}?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
       currentRole
     )}`
   );
@@ -135,27 +151,22 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAdminRole(["superuser", "admin"]);
+
   const params = await searchParams;
 
   const q = params.q || "";
   const selectedRole = params.role || "all";
 
-  let query = supabaseAdmin
-    .from("users")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const [profileUsersResult, authUsersResult, adminUsersResult] = await Promise.all([
+    supabaseAdmin.from("users").select("*").order("created_at", { ascending: false }),
+    supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    supabaseAdmin.from("admin_users").select("email, full_name, role"),
+  ]);
 
-  if (q) {
-    query = query.or(`email.ilike.%${q}%,role.ilike.%${q}%`);
-  }
-
-  if (selectedRole !== "all") {
-    query = query.eq("role", selectedRole);
-  }
-
-  const { data: users, error } = await query;
-
-  const { data: allUsers } = await supabaseAdmin.from("users").select("*");
+  const error = profileUsersResult.error && authUsersResult.error
+    ? profileUsersResult.error
+    : null;
 
   if (error) {
     return (
@@ -173,12 +184,68 @@ export default async function AdminUsersPage({
     );
   }
 
-  const safeUsers = (users || []) as AppUser[];
-  const fullUsers = (allUsers || []) as AppUser[];
+  const profileUsers = (profileUsersResult.data || []) as AppUser[];
+  const authUsers = authUsersResult.data?.users || [];
+  const adminUsers = (adminUsersResult.data || []) as AdminUserRow[];
+  const adminUsersByEmail = new Map(
+    adminUsers
+      .filter((adminUser) => adminUser.email)
+      .map((adminUser) => [adminUser.email!.toLowerCase(), adminUser])
+  );
+
+  const fullUsersById = new Map<string, AppUser>();
+
+  for (const profileUser of profileUsers) {
+    fullUsersById.set(profileUser.id, profileUser);
+  }
+
+  for (const authUser of authUsers) {
+    const existingUser = fullUsersById.get(authUser.id);
+    const email = (existingUser?.email || authUser.email || null)?.toLowerCase() || null;
+    const adminUser = email ? adminUsersByEmail.get(email) : null;
+    const metadata = authUser.user_metadata || {};
+    const metadataRole = typeof metadata.role === "string" ? metadata.role : null;
+    const metadataName =
+      typeof metadata.full_name === "string"
+        ? metadata.full_name
+        : typeof metadata.name === "string"
+          ? metadata.name
+          : null;
+    const role = existingUser?.role || metadataRole || adminUser?.role || "user";
+
+    fullUsersById.set(authUser.id, {
+      id: authUser.id,
+      email,
+      full_name: existingUser?.full_name || metadataName || adminUser?.full_name || null,
+      role,
+      is_superadmin: existingUser?.is_superadmin || role === "superuser",
+      created_at: existingUser?.created_at || authUser.created_at || null,
+    });
+  }
+
+  const fullUsers = Array.from(fullUsersById.values()).sort(
+    (a, b) =>
+      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  );
+
+  const safeUsers = fullUsers.filter((user) => {
+    const displayRole = user.is_superadmin ? "superuser" : user.role || "user";
+    const matchesQuery = q
+      ? [user.email, user.full_name, displayRole]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(q.toLowerCase()))
+      : true;
+    const matchesRole =
+      selectedRole === "all" ||
+      displayRole === selectedRole ||
+      user.role === selectedRole;
+
+    return matchesQuery && matchesRole;
+  });
 
   const totalUsers = fullUsers.length;
   const admins = fullUsers.filter(
-    (u) => u.role === "admin" || u.is_superadmin
+    (u) => u.role === "admin" || u.role === "superuser" || u.is_superadmin
   ).length;
   const owners = fullUsers.filter((u) => u.role === "owner").length;
   const regularUsers = fullUsers.filter((u) => u.role === "user").length;
@@ -207,7 +274,7 @@ export default async function AdminUsersPage({
             </div>
 
             <Link
-              href="/admin/users/new"
+              href="/admin/dashboard/users/new"
               className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg hover:scale-[1.03]"
             >
               + Create User
@@ -287,7 +354,7 @@ export default async function AdminUsersPage({
             ].map((role) => (
               <Link
                 key={role}
-                href={`/admin/users?q=${encodeURIComponent(q)}&role=${role}`}
+                href={`/admin/dashboard/users?q=${encodeURIComponent(q)}&role=${role}`}
                 className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
                   selectedRole === role
                     ? "border-rose-400 bg-rose-500 text-white"
@@ -310,7 +377,7 @@ export default async function AdminUsersPage({
             </div>
 
             <Link
-              href="/admin/users/new"
+              href="/admin/dashboard/users/new"
               className="rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white"
             >
               + Add User
@@ -322,7 +389,7 @@ export default async function AdminUsersPage({
               <p className="text-lg font-black">No users found</p>
 
               <Link
-                href="/admin/users/new"
+                href="/admin/dashboard/users/new"
                 className="mt-4 inline-block rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white"
               >
                 Create First User
@@ -344,6 +411,11 @@ export default async function AdminUsersPage({
                       <div>
                         <p className="truncate font-black">
                           {user.email || "No email"}
+                          {user.full_name && (
+                            <span className="ml-2 text-sm font-bold text-black/40">
+                              {user.full_name}
+                            </span>
+                          )}
                         </p>
 
                         <p className="mt-1 text-xs text-black/40">

@@ -45,7 +45,7 @@ export default function AdminTopBar() {
           .eq("email", currentUser.email.toLowerCase())
           .maybeSingle();
 
-        setRole(adminUser?.role || null);
+        setRole(adminUser?.role || currentUser.user_metadata?.role || null);
       }
     };
 
@@ -237,7 +237,7 @@ export default function AdminTopBar() {
           {canViewDashboard && (
             <button
               type="button"
-              onClick={() => goTo("/reserve/dashboard")}
+              onClick={() => goTo("/admin/dashboard/reservations")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Reservations
@@ -247,7 +247,7 @@ export default function AdminTopBar() {
           {canViewLocations && (
             <button
               type="button"
-              onClick={() => goTo("/admin/locations")}
+              onClick={() => goTo("/admin/dashboard/locations")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Locations
@@ -257,7 +257,7 @@ export default function AdminTopBar() {
           {canViewUsers && (
             <button
               type="button"
-              onClick={() => goTo("/admin/users")}
+              onClick={() => goTo("/admin/dashboard/users")}
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Users
@@ -336,20 +336,20 @@ export default function AdminTopBar() {
                 )}
 
                 {canViewDashboard && (
-                  <MenuButton onClick={() => goTo("/reserve/dashboard")}>
+                  <MenuButton onClick={() => goTo("/admin/dashboard/reservations")}>
                     Reservation System
                   </MenuButton>
                 )}
 
                 {canViewLocations && (
-                  <MenuButton onClick={() => goTo("/admin/locations")}>
+                  <MenuButton onClick={() => goTo("/admin/dashboard/locations")}>
                     Locations
                   </MenuButton>
                 )}
 
                 {canViewUsers && (
                   <>
-                    <MenuButton onClick={() => goTo("/admin/users")}>
+                    <MenuButton onClick={() => goTo("/admin/dashboard/users")}>
                       Users Dashboard
                     </MenuButton>
 
@@ -470,7 +470,7 @@ export default function AdminTopBar() {
                 )}
 
                 {canViewAnalytics && (
-                  <MenuButton onClick={() => goTo("/admin/analytics")}>
+                  <MenuButton onClick={() => goTo("/admin/dashboard/analytics")}>
                     Analytics Dashboard
                   </MenuButton>
                 )}
