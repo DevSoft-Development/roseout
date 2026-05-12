@@ -66,6 +66,13 @@ export default async function CentralDashboardPage() {
       cta: "Open support",
     },
     {
+      eyebrow: "Users",
+      title: "User Accounts",
+      text: "Review platform users, edit roles, and create new admin or owner access.",
+      href: "/admin/users",
+      cta: "Manage users",
+    },
+    {
       eyebrow: "Claims",
       title: "Claim Review",
       text: "Review business claims and connect owners to their locations.",
@@ -126,6 +133,13 @@ export default async function CentralDashboardPage() {
                   className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
                 >
                   Support Tickets
+                </Link>
+
+                <Link
+                  href="/admin/users/new"
+                  className="rounded-full border border-rose-300/30 bg-rose-500/15 px-6 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-500 hover:text-white"
+                >
+                  + Add User
                 </Link>
               </div>
             </div>
