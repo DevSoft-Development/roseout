@@ -34,6 +34,7 @@ type PlanLocation = {
   smart_match_score?: number | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  pair_distance_miles?: number | null;
   pair_walking_minutes?: number | null;
   pair_walking_label?: string | null;
 };
@@ -42,6 +43,7 @@ type SavedPlan = {
   restaurant?: PlanLocation | null;
   activity?: PlanLocation | null;
   locations?: PlanLocation[];
+  distancePreference?: "walking" | "miles";
   savedAt?: number;
 };
 
@@ -82,6 +84,7 @@ function PlanPageInner() {
   const activity = plan?.activity || null;
 
   const hasPlan = Boolean(restaurant || activity);
+  const distancePreference = plan?.distancePreference || "miles";
 
   const planTitle = useMemo(() => {
     const names = [
@@ -206,7 +209,7 @@ function PlanPageInner() {
                   </p>
                   <p className="mt-1 text-xs font-bold leading-5 text-white/60 sm:text-sm">
                     {restaurant && activity
-                      ? buildFlowText(restaurant, activity)
+                      ? buildFlowText(restaurant, activity, distancePreference)
                       : "Add the second stop to complete the night."}
                   </p>
                 </div>
@@ -633,18 +636,31 @@ function walkingMinutesFromMiles(distanceMiles: number | null) {
 
 function buildFlowText(
   restaurant: PlanLocation | null,
-  activity: PlanLocation | null
+  activity: PlanLocation | null,
+  distancePreference: "walking" | "miles"
 ) {
   if (!restaurant || !activity) return "Dinner → Activity";
 
-  if (activity.pair_walking_label) return activity.pair_walking_label;
-
-  const distance = distanceBetweenLocations(restaurant, activity);
-  const walkingMinutes = walkingMinutesFromMiles(distance);
+  const distance =
+    distanceBetweenLocations(restaurant, activity) ??
+    activity.pair_distance_miles ??
+    null;
   const restaurantName = restaurant.restaurant_name || restaurant.name;
+  const activityName = activity.activity_name || activity.name;
 
-  if (walkingMinutes && restaurantName) {
-    return `${walkingMinutes} min walk from ${restaurantName}`;
+  if (distance !== null) {
+    if (distancePreference === "walking") {
+      const walkingMinutes =
+        activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
+
+      if (walkingMinutes && restaurantName) {
+        return `${walkingMinutes} min walk from ${restaurantName}`;
+      }
+    }
+
+    return `${distance} miles between ${restaurantName || "dinner"} and ${
+      activityName || "activity"
+    }`;
   }
 
   if (restaurant.city && activity.city && restaurant.city === activity.city) {
