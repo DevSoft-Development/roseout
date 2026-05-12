@@ -55,6 +55,18 @@ const statuses: ReservationStatus[] = [
   "no_show",
 ];
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function getInitialStatus(value: string | null): ReservationStatus | "all" {
+  if (!value) return "all";
+
+  return statuses.includes(value as ReservationStatus)
+    ? (value as ReservationStatus)
+    : "all";
+}
+
 function statusLabel(status: string) {
   return status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
 }
@@ -100,7 +112,7 @@ function ReservePortalReservationsContent() {
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [activeStatus, setActiveStatus] = useState<ReservationStatus | "all">(
-    "pending"
+    getInitialStatus(searchParams.get("status"))
   );
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState("");
@@ -143,12 +155,22 @@ function ReservePortalReservationsContent() {
       setLoading(true);
       setError("");
 
-      if (!locationId) {
-        throw new Error("Missing locationId in the URL.");
+      const reservationParams = new URLSearchParams();
+
+      if (locationId) {
+        reservationParams.set("locationId", locationId);
+        reservationParams.set("type", locationType);
       }
 
+      const filter = searchParams.get("filter");
+      const status = searchParams.get("status");
+
+      if (filter) reservationParams.set("filter", filter);
+      if (status) reservationParams.set("status", status);
+
+      const query = reservationParams.toString();
       const response = await fetch(
-        `/api/reserve/portal/reservations?locationId=${locationId}&type=${locationType}`
+        `/api/reserve/portal/reservations${query ? `?${query}` : ""}`
       );
 
       const data = await response.json();
@@ -158,8 +180,8 @@ function ReservePortalReservationsContent() {
       }
 
       setReservations(data.reservations || []);
-    } catch (err: any) {
-      setError(err?.message || "Unable to load reservations.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Unable to load reservations."));
     } finally {
       setLoading(false);
     }
@@ -197,17 +219,21 @@ function ReservePortalReservationsContent() {
           item.id === reservation.id ? data.reservation : item
         )
       );
-    } catch (err: any) {
-      setError(err?.message || "Unable to update reservation.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Unable to update reservation."));
     } finally {
       setUpdatingId("");
     }
   }
 
   useEffect(() => {
-    loadReservations();
+    const timer = window.setTimeout(() => {
+      loadReservations();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, locationType]);
+  }, [locationId, locationType, searchParams]);
 
   useEffect(() => {
     if (!locationId) return;
@@ -246,7 +272,7 @@ function ReservePortalReservationsContent() {
           <div className="relative z-10 mx-auto max-w-7xl">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <Link
-                href="/"
+                href="/reserve/dashboard"
                 className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
               >
                 <ArrowLeft size={16} />
@@ -294,7 +320,7 @@ function ReservePortalReservationsContent() {
                       {stats.total} total reservations
                     </h2>
                     <p className="mt-2 text-sm font-medium text-neutral-500">
-                      Live activity for this location.
+                      {locationId ? "Live activity for this location." : "Live activity across all Reserve bookings."}
                     </p>
                   </div>
 

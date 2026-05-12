@@ -527,36 +527,41 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
 }
 
 
-export async function closeSupportTicket(ticketId: string) {
+export async function updateSupportTicketStatus(ticketId: string, status: string) {
   const ticket = await getSupportTicket(ticketId);
   if (!ticket) throw new Error("Ticket not found.");
 
-  const closedAt = new Date().toISOString();
-  const closedTicket = {
+  const supportedStatuses = ["open", "pending", "waiting_on_customer", "closed"];
+  if (!supportedStatuses.includes(status)) {
+    throw new Error("Unsupported ticket status.");
+  }
+
+  const updatedAt = new Date().toISOString();
+  const updatedTicket = {
     ...ticket,
-    status: "closed",
-    updated_at: closedAt,
-    last_message_at: closedAt,
+    status,
+    updated_at: updatedAt,
+    last_message_at: updatedAt,
   } satisfies SupportTicket;
 
   const { error: updateError } = await supabaseAdmin
     .from("support_tickets")
     .update({
-      status: "closed",
-      updated_at: closedAt,
-      last_message_at: closedAt,
+      status,
+      updated_at: updatedAt,
+      last_message_at: updatedAt,
     })
     .eq("id", ticket.id);
 
-  const closeMessage = {
+  const statusMessage = {
     id: crypto.randomUUID(),
     ticket_id: ticket.id,
     actor_type: "system",
     author_name: "TheOutHaven Support",
     author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
     author_phone: null,
-    body: "Ticket closed by TheOutHaven Support.",
-    created_at: closedAt,
+    body: `Ticket status changed to ${status.replace(/_/g, " ")}.`,
+    created_at: updatedAt,
   } satisfies SupportMessage;
 
   let fallbackStored = false;
@@ -564,20 +569,24 @@ export async function closeSupportTicket(ticketId: string) {
   try {
     await insertSupportEvent({
       eventType: SUPPORT_STATUS_EVENT,
-      ticket: closedTicket,
-      message: closeMessage,
+      ticket: updatedTicket,
+      message: statusMessage,
     });
     fallbackStored = true;
   } catch (fallbackError) {
     if (updateError) throw updateError;
-    console.error("Support ticket close fallback event failed", fallbackError);
+    console.error("Support ticket status fallback event failed", fallbackError);
   }
 
   if (updateError && !fallbackStored) {
     throw updateError;
   }
 
-  return { ticket: closedTicket, message: closeMessage };
+  return { ticket: updatedTicket, message: statusMessage };
+}
+
+export async function closeSupportTicket(ticketId: string) {
+  return updateSupportTicketStatus(ticketId, "closed");
 }
 
 export async function createSupportReply(input: CreateSupportReplyInput) {

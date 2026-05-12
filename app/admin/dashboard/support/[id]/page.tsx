@@ -9,7 +9,8 @@ type PageProps = {
 };
 
 export default async function AdminSupportTicketPage({ params }: PageProps) {
-  await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
+  const adminUser = await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
+  const canManageTicket = ["superuser", "admin"].includes(adminUser.role);
 
   const { id } = await params;
   const ticket = await getSupportTicket(id);
@@ -29,7 +30,13 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
             Public ticket view
           </Link>
         </div>
-        <SupportTicketConversation ticket={ticket} messages={messages} accessKey={ticket.public_access_token} adminMode />
+        <SupportTicketConversation
+          ticket={ticket}
+          messages={messages}
+          accessKey={ticket.public_access_token}
+          adminMode
+          canManageTicket={canManageTicket}
+        />
       </div>
     </main>
   );
