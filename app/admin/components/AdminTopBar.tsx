@@ -45,7 +45,7 @@ export default function AdminTopBar() {
           .eq("email", currentUser.email.toLowerCase())
           .maybeSingle();
 
-        setRole(adminUser?.role || null);
+        setRole(adminUser?.role || currentUser.user_metadata?.role || null);
       }
     };
 

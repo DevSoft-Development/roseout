@@ -56,21 +56,24 @@ export default function LoginPage() {
         .eq("email", userEmail)
         .maybeSingle();
 
-      if (adminError) {
+      const metadataRole = data.user.user_metadata?.role;
+
+      if (adminError && metadataRole !== "superuser") {
         setError(adminError.message);
         return;
       }
 
       const roleRedirects: Record<string, string> = {
-        superuser: "/admin",
-        admin: "/admin",
+        superuser: "/admin/dashboard",
+        admin: "/admin/dashboard",
         editor: "/admin/restaurants",
         reviewer: "/admin/claims",
         viewer: "/admin/import-history",
       };
 
-      const redirectPath = adminUser
-        ? roleRedirects[adminUser.role] || "/admin"
+      const effectiveRole = adminUser?.role || metadataRole;
+      const redirectPath = effectiveRole
+        ? roleRedirects[effectiveRole] || "/admin/dashboard"
         : "/create";
 
       setMessage("Login successful. Redirecting...");
