@@ -66,6 +66,18 @@ const statuses: ReservationStatus[] = [
   "no_show",
 ];
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function getInitialStatus(value: string | null): ReservationStatus | "all" {
+  if (!value) return "all";
+
+  return statuses.includes(value as ReservationStatus)
+    ? (value as ReservationStatus)
+    : "all";
+}
+
 function statusLabel(status: string) {
   return status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
 }
@@ -91,7 +103,7 @@ export default function ReserveDashboardReservationsPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [locations, setLocations] = useState<LocationSummary[]>([]);
   const [activeStatus, setActiveStatus] = useState<ReservationStatus | "all">(
-    "all"
+    getInitialStatus(searchParams.get("status"))
   );
   const [locationKind, setLocationKind] = useState<LocationKind>("all");
   const [search, setSearch] = useState("");
@@ -123,14 +135,22 @@ export default function ReserveDashboardReservationsPage() {
       setLoading(true);
       setError("");
 
-      const params = new URLSearchParams({ kind: locationKind });
+      const reservationParams = new URLSearchParams();
 
-      if (search.trim()) {
-        params.set("search", search.trim());
+      if (locationId) {
+        reservationParams.set("locationId", locationId);
+        reservationParams.set("type", locationType);
       }
 
+      const filter = searchParams.get("filter");
+      const status = searchParams.get("status");
+
+      if (filter) reservationParams.set("filter", filter);
+      if (status) reservationParams.set("status", status);
+
+      const query = reservationParams.toString();
       const response = await fetch(
-        `/api/reserve/dashboard/reservations?${params.toString()}`
+        `/api/reserve/portal/reservations${query ? `?${query}` : ""}`
       );
       const data = await response.json();
 
@@ -139,9 +159,8 @@ export default function ReserveDashboardReservationsPage() {
       }
 
       setReservations(data.reservations || []);
-      setLocations(data.locations || []);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to load reservations.");
+      setError(getErrorMessage(err, "Unable to load reservations."));
     } finally {
       setLoading(false);
     }
@@ -171,9 +190,13 @@ export default function ReserveDashboardReservationsPage() {
         throw new Error(data.error || "Unable to update reservation.");
       }
 
-      await loadReservations();
+      setReservations((prev) =>
+        prev.map((item) =>
+          item.id === reservation.id ? data.reservation : item
+        )
+      );
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to update reservation.");
+      setError(getErrorMessage(err, "Unable to update reservation."));
     } finally {
       setUpdatingId("");
     }
@@ -181,32 +204,35 @@ export default function ReserveDashboardReservationsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadReservations();
-    }, 250);
+      loadReservations();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId, locationType, searchParams]);
 
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationKind, search]);
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px]">
-        <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_60%,#140f0a)] p-5 shadow-2xl sm:p-6">
-          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />
+    <>
+      <TheOutHavenHeader />
 
-          <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                TheOutHaven Reserve
-              </p>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                Reservations Command Center
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Bird’s-eye view of reservations across all restaurants and activities,
-                with location filters and search for individual venues.
-              </p>
-            </div>
+      <main className="min-h-screen bg-black pt-24 text-white">
+        <section className="relative overflow-hidden px-5 py-10 sm:px-8">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(225,6,42,0.35),transparent_30%),#000]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/85 to-black" />
+
+          <div className="relative z-10 mx-auto max-w-7xl">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <Link
+                href="/reserve/dashboard"
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
+              >
+                <ArrowLeft size={16} />
+                Back
+              </Link>
 
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -286,30 +312,19 @@ export default function ReserveDashboardReservationsPage() {
             </div>
           </div>
 
-          {loading ? (
-            <LoadingState />
-          ) : locations.length === 0 ? (
-            <EmptyState text="No matching locations found." />
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {locations.map((location) => (
-                <div
-                  key={`${location.type}-${location.id}`}
-                  className="rounded-[1.5rem] border border-white/10 bg-black/25 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-lg font-black">{location.name}</p>
-                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-rose-200/70">
-                        {formatLocationType(location.type)}
-                      </p>
-                      <p className="mt-2 text-sm text-white/45">
-                        {[location.city, location.state].filter(Boolean).join(", ") || "No city listed"}
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/70">
-                      {location.total}
-                    </span>
+            <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+              <div className="rounded-[2rem] bg-white p-6 text-black">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
+                      Reservation Overview
+                    </p>
+                    <h2 className="mt-2 text-4xl font-extrabold">
+                      {stats.total} total reservations
+                    </h2>
+                    <p className="mt-2 text-sm font-medium text-neutral-500">
+                      {locationId ? "Live activity for this location." : "Live activity across all Reserve bookings."}
+                    </p>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2 text-sm">

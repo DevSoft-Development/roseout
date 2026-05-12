@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 
 function generateStrongPassword() {
   const chars =
@@ -20,15 +19,9 @@ export default function AddUserPage() {
   const [useManual, setUseManual] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-
-    if (!isStrongPassword(password)) {
-      alert(`Password must include: ${strongPasswordMessage()}.`);
-      setLoading(false);
-      return;
-    }
 
     const form = new FormData(e.currentTarget);
 
@@ -45,7 +38,7 @@ export default function AddUserPage() {
       return;
     }
 
-    window.location.href = "/admin/users?created=1";
+    window.location.href = "/admin/dashboard/users?created=1";
   };
 
   return (
@@ -71,7 +64,7 @@ export default function AddUserPage() {
             </div>
 
             <Link
-              href="/admin/users"
+              href="/admin/dashboard/users"
               className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
             >
               Back
@@ -166,7 +159,7 @@ export default function AddUserPage() {
               </button>
 
               <Link
-                href="/admin/users"
+                href="/admin/dashboard/users"
                 className="rounded-full border border-black/10 px-6 py-3 text-sm font-black"
               >
                 Cancel

@@ -16,6 +16,8 @@ export type SupportTicket = {
   requester_name: string | null;
   requester_email: string;
   requester_phone: string | null;
+  assigned_admin_email?: string | null;
+  assigned_admin_name?: string | null;
   source: string | null;
   public_access_token: string;
   created_at: string;
@@ -527,36 +529,41 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
 }
 
 
-export async function closeSupportTicket(ticketId: string) {
+export async function updateSupportTicketStatus(ticketId: string, status: string) {
   const ticket = await getSupportTicket(ticketId);
   if (!ticket) throw new Error("Ticket not found.");
 
-  const closedAt = new Date().toISOString();
-  const closedTicket = {
+  const supportedStatuses = ["open", "pending", "waiting_on_customer", "closed"];
+  if (!supportedStatuses.includes(status)) {
+    throw new Error("Unsupported ticket status.");
+  }
+
+  const updatedAt = new Date().toISOString();
+  const updatedTicket = {
     ...ticket,
-    status: "closed",
-    updated_at: closedAt,
-    last_message_at: closedAt,
+    status,
+    updated_at: updatedAt,
+    last_message_at: updatedAt,
   } satisfies SupportTicket;
 
   const { error: updateError } = await supabaseAdmin
     .from("support_tickets")
     .update({
-      status: "closed",
-      updated_at: closedAt,
-      last_message_at: closedAt,
+      status,
+      updated_at: updatedAt,
+      last_message_at: updatedAt,
     })
     .eq("id", ticket.id);
 
-  const closeMessage = {
+  const statusMessage = {
     id: crypto.randomUUID(),
     ticket_id: ticket.id,
     actor_type: "system",
     author_name: "TheOutHaven Support",
     author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
     author_phone: null,
-    body: "Ticket closed by TheOutHaven Support.",
-    created_at: closedAt,
+    body: `Ticket status changed to ${status.replace(/_/g, " ")}.`,
+    created_at: updatedAt,
   } satisfies SupportMessage;
 
   let fallbackStored = false;
@@ -564,20 +571,98 @@ export async function closeSupportTicket(ticketId: string) {
   try {
     await insertSupportEvent({
       eventType: SUPPORT_STATUS_EVENT,
-      ticket: closedTicket,
-      message: closeMessage,
+      ticket: updatedTicket,
+      message: statusMessage,
     });
     fallbackStored = true;
   } catch (fallbackError) {
     if (updateError) throw updateError;
-    console.error("Support ticket close fallback event failed", fallbackError);
+    console.error("Support ticket status fallback event failed", fallbackError);
   }
 
   if (updateError && !fallbackStored) {
     throw updateError;
   }
 
-  return { ticket: closedTicket, message: closeMessage };
+  return { ticket: updatedTicket, message: statusMessage };
+}
+
+
+export async function assignSupportTicket(ticketId: string, adminEmail: string) {
+  const ticket = await getSupportTicket(ticketId);
+  if (!ticket) throw new Error("Ticket not found.");
+
+  const cleanEmail = normalizeEmail(adminEmail);
+
+  if (!cleanEmail) {
+    throw new Error("Select an admin user to assign this ticket.");
+  }
+
+  const { data: adminUser, error: adminError } = await supabaseAdmin
+    .from("admin_users")
+    .select("email, full_name, role")
+    .eq("email", cleanEmail)
+    .maybeSingle();
+
+  if (adminError) throw adminError;
+
+  if (!adminUser) {
+    throw new Error("Admin user not found.");
+  }
+
+  const assignedAt = new Date().toISOString();
+  const assignedTicket = {
+    ...ticket,
+    assigned_admin_email: adminUser.email,
+    assigned_admin_name: adminUser.full_name,
+    updated_at: assignedAt,
+    last_message_at: assignedAt,
+  } satisfies SupportTicket;
+
+  const { error: updateError } = await supabaseAdmin
+    .from("support_tickets")
+    .update({
+      assigned_admin_email: adminUser.email,
+      assigned_admin_name: adminUser.full_name,
+      updated_at: assignedAt,
+      last_message_at: assignedAt,
+    })
+    .eq("id", ticket.id);
+
+  const assignmentMessage = {
+    id: crypto.randomUUID(),
+    ticket_id: ticket.id,
+    actor_type: "system",
+    author_name: "TheOutHaven Support",
+    author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
+    author_phone: null,
+    body: `Ticket assigned to ${adminUser.full_name || adminUser.email}.`,
+    created_at: assignedAt,
+  } satisfies SupportMessage;
+
+  let fallbackStored = false;
+
+  try {
+    await insertSupportEvent({
+      eventType: SUPPORT_STATUS_EVENT,
+      ticket: assignedTicket,
+      message: assignmentMessage,
+    });
+    fallbackStored = true;
+  } catch (fallbackError) {
+    if (updateError) throw updateError;
+    console.error("Support ticket assignment fallback event failed", fallbackError);
+  }
+
+  if (updateError && !fallbackStored) {
+    throw updateError;
+  }
+
+  return { ticket: assignedTicket, message: assignmentMessage };
+}
+
+export async function closeSupportTicket(ticketId: string) {
+  return updateSupportTicketStatus(ticketId, "closed");
 }
 
 export async function createSupportReply(input: CreateSupportReplyInput) {

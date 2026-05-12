@@ -1,5 +1,1 @@
-import { redirect } from "next/navigation";
-
-export default function AdminDashboardReservationsRedirect() {
-  redirect("/reserve/dashboard/reservations");
-}
+export { default } from "../../../reserve/dashboard/page";

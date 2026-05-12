@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminRole } from "@/lib/admin-auth";
 import LoginAsUserButton from "./LoginAsUserButton";
 import { getStrongPasswordErrors, strongPasswordMessage } from "@/lib/password-policy";
 
@@ -24,6 +25,19 @@ type ImpersonationLog = {
   created_at?: string | null;
 };
 
+type SavedPlan = {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  created_at: string | null;
+};
+
+type ImpersonationLog = {
+  id: string;
+  admin_id: string | null;
+  created_at: string | null;
+};
+
 function adminSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,64 +50,9 @@ function adminSupabase() {
   );
 }
 
-async function updateUser(formData: FormData) {
-  "use server";
+export default async function AdminUserDetailPage({ params }: PageProps) {
+  await requireAdminRole(["superuser", "admin"]);
 
-  const userId = String(formData.get("user_id") || "");
-  const fullName = String(formData.get("full_name") || "").trim();
-  const email = String(formData.get("email") || "").trim().toLowerCase();
-  const phone = String(formData.get("phone") || "").trim();
-  const role = String(formData.get("role") || "user");
-  const subscriptionStatus = String(
-    formData.get("subscription_status") || "free"
-  );
-  const password = String(formData.get("password") || "");
-
-  if (!userId) redirect("/admin/users");
-
-  if (password) {
-    const passwordErrors = getStrongPasswordErrors(password);
-
-    if (passwordErrors.length) {
-      redirect(
-        `/admin/users/${userId}?error=${encodeURIComponent(
-          `Password must include: ${strongPasswordMessage()}.`
-        )}`
-      );
-    }
-  }
-
-  const supabase = adminSupabase();
-
-  await supabase
-    .from("users")
-    .update({
-      full_name: fullName || null,
-      email,
-      phone: phone || null,
-      role,
-      subscription_status: subscriptionStatus,
-      is_superadmin: role === "superuser",
-    })
-    .eq("id", userId);
-
-  await supabase.auth.admin.updateUserById(userId, {
-    email: email || undefined,
-    password: password || undefined,
-    user_metadata: {
-      full_name: fullName || null,
-      phone: phone || null,
-      role,
-    },
-  });
-
-  redirect(`/admin/users/${userId}?updated=1`);
-}
-
-export default async function AdminUserDetailPage({
-  params,
-  searchParams,
-}: PageProps) {
   const { id } = await params;
   const notices = await searchParams;
 
@@ -130,7 +89,7 @@ export default async function AdminUserDetailPage({
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <Link
-              href="/admin/users"
+              href="/admin/dashboard/users"
               className="mb-4 inline-flex text-sm font-bold text-rose-300 hover:text-rose-200"
             >
               ← Back to Users
@@ -344,7 +303,7 @@ export default async function AdminUserDetailPage({
               <p className="mt-6 text-white/50">This user has no saved plans.</p>
             ) : (
               <div className="mt-6 space-y-4">
-                {savedPlans.map((plan) => (
+                {savedPlans.map((plan: SavedPlan) => (
                   <div
                     key={plan.id}
                     className="rounded-2xl border border-white/10 bg-black/30 p-4"
@@ -376,7 +335,7 @@ export default async function AdminUserDetailPage({
             </p>
           ) : (
             <div className="mt-6 space-y-3">
-              {logs.map((log) => (
+              {logs.map((log: ImpersonationLog) => (
                 <div
                   key={log.id}
                   className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm"

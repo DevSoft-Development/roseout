@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
+const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
 
 type SearchParams = {
   q?: string;
@@ -107,7 +108,7 @@ function buildQueryUrl({
   if (claim !== "all") params.set("claim", claim);
   params.set("page", String(page));
 
-  return `/admin/locations?${params.toString()}`;
+  return `${ADMIN_LOCATIONS_BASE_PATH}?${params.toString()}`;
 }
 
 export default async function AdminLocationsPage({
@@ -267,13 +268,27 @@ export default async function AdminLocationsPage({
               </p>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 backdrop-blur">
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                Showing
-              </p>
-              <p className="mt-1 text-3xl font-black">
-                {formatNumber(totalFiltered)}
-              </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/admin/dashboard/locations/new"
+                className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg transition hover:scale-[1.02]"
+              >
+                + Add Location
+              </Link>
+              <Link
+                href="/admin/dashboard/claim-qrs"
+                className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
+              >
+                Print Claim QRs
+              </Link>
+              <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 backdrop-blur">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+                  Showing
+                </p>
+                <p className="mt-1 text-3xl font-black">
+                  {formatNumber(totalFiltered)}
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -501,7 +516,7 @@ export default async function AdminLocationsPage({
                 >
                   <div className="grid gap-4 xl:grid-cols-[1fr_420px_140px] xl:items-center">
                     <Link
-                      href={`/locations/${location.locationType}/${location.id}?from=/admin/locations`}
+                      href={`/locations/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                       className="flex min-w-0 items-center gap-4"
                     >
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
@@ -605,14 +620,14 @@ export default async function AdminLocationsPage({
 
                     <div className="flex gap-2 xl:flex-col">
                       <Link
-                        href={`/locations/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/locations/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         View
                       </Link>
 
                       <Link
-                        href={`/locations/edit/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/admin/dashboard/locations/edit/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit

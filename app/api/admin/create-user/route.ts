@@ -1,7 +1,5 @@
-import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getStrongPasswordErrors, strongPasswordMessage } from "@/lib/password-policy";
 
 const VALID_ROLES = [
   "user",
@@ -11,38 +9,35 @@ const VALID_ROLES = [
   "reviewer",
   "admin",
   "superuser",
-  "disabled",
 ];
+
+function cleanString(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
 export async function POST(request: Request) {
   const { error } = await requireAdminApiRole(["superuser", "admin"]);
 
   if (error) return error;
 
-  const formData = await request.formData();
-  const email = String(formData.get("email") || "").trim().toLowerCase();
-  const password = String(formData.get("password") || "");
-  const role = String(formData.get("role") || "user");
+  try {
+    const formData = await request.formData();
+    const email = cleanString(formData.get("email")).toLowerCase();
+    const password = cleanString(formData.get("password"));
+    const role = cleanString(formData.get("role")) || "user";
 
-  if (!email) {
-    return NextResponse.json({ error: "Email is required." }, { status: 400 });
-  }
+    if (!email || !password) {
+      return Response.json(
+        { error: "Email and password are required." },
+        { status: 400 }
+      );
+    }
 
-  if (!VALID_ROLES.includes(role)) {
-    return NextResponse.json({ error: "Invalid role." }, { status: 400 });
-  }
+    if (!VALID_ROLES.includes(role)) {
+      return Response.json({ error: "Invalid role." }, { status: 400 });
+    }
 
-  const passwordErrors = getStrongPasswordErrors(password);
-
-  if (passwordErrors.length) {
-    return NextResponse.json(
-      { error: `Password must include: ${strongPasswordMessage()}.` },
-      { status: 400 }
-    );
-  }
-
-  const { data: authUser, error: createError } =
-    await supabaseAdmin.auth.admin.createUser({
+    const { data, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -51,23 +46,38 @@ export async function POST(request: Request) {
       },
     });
 
-  if (createError || !authUser.user) {
-    return NextResponse.json(
-      { error: createError?.message || "Unable to create user." },
+    if (createError || !data.user) {
+      return Response.json(
+        { error: createError?.message || "Could not create user." },
+        { status: 400 }
+      );
+    }
+
+    await supabaseAdmin.from("users").upsert(
+      {
+        id: data.user.id,
+        email,
+        role,
+        is_superadmin: role === "superuser",
+      },
+      { onConflict: "id" }
+    );
+
+    if (["superuser", "admin", "editor", "reviewer", "viewer"].includes(role)) {
+      await supabaseAdmin.from("admin_users").upsert(
+        {
+          email,
+          role,
+        },
+        { onConflict: "email" }
+      );
+    }
+
+    return Response.json({ success: true, user: data.user });
+  } catch (error: unknown) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }
-
-  const { error: profileError } = await supabaseAdmin.from("users").upsert({
-    id: authUser.user.id,
-    email,
-    role,
-    is_superadmin: role === "superuser",
-  });
-
-  if (profileError) {
-    return NextResponse.json({ error: profileError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ success: true, userId: authUser.user.id });
 }

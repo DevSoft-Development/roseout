@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
   const user = data.user;
 
   if (user.user_metadata?.role === "superuser") {
-    response.headers.set("Location", `${siteUrl}/admin`);
+    response.headers.set("Location", `${siteUrl}/admin/dashboard`);
     return response;
   }
 
