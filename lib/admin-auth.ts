@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
+import { resolveAdminUser } from "@/lib/admin-user";
 
 export type AdminRole =
   | "superuser"
@@ -19,11 +20,7 @@ export async function getCurrentAdmin() {
     redirect("/login");
   }
 
-  const { data: adminUser } = await supabase
-    .from("admin_users")
-    .select("id, email, full_name, role")
-    .eq("email", user.email.toLowerCase())
-    .maybeSingle();
+  const adminUser = await resolveAdminUser(user);
 
   if (!adminUser) {
     redirect("/login");
