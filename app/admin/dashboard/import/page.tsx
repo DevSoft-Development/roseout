@@ -18,6 +18,7 @@ type ImportMeta = ImportSectionMeta & {
     minRating?: number;
     primaryTag?: string;
     batch?: string;
+    maxQueries?: number;
   };
   restaurant?: ImportSectionMeta;
   activity?: ImportSectionMeta;
@@ -117,6 +118,15 @@ const ratingOptions = [
   { label: "3.8+ stars", value: "3.8" },
 ];
 
+const queryCountOptions = [
+  { label: "1 query", value: "1" },
+  { label: "2 queries", value: "2" },
+  { label: "3 queries", value: "3" },
+  { label: "5 queries", value: "5" },
+  { label: "8 queries", value: "8" },
+  { label: "12 queries", value: "12" },
+];
+
 export default function ImportPage() {
   const [logs, setLogs] = useState<ImportLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -127,6 +137,7 @@ export default function ImportPage() {
   const [area, setArea] = useState("nyc");
   const [primaryTag, setPrimaryTag] = useState("all");
   const [minRating, setMinRating] = useState("4");
+  const [queryCount, setQueryCount] = useState("2");
 
   const fetchLogs = async () => {
     try {
@@ -281,7 +292,7 @@ export default function ImportPage() {
           requireWebsite: true,
           requireLocation: true,
           requireCuisineType: true,
-          maxQueries: 2,
+          maxQueries: Number(queryCount),
         }),
       });
 
@@ -411,7 +422,7 @@ export default function ImportPage() {
             </div>
 
 
-            <div className="relative mt-8 grid gap-4 rounded-[1.5rem] border border-white/10 bg-black/30 p-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="relative mt-8 grid gap-4 rounded-[1.5rem] border border-white/10 bg-black/30 p-4 md:grid-cols-2 xl:grid-cols-5">
               <SelectField
                 label="Import"
                 value={importType}
@@ -438,6 +449,13 @@ export default function ImportPage() {
                 value={minRating}
                 onChange={setMinRating}
                 options={ratingOptions}
+              />
+
+              <SelectField
+                label="Queries to run"
+                value={queryCount}
+                onChange={setQueryCount}
+                options={queryCountOptions}
               />
             </div>
 
@@ -466,8 +484,8 @@ export default function ImportPage() {
                 </div>
 
                 <p className="mt-3 text-xs text-zinc-500">
-                  Filtering for your selected type, area, tag, rating, and
-                  required contact/photo/location fields.
+                  Filtering for your selected type, area, tag, rating, query
+                  count, and required contact/photo/location fields.
                 </p>
               </div>
             )}
@@ -615,6 +633,9 @@ export default function ImportPage() {
                         </span>
                         <span className="rounded-full bg-white/10 px-3 py-1">
                           Tag: {meta.settings.primaryTag || meta.settings.batch || "all"}
+                        </span>
+                        <span className="rounded-full bg-white/10 px-3 py-1">
+                          Queries: {meta.settings.maxQueries || 2}
                         </span>
                       </div>
                     )}
