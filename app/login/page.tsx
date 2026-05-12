@@ -7,6 +7,34 @@ import { createClient } from "@/lib/supabase-browser";
 
 const LOGIN_PAGE_VERSION = "login-refresh-2026-05-11";
 
+const ADMIN_DASHBOARD_PATH = "/admin/dashboard";
+
+const roleRedirects: Record<string, string> = {
+  superuser: ADMIN_DASHBOARD_PATH,
+  superadmin: ADMIN_DASHBOARD_PATH,
+  admin: ADMIN_DASHBOARD_PATH,
+  editor: "/admin/restaurants",
+  reviewer: "/admin/claims",
+  viewer: "/admin/import-history",
+};
+
+function normalizeRole(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function getMetadataRedirectPath(user: { app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> }) {
+  if (user.user_metadata?.is_superadmin || user.app_metadata?.is_superadmin) {
+    return ADMIN_DASHBOARD_PATH;
+  }
+
+  const userRole = normalizeRole(user.user_metadata?.role);
+  const appRole = normalizeRole(user.app_metadata?.role);
+
+  return roleRedirects[userRole] || roleRedirects[appRole] || null;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -48,26 +76,56 @@ export default function LoginPage() {
         return;
       }
 
-      const redirectResponse = await fetch("/api/auth/login-redirect", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          accessToken: data.session?.access_token,
-        }),
-        cache: "no-store",
-      });
+      let redirectPath = getMetadataRedirectPath(data.user);
 
-      const redirectData: { redirectPath?: string; error?: string } =
-        await redirectResponse.json();
+      if (!redirectPath) {
+        const userEmail = data.user.email.toLowerCase();
 
-      if (!redirectResponse.ok) {
-        setError(redirectData.error || "Could not determine login destination.");
-        return;
+        const { data: adminUser } = await supabase
+          .from("admin_users")
+          .select("role")
+          .eq("email", userEmail)
+          .maybeSingle();
+
+        const adminRole = normalizeRole(adminUser?.role);
+        redirectPath = roleRedirects[adminRole] || null;
       }
 
-      const redirectPath = redirectData.redirectPath || "/create";
+      if (!redirectPath) {
+        const userEmail = data.user.email.toLowerCase();
+
+        const { data: appUser } = await supabase
+          .from("users")
+          .select("role,is_superadmin")
+          .eq("email", userEmail)
+          .maybeSingle();
+
+        const appRole = normalizeRole(appUser?.role);
+        redirectPath = appUser?.is_superadmin
+          ? ADMIN_DASHBOARD_PATH
+          : roleRedirects[appRole] || null;
+      }
+
+      if (!redirectPath && data.session?.access_token) {
+        const redirectResponse = await fetch("/api/auth/login-redirect", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            accessToken: data.session.access_token,
+          }),
+          cache: "no-store",
+        });
+
+        if (redirectResponse.ok) {
+          const redirectData: { redirectPath?: string } =
+            await redirectResponse.json();
+          redirectPath = redirectData.redirectPath || null;
+        }
+      }
+
+      redirectPath ||= "/create";
 
       setMessage("Login successful. Redirecting...");
 

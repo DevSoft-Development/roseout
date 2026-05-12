@@ -51,9 +51,9 @@ export async function GET(request: NextRequest) {
 
   const user = data.user;
 
-  const userRole = String(user.user_metadata?.role || "").toLowerCase();
+  const userRole = String(user.user_metadata?.role || user.app_metadata?.role || "").toLowerCase();
 
-  if (["superuser", "superadmin"].includes(userRole)) {
+  if (user.user_metadata?.is_superadmin || user.app_metadata?.is_superadmin || ["superuser", "superadmin"].includes(userRole)) {
     response.headers.set("Location", `${siteUrl}/admin/dashboard`);
     return response;
   }

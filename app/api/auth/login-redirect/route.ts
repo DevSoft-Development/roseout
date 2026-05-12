@@ -39,10 +39,15 @@ function normalizeRole(value: unknown) {
 async function resolveRedirectPath(user: User | null) {
   if (!user?.email) return "/create";
 
-  const metadataRole = normalizeRole(user.user_metadata?.role);
+  if (user.user_metadata?.is_superadmin || user.app_metadata?.is_superadmin) {
+    return ADMIN_DASHBOARD_PATH;
+  }
 
-  if (roleRedirects[metadataRole]) {
-    return roleRedirects[metadataRole];
+  const metadataRole = normalizeRole(user.user_metadata?.role);
+  const appMetadataRole = normalizeRole(user.app_metadata?.role);
+
+  if (roleRedirects[metadataRole] || roleRedirects[appMetadataRole]) {
+    return roleRedirects[metadataRole] || roleRedirects[appMetadataRole];
   }
 
   const email = user.email.toLowerCase();
