@@ -132,6 +132,8 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [backfillingPhones, setBackfillingPhones] = useState(false);
+  const [backfillingCuisines, setBackfillingCuisines] = useState(false);
+  const [cleaningLocations, setCleaningLocations] = useState(false);
   const [progress, setProgress] = useState(0);
   const [importType, setImportType] = useState("both");
   const [area, setArea] = useState("nyc");
@@ -330,6 +332,78 @@ export default function ImportPage() {
   };
 
 
+  const handleCuisineBackfill = async () => {
+    try {
+      setBackfillingCuisines(true);
+
+      const res = await fetch("/api/admin/restaurants/backfill-cuisine", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          includeGeneric: true,
+          limit: 250,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Cuisine backfill failed");
+        return;
+      }
+
+      alert(
+        `Cuisine backfill complete\nChecked: ${data.checked || 0}\nUpdated: ${data.updated || 0}\nSkipped: ${data.skipped || 0}`
+      );
+
+      await fetchLogs();
+    } catch (err) {
+      console.error("Cuisine backfill failed:", err);
+      alert("Cuisine backfill failed");
+    } finally {
+      setBackfillingCuisines(false);
+    }
+  };
+
+  const handleLocationCleanup = async () => {
+    try {
+      setCleaningLocations(true);
+
+      const res = await fetch("/api/admin/locations/cleanup-missing-address", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          limit: 100,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Location cleanup failed");
+        return;
+      }
+
+      const restaurants = data.restaurants || {};
+      const activities = data.activities || {};
+
+      alert(
+        `Location cleanup complete\nRestaurants updated: ${restaurants.updated || 0}\nActivities updated: ${activities.updated || 0}\nFailed: ${(restaurants.failed || 0) + (activities.failed || 0)}`
+      );
+
+      await fetchLogs();
+    } catch (err) {
+      console.error("Location cleanup failed:", err);
+      alert("Location cleanup failed");
+    } finally {
+      setCleaningLocations(false);
+    }
+  };
+
   const handlePhoneBackfill = async () => {
     try {
       setBackfillingPhones(true);
@@ -398,11 +472,11 @@ export default function ImportPage() {
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:justify-end">
                 <button
                   type="button"
                   onClick={handlePhoneBackfill}
-                  disabled={running || backfillingPhones}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
                   className="rounded-full border border-rose-400/40 px-7 py-4 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {backfillingPhones
@@ -412,8 +486,30 @@ export default function ImportPage() {
 
                 <button
                   type="button"
+                  onClick={handleCuisineBackfill}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
+                  className="rounded-full border border-amber-300/40 px-7 py-4 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+                >
+                  {backfillingCuisines
+                    ? "Backfilling Cuisines..."
+                    : "Backfill Cuisine Names"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLocationCleanup}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
+                  className="rounded-full border border-sky-300/40 px-7 py-4 text-sm font-black text-sky-100 transition hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+                >
+                  {cleaningLocations
+                    ? "Cleaning Locations..."
+                    : "Clean Missing City/State/Zip"}
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleRunImport}
-                  disabled={running || backfillingPhones}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
                   className="rounded-full bg-rose-600 px-7 py-4 text-sm font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
                 >
                   {running ? "Import Running..." : "Run Google Import"}

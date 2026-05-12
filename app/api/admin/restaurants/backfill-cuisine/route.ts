@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ function getBearerToken(request: NextRequest) {
   return auth.slice(7).trim();
 }
 
-function isAuthorized(request: NextRequest) {
+function hasSecretAuthorization(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return true;
 
   const importSecret = request.headers.get("x-internal-import-secret");
@@ -33,7 +34,42 @@ function isAuthorized(request: NextRequest) {
   return false;
 }
 
-function detectCuisineFromRestaurant(restaurant: any) {
+async function requireCuisineBackfillAuthorization(request: NextRequest) {
+  if (hasSecretAuthorization(request)) return null;
+
+  const { error } = await requireAdminApiRole([
+    "superuser",
+    "admin",
+    "editor",
+  ]);
+
+  return error;
+}
+
+type RestaurantCuisineRow = {
+  id: string;
+  restaurant_name?: string | null;
+  address?: string | null;
+  city?: string | null;
+  cuisine?: string | null;
+  food_type?: string | null;
+  cuisine_type?: string | null;
+  cuisine_tags?: string[] | null;
+  primary_tag?: string | null;
+  search_keywords?: string[] | null;
+};
+
+type CuisineBackfillBody = {
+  includeGeneric?: boolean;
+  limit?: number | string;
+};
+
+function isGenericCuisine(value: unknown) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return !normalized || ["restaurant", "restaurants", "food", "dining"].includes(normalized);
+}
+
+function detectCuisineFromRestaurant(restaurant: RestaurantCuisineRow) {
   const text = `${restaurant.restaurant_name || ""} ${
     restaurant.address || ""
   } ${restaurant.city || ""} ${restaurant.primary_tag || ""} ${(
@@ -148,18 +184,57 @@ function detectCuisineFromRestaurant(restaurant: any) {
   };
 }
 
+async function logCuisineBackfillRun(meta: Record<string, unknown>, error?: string) {
+  try {
+    await supabaseAdmin.from("import_logs").insert({
+      job_name: "restaurant_cuisine_backfill",
+      imported_count: Number(meta.updated || 0),
+      error: error || null,
+      meta,
+    });
+  } catch (logError) {
+    console.error("Cuisine backfill logging failed:", logError);
+  }
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export async function POST(request: NextRequest) {
   try {
-    if (!isAuthorized(request)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const authError = await requireCuisineBackfillAuthorization(request);
+
+    if (authError) {
+      return authError;
     }
+
+    const body = (await request.json().catch(() => ({}))) as CuisineBackfillBody;
+    const includeGeneric = body.includeGeneric !== false;
+    const limit = Math.max(1, Math.min(Number(body.limit || 250), 1000));
+    const genericFilter = [
+      "cuisine.is.null",
+      "cuisine.eq.",
+      "cuisine.eq.restaurant",
+      "cuisine.eq.restaurants",
+      "food_type.is.null",
+      "food_type.eq.",
+      "food_type.eq.restaurant",
+      "food_type.eq.restaurants",
+      "cuisine_type.is.null",
+      "cuisine_type.eq.",
+      "cuisine_type.eq.restaurant",
+      "cuisine_type.eq.restaurants",
+      "cuisine_tags.is.null",
+    ];
 
     const { data: restaurants, error } = await supabaseAdmin
       .from("restaurants")
       .select(
-        "id, restaurant_name, address, city, cuisine, food_type, cuisine_tags, primary_tag, search_keywords"
+        "id, restaurant_name, address, city, cuisine, food_type, cuisine_type, cuisine_tags, primary_tag, search_keywords"
       )
-      .or("cuisine.is.null,food_type.is.null,cuisine_tags.is.null");
+      .or(includeGeneric ? genericFilter.join(",") : "cuisine.is.null,food_type.is.null,cuisine_type.is.null,cuisine_tags.is.null")
+      .limit(limit);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -171,7 +246,7 @@ export async function POST(request: NextRequest) {
     for (const restaurant of restaurants || []) {
       const cuisineInfo = detectCuisineFromRestaurant(restaurant);
 
-      if (!cuisineInfo.cuisine) {
+      if (!cuisineInfo.cuisine || isGenericCuisine(cuisineInfo.cuisine)) {
         skipped++;
         continue;
       }
@@ -181,7 +256,11 @@ export async function POST(request: NextRequest) {
         .update({
           cuisine: cuisineInfo.cuisine,
           food_type: cuisineInfo.food_type,
+          cuisine_type: cuisineInfo.cuisine,
           cuisine_tags: cuisineInfo.cuisine_tags,
+          primary_tag: isGenericCuisine(restaurant.primary_tag)
+            ? cuisineInfo.cuisine
+            : restaurant.primary_tag,
         })
         .eq("id", restaurant.id);
 
@@ -192,15 +271,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       checked: restaurants?.length || 0,
       updated,
       skipped,
-    });
-  } catch (error: any) {
+      settings: {
+        includeGeneric,
+        limit,
+      },
+    };
+
+    await logCuisineBackfillRun(payload);
+
+    return NextResponse.json(payload);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error) || "Cuisine backfill failed";
+    await logCuisineBackfillRun({ success: false, error: message }, message);
+
     return NextResponse.json(
-      { error: error.message || "Cuisine backfill failed" },
+      { error: message },
       { status: 500 }
     );
   }
