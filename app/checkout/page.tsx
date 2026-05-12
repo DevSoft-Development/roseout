@@ -21,6 +21,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+import { STRONG_PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 declare global {
   interface Window {
@@ -56,7 +57,7 @@ export default function CheckoutInfoPage() {
 
   const passwordChecks = useMemo(
     () => [
-      { label: "At least 8 characters", valid: password.length >= 8 },
+      { label: "At least 12 characters", valid: password.length >= STRONG_PASSWORD_MIN_LENGTH },
       { label: "One uppercase letter", valid: /[A-Z]/.test(password) },
       { label: "One lowercase letter", valid: /[a-z]/.test(password) },
       { label: "One number", valid: /[0-9]/.test(password) },
@@ -442,7 +443,7 @@ export default function CheckoutInfoPage() {
 
                 <Step number="02" title="Create account password">
                   Your password must include uppercase, lowercase, number,
-                  special character, and at least 8 characters.
+                  special character, and at least 12 characters.
                 </Step>
 
                 <Step number="03" title="Complete Stripe checkout">
@@ -647,7 +648,9 @@ function PasswordField({
           type="password"
           name={name}
           required
-          minLength={8}
+          minLength={STRONG_PASSWORD_MIN_LENGTH}
+          pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}"
+          title="Use at least 12 characters with uppercase, lowercase, number, and symbol."
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}

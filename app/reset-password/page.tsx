@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
+import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -26,8 +27,8 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    if (!isStrongPassword(password)) {
+      setError(`Password must include: ${strongPasswordMessage()}.`);
       return;
     }
 
@@ -53,8 +54,8 @@ export default function ResetPasswordPage() {
       setTimeout(() => {
         router.replace("/login");
       }, 1000);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }

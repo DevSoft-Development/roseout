@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
+import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
 
 export default function VerifyPage() {
   return (
@@ -46,13 +47,15 @@ function VerifyPageContent() {
       if (saved) {
         const parsed = JSON.parse(saved);
 
-        if (parsed?.email && !email) {
-          setEmail(parsed.email);
-        }
+        window.setTimeout(() => {
+          if (parsed?.email && !email) {
+            setEmail(parsed.email);
+          }
 
-        if (parsed?.password) {
-          setPassword(parsed.password);
-        }
+          if (parsed?.password) {
+            setPassword(parsed.password);
+          }
+        }, 0);
       }
     } catch {
       // ignore
@@ -85,14 +88,19 @@ function VerifyPageContent() {
       }
 
       if (password) {
+        if (!isStrongPassword(password)) {
+          setError(`Password must include: ${strongPasswordMessage()}.`);
+          return;
+        }
+
         await supabase.auth.updateUser({ password });
       }
 
       sessionStorage.removeItem("theouthaven_pending_signup");
 
       router.replace("/login?verified=1");
-    } catch (err: any) {
-      setError(err.message || "Something went wrong.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -123,8 +131,8 @@ function VerifyPageContent() {
       }
 
       setMessage("A new verification code was sent.");
-    } catch (err: any) {
-      setError(err.message || "Could not resend code.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not resend code.");
     } finally {
       setResending(false);
     }
