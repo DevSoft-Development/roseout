@@ -9,6 +9,7 @@ import ScoreBadge from "@/components/ScoreBadge";
 import { trackActivity } from "@/lib/trackActivity";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
+import AdminClaimQrPanel from "@/components/locations/AdminClaimQrPanel";
 
 function toArray(value: any): string[] {
   if (!value) return [];
@@ -593,6 +594,8 @@ if (error || !data) {
                   </button>
                 </div>
               </LuxuryCard>
+
+              <AdminClaimQrPanel id={id} type={type} />
 
               <LuxuryCard
                 eyebrow="Review Intelligence"
