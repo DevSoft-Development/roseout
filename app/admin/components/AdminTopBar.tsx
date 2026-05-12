@@ -255,13 +255,23 @@ export default function AdminTopBar() {
           )}
 
           {canViewUsers && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/users")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Users
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => goTo("/admin/users")}
+                className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
+              >
+                Users
+              </button>
+
+              <button
+                type="button"
+                onClick={() => goTo("/admin/users/new")}
+                className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/25 transition hover:scale-[1.03]"
+              >
+                + Add User
+              </button>
+            </>
           )}
 
           {canViewClaims && (
@@ -351,6 +361,10 @@ export default function AdminTopBar() {
                   <>
                     <MenuButton onClick={() => goTo("/admin/users")}>
                       Users Dashboard
+                    </MenuButton>
+
+                    <MenuButton onClick={() => goTo("/admin/users/new")}>
+                      + Add User
                     </MenuButton>
 
                     <button
