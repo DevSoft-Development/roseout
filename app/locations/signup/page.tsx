@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { Turnstile } from "@marsidev/react-turnstile";
+import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
 
 export default function LocationsSignupPage({
   searchParams,
@@ -68,6 +69,11 @@ export default function LocationsSignupPage({
 
     if (!form.owner_name || !form.owner_email || !form.password) {
       setMessage("Please fill all required fields.");
+      return;
+    }
+
+    if (!isStrongPassword(form.password)) {
+      setMessage(`Password must include: ${strongPasswordMessage()}.`);
       return;
     }
 
@@ -190,7 +196,7 @@ export default function LocationsSignupPage({
 
           <input
             type="password"
-            placeholder="Password"
+            placeholder="Password (12+ chars, upper/lowercase, number, symbol)"
             value={form.password}
             onChange={(e) => update("password", e.target.value)}
             className="w-full mb-3 p-3 border rounded"
