@@ -22,5 +22,5 @@ export default async function AdminRestaurantsRedirectPage({
 
   query.set("type", "restaurants");
 
-  redirect(`/admin/locations?${query.toString()}`);
+  redirect(`/admin/dashboard/locations?${query.toString()}`);
 }

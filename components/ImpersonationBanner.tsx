@@ -12,7 +12,7 @@ export default function ImpersonationBanner() {
       method: "POST",
     });
 
-    window.location.href = "/admin/users";
+    window.location.href = "/admin/dashboard/users";
   };
 
   return (

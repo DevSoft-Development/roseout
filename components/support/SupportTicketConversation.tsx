@@ -8,45 +8,52 @@ type Props = {
   messages: SupportMessage[];
   accessKey?: string;
   adminMode?: boolean;
+  canManageTicket?: boolean;
 };
 
-export default function SupportTicketConversation({ ticket, messages, accessKey = "", adminMode = false }: Props) {
+export default function SupportTicketConversation({
+  ticket,
+  messages,
+  accessKey = "",
+  adminMode = false,
+  canManageTicket = false,
+}: Props) {
   const [replyText, setReplyText] = useState("");
   const [items, setItems] = useState(messages);
   const [status, setStatus] = useState(ticket.status || "open");
   const [loading, setLoading] = useState(false);
-  const [closing, setClosing] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState("");
 
 
-  const closeTicket = async () => {
-    if (closing || status === "closed") return;
+  const updateTicketStatus = async (nextStatus: string) => {
+    if (updatingStatus || status === nextStatus) return;
 
-    setClosing(true);
+    setUpdatingStatus(true);
     setError("");
 
     try {
       const res = await fetch(`/api/support/tickets/${ticket.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "closed" }),
+        body: JSON.stringify({ status: nextStatus }),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Could not close ticket.");
+        setError(data.error || "Could not update ticket status.");
         return;
       }
 
-      setStatus(data.ticket?.status || "closed");
+      setStatus(data.ticket?.status || nextStatus);
 
       if (data.message) {
         setItems((prev) => [...prev, data.message]);
       }
     } catch {
-      setError("Could not close ticket. Please try again.");
+      setError("Could not update ticket status. Please try again.");
     } finally {
-      setClosing(false);
+      setUpdatingStatus(false);
     }
   };
 
@@ -97,15 +104,28 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
             <span className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-black">
               {status}
             </span>
-            {adminMode && status !== "closed" && (
-              <button
-                type="button"
-                onClick={closeTicket}
-                disabled={closing}
-                className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
-              >
-                {closing ? "Closing..." : "Close Ticket"}
-              </button>
+            {canManageTicket && (
+              <div className="flex flex-wrap gap-2">
+                {status === "closed" ? (
+                  <button
+                    type="button"
+                    onClick={() => updateTicketStatus("open")}
+                    disabled={updatingStatus}
+                    className="rounded-full border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-rose-100 transition hover:bg-rose-500/20 disabled:opacity-60"
+                  >
+                    {updatingStatus ? "Updating..." : "Reopen Ticket"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => updateTicketStatus("closed")}
+                    disabled={updatingStatus}
+                    className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-xs font-black uppercase tracking-wide text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
+                  >
+                    {updatingStatus ? "Updating..." : "Close Ticket"}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -135,6 +155,7 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
         {status === "closed" ? (
           <div className="mt-6 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">
             This ticket is closed.
+            {canManageTicket ? " Reopen it to add another reply." : ""}
           </div>
         ) : (
         <form onSubmit={submitReply} className="mt-6 space-y-3">

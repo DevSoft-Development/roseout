@@ -1,12 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminRole } from "@/lib/admin-auth";
 import LoginAsUserButton from "./LoginAsUserButton";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type SavedPlan = {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  created_at: string | null;
+};
+
+type ImpersonationLog = {
+  id: string;
+  admin_id: string | null;
+  created_at: string | null;
 };
 
 function adminSupabase() {
@@ -22,6 +36,8 @@ function adminSupabase() {
 }
 
 export default async function AdminUserDetailPage({ params }: PageProps) {
+  await requireAdminRole(["superuser", "admin"]);
+
   const { id } = await params;
 
   const supabase = adminSupabase();
@@ -54,7 +70,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <Link
-              href="/admin/users"
+              href="/admin/dashboard/users"
               className="mb-4 inline-flex text-sm font-bold text-rose-300 hover:text-rose-200"
             >
               ← Back to Users
@@ -148,7 +164,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
               <p className="mt-6 text-white/50">This user has no saved plans.</p>
             ) : (
               <div className="mt-6 space-y-4">
-                {savedPlans.map((plan: any) => (
+                {savedPlans.map((plan: SavedPlan) => (
                   <div
                     key={plan.id}
                     className="rounded-2xl border border-white/10 bg-black/30 p-4"
@@ -180,7 +196,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
             </p>
           ) : (
             <div className="mt-6 space-y-3">
-              {logs.map((log: any) => (
+              {logs.map((log: ImpersonationLog) => (
                 <div
                   key={log.id}
                   className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm"
