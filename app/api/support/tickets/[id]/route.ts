@@ -1,4 +1,5 @@
 import {
+  assignSupportTicket,
   closeSupportTicket,
   getSupportTicket,
   getSupportTicketMessages,
@@ -24,7 +25,10 @@ export async function GET(req: Request, context: RouteContext) {
 
     const isAdmin = await isSupportRequestAdmin();
     if (!isAdmin && key !== ticket.public_access_token) {
-      return Response.json({ error: "Invalid ticket access key." }, { status: 403 });
+      return Response.json(
+        { error: "Invalid ticket access key." },
+        { status: 403 },
+      );
     }
 
     const messages = await getSupportTicketMessages(ticket.id);
@@ -32,8 +36,11 @@ export async function GET(req: Request, context: RouteContext) {
     return Response.json({ ticket, messages });
   } catch (error: unknown) {
     return Response.json(
-      { error: error instanceof Error ? error.message : "Could not load ticket." },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error ? error.message : "Could not load ticket.",
+      },
+      { status: 500 },
     );
   }
 }
@@ -45,20 +52,40 @@ export async function PATCH(req: Request, context: RouteContext) {
     const isAdmin = await isSupportRequestAdmin();
 
     if (!isAdmin) {
-      return Response.json({ error: "Admin access is required." }, { status: 403 });
+      return Response.json(
+        { error: "Admin access is required." },
+        { status: 403 },
+      );
     }
 
-    if (body.status !== "closed") {
-      return Response.json({ error: "Unsupported ticket status." }, { status: 400 });
+    if (body.action === "assign") {
+      const result = await assignSupportTicket({
+        ticketId: id,
+        adminEmail: body.adminEmail,
+        adminName: body.adminName,
+        departmentRoute: body.departmentRoute,
+      });
+
+      return Response.json({ success: true, ...result });
     }
 
-    const result = await closeSupportTicket(id);
+    if (body.status === "closed") {
+      const result = await closeSupportTicket(id);
 
-    return Response.json({ success: true, ...result });
+      return Response.json({ success: true, ...result });
+    }
+
+    return Response.json(
+      { error: "Unsupported ticket update." },
+      { status: 400 },
+    );
   } catch (error: unknown) {
     return Response.json(
-      { error: error instanceof Error ? error.message : "Could not update ticket." },
-      { status: 400 }
+      {
+        error:
+          error instanceof Error ? error.message : "Could not update ticket.",
+      },
+      { status: 400 },
     );
   }
 }

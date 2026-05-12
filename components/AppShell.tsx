@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import TheOutHavenFooter from "@/components/TheOutHavenFooter";
+import SessionTimeout from "@/components/SessionTimeout";
 
 export default function AppShell({
   children,
@@ -17,6 +18,7 @@ export default function AppShell({
 
   return (
     <>
+      <SessionTimeout />
       {!isAdmin && <TheOutHavenHeader />}
       {children}
       {!isAdmin && <TheOutHavenFooter />}

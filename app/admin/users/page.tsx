@@ -19,6 +19,14 @@ type AppUser = {
   created_at: string | null;
 };
 
+type AuthUserSummary = {
+  id: string;
+  email?: string;
+  created_at?: string;
+  user_metadata?: { role?: string; is_superadmin?: boolean };
+  app_metadata?: { role?: string; is_superadmin?: boolean };
+};
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -27,7 +35,7 @@ const supabaseAdmin = createClient(
       autoRefreshToken: false,
       persistSession: false,
     },
-  }
+  },
 );
 
 function formatNumber(value: number | null | undefined) {
@@ -74,8 +82,8 @@ async function updateUserRole(formData: FormData) {
 
   redirect(
     `/admin/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
-      currentRole
-    )}`
+      currentRole,
+    )}`,
   );
 }
 
@@ -106,8 +114,8 @@ async function disableUser(formData: FormData) {
 
   redirect(
     `/admin/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
-      currentRole
-    )}`
+      currentRole,
+    )}`,
   );
 }
 
@@ -125,8 +133,8 @@ async function deleteUser(formData: FormData) {
 
   redirect(
     `/admin/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
-      currentRole
-    )}`
+      currentRole,
+    )}`,
   );
 }
 
@@ -153,11 +161,16 @@ export default async function AdminUsersPage({
     query = query.eq("role", selectedRole);
   }
 
-  const { data: users, error } = await query;
+  const [{ data: users, error }, { data: allUsers }, authUsersResult] =
+    await Promise.all([
+      query,
+      supabaseAdmin.from("users").select("*"),
+      supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    ]);
 
-  const { data: allUsers } = await supabaseAdmin.from("users").select("*");
+  const authUsers = (authUsersResult.data?.users || []) as AuthUserSummary[];
 
-  if (error) {
+  if (error && authUsers.length === 0) {
     return (
       <main
         data-page-version={ADMIN_USERS_VERSION}
@@ -173,12 +186,52 @@ export default async function AdminUsersPage({
     );
   }
 
-  const safeUsers = (users || []) as AppUser[];
-  const fullUsers = (allUsers || []) as AppUser[];
+  const tableUsers = (users || []) as AppUser[];
+  const fullTableUsers = (allUsers || []) as AppUser[];
+  const usersById = new Map<string, AppUser>();
+
+  for (const user of fullTableUsers) {
+    usersById.set(user.id, user);
+  }
+
+  for (const authUser of authUsers) {
+    if (!usersById.has(authUser.id)) {
+      usersById.set(authUser.id, {
+        id: authUser.id,
+        email: authUser.email || null,
+        role:
+          authUser.user_metadata?.role || authUser.app_metadata?.role || "user",
+        is_superadmin:
+          authUser.user_metadata?.is_superadmin ||
+          authUser.app_metadata?.is_superadmin ||
+          false,
+        created_at: authUser.created_at || null,
+      });
+    }
+  }
+
+  const mergedUsers = Array.from(usersById.values());
+  const normalizedSearch = q.trim().toLowerCase();
+  const safeUsers = (tableUsers.length ? tableUsers : mergedUsers).filter(
+    (user) => {
+      if (selectedRole !== "all" && user.role !== selectedRole) return false;
+      if (!normalizedSearch) return true;
+
+      return (
+        String(user.email || "")
+          .toLowerCase()
+          .includes(normalizedSearch) ||
+        String(user.role || "")
+          .toLowerCase()
+          .includes(normalizedSearch)
+      );
+    },
+  );
+  const fullUsers = mergedUsers;
 
   const totalUsers = fullUsers.length;
   const admins = fullUsers.filter(
-    (u) => u.role === "admin" || u.is_superadmin
+    (u) => u.role === "admin" || u.is_superadmin,
   ).length;
   const owners = fullUsers.filter((u) => u.role === "owner").length;
   const regularUsers = fullUsers.filter((u) => u.role === "user").length;
@@ -201,8 +254,8 @@ export default async function AdminUsersPage({
               <h1 className="mt-2 text-4xl font-black">Users</h1>
 
               <p className="mt-2 text-sm text-white/60">
-                Search users, filter roles, edit access, disable accounts, and
-                remove users.
+                Search users from both the users table and Supabase Auth, filter
+                roles, edit access, disable accounts, and remove users.
               </p>
             </div>
 
@@ -354,7 +407,7 @@ export default async function AdminUsersPage({
                           <span
                             className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${roleBadge(
                               user.role,
-                              user.is_superadmin
+                              user.is_superadmin,
                             )}`}
                           >
                             {displayRole}
@@ -398,7 +451,14 @@ export default async function AdminUsersPage({
                         </button>
                       </form>
 
-                      <div className="flex gap-2 xl:justify-end">
+                      <div className="flex flex-wrap gap-2 xl:justify-end">
+                        <Link
+                          href={`/admin/users/${user.id}`}
+                          className="rounded-full bg-[#1b1210] px-4 py-3 text-xs font-black text-white transition hover:bg-rose-600"
+                        >
+                          Edit
+                        </Link>
+
                         <form action={disableUser}>
                           <input type="hidden" name="user_id" value={user.id} />
                           <input type="hidden" name="q" value={q} />

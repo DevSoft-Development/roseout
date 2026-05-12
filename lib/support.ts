@@ -3,6 +3,10 @@ import { headers } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
 import { sendNotification } from "@/lib/notifications";
+import {
+  listSupportDepartmentRoutes,
+  supportDepartmentSlugForTopic,
+} from "@/lib/support-routing";
 
 export type SupportActor = "creator" | "admin" | "system";
 
@@ -21,6 +25,9 @@ export type SupportTicket = {
   created_at: string;
   updated_at: string | null;
   last_message_at: string | null;
+  assigned_admin_email?: string | null;
+  assigned_admin_name?: string | null;
+  department_route?: string | null;
 };
 
 export type SupportMessage = {
@@ -118,9 +125,10 @@ export function renderSupportEmail({
   ctaLabel?: string;
   footerText?: string;
 }) {
-  const cta = ctaUrl && ctaLabel
-    ? `<p style="margin:56px 0 0;"><a href="${ctaUrl}" style="display:inline-block;background:#e11d48;color:#ffffff;text-decoration:none;border-radius:999px;padding:18px 28px;font-size:18px;font-weight:900;letter-spacing:0.02em;">${htmlEscape(ctaLabel)}</a></p>`
-    : "";
+  const cta =
+    ctaUrl && ctaLabel
+      ? `<p style="margin:56px 0 0;"><a href="${ctaUrl}" style="display:inline-block;background:#e11d48;color:#ffffff;text-decoration:none;border-radius:999px;padding:18px 28px;font-size:18px;font-weight:900;letter-spacing:0.02em;">${htmlEscape(ctaLabel)}</a></p>`
+      : "";
 
   return `
     <div style="margin:0;padding:0;background:#ffffff;color:#141414;font-family:Arial,Helvetica,sans-serif;">
@@ -149,7 +157,12 @@ function ticketFromEventRow(row: SupportEventRow): SupportTicket | null {
   const metadata = metadataFromRow(row);
   const ticket = metadata.ticket;
 
-  if (!ticket?.id || !ticket.requester_email || !ticket.public_access_token || !ticket.subject) {
+  if (
+    !ticket?.id ||
+    !ticket.requester_email ||
+    !ticket.public_access_token ||
+    !ticket.subject
+  ) {
     return null;
   }
 
@@ -168,6 +181,9 @@ function ticketFromEventRow(row: SupportEventRow): SupportTicket | null {
     created_at: ticket.created_at || row.created_at || new Date().toISOString(),
     updated_at: ticket.updated_at || null,
     last_message_at: ticket.last_message_at || row.created_at || null,
+    assigned_admin_email: ticket.assigned_admin_email || null,
+    assigned_admin_name: ticket.assigned_admin_name || null,
+    department_route: ticket.department_route || null,
   } satisfies SupportTicket;
 }
 
@@ -185,7 +201,8 @@ function messageFromEventRow(row: SupportEventRow): SupportMessage | null {
     author_email: message.author_email || null,
     author_phone: message.author_phone || null,
     body: message.body,
-    created_at: message.created_at || row.created_at || new Date().toISOString(),
+    created_at:
+      message.created_at || row.created_at || new Date().toISOString(),
   } satisfies SupportMessage;
 }
 
@@ -220,12 +237,14 @@ export function getSupportSiteUrl() {
   return (
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.SITE_URL ||
-    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}` ||
+    (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
     "http://localhost:3000"
   );
 }
 
-export function makeTicketUrl(ticket: Pick<SupportTicket, "id" | "public_access_token">) {
+export function makeTicketUrl(
+  ticket: Pick<SupportTicket, "id" | "public_access_token">,
+) {
   return `${getSupportSiteUrl()}/support/tickets/${ticket.id}?key=${ticket.public_access_token}`;
 }
 
@@ -233,9 +252,12 @@ export function makeAdminTicketUrl(ticketId: string) {
   return `${getSupportSiteUrl()}/admin/dashboard/support/${ticketId}`;
 }
 
-export function makeSupportReplyAddress(ticket: Pick<SupportTicket, "id" | "public_access_token">) {
+export function makeSupportReplyAddress(
+  ticket: Pick<SupportTicket, "id" | "public_access_token">,
+) {
   const domain = process.env.SUPPORT_REPLY_EMAIL_DOMAIN;
-  if (!domain) return process.env.SUPPORT_REPLY_TO_EMAIL || process.env.EMAIL_FROM;
+  if (!domain)
+    return process.env.SUPPORT_REPLY_TO_EMAIL || process.env.EMAIL_FROM;
 
   return `support+${ticket.id}.${ticket.public_access_token}@${domain}`;
 }
@@ -277,7 +299,10 @@ async function insertSupportEvent({
   ticket,
   message,
 }: {
-  eventType: typeof SUPPORT_CREATED_EVENT | typeof SUPPORT_REPLY_EVENT | typeof SUPPORT_STATUS_EVENT;
+  eventType:
+    | typeof SUPPORT_CREATED_EVENT
+    | typeof SUPPORT_REPLY_EVENT
+    | typeof SUPPORT_STATUS_EVENT;
   ticket: SupportTicket;
   message: SupportMessage;
 }) {
@@ -286,7 +311,10 @@ async function insertSupportEvent({
     session_id: null,
     event_type: eventType,
     event_name: ticket.id,
-    page_path: eventType === SUPPORT_CREATED_EVENT ? ticket.source || "/support" : "/support/reply",
+    page_path:
+      eventType === SUPPORT_CREATED_EVENT
+        ? ticket.source || "/support"
+        : "/support/reply",
     metadata: {
       support_ticket_id: ticket.id,
       ticket,
@@ -315,7 +343,11 @@ async function getFallbackSupportTicketMessages(ticketId: string) {
   const { data, error } = await supabaseAdmin
     .from("user_activity_events")
     .select("id, event_type, event_name, metadata, created_at")
-    .in("event_type", [SUPPORT_CREATED_EVENT, SUPPORT_REPLY_EVENT, SUPPORT_STATUS_EVENT])
+    .in("event_type", [
+      SUPPORT_CREATED_EVENT,
+      SUPPORT_REPLY_EVENT,
+      SUPPORT_STATUS_EVENT,
+    ])
     .eq("event_name", ticketId)
     .order("created_at", { ascending: true });
 
@@ -326,14 +358,34 @@ async function getFallbackSupportTicketMessages(ticketId: string) {
     .filter((message): message is SupportMessage => Boolean(message));
 }
 
-export async function listSupportTickets(limit = 50) {
+export async function listSupportAdmins() {
+  const { data, error } = await supabaseAdmin
+    .from("admin_users")
+    .select("email, full_name, role")
+    .order("email", { ascending: true });
+
+  if (error) return [];
+
+  return (data || []) as {
+    email: string;
+    full_name: string | null;
+    role: string | null;
+  }[];
+}
+
+export async function listSupportTickets(limit = 50, department?: string) {
   const { data, error } = await supabaseAdmin
     .from("support_tickets")
     .select("*")
     .order("last_message_at", { ascending: false })
     .limit(limit);
 
-  const primaryTickets = error ? [] : (data || []) as SupportTicket[];
+  const primaryTickets = (
+    error ? [] : ((data || []) as SupportTicket[])
+  ).filter(
+    (ticket) =>
+      !department || (ticket.department_route || "general") === department,
+  );
 
   const { data: fallbackData, error: fallbackError } = await supabaseAdmin
     .from("user_activity_events")
@@ -348,7 +400,12 @@ export async function listSupportTickets(limit = 50) {
     ? []
     : ((fallbackData || []) as SupportEventRow[])
         .map(ticketFromEventRow)
-        .filter((ticket): ticket is SupportTicket => Boolean(ticket));
+        .filter((ticket): ticket is SupportTicket => Boolean(ticket))
+        .filter(
+          (ticket) =>
+            !department ||
+            (ticket.department_route || "general") === department,
+        );
 
   const ticketsById = new Map<string, SupportTicket>();
 
@@ -378,12 +435,18 @@ export async function getSupportTicket(ticketId: string) {
     .eq("id", ticketId)
     .maybeSingle();
 
-  const primaryTicket = !error && data ? data as SupportTicket : null;
+  const primaryTicket = !error && data ? (data as SupportTicket) : null;
   const fallbackTicket = await getFallbackSupportTicket(ticketId);
 
   if (primaryTicket && fallbackTicket) {
-    const primaryDate = primaryTicket.last_message_at || primaryTicket.updated_at || primaryTicket.created_at;
-    const fallbackDate = fallbackTicket.last_message_at || fallbackTicket.updated_at || fallbackTicket.created_at;
+    const primaryDate =
+      primaryTicket.last_message_at ||
+      primaryTicket.updated_at ||
+      primaryTicket.created_at;
+    const fallbackDate =
+      fallbackTicket.last_message_at ||
+      fallbackTicket.updated_at ||
+      fallbackTicket.created_at;
 
     return new Date(fallbackDate).getTime() > new Date(primaryDate).getTime()
       ? fallbackTicket
@@ -415,7 +478,10 @@ export async function getSupportTicketMessages(ticketId: string) {
   return [
     ...tableMessages,
     ...fallbackMessages.filter((message) => !tableIds.has(message.id)),
-  ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  ].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
 }
 
 export async function createSupportTicket(input: CreateSupportTicketInput) {
@@ -431,6 +497,15 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
     throw new Error("Name, email, and message are required.");
   }
 
+  const departmentRoutes = await listSupportDepartmentRoutes();
+  const departmentRoute = supportDepartmentSlugForTopic(
+    topic,
+    departmentRoutes,
+  );
+  const assignedRoute = departmentRoutes.find(
+    (route) => route.slug === departmentRoute,
+  );
+  const assignedAdminEmail = assignedRoute?.default_admin_email || null;
   const createdAt = new Date().toISOString();
   const publicAccessToken = crypto.randomBytes(24).toString("hex");
   const ticketNumber = `RO-${Date.now().toString(36).toUpperCase()}`;
@@ -449,6 +524,9 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
     created_at: createdAt,
     updated_at: createdAt,
     last_message_at: createdAt,
+    assigned_admin_email: assignedAdminEmail,
+    assigned_admin_name: null,
+    department_route: departmentRoute,
   } satisfies SupportTicket;
 
   const { data: ticket, error: ticketError } = await supabaseAdmin
@@ -466,6 +544,8 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
       source,
       public_access_token: publicAccessToken,
       last_message_at: createdAt,
+      assigned_admin_email: assignedAdminEmail,
+      department_route: departmentRoute,
     })
     .select("*")
     .single();
@@ -526,7 +606,6 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
   return createdTicket;
 }
 
-
 export async function closeSupportTicket(ticketId: string) {
   const ticket = await getSupportTicket(ticketId);
   if (!ticket) throw new Error("Ticket not found.");
@@ -580,6 +659,64 @@ export async function closeSupportTicket(ticketId: string) {
   return { ticket: closedTicket, message: closeMessage };
 }
 
+export async function assignSupportTicket({
+  ticketId,
+  adminEmail,
+  adminName,
+  departmentRoute,
+}: {
+  ticketId: string;
+  adminEmail?: string;
+  adminName?: string;
+  departmentRoute?: string;
+}) {
+  const ticket = await getSupportTicket(ticketId);
+  if (!ticket) throw new Error("Ticket not found.");
+
+  const updatedAt = new Date().toISOString();
+  const assignedTicket = {
+    ...ticket,
+    assigned_admin_email: normalizeEmail(adminEmail) || null,
+    assigned_admin_name: clean(adminName) || null,
+    department_route:
+      clean(departmentRoute) || ticket.department_route || "general",
+    updated_at: updatedAt,
+  } satisfies SupportTicket;
+
+  const { error } = await supabaseAdmin
+    .from("support_tickets")
+    .update({
+      assigned_admin_email: assignedTicket.assigned_admin_email,
+      assigned_admin_name: assignedTicket.assigned_admin_name,
+      department_route: assignedTicket.department_route,
+      updated_at: updatedAt,
+    })
+    .eq("id", ticket.id);
+
+  const message = {
+    id: crypto.randomUUID(),
+    ticket_id: ticket.id,
+    actor_type: "system",
+    author_name: "TheOutHaven Support",
+    author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
+    author_phone: null,
+    body: assignedTicket.assigned_admin_email
+      ? `Ticket assigned to ${assignedTicket.assigned_admin_name || assignedTicket.assigned_admin_email}.`
+      : "Ticket assignment cleared.",
+    created_at: updatedAt,
+  } satisfies SupportMessage;
+
+  await insertSupportEvent({
+    eventType: SUPPORT_STATUS_EVENT,
+    ticket: assignedTicket,
+    message,
+  });
+
+  if (error) throw error;
+
+  return { ticket: assignedTicket, message };
+}
+
 export async function createSupportReply(input: CreateSupportReplyInput) {
   const message = clean(input.message);
   const ticketId = clean(input.ticketId);
@@ -591,7 +728,8 @@ export async function createSupportReply(input: CreateSupportReplyInput) {
 
   const ticket = await getSupportTicket(ticketId);
   if (!ticket) throw new Error("Ticket not found.");
-  if (ticket.status === "closed") throw new Error("This support ticket is closed.");
+  if (ticket.status === "closed")
+    throw new Error("This support ticket is closed.");
 
   const actorType = input.actorType || "creator";
   const adminActor = actorType === "admin";
@@ -601,8 +739,16 @@ export async function createSupportReply(input: CreateSupportReplyInput) {
   }
 
   const createdAt = new Date().toISOString();
-  const authorName = clean(input.authorName) || (adminActor ? "TheOutHaven Support" : ticket.requester_name || "Ticket requester");
-  const authorEmail = normalizeEmail(input.authorEmail) || (adminActor ? process.env.ADMIN_NOTIFY_EMAIL || null : ticket.requester_email);
+  const authorName =
+    clean(input.authorName) ||
+    (adminActor
+      ? "TheOutHaven Support"
+      : ticket.requester_name || "Ticket requester");
+  const authorEmail =
+    normalizeEmail(input.authorEmail) ||
+    (adminActor
+      ? process.env.ADMIN_NOTIFY_EMAIL || null
+      : ticket.requester_email);
   const authorPhone = clean(input.authorPhone) || null;
   const fallbackMessage = {
     id: crypto.randomUUID(),
@@ -647,10 +793,13 @@ export async function createSupportReply(input: CreateSupportReplyInput) {
 
   await notifySupportReply(ticket, message, actorType);
 
-  return messageError ? fallbackMessage : createdMessage as SupportMessage;
+  return messageError ? fallbackMessage : (createdMessage as SupportMessage);
 }
 
-async function notifySupportTicketCreated(ticket: SupportTicket, message: string) {
+async function notifySupportTicketCreated(
+  ticket: SupportTicket,
+  message: string,
+) {
   const ticketUrl = makeTicketUrl(ticket);
   const adminTicketUrl = makeAdminTicketUrl(ticket.id);
   const replyTo = makeSupportReplyAddress(ticket);
@@ -705,7 +854,11 @@ async function notifySupportTicketCreated(ticket: SupportTicket, message: string
   });
 }
 
-async function notifySupportReply(ticket: SupportTicket, message: string, actorType: SupportActor) {
+async function notifySupportReply(
+  ticket: SupportTicket,
+  message: string,
+  actorType: SupportActor,
+) {
   const ticketUrl = makeTicketUrl(ticket);
   const adminTicketUrl = makeAdminTicketUrl(ticket.id);
   const replyTo = makeSupportReplyAddress(ticket);
@@ -721,7 +874,9 @@ async function notifySupportReply(ticket: SupportTicket, message: string, actorT
     from: supportEmailFrom(),
     emailHtml: renderSupportEmail({
       title: "New ticket reply",
-      greeting: creatorIsRecipient ? `Hi ${ticket.requester_name || "there"},` : "Hi team,",
+      greeting: creatorIsRecipient
+        ? `Hi ${ticket.requester_name || "there"},`
+        : "Hi team,",
       bodyHtml: `
         <p style="margin:0 0 44px;">There is a new reply on this TheOutHaven support ticket. Reply to this email to continue the conversation.</p>
         <p style="margin:0 0 18px;"><strong>Ticket:</strong> ${htmlEscape(ticket.ticket_number || ticket.id)}</p>

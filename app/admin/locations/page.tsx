@@ -64,16 +64,20 @@ function formatFullAddress(item: {
 
   const cityStateZip = [city, state, zip].filter(Boolean).join(", ");
 
-  return [street, cityStateZip].filter(Boolean).join(" • ") || "Address not listed";
+  return (
+    [street, cityStateZip].filter(Boolean).join(" • ") || "Address not listed"
+  );
 }
 
 function statusBadge(status?: string | null) {
   const value = status || "unknown";
 
-  if (value === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (value === "approved")
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (value === "pending") return "border-amber-200 bg-amber-50 text-amber-700";
   if (value === "rejected") return "border-red-200 bg-red-50 text-red-700";
-  if (value === "draft") return "border-neutral-200 bg-neutral-100 text-neutral-700";
+  if (value === "draft")
+    return "border-neutral-200 bg-neutral-100 text-neutral-700";
 
   return "border-neutral-200 bg-neutral-100 text-neutral-600";
 }
@@ -132,7 +136,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -140,7 +144,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -162,25 +166,29 @@ export default async function AdminLocationsPage({
 
   if (q) {
     restaurantsQuery = restaurantsQuery.or(
-      `restaurant_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,cuisine_type.ilike.%${q}%`
+      `restaurant_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,cuisine_type.ilike.%${q}%`,
     );
 
     activitiesQuery = activitiesQuery.or(
-      `activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,activity_type.ilike.%${q}%`
+      `activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,activity_type.ilike.%${q}%`,
     );
   }
 
-  const [restaurantsResult, activitiesResult, totalRestaurantsResult, totalActivitiesResult] =
-    await Promise.all([
-      shouldLoadRestaurants
-        ? restaurantsQuery
-        : Promise.resolve({ data: [], error: null }),
-      shouldLoadActivities
-        ? activitiesQuery
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from("restaurants").select("id", { count: "exact", head: true }),
-      supabase.from("activities").select("id", { count: "exact", head: true }),
-    ]);
+  const [
+    restaurantsResult,
+    activitiesResult,
+    totalRestaurantsResult,
+    totalActivitiesResult,
+  ] = await Promise.all([
+    shouldLoadRestaurants
+      ? restaurantsQuery
+      : Promise.resolve({ data: [], error: null }),
+    shouldLoadActivities
+      ? activitiesQuery
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("restaurants").select("id", { count: "exact", head: true }),
+    supabase.from("activities").select("id", { count: "exact", head: true }),
+  ]);
 
   const restaurantRows: AdminLocation[] =
     (restaurantsResult.data as AdminRestaurantRow[] | null)?.map((item) => ({
@@ -261,9 +269,9 @@ export default async function AdminLocationsPage({
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Manage restaurants and activities from one unified page. Filter by
-                location type, approval status, claim status, address, city, zip,
-                category, and performance.
+                Manage restaurants and activities from one unified page. Filter
+                by location type, approval status, claim status, address, city,
+                zip, category, and performance.
               </p>
             </div>
 
@@ -526,7 +534,7 @@ export default async function AdminLocationsPage({
 
                           <span
                             className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${typeBadge(
-                              location.locationType
+                              location.locationType,
                             )}`}
                           >
                             {location.locationType === "restaurants"
@@ -536,7 +544,7 @@ export default async function AdminLocationsPage({
 
                           <span
                             className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${statusBadge(
-                              location.status
+                              location.status,
                             )}`}
                           >
                             {location.status || "unknown"}
@@ -612,7 +620,7 @@ export default async function AdminLocationsPage({
                       </Link>
 
                       <Link
-                        href={`/locations/edit/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/admin/dashboard/locations/${location.locationType}/${location.id}/edit?from=/admin/locations`}
                         className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit

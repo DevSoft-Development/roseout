@@ -3,21 +3,86 @@
 import { useState } from "react";
 import type { SupportMessage, SupportTicket } from "@/lib/support";
 
+type SupportAdmin = {
+  email: string;
+  full_name: string | null;
+  role: string | null;
+};
+
+type SupportDepartment = {
+  name: string;
+  slug: string;
+};
+
 type Props = {
   ticket: SupportTicket;
   messages: SupportMessage[];
   accessKey?: string;
   adminMode?: boolean;
+  admins?: SupportAdmin[];
+  departments?: SupportDepartment[];
 };
 
-export default function SupportTicketConversation({ ticket, messages, accessKey = "", adminMode = false }: Props) {
+export default function SupportTicketConversation({
+  ticket,
+  messages,
+  accessKey = "",
+  adminMode = false,
+  admins = [],
+  departments = [],
+}: Props) {
   const [replyText, setReplyText] = useState("");
   const [items, setItems] = useState(messages);
   const [status, setStatus] = useState(ticket.status || "open");
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [assignedAdminEmail, setAssignedAdminEmail] = useState(
+    ticket.assigned_admin_email || "",
+  );
+  const [departmentRoute, setDepartmentRoute] = useState(
+    ticket.department_route || "general",
+  );
   const [error, setError] = useState("");
 
+  const assignTicket = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (assigning) return;
+
+    setAssigning(true);
+    setError("");
+
+    const selectedAdmin = admins.find(
+      (admin) => admin.email === assignedAdminEmail,
+    );
+
+    try {
+      const res = await fetch(`/api/support/tickets/${ticket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "assign",
+          adminEmail: assignedAdminEmail,
+          adminName: selectedAdmin?.full_name || null,
+          departmentRoute,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Could not update assignment.");
+        return;
+      }
+
+      if (data.message) {
+        setItems((prev) => [...prev, data.message]);
+      }
+    } catch {
+      setError("Could not update assignment. Please try again.");
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const closeTicket = async () => {
     if (closing || status === "closed") return;
@@ -123,10 +188,16 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
                 }`}
               >
                 <div className="flex flex-wrap justify-between gap-2 text-xs font-black uppercase tracking-[0.2em] text-white/40">
-                  <span>{admin ? "TheOutHaven Support" : message.author_name || "Requester"}</span>
+                  <span>
+                    {admin
+                      ? "TheOutHaven Support"
+                      : message.author_name || "Requester"}
+                  </span>
                   <time>{new Date(message.created_at).toLocaleString()}</time>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-white/75">{message.body}</p>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-white/75">
+                  {message.body}
+                </p>
               </article>
             );
           })}
@@ -137,37 +208,106 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
             This ticket is closed.
           </div>
         ) : (
-        <form onSubmit={submitReply} className="mt-6 space-y-3">
-          <label className="block">
-            <span className="text-xs font-black uppercase tracking-[0.22em] text-white/45">Reply</span>
-            <textarea
-              value={replyText}
-              onChange={(event) => setReplyText(event.target.value)}
-              rows={5}
-              className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-500"
-              placeholder="Add a reply to this ticket..."
-            />
-          </label>
-          {error && <p className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-bold text-red-200">{error}</p>}
-          <button
-            disabled={loading}
-            className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg transition hover:scale-[1.02] disabled:opacity-60"
-          >
-            {loading ? "Sending..." : "Send reply"}
-          </button>
-        </form>
+          <form onSubmit={submitReply} className="mt-6 space-y-3">
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                Reply
+              </span>
+              <textarea
+                value={replyText}
+                onChange={(event) => setReplyText(event.target.value)}
+                rows={5}
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-500"
+                placeholder="Add a reply to this ticket..."
+              />
+            </label>
+            {error && (
+              <p className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-bold text-red-200">
+                {error}
+              </p>
+            )}
+            <button
+              disabled={loading}
+              className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg transition hover:scale-[1.02] disabled:opacity-60"
+            >
+              {loading ? "Sending..." : "Send reply"}
+            </button>
+          </form>
         )}
       </section>
 
       <aside className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl sm:p-7">
-        <p className="text-xs font-black uppercase tracking-[0.28em] text-white/40">Ticket details</p>
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-white/40">
+          Ticket details
+        </p>
         <dl className="mt-5 space-y-4 text-sm">
-          <Detail label="Name" value={ticket.requester_name || "Not provided"} />
+          <Detail
+            label="Name"
+            value={ticket.requester_name || "Not provided"}
+          />
           <Detail label="Email" value={ticket.requester_email} />
-          <Detail label="Phone" value={ticket.requester_phone || "Not provided"} />
+          <Detail
+            label="Phone"
+            value={ticket.requester_phone || "Not provided"}
+          />
           <Detail label="Topic" value={ticket.topic || "General Support"} />
+          <Detail label="Department" value={departmentRoute || "general"} />
+          <Detail label="Assigned" value={assignedAdminEmail || "Unassigned"} />
           <Detail label="Source" value={ticket.source || "support"} />
         </dl>
+
+        {adminMode && (
+          <form
+            onSubmit={assignTicket}
+            className="mt-6 rounded-3xl border border-white/10 bg-black/35 p-4"
+          >
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/35">
+              Reassign ticket
+            </p>
+            <label className="mt-4 block">
+              <span className="text-xs font-black uppercase tracking-[0.18em] text-white/35">
+                Admin
+              </span>
+              <select
+                value={assignedAdminEmail}
+                onChange={(event) => setAssignedAdminEmail(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-500"
+              >
+                <option value="">Unassigned</option>
+                {admins.map((admin) => (
+                  <option key={admin.email} value={admin.email}>
+                    {admin.full_name || admin.email} · {admin.role || "admin"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mt-4 block">
+              <span className="text-xs font-black uppercase tracking-[0.18em] text-white/35">
+                Department route
+              </span>
+              <select
+                value={departmentRoute}
+                onChange={(event) => setDepartmentRoute(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-500"
+              >
+                {departments.map((department) => (
+                  <option key={department.slug} value={department.slug}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="submit"
+              disabled={assigning}
+              className="mt-4 w-full rounded-full bg-white px-5 py-3 text-xs font-black uppercase tracking-wide text-black transition hover:bg-rose-100 disabled:opacity-60"
+            >
+              {assigning ? "Updating..." : "Update assignment"}
+            </button>
+          </form>
+        )}
         <p className="mt-6 rounded-3xl border border-white/10 bg-black/35 p-4 text-sm leading-6 text-white/55">
           Replies from this page, email, or text will notify the other side and
           keep the conversation attached to this ticket.
@@ -180,7 +320,9 @@ export default function SupportTicketConversation({ ticket, messages, accessKey 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-black uppercase tracking-[0.22em] text-white/35">{label}</dt>
+      <dt className="text-xs font-black uppercase tracking-[0.22em] text-white/35">
+        {label}
+      </dt>
       <dd className="mt-1 font-bold text-white/80">{value}</dd>
     </div>
   );

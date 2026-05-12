@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Script from "next/script";
 import { createClient } from "@/lib/supabase-browser";
+import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
 
 type TurnstileWindow = Window & {
   turnstile?: {
@@ -50,14 +51,14 @@ export default function SignupPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const hasMinLength = password.length >= 8;
+  const hasMinLength = password.length >= 12;
   const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
   const hasSymbol = /[^A-Za-z0-9]/.test(password);
   const passwordsMatch = password.length > 0 && password === confirmPassword;
 
-  const isPasswordValid =
-    hasMinLength && hasUppercase && hasNumber && hasSymbol;
+  const isPasswordValid = isStrongPassword(password);
 
   const canGoStep2 =
     fullName.trim() &&
@@ -125,7 +126,7 @@ export default function SignupPage() {
 
     if (!isPasswordValid) {
       setErrorMessage(
-        "Password must be at least 8 characters and include an uppercase letter, number, and symbol."
+        `Password must include: ${strongPasswordMessage()}.`
       );
       return;
     }
@@ -351,10 +352,13 @@ export default function SignupPage() {
 
                 <div className="rounded-xl border border-white/10 bg-black/40 p-3 text-xs">
                   <p className={hasMinLength ? "text-emerald-400" : "text-white/35"}>
-                    ✓ At least 8 characters
+                    ✓ At least 12 characters
                   </p>
                   <p className={hasUppercase ? "text-emerald-400" : "text-white/35"}>
                     ✓ One uppercase letter
+                  </p>
+                  <p className={hasLowercase ? "text-emerald-400" : "text-white/35"}>
+                    ✓ One lowercase letter
                   </p>
                   <p className={hasNumber ? "text-emerald-400" : "text-white/35"}>
                     ✓ One number

@@ -1,331 +1,368 @@
+import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
+
+type LocationMetric = {
+  id: string;
+  name: string;
+  city: string | null;
+  views: number;
+  clicks: number;
+  score: number;
+  type: "Restaurant" | "Activity";
+};
+
+type AnalyticsEvent = {
+  id: string;
+  item_type: string | null;
+  event_type: string | null;
+  page_path: string | null;
+  created_at: string | null;
+};
+
+type ReservationMetric = {
+  id: string;
+  status: string | null;
+  arrived_at: string | null;
+  completed_at: string | null;
+};
+
+function num(value: unknown) {
+  return Number(value || 0);
+}
+
+function pct(part: number, total: number) {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function barWidth(value: number, total: number) {
+  return `${Math.max(4, pct(value, total))}%`;
+}
 
 export default async function AdminAnalyticsPage() {
   await requireAdminRole(["superuser", "admin", "viewer"]);
 
-  const { data: restaurants } = await supabase
-    .from("restaurants")
-    .select("id, restaurant_name, city, view_count, click_count, theouthaven_score")
-    .order("view_count", { ascending: false })
-    .limit(10);
+  const [
+    { data: restaurants },
+    { data: activities },
+    { data: recentEvents },
+    { data: reservations },
+  ] = await Promise.all([
+    supabase
+      .from("restaurants")
+      .select(
+        "id, restaurant_name, city, view_count, click_count, theouthaven_score",
+      )
+      .order("view_count", { ascending: false })
+      .limit(12),
+    supabase
+      .from("activities")
+      .select(
+        "id, activity_name, city, view_count, click_count, theouthaven_score",
+      )
+      .order("view_count", { ascending: false })
+      .limit(12),
+    supabase
+      .from("analytics_events")
+      .select("id, item_type, event_type, page_path, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("location_reservations")
+      .select("id, status, arrived_at, completed_at"),
+  ]);
 
-  const { data: activities } = await supabase
-    .from("activities")
-    .select("id, activity_name, city, view_count, click_count, theouthaven_score")
-    .order("view_count", { ascending: false })
-    .limit(10);
+  const locationMetrics: LocationMetric[] = [
+    ...((restaurants || []).map((item) => ({
+      id: item.id,
+      name: item.restaurant_name || "Untitled restaurant",
+      city: item.city || null,
+      views: num(item.view_count),
+      clicks: num(item.click_count),
+      score: num(item.theouthaven_score),
+      type: "Restaurant" as const,
+    })) || []),
+    ...((activities || []).map((item) => ({
+      id: item.id,
+      name: item.activity_name || "Untitled activity",
+      city: item.city || null,
+      views: num(item.view_count),
+      clicks: num(item.click_count),
+      score: num(item.theouthaven_score),
+      type: "Activity" as const,
+    })) || []),
+  ].sort((a, b) => b.views - a.views);
 
-  const { data: recentEvents } = await supabase
-    .from("analytics_events")
-    .select("id, item_type, event_type, page_path, created_at")
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  const { data: reservations } = await supabase
-    .from("location_reservations")
-    .select("id, status, arrived_at, completed_at");
-
-  const totalRestaurantViews =
-    restaurants?.reduce((sum, r) => sum + Number(r.view_count || 0), 0) || 0;
-
-  const totalRestaurantClicks =
-    restaurants?.reduce((sum, r) => sum + Number(r.click_count || 0), 0) || 0;
-
-  const totalActivityViews =
-    activities?.reduce((sum, a) => sum + Number(a.view_count || 0), 0) || 0;
-
-  const totalActivityClicks =
-    activities?.reduce((sum, a) => sum + Number(a.click_count || 0), 0) || 0;
+  const reservationRows = (reservations || []) as ReservationMetric[];
+  const eventRows = (recentEvents || []) as AnalyticsEvent[];
+  const totalViews = locationMetrics.reduce((sum, item) => sum + item.views, 0);
+  const totalClicks = locationMetrics.reduce(
+    (sum, item) => sum + item.clicks,
+    0,
+  );
+  const avgScore = locationMetrics.length
+    ? Math.round(
+        locationMetrics.reduce((sum, item) => sum + item.score, 0) /
+          locationMetrics.length,
+      )
+    : 0;
+  const topPerformer = locationMetrics[0];
 
   const reservationStats = {
-    total: reservations?.length || 0,
-    confirmed:
-      reservations?.filter((r) => r.status === "confirmed").length || 0,
-    arrived: reservations?.filter((r) => r.status === "arrived").length || 0,
-    completed:
-      reservations?.filter((r) => r.status === "completed").length || 0,
-    cancelled:
-      reservations?.filter((r) => r.status === "cancelled").length || 0,
-    noShow: reservations?.filter((r) => r.status === "no_show").length || 0,
+    total: reservationRows.length,
+    confirmed: reservationRows.filter((item) => item.status === "confirmed")
+      .length,
+    arrived: reservationRows.filter((item) => item.status === "arrived").length,
+    completed: reservationRows.filter((item) => item.status === "completed")
+      .length,
+    cancelled: reservationRows.filter((item) => item.status === "cancelled")
+      .length,
+    noShow: reservationRows.filter((item) => item.status === "no_show").length,
   };
 
-  const arrivalRate =
-    reservationStats.total > 0
-      ? Math.round(
-          ((reservationStats.arrived + reservationStats.completed) /
-            reservationStats.total) *
-            100
-        )
-      : 0;
-
-  const noShowRate =
-    reservationStats.total > 0
-      ? Math.round((reservationStats.noShow / reservationStats.total) * 100)
-      : 0;
-
-  const totalViews = totalRestaurantViews + totalActivityViews;
-  const totalClicks = totalRestaurantClicks + totalActivityClicks;
-  const clickRate =
-    totalViews > 0 ? Math.round((totalClicks / totalViews) * 100) : 0;
+  const clickRate = pct(totalClicks, totalViews);
+  const arrivalRate = pct(
+    reservationStats.arrived + reservationStats.completed,
+    reservationStats.total,
+  );
+  const noShowRate = pct(reservationStats.noShow, reservationStats.total);
 
   return (
-    <div>
-      <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-500">
-        TheOutHaven Admin
-      </p>
-
-      <h1 className="text-4xl font-extrabold tracking-tight">
-        Analytics Dashboard
-      </h1>
-
-      <p className="mt-3 text-neutral-400">
-        View discovery performance, reservation activity, arrival trends, and
-        recent analytics events.
-      </p>
-
-      <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-        <div className="rounded-[2rem] bg-white p-6 text-black">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1500px]">
+        <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_60%,#140f0a)] p-6 shadow-2xl">
+          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />
+          <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-                Discovery Overview
+              <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">
+                TheOutHaven Admin
               </p>
-              <h2 className="mt-2 text-3xl font-extrabold">
-                {totalViews.toLocaleString()} total views
-              </h2>
-              <p className="mt-2 text-sm font-medium text-neutral-500">
-                Restaurants and activities combined.
+              <h1 className="mt-2 text-4xl font-black tracking-tight">
+                Analytics Dashboard
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
+                A full performance view across discovery, reservations,
+                engagement events, and location quality.
               </p>
             </div>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/admin/locations"
+                className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
+              >
+                Locations
+              </Link>
+              <Link
+                href="/admin/dashboard/reservations"
+                className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg"
+              >
+                Reservations
+              </Link>
+            </div>
+          </div>
+        </section>
 
-            <div className="rounded-2xl bg-black px-5 py-4 text-white">
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-                Click Rate
-              </p>
-              <p className="mt-1 text-3xl font-extrabold">{clickRate}%</p>
+        <section className="mt-5 grid gap-4 md:grid-cols-4">
+          <Metric label="Total Views" value={totalViews} />
+          <Metric label="Total Clicks" value={totalClicks} />
+          <Metric label="Click Rate" value={`${clickRate}%`} />
+          <Metric label="Avg Score" value={avgScore} />
+        </section>
+
+        <section className="mt-5 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.05] p-5 shadow-2xl">
+            <div className="flex flex-wrap justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/40">
+                  Discovery leaderboard
+                </p>
+                <h2 className="mt-2 text-2xl font-black">
+                  Top viewed locations
+                </h2>
+              </div>
+              {topPerformer && (
+                <div className="rounded-2xl bg-white px-4 py-3 text-black">
+                  <p className="text-xs font-black uppercase tracking-wide text-black/45">
+                    Top performer
+                  </p>
+                  <p className="mt-1 font-black">{topPerformer.name}</p>
+                </div>
+              )}
+            </div>
+            <div className="mt-5 space-y-3">
+              {locationMetrics.slice(0, 10).map((item) => (
+                <div
+                  key={`${item.type}-${item.id}`}
+                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-black">{item.name}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/70">
+                        {item.type} · {item.city || "City N/A"}
+                      </p>
+                    </div>
+                    <div className="text-right text-sm font-black text-white/70">
+                      {item.views.toLocaleString()} views ·{" "}
+                      {item.clicks.toLocaleString()} clicks
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-rose-500 to-orange-300"
+                      style={{
+                        width: barWidth(item.views, topPerformer?.views || 1),
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="mt-7 grid gap-4 md:grid-cols-4">
-            <MiniMetric label="Restaurant Views" value={totalRestaurantViews} />
-            <MiniMetric label="Restaurant Clicks" value={totalRestaurantClicks} />
-            <MiniMetric label="Activity Views" value={totalActivityViews} />
-            <MiniMetric label="Activity Clicks" value={totalActivityClicks} />
-          </div>
-        </div>
-
-        <div className="rounded-[2rem] bg-gradient-to-br from-red-700 via-red-600 to-black p-6 text-white">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/60">
-            Reserve Performance
-          </p>
-
-          <h2 className="mt-2 text-5xl font-extrabold">
-            {reservationStats.total}
-          </h2>
-
-          <p className="mt-2 text-sm font-semibold text-white/65">
-            Total reservations captured through TheOutHaven Reserve.
-          </p>
-
-          <div className="mt-7 grid grid-cols-2 gap-3">
-            <DarkMetric label="Arrival Rate" value={`${arrivalRate}%`} />
-            <DarkMetric label="No-Show Rate" value={`${noShowRate}%`} />
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="rounded-[2rem] bg-white p-6 text-black lg:col-span-2">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-                Reservation Pipeline
-              </p>
-              <h2 className="mt-2 text-2xl font-extrabold">
-                Booking status breakdown
-              </h2>
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-4">
-            <PipelineRow
-              label="Confirmed"
-              value={reservationStats.confirmed}
-              total={reservationStats.total}
-            />
-            <PipelineRow
-              label="Arrived"
-              value={reservationStats.arrived}
-              total={reservationStats.total}
-            />
-            <PipelineRow
-              label="Completed"
-              value={reservationStats.completed}
-              total={reservationStats.total}
-            />
-            <PipelineRow
-              label="Cancelled"
-              value={reservationStats.cancelled}
-              total={reservationStats.total}
-            />
-            <PipelineRow
-              label="No Shows"
-              value={reservationStats.noShow}
-              total={reservationStats.total}
-            />
-          </div>
-        </div>
-
-        <div className="rounded-[2rem] bg-white p-6 text-black">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-            Key Takeaway
-          </p>
-
-          <h2 className="mt-3 text-2xl font-extrabold">
-            {arrivalRate >= 70
-              ? "Strong arrival quality"
-              : reservationStats.total > 0
-                ? "Improve show-up rate"
-                : "Ready for bookings"}
-          </h2>
-
-          <p className="mt-3 text-sm leading-6 text-neutral-500">
-            {reservationStats.total === 0
-              ? "Once locations start using TheOutHaven Reserve, this section will show booking quality and no-show trends."
-              : `TheOutHaven has a ${arrivalRate}% arrival rate and ${noShowRate}% no-show rate across current reservations.`}
-          </p>
-
-          <div className="mt-6 rounded-2xl bg-neutral-100 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-              Best Sales Angle
+          <div className="rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] p-5 text-[#1b1210] shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-black/45">
+              Reserve health
             </p>
-            <p className="mt-2 text-sm font-bold text-neutral-800">
-              “TheOutHaven does not just send clicks. It tracks reservations,
-              arrivals, and no-shows.”
+            <h2 className="mt-2 text-5xl font-black">
+              {reservationStats.total}
+            </h2>
+            <p className="mt-2 text-sm font-bold text-black/50">
+              Total reservation records
             </p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <LightMetric label="Arrival rate" value={`${arrivalRate}%`} />
+              <LightMetric label="No-show rate" value={`${noShowRate}%`} />
+              <LightMetric
+                label="Confirmed"
+                value={reservationStats.confirmed}
+              />
+              <LightMetric
+                label="Cancelled"
+                value={reservationStats.cancelled}
+              />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="mt-8 overflow-hidden rounded-[2rem] bg-white text-black">
-        <div className="border-b border-neutral-200 p-5">
-          <h2 className="text-xl font-bold">Top Restaurants</h2>
-        </div>
+        <section className="mt-5 grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.05] p-5 shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-white/40">
+              Reservation pipeline
+            </p>
+            <div className="mt-5 space-y-4">
+              <Pipeline
+                label="Confirmed"
+                value={reservationStats.confirmed}
+                total={reservationStats.total}
+              />
+              <Pipeline
+                label="Arrived"
+                value={reservationStats.arrived}
+                total={reservationStats.total}
+              />
+              <Pipeline
+                label="Completed"
+                value={reservationStats.completed}
+                total={reservationStats.total}
+              />
+              <Pipeline
+                label="Cancelled"
+                value={reservationStats.cancelled}
+                total={reservationStats.total}
+              />
+              <Pipeline
+                label="No show"
+                value={reservationStats.noShow}
+                total={reservationStats.total}
+              />
+            </div>
+          </div>
 
-        <table className="w-full text-left text-sm">
-          <thead className="bg-neutral-100 text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-5 py-4">Restaurant</th>
-              <th className="px-5 py-4">City</th>
-              <th className="px-5 py-4">Views</th>
-              <th className="px-5 py-4">Clicks</th>
-              <th className="px-5 py-4">Score</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {restaurants?.map((r) => (
-              <tr key={r.id} className="border-t border-neutral-200">
-                <td className="px-5 py-4 font-bold">{r.restaurant_name}</td>
-                <td className="px-5 py-4">{r.city || "N/A"}</td>
-                <td className="px-5 py-4">{r.view_count || 0}</td>
-                <td className="px-5 py-4">{r.click_count || 0}</td>
-                <td className="px-5 py-4">{r.theouthaven_score || 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="mt-8 overflow-hidden rounded-[2rem] bg-white text-black">
-        <div className="border-b border-neutral-200 p-5">
-          <h2 className="text-xl font-bold">Top Activities</h2>
-        </div>
-
-        <table className="w-full text-left text-sm">
-          <thead className="bg-neutral-100 text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-5 py-4">Activity</th>
-              <th className="px-5 py-4">City</th>
-              <th className="px-5 py-4">Views</th>
-              <th className="px-5 py-4">Clicks</th>
-              <th className="px-5 py-4">Score</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {activities?.map((a) => (
-              <tr key={a.id} className="border-t border-neutral-200">
-                <td className="px-5 py-4 font-bold">{a.activity_name}</td>
-                <td className="px-5 py-4">{a.city || "N/A"}</td>
-                <td className="px-5 py-4">{a.view_count || 0}</td>
-                <td className="px-5 py-4">{a.click_count || 0}</td>
-                <td className="px-5 py-4">{a.theouthaven_score || 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="mt-8 overflow-hidden rounded-[2rem] bg-white text-black">
-        <div className="border-b border-neutral-200 p-5">
-          <h2 className="text-xl font-bold">Recent Events</h2>
-        </div>
-
-        <table className="w-full text-left text-sm">
-          <thead className="bg-neutral-100 text-xs uppercase text-neutral-500">
-            <tr>
-              <th className="px-5 py-4">Type</th>
-              <th className="px-5 py-4">Event</th>
-              <th className="px-5 py-4">Page</th>
-              <th className="px-5 py-4">Time</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {recentEvents?.map((event) => (
-              <tr key={event.id} className="border-t border-neutral-200">
-                <td className="px-5 py-4 capitalize">{event.item_type}</td>
-                <td className="px-5 py-4 capitalize">{event.event_type}</td>
-                <td className="px-5 py-4">{event.page_path || "N/A"}</td>
-                <td className="px-5 py-4">
-                  {event.created_at
-                    ? new Date(event.created_at).toLocaleString()
-                    : "N/A"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </div>
+          <div className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/[0.05] shadow-2xl">
+            <div className="border-b border-white/10 p-5">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-white/40">
+                Live events
+              </p>
+              <h2 className="mt-2 text-2xl font-black">
+                Recent analytics activity
+              </h2>
+            </div>
+            <div className="divide-y divide-white/10">
+              {eventRows.map((event) => (
+                <div
+                  key={event.id}
+                  className="grid gap-3 p-4 md:grid-cols-[160px_1fr_150px] md:items-center"
+                >
+                  <span className="rounded-full bg-white/10 px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-white/70">
+                    {event.event_type || "event"}
+                  </span>
+                  <p className="truncate text-sm font-bold text-white/70">
+                    {event.page_path || event.item_type || "Unknown path"}
+                  </p>
+                  <time className="text-sm font-bold text-white/40">
+                    {formatDate(event.created_at)}
+                  </time>
+                </div>
+              ))}
+              {eventRows.length === 0 && (
+                <p className="p-8 text-center text-sm font-bold text-white/45">
+                  No analytics events yet.
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }
 
-function MiniMetric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl bg-neutral-100 p-4">
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-extrabold">{value}</p>
+      <p className="mt-2 text-3xl font-black">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
     </div>
   );
 }
 
-function DarkMetric({ label, value }: { label: string; value: string }) {
+function LightMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
   return (
-    <div className="rounded-2xl bg-white/10 p-4 backdrop-blur">
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/55">
+    <div className="rounded-2xl bg-white p-4">
+      <p className="text-xs font-black uppercase tracking-wide text-black/45">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-extrabold">{value}</p>
+      <p className="mt-1 text-2xl font-black">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
     </div>
   );
 }
 
-function PipelineRow({
+function Pipeline({
   label,
   value,
   total,
@@ -334,21 +371,16 @@ function PipelineRow({
   value: number;
   total: number;
 }) {
-  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-
   return (
     <div>
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm font-bold text-neutral-700">{label}</p>
-        <p className="text-sm font-extrabold text-neutral-900">
-          {value} · {percent}%
-        </p>
+      <div className="mb-2 flex justify-between text-sm font-black">
+        <span>{label}</span>
+        <span>{value.toLocaleString()}</span>
       </div>
-
-      <div className="mt-2 h-3 overflow-hidden rounded-full bg-neutral-100">
+      <div className="h-3 overflow-hidden rounded-full bg-white/10">
         <div
-          className="h-full rounded-full bg-red-600"
-          style={{ width: `${percent}%` }}
+          className="h-full rounded-full bg-gradient-to-r from-rose-500 to-emerald-300"
+          style={{ width: barWidth(value, total || 1) }}
         />
       </div>
     </div>

@@ -14,6 +14,9 @@ create table if not exists public.support_tickets (
   status text not null default 'open',
   priority text not null default 'normal',
   source text default 'support_form',
+  assigned_admin_email text,
+  assigned_admin_name text,
+  department_route text default 'general',
   public_access_token text not null unique,
   last_message_at timestamptz default now(),
   created_at timestamptz not null default now(),
@@ -53,6 +56,9 @@ alter table public.support_tickets
   add column if not exists status text not null default 'open',
   add column if not exists priority text not null default 'normal',
   add column if not exists source text default 'support_form',
+  add column if not exists assigned_admin_email text,
+  add column if not exists assigned_admin_name text,
+  add column if not exists department_route text default 'general',
   add column if not exists public_access_token text,
   add column if not exists last_message_at timestamptz default now(),
   add column if not exists created_at timestamptz not null default now(),
@@ -98,8 +104,25 @@ create index if not exists support_tickets_requester_email_idx
 create index if not exists support_tickets_last_message_at_idx
   on public.support_tickets (last_message_at desc);
 
+create index if not exists support_tickets_department_route_idx
+  on public.support_tickets (department_route);
+
+create table if not exists public.support_department_routes (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  topics text[] not null default '{}',
+  default_admin_email text,
+  description text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists support_ticket_messages_ticket_id_idx
   on public.support_ticket_messages (ticket_id, created_at);
+
+alter table public.support_department_routes enable row level security;
 
 alter table public.support_tickets enable row level security;
 alter table public.support_ticket_messages enable row level security;

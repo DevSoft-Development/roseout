@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isStrongPassword, strongPasswordMessage } from "@/lib/password-policy";
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +32,22 @@ export async function POST(request: NextRequest) {
     const address = String(formData.get("address") || "");
     const businessType = String(formData.get("businessType") || "");
     const goal = String(formData.get("goal") || "");
+    const password = String(formData.get("password") || "");
+    const confirmPassword = String(formData.get("confirmPassword") || "");
+
+    if (password !== confirmPassword) {
+      return NextResponse.json(
+        { error: "Passwords do not match." },
+        { status: 400 }
+      );
+    }
+
+    if (!isStrongPassword(password)) {
+      return NextResponse.json(
+        { error: `Password must include: ${strongPasswordMessage()}.` },
+        { status: 400 }
+      );
+    }
 
     if (plan !== "pro") {
       return NextResponse.redirect(`${siteUrl}/locations/apply?plan=free`, {
@@ -98,9 +115,9 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.redirect(session.url, { status: 303 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message || "Checkout failed." },
+      { error: error instanceof Error ? error.message : "Checkout failed." },
       { status: 500 }
     );
   }

@@ -33,8 +33,10 @@ export default async function CentralDashboardPage() {
     .select("id", { count: "exact", head: true })
     .eq("claimed", true);
 
-  const totalLocations = Number(totalRestaurants || 0) + Number(totalActivities || 0);
-  const totalClaimed = Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
+  const totalLocations =
+    Number(totalRestaurants || 0) + Number(totalActivities || 0);
+  const totalClaimed =
+    Number(claimedRestaurants || 0) + Number(claimedActivities || 0);
 
   const navCards = [
     {
@@ -48,7 +50,7 @@ export default async function CentralDashboardPage() {
       eyebrow: "Reserve",
       title: "Reservations",
       text: "View bookings, availability, live service flow, and requests.",
-      href: "/reserve/dashboard",
+      href: "/admin/dashboard/reservations",
       cta: "Open reserve",
     },
     {
@@ -108,7 +110,7 @@ export default async function CentralDashboardPage() {
                 </Link>
 
                 <Link
-                  href="/reserve/dashboard"
+                  href="/admin/dashboard/reservations"
                   className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
                 >
                   Open Reserve
@@ -161,7 +163,7 @@ export default async function CentralDashboardPage() {
                 </Link>
 
                 <Link
-                  href="/reserve/dashboard"
+                  href="/admin/dashboard/reservations"
                   className="rounded-2xl bg-black/25 p-4 transition hover:bg-white/10"
                 >
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
@@ -283,7 +285,7 @@ export default async function CentralDashboardPage() {
 
             <div className="mt-5 space-y-3">
               <Link
-                href="/reserve/dashboard"
+                href="/admin/dashboard/reservations"
                 className="block rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
                 <p className="font-black">Reservation System</p>
