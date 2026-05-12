@@ -49,6 +49,14 @@ function getSearchText(location: ClaimQrLocation) {
     .toLowerCase();
 }
 
+function getDisplayClaimUrl(claimUrl: string | null) {
+  if (!claimUrl) {
+    return null;
+  }
+
+  return claimUrl.replace(/^(https?:\/\/)?(www\.)?roseout\.com/i, "https://www.theouthaven.com");
+}
+
 function compareText(left: string, right: string) {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
 }
@@ -175,6 +183,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
           const key = getLocationKey(location);
           const isSelected = selectedKeys.has(key);
           const cityStateZip = getCityStateZip(location);
+          const displayClaimUrl = getDisplayClaimUrl(location.claim_url);
 
           return (
             <div
@@ -193,7 +202,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                 Print
               </label>
 
-              <div className="flex items-center justify-center rounded-2xl border border-black/10 bg-white p-2 print:min-h-[132px]">
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-black/10 bg-white p-2 print:min-h-[132px]">
                 {location.qr_code_data_url ? (
                   <Image
                     unoptimized
@@ -201,15 +210,18 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                     alt={`Claim QR for ${getLocationName(location)}`}
                     width={128}
                     height={128}
-                    className="h-32 w-32 object-contain"
+                    className="h-28 w-28 object-contain print:h-28 print:w-28"
                   />
                 ) : (
                   <div className="text-xs font-black text-black/35">No QR</div>
                 )}
+                <p className="mt-2 text-center text-[10px] font-black uppercase tracking-[0.12em] text-black/60">
+                  Please scan here
+                </p>
               </div>
               <div className="flex flex-col justify-center pr-16 print:pr-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-700">
-                  TheOutHaven Claim
+                  www.theouthaven.com
                 </p>
                 <h2 className="mt-2 text-2xl font-black leading-tight print:text-xl">
                   {getLocationName(location)}
@@ -218,9 +230,9 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                   <p>{location.address?.trim() || "Address not listed"}</p>
                   {cityStateZip && <p>{cityStateZip}</p>}
                 </div>
-                {location.claim_url && (
-                  <p className="mt-3 break-all text-[10px] font-bold text-black/35 print:hidden">
-                    {location.claim_url}
+                {displayClaimUrl && (
+                  <p className="mt-3 break-all text-[10px] font-bold text-black/35">
+                    {displayClaimUrl}
                   </p>
                 )}
               </div>
