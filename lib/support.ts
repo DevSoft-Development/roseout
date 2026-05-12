@@ -17,6 +17,8 @@ export type SupportTicket = {
   requester_email: string;
   requester_phone: string | null;
   source: string | null;
+  department?: string | null;
+  assigned_admin_email?: string | null;
   public_access_token: string;
   created_at: string;
   updated_at: string | null;
@@ -164,6 +166,8 @@ function ticketFromEventRow(row: SupportEventRow): SupportTicket | null {
     requester_email: ticket.requester_email,
     requester_phone: ticket.requester_phone || null,
     source: ticket.source || "support_event_fallback",
+    department: ticket.department || null,
+    assigned_admin_email: ticket.assigned_admin_email || null,
     public_access_token: ticket.public_access_token,
     created_at: ticket.created_at || row.created_at || new Date().toISOString(),
     updated_at: ticket.updated_at || null,
@@ -445,6 +449,8 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
     status: "open",
     priority: "normal",
     source,
+    department: topic.includes("Reservation") ? "OutHaven Reserve" : "Guest Care",
+    assigned_admin_email: null,
     public_access_token: publicAccessToken,
     created_at: createdAt,
     updated_at: createdAt,
@@ -464,6 +470,8 @@ export async function createSupportTicket(input: CreateSupportTicketInput) {
       status: "open",
       priority: "normal",
       source,
+      department: topic.includes("Reservation") ? "OutHaven Reserve" : "Guest Care",
+      assigned_admin_email: null,
       public_access_token: publicAccessToken,
       last_message_at: createdAt,
     })

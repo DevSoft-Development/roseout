@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import AdminAddLocationForm from "@/components/admin/AdminAddLocationForm";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 
@@ -107,7 +108,7 @@ function buildQueryUrl({
   if (claim !== "all") params.set("claim", claim);
   params.set("page", String(page));
 
-  return `/admin/locations?${params.toString()}`;
+  return `/admin/dashboard/locations?${params.toString()}`;
 }
 
 export default async function AdminLocationsPage({
@@ -132,7 +133,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -140,7 +141,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -197,7 +198,7 @@ export default async function AdminLocationsPage({
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      theouthaven_score: item.theouthaven_score,
+      theouthaven_score: item.rating ? Math.round(Number(item.rating) * 20) : 0,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
@@ -217,7 +218,7 @@ export default async function AdminLocationsPage({
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
-      theouthaven_score: item.theouthaven_score,
+      theouthaven_score: item.rating ? Math.round(Number(item.rating) * 20) : 0,
       image_url: item.image_url,
       created_at: item.created_at,
     })) || [];
@@ -265,6 +266,21 @@ export default async function AdminLocationsPage({
                 location type, approval status, claim status, address, city, zip,
                 category, and performance.
               </p>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href="#add-location"
+                  className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.02]"
+                >
+                  + Add Location
+                </Link>
+                <Link
+                  href="/admin/labels"
+                  className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
+                >
+                  Print Claim QRs
+                </Link>
+              </div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 backdrop-blur">
@@ -277,6 +293,8 @@ export default async function AdminLocationsPage({
             </div>
           </div>
         </section>
+
+        <AdminAddLocationForm />
 
         {error && (
           <div className="mt-5 rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm font-bold text-rose-100">
@@ -501,7 +519,7 @@ export default async function AdminLocationsPage({
                 >
                   <div className="grid gap-4 xl:grid-cols-[1fr_420px_140px] xl:items-center">
                     <Link
-                      href={`/locations/${location.locationType}/${location.id}?from=/admin/locations`}
+                      href={`/locations/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                       className="flex min-w-0 items-center gap-4"
                     >
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
@@ -605,14 +623,14 @@ export default async function AdminLocationsPage({
 
                     <div className="flex gap-2 xl:flex-col">
                       <Link
-                        href={`/locations/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/locations/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         View
                       </Link>
 
                       <Link
-                        href={`/locations/edit/${location.locationType}/${location.id}?from=/admin/locations`}
+                        href={`/locations/edit/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit
