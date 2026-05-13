@@ -151,7 +151,8 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superuser", "admin"]);
+  const currentAdmin = await requireAdminRole(["superuser", "admin"]);
+  const canEditUsers = currentAdmin.role === "superuser";
 
   const params = await searchParams;
 
@@ -470,7 +471,16 @@ export default async function AdminUsersPage({
                         </button>
                       </form>
 
-                      <div className="flex gap-2 xl:justify-end">
+                      <div className="flex flex-wrap gap-2 xl:justify-end">
+                        {canEditUsers && (
+                          <Link
+                            href={`/admin/dashboard/users/${user.id}/edit`}
+                            className="rounded-full bg-[#1b1210] px-4 py-3 text-xs font-black text-white transition hover:bg-rose-600"
+                          >
+                            Edit
+                          </Link>
+                        )}
+
                         <form action={disableUser}>
                           <input type="hidden" name="user_id" value={user.id} />
                           <input type="hidden" name="q" value={q} />
