@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import RecoveryRedirect from "@/components/RecoveryRedirect";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +130,7 @@ export default function HomePage() {
       data-homepage-lock="2026-05-11"
       className="min-h-screen overflow-hidden bg-[#070303] text-white"
     >
+      <RecoveryRedirect />
       <style>{`
         @keyframes feedback-marquee {
           0% { transform: translateX(-50%); }
