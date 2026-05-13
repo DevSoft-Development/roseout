@@ -36,7 +36,8 @@ function adminSupabase() {
 }
 
 export default async function AdminUserDetailPage({ params }: PageProps) {
-  await requireAdminRole(["superuser", "admin"]);
+  const currentAdmin = await requireAdminRole(["superuser", "admin"]);
+  const canEditUser = currentAdmin.role === "superuser";
 
   const { id } = await params;
 
@@ -82,7 +83,17 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
             <p className="mt-2 text-white/50">{user.email}</p>
           </div>
 
-          <LoginAsUserButton userId={user.id} />
+          <div className="flex flex-wrap gap-2">
+            {canEditUser && (
+              <Link
+                href={`/admin/dashboard/users/${user.id}/edit`}
+                className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg hover:scale-[1.03]"
+              >
+                Edit User
+              </Link>
+            )}
+            <LoginAsUserButton userId={user.id} />
+          </div>
         </div>
 
         <section className="mb-8 grid gap-4 md:grid-cols-4">
