@@ -100,7 +100,7 @@ function FooterColumn({
       <div className="mt-5 flex flex-col gap-3">
         {links.map((link) => (
           <Link
-            key={link.href}
+            key={`${link.label}-${link.href}`}
             href={link.href}
             className="text-sm font-semibold text-white/45 transition hover:text-white"
           >

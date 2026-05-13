@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "embeddings:backfill": "node scripts/backfill-embeddings.js",
     "start": "next start",
     "lint": "eslint",
     "verify:homepage": "node scripts/verify-homepage-lock.mjs"
@@ -13,10 +14,11 @@
     "@googlemaps/js-api-loader": "^2.0.2",
     "@marsidev/react-turnstile": "^1.5.1",
     "@supabase/ssr": "^0.10.2",
-    "@supabase/supabase-js": "^2.105.1",
+    "@supabase/supabase-js": "^2.105.4",
+    "dotenv": "^17.4.2",
     "lucide-react": "^1.14.0",
     "next": "16.2.4",
-    "openai": "^6.35.0",
+    "openai": "^6.37.0",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
