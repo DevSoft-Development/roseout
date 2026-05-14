@@ -366,6 +366,23 @@ function normalizeLocation(location: string) {
   return location;
 }
 
+function isLongIslandCityItem(item: SmartMatchItem) {
+  const locationFields = [
+    item.city,
+    item.neighborhood,
+    ...(item.tags || []),
+  ]
+    .filter(Boolean)
+    .map((value) => normalize(String(value)));
+
+  return (
+    locationFields.includes("long island city") ||
+    locationFields.includes("lic") ||
+    (locationFields.includes("queens") &&
+      phraseIncludes(getSearchText(item), "long island city"))
+  );
+}
+
 export function detectSmartMatchIntent(input: string): SmartMatchIntent {
   const text = normalize(input);
 
@@ -472,6 +489,14 @@ export function matchesLocationIntent(
   intent: SmartMatchIntent
 ) {
   if (!intent.locations.length) return true;
+
+  if (
+    intent.locations.includes("long island") &&
+    !intent.locations.includes("long island city") &&
+    isLongIslandCityItem(item)
+  ) {
+    return false;
+  }
 
   const text = getSearchText(item);
 
@@ -663,5 +688,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v5";
+  return "theouthaven-smart-match-engine-v6";
 }

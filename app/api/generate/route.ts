@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v13-search-limits-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v14-long-island-filter-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -1032,11 +1032,32 @@ function hasCoordinateInBounds(
   );
 }
 
+function isLongIslandCityLocation(item: any) {
+  const normalizedFields = [
+    item.city,
+    item.neighborhood,
+    item.borough,
+    ...toArray(item.location_tags),
+    ...toArray(item.neighborhood_tags),
+    ...toArray(item.area_tags),
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeQuery(String(value)));
+
+  return (
+    normalizedFields.includes("long island city") ||
+    normalizedFields.includes("lic") ||
+    (normalizedFields.includes("queens") &&
+      locationSearchText(item).includes("long island city"))
+  );
+}
+
 function matchesLongIslandLocation(item: any) {
   const searchable = locationSearchText(item);
   const state = normalizeQuery(String(item.state || ""));
 
   if (state === "nj" || searchable.includes("new jersey")) return false;
+  if (isLongIslandCityLocation(item)) return false;
 
   if (
     Array.from(LONG_ISLAND_LOCATION_TERMS).some((term) =>
