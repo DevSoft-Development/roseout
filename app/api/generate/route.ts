@@ -3459,9 +3459,13 @@ STRICT RULES:
         strictActivityMode: smartIntent.strictActivityMode,
       },
       reply:
-        response?.output_text ||
-        "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
-      intent: {
+  pairedResults.pairs.length > 0
+    ? response?.output_text ||
+      "Here are walkable restaurant and activity matches."
+    : strictWalkingRequest
+      ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
+      : response?.output_text ||
+        "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",intent: {
         requestedTags: intent.requestedTags,
         foodIntents: intent.foodIntents,
         activityIntents: intent.activityIntents,
