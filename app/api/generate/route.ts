@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v14-area-safe-walking-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v15-cross-state-walking-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -2514,9 +2514,18 @@ function locationTextIncludesAny(item: any, terms: string[]) {
   return terms.some((term) => text.includes(normalizeQuery(term)));
 }
 
-function inferNycWalkingArea(item: any) {
+function inferWalkingArea(item: any) {
   const city = normalizeQuery(String(item.city || ""));
+  const state = normalizeQuery(String(item.state || ""));
   const borough = normalizeQuery(String(item.borough || ""));
+
+  if (
+    state === "nj" ||
+    state === "new jersey" ||
+    locationTextIncludesAny(item, Array.from(NEW_JERSEY_LOCATION_TERMS))
+  ) {
+    return "new_jersey";
+  }
 
   if (
     borough.includes("queens") ||
@@ -2537,8 +2546,8 @@ function inferNycWalkingArea(item: any) {
 }
 
 function isCrossAreaWalkingPair(restaurant: any, activity: any) {
-  const restaurantArea = inferNycWalkingArea(restaurant);
-  const activityArea = inferNycWalkingArea(activity);
+  const restaurantArea = inferWalkingArea(restaurant);
+  const activityArea = inferWalkingArea(activity);
 
   return Boolean(
     restaurantArea && activityArea && restaurantArea !== activityArea
