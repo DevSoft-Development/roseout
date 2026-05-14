@@ -1,6 +1,3 @@
-mkdir -p lib
-
-cat > lib/aiSemanticSearch.ts <<'EOF'
 export const SEMANTIC_SEARCH_VERSION = "v1";
 
 export function semanticScoreBoost(_item?: any, _semanticResults?: any) {
@@ -33,4 +30,3 @@ export function confidenceFromScores(item: any) {
     confidence_label: "low",
   };
 }
-EOF
