@@ -18,11 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v11-broader-candidates-${SEMANTIC_SEARCH_VERSION}`;
-const ENTERPRISE_MATCH_LIMIT = 250;
-const SUPPORTING_LOCATION_LIMIT = 500;
-const FALLBACK_GENERAL_RECORD_LIMIT = 1000;
-const FALLBACK_REGIONAL_RECORD_LIMIT = 500;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v11-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -2733,14 +2729,8 @@ async function fetchFallbackRecords(input: string = "") {
 
   const [locationsResult, activitiesResult, ...restaurantResults] =
     await Promise.all([
-      supabase
-        .from("locations")
-        .select(LOCATION_COLUMNS)
-        .limit(SUPPORTING_LOCATION_LIMIT),
-      supabase
-        .from("activities")
-        .select(ACTIVITY_COLUMNS)
-        .limit(FALLBACK_GENERAL_RECORD_LIMIT),
+      supabase.from("locations").select(LOCATION_COLUMNS).limit(800),
+      supabase.from("activities").select(ACTIVITY_COLUMNS).limit(800),
       ...restaurantQueries,
     ]);
 
@@ -2778,7 +2768,7 @@ async function fetchSupportingRecords() {
   const { data, error } = await supabase
     .from("locations")
     .select(LOCATION_COLUMNS)
-    .limit(SUPPORTING_LOCATION_LIMIT);
+    .limit(500);
 
   if (error) throw error;
 
@@ -2855,13 +2845,13 @@ async function fetchEnterpriseSearchRecords(
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_cuisine: requestedCuisine,
-      match_limit: ENTERPRISE_MATCH_LIMIT,
+      match_limit: 150,
     }),
     supabase.rpc("search_activities_enterprise", {
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_activity: requestedActivity,
-      match_limit: ENTERPRISE_MATCH_LIMIT,
+      match_limit: 150,
     }),
   ]);
 
