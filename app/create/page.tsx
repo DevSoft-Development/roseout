@@ -6,6 +6,7 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
+import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type RestaurantCard = {
@@ -891,75 +892,97 @@ export default function CreatePage() {
                           if (isAddOnResults) {
                             addOnActivitySectionRef.current = element;
                           }
-                        }}
-                        className="scroll-mt-24 sm:scroll-mt-28"
-                      >
-                        <ResultSection
-                          title="Experience Picks"
-                          subtitle="Activities matched to your outing plan"
-                        >
-                          {activities.map((activity, activityIndex) => {
-                            const activityId = String(activity.id);
-                            const isSelected =
-                              selectedActivity?.id === activity.id;
-                            const reservationUrl =
-                              activity.reservation_url ||
-                              activity.reservation_link ||
-                              undefined;
-                            const distanceFromRestaurantLabel =
+                        />
+                      );
+                    })}
+                    </ResultSection>
+                  </div>
+                )}
+
+                {activities.length > 0 && (
+                  <div
+                    ref={(element) => {
+                      activitySectionRef.current = element;
+
+                      if (isAddOnResults) {
+                        addOnActivitySectionRef.current = element;
+                      }
+                    }}
+                    className="scroll-mt-24 sm:scroll-mt-28"
+                  >
+                    <ResultSection
+                      title="Experience Picks"
+                      subtitle="Activities matched to your outing plan"
+                    >
+                      {activities.map((activity, activityIndex) => {
+                        const activityId = String(activity.id);
+                        const isSelected =
+                          selectedActivity?.id === activity.id;
+                        const reservationUrl =
+                          activity.reservation_url ||
+                          activity.reservation_link ||
+                          undefined;
+                        const distanceFromRestaurantLabel = selectedRestaurant
+                          ? buildDistanceFromRestaurantLabel(
+                              selectedRestaurant,
+                              activity,
+                              latestDistancePreference
+                            )
+                          : undefined;
+                        const walkingDirectionsUrl = selectedRestaurant
+                          ? buildGoogleDirectionsUrl({
+                              origin: selectedRestaurant,
+                              destination: activity,
+                              travelMode: "walking",
+                            })
+                          : undefined;
+
+                        return (
+                          <ResultCard
+                            key={activityId || activityIndex}
+                            index={activityIndex}
+                            type="activity"
+                            imageUrl={activity.image_url || undefined}
+                            title={activity.activity_name}
+                            eyebrow={activity.activity_type || "Activity"}
+                            address={formatAddress(activity)}
+                            rating={activity.rating}
+                            reviewKeywords={activity.review_keywords}
+                            reviewSnippet={activity.review_snippet}
+                            primaryTag={activity.primary_tag}
+                            distance={
                               selectedRestaurant
                                 ? buildDistanceFromRestaurantLabel(
                                     selectedRestaurant,
-                                    activity,
-                                    latestDistancePreference
-                                  )
-                                : undefined;
-
-                            return (
-                              <ResultCard
-                                key={activityId || activityIndex}
-                                index={activityIndex}
-                                type="activity"
-                                imageUrl={activity.image_url || undefined}
-                                title={activity.activity_name}
-                                eyebrow={activity.activity_type || "Activity"}
-                                address={formatAddress(activity)}
-                                rating={activity.rating}
-                                reviewKeywords={activity.review_keywords}
-                                reviewSnippet={activity.review_snippet}
-                                primaryTag={activity.primary_tag}
-                                distance={
-                                  selectedRestaurant
-                                    ? distanceBetweenLocations(
-                                        selectedRestaurant,
-                                        activity
-                                      ) ?? activity.distance_miles
-                                    : activity.distance_miles
-                                }
-                                distanceLabel={distanceFromRestaurantLabel}
-                                selected={isSelected}
-                                priority={activityIndex === 0}
-                                selectLabel={isSelected ? "Selected" : "Select"}
-                                onSelect={() => selectActivity(activity)}
-                                detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
-                                onDetails={() => trackActivityClick(activityId)}
-                                websiteUrl={activity.website || undefined}
-                                onWebsite={() => trackActivityClick(activityId)}
-                                reservationUrl={reservationUrl}
-                                reservationLabel="Book"
-                                onReservation={() =>
-                                  trackActivityClick(activityId)
-                                }
-                              />
-                            );
-                          })}
-                        </ResultSection>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
+                                    activity
+                                  ) ?? activity.distance_miles
+                                : activity.distance_miles
+                            }
+                            distanceLabel={distanceFromRestaurantLabel}
+                            distanceHref={
+                              latestDistancePreference === "walking"
+                                ? walkingDirectionsUrl
+                                : undefined
+                            }
+                            selected={isSelected}
+                            priority={activityIndex === 0}
+                            selectLabel={isSelected ? "Selected" : "Select"}
+                            onSelect={() => selectActivity(activity)}
+                            detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
+                            onDetails={() => trackActivityClick(activityId)}
+                            websiteUrl={activity.website || undefined}
+                            onWebsite={() => trackActivityClick(activityId)}
+                            reservationUrl={reservationUrl}
+                            reservationLabel="Book"
+                            onReservation={() =>
+                              trackActivityClick(activityId)
+                            }
+                          />
+                        );
+                      })}
+                    </ResultSection>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1606,6 +1629,7 @@ function ResultCard({
   primaryTag,
   distance,
   distanceLabel,
+  distanceHref,
   selected,
   priority,
   selectLabel,
@@ -1630,6 +1654,7 @@ function ResultCard({
   primaryTag?: string | null;
   distance?: number | null;
   distanceLabel?: string;
+  distanceHref?: string;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1714,9 +1739,20 @@ function ResultCard({
           </p>
 
           {distanceLabel ? (
-            <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
-              {distanceLabel}
-            </div>
+            distanceHref ? (
+              <a
+                href={distanceHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/25 sm:text-[11px]"
+              >
+                {distanceLabel} • Google walking route
+              </a>
+            ) : (
+              <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
+                {distanceLabel}
+              </div>
+            )
           ) : null}
         </div>
 
