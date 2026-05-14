@@ -18,11 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v12-walking-pair-candidates-${SEMANTIC_SEARCH_VERSION}`;
-const ENTERPRISE_MATCH_LIMIT: number = 250;
-const SUPPORTING_LOCATION_LIMIT: number = 500;
-const FALLBACK_GENERAL_RECORD_LIMIT: number = 1000;
-const FALLBACK_REGIONAL_RECORD_LIMIT: number = 500;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v11-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -2862,7 +2858,7 @@ async function fetchEnterpriseSearchRecords(
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_activity: requestedActivity,
-      match_limit: ENTERPRISE_MATCH_LIMIT,
+      match_limit: 150,
     }),
   ]);
 
