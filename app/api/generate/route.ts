@@ -18,7 +18,11 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v10-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v11-broader-candidates-${SEMANTIC_SEARCH_VERSION}`;
+const ENTERPRISE_MATCH_LIMIT: number = 250;
+const SUPPORTING_LOCATION_LIMIT: number = 500;
+const FALLBACK_GENERAL_RECORD_LIMIT: number = 1000;
+const FALLBACK_REGIONAL_RECORD_LIMIT: number = 500;
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -2669,7 +2673,7 @@ async function fetchFallbackRecords(input: string = "") {
   // searches food terms, not every neighborhood name.
   let foodQuery = supabase.from("restaurants").select(RESTAURANT_COLUMNS);
   foodQuery = applyFoodFilter(foodQuery);
-  restaurantQueries.push(foodQuery.limit(300));
+  restaurantQueries.push(foodQuery.limit(FALLBACK_GENERAL_RECORD_LIMIT));
 
   // Queens fallback by coordinate bounds. This keeps ALL Queens neighborhoods
   // without sending a huge OR list in the URL.
@@ -2684,11 +2688,15 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -73.68);
 
     queensQuery = applyFoodFilter(queensQuery);
-    restaurantQueries.push(queensQuery.limit(150));
+    restaurantQueries.push(queensQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT));
   }
 
   // Long Island fallback by coordinate bounds.
-  if (text.includes("long island") || text.includes("nassau") || text.includes("suffolk")) {
+  if (
+    text.includes("long island") ||
+    text.includes("nassau") ||
+    text.includes("suffolk")
+  ) {
     let longIslandQuery = supabase
       .from("restaurants")
       .select(RESTAURANT_COLUMNS)
@@ -2699,11 +2707,17 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -71.75);
 
     longIslandQuery = applyFoodFilter(longIslandQuery);
-    restaurantQueries.push(longIslandQuery.limit(150));
+    restaurantQueries.push(
+      longIslandQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT)
+    );
   }
 
   // North Jersey fallback by coordinate bounds.
-  if (text.includes("new jersey") || text.includes("north jersey") || text.includes("jersey")) {
+  if (
+    text.includes("new jersey") ||
+    text.includes("north jersey") ||
+    text.includes("jersey")
+  ) {
     let jerseyQuery = supabase
       .from("restaurants")
       .select(RESTAURANT_COLUMNS)
@@ -2714,13 +2728,19 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -73.85);
 
     jerseyQuery = applyFoodFilter(jerseyQuery);
-    restaurantQueries.push(jerseyQuery.limit(150));
+    restaurantQueries.push(jerseyQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT));
   }
 
   const [locationsResult, activitiesResult, ...restaurantResults] =
     await Promise.all([
-      supabase.from("locations").select(LOCATION_COLUMNS).limit(100),
-      supabase.from("activities").select(ACTIVITY_COLUMNS).limit(300),
+      supabase
+        .from("locations")
+        .select(LOCATION_COLUMNS)
+        .limit(SUPPORTING_LOCATION_LIMIT),
+      supabase
+        .from("activities")
+        .select(ACTIVITY_COLUMNS)
+        .limit(FALLBACK_GENERAL_RECORD_LIMIT),
       ...restaurantQueries,
     ]);
 
@@ -2758,7 +2778,7 @@ async function fetchSupportingRecords() {
   const { data, error } = await supabase
     .from("locations")
     .select(LOCATION_COLUMNS)
-    .limit(100);
+    .limit(SUPPORTING_LOCATION_LIMIT);
 
   if (error) throw error;
 
@@ -2835,13 +2855,13 @@ async function fetchEnterpriseSearchRecords(
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_cuisine: requestedCuisine,
-      match_limit: 40,
+      match_limit: ENTERPRISE_MATCH_LIMIT,
     }),
     supabase.rpc("search_activities_enterprise", {
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_activity: requestedActivity,
-      match_limit: 40,
+      match_limit: ENTERPRISE_MATCH_LIMIT,
     }),
   ]);
 
