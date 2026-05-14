@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v13-search-limits-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v15-expanded-location-aliases-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -867,6 +867,41 @@ const QUEENS_LOCATION_ALIASES = [
   "ditmars",
   "ditmars steinway",
   "utopia",
+  "alley pond",
+  "arverne by the sea",
+  "astoria heights",
+  "bay terrace queens",
+  "bayswater",
+  "bellaire",
+  "bellerose manor",
+  "bowne park",
+  "cambria heights",
+  "clearview",
+  "corona heights",
+  "downtown flushing",
+  "east flushing",
+  "edgemere queens",
+  "elmhurst queens",
+  "fresh pond",
+  "glen oaks village",
+  "hamilton beach",
+  "hammels",
+  "hunters point",
+  "kew gardens queens",
+  "laurelton queens",
+  "lefrak city",
+  "linden hill",
+  "long island city queens",
+  "murray hill flushing",
+  "old astoria",
+  "pomonok",
+  "queens plaza",
+  "rego park queens",
+  "rockaway park",
+  "south jamaica",
+  "st. albans",
+  "willets point",
+  "windsor park",
 ];
 
 const NASSAU_LOCATION_ALIASES = [
@@ -901,6 +936,33 @@ const NASSAU_LOCATION_ALIASES = [
   "oceanside",
   "lynbrook",
   "malverne",
+  "albertson",
+  "baldwin",
+  "carle place",
+  "cedarhurst",
+  "east meadow",
+  "east rockaway",
+  "floral park",
+  "franklin square",
+  "glen cove",
+  "glen head",
+  "glenwood landing",
+  "great neck plaza",
+  "hewlett",
+  "inwood nassau",
+  "island park nassau",
+  "lawrence",
+  "locust valley",
+  "manorhaven",
+  "new hyde park",
+  "north bellmore",
+  "north merrick",
+  "old westbury",
+  "point lookout",
+  "sea cliff",
+  "seaford",
+  "stewart manor",
+  "williston park",
 ];
 
 const SUFFOLK_LOCATION_ALIASES = [
@@ -924,6 +986,45 @@ const SUFFOLK_LOCATION_ALIASES = [
   "east hampton",
   "montauk",
   "greenport",
+  "amityville",
+  "bayport",
+  "bellport",
+  "blue point",
+  "bohemia",
+  "brentwood",
+  "bridgehampton",
+  "brookhaven",
+  "centerport",
+  "central islip",
+  "copiague",
+  "dix hills",
+  "east northport",
+  "farmingville",
+  "fire island",
+  "great river",
+  "holbrook",
+  "holtsville",
+  "kings park",
+  "lake grove",
+  "lindenhurst",
+  "mastic",
+  "mastic beach",
+  "medford",
+  "miller place",
+  "nesconset",
+  "northport",
+  "oakdale",
+  "port jefferson",
+  "port jefferson station",
+  "rocky point",
+  "sag harbor",
+  "selden",
+  "setauket",
+  "shirley",
+  "st james",
+  "stony brook",
+  "westhampton beach",
+  "yaphank",
 ];
 
 const LONG_ISLAND_LOCATION_ALIASES = [
@@ -935,27 +1036,15 @@ const LONG_ISLAND_LOCATION_ALIASES = [
   ...SUFFOLK_LOCATION_ALIASES,
 ];
 
-const LOCATION_AREA_ALIASES: Record<string, string[]> = {
-  queens: QUEENS_LOCATION_ALIASES,
-  "long island": LONG_ISLAND_LOCATION_ALIASES,
-  nassau: ["nassau county", ...NASSAU_LOCATION_ALIASES],
-  "nassau county": ["nassau", ...NASSAU_LOCATION_ALIASES],
-  suffolk: ["suffolk county", ...SUFFOLK_LOCATION_ALIASES],
-  "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
-};
-
-const LONG_ISLAND_LOCATION_TERMS = new Set([
-  "long island",
-  "nassau",
-  "nassau county",
-  "suffolk",
-  "suffolk county",
-  ...LONG_ISLAND_LOCATION_ALIASES,
-]);
-
-const NEW_JERSEY_LOCATION_TERMS = new Set([
+const NEW_JERSEY_LOCATION_ALIASES = [
   "new jersey",
   "north jersey",
+  "bergen county",
+  "essex county",
+  "hudson county",
+  "passaic county",
+  "union county",
+  "morris county",
   "jersey city",
   "hoboken",
   "newark",
@@ -986,7 +1075,69 @@ const NEW_JERSEY_LOCATION_TERMS = new Set([
   "fairview",
   "palisades park",
   "leonia",
+  "asbury park",
+  "belmar",
+  "belleville",
+  "boonton",
+  "caldwell",
+  "cedar grove",
+  "cranford",
+  "dover",
+  "east orange",
+  "elmwood park",
+  "emerson",
+  "garfield",
+  "glen ridge",
+  "glen rock",
+  "hasbrouck heights",
+  "hawthorne",
+  "hillsdale",
+  "irvington",
+  "little ferry",
+  "little falls",
+  "livingston",
+  "lodi",
+  "lyndhurst",
+  "mahwah",
+  "maywood",
+  "millburn",
+  "morristown",
+  "new brunswick",
+  "north arlington",
+  "nutley",
+  "passaic",
+  "rutherford",
+  "south orange",
+  "summit",
+  "teterboro",
+  "totowa",
+  "wayne",
+  "wood ridge",
+];
+
+const NEW_JERSEY_LOCATION_TERMS = new Set(NEW_JERSEY_LOCATION_ALIASES);
+
+const LOCATION_AREA_ALIASES: Record<string, string[]> = {
+  queens: QUEENS_LOCATION_ALIASES,
+  "long island": LONG_ISLAND_LOCATION_ALIASES,
+  nassau: ["nassau county", ...NASSAU_LOCATION_ALIASES],
+  "nassau county": ["nassau", ...NASSAU_LOCATION_ALIASES],
+  suffolk: ["suffolk county", ...SUFFOLK_LOCATION_ALIASES],
+  "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
+  "new jersey": NEW_JERSEY_LOCATION_ALIASES,
+  "north jersey": NEW_JERSEY_LOCATION_ALIASES,
+};
+
+const LONG_ISLAND_LOCATION_TERMS = new Set([
+  "long island",
+  "nassau",
+  "nassau county",
+  "suffolk",
+  "suffolk county",
+  ...LONG_ISLAND_LOCATION_ALIASES,
 ]);
+
+
 
 function locationSearchText(item: any) {
   return normalizeQuery(
@@ -1032,11 +1183,32 @@ function hasCoordinateInBounds(
   );
 }
 
+function isLongIslandCityLocation(item: any) {
+  const normalizedFields = [
+    item.city,
+    item.neighborhood,
+    item.borough,
+    ...toArray(item.location_tags),
+    ...toArray(item.neighborhood_tags),
+    ...toArray(item.area_tags),
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeQuery(String(value)));
+
+  return (
+    normalizedFields.includes("long island city") ||
+    normalizedFields.includes("lic") ||
+    (normalizedFields.includes("queens") &&
+      locationSearchText(item).includes("long island city"))
+  );
+}
+
 function matchesLongIslandLocation(item: any) {
   const searchable = locationSearchText(item);
   const state = normalizeQuery(String(item.state || ""));
 
   if (state === "nj" || searchable.includes("new jersey")) return false;
+  if (isLongIslandCityLocation(item)) return false;
 
   if (
     Array.from(LONG_ISLAND_LOCATION_TERMS).some((term) =>
@@ -1227,6 +1399,7 @@ function detectLocation(input: string, locations: any[]) {
     "far rockaway",
     "belle harbor",
     "rockaway beach",
+    ...QUEENS_LOCATION_ALIASES,
     "south bronx",
     "mott haven",
     "melrose",
@@ -1274,6 +1447,7 @@ function detectLocation(input: string, locations: any[]) {
     "patchogue",
     "huntington",
     "island park",
+    ...LONG_ISLAND_LOCATION_ALIASES,
     "westchester",
     "westchester county",
     "yonkers",
@@ -1289,19 +1463,7 @@ function detectLocation(input: string, locations: any[]) {
     "hartsdale",
     "port chester",
     "rye",
-    "new jersey",
-    "north jersey",
-    "jersey city",
-    "hoboken",
-    "newark",
-    "edgewater",
-    "fort lee",
-    "union city",
-    "weehawken",
-    "secaucus",
-    "hackensack",
-    "paramus",
-    "englewood",
+    ...NEW_JERSEY_LOCATION_ALIASES,
     "jfk",
     "laguardia",
     "lga",

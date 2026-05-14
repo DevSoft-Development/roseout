@@ -259,8 +259,29 @@ export const LOCATION_INTENTS: string[] = [
   "south ozone park",
   "far rockaway",
   "rockaway",
+  "rockaway park",
   "bayside",
   "whitestone",
+  "college point",
+  "fresh meadows",
+  "kew gardens",
+  "queens village",
+  "laurelton",
+  "cambria heights",
+  "st albans",
+  "springfield gardens",
+  "middle village",
+  "maspeth",
+  "glendale",
+  "bellerose",
+  "briarwood",
+  "douglaston",
+  "little neck",
+  "howard beach",
+  "arverne",
+  "broad channel",
+  "hunters point",
+  "queens plaza",
   "south bronx",
   "fordham",
   "riverdale",
@@ -287,14 +308,63 @@ export const LOCATION_INTENTS: string[] = [
   "mineola",
   "freeport",
   "long beach",
+  "rockville centre",
+  "valley stream",
+  "elmont",
+  "uniondale",
   "hicksville",
   "westbury",
   "massapequa",
+  "levittown",
+  "bethpage",
+  "farmingdale",
+  "great neck",
+  "manhasset",
+  "port washington",
+  "roslyn",
+  "syosset",
+  "plainview",
+  "merrick",
+  "bellmore",
+  "oceanside",
+  "lynbrook",
+  "new hyde park",
+  "glen cove",
+  "east meadow",
+  "seaford",
   "babylon",
   "deer park",
   "ronkonkoma",
   "patchogue",
+  "huntington",
+  "smithtown",
+  "commack",
+  "bay shore",
+  "islip",
+  "sayville",
+  "hauppauge",
+  "melville",
+  "riverhead",
+  "hampton bays",
+  "southampton",
+  "east hampton",
+  "montauk",
+  "greenport",
+  "port jefferson",
+  "stony brook",
+  "lindenhurst",
+  "brentwood",
+  "central islip",
+  "sag harbor",
   "island park",
+  "new jersey",
+  "north jersey",
+  "bergen county",
+  "essex county",
+  "hudson county",
+  "passaic county",
+  "union county",
+  "morris county",
   "jersey city",
   "hoboken",
   "newark",
@@ -305,6 +375,44 @@ export const LOCATION_INTENTS: string[] = [
   "secaucus",
   "hackensack",
   "paramus",
+  "englewood",
+  "bayonne",
+  "kearny",
+  "harrison",
+  "elizabeth",
+  "union",
+  "maplewood",
+  "montclair",
+  "bloomfield",
+  "clifton",
+  "paterson",
+  "teaneck",
+  "ridgefield",
+  "ridgefield park",
+  "north bergen",
+  "west new york",
+  "guttenberg",
+  "fairview",
+  "palisades park",
+  "leonia",
+  "asbury park",
+  "belmar",
+  "cranford",
+  "east orange",
+  "glen ridge",
+  "livingston",
+  "lodi",
+  "lyndhurst",
+  "mahwah",
+  "millburn",
+  "morristown",
+  "new brunswick",
+  "nutley",
+  "passaic",
+  "rutherford",
+  "south orange",
+  "summit",
+  "wayne",
   "laguardia",
   "jfk",
 ];
@@ -364,6 +472,23 @@ function normalizeLocation(location: string) {
   if (location === "les") return "lower east side";
   if (location === "fidi") return "financial district";
   return location;
+}
+
+function isLongIslandCityItem(item: SmartMatchItem) {
+  const locationFields = [
+    item.city,
+    item.neighborhood,
+    ...(item.tags || []),
+  ]
+    .filter(Boolean)
+    .map((value) => normalize(String(value)));
+
+  return (
+    locationFields.includes("long island city") ||
+    locationFields.includes("lic") ||
+    (locationFields.includes("queens") &&
+      phraseIncludes(getSearchText(item), "long island city"))
+  );
 }
 
 export function detectSmartMatchIntent(input: string): SmartMatchIntent {
@@ -472,6 +597,14 @@ export function matchesLocationIntent(
   intent: SmartMatchIntent
 ) {
   if (!intent.locations.length) return true;
+
+  if (
+    intent.locations.includes("long island") &&
+    !intent.locations.includes("long island city") &&
+    isLongIslandCityItem(item)
+  ) {
+    return false;
+  }
 
   const text = getSearchText(item);
 
@@ -663,5 +796,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v5";
+  return "theouthaven-smart-match-engine-v7";
 }
