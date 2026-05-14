@@ -796,5 +796,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v7";
+  return "theouthaven-smart-match-engine-v5";
 }

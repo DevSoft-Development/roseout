@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v15-expanded-location-aliases-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v14-area-safe-walking-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -790,6 +790,46 @@ function normalizeLocation(item: any) {
         : item.activity_name,
   };
 }
+
+const MANHATTAN_LOCATION_ALIASES = [
+  "manhattan",
+  "new york",
+  "new york city",
+  "soho",
+  "tribeca",
+  "chelsea",
+  "midtown",
+  "midtown east",
+  "midtown west",
+  "upper east side",
+  "upper west side",
+  "harlem",
+  "east harlem",
+  "west harlem",
+  "washington heights",
+  "inwood",
+  "hells kitchen",
+  "hudson yards",
+  "times square",
+  "theater district",
+  "flatiron",
+  "gramercy",
+  "kips bay",
+  "noho",
+  "nolita",
+  "lower east side",
+  "les",
+  "east village",
+  "west village",
+  "greenwich village",
+  "financial district",
+  "fidi",
+  "battery park",
+  "battery park city",
+  "chinatown",
+  "little italy",
+  "union square",
+];
 
 const QUEENS_LOCATION_ALIASES = [
   "queens",
@@ -2468,6 +2508,43 @@ function filterActivitiesByActivityIntent(
 const WALKING_DISTANCE_MILES = 1.25;
 const WALKING_PAIR_CANDIDATE_LIMIT = 80;
 
+function locationTextIncludesAny(item: any, terms: string[]) {
+  const text = locationSearchText(item);
+
+  return terms.some((term) => text.includes(normalizeQuery(term)));
+}
+
+function inferNycWalkingArea(item: any) {
+  const city = normalizeQuery(String(item.city || ""));
+  const borough = normalizeQuery(String(item.borough || ""));
+
+  if (
+    borough.includes("queens") ||
+    locationTextIncludesAny(item, QUEENS_LOCATION_ALIASES)
+  ) {
+    return "queens";
+  }
+
+  if (
+    borough.includes("manhattan") ||
+    city === "new york" ||
+    locationTextIncludesAny(item, MANHATTAN_LOCATION_ALIASES)
+  ) {
+    return "manhattan";
+  }
+
+  return null;
+}
+
+function isCrossAreaWalkingPair(restaurant: any, activity: any) {
+  const restaurantArea = inferNycWalkingArea(restaurant);
+  const activityArea = inferNycWalkingArea(activity);
+
+  return Boolean(
+    restaurantArea && activityArea && restaurantArea !== activityArea
+  );
+}
+
 function pairWalkingDistanceMatches(
   restaurants: any[],
   activities: any[]
@@ -2481,6 +2558,10 @@ function pairWalkingDistanceMatches(
           !activity.latitude ||
           !activity.longitude
         ) {
+          return null;
+        }
+
+        if (isCrossAreaWalkingPair(restaurant, activity)) {
           return null;
         }
 
