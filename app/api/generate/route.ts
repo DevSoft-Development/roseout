@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v10-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v11-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -2719,8 +2719,8 @@ async function fetchFallbackRecords(input: string = "") {
 
   const [locationsResult, activitiesResult, ...restaurantResults] =
     await Promise.all([
-      supabase.from("locations").select(LOCATION_COLUMNS).limit(100),
-      supabase.from("activities").select(ACTIVITY_COLUMNS).limit(300),
+      supabase.from("locations").select(LOCATION_COLUMNS).limit(800),
+      supabase.from("activities").select(ACTIVITY_COLUMNS).limit(800),
       ...restaurantQueries,
     ]);
 
@@ -2758,7 +2758,7 @@ async function fetchSupportingRecords() {
   const { data, error } = await supabase
     .from("locations")
     .select(LOCATION_COLUMNS)
-    .limit(100);
+    .limit(500);
 
   if (error) throw error;
 
@@ -2835,13 +2835,13 @@ async function fetchEnterpriseSearchRecords(
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_cuisine: requestedCuisine,
-      match_limit: 40,
+      match_limit: 150,
     }),
     supabase.rpc("search_activities_enterprise", {
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_activity: requestedActivity,
-      match_limit: 40,
+      match_limit: 150,
     }),
   ]);
 
