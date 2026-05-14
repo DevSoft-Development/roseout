@@ -2296,6 +2296,53 @@ function filterActivitiesByActivityIntent(
   return [];
 }
 
+const WALKING_DISTANCE_MILES = 0.75;
+
+function pairWalkingDistanceMatches(restaurants: any[], activities: any[]) {
+  const pairs = restaurants
+    .flatMap((restaurant) =>
+      activities.map((activity) => {
+        if (
+          !restaurant.latitude ||
+          !restaurant.longitude ||
+          !activity.latitude ||
+          !activity.longitude
+        ) {
+          return null;
+        }
+
+        const distance = haversineMiles(
+          Number(restaurant.latitude),
+          Number(restaurant.longitude),
+          Number(activity.latitude),
+          Number(activity.longitude)
+        );
+
+        if (distance > WALKING_DISTANCE_MILES) return null;
+
+        const walkingMinutes = walkingMinutesFromMiles(distance);
+
+        return {
+          restaurant,
+          activity,
+          distance_miles: Number(distance.toFixed(2)),
+          walking_minutes: walkingMinutes,
+          walking_label: `${walkingMinutes} min walk from ${
+            restaurant.restaurant_name || restaurant.name
+          }`,
+          pair_score:
+            Number(restaurant.theouthaven_score || 0) +
+            Number(activity.theouthaven_score || 0) +
+            200,
+        };
+      })
+    )
+    .filter(Boolean)
+    .sort((a: any, b: any) => b.pair_score - a.pair_score);
+
+  return pairs.slice(0, 5);
+}
+
 function pairSmartMatches(restaurants: any[], activities: any[]) {
   if (!restaurants.length || !activities.length) {
     return {
@@ -3163,15 +3210,57 @@ return (
       smartBalanced.activities = rankedActivities.slice(0, 2);
     }
 
-    const pairedResults =
-      smartBalanced.restaurants.length > 0 &&
-      smartBalanced.activities.length > 0
-        ? pairSmartMatches(smartBalanced.restaurants, smartBalanced.activities)
-        : {
-            restaurants: smartBalanced.restaurants,
-            activities: smartBalanced.activities,
-            pairs: [],
-          };
+ const wantsWalkingPair =
+  intent.wantsFullOuting ||
+  (intent.wantsRestaurant && intent.wantsActivity) ||
+  input.toLowerCase().includes("walking distance") ||
+  input.toLowerCase().includes("walkable") ||
+  input.toLowerCase().includes("nearby") ||
+  input.toLowerCase().includes("close by");
+
+const walkingPairs =
+  wantsWalkingPair &&
+  smartBalanced.restaurants.length > 0 &&
+  smartBalanced.activities.length > 0
+    ? pairWalkingDistanceMatches(
+        smartBalanced.restaurants,
+        smartBalanced.activities
+      )
+    : [];
+
+const pairedResults =
+  walkingPairs.length > 0
+    ? {
+        restaurants: walkingPairs.map((pair: any) => ({
+          ...pair.restaurant,
+          paired_activity_name:
+            pair.activity.activity_name || pair.activity.name,
+          pair_distance_miles: pair.distance_miles,
+          pair_walking_minutes: pair.walking_minutes,
+          pair_walking_label: pair.walking_label,
+          pair_score: pair.pair_score,
+        })),
+        activities: walkingPairs.map((pair: any) => ({
+          ...pair.activity,
+          paired_restaurant_name:
+            pair.restaurant.restaurant_name || pair.restaurant.name,
+          pair_distance_miles: pair.distance_miles,
+          pair_walking_minutes: pair.walking_minutes,
+          pair_walking_label: `${pair.walking_minutes} min walk from ${
+            pair.activity.activity_name || pair.activity.name
+          }`,
+          pair_score: pair.pair_score,
+        })),
+        pairs: walkingPairs,
+      }
+    : smartBalanced.restaurants.length > 0 &&
+        smartBalanced.activities.length > 0
+      ? pairSmartMatches(smartBalanced.restaurants, smartBalanced.activities)
+      : {
+          restaurants: smartBalanced.restaurants,
+          activities: smartBalanced.activities,
+          pairs: [],
+        };
 
     const finalDedupedResults = removeDuplicateLocationsAcrossTypes(
       pairedResults.restaurants,
@@ -3309,6 +3398,7 @@ STRICT RULES:
 - Do NOT invent business details.
 - Do NOT add times unless asked.
 - Do NOT add dessert, walks, or extra stops unless asked.
+- If the user asks for a restaurant with activities, date night, full outing, nearby, walkable, or walking distance, prioritize restaurant/activity pairs within 0.75 miles.
 `;
 
     const hasResults =
