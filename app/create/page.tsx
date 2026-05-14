@@ -6,6 +6,8 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
+import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
+import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type RestaurantCard = {
   id: string;
@@ -821,6 +823,17 @@ export default function CreatePage() {
                               latestDistancePreference
                             )
                           : undefined;
+                        const walkingDirectionsUrl = selectedRestaurant
+                          ? buildGoogleDirectionsUrl({
+                              origin: selectedRestaurant,
+                              destination: activity,
+                              travelMode: "walking",
+                            })
+                          : undefined;
+                        const shouldLinkWalkingDirections = Boolean(
+                          latestDistancePreference === "walking" &&
+                            walkingDirectionsUrl
+                        );
 
                         return (
                           <ResultCard
@@ -844,6 +857,11 @@ export default function CreatePage() {
                                 : activity.distance_miles
                             }
                             distanceLabel={distanceFromRestaurantLabel}
+                            distanceHref={
+                              shouldLinkWalkingDirections
+                                ? walkingDirectionsUrl
+                                : undefined
+                            }
                             selected={isSelected}
                             priority={activityIndex === 0}
                             selectLabel={isSelected ? "Selected" : "Select"}
@@ -1509,6 +1527,7 @@ function ResultCard({
   primaryTag,
   distance,
   distanceLabel,
+  distanceHref,
   selected,
   priority,
   selectLabel,
@@ -1533,6 +1552,7 @@ function ResultCard({
   primaryTag?: string | null;
   distance?: number | null;
   distanceLabel?: string;
+  distanceHref?: string;
   selected: boolean;
   priority: boolean;
   selectLabel: string;
@@ -1617,9 +1637,20 @@ function ResultCard({
           </p>
 
           {distanceLabel ? (
-            <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
-              {distanceLabel}
-            </div>
+            distanceHref ? (
+              <a
+                href={distanceHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/25 sm:text-[11px]"
+              >
+                {distanceLabel} • Google walking route
+              </a>
+            ) : (
+              <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
+                {distanceLabel}
+              </div>
+            )
           ) : null}
         </div>
 
@@ -1921,6 +1952,10 @@ function walkingMinutesFromMiles(distanceMiles: number | null) {
   return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
 }
 
+function formatPairDistanceMiles(distanceMiles: number) {
+  return distanceMiles.toFixed(1);
+}
+
 function queryRequestsWalkingDistance(input: string) {
   return /\b(walk|walking|walkable|walks)\b/i.test(input);
 }
@@ -1940,6 +1975,10 @@ function buildDistanceFromRestaurantLabel(
   if (distance === null) return undefined;
 
   if (distancePreference === "walking") {
+    if (isCrossAreaWalkingPair(restaurant, activity)) {
+      return `Not walkable from ${restaurant.restaurant_name}`;
+    }
+
     const walkingMinutes =
       activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
@@ -1948,7 +1987,7 @@ function buildDistanceFromRestaurantLabel(
       : undefined;
   }
 
-  return `${distance} mi from ${restaurant.restaurant_name}`;
+  return `${formatPairDistanceMiles(distance)} miles from ${restaurant.restaurant_name}`;
 }
 
 function buildDistanceText(
@@ -1964,6 +2003,10 @@ function buildDistanceText(
 
     if (distance !== null) {
       if (distancePreference === "walking") {
+        if (isCrossAreaWalkingPair(restaurant, activity)) {
+          return `Not walkable between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+        }
+
         const walkingMinutes =
           activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
@@ -1972,7 +2015,7 @@ function buildDistanceText(
         }
       }
 
-      return `${distance} miles between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+      return `${formatPairDistanceMiles(distance)} miles between ${restaurant.restaurant_name} and ${activity.activity_name}`;
     }
 
     if (restaurant.city && activity.city && restaurant.city === activity.city) {

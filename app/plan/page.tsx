@@ -4,6 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  buildGoogleDirectionsUrl,
+  buildGooglePlaceDirectionsUrl,
+} from "@/lib/googleDirections";
+import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type PlanLocation = {
   id?: string;
@@ -85,6 +90,16 @@ function PlanPageInner() {
 
   const hasPlan = Boolean(restaurant || activity);
   const distancePreference = plan?.distancePreference || "miles";
+  const walkingRouteUrl = buildGoogleDirectionsUrl({
+    origin: restaurant,
+    destination: activity,
+    travelMode: "walking",
+  });
+  const drivingRouteUrl = buildGoogleDirectionsUrl({
+    origin: restaurant,
+    destination: activity,
+    travelMode: "driving",
+  });
 
   const planTitle = useMemo(() => {
     const names = [
@@ -176,6 +191,37 @@ function PlanPageInner() {
                   planning into action.
                 </p>
               </div>
+
+              {(walkingRouteUrl || drivingRouteUrl) && (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
+                    Google Routes
+                  </p>
+                  <div className="mt-3 grid gap-2">
+                    {walkingRouteUrl ? (
+                      <a
+                        href={walkingRouteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+                      >
+                        Google Walking Route
+                      </a>
+                    ) : null}
+
+                    {drivingRouteUrl ? (
+                      <a
+                        href={drivingRouteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
+                      >
+                        Drive Dinner → Activity
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </aside>
 
             <div className="rounded-[1.2rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:p-4">
@@ -236,6 +282,10 @@ function PlanPageInner() {
                 label="Dinner Pick"
                 type="restaurant"
                 location={restaurant}
+                directionsUrl={buildGooglePlaceDirectionsUrl({
+                  destination: restaurant,
+                  travelMode: "driving",
+                })}
               />
             )}
 
@@ -244,6 +294,10 @@ function PlanPageInner() {
                 label="Activity Pick"
                 type="activity"
                 location={activity}
+                directionsUrl={buildGooglePlaceDirectionsUrl({
+                  destination: activity,
+                  travelMode: "driving",
+                })}
               />
             )}
           </div>
@@ -404,10 +458,12 @@ function PlanActionCard({
   label,
   type,
   location,
+  directionsUrl,
 }: {
   label: string;
   type: "restaurant" | "activity";
   location: PlanLocation;
+  directionsUrl?: string;
 }) {
   const title =
     type === "restaurant"
@@ -482,6 +538,17 @@ function PlanActionCard({
           >
             Details
           </Link>
+
+          {directionsUrl ? (
+            <a
+              href={directionsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+            >
+              Drive Here
+            </a>
+          ) : null}
 
           {reservationUrl ? (
             <a
@@ -650,6 +717,12 @@ function buildFlowText(
 
   if (distance !== null) {
     if (distancePreference === "walking") {
+      if (isCrossAreaWalkingPair(restaurant, activity)) {
+        return `Not walkable between ${restaurantName || "dinner"} and ${
+          activityName || "activity"
+        }`;
+      }
+
       const walkingMinutes =
         activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
