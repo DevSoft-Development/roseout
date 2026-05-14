@@ -18,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v13-search-limits-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-location-coordinates-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -791,6 +791,187 @@ function normalizeLocation(item: any) {
   };
 }
 
+const MANHATTAN_LOCATION_ALIASES = [
+  "manhattan",
+  "soho",
+  "south of houston",
+  "tribeca",
+  "hudson square",
+  "civic center",
+  "downtown",
+  "uptown",
+  "two bridges",
+  "lower east side",
+  "les",
+  "east village",
+  "alphabet city",
+  "noho",
+  "nolita",
+  "little italy",
+  "chinatown",
+  "financial district",
+  "fidi",
+  "wall street",
+  "battery park",
+  "battery park city",
+  "seaport",
+  "south street seaport",
+  "west village",
+  "greenwich village",
+  "meatpacking district",
+  "chelsea",
+  "flatiron",
+  "nomad",
+  "gramercy",
+  "union square",
+  "stuyvesant town",
+  "peter cooper village",
+  "kips bay",
+  "murray hill",
+  "midtown",
+  "midtown east",
+  "midtown west",
+  "hells kitchen",
+  "hell s kitchen",
+  "hell's kitchen",
+  "clinton",
+  "theater district",
+  "times square",
+  "garment district",
+  "koreatown",
+  "herald square",
+  "hudson yards",
+  "turtle bay",
+  "sutton place",
+  "upper east side",
+  "ues",
+  "yorkville",
+  "lenox hill",
+  "carnegie hill",
+  "upper west side",
+  "uws",
+  "lincoln square",
+  "columbus circle",
+  "manhattan valley",
+  "morningside heights",
+  "harlem",
+  "east harlem",
+  "spanish harlem",
+  "central harlem",
+  "west harlem",
+  "hamilton heights",
+  "washington heights",
+  "inwood",
+  "marble hill",
+  "roosevelt island",
+];
+
+type LocationCoordinate = {
+  latitude: number;
+  longitude: number;
+};
+
+const MANHATTAN_LOCATION_COORDINATES: Record<string, LocationCoordinate> = {
+  manhattan: { latitude: 40.7831, longitude: -73.9712 },
+  soho: { latitude: 40.7233, longitude: -74.003 },
+  "south of houston": { latitude: 40.7233, longitude: -74.003 },
+  tribeca: { latitude: 40.7163, longitude: -74.0086 },
+  "hudson square": { latitude: 40.7266, longitude: -74.0074 },
+  "civic center": { latitude: 40.7135, longitude: -74.0024 },
+  downtown: { latitude: 40.7209, longitude: -74.0007 },
+  uptown: { latitude: 40.8156, longitude: -73.9465 },
+  "two bridges": { latitude: 40.7114, longitude: -73.9968 },
+  "lower east side": { latitude: 40.715, longitude: -73.9843 },
+  les: { latitude: 40.715, longitude: -73.9843 },
+  "east village": { latitude: 40.7265, longitude: -73.9815 },
+  "alphabet city": { latitude: 40.7258, longitude: -73.9786 },
+  noho: { latitude: 40.7287, longitude: -73.9926 },
+  nolita: { latitude: 40.7223, longitude: -73.9957 },
+  "little italy": { latitude: 40.7191, longitude: -73.9973 },
+  chinatown: { latitude: 40.7158, longitude: -73.997 },
+  "financial district": { latitude: 40.7075, longitude: -74.0113 },
+  fidi: { latitude: 40.7075, longitude: -74.0113 },
+  "wall street": { latitude: 40.706, longitude: -74.0088 },
+  "battery park": { latitude: 40.7033, longitude: -74.017 },
+  "battery park city": { latitude: 40.7116, longitude: -74.0158 },
+  seaport: { latitude: 40.7065, longitude: -74.0036 },
+  "south street seaport": { latitude: 40.7065, longitude: -74.0036 },
+  "west village": { latitude: 40.7358, longitude: -74.0036 },
+  "greenwich village": { latitude: 40.7336, longitude: -73.9992 },
+  "meatpacking district": { latitude: 40.7409, longitude: -74.0077 },
+  chelsea: { latitude: 40.7465, longitude: -74.0014 },
+  flatiron: { latitude: 40.7411, longitude: -73.9897 },
+  nomad: { latitude: 40.7447, longitude: -73.9884 },
+  gramercy: { latitude: 40.7376, longitude: -73.9846 },
+  "union square": { latitude: 40.7359, longitude: -73.9911 },
+  "stuyvesant town": { latitude: 40.7317, longitude: -73.9776 },
+  "peter cooper village": { latitude: 40.7338, longitude: -73.9787 },
+  "kips bay": { latitude: 40.7423, longitude: -73.9781 },
+  "murray hill": { latitude: 40.7479, longitude: -73.9765 },
+  midtown: { latitude: 40.7549, longitude: -73.984 },
+  "midtown east": { latitude: 40.754, longitude: -73.9708 },
+  "midtown west": { latitude: 40.759, longitude: -73.9928 },
+  "hells kitchen": { latitude: 40.7638, longitude: -73.9918 },
+  "hell s kitchen": { latitude: 40.7638, longitude: -73.9918 },
+  "hell's kitchen": { latitude: 40.7638, longitude: -73.9918 },
+  clinton: { latitude: 40.7638, longitude: -73.9918 },
+  "theater district": { latitude: 40.759, longitude: -73.986 },
+  "times square": { latitude: 40.758, longitude: -73.9855 },
+  "garment district": { latitude: 40.7547, longitude: -73.9917 },
+  koreatown: { latitude: 40.7476, longitude: -73.9867 },
+  "herald square": { latitude: 40.7501, longitude: -73.9877 },
+  "hudson yards": { latitude: 40.7538, longitude: -74.0022 },
+  "turtle bay": { latitude: 40.754, longitude: -73.968 },
+  "sutton place": { latitude: 40.7586, longitude: -73.9618 },
+  "upper east side": { latitude: 40.7736, longitude: -73.9566 },
+  ues: { latitude: 40.7736, longitude: -73.9566 },
+  yorkville: { latitude: 40.7762, longitude: -73.9492 },
+  "lenox hill": { latitude: 40.7687, longitude: -73.9588 },
+  "carnegie hill": { latitude: 40.7845, longitude: -73.9557 },
+  "upper west side": { latitude: 40.787, longitude: -73.9754 },
+  uws: { latitude: 40.787, longitude: -73.9754 },
+  "lincoln square": { latitude: 40.7738, longitude: -73.9845 },
+  "columbus circle": { latitude: 40.7681, longitude: -73.9819 },
+  "manhattan valley": { latitude: 40.7986, longitude: -73.9619 },
+  "morningside heights": { latitude: 40.8075, longitude: -73.9626 },
+  harlem: { latitude: 40.8116, longitude: -73.9465 },
+  "east harlem": { latitude: 40.7957, longitude: -73.9389 },
+  "spanish harlem": { latitude: 40.7957, longitude: -73.9389 },
+  "central harlem": { latitude: 40.8116, longitude: -73.9465 },
+  "west harlem": { latitude: 40.8188, longitude: -73.9558 },
+  "hamilton heights": { latitude: 40.8253, longitude: -73.9477 },
+  "washington heights": { latitude: 40.8417, longitude: -73.9394 },
+  inwood: { latitude: 40.8677, longitude: -73.9212 },
+  "marble hill": { latitude: 40.8761, longitude: -73.9103 },
+  "roosevelt island": { latitude: 40.7618, longitude: -73.9499 },
+};
+
+const LOCATION_COORDINATES: Record<string, LocationCoordinate> = {
+  ...MANHATTAN_LOCATION_COORDINATES,
+};
+
+function coordinatesForLocations(locations: string[]) {
+  return locations
+    .map((location) => {
+      const normalizedLocation = normalizeQuery(location);
+      const coordinates = LOCATION_COORDINATES[normalizedLocation];
+
+      if (!coordinates) return null;
+
+      return {
+        location: normalizedLocation,
+        ...coordinates,
+      };
+    })
+    .filter(
+      (coordinates): coordinates is {
+        location: string;
+        latitude: number;
+        longitude: number;
+      } => Boolean(coordinates)
+    );
+}
+
 const QUEENS_LOCATION_ALIASES = [
   "queens",
   "astoria",
@@ -867,6 +1048,41 @@ const QUEENS_LOCATION_ALIASES = [
   "ditmars",
   "ditmars steinway",
   "utopia",
+  "alley pond",
+  "arverne by the sea",
+  "astoria heights",
+  "bay terrace queens",
+  "bayswater",
+  "bellaire",
+  "bellerose manor",
+  "bowne park",
+  "cambria heights",
+  "clearview",
+  "corona heights",
+  "downtown flushing",
+  "east flushing",
+  "edgemere queens",
+  "elmhurst queens",
+  "fresh pond",
+  "glen oaks village",
+  "hamilton beach",
+  "hammels",
+  "hunters point",
+  "kew gardens queens",
+  "laurelton queens",
+  "lefrak city",
+  "linden hill",
+  "long island city queens",
+  "murray hill flushing",
+  "old astoria",
+  "pomonok",
+  "queens plaza",
+  "rego park queens",
+  "rockaway park",
+  "south jamaica",
+  "st. albans",
+  "willets point",
+  "windsor park",
 ];
 
 const NASSAU_LOCATION_ALIASES = [
@@ -901,6 +1117,33 @@ const NASSAU_LOCATION_ALIASES = [
   "oceanside",
   "lynbrook",
   "malverne",
+  "albertson",
+  "baldwin",
+  "carle place",
+  "cedarhurst",
+  "east meadow",
+  "east rockaway",
+  "floral park",
+  "franklin square",
+  "glen cove",
+  "glen head",
+  "glenwood landing",
+  "great neck plaza",
+  "hewlett",
+  "inwood nassau",
+  "island park nassau",
+  "lawrence",
+  "locust valley",
+  "manorhaven",
+  "new hyde park",
+  "north bellmore",
+  "north merrick",
+  "old westbury",
+  "point lookout",
+  "sea cliff",
+  "seaford",
+  "stewart manor",
+  "williston park",
 ];
 
 const SUFFOLK_LOCATION_ALIASES = [
@@ -924,6 +1167,45 @@ const SUFFOLK_LOCATION_ALIASES = [
   "east hampton",
   "montauk",
   "greenport",
+  "amityville",
+  "bayport",
+  "bellport",
+  "blue point",
+  "bohemia",
+  "brentwood",
+  "bridgehampton",
+  "brookhaven",
+  "centerport",
+  "central islip",
+  "copiague",
+  "dix hills",
+  "east northport",
+  "farmingville",
+  "fire island",
+  "great river",
+  "holbrook",
+  "holtsville",
+  "kings park",
+  "lake grove",
+  "lindenhurst",
+  "mastic",
+  "mastic beach",
+  "medford",
+  "miller place",
+  "nesconset",
+  "northport",
+  "oakdale",
+  "port jefferson",
+  "port jefferson station",
+  "rocky point",
+  "sag harbor",
+  "selden",
+  "setauket",
+  "shirley",
+  "st james",
+  "stony brook",
+  "westhampton beach",
+  "yaphank",
 ];
 
 const LONG_ISLAND_LOCATION_ALIASES = [
@@ -935,27 +1217,15 @@ const LONG_ISLAND_LOCATION_ALIASES = [
   ...SUFFOLK_LOCATION_ALIASES,
 ];
 
-const LOCATION_AREA_ALIASES: Record<string, string[]> = {
-  queens: QUEENS_LOCATION_ALIASES,
-  "long island": LONG_ISLAND_LOCATION_ALIASES,
-  nassau: ["nassau county", ...NASSAU_LOCATION_ALIASES],
-  "nassau county": ["nassau", ...NASSAU_LOCATION_ALIASES],
-  suffolk: ["suffolk county", ...SUFFOLK_LOCATION_ALIASES],
-  "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
-};
-
-const LONG_ISLAND_LOCATION_TERMS = new Set([
-  "long island",
-  "nassau",
-  "nassau county",
-  "suffolk",
-  "suffolk county",
-  ...LONG_ISLAND_LOCATION_ALIASES,
-]);
-
-const NEW_JERSEY_LOCATION_TERMS = new Set([
+const NEW_JERSEY_LOCATION_ALIASES = [
   "new jersey",
   "north jersey",
+  "bergen county",
+  "essex county",
+  "hudson county",
+  "passaic county",
+  "union county",
+  "morris county",
   "jersey city",
   "hoboken",
   "newark",
@@ -986,7 +1256,70 @@ const NEW_JERSEY_LOCATION_TERMS = new Set([
   "fairview",
   "palisades park",
   "leonia",
+  "asbury park",
+  "belmar",
+  "belleville",
+  "boonton",
+  "caldwell",
+  "cedar grove",
+  "cranford",
+  "dover",
+  "east orange",
+  "elmwood park",
+  "emerson",
+  "garfield",
+  "glen ridge",
+  "glen rock",
+  "hasbrouck heights",
+  "hawthorne",
+  "hillsdale",
+  "irvington",
+  "little ferry",
+  "little falls",
+  "livingston",
+  "lodi",
+  "lyndhurst",
+  "mahwah",
+  "maywood",
+  "millburn",
+  "morristown",
+  "new brunswick",
+  "north arlington",
+  "nutley",
+  "passaic",
+  "rutherford",
+  "south orange",
+  "summit",
+  "teterboro",
+  "totowa",
+  "wayne",
+  "wood ridge",
+];
+
+const NEW_JERSEY_LOCATION_TERMS = new Set(NEW_JERSEY_LOCATION_ALIASES);
+
+const LOCATION_AREA_ALIASES: Record<string, string[]> = {
+  manhattan: MANHATTAN_LOCATION_ALIASES,
+  queens: QUEENS_LOCATION_ALIASES,
+  "long island": LONG_ISLAND_LOCATION_ALIASES,
+  nassau: ["nassau county", ...NASSAU_LOCATION_ALIASES],
+  "nassau county": ["nassau", ...NASSAU_LOCATION_ALIASES],
+  suffolk: ["suffolk county", ...SUFFOLK_LOCATION_ALIASES],
+  "suffolk county": ["suffolk", ...SUFFOLK_LOCATION_ALIASES],
+  "new jersey": NEW_JERSEY_LOCATION_ALIASES,
+  "north jersey": NEW_JERSEY_LOCATION_ALIASES,
+};
+
+const LONG_ISLAND_LOCATION_TERMS = new Set([
+  "long island",
+  "nassau",
+  "nassau county",
+  "suffolk",
+  "suffolk county",
+  ...LONG_ISLAND_LOCATION_ALIASES,
 ]);
+
+
 
 function locationSearchText(item: any) {
   return normalizeQuery(
@@ -1032,11 +1365,32 @@ function hasCoordinateInBounds(
   );
 }
 
+function isLongIslandCityLocation(item: any) {
+  const normalizedFields = [
+    item.city,
+    item.neighborhood,
+    item.borough,
+    ...toArray(item.location_tags),
+    ...toArray(item.neighborhood_tags),
+    ...toArray(item.area_tags),
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeQuery(String(value)));
+
+  return (
+    normalizedFields.includes("long island city") ||
+    normalizedFields.includes("lic") ||
+    (normalizedFields.includes("queens") &&
+      locationSearchText(item).includes("long island city"))
+  );
+}
+
 function matchesLongIslandLocation(item: any) {
   const searchable = locationSearchText(item);
   const state = normalizeQuery(String(item.state || ""));
 
   if (state === "nj" || searchable.includes("new jersey")) return false;
+  if (isLongIslandCityLocation(item)) return false;
 
   if (
     Array.from(LONG_ISLAND_LOCATION_TERMS).some((term) =>
@@ -1121,47 +1475,11 @@ function detectLocation(input: string, locations: any[]) {
     "new york",
     "new york city",
     "manhattan",
+    ...MANHATTAN_LOCATION_ALIASES,
     "brooklyn",
     "queens",
     "bronx",
     "staten island",
-    "soho",
-    "tribeca",
-    "chelsea",
-    "midtown",
-    "midtown east",
-    "midtown west",
-    "downtown",
-    "uptown",
-    "upper east side",
-    "upper west side",
-    "harlem",
-    "east harlem",
-    "west harlem",
-    "washington heights",
-    "inwood",
-    "hells kitchen",
-    "hudson yards",
-    "times square",
-    "theater district",
-    "flatiron",
-    "gramercy",
-    "murray hill",
-    "kips bay",
-    "noho",
-    "nolita",
-    "lower east side",
-    "les",
-    "east village",
-    "west village",
-    "greenwich village",
-    "financial district",
-    "fidi",
-    "battery park",
-    "battery park city",
-    "chinatown",
-    "little italy",
-    "union square",
     "williamsburg",
     "bushwick",
     "greenpoint",
@@ -1227,6 +1545,7 @@ function detectLocation(input: string, locations: any[]) {
     "far rockaway",
     "belle harbor",
     "rockaway beach",
+    ...QUEENS_LOCATION_ALIASES,
     "south bronx",
     "mott haven",
     "melrose",
@@ -1274,6 +1593,7 @@ function detectLocation(input: string, locations: any[]) {
     "patchogue",
     "huntington",
     "island park",
+    ...LONG_ISLAND_LOCATION_ALIASES,
     "westchester",
     "westchester county",
     "yonkers",
@@ -1289,19 +1609,7 @@ function detectLocation(input: string, locations: any[]) {
     "hartsdale",
     "port chester",
     "rye",
-    "new jersey",
-    "north jersey",
-    "jersey city",
-    "hoboken",
-    "newark",
-    "edgewater",
-    "fort lee",
-    "union city",
-    "weehawken",
-    "secaucus",
-    "hackensack",
-    "paramus",
-    "englewood",
+    ...NEW_JERSEY_LOCATION_ALIASES,
     "jfk",
     "laguardia",
     "lga",
@@ -2032,8 +2340,10 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
 
   const budget = detectBudget(input);
   const maxMiles = body.maxMiles || body.max_miles || detectDistance(input);
-  const userLat = body.lat || body.latitude || null;
-  const userLng = body.lng || body.longitude || null;
+  const locationCoordinates = coordinatesForLocations(detectedLocations);
+  const primaryLocationCoordinate = locationCoordinates[0] || null;
+  const userLat = body.lat || body.latitude || primaryLocationCoordinate?.latitude || null;
+  const userLng = body.lng || body.longitude || primaryLocationCoordinate?.longitude || null;
 
   const multiIntentMode =
     wantsFullOuting ||
@@ -2059,6 +2369,8 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     vibes,
     multiIntentMode,
     locations: detectedLocations,
+    locationCoordinates,
+    primaryLocationCoordinate,
 
     wantsBirthday: text.includes("birthday"),
     wantsBirthdayDinner: text.includes("birthday dinner"),
@@ -3423,6 +3735,8 @@ ${JSON.stringify({
   budget: intent.budget,
   maxMiles: intent.maxMiles,
   locations: intent.locations,
+  locationCoordinates: intent.locationCoordinates,
+  primaryLocationCoordinate: intent.primaryLocationCoordinate,
 })}
 
 Matched location/business names from TheOutHaven database:
@@ -3491,6 +3805,8 @@ STRICT RULES:
         activityIntents: smartIntent.activityIntents,
         vibes: smartIntent.vibes,
         locations: smartIntent.locations,
+        locationCoordinates: smartIntent.locationCoordinates,
+        primaryLocationCoordinate: smartIntent.primaryLocationCoordinate,
         strictFoodMode: smartIntent.strictFoodMode,
         strictActivityMode: smartIntent.strictActivityMode,
       },
@@ -3511,6 +3827,8 @@ STRICT RULES:
         maxMiles: intent.maxMiles,
         multiIntentMode: intent.multiIntentMode,
         locations: intent.locations,
+        locationCoordinates: intent.locationCoordinates,
+        primaryLocationCoordinate: intent.primaryLocationCoordinate,
       },
       matched_locations: matchedLocationResults.map((item: any) => ({
         id: String(item.id),
