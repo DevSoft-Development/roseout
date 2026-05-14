@@ -2297,7 +2297,7 @@ function filterActivitiesByActivityIntent(
   return [];
 }
 
-const WALKING_DISTANCE_MILES = 0.75;
+const WALKING_DISTANCE_MILES = 0.50;
 
 function pairWalkingDistanceMatches(restaurants: any[], activities: any[]) {
   const pairs = restaurants
@@ -2479,99 +2479,6 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
   };
 }
 
-const WALKING_DISTANCE_MILES = 0.45;
-
-function pairWalkingDistanceMatches(
-  restaurants: any[],
-  activities: any[]
-) {
-  const pairs = restaurants
-    .flatMap((restaurant) =>
-      activities.map((activity) => {
-        if (
-          !restaurant.latitude ||
-          !restaurant.longitude ||
-          !activity.latitude ||
-          !activity.longitude
-        ) {
-          return null;
-        }
-
-        const restaurantCity = (
-          restaurant.city ||
-          restaurant.neighborhood ||
-          ""
-        ).toLowerCase();
-
-        const activityCity = (
-          activity.city ||
-          activity.neighborhood ||
-          ""
-        ).toLowerCase();
-
-        if (
-          restaurantCity &&
-          activityCity &&
-          restaurantCity !== activityCity
-        ) {
-          return null;
-        }
-
-        const distance = haversineMiles(
-          Number(restaurant.latitude),
-          Number(restaurant.longitude),
-          Number(activity.latitude),
-          Number(activity.longitude)
-        );
-
-        if (distance > WALKING_DISTANCE_MILES) {
-          return null;
-        }
-
-        const walkingMinutes =
-          walkingMinutesFromMiles(distance);
-
-        return {
-          restaurant,
-          activity,
-          distance_miles: Number(distance.toFixed(2)),
-          walking_minutes: walkingMinutes,
-          walking_label: `${walkingMinutes} min walk from ${
-            restaurant.restaurant_name ||
-            restaurant.name
-          }`,
-          pair_score:
-            Number(
-              restaurant.theouthaven_score || 0
-            ) +
-            Number(
-              activity.theouthaven_score || 0
-            ) +
-            200,
-        };
-      })
-    )
-    .filter(Boolean)
-    .filter(
-      (pair: any) =>
-        pair.distance_miles <=
-        WALKING_DISTANCE_MILES
-    )
-    .sort((a: any, b: any) => {
-      if (
-        a.distance_miles !== b.distance_miles
-      ) {
-        return (
-          a.distance_miles -
-          b.distance_miles
-        );
-      }
-
-      return b.pair_score - a.pair_score;
-    });
-
-  return pairs.slice(0, 5);
-}
 
 const LOCATION_COLUMNS = `
   id,
