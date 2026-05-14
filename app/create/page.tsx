@@ -6,6 +6,7 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
+import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type RestaurantCard = {
   id: string;
@@ -2100,6 +2101,10 @@ function buildDistanceFromRestaurantLabel(
   if (distance === null) return undefined;
 
   if (distancePreference === "walking") {
+    if (isCrossAreaWalkingPair(restaurant, activity)) {
+      return `Not walkable from ${restaurant.restaurant_name}`;
+    }
+
     const walkingMinutes =
       activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
@@ -2124,6 +2129,10 @@ function buildDistanceText(
 
     if (distance !== null) {
       if (distancePreference === "walking") {
+        if (isCrossAreaWalkingPair(restaurant, activity)) {
+          return `Not walkable between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+        }
+
         const walkingMinutes =
           activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 

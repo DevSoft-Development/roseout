@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { supabase } from "@/lib/supabase";
 import { clampScore } from "@/lib/clampScore";
+import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -18,7 +19,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v15-cross-state-walking-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v16-shared-walking-area-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -2507,52 +2508,6 @@ function filterActivitiesByActivityIntent(
 
 const WALKING_DISTANCE_MILES = 1.25;
 const WALKING_PAIR_CANDIDATE_LIMIT = 80;
-
-function locationTextIncludesAny(item: any, terms: string[]) {
-  const text = locationSearchText(item);
-
-  return terms.some((term) => text.includes(normalizeQuery(term)));
-}
-
-function inferWalkingArea(item: any) {
-  const city = normalizeQuery(String(item.city || ""));
-  const state = normalizeQuery(String(item.state || ""));
-  const borough = normalizeQuery(String(item.borough || ""));
-
-  if (
-    state === "nj" ||
-    state === "new jersey" ||
-    locationTextIncludesAny(item, Array.from(NEW_JERSEY_LOCATION_TERMS))
-  ) {
-    return "new_jersey";
-  }
-
-  if (
-    borough.includes("queens") ||
-    locationTextIncludesAny(item, QUEENS_LOCATION_ALIASES)
-  ) {
-    return "queens";
-  }
-
-  if (
-    borough.includes("manhattan") ||
-    city === "new york" ||
-    locationTextIncludesAny(item, MANHATTAN_LOCATION_ALIASES)
-  ) {
-    return "manhattan";
-  }
-
-  return null;
-}
-
-function isCrossAreaWalkingPair(restaurant: any, activity: any) {
-  const restaurantArea = inferWalkingArea(restaurant);
-  const activityArea = inferWalkingArea(activity);
-
-  return Boolean(
-    restaurantArea && activityArea && restaurantArea !== activityArea
-  );
-}
 
 function pairWalkingDistanceMatches(
   restaurants: any[],
