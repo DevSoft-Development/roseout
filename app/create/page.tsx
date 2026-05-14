@@ -936,6 +936,10 @@ export default function CreatePage() {
                               travelMode: "walking",
                             })
                           : undefined;
+                        const shouldLinkWalkingDirections = Boolean(
+                          latestDistancePreference === "walking" &&
+                            walkingDirectionsUrl
+                        );
 
                         return (
                           <ResultCard
@@ -960,7 +964,7 @@ export default function CreatePage() {
                             }
                             distanceLabel={distanceFromRestaurantLabel}
                             distanceHref={
-                              latestDistancePreference === "walking"
+                              shouldLinkWalkingDirections
                                 ? walkingDirectionsUrl
                                 : undefined
                             }
