@@ -73,6 +73,7 @@ type Message = {
   restaurants?: RestaurantCard[];
   activities?: ActivityCard[];
   distancePreference?: DistancePreference;
+  resultOrder?: ResultSectionKind[];
 };
 
 type ApiResponse = {
@@ -82,6 +83,7 @@ type ApiResponse = {
 };
 
 type AddOnTarget = "restaurant" | "activity";
+type ResultSectionKind = "restaurants" | "activities";
 
 type UserLocation = {
   latitude: number;
@@ -111,6 +113,70 @@ const loadingLines = [
   "Checking food and activity signals...",
   "Building tighter TheOutHaven picks...",
   "Finding the best fit...",
+];
+
+const DEFAULT_RESULT_ORDER: ResultSectionKind[] = ["restaurants", "activities"];
+
+const RESULT_ORDER_RESTAURANT_KEYWORDS = [
+  "restaurant",
+  "restaurants",
+  "dining",
+  "dinner",
+  "brunch",
+  "lunch",
+  "breakfast",
+  "food",
+  "eat",
+  "seafood",
+  "steak",
+  "steakhouse",
+  "sushi",
+  "italian",
+  "mexican",
+  "chinese",
+  "thai",
+  "indian",
+  "mediterranean",
+  "bbq",
+  "barbecue",
+  "burger",
+  "pizza",
+  "tacos",
+  "ramen",
+  "halal",
+  "vegan",
+  "dessert",
+  "cafe",
+  "coffee",
+];
+
+const RESULT_ORDER_ACTIVITY_KEYWORDS = [
+  "activity",
+  "activities",
+  "experience",
+  "bowling",
+  "arcade",
+  "karaoke",
+  "museum",
+  "escape room",
+  "escape",
+  "mini golf",
+  "minigolf",
+  "golf",
+  "axe throwing",
+  "paint and sip",
+  "comedy",
+  "movie",
+  "movies",
+  "spa",
+  "games",
+  "pool",
+  "billiards",
+  "jazz",
+  "live music",
+  "nightclub",
+  "night club",
+  "club",
 ];
 
 export default function CreatePage() {
@@ -160,12 +226,13 @@ export default function CreatePage() {
   const latestDistancePreference =
     latestAssistant?.distancePreference || "miles";
 
-  const selectedPlanText = [
-    selectedRestaurant?.restaurant_name,
-    selectedActivity?.activity_name,
-  ]
-    .filter(Boolean)
-    .join(" + ");
+  const latestResultOrder = latestAssistant?.resultOrder || DEFAULT_RESULT_ORDER;
+
+  const selectedPlanText = buildSelectedPlanText(
+    selectedRestaurant,
+    selectedActivity,
+    latestResultOrder
+  );
 
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
@@ -377,7 +444,7 @@ export default function CreatePage() {
     setSelectedRestaurant(nextSelected);
     setShowPlanSummary(false);
 
-    if (nextSelected) {
+    if (nextSelected && latestResultOrder[0] === "restaurants") {
       setTimeout(() => {
         activitySectionRef.current?.scrollIntoView({
           behavior: "smooth",
@@ -388,8 +455,19 @@ export default function CreatePage() {
   }
 
   function selectActivity(activity: ActivityCard) {
-    setSelectedActivity(selectedActivity?.id === activity.id ? null : activity);
+    const nextSelected = selectedActivity?.id === activity.id ? null : activity;
+
+    setSelectedActivity(nextSelected);
     setShowPlanSummary(false);
+
+    if (nextSelected && latestResultOrder[0] === "activities") {
+      setTimeout(() => {
+        addOnRestaurantSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 200);
+    }
   }
 
   async function submitSearch(
@@ -472,6 +550,7 @@ export default function CreatePage() {
         distancePreference: queryRequestsWalkingDistance(cleanInput)
           ? "walking"
           : "miles",
+        resultOrder: inferResultOrder(cleanInput),
         content:
           data.reply ||
           (addOnTarget
@@ -689,6 +768,7 @@ export default function CreatePage() {
             const restaurants = message.restaurants || [];
             const activities = message.activities || [];
             const hasCards = restaurants.length > 0 || activities.length > 0;
+            const resultOrder = getOrderedResultSections(message.resultOrder);
             const isAddOnResults =
               messages[index - 1]?.role === "user" &&
               messages[index - 1]?.content.startsWith("Add-on search:");
@@ -728,142 +808,158 @@ export default function CreatePage() {
                       Tight matches for your outing
                     </h2>
                     <p className="mt-1 text-sm font-semibold leading-5 text-white/40">
-                      Select a restaurant, then choose the experience that completes
-                      the outing.
+                      {getResultInstruction(resultOrder)}
                     </p>
                   </div>
                 </div>
 
-                {restaurants.length > 0 && (
-                  <div
-                    ref={isAddOnResults ? addOnRestaurantSectionRef : null}
-                    className="scroll-mt-24 sm:scroll-mt-28"
-                  >
-                    <ResultSection
-                      title="Restaurant Picks"
-                      subtitle="Food spots matched to cuisine, vibe, and location"
-                    >
-                    {restaurants.map((restaurant, restaurantIndex) => {
-                      const restaurantId = String(restaurant.id);
-                      const isSelected =
-                        selectedRestaurant?.id === restaurant.id;
-                      const reservationUrl =
-                        restaurant.reservation_url ||
-                        restaurant.reservation_link ||
-                        undefined;
+                {resultOrder.map((sectionKind) => {
+                  if (sectionKind === "restaurants" && restaurants.length > 0) {
+                    return (
+                      <div
+                        key="restaurants"
+                        ref={(element) => {
+                          addOnRestaurantSectionRef.current = element;
+                        }}
+                        className="scroll-mt-24 sm:scroll-mt-28"
+                      >
+                        <ResultSection
+                          title="Restaurant Picks"
+                          subtitle="Food spots matched to cuisine, vibe, and location"
+                        >
+                          {restaurants.map((restaurant, restaurantIndex) => {
+                            const restaurantId = String(restaurant.id);
+                            const isSelected =
+                              selectedRestaurant?.id === restaurant.id;
+                            const reservationUrl =
+                              restaurant.reservation_url ||
+                              restaurant.reservation_link ||
+                              undefined;
 
-                      return (
-                        <ResultCard
-                          key={restaurantId || restaurantIndex}
-                          index={restaurantIndex}
-                          type="restaurant"
-                          imageUrl={restaurant.image_url || undefined}
-                          title={restaurant.restaurant_name}
-                          eyebrow={
-                            restaurant.cuisine ||
-                            restaurant.food_type ||
-                            "Restaurant"
+                            return (
+                              <ResultCard
+                                key={restaurantId || restaurantIndex}
+                                index={restaurantIndex}
+                                type="restaurant"
+                                imageUrl={restaurant.image_url || undefined}
+                                title={restaurant.restaurant_name}
+                                eyebrow={
+                                  restaurant.cuisine ||
+                                  restaurant.food_type ||
+                                  "Restaurant"
+                                }
+                                address={formatAddress(restaurant)}
+                                rating={restaurant.rating}
+                                reviewKeywords={restaurant.review_keywords}
+                                reviewSnippet={restaurant.review_snippet}
+                                primaryTag={restaurant.primary_tag}
+                                distance={restaurant.distance_miles}
+                                selected={isSelected}
+                                priority={restaurantIndex === 0}
+                                selectLabel={isSelected ? "Selected" : "Select"}
+                                onSelect={() =>
+                                  selectRestaurantAndMaybeScroll(restaurant)
+                                }
+                                detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
+                                onDetails={() =>
+                                  trackRestaurantClick(restaurantId)
+                                }
+                                websiteUrl={restaurant.website || undefined}
+                                onWebsite={() =>
+                                  trackRestaurantClick(restaurantId)
+                                }
+                                reservationUrl={reservationUrl}
+                                reservationLabel="Reserve"
+                                onReservation={() =>
+                                  trackRestaurantClick(restaurantId)
+                                }
+                              />
+                            );
+                          })}
+                        </ResultSection>
+                      </div>
+                    );
+                  }
+
+                  if (sectionKind === "activities" && activities.length > 0) {
+                    return (
+                      <div
+                        key="activities"
+                        ref={(element) => {
+                          activitySectionRef.current = element;
+
+                          if (isAddOnResults) {
+                            addOnActivitySectionRef.current = element;
                           }
-                          address={formatAddress(restaurant)}
-                          rating={restaurant.rating}
-                          reviewKeywords={restaurant.review_keywords}
-                          reviewSnippet={restaurant.review_snippet}
-                          primaryTag={restaurant.primary_tag}
-                          distance={restaurant.distance_miles}
-                          selected={isSelected}
-                          priority={restaurantIndex === 0}
-                          selectLabel={isSelected ? "Selected" : "Select"}
-                          onSelect={() =>
-                            selectRestaurantAndMaybeScroll(restaurant)
-                          }
-                          detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
-                          onDetails={() => trackRestaurantClick(restaurantId)}
-                          websiteUrl={restaurant.website || undefined}
-                          onWebsite={() => trackRestaurantClick(restaurantId)}
-                          reservationUrl={reservationUrl}
-                          reservationLabel="Reserve"
-                          onReservation={() =>
-                            trackRestaurantClick(restaurantId)
-                          }
-                        />
-                      );
-                    })}
-                    </ResultSection>
-                  </div>
-                )}
-
-                {activities.length > 0 && (
-                  <div
-                    ref={(element) => {
-                      activitySectionRef.current = element;
-
-                      if (isAddOnResults) {
-                        addOnActivitySectionRef.current = element;
-                      }
-                    }}
-                    className="scroll-mt-24 sm:scroll-mt-28"
-                  >
-                    <ResultSection
-                      title="Experience Picks"
-                      subtitle="Activities matched to your outing plan"
-                    >
-                      {activities.map((activity, activityIndex) => {
-                        const activityId = String(activity.id);
-                        const isSelected =
-                          selectedActivity?.id === activity.id;
-                        const reservationUrl =
-                          activity.reservation_url ||
-                          activity.reservation_link ||
-                          undefined;
-                        const distanceFromRestaurantLabel = selectedRestaurant
-                          ? buildDistanceFromRestaurantLabel(
-                              selectedRestaurant,
-                              activity,
-                              latestDistancePreference
-                            )
-                          : undefined;
-
-                        return (
-                          <ResultCard
-                            key={activityId || activityIndex}
-                            index={activityIndex}
-                            type="activity"
-                            imageUrl={activity.image_url || undefined}
-                            title={activity.activity_name}
-                            eyebrow={activity.activity_type || "Activity"}
-                            address={formatAddress(activity)}
-                            rating={activity.rating}
-                            reviewKeywords={activity.review_keywords}
-                            reviewSnippet={activity.review_snippet}
-                            primaryTag={activity.primary_tag}
-                            distance={
+                        }}
+                        className="scroll-mt-24 sm:scroll-mt-28"
+                      >
+                        <ResultSection
+                          title="Experience Picks"
+                          subtitle="Activities matched to your outing plan"
+                        >
+                          {activities.map((activity, activityIndex) => {
+                            const activityId = String(activity.id);
+                            const isSelected =
+                              selectedActivity?.id === activity.id;
+                            const reservationUrl =
+                              activity.reservation_url ||
+                              activity.reservation_link ||
+                              undefined;
+                            const distanceFromRestaurantLabel =
                               selectedRestaurant
-                                ? distanceBetweenLocations(
+                                ? buildDistanceFromRestaurantLabel(
                                     selectedRestaurant,
-                                    activity
-                                  ) ?? activity.distance_miles
-                                : activity.distance_miles
-                            }
-                            distanceLabel={distanceFromRestaurantLabel}
-                            selected={isSelected}
-                            priority={activityIndex === 0}
-                            selectLabel={isSelected ? "Selected" : "Select"}
-                            onSelect={() => selectActivity(activity)}
-                            detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
-                            onDetails={() => trackActivityClick(activityId)}
-                            websiteUrl={activity.website || undefined}
-                            onWebsite={() => trackActivityClick(activityId)}
-                            reservationUrl={reservationUrl}
-                            reservationLabel="Book"
-                            onReservation={() =>
-                              trackActivityClick(activityId)
-                            }
-                          />
-                        );
-                      })}
-                    </ResultSection>
-                  </div>
-                )}
+                                    activity,
+                                    latestDistancePreference
+                                  )
+                                : undefined;
+
+                            return (
+                              <ResultCard
+                                key={activityId || activityIndex}
+                                index={activityIndex}
+                                type="activity"
+                                imageUrl={activity.image_url || undefined}
+                                title={activity.activity_name}
+                                eyebrow={activity.activity_type || "Activity"}
+                                address={formatAddress(activity)}
+                                rating={activity.rating}
+                                reviewKeywords={activity.review_keywords}
+                                reviewSnippet={activity.review_snippet}
+                                primaryTag={activity.primary_tag}
+                                distance={
+                                  selectedRestaurant
+                                    ? distanceBetweenLocations(
+                                        selectedRestaurant,
+                                        activity
+                                      ) ?? activity.distance_miles
+                                    : activity.distance_miles
+                                }
+                                distanceLabel={distanceFromRestaurantLabel}
+                                selected={isSelected}
+                                priority={activityIndex === 0}
+                                selectLabel={isSelected ? "Selected" : "Select"}
+                                onSelect={() => selectActivity(activity)}
+                                detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
+                                onDetails={() => trackActivityClick(activityId)}
+                                websiteUrl={activity.website || undefined}
+                                onWebsite={() => trackActivityClick(activityId)}
+                                reservationUrl={reservationUrl}
+                                reservationLabel="Book"
+                                onReservation={() =>
+                                  trackActivityClick(activityId)
+                                }
+                              />
+                            );
+                          })}
+                        </ResultSection>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
               </div>
             );
           })}
@@ -1728,6 +1824,66 @@ function formatAddress(item: {
     .join(", ");
 }
 
+function getFirstKeywordIndex(input: string, keywords: string[]) {
+  const normalized = input.toLowerCase();
+
+  return keywords.reduce((earliest, keyword) => {
+    const index = normalized.indexOf(keyword.toLowerCase());
+
+    if (index === -1) return earliest;
+    return Math.min(earliest, index);
+  }, Number.POSITIVE_INFINITY);
+}
+
+function inferResultOrder(input: string): ResultSectionKind[] {
+  const activityIndex = getFirstKeywordIndex(
+    input,
+    RESULT_ORDER_ACTIVITY_KEYWORDS
+  );
+  const restaurantIndex = getFirstKeywordIndex(
+    input,
+    RESULT_ORDER_RESTAURANT_KEYWORDS
+  );
+
+  if (activityIndex < restaurantIndex) {
+    return ["activities", "restaurants"];
+  }
+
+  return DEFAULT_RESULT_ORDER;
+}
+
+function getOrderedResultSections(resultOrder?: ResultSectionKind[]) {
+  const ordered = resultOrder?.length ? resultOrder : DEFAULT_RESULT_ORDER;
+  const uniqueOrdered = ordered.filter(
+    (sectionKind, index) => ordered.indexOf(sectionKind) === index
+  );
+  const missingSections = DEFAULT_RESULT_ORDER.filter(
+    (sectionKind) => !uniqueOrdered.includes(sectionKind)
+  );
+
+  return [...uniqueOrdered, ...missingSections];
+}
+
+function getResultInstruction(resultOrder: ResultSectionKind[]) {
+  return resultOrder[0] === "activities"
+    ? "Select an activity, then choose the restaurant that completes the outing."
+    : "Select a restaurant, then choose the experience that completes the outing.";
+}
+
+function buildSelectedPlanText(
+  restaurant: RestaurantCard | null,
+  activity: ActivityCard | null,
+  resultOrder: ResultSectionKind[]
+) {
+  return getOrderedResultSections(resultOrder)
+    .map((sectionKind) =>
+      sectionKind === "activities"
+        ? activity?.activity_name
+        : restaurant?.restaurant_name
+    )
+    .filter(Boolean)
+    .join(" + ");
+}
 
 function titleCase(value: string) {
   return value
