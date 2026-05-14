@@ -2299,7 +2299,11 @@ function filterActivitiesByActivityIntent(
 
 const WALKING_DISTANCE_MILES = 0.50;
 
-function pairWalkingDistanceMatches(restaurants: any[], activities: any[]) {
+function pairWalkingDistanceMatches(
+  restaurants: any[],
+  activities: any[]
+): any[] {
+  
   const pairs = restaurants
   
     .flatMap((restaurant) =>
