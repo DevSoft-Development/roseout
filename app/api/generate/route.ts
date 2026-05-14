@@ -2669,7 +2669,7 @@ async function fetchFallbackRecords(input: string = "") {
   // searches food terms, not every neighborhood name.
   let foodQuery = supabase.from("restaurants").select(RESTAURANT_COLUMNS);
   foodQuery = applyFoodFilter(foodQuery);
-  restaurantQueries.push(foodQuery.limit(300));
+  restaurantQueries.push(foodQuery.limit(FALLBACK_GENERAL_RECORD_LIMIT));
 
   // Queens fallback by coordinate bounds. This keeps ALL Queens neighborhoods
   // without sending a huge OR list in the URL.
@@ -2684,11 +2684,15 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -73.68);
 
     queensQuery = applyFoodFilter(queensQuery);
-    restaurantQueries.push(queensQuery.limit(150));
+    restaurantQueries.push(queensQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT));
   }
 
   // Long Island fallback by coordinate bounds.
-  if (text.includes("long island") || text.includes("nassau") || text.includes("suffolk")) {
+  if (
+    text.includes("long island") ||
+    text.includes("nassau") ||
+    text.includes("suffolk")
+  ) {
     let longIslandQuery = supabase
       .from("restaurants")
       .select(RESTAURANT_COLUMNS)
@@ -2699,11 +2703,17 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -71.75);
 
     longIslandQuery = applyFoodFilter(longIslandQuery);
-    restaurantQueries.push(longIslandQuery.limit(150));
+    restaurantQueries.push(
+      longIslandQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT)
+    );
   }
 
   // North Jersey fallback by coordinate bounds.
-  if (text.includes("new jersey") || text.includes("north jersey") || text.includes("jersey")) {
+  if (
+    text.includes("new jersey") ||
+    text.includes("north jersey") ||
+    text.includes("jersey")
+  ) {
     let jerseyQuery = supabase
       .from("restaurants")
       .select(RESTAURANT_COLUMNS)
@@ -2714,7 +2724,7 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -73.85);
 
     jerseyQuery = applyFoodFilter(jerseyQuery);
-    restaurantQueries.push(jerseyQuery.limit(150));
+    restaurantQueries.push(jerseyQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT));
   }
 
   const [locationsResult, activitiesResult, ...restaurantResults] =
