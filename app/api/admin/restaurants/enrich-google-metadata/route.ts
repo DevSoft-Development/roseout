@@ -359,7 +359,6 @@ export async function POST(request: NextRequest) {
 
         const cuisineText = [
           restaurant.restaurant_name,
-          restaurant.name,
           restaurant.city,
           restaurant.primary_tag,
           restaurant.search_keywords?.join(" "),
