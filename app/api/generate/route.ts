@@ -2297,15 +2297,13 @@ function filterActivitiesByActivityIntent(
   return [];
 }
 
-const WALKING_DISTANCE_MILES = 0.50;
+const WALKING_DISTANCE_MILES = 0.45;
 
 function pairWalkingDistanceMatches(
   restaurants: any[],
   activities: any[]
 ): any[] {
-  
   const pairs = restaurants
-  
     .flatMap((restaurant) =>
       activities.map((activity) => {
         if (
@@ -2325,8 +2323,8 @@ function pairWalkingDistanceMatches(
         );
 
         if (distance > WALKING_DISTANCE_MILES) {
-  return null;
-}
+          return null;
+        }
 
         const walkingMinutes = walkingMinutesFromMiles(distance);
 
@@ -2345,20 +2343,18 @@ function pairWalkingDistanceMatches(
         };
       })
     )
-.filter(Boolean)
-.filter(
-  (pair: any) =>
-    pair.distance_miles <= WALKING_DISTANCE_MILES
-)
-.sort((a: any, b: any) => {
-  if (a.distance_miles !== b.distance_miles) {
-    return a.distance_miles - b.distance_miles;
-  }
+    .filter(Boolean)
+    .filter((pair: any) => pair.distance_miles <= WALKING_DISTANCE_MILES)
+    .sort((a: any, b: any) => {
+      if (a.distance_miles !== b.distance_miles) {
+        return a.distance_miles - b.distance_miles;
+      }
 
-  return b.pair_score - a.pair_score;
-});
+      return b.pair_score - a.pair_score;
+    });
+
+  return pairs.slice(0, 5);
 }
-
 function pairSmartMatches(restaurants: any[], activities: any[]) {
   if (!restaurants.length || !activities.length) {
     return {
