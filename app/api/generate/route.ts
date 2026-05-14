@@ -18,7 +18,13 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v11-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v13-search-limits-${SEMANTIC_SEARCH_VERSION}`;
+const SEARCH_LIMITS = {
+  enterpriseMatches: 250,
+  supportingLocations: 500,
+  fallbackGeneralRecords: 1000,
+  fallbackRegionalRecords: 500,
+} as const;
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -2297,7 +2303,8 @@ function filterActivitiesByActivityIntent(
   return [];
 }
 
-const WALKING_DISTANCE_MILES = 0.75;
+const WALKING_DISTANCE_MILES = 1.25;
+const WALKING_PAIR_CANDIDATE_LIMIT = 80;
 
 function pairWalkingDistanceMatches(
   restaurants: any[],
@@ -2669,7 +2676,9 @@ async function fetchFallbackRecords(input: string = "") {
   // searches food terms, not every neighborhood name.
   let foodQuery = supabase.from("restaurants").select(RESTAURANT_COLUMNS);
   foodQuery = applyFoodFilter(foodQuery);
-  restaurantQueries.push(foodQuery.limit(FALLBACK_GENERAL_RECORD_LIMIT));
+  restaurantQueries.push(
+    foodQuery.limit(SEARCH_LIMITS.fallbackGeneralRecords)
+  );
 
   // Queens fallback by coordinate bounds. This keeps ALL Queens neighborhoods
   // without sending a huge OR list in the URL.
@@ -2684,7 +2693,9 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -73.68);
 
     queensQuery = applyFoodFilter(queensQuery);
-    restaurantQueries.push(queensQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT));
+    restaurantQueries.push(
+      queensQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords)
+    );
   }
 
   // Long Island fallback by coordinate bounds.
@@ -2704,7 +2715,7 @@ async function fetchFallbackRecords(input: string = "") {
 
     longIslandQuery = applyFoodFilter(longIslandQuery);
     restaurantQueries.push(
-      longIslandQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT)
+      longIslandQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords)
     );
   }
 
@@ -2724,13 +2735,21 @@ async function fetchFallbackRecords(input: string = "") {
       .lte("longitude", -73.85);
 
     jerseyQuery = applyFoodFilter(jerseyQuery);
-    restaurantQueries.push(jerseyQuery.limit(FALLBACK_REGIONAL_RECORD_LIMIT));
+    restaurantQueries.push(
+      jerseyQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords)
+    );
   }
 
   const [locationsResult, activitiesResult, ...restaurantResults] =
     await Promise.all([
-      supabase.from("locations").select(LOCATION_COLUMNS).limit(800),
-      supabase.from("activities").select(ACTIVITY_COLUMNS).limit(800),
+      supabase
+        .from("locations")
+        .select(LOCATION_COLUMNS)
+        .limit(SEARCH_LIMITS.supportingLocations),
+      supabase
+        .from("activities")
+        .select(ACTIVITY_COLUMNS)
+        .limit(SEARCH_LIMITS.fallbackGeneralRecords),
       ...restaurantQueries,
     ]);
 
@@ -2768,7 +2787,7 @@ async function fetchSupportingRecords() {
   const { data, error } = await supabase
     .from("locations")
     .select(LOCATION_COLUMNS)
-    .limit(500);
+    .limit(SEARCH_LIMITS.supportingLocations);
 
   if (error) throw error;
 
@@ -2845,13 +2864,13 @@ async function fetchEnterpriseSearchRecords(
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_cuisine: requestedCuisine,
-      match_limit: 150,
+      match_limit: SEARCH_LIMITS.enterpriseMatches,
     }),
     supabase.rpc("search_activities_enterprise", {
       query_embedding: embedding,
       requested_city: requestedCity,
       requested_activity: requestedActivity,
-      match_limit: 150,
+      match_limit: SEARCH_LIMITS.enterpriseMatches,
     }),
   ]);
 
@@ -3155,7 +3174,8 @@ return (
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
         const score = clampScore(
-          scoreRestaurant(restaurant, input, intent) + semantic.semantic_score_boost
+          scoreRestaurant(restaurant, input, intent) +
+            semantic.semantic_score_boost
         );
         const confidence = confidenceFromScores({
           ...restaurant,
@@ -3233,70 +3253,76 @@ return (
       smartBalanced.activities = rankedActivities.slice(0, 2);
     }
 
- const wantsWalkingPair =
-  intent.wantsFullOuting ||
-  (intent.wantsRestaurant && intent.wantsActivity) ||
-  input.toLowerCase().includes("walking distance") ||
-  input.toLowerCase().includes("walkable") ||
-  input.toLowerCase().includes("nearby") ||
-  input.toLowerCase().includes("close by");
+    const wantsWalkingPair =
+      intent.wantsFullOuting ||
+      (intent.wantsRestaurant && intent.wantsActivity) ||
+      input.toLowerCase().includes("walking distance") ||
+      input.toLowerCase().includes("walkable") ||
+      input.toLowerCase().includes("nearby") ||
+      input.toLowerCase().includes("close by");
 
-const walkingPairs =
-  wantsWalkingPair &&
-  smartBalanced.restaurants.length > 0 &&
-  smartBalanced.activities.length > 0
-    ? pairWalkingDistanceMatches(
-        smartBalanced.restaurants,
-        smartBalanced.activities
-      )
-    : [];
+    const walkingPairRestaurants = wantsWalkingPair
+      ? rankedRestaurants.slice(0, WALKING_PAIR_CANDIDATE_LIMIT)
+      : [];
+    const walkingPairActivities = wantsWalkingPair
+      ? rankedActivities.slice(0, WALKING_PAIR_CANDIDATE_LIMIT)
+      : [];
 
-const strictWalkingRequest =
-  input.toLowerCase().includes("walking distance") ||
-  input.toLowerCase().includes("walkable") ||
-  input.toLowerCase().includes("walk from") ||
-  input.toLowerCase().includes("nearby") ||
-  input.toLowerCase().includes("close by");
+    const walkingPairs =
+      walkingPairRestaurants.length > 0 && walkingPairActivities.length > 0
+        ? pairWalkingDistanceMatches(
+            walkingPairRestaurants,
+            walkingPairActivities
+          )
+        : [];
 
-const pairedResults =
-  walkingPairs.length > 0
-    ? {
-        restaurants: walkingPairs.map((pair: any) => ({
-          ...pair.restaurant,
-          paired_activity_name:
-            pair.activity.activity_name || pair.activity.name,
-          pair_distance_miles: pair.distance_miles,
-          pair_walking_minutes: pair.walking_minutes,
-          pair_walking_label: pair.walking_label,
-          pair_score: pair.pair_score,
-        })),
-        activities: walkingPairs.map((pair: any) => ({
-          ...pair.activity,
-          paired_restaurant_name:
-            pair.restaurant.restaurant_name || pair.restaurant.name,
-          pair_distance_miles: pair.distance_miles,
-          pair_walking_minutes: pair.walking_minutes,
-          pair_walking_label: `${pair.walking_minutes} min walk from ${
-            pair.restaurant.restaurant_name || pair.restaurant.name
-          }`,
-          pair_score: pair.pair_score,
-        })),
-        pairs: walkingPairs,
-      }
-    : strictWalkingRequest
-      ? {
-          restaurants: [],
-          activities: [],
-          pairs: [],
-        }
-      : smartBalanced.restaurants.length > 0 &&
-          smartBalanced.activities.length > 0
-        ? pairSmartMatches(smartBalanced.restaurants, smartBalanced.activities)
-        : {
-            restaurants: smartBalanced.restaurants,
-            activities: smartBalanced.activities,
-            pairs: [],
-          };
+    const strictWalkingRequest =
+      input.toLowerCase().includes("walking distance") ||
+      input.toLowerCase().includes("walkable") ||
+      input.toLowerCase().includes("walk from");
+
+    const pairedResults =
+      walkingPairs.length > 0
+        ? {
+            restaurants: walkingPairs.map((pair: any) => ({
+              ...pair.restaurant,
+              paired_activity_name:
+                pair.activity.activity_name || pair.activity.name,
+              pair_distance_miles: pair.distance_miles,
+              pair_walking_minutes: pair.walking_minutes,
+              pair_walking_label: pair.walking_label,
+              pair_score: pair.pair_score,
+            })),
+            activities: walkingPairs.map((pair: any) => ({
+              ...pair.activity,
+              paired_restaurant_name:
+                pair.restaurant.restaurant_name || pair.restaurant.name,
+              pair_distance_miles: pair.distance_miles,
+              pair_walking_minutes: pair.walking_minutes,
+              pair_walking_label: `${pair.walking_minutes} min walk from ${
+                pair.restaurant.restaurant_name || pair.restaurant.name
+              }`,
+              pair_score: pair.pair_score,
+            })),
+            pairs: walkingPairs,
+          }
+        : strictWalkingRequest
+          ? {
+              restaurants: [],
+              activities: [],
+              pairs: [],
+            }
+          : smartBalanced.restaurants.length > 0 &&
+              smartBalanced.activities.length > 0
+            ? pairSmartMatches(
+                smartBalanced.restaurants,
+                smartBalanced.activities
+              )
+            : {
+                restaurants: smartBalanced.restaurants,
+                activities: smartBalanced.activities,
+                pairs: [],
+              };
 
     const finalDedupedResults = removeDuplicateLocationsAcrossTypes(
       pairedResults.restaurants,
@@ -3434,7 +3460,7 @@ STRICT RULES:
 - Do NOT invent business details.
 - Do NOT add times unless asked.
 - Do NOT add dessert, walks, or extra stops unless asked.
-- If the user asks for a restaurant with activities, date night, full outing, nearby, walkable, or walking distance, prioritize restaurant/activity pairs within 0.75 miles.
+- If the user asks for a restaurant with activities, date night, full outing, nearby, walkable, or walking distance, prioritize restaurant/activity pairs within 1.25 miles.
 `;
 
     const hasResults =
@@ -3469,13 +3495,14 @@ STRICT RULES:
         strictActivityMode: smartIntent.strictActivityMode,
       },
       reply:
-  pairedResults.pairs.length > 0
-    ? response?.output_text ||
-      "Here are walkable restaurant and activity matches."
-    : strictWalkingRequest
-      ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
-      : response?.output_text ||
-        "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",intent: {
+        pairedResults.pairs.length > 0
+          ? response?.output_text ||
+            "Here are walkable restaurant and activity matches."
+          : strictWalkingRequest
+            ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
+            : response?.output_text ||
+              "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
+      intent: {
         requestedTags: intent.requestedTags,
         foodIntents: intent.foodIntents,
         activityIntents: intent.activityIntents,
