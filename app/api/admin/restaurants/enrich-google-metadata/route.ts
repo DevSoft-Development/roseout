@@ -19,7 +19,6 @@ const GOOGLE_API_KEY =
 type RestaurantRow = {
   id: string;
   restaurant_name?: string | null;
-  name?: string | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -172,7 +171,6 @@ function inferCuisine(text: string) {
 function buildSearchKeywords(place: GooglePlace, restaurant: RestaurantRow, cuisineTags: string[]) {
   return normalizeArray([
     restaurant.restaurant_name,
-    restaurant.name,
     restaurant.city,
     restaurant.state,
     place.name,
@@ -243,7 +241,7 @@ async function googleDetails(placeId: string): Promise<GooglePlace | null> {
 
 function buildGoogleQuery(restaurant: RestaurantRow) {
   return [
-    restaurant.restaurant_name || restaurant.name,
+    restaurant.restaurant_name,
     restaurant.address,
     restaurant.city,
     restaurant.state || "NY",
@@ -304,7 +302,6 @@ export async function POST(request: NextRequest) {
         `
         id,
         restaurant_name,
-        name,
         address,
         city,
         state,
@@ -438,7 +435,7 @@ export async function POST(request: NextRequest) {
         results.push({
           id: restaurant.id,
           status: "updated",
-          name: restaurant.restaurant_name || restaurant.name,
+          name: restaurant.restaurant_name,
           primary_tag: updatePayload.primary_tag,
           cuisine: updatePayload.cuisine || restaurant.cuisine,
         });
