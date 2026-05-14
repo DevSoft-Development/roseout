@@ -6,6 +6,11 @@ import {
   balanceSmartMatches,
   getSmartMatchVersion,
 } from "@/lib/theouthavenSmartMatchEngine";
+import {
+  SEMANTIC_SEARCH_VERSION,
+  confidenceFromScores,
+  semanticScoreBoost,
+} from "@/lib/aiSemanticSearch";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -13,7 +18,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = "food-cuisine-location-distance-v3";
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v10-enterprise-rpc-${SEMANTIC_SEARCH_VERSION}`;
 
 type DetectedIntent = ReturnType<typeof detectIntent>;
 
@@ -40,27 +45,61 @@ const LOCATION_NAME_MATCH_WEIGHT = 500;
 const FOOD_KEYWORDS = [
   "food",
   "eat",
+  "eats",
   "restaurant",
   "restaurants",
   "restuarant",
   "restuarants",
   "restaraunt",
   "restaraunts",
+  "dining",
+  "fine dining",
+  "upscale dining",
+  "luxury dining",
+  "chef tasting",
+
   "breakfast",
   "brunch",
+  "bottomless brunch",
   "lunch",
   "dinner",
+  "late night food",
   "birthday dinner",
   "birthday brunch",
   "birthday restaurant",
+
   "steak",
   "steakhouse",
-  "pizza",
-  "burger",
+  "ribeye",
+  "porterhouse",
+  "filet mignon",
+
   "seafood",
+  "fish",
+  "lobster",
+  "crab",
+  "shrimp",
+  "oyster",
+  "oysters",
+  "raw bar",
+  "clam",
+  "salmon",
+  "branzino",
+  "surf and turf",
+
   "sushi",
+  "omakase",
+  "sashimi",
+  "nigiri",
+  "maki",
+
   "ramen",
+  "pho",
+  "noodles",
+
   "pasta",
+  "risotto",
+
   "italian",
   "mexican",
   "chinese",
@@ -69,25 +108,123 @@ const FOOD_KEYWORDS = [
   "mediterranean",
   "greek",
   "spanish",
-  "bbq",
-  "barbecue",
+  "french",
+  "japanese",
+  "korean",
+  "korean bbq",
+  "kbbq",
+  "vietnamese",
+  "filipino",
   "caribbean",
   "jamaican",
-  "soul food",
+  "haitian",
   "african",
+  "ethiopian",
+  "nigerian",
+  "ghanaian",
+  "soul food",
+  "southern",
+
+  "bbq",
+  "barbecue",
+  "smokehouse",
+  "brisket",
+  "ribs",
+
+  "burger",
+  "burgers",
+  "smashburger",
+
+  "pizza",
+  "pizzeria",
+  "slice shop",
+
+  "wings",
+  "buffalo wings",
+
+  "sandwich",
+  "sandwiches",
+  "subs",
+  "heroes",
+  "hoagies",
+
+  "taco",
+  "tacos",
+  "taqueria",
+  "birria",
+  "quesadilla",
+
+  "halal",
+  "halal food",
+  "halal restaurant",
+
+  "vegan",
+  "vegetarian",
+  "plant based",
+  "plant-based",
+  "healthy",
+  "organic",
+  "salad",
+
+  "buffet",
+  "all you can eat",
+  "ayce",
+
+  "hibachi",
+  "teppanyaki",
+  "hot pot",
+  "shabu shabu",
+
+  "dessert",
+  "desserts",
+  "ice cream",
+  "gelato",
+  "bakery",
+  "cake",
+  "cookies",
+  "cupcakes",
+  "cheesecake",
+  "pastry",
+  "croissant",
+
+  "coffee",
+  "cafe",
+  "coffee shop",
+  "espresso",
+  "latte",
+
   "wine",
+  "wine bar",
   "cocktail",
   "cocktails",
   "drinks",
   "bar",
+  "sports bar",
   "rooftop",
+  "rooftop bar",
   "lounge",
-  "dessert",
-  "coffee",
-  "cafe",
+  "cocktail lounge",
+
   "hookah",
   "shisha",
+
   "cigar",
+  "cigar lounge",
+  "cigar bar",
+
+  "date night",
+  "romantic dinner",
+  "romantic restaurant",
+  "romantic brunch",
+
+  "upscale",
+  "luxury",
+  "romantic",
+  "cozy",
+  "intimate",
+  "scenic",
+  "waterfront",
+  "skyline",
 ];
 
 const ACTIVITY_KEYWORDS = [
@@ -142,41 +279,316 @@ const TAG_KEYWORDS: Record<string, string[]> = {
 };
 
 const FOOD_INTENTS: Record<string, string[]> = {
-  steak: ["steak", "steakhouse"],
-  seafood: ["seafood", "fish", "lobster", "crab", "shrimp"],
-  sushi: ["sushi", "omakase", "japanese sushi"],
-  ramen: ["ramen"],
-  italian: ["italian", "pasta"],
-  mexican: ["mexican", "taco", "tacos"],
-  chinese: ["chinese", "dim sum", "dumpling", "dumplings"],
-  thai: ["thai", "pad thai", "thai food"],
-  indian: ["indian", "curry", "tikka", "masala"],
-  japanese: ["japanese"],
-  korean: ["korean", "korean bbq", "kbbq"],
-  asian: ["asian", "asian fusion"],
-  caribbean: ["caribbean", "jamaican"],
-  soul_food: ["soul food"],
-  african: ["african"],
-  mediterranean: ["mediterranean", "greek"],
-  brunch: ["brunch"],
-  breakfast: ["breakfast"],
-  cafe: ["cafe", "coffee"],
+  steak: ["steak", "steakhouse", "filet", "ribeye", "porterhouse"],
+
+  seafood: [
+    "seafood",
+    "oyster",
+    "oysters",
+    "raw bar",
+    "lobster",
+    "crab",
+    "shrimp",
+    "clam",
+    "fish",
+    "branzino",
+    "salmon",
+    "surf and turf",
+  ],
+
+  sushi: [
+    "sushi",
+    "omakase",
+    "nigiri",
+    "sashimi",
+    "maki",
+    "japanese sushi",
+  ],
+
+  ramen: ["ramen", "tonkotsu", "shoyu ramen"],
+
+  italian: [
+    "italian",
+    "pasta",
+    "risotto",
+    "trattoria",
+    "pizza italiana",
+  ],
+
+  mexican: [
+    "mexican",
+    "taco",
+    "tacos",
+    "birria",
+    "quesadilla",
+    "taqueria",
+  ],
+
+  chinese: [
+    "chinese",
+    "dim sum",
+    "dumpling",
+    "dumplings",
+    "szechuan",
+    "cantonese",
+  ],
+
+  thai: ["thai", "pad thai", "thai food", "thai cuisine"],
+
+  indian: [
+    "indian",
+    "curry",
+    "tikka",
+    "masala",
+    "biryani",
+    "naan",
+  ],
+
+  japanese: [
+    "japanese",
+    "izakaya",
+    "yakitori",
+    "hibachi",
+    "teppanyaki",
+  ],
+
+  korean: [
+    "korean",
+    "korean bbq",
+    "kbbq",
+    "bulgogi",
+    "hot pot",
+  ],
+
+  vietnamese: [
+    "vietnamese",
+    "pho",
+    "banh mi",
+    "vermicelli",
+  ],
+
+  filipino: [
+    "filipino",
+    "adobo",
+    "lechon",
+    "lumpia",
+  ],
+
+  african: [
+    "african",
+    "nigerian",
+    "ghanaian",
+    "ethiopian",
+    "senegalese",
+  ],
+
+  caribbean: [
+    "caribbean",
+    "jamaican",
+    "haitian",
+    "trinidadian",
+    "jerk",
+  ],
+
+  soul_food: [
+    "soul food",
+    "southern",
+    "comfort food",
+    "fried chicken",
+  ],
+
+  mediterranean: [
+    "mediterranean",
+    "greek",
+    "falafel",
+    "gyro",
+    "hummus",
+  ],
+
+  spanish: [
+    "spanish",
+    "paella",
+    "tapas",
+  ],
+
+  french: [
+    "french",
+    "bistro",
+    "brasserie",
+  ],
+
+  american: [
+    "american",
+    "new american",
+    "american grill",
+    "gastropub",
+  ],
+
+  bbq: [
+    "bbq",
+    "barbecue",
+    "smokehouse",
+    "ribs",
+    "brisket",
+  ],
+
+  halal: [
+    "halal",
+    "halal food",
+    "halal restaurant",
+  ],
+
+  vegan: [
+    "vegan",
+    "plant based",
+    "plant-based",
+  ],
+
+  vegetarian: [
+    "vegetarian",
+    "veggie",
+  ],
+
+  healthy: [
+    "healthy",
+    "organic",
+    "salad",
+    "wellness",
+  ],
+
+  brunch: [
+    "brunch",
+    "bottomless brunch",
+    "brunch spot",
+  ],
+
+  breakfast: [
+    "breakfast",
+    "pancakes",
+    "waffles",
+    "breakfast spot",
+  ],
+
+  cafe: [
+    "cafe",
+    "coffee",
+    "espresso",
+    "latte",
+    "coffee shop",
+  ],
+
+  bakery: [
+    "bakery",
+    "pastry",
+    "croissant",
+    "baked goods",
+  ],
+
   dessert: [
     "dessert",
     "desserts",
-    "desert",
-    "deserts",
     "ice cream",
-    "bakery",
+    "gelato",
     "cake",
+    "cheesecake",
+    "cookies",
+    "cupcakes",
   ],
-  drinks: ["drinks", "cocktail", "cocktails", "wine", "bar"],
-  rooftop: ["rooftop", "roof top", "view", "skyline"],
-  lounge: ["lounge"],
-  hookah: ["hookah", "shisha", "hookah lounge", "hookah restaurant"],
-  cigar: ["cigar", "cigar lounge", "cigar bar", "cigar friendly"],
-  burger: ["burger"],
-  pizza: ["pizza"],
+
+  burgers: [
+    "burger",
+    "burgers",
+    "smashburger",
+  ],
+
+  pizza: [
+    "pizza",
+    "pizzeria",
+    "wood fired pizza",
+    "slice shop",
+  ],
+
+  wings: [
+    "wings",
+    "buffalo wings",
+    "chicken wings",
+  ],
+
+  sandwiches: [
+    "sandwich",
+    "sandwiches",
+    "subs",
+    "heroes",
+    "hoagies",
+  ],
+
+  tacos: [
+    "tacos",
+    "street tacos",
+  ],
+
+  drinks: [
+    "drinks",
+    "cocktail",
+    "cocktails",
+    "wine",
+    "bar",
+    "mixology",
+  ],
+
+  wine_bar: [
+    "wine bar",
+    "wine lounge",
+  ],
+
+  rooftop: [
+    "rooftop",
+    "roof top",
+    "skyline",
+    "view",
+  ],
+
+  lounge: [
+    "lounge",
+    "cocktail lounge",
+  ],
+
+  hookah: [
+    "hookah",
+    "shisha",
+    "hookah lounge",
+    "hookah restaurant",
+  ],
+
+  cigar: [
+    "cigar",
+    "cigar lounge",
+    "cigar bar",
+    "cigar friendly",
+  ],
+
+  fine_dining: [
+    "fine dining",
+    "upscale dining",
+    "luxury dining",
+    "chef tasting",
+  ],
+
+  buffet: [
+    "buffet",
+    "all you can eat",
+    "ayce",
+  ],
+
+  hibachi: [
+    "hibachi",
+    "teppanyaki",
+  ],
+
+  hot_pot: [
+    "hot pot",
+    "shabu shabu",
+  ],
 };
 
 const ACTIVITY_INTENTS: Record<string, string[]> = {
@@ -373,6 +785,7 @@ function normalizeLocation(item: any) {
 }
 
 const QUEENS_LOCATION_ALIASES = [
+  "queens",
   "astoria",
   "long island city",
   "lic",
@@ -397,6 +810,7 @@ const QUEENS_LOCATION_ALIASES = [
   "laurelton",
   "cambria heights",
   "st albans",
+  "saint albans",
   "springfield gardens",
   "ozone park",
   "south ozone park",
@@ -417,6 +831,35 @@ const QUEENS_LOCATION_ALIASES = [
   "belle harbor",
   "rockaway beach",
   "arverne",
+  "broad channel",
+  "auburndale",
+  "bay terrace",
+  "beechhurst",
+  "blissville",
+  "brookville",
+  "edgemere",
+  "glen oaks",
+  "hillcrest",
+  "holliswood",
+  "jamaica hills",
+  "kew gardens hills",
+  "lindenwood",
+  "malba",
+  "meadowmere",
+  "murray hill queens",
+  "murray hill",
+  "neponsit",
+  "queensboro hill",
+  "queensbridge",
+  "ravenswood",
+  "rosedale",
+  "roxbury",
+  "seaside",
+  "springfield",
+  "steinway",
+  "ditmars",
+  "ditmars steinway",
+  "utopia",
 ];
 
 const NASSAU_LOCATION_ALIASES = [
@@ -517,6 +960,25 @@ const NEW_JERSEY_LOCATION_TERMS = new Set([
   "hackensack",
   "paramus",
   "englewood",
+  "bayonne",
+  "kearny",
+  "harrison",
+  "elizabeth",
+  "union",
+  "maplewood",
+  "montclair",
+  "bloomfield",
+  "clifton",
+  "paterson",
+  "teaneck",
+  "ridgefield",
+  "ridgefield park",
+  "north bergen",
+  "west new york",
+  "guttenberg",
+  "fairview",
+  "palisades park",
+  "leonia",
 ]);
 
 function locationSearchText(item: any) {
@@ -898,10 +1360,11 @@ function isLoungeStyleLocation(item: any) {
     searchable.includes("shisha") ||
     searchable.includes("cigar") ||
     searchable.includes("nightclub") ||
-    searchable.includes("night club")
+    searchable.includes("night club") ||
+    searchable.includes("cocktail lounge") ||
+    searchable.includes("rooftop bar")
   );
 }
-
 function isExplicitFoodAtLoungeRequest(intent: ReturnType<typeof detectIntent>) {
   const text = intent.text;
 
@@ -1079,6 +1542,10 @@ function isTheOutHavenRelated(input: string) {
     "nassau",
     "suffolk",
     "long island",
+    "new jersey",
+    "north jersey",
+    "jersey city",
+    "hoboken",
   ];
 
   return allowedWords.some((word) => text.includes(word));
@@ -1953,6 +2420,385 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
   };
 }
 
+const LOCATION_COLUMNS = `
+  id,
+  location_type,
+  restaurant_name,
+  activity_name,
+  name,
+  address,
+  city,
+  state,
+  zip_code,
+  neighborhood,
+  latitude,
+  longitude,
+  description,
+  cuisine,
+  cuisine_type,
+  activity_type,
+  atmosphere,
+  lighting,
+  noise_level,
+  price_range,
+  group_friendly,
+  reservation_link,
+  reservation_url,
+  booking_url,
+  website,
+  phone,
+  image_url,
+  rating,
+  review_count,
+  review_score,
+  review_keywords,
+  review_snippet,
+  search_document
+`;
+
+const ACTIVITY_COLUMNS = `
+  id,
+  activity_name,
+  activity_type,
+  address,
+  city,
+  state,
+  zip_code,
+  price_range,
+  atmosphere,
+  group_friendly,
+  reservation_link,
+  website,
+  image_url,
+  status,
+  date_style_tags,
+  primary_tag,
+  rating,
+  review_count,
+  quality_score,
+  popularity_score,
+  detail_url,
+  claim_url,
+  view_count,
+  click_count,
+  roseout_score,
+  neighborhood,
+  latitude,
+  longitude,
+  reservation_url,
+  phone,
+  noise_level,
+  dress_code,
+  parking_info,
+  hours,
+  description,
+  best_for,
+  special_features,
+  signature_items,
+  search_keywords,
+  ranking_badge,
+  trend_score,
+  conversion_score,
+  review_score,
+  review_keywords,
+  google_maps_url,
+  price_level,
+  theouthaven_score,
+  search_document
+`;
+
+const RESTAURANT_COLUMNS = `
+  id,
+  restaurant_name,
+  city,
+  state,
+  cuisine_type,
+  price_range,
+  description,
+  reservation_link,
+  google_maps_link,
+  yelp_link,
+  instagram_url,
+  status,
+  mood_tags,
+  lighting,
+  noise_level,
+  atmosphere,
+  best_for,
+  phone,
+  email,
+  website,
+  neighborhood,
+  hours_of_operation,
+  days_of_operation,
+  kitchen_closing_time,
+  street,
+  zip_code,
+  address,
+  image_url,
+  date_style_tags,
+  primary_tag,
+  rating,
+  review_count,
+  yelp_id,
+  yelp_url,
+  google_place_id,
+  quality_score,
+  popularity_score,
+  detail_url,
+  claim_url,
+  claim_status,
+  updated_at,
+  facebook_url,
+  view_count,
+  click_count,
+  claim_count,
+  roseout_score,
+  owner_name,
+  owner_phone,
+  claimed,
+  latitude,
+  longitude,
+  search_document
+`;
+
+async function fetchFallbackRecords(input: string = "") {
+  const text = normalizeQuery(input);
+
+  const buildTextOrFilter = (columns: string[], terms: string[]) =>
+    terms
+      .map(normalizeQuery)
+      .filter(Boolean)
+      .slice(0, 20)
+      .flatMap((term) => {
+        const safeTerm = term.replace(/%/g, "").replace(/,/g, " ").trim();
+        return columns.map((column) => `${column}.ilike.%${safeTerm}%`);
+      })
+      .join(",");
+
+  const foodColumns = [
+    "restaurant_name",
+    "cuisine_type",
+    "description",
+    "primary_tag",
+    "search_document",
+  ];
+
+  const foodTerms = new Set<string>();
+
+  Object.entries(FOOD_INTENTS).forEach(([intentKey, keywords]) => {
+    if (keywords.some((keyword) => text.includes(normalizeQuery(keyword)))) {
+      keywords.forEach((keyword) => foodTerms.add(normalizeQuery(keyword)));
+      foodTerms.add(normalizeQuery(intentKey.replace(/_/g, " ")));
+    }
+  });
+
+  const foodFilter =
+    foodTerms.size > 0
+      ? buildTextOrFilter(foodColumns, Array.from(foodTerms))
+      : "";
+
+  const applyFoodFilter = (query: any) => {
+    if (!foodFilter) return query;
+    return query.or(foodFilter);
+  };
+
+  const restaurantQueries: PromiseLike<any>[] = [];
+
+  // General food fallback. This keeps the request URL short because it only
+  // searches food terms, not every neighborhood name.
+  let foodQuery = supabase.from("restaurants").select(RESTAURANT_COLUMNS);
+  foodQuery = applyFoodFilter(foodQuery);
+  restaurantQueries.push(foodQuery.limit(300));
+
+  // Queens fallback by coordinate bounds. This keeps ALL Queens neighborhoods
+  // without sending a huge OR list in the URL.
+  if (text.includes("queens")) {
+    let queensQuery = supabase
+      .from("restaurants")
+      .select(RESTAURANT_COLUMNS)
+      .eq("state", "NY")
+      .gte("latitude", 40.48)
+      .lte("latitude", 40.82)
+      .gte("longitude", -73.96)
+      .lte("longitude", -73.68);
+
+    queensQuery = applyFoodFilter(queensQuery);
+    restaurantQueries.push(queensQuery.limit(150));
+  }
+
+  // Long Island fallback by coordinate bounds.
+  if (text.includes("long island") || text.includes("nassau") || text.includes("suffolk")) {
+    let longIslandQuery = supabase
+      .from("restaurants")
+      .select(RESTAURANT_COLUMNS)
+      .eq("state", "NY")
+      .gte("latitude", 40.5)
+      .lte("latitude", 41.35)
+      .gte("longitude", -73.8)
+      .lte("longitude", -71.75);
+
+    longIslandQuery = applyFoodFilter(longIslandQuery);
+    restaurantQueries.push(longIslandQuery.limit(150));
+  }
+
+  // North Jersey fallback by coordinate bounds.
+  if (text.includes("new jersey") || text.includes("north jersey") || text.includes("jersey")) {
+    let jerseyQuery = supabase
+      .from("restaurants")
+      .select(RESTAURANT_COLUMNS)
+      .eq("state", "NJ")
+      .gte("latitude", 40.45)
+      .lte("latitude", 41.25)
+      .gte("longitude", -74.35)
+      .lte("longitude", -73.85);
+
+    jerseyQuery = applyFoodFilter(jerseyQuery);
+    restaurantQueries.push(jerseyQuery.limit(150));
+  }
+
+  const [locationsResult, activitiesResult, ...restaurantResults] =
+    await Promise.all([
+      supabase.from("locations").select(LOCATION_COLUMNS).limit(100),
+      supabase.from("activities").select(ACTIVITY_COLUMNS).limit(300),
+      ...restaurantQueries,
+    ]);
+
+  if (locationsResult.error) throw locationsResult.error;
+  if (activitiesResult.error) throw activitiesResult.error;
+
+  const restaurantRows: any[] = [];
+  restaurantResults.forEach((result: any) => {
+    if (result.error) throw result.error;
+    restaurantRows.push(...(result.data || []));
+  });
+
+  const seenRestaurants = new Set<string>();
+  const restaurants = restaurantRows.filter((restaurant: any) => {
+    const key = String(
+      restaurant.id ||
+        restaurant.google_place_id ||
+        `${restaurant.restaurant_name || ""}-${restaurant.address || ""}`
+    );
+
+    if (!key || seenRestaurants.has(key)) return false;
+    seenRestaurants.add(key);
+    return true;
+  });
+
+  return {
+    locations: locationsResult.data || [],
+    restaurants,
+    activities: activitiesResult.data || [],
+  };
+}
+
+
+async function fetchSupportingRecords() {
+  const { data, error } = await supabase
+    .from("locations")
+    .select(LOCATION_COLUMNS)
+    .limit(100);
+
+  if (error) throw error;
+
+  return {
+    locations: data || [],
+  };
+}
+
+function confidenceLabelFromSimilarity(similarity: number) {
+  if (similarity >= 0.78) return "high";
+  if (similarity >= 0.68) return "medium";
+  return "low";
+}
+
+async function createSearchEmbedding(input: string) {
+  const embeddingResponse = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input,
+  });
+
+  return embeddingResponse.data[0].embedding;
+}
+
+function mapEnterpriseRestaurant(restaurant: any) {
+  const semanticSimilarity = Number(restaurant.semantic_similarity || 0);
+  const finalScore = Number(restaurant.final_score || 0) * 100;
+
+  return {
+    ...restaurant,
+    location_type: "restaurant",
+    name: restaurant.restaurant_name,
+    restaurant_name: restaurant.restaurant_name,
+    cuisine: restaurant.cuisine || restaurant.cuisine_type,
+    cuisine_type: restaurant.cuisine_type || restaurant.cuisine,
+    theouthaven_score: finalScore,
+    smart_match_score: finalScore,
+    semantic_similarity: semanticSimilarity,
+    semantic_score_boost: semanticSimilarity * 100,
+    confidence: semanticSimilarity,
+    confidence_label: confidenceLabelFromSimilarity(semanticSimilarity),
+  };
+}
+
+function mapEnterpriseActivity(activity: any) {
+  const semanticSimilarity = Number(activity.semantic_similarity || 0);
+  const finalScore = Number(activity.final_score || 0) * 100;
+
+  return {
+    ...activity,
+    location_type: "activity",
+    name: activity.activity_name,
+    activity_name: activity.activity_name,
+    theouthaven_score: finalScore,
+    smart_match_score: finalScore,
+    semantic_similarity: semanticSimilarity,
+    semantic_score_boost: semanticSimilarity * 100,
+    confidence: semanticSimilarity,
+    confidence_label: confidenceLabelFromSimilarity(semanticSimilarity),
+  };
+}
+
+async function fetchEnterpriseSearchRecords(
+  input: string,
+  intent: ReturnType<typeof detectIntent>
+) {
+  const embedding = await createSearchEmbedding(input);
+
+  const requestedCity = intent.locations[0] || null;
+  const requestedCuisine = intent.foodIntents[0] || null;
+  const requestedActivity = intent.activityIntents[0] || null;
+
+  const [restaurantsResult, activitiesResult] = await Promise.all([
+    supabase.rpc("search_restaurants_enterprise", {
+      query_embedding: embedding,
+      requested_city: requestedCity,
+      requested_cuisine: requestedCuisine,
+      match_limit: 40,
+    }),
+    supabase.rpc("search_activities_enterprise", {
+      query_embedding: embedding,
+      requested_city: requestedCity,
+      requested_activity: requestedActivity,
+      match_limit: 40,
+    }),
+  ]);
+
+  if (restaurantsResult.error) {
+    throw restaurantsResult.error;
+  }
+
+  if (activitiesResult.error) {
+    throw activitiesResult.error;
+  }
+
+  return {
+    restaurants: (restaurantsResult.data || []).map(mapEnterpriseRestaurant),
+    activities: (activitiesResult.data || []).map(mapEnterpriseActivity),
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -1988,71 +2834,68 @@ export async function POST(req: Request) {
 
     await logSearchQuery(input);
 
-    const { data: locationsData, error: locationsError } = await supabase
-      .from("locations")
-      .select("*");
+const preliminaryIntent = detectIntent(input, body, []);
+const semanticResults = new Map<string, any>();
 
-    const { data: restaurantsData, error: restaurantsError } = await supabase
-      .from("restaurants")
-      .select("*");
+let matchedRecords = {
+  locations: [] as any[],
+  restaurants: [] as any[],
+  activities: [] as any[],
+};
 
-    const { data: activitiesData, error: activitiesError } = await supabase
-      .from("activities")
-      .select("*");
+try {
+  const [enterpriseRecords, supportingRecords] = await Promise.all([
+    fetchEnterpriseSearchRecords(input, preliminaryIntent),
+    fetchSupportingRecords(),
+  ]);
 
-    if (locationsError) {
-      return Response.json({ error: locationsError.message }, { status: 500 });
-    }
+  matchedRecords = {
+    locations: supportingRecords.locations || [],
+    restaurants: enterpriseRecords.restaurants || [],
+    activities: enterpriseRecords.activities || [],
+  };
+} catch (rpcError) {
+  console.error("ENTERPRISE RPC FALLBACK:", rpcError);
+  matchedRecords = await fetchFallbackRecords(input);
+}
 
-    if (restaurantsError) {
-      return Response.json(
-        { error: restaurantsError.message },
-        { status: 500 }
-      );
-    }
+const mergedLocations = [
+  ...(matchedRecords.locations || []),
 
-    if (activitiesError) {
-      return Response.json({ error: activitiesError.message }, { status: 500 });
-    }
+  ...(matchedRecords.restaurants || []).map((restaurant: any) => ({
+    ...restaurant,
+    location_type: "restaurant",
+    name: restaurant.restaurant_name || restaurant.name,
+    restaurant_name: restaurant.restaurant_name || restaurant.name,
+  })),
 
-    const mergedLocations = [
-      ...(locationsData || []),
-      ...(restaurantsData || []).map((restaurant: any) => ({
-        ...restaurant,
-        location_type: "restaurant",
-        name: restaurant.restaurant_name || restaurant.name,
-        restaurant_name: restaurant.restaurant_name || restaurant.name,
-      })),
-      ...(activitiesData || []).map((activity: any) => ({
-        ...activity,
-        location_type: "activity",
-        name: activity.activity_name || activity.name,
-        activity_name: activity.activity_name || activity.name,
-      })),
-    ];
+  ...(matchedRecords.activities || []).map((activity: any) => ({
+    ...activity,
+    location_type: "activity",
+    name: activity.activity_name || activity.name,
+    activity_name: activity.activity_name || activity.name,
+  })),
+];
 
-    const locations = mergedLocations.map(normalizeLocation);
-    const intent = detectIntent(input, body, locations);
+const locations = mergedLocations.map(normalizeLocation);
 
-    const cacheKey = normalizeQuery(
-      `theouthaven-${getSmartMatchVersion()}-${RESPONSE_CACHE_VERSION}-${input}-${
-        intent.userLat || ""
-      }-${intent.userLng || ""}-${intent.maxMiles || ""}-${intent.locations.join("-")}`
-    );
+const intent = detectIntent(input, body, locations);
 
-    const { data: cached } = await supabase
-      .from("ai_response_cache")
-      .select("response, created_at")
-      .eq("cache_key", cacheKey)
-      .maybeSingle();
+const cacheKey = buildResponseCacheKey(input, intent);
 
-    if (cached?.response) {
-      const cacheAge = Date.now() - new Date(cached.created_at).getTime();
+const { data: cached } = await supabase
+  .from("ai_response_cache")
+  .select("response, created_at")
+  .eq("cache_key", cacheKey)
+  .maybeSingle();
 
-      if (cacheAge < 1000 * 60 * 60 * CACHE_HOURS) {
-        return Response.json(cached.response);
-      }
-    }
+if (cached?.response) {
+  const cacheAge = Date.now() - new Date(cached.created_at).getTime();
+
+  if (cacheAge < 1000 * 60 * 60 * CACHE_HOURS) {
+    return Response.json(cached.response);
+  }
+}
 
 const usableLocations = locations.filter((item: any) => {
   const status = String(item.status || "approved").toLowerCase();
@@ -2063,8 +2906,8 @@ const usableLocations = locations.filter((item: any) => {
   return isApproved && isWithinTheOutHavenServiceArea(item);
 });
 
-    const sourceLocations =
-      usableLocations.length > 0 ? usableLocations : locations;
+const sourceLocations =
+  usableLocations.length > 0 ? usableLocations : locations;
 
     const matchedLocationResults = buildMatchedLocationResults(
       sourceLocations.filter(isOutingEligibleLocation),
@@ -2074,13 +2917,16 @@ const usableLocations = locations.filter((item: any) => {
     let restaurants = sourceLocations.filter((item: any) => {
       const type = String(item.location_type || "").toLowerCase();
 
-      return (
-        type === "restaurant" ||
-        Boolean(item.restaurant_name) ||
-        Boolean(item.cuisine) ||
-        Boolean(item.cuisine_type)
-      );
-    });
+return (
+  isOutingEligibleLocation(item) &&
+  (
+    type === "restaurant" ||
+    Boolean(item.restaurant_name) ||
+    Boolean(item.cuisine) ||
+    Boolean(item.cuisine_type)
+  )
+);
+});
 
     let activities = sourceLocations.filter((item: any) => {
       const type = String(item.location_type || "").toLowerCase();
@@ -2157,6 +3003,20 @@ const usableLocations = locations.filter((item: any) => {
       activities = filterActivitiesByActivityIntent(activities, intent);
     }
 
+    if (restaurants.length === 0 && intent.wantsRestaurant) {
+      restaurants = sourceLocations.filter((item: any) => {
+        const searchable = itemText(item);
+
+        return (
+          isOutingEligibleLocation(item) &&
+          (searchable.includes("restaurant") ||
+            searchable.includes("dining") ||
+            searchable.includes("food") ||
+            searchable.includes("cuisine"))
+        );
+      });
+    }
+
     if (isLoungeActivityOnlyRequest(intent)) {
       restaurants = [];
       activities = sourceLocations.filter(
@@ -2223,12 +3083,25 @@ const usableLocations = locations.filter((item: any) => {
 
     const rankedRestaurants = restaurants
       .map((restaurant: any) => {
-        const score = scoreRestaurant(restaurant, input, intent);
+        const semantic = semanticScoreBoost(restaurant, semanticResults);
+        const score = clampScore(
+          scoreRestaurant(restaurant, input, intent) + semantic.semantic_score_boost
+        );
+        const confidence = confidenceFromScores({
+          ...restaurant,
+          smart_match_score: score,
+          semantic_similarity: semantic.semantic_similarity,
+          location_name_match_score: locationNameMatchScore(restaurant, input),
+        });
 
         return {
           ...restaurant,
           theouthaven_score: score,
           smart_match_score: score,
+          semantic_similarity: semantic.semantic_similarity,
+          semantic_score_boost: semantic.semantic_score_boost,
+          confidence: confidence.confidence,
+          confidence_label: confidence.confidence_label,
           location_name_match_score: locationNameMatchScore(restaurant, input),
         };
       })
@@ -2236,12 +3109,25 @@ const usableLocations = locations.filter((item: any) => {
 
     const rankedActivities = activities
       .map((activity: any) => {
-        const score = scoreActivity(activity, input, intent);
+        const semantic = semanticScoreBoost(activity, semanticResults);
+        const score = clampScore(
+          scoreActivity(activity, input, intent) + semantic.semantic_score_boost
+        );
+        const confidence = confidenceFromScores({
+          ...activity,
+          smart_match_score: score,
+          semantic_similarity: semantic.semantic_similarity,
+          location_name_match_score: locationNameMatchScore(activity, input),
+        });
 
         return {
           ...activity,
           theouthaven_score: score,
           smart_match_score: score,
+          semantic_similarity: semantic.semantic_similarity,
+          semantic_score_boost: semantic.semantic_score_boost,
+          confidence: confidence.confidence,
+          confidence_label: confidence.confidence_label,
           location_name_match_score: locationNameMatchScore(activity, input),
         };
       })
@@ -2320,6 +3206,8 @@ const usableLocations = locations.filter((item: any) => {
       cuisine: r.cuisine || r.cuisine_type,
       score: clampScore(r.theouthaven_score),
       location_name_match_score: r.location_name_match_score || 0,
+      semantic_similarity: r.semantic_similarity || 0,
+      confidence_label: r.confidence_label || "low",
       tag: r.primary_tag,
       rating: r.rating,
       review_count: r.review_count,
@@ -2333,6 +3221,8 @@ const usableLocations = locations.filter((item: any) => {
       type: a.activity_type || a.category || a.subcategory,
       score: clampScore(a.theouthaven_score),
       location_name_match_score: a.location_name_match_score || 0,
+      semantic_similarity: a.semantic_similarity || 0,
+      confidence_label: a.confidence_label || "low",
       tag: a.primary_tag,
       rating: a.rating,
       review_count: a.review_count,
@@ -2398,6 +3288,8 @@ STRICT RULES:
 - If the user asks anything outside TheOutHaven, respond exactly: "${OFF_TOPIC_REPLY}"
 - Keep the answer short and direct.
 - Use ONLY the listed restaurants and activities.
+- Treat high confidence matches as strongest. For medium/low confidence, say "best available matches" instead of sounding certain.
+- Prefer items with stronger semantic_similarity when the user's request is a full sentence or describes a vibe.
 - If the user typed a specific business/location name and it appears in "Matched location/business names", prioritize it.
 - If there is a matched business/location name, mention that match first.
 - If the user asks for food plus any activity, include both a restaurant and a matching activity when available.
@@ -2428,7 +3320,7 @@ STRICT RULES:
       ? await openai.responses.create({
           model: AI_MODEL,
           input: prompt,
-          max_output_tokens: 350,
+          max_output_tokens: 180,
         })
       : null;
 
@@ -2452,7 +3344,7 @@ STRICT RULES:
       },
       reply:
         response?.output_text ||
-        "Here are strong TheOutHaven matches based on your vibe.",
+        "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
       intent: {
         requestedTags: intent.requestedTags,
         foodIntents: intent.foodIntents,
@@ -2513,6 +3405,10 @@ google_maps_url: item.google_maps_url || null,
         price_range: r.price_range || null,
         theouthaven_score: clampScore(r.theouthaven_score),
         smart_match_score: clampScore(r.smart_match_score || r.theouthaven_score),
+        semantic_similarity: r.semantic_similarity || 0,
+        semantic_score_boost: r.semantic_score_boost || 0,
+        confidence: r.confidence || 0,
+        confidence_label: r.confidence_label || "low",
         location_name_match_score: r.location_name_match_score || 0,
         paired_activity_name: r.paired_activity_name || null,
         pair_distance_miles: r.pair_distance_miles || null,
@@ -2548,6 +3444,10 @@ google_maps_url: item.google_maps_url || null,
         group_friendly: a.group_friendly,
         theouthaven_score: clampScore(a.theouthaven_score),
         smart_match_score: clampScore(a.smart_match_score || a.theouthaven_score),
+        semantic_similarity: a.semantic_similarity || 0,
+        semantic_score_boost: a.semantic_score_boost || 0,
+        confidence: a.confidence || 0,
+        confidence_label: a.confidence_label || "low",
         location_name_match_score: a.location_name_match_score || 0,
         paired_restaurant_name: a.paired_restaurant_name || null,
         pair_distance_miles: a.pair_distance_miles || null,
