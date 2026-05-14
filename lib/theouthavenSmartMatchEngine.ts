@@ -13,6 +13,9 @@ export type SmartMatchIntent = {
 
 type ScoredSmartMatchItem = SmartMatchItem & { smart_match_score: number };
 
+const SINGLE_STOP_RESULT_LIMIT = 8;
+const FULL_OUTING_RESULT_LIMIT = 6;
+
 export type SmartMatchItem = {
   id?: string;
   name?: string;
@@ -633,11 +636,12 @@ export function balanceSmartMatches(
   const finalRestaurants =
     smartRestaurants.length > 0 ? smartRestaurants : restaurants;
 
-  const finalActivities = smartActivities.length > 0 ? smartActivities : activities;
+  const finalActivities =
+    smartActivities.length > 0 ? smartActivities : activities;
 
   if (intent.wantsFood && !intent.wantsActivity && !intent.wantsFullOuting) {
     return {
-      restaurants: finalRestaurants.slice(0, 6),
+      restaurants: finalRestaurants.slice(0, SINGLE_STOP_RESULT_LIMIT),
       activities: [],
       mode: "food_only",
     };
@@ -646,18 +650,18 @@ export function balanceSmartMatches(
   if (!intent.wantsFood && intent.wantsActivity && !intent.wantsFullOuting) {
     return {
       restaurants: [],
-      activities: finalActivities.slice(0, 6),
+      activities: finalActivities.slice(0, SINGLE_STOP_RESULT_LIMIT),
       mode: "activity_only",
     };
   }
 
   return {
-    restaurants: finalRestaurants.slice(0, 3),
-    activities: finalActivities.slice(0, 3),
+    restaurants: finalRestaurants.slice(0, FULL_OUTING_RESULT_LIMIT),
+    activities: finalActivities.slice(0, FULL_OUTING_RESULT_LIMIT),
     mode: "full_outing",
   };
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v4";
+  return "theouthaven-smart-match-engine-v5";
 }
