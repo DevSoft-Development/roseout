@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type PlanLocation = {
   id?: string;
@@ -650,6 +651,12 @@ function buildFlowText(
 
   if (distance !== null) {
     if (distancePreference === "walking") {
+      if (isCrossAreaWalkingPair(restaurant, activity)) {
+        return `Not walkable between ${restaurantName || "dinner"} and ${
+          activityName || "activity"
+        }`;
+      }
+
       const walkingMinutes =
         activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
