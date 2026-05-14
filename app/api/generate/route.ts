@@ -2297,7 +2297,7 @@ function filterActivitiesByActivityIntent(
   return [];
 }
 
-const WALKING_DISTANCE_MILES = 0.45;
+const WALKING_DISTANCE_MILES = 0.75;
 
 function pairWalkingDistanceMatches(
   restaurants: any[],
@@ -3241,6 +3241,13 @@ const walkingPairs =
       )
     : [];
 
+const strictWalkingRequest =
+  input.toLowerCase().includes("walking distance") ||
+  input.toLowerCase().includes("walkable") ||
+  input.toLowerCase().includes("walk from") ||
+  input.toLowerCase().includes("nearby") ||
+  input.toLowerCase().includes("close by");
+
 const pairedResults =
   walkingPairs.length > 0
     ? {
@@ -3260,20 +3267,26 @@ const pairedResults =
           pair_distance_miles: pair.distance_miles,
           pair_walking_minutes: pair.walking_minutes,
           pair_walking_label: `${pair.walking_minutes} min walk from ${
-            pair.activity.activity_name || pair.activity.name
+            pair.restaurant.restaurant_name || pair.restaurant.name
           }`,
           pair_score: pair.pair_score,
         })),
         pairs: walkingPairs,
       }
-    : smartBalanced.restaurants.length > 0 &&
-        smartBalanced.activities.length > 0
-      ? pairSmartMatches(smartBalanced.restaurants, smartBalanced.activities)
-      : {
-          restaurants: smartBalanced.restaurants,
-          activities: smartBalanced.activities,
+    : strictWalkingRequest
+      ? {
+          restaurants: [],
+          activities: [],
           pairs: [],
-        };
+        }
+      : smartBalanced.restaurants.length > 0 &&
+          smartBalanced.activities.length > 0
+        ? pairSmartMatches(smartBalanced.restaurants, smartBalanced.activities)
+        : {
+            restaurants: smartBalanced.restaurants,
+            activities: smartBalanced.activities,
+            pairs: [],
+          };
 
     const finalDedupedResults = removeDuplicateLocationsAcrossTypes(
       pairedResults.restaurants,
