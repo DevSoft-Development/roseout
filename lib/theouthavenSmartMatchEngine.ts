@@ -9,6 +9,7 @@ export type SmartMatchIntent = {
   locations: string[];
   strictFoodMode: boolean;
   strictActivityMode: boolean;
+  wantsPrimaryMeal: boolean;
 };
 
 type ScoredSmartMatchItem = SmartMatchItem & { smart_match_score: number };
@@ -432,6 +433,69 @@ const MEAL_WORDS = [
   "eat",
 ];
 
+const PRIMARY_MEAL_WORDS = [
+  "restaurant",
+  "restaurants",
+  "restuarant",
+  "restuarants",
+  "restaraunt",
+  "restaraunts",
+  "dinner",
+  "lunch",
+  "brunch",
+  "breakfast",
+  "dining",
+  "sit down",
+  "sit-down",
+];
+
+const DESSERT_ONLY_TERMS = [
+  "ice cream",
+  "italian ice",
+  "shaved ice",
+  "gelato",
+  "frozen yogurt",
+  "froyo",
+  "dessert",
+  "desserts",
+  "dessert shop",
+  "bakery",
+  "cupcake",
+  "cupcakes",
+  "cookie",
+  "cookies",
+  "pastry",
+  "pastries",
+  "candy",
+  "chocolate",
+  "sweets",
+];
+
+const FULL_MEAL_TERMS = [
+  "restaurant",
+  "dining",
+  "kitchen",
+  "grill",
+  "bistro",
+  "brasserie",
+  "steak",
+  "seafood",
+  "sushi",
+  "italian",
+  "mexican",
+  "chinese",
+  "thai",
+  "indian",
+  "mediterranean",
+  "american",
+  "bbq",
+  "pizza",
+  "burger",
+  "taco",
+  "ramen",
+  "hibachi",
+];
+
 function normalize(input: string) {
   return input
     .toLowerCase()
@@ -515,6 +579,10 @@ export function detectSmartMatchIntent(input: string): SmartMatchIntent {
       (word) => phraseIncludes(text, word)
     );
 
+  const hasPrimaryMealWord = PRIMARY_MEAL_WORDS.some((word) =>
+    phraseIncludes(text, word)
+  );
+
   const wantsFullOuting =
     phraseIncludes(text, "with") ||
     phraseIncludes(text, "and") ||
@@ -522,6 +590,14 @@ export function detectSmartMatchIntent(input: string): SmartMatchIntent {
     phraseIncludes(text, "date night") ||
     phraseIncludes(text, "outing") ||
     (wantsFood && wantsActivity);
+
+  const onlyFoodAddOnRequested =
+    foodIntents.length > 0 &&
+    foodIntents.every((foodIntent) =>
+      ["dessert", "ice_cream", "coffee", "drinks", "wine_bar"].includes(foodIntent)
+    );
+  const wantsPrimaryMeal =
+    hasPrimaryMealWord && !(onlyFoodAddOnRequested && !wantsFullOuting);
 
   return {
     query: text,
@@ -534,6 +610,7 @@ export function detectSmartMatchIntent(input: string): SmartMatchIntent {
     locations,
     strictFoodMode: foodIntents.length > 0,
     strictActivityMode: activityIntents.length > 0,
+    wantsPrimaryMeal,
   };
 }
 
@@ -574,6 +651,32 @@ function matchesIntent(
     const keywords = intentMap[key] || [];
     return keywords.some((word) => phraseIncludes(text, word));
   });
+}
+
+export function isDessertOnlyRestaurant(item: SmartMatchItem) {
+  const primaryText = [
+    item.name,
+    item.restaurant_name,
+    item.title,
+    item.cuisine,
+    item.category,
+    item.primary_tag,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const text = getSearchText(item);
+
+  const hasDessertSignal =
+    DESSERT_ONLY_TERMS.some((term) => phraseIncludes(primaryText, term)) ||
+    DESSERT_ONLY_TERMS.some((term) => phraseIncludes(text, term));
+
+  if (!hasDessertSignal) return false;
+
+  return !FULL_MEAL_TERMS.some((term) => phraseIncludes(primaryText, term));
+}
+
+function matchesPrimaryMealIntent(item: SmartMatchItem, intent: SmartMatchIntent) {
+  return !intent.wantsPrimaryMeal || !isDessertOnlyRestaurant(item);
 }
 
 export function matchesFoodIntent(
@@ -620,6 +723,7 @@ export function scoreRestaurant(
 
   if (matchesFoodIntent(restaurant, intent)) score += 30;
   if (matchesLocationIntent(restaurant, intent)) score += 15;
+  if (intent.wantsPrimaryMeal && isDessertOnlyRestaurant(restaurant)) score -= 35;
 
   for (const vibe of intent.vibes) {
     const vibeWords = VIBE_INTENTS[vibe] || [];
@@ -731,6 +835,7 @@ export function filterSmartRestaurants(
   return restaurants
     .filter((restaurant) => matchesLocationIntent(restaurant, intent))
     .filter((restaurant) => matchesFoodIntent(restaurant, intent))
+    .filter((restaurant) => matchesPrimaryMealIntent(restaurant, intent))
     .map((restaurant) => ({
       ...restaurant,
       smart_match_score: scoreRestaurant(restaurant, intent),
@@ -796,5 +901,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v5";
+  return "theouthaven-smart-match-engine-v6";
 }

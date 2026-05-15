@@ -19,7 +19,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v16-shared-walking-area-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-primary-meal-filter-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -232,6 +232,69 @@ const FOOD_KEYWORDS = [
   "scenic",
   "waterfront",
   "skyline",
+];
+
+const PRIMARY_MEAL_KEYWORDS = [
+  "restaurant",
+  "restaurants",
+  "restuarant",
+  "restuarants",
+  "restaraunt",
+  "restaraunts",
+  "dinner",
+  "lunch",
+  "brunch",
+  "breakfast",
+  "dining",
+  "sit down",
+  "sit-down",
+];
+
+const DESSERT_ONLY_RESTAURANT_KEYWORDS = [
+  "ice cream",
+  "italian ice",
+  "shaved ice",
+  "gelato",
+  "frozen yogurt",
+  "froyo",
+  "dessert",
+  "desserts",
+  "dessert shop",
+  "bakery",
+  "cupcake",
+  "cupcakes",
+  "cookie",
+  "cookies",
+  "pastry",
+  "pastries",
+  "candy",
+  "chocolate",
+  "sweets",
+];
+
+const FULL_MEAL_RESTAURANT_KEYWORDS = [
+  "restaurant",
+  "dining",
+  "kitchen",
+  "grill",
+  "bistro",
+  "brasserie",
+  "steak",
+  "seafood",
+  "sushi",
+  "italian",
+  "mexican",
+  "chinese",
+  "thai",
+  "indian",
+  "mediterranean",
+  "american",
+  "bbq",
+  "pizza",
+  "burger",
+  "taco",
+  "ramen",
+  "hibachi",
 ];
 
 const ACTIVITY_KEYWORDS = [
@@ -684,6 +747,70 @@ function toArray(value: any): string[] {
       
   }
   return [];
+}
+
+function phraseIncludesNormalized(text: string, phrase: string) {
+  const cleanText = normalizeQuery(text);
+  const cleanPhrase = normalizeQuery(phrase);
+
+  if (!cleanText || !cleanPhrase) return false;
+
+  if (cleanPhrase.length <= 3) {
+    return new RegExp(`\\b${cleanPhrase}\\b`).test(cleanText);
+  }
+
+  return cleanText.includes(cleanPhrase);
+}
+
+function wantsPrimaryMeal(input: string) {
+  const text = normalizeQuery(input);
+
+  return PRIMARY_MEAL_KEYWORDS.some((keyword) =>
+    phraseIncludesNormalized(text, keyword)
+  );
+}
+
+function isDessertOnlyRestaurant(item: Record<string, unknown>) {
+  const primaryText = [
+    item.restaurant_name,
+    item.name,
+    item.cuisine,
+    item.cuisine_type,
+    item.food_type,
+    item.category,
+    item.categories,
+    item.primary_tag,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const searchable = itemText(item);
+
+  const hasDessertSignal =
+    DESSERT_ONLY_RESTAURANT_KEYWORDS.some((keyword) =>
+      phraseIncludesNormalized(primaryText, keyword)
+    ) ||
+    DESSERT_ONLY_RESTAURANT_KEYWORDS.some((keyword) =>
+      phraseIncludesNormalized(searchable, keyword)
+    );
+
+  if (!hasDessertSignal) return false;
+
+  return !FULL_MEAL_RESTAURANT_KEYWORDS.some((keyword) =>
+    phraseIncludesNormalized(primaryText, keyword)
+  );
+}
+
+function filterPrimaryMealRestaurants(
+  restaurants: Record<string, unknown>[],
+  intent: ReturnType<typeof detectIntent>
+) {
+  if (!intent.wantsPrimaryMeal) return restaurants;
+
+  const primaryMealMatches = restaurants.filter(
+    (restaurant) => !isDessertOnlyRestaurant(restaurant)
+  );
+
+  return primaryMealMatches.length > 0 ? primaryMealMatches : restaurants;
 }
 
 function itemText(item: any) {
@@ -2238,6 +2365,11 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const userLat = body.lat || body.latitude || null;
   const userLng = body.lng || body.longitude || null;
 
+  const onlyFoodAddOnRequested =
+    foodIntents.length > 0 && foodIntents.every(isFoodAddOnIntent);
+  const primaryMealRequested =
+    wantsPrimaryMeal(input) && !(onlyFoodAddOnRequested && !wantsFullOuting);
+
   const multiIntentMode =
     wantsFullOuting ||
     (foodIntents.length > 0 && activityIntents.length > 0) ||
@@ -2249,6 +2381,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     wantsActivity,
     wantsFullOuting,
     wantsRestaurant,
+    wantsPrimaryMeal: primaryMealRequested,
     requestedTags,
     foodIntents,
     activityIntents,
@@ -2338,6 +2471,11 @@ function scoreRestaurant(
   score += weightedVibeBoost(item, intent.vibes);
   score += weightedTagBoost(item, intent.requestedTags);
   score += weightedFoodBoost(item, intent.foodIntents);
+
+  if (intent.wantsPrimaryMeal && isDessertOnlyRestaurant(item)) {
+    score -= 260;
+  }
+
   score += budgetBoost(item, intent.budget);
   score += distanceBoost(item, intent.userLat, intent.userLng, intent.maxMiles);
   score += popularityBoost(item);
@@ -2463,22 +2601,24 @@ function scoreActivity(
 }
 
 function filterRestaurantsByFoodIntent(
-  restaurants: any[],
+  restaurants: Record<string, unknown>[],
   intent: ReturnType<typeof detectIntent>
 ) {
-  if (intent.foodIntents.length === 0) return restaurants;
+  const primaryMealRestaurants = filterPrimaryMealRestaurants(restaurants, intent);
 
-  const exactMatches = restaurants.filter((restaurant: any) =>
+  if (intent.foodIntents.length === 0) return primaryMealRestaurants;
+
+  const exactMatches = primaryMealRestaurants.filter((restaurant: any) =>
     intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food))
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
-  const partialMatches = restaurants.filter((restaurant: any) =>
+  const partialMatches = primaryMealRestaurants.filter((restaurant: any) =>
     intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food))
   );
 
-  return partialMatches.length > 0 ? partialMatches : restaurants;
+  return partialMatches.length > 0 ? partialMatches : primaryMealRestaurants;
 }
 
 function filterActivitiesByActivityIntent(
