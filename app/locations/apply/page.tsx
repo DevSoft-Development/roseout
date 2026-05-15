@@ -9,6 +9,7 @@ declare global {
   interface Window {
     turnstile?: any;
     google?: any;
+    initTheOutHavenGooglePlaces?: () => void;
     onTheOutHavenTurnstileSuccess?: (token: string) => void;
     onTheOutHavenTurnstileExpired?: () => void;
   }
@@ -58,6 +59,7 @@ export default function LocationApplyPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
   const [googleLoaded, setGoogleLoaded] = useState(false);
+  const [googleAddressReady, setGoogleAddressReady] = useState(false);
 
   useEffect(() => {
     document.title = "Claim or Add Your Location | TheOutHaven";
@@ -77,15 +79,36 @@ export default function LocationApplyPage() {
   }, []);
 
   useEffect(() => {
-    if (!googleLoaded || !window.google?.maps?.places || !addressInputRef.current) {
-      return;
+    window.initTheOutHavenGooglePlaces = () => {
+      setGoogleLoaded(true);
+    };
+
+    if (window.google?.maps?.places) {
+      setGoogleLoaded(true);
     }
+
+    return () => {
+      delete window.initTheOutHavenGooglePlaces;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!googleLoaded) return;
+    if (!window.google?.maps?.places) return;
+    if (!addressInputRef.current) return;
+    if (autocompleteRef.current) return;
 
     autocompleteRef.current = new window.google.maps.places.Autocomplete(
       addressInputRef.current,
       {
-        fields: ["formatted_address", "address_components", "geometry", "name"],
-        types: ["address"],
+        fields: [
+          "formatted_address",
+          "address_components",
+          "geometry",
+          "name",
+          "place_id",
+        ],
+        types: ["establishment"],
         componentRestrictions: { country: "us" },
       }
     );
@@ -118,6 +141,8 @@ export default function LocationApplyPage() {
         city: cityComponent?.long_name || prev.city,
       }));
     });
+
+    setGoogleAddressReady(true);
   }, [googleLoaded]);
 
   const chooseRequestType = (type: RequestType) => {
@@ -314,9 +339,8 @@ export default function LocationApplyPage() {
       />
 
       <Script
-        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
+        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&callback=initTheOutHavenGooglePlaces`}
         strategy="afterInteractive"
-        onLoad={() => setGoogleLoaded(true)}
       />
 
       <TheOutHavenHeader />
@@ -353,9 +377,11 @@ export default function LocationApplyPage() {
                 <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
                   Option 1
                 </p>
+
                 <h2 className="mt-3 text-2xl font-black">
                   Claim Existing Location
                 </h2>
+
                 <p className="mt-3 text-sm leading-7 text-white/55">
                   Choose this if your restaurant, lounge, activity, venue, or
                   business already appears on TheOutHaven.
@@ -374,9 +400,9 @@ export default function LocationApplyPage() {
                 <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
                   Option 2
                 </p>
-                <h2 className="mt-3 text-2xl font-black">
-                  Add New Location
-                </h2>
+
+                <h2 className="mt-3 text-2xl font-black">Add New Location</h2>
+
                 <p className="mt-3 text-sm leading-7 text-white/55">
                   Choose this if your business is not listed yet and you want to
                   submit it for review.
@@ -550,6 +576,7 @@ export default function LocationApplyPage() {
                 value={form.address}
                 onChange={(value) => updateField("address", value)}
                 required
+                ready={googleAddressReady}
               />
 
               <Field
@@ -637,6 +664,39 @@ export default function LocationApplyPage() {
           </div>
         </div>
       </section>
+
+      <style jsx global>{`
+        .pac-container {
+          z-index: 999999 !important;
+          border-radius: 16px !important;
+          overflow: hidden !important;
+          background: #0d0d0d !important;
+          border: 1px solid rgba(255, 255, 255, 0.12) !important;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45) !important;
+        }
+
+        .pac-item {
+          padding: 12px 14px !important;
+          background: #0d0d0d !important;
+          color: rgba(255, 255, 255, 0.75) !important;
+          border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+          cursor: pointer !important;
+        }
+
+        .pac-item:hover {
+          background: #1a1a1a !important;
+        }
+
+        .pac-item-query {
+          color: #ffffff !important;
+          font-weight: 800 !important;
+        }
+
+        .pac-matched {
+          color: #e1062a !important;
+          font-weight: 900 !important;
+        }
+      `}</style>
     </main>
   );
 }
@@ -681,6 +741,7 @@ function AddressField({
   value,
   onChange,
   required,
+  ready,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   label: string;
@@ -688,6 +749,7 @@ function AddressField({
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
+  ready: boolean;
 }) {
   return (
     <label className="block">
@@ -707,7 +769,9 @@ function AddressField({
       />
 
       <p className="mt-2 text-xs font-semibold text-white/35">
-        Select a suggested Google address when possible.
+        {ready
+          ? "Google address suggestions are ready. Start typing and select a result."
+          : "Loading Google address suggestions..."}
       </p>
     </label>
   );
