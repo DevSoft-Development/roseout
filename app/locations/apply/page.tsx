@@ -8,14 +8,17 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 declare global {
   interface Window {
     turnstile?: any;
-    google?: any;
-    initTheOutHavenGooglePlaces?: () => void;
     onTheOutHavenTurnstileSuccess?: (token: string) => void;
     onTheOutHavenTurnstileExpired?: () => void;
   }
 }
 
 type RequestType = "claim" | "add";
+
+type AddressPrediction = {
+  place_id: string;
+  description: string;
+};
 
 type FormState = {
   location_name: string;
@@ -52,8 +55,6 @@ export default function LocationApplyPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerActiveRef = useRef(false);
   const addressInputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteServiceRef = useRef<any>(null);
-  const geocoderRef = useRef<any>(null);
 
   const [requestType, setRequestType] = useState<RequestType>("claim");
   const [form, setForm] = useState<FormState>(getInitialForm("claim"));
@@ -63,9 +64,9 @@ export default function LocationApplyPage() {
   const [error, setError] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
-  const [googleLoaded, setGoogleLoaded] = useState(false);
-  const [googleAddressReady, setGoogleAddressReady] = useState(false);
-  const [addressPredictions, setAddressPredictions] = useState<any[]>([]);
+  const [addressPredictions, setAddressPredictions] = useState<
+    AddressPrediction[]
+  >([]);
   const [addressLoading, setAddressLoading] = useState(false);
   const [addressStatus, setAddressStatus] = useState("");
 
@@ -86,33 +87,6 @@ export default function LocationApplyPage() {
     };
   }, []);
 
-  useEffect(() => {
-    window.initTheOutHavenGooglePlaces = () => {
-      setGoogleLoaded(true);
-    };
-
-    if (window.google?.maps?.places) {
-      setGoogleLoaded(true);
-    }
-
-    return () => {
-      delete window.initTheOutHavenGooglePlaces;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!googleLoaded) return;
-    if (!window.google?.maps?.places?.AutocompleteService) return;
-    if (!window.google?.maps?.Geocoder) return;
-
-    autocompleteServiceRef.current =
-      new window.google.maps.places.AutocompleteService();
-
-    geocoderRef.current = new window.google.maps.Geocoder();
-
-    setGoogleAddressReady(true);
-  }, [googleLoaded]);
-
   const chooseRequestType = (type: RequestType) => {
     setRequestType(type);
     setForm((prev) => ({
@@ -131,11 +105,11 @@ export default function LocationApplyPage() {
     }));
   };
 
-  const handleAddressChange = (value: string) => {
+  const handleAddressChange = async (value: string) => {
     updateField("address", value);
     setAddressStatus("");
 
-    if (!autocompleteServiceRef.current || value.trim().length < 2) {
+    if (value.trim().length < 2) {
       setAddressPredictions([]);
       setAddressLoading(false);
       return;
@@ -143,91 +117,69 @@ export default function LocationApplyPage() {
 
     setAddressLoading(true);
 
-    autocompleteServiceRef.current.getPlacePredictions(
-      {
-        input: value,
-        componentRestrictions: { country: "us" },
-        types: ["geocode"],
-      },
-      (predictions: any[] | null, status: string) => {
-        setAddressLoading(false);
+    try {
+      const res = await fetch("/api/google/address-autocomplete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input: value }),
+      });
 
-        console.log("Google address autocomplete status:", status);
+      const data = await res.json();
 
-        if (status !== "OK" || !predictions) {
-          setAddressPredictions([]);
-
-          if (status === "ZERO_RESULTS") {
-            setAddressStatus("No address matches found. Try typing the full street address.");
-          } else if (status === "REQUEST_DENIED") {
-            setAddressStatus(
-              "Google address lookup was denied. Check your Google API key, allowed domains, billing, and enabled APIs."
-            );
-          } else if (status === "OVER_QUERY_LIMIT") {
-            setAddressStatus("Google address lookup is over the request limit.");
-          } else if (status) {
-            setAddressStatus(`Google address lookup issue: ${status}`);
-          }
-
-          return;
-        }
-
-        setAddressPredictions(predictions);
+      if (!res.ok) {
+        setAddressPredictions([]);
+        setAddressStatus(data.error || "Google address lookup failed.");
+        return;
       }
-    );
+
+      setAddressPredictions(data.predictions || []);
+
+      if (!data.predictions?.length) {
+        setAddressStatus("No address matches found. Try typing more details.");
+      }
+    } catch {
+      setAddressPredictions([]);
+      setAddressStatus("Google address lookup failed.");
+    } finally {
+      setAddressLoading(false);
+    }
   };
 
-  const selectAddressPrediction = (prediction: any) => {
-    if (!geocoderRef.current) return;
+  const selectAddressPrediction = async (prediction: AddressPrediction) => {
+    setAddressPredictions([]);
+    setAddressLoading(true);
+    setAddressStatus("");
 
-    geocoderRef.current.geocode(
-      { placeId: prediction.place_id },
-      (results: any[] | null, status: string) => {
-        if (status !== "OK" || !results?.[0]) {
-          setAddressStatus(`Could not read selected address: ${status}`);
-          return;
-        }
+    try {
+      const res = await fetch("/api/google/address-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ placeId: prediction.place_id }),
+      });
 
-        const result = results[0];
-        const components = result.address_components || [];
+      const data = await res.json();
 
-        const getComponent = (type: string, short = false) => {
-          const component = components.find((item: any) =>
-            item.types?.includes(type)
-          );
-
-          if (!component) return "";
-
-          return short ? component.short_name || "" : component.long_name || "";
-        };
-
-        const streetNumber = getComponent("street_number");
-        const route = getComponent("route");
-
-        const city =
-          getComponent("locality") ||
-          getComponent("postal_town") ||
-          getComponent("sublocality") ||
-          getComponent("administrative_area_level_2");
-
-        const state = getComponent("administrative_area_level_1", true);
-        const zipCode = getComponent("postal_code");
-
-        setForm((prev) => ({
-          ...prev,
-          address:
-            streetNumber && route
-              ? `${streetNumber} ${route}`
-              : result.formatted_address || prediction.description,
-          city,
-          state,
-          zip_code: zipCode,
-        }));
-
-        setAddressPredictions([]);
-        setAddressStatus("");
+      if (!res.ok) {
+        setAddressStatus(data.error || "Could not read selected address.");
+        return;
       }
-    );
+
+      setForm((prev) => ({
+        ...prev,
+        address: data.address || prediction.description || prev.address,
+        city: data.city || prev.city,
+        state: data.state || prev.state,
+        zip_code: data.zip_code || prev.zip_code,
+      }));
+    } catch {
+      setAddressStatus("Could not read selected address.");
+    } finally {
+      setAddressLoading(false);
+    }
   };
 
   const resetCaptcha = () => {
@@ -422,11 +374,6 @@ export default function LocationApplyPage() {
         defer
       />
 
-      <Script
-        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&callback=initTheOutHavenGooglePlaces`}
-        strategy="afterInteractive"
-      />
-
       <TheOutHavenHeader />
 
       <section className="relative overflow-hidden px-6 pt-32 pb-20">
@@ -505,7 +452,7 @@ export default function LocationApplyPage() {
               />
               <InfoBox
                 title="Google Address"
-                text="Select a Google address to auto-fill city, state, and zip code."
+                text="Search and select an address to auto-fill city, state, and zip code."
               />
               <InfoBox
                 title="Upgrade Later"
@@ -663,7 +610,6 @@ export default function LocationApplyPage() {
                 onSelectPrediction={selectAddressPrediction}
                 loading={addressLoading}
                 required
-                ready={googleAddressReady}
                 status={addressStatus}
               />
 
@@ -815,7 +761,6 @@ function AddressField({
   value,
   onChange,
   required,
-  ready,
   predictions,
   onSelectPrediction,
   loading,
@@ -827,9 +772,8 @@ function AddressField({
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
-  ready: boolean;
-  predictions: any[];
-  onSelectPrediction: (prediction: any) => void;
+  predictions: AddressPrediction[];
+  onSelectPrediction: (prediction: AddressPrediction) => void;
   loading: boolean;
   status: string;
 }) {
@@ -873,9 +817,7 @@ function AddressField({
       <p className="mt-2 text-xs font-semibold text-white/35">
         {loading
           ? "Searching Google addresses..."
-          : ready
-            ? "Start typing, then select an address from the list."
-            : "Loading Google address suggestions..."}
+          : "Start typing, then select an address from the list."}
       </p>
 
       {status && (
