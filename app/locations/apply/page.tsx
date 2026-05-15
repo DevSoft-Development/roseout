@@ -8,6 +8,7 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 declare global {
   interface Window {
     turnstile?: any;
+    google?: any;
     onTheOutHavenTurnstileSuccess?: (token: string) => void;
     onTheOutHavenTurnstileExpired?: () => void;
   }
@@ -45,6 +46,8 @@ const getInitialForm = (requestType: RequestType): FormState => ({
 export default function LocationApplyPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerActiveRef = useRef(false);
+  const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<any>(null);
 
   const [requestType, setRequestType] = useState<RequestType>("claim");
   const [form, setForm] = useState<FormState>(getInitialForm("claim"));
@@ -54,6 +57,7 @@ export default function LocationApplyPage() {
   const [error, setError] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
+  const [googleLoaded, setGoogleLoaded] = useState(false);
 
   useEffect(() => {
     document.title = "Claim or Add Your Location | TheOutHaven";
@@ -71,6 +75,50 @@ export default function LocationApplyPage() {
       delete window.onTheOutHavenTurnstileExpired;
     };
   }, []);
+
+  useEffect(() => {
+    if (!googleLoaded || !window.google?.maps?.places || !addressInputRef.current) {
+      return;
+    }
+
+    autocompleteRef.current = new window.google.maps.places.Autocomplete(
+      addressInputRef.current,
+      {
+        fields: ["formatted_address", "address_components", "geometry", "name"],
+        types: ["address"],
+        componentRestrictions: { country: "us" },
+      }
+    );
+
+    autocompleteRef.current.addListener("place_changed", () => {
+      const place = autocompleteRef.current?.getPlace();
+
+      if (!place) return;
+
+      const formattedAddress = place.formatted_address || "";
+      const components = place.address_components || [];
+
+      const cityComponent =
+        components.find((component: any) =>
+          component.types?.includes("locality")
+        ) ||
+        components.find((component: any) =>
+          component.types?.includes("postal_town")
+        ) ||
+        components.find((component: any) =>
+          component.types?.includes("sublocality")
+        ) ||
+        components.find((component: any) =>
+          component.types?.includes("administrative_area_level_2")
+        );
+
+      setForm((prev) => ({
+        ...prev,
+        address: formattedAddress || prev.address,
+        city: cityComponent?.long_name || prev.city,
+      }));
+    });
+  }, [googleLoaded]);
 
   const chooseRequestType = (type: RequestType) => {
     setRequestType(type);
@@ -194,6 +242,11 @@ export default function LocationApplyPage() {
       return;
     }
 
+    if (!form.address.trim()) {
+      setError("Please select or enter the business address.");
+      return;
+    }
+
     if (!form.owner_name.trim()) {
       setError("Please enter the owner or manager name.");
       return;
@@ -258,6 +311,12 @@ export default function LocationApplyPage() {
         src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         async
         defer
+      />
+
+      <Script
+        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
+        strategy="afterInteractive"
+        onLoad={() => setGoogleLoaded(true)}
       />
 
       <TheOutHavenHeader />
@@ -335,12 +394,12 @@ export default function LocationApplyPage() {
                 text="Submit a new business location for approval before it appears publicly."
               />
               <InfoBox
-                title="Upgrade Later"
-                text="Move to Pro when you want reservations, analytics, QR tools, and priority discovery."
+                title="Google Address"
+                text="Use Google autocomplete to select the correct business address."
               />
               <InfoBox
-                title="Review Required"
-                text="All claims and new submissions may be reviewed before approval."
+                title="Upgrade Later"
+                text="Move to Pro when you want reservations, analytics, QR tools, and priority discovery."
               />
             </div>
 
@@ -484,16 +543,18 @@ export default function LocationApplyPage() {
                 onChange={(value) => updateField("website", value)}
               />
 
-              <Field
-                label="Address"
-                placeholder="Street address"
+              <AddressField
+                inputRef={addressInputRef}
+                label="Google Address"
+                placeholder="Start typing and select the business address"
                 value={form.address}
                 onChange={(value) => updateField("address", value)}
+                required
               />
 
               <Field
                 label="City"
-                placeholder="New York"
+                placeholder="Auto-filled from selected address"
                 value={form.city}
                 onChange={(value) => updateField("city", value)}
               />
@@ -609,6 +670,45 @@ function Field({
         placeholder={placeholder}
         className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
       />
+    </label>
+  );
+}
+
+function AddressField({
+  inputRef,
+  label,
+  placeholder,
+  value,
+  onChange,
+  required,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+        {label}
+        {required ? <span className="text-[#e1062a]"> *</span> : null}
+      </span>
+
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
+      />
+
+      <p className="mt-2 text-xs font-semibold text-white/35">
+        Select a suggested Google address when possible.
+      </p>
     </label>
   );
 }
