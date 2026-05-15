@@ -24,6 +24,8 @@ type FormState = {
   website: string;
   address: string;
   city: string;
+  state: string;
+  zip_code: string;
   owner_name: string;
   owner_email: string;
   owner_phone: string;
@@ -38,6 +40,8 @@ const getInitialForm = (requestType: RequestType): FormState => ({
   website: "",
   address: "",
   city: "",
+  state: "",
+  zip_code: "",
   owner_name: "",
   owner_email: "",
   owner_phone: "",
@@ -108,7 +112,7 @@ export default function LocationApplyPage() {
           "name",
           "place_id",
         ],
-        types: ["establishment"],
+        types: ["geocode"],
         componentRestrictions: { country: "us" },
       }
     );
@@ -121,24 +125,35 @@ export default function LocationApplyPage() {
       const formattedAddress = place.formatted_address || "";
       const components = place.address_components || [];
 
-      const cityComponent =
-        components.find((component: any) =>
-          component.types?.includes("locality")
-        ) ||
-        components.find((component: any) =>
-          component.types?.includes("postal_town")
-        ) ||
-        components.find((component: any) =>
-          component.types?.includes("sublocality")
-        ) ||
-        components.find((component: any) =>
-          component.types?.includes("administrative_area_level_2")
+      const getComponent = (type: string, short = false) => {
+        const component = components.find((item: any) =>
+          item.types?.includes(type)
         );
+
+        if (!component) return "";
+
+        return short ? component.short_name || "" : component.long_name || "";
+      };
+
+      const streetNumber = getComponent("street_number");
+      const route = getComponent("route");
+      const city =
+        getComponent("locality") ||
+        getComponent("postal_town") ||
+        getComponent("sublocality") ||
+        getComponent("administrative_area_level_2");
+      const state = getComponent("administrative_area_level_1", true);
+      const zipCode = getComponent("postal_code");
+
+      const cleanStreetAddress =
+        streetNumber && route ? `${streetNumber} ${route}` : formattedAddress;
 
       setForm((prev) => ({
         ...prev,
-        address: formattedAddress || prev.address,
-        city: cityComponent?.long_name || prev.city,
+        address: cleanStreetAddress || formattedAddress || prev.address,
+        city: city || prev.city,
+        state: state || prev.state,
+        zip_code: zipCode || prev.zip_code,
       }));
     });
 
@@ -269,6 +284,21 @@ export default function LocationApplyPage() {
 
     if (!form.address.trim()) {
       setError("Please select or enter the business address.");
+      return;
+    }
+
+    if (!form.city.trim()) {
+      setError("Please enter the city.");
+      return;
+    }
+
+    if (!form.state.trim()) {
+      setError("Please enter the state.");
+      return;
+    }
+
+    if (!form.zip_code.trim()) {
+      setError("Please enter the zip code.");
       return;
     }
 
@@ -421,7 +451,7 @@ export default function LocationApplyPage() {
               />
               <InfoBox
                 title="Google Address"
-                text="Use Google autocomplete to select the correct business address."
+                text="Select a Google address to auto-fill city, state, and zip code."
               />
               <InfoBox
                 title="Upgrade Later"
@@ -579,12 +609,31 @@ export default function LocationApplyPage() {
                 ready={googleAddressReady}
               />
 
-              <Field
-                label="City"
-                placeholder="Auto-filled from selected address"
-                value={form.city}
-                onChange={(value) => updateField("city", value)}
-              />
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field
+                  label="City"
+                  placeholder="City"
+                  value={form.city}
+                  onChange={(value) => updateField("city", value)}
+                  required
+                />
+
+                <Field
+                  label="State"
+                  placeholder="State"
+                  value={form.state}
+                  onChange={(value) => updateField("state", value)}
+                  required
+                />
+
+                <Field
+                  label="Zip"
+                  placeholder="Zip code"
+                  value={form.zip_code}
+                  onChange={(value) => updateField("zip_code", value)}
+                  required
+                />
+              </div>
 
               <Field
                 label="Owner / Manager Name"
@@ -770,7 +819,7 @@ function AddressField({
 
       <p className="mt-2 text-xs font-semibold text-white/35">
         {ready
-          ? "Google address suggestions are ready. Start typing and select a result."
+          ? "Google address suggestions are ready. Select a result to fill city, state, and zip."
           : "Loading Google address suggestions..."}
       </p>
     </label>
