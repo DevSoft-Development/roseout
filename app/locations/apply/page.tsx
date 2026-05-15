@@ -13,6 +13,8 @@ declare global {
   }
 }
 
+type RequestType = "claim" | "add";
+
 type FormState = {
   location_name: string;
   location_type: string;
@@ -26,10 +28,11 @@ type FormState = {
   notes: string;
 };
 
-const initialForm: FormState = {
+const getInitialForm = (requestType: RequestType): FormState => ({
   location_name: "",
   location_type: "Restaurant",
-  request_type: "Claim existing listing",
+  request_type:
+    requestType === "claim" ? "Claim existing listing" : "Add new location",
   website: "",
   address: "",
   city: "",
@@ -37,13 +40,14 @@ const initialForm: FormState = {
   owner_email: "",
   owner_phone: "",
   notes: "",
-};
+});
 
 export default function LocationApplyPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerActiveRef = useRef(false);
 
-  const [form, setForm] = useState<FormState>(initialForm);
+  const [requestType, setRequestType] = useState<RequestType>("claim");
+  const [form, setForm] = useState<FormState>(getInitialForm("claim"));
   const [captchaToken, setCaptchaToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
@@ -67,6 +71,17 @@ export default function LocationApplyPage() {
       delete window.onTheOutHavenTurnstileExpired;
     };
   }, []);
+
+  const chooseRequestType = (type: RequestType) => {
+    setRequestType(type);
+    setForm((prev) => ({
+      ...prev,
+      request_type:
+        type === "claim" ? "Claim existing listing" : "Add new location",
+    }));
+    setError("");
+    setSuccess("");
+  };
 
   const updateField = (field: keyof FormState, value: string) => {
     setForm((prev) => ({
@@ -204,6 +219,8 @@ export default function LocationApplyPage() {
         },
         body: JSON.stringify({
           ...form,
+          plan: "free",
+          flow: requestType,
           captchaToken,
         }),
       });
@@ -217,10 +234,13 @@ export default function LocationApplyPage() {
       }
 
       setSuccess(
-        data.message || "Request submitted. We’ll review and follow up shortly."
+        data.message ||
+          (requestType === "claim"
+            ? "Claim request submitted. We’ll review and follow up shortly."
+            : "New location submitted. We’ll review it before publishing.")
       );
 
-      setForm(initialForm);
+      setForm(getInitialForm(requestType));
       resetCaptcha();
     } catch {
       setError("Could not submit request. Please try again.");
@@ -229,6 +249,8 @@ export default function LocationApplyPage() {
       setLoading(false);
     }
   };
+
+  const isClaim = requestType === "claim";
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -246,98 +268,151 @@ export default function LocationApplyPage() {
         <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-              Claim or Add Location
+              Free Business Listing
             </p>
 
             <h1 className="mt-5 text-5xl font-black leading-tight md:text-6xl">
-              Manage how your location appears on TheOutHaven.
+              Claim your listing or add a new location.
             </h1>
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-white/60">
-              This page is for restaurants, activities, lounges, venues, and
-              experience-based businesses that want to claim or submit a
-              location on TheOutHaven.
+              Choose the correct free plan flow below. Claim is for businesses
+              already listed on TheOutHaven. Add New Location is for businesses
+              that are not listed yet.
             </p>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => chooseRequestType("claim")}
+                className={`rounded-[2rem] border p-6 text-left transition ${
+                  isClaim
+                    ? "border-[#e1062a] bg-[#e1062a]/15 shadow-2xl shadow-red-500/20"
+                    : "border-white/10 bg-white/[0.04] hover:border-white/25"
+                }`}
+              >
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
+                  Option 1
+                </p>
+                <h2 className="mt-3 text-2xl font-black">
+                  Claim Existing Location
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-white/55">
+                  Choose this if your restaurant, lounge, activity, venue, or
+                  business already appears on TheOutHaven.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => chooseRequestType("add")}
+                className={`rounded-[2rem] border p-6 text-left transition ${
+                  !isClaim
+                    ? "border-[#e1062a] bg-[#e1062a]/15 shadow-2xl shadow-red-500/20"
+                    : "border-white/10 bg-white/[0.04] hover:border-white/25"
+                }`}
+              >
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
+                  Option 2
+                </p>
+                <h2 className="mt-3 text-2xl font-black">
+                  Add New Location
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-white/55">
+                  Choose this if your business is not listed yet and you want to
+                  submit it for review.
+                </p>
+              </button>
+            </div>
+
+            <div className="mt-8 grid gap-4 sm:grid-cols-2">
               <InfoBox
-                title="Claim"
-                text="Already listed? Start the claim process."
+                title="Free Claim"
+                text="Verify ownership and request access to manage an existing listing."
               />
               <InfoBox
-                title="Submit"
-                text="Not listed yet? Submit your location for review."
+                title="Free Submission"
+                text="Submit a new business location for approval before it appears publicly."
               />
               <InfoBox
-                title="Improve"
-                text="Update details, links, photos, and tags after approval."
+                title="Upgrade Later"
+                text="Move to Pro when you want reservations, analytics, QR tools, and priority discovery."
               />
               <InfoBox
-                title="Track"
-                text="Understand views, clicks, and customer interest."
+                title="Review Required"
+                text="All claims and new submissions may be reviewed before approval."
               />
             </div>
 
-            <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-              <h2 className="text-xl font-black">
-                Already received a QR code?
-              </h2>
+            {isClaim && (
+              <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
+                <h2 className="text-xl font-black">
+                  Already received a QR code?
+                </h2>
 
-              <p className="mt-3 text-sm leading-7 text-white/50">
-                Open your camera to scan your TheOutHaven claim QR code. If the code
-                is valid, you’ll be taken directly to your claim page.
-              </p>
+                <p className="mt-3 text-sm leading-7 text-white/50">
+                  Open your camera to scan your TheOutHaven claim QR code. If the
+                  code is valid, you’ll be taken directly to your claim page.
+                </p>
 
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={openQrScanner}
-                  className="rounded-2xl bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-red-500"
-                >
-                  Scan QR Code
-                </button>
-
-                <Link
-                  href="/business"
-                  className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-center text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
-                >
-                  Back to For Businesses
-                </Link>
-              </div>
-
-              {scannerOpen && (
-                <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-black p-4">
-                  <video
-                    ref={videoRef}
-                    className="h-72 w-full rounded-2xl bg-black object-cover"
-                    playsInline
-                    muted
-                  />
-
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <button
                     type="button"
-                    onClick={closeQrScanner}
-                    className="mt-4 w-full rounded-2xl border border-white/15 px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
+                    onClick={openQrScanner}
+                    className="rounded-2xl bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-red-500"
                   >
-                    Close Camera
+                    Scan QR Code
                   </button>
-                </div>
-              )}
 
-              {scanError && (
-                <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-200">
-                  {scanError}
+                  <Link
+                    href="/business"
+                    className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-center text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
+                  >
+                    Back to For Businesses
+                  </Link>
                 </div>
-              )}
-            </div>
+
+                {scannerOpen && (
+                  <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-black p-4">
+                    <video
+                      ref={videoRef}
+                      className="h-72 w-full rounded-2xl bg-black object-cover"
+                      playsInline
+                      muted
+                    />
+
+                    <button
+                      type="button"
+                      onClick={closeQrScanner}
+                      className="mt-4 w-full rounded-2xl border border-white/15 px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
+                    >
+                      Close Camera
+                    </button>
+                  </div>
+                )}
+
+                {scanError && (
+                  <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-200">
+                    {scanError}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-6 shadow-2xl shadow-black/40">
-            <h2 className="text-2xl font-black">Location request</h2>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
+              {isClaim ? "Claim Existing Location" : "Add New Location"}
+            </p>
+
+            <h2 className="mt-3 text-2xl font-black">
+              {isClaim ? "Submit a claim request" : "Submit a new location"}
+            </h2>
 
             <p className="mt-2 text-sm leading-6 text-white/45">
-              Submit your request to claim or add your location. Our team will
-              review and follow up if needed.
+              {isClaim
+                ? "Use this form to request access to an existing TheOutHaven listing."
+                : "Use this form to submit a new business location for review."}
             </p>
 
             {success && (
@@ -353,9 +428,37 @@ export default function LocationApplyPage() {
             )}
 
             <form onSubmit={submitRequest} className="mt-6 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => chooseRequestType("claim")}
+                  className={`rounded-2xl border px-4 py-4 text-sm font-black transition ${
+                    isClaim
+                      ? "border-[#e1062a] bg-[#e1062a] text-white"
+                      : "border-white/10 bg-black text-white/55 hover:text-white"
+                  }`}
+                >
+                  Claim Existing
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => chooseRequestType("add")}
+                  className={`rounded-2xl border px-4 py-4 text-sm font-black transition ${
+                    !isClaim
+                      ? "border-[#e1062a] bg-[#e1062a] text-white"
+                      : "border-white/10 bg-black text-white/55 hover:text-white"
+                  }`}
+                >
+                  Add New Location
+                </button>
+              </div>
+
               <Field
                 label="Business / Location Name"
-                placeholder="Example: Rose Lounge"
+                placeholder={
+                  isClaim ? "Existing listing name" : "New business name"
+                }
                 value={form.location_name}
                 onChange={(value) => updateField("location_name", value)}
                 required
@@ -420,17 +523,6 @@ export default function LocationApplyPage() {
                 type="tel"
               />
 
-              <SelectField
-                label="Request Type"
-                value={form.request_type}
-                onChange={(value) => updateField("request_type", value)}
-                options={[
-                  "Claim existing listing",
-                  "Add new location",
-                  "Update listing details",
-                ]}
-              />
-
               <label className="block">
                 <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
                   Notes
@@ -440,7 +532,11 @@ export default function LocationApplyPage() {
                   rows={4}
                   value={form.notes}
                   onChange={(e) => updateField("notes", e.target.value)}
-                  placeholder="Tell us anything helpful about this location."
+                  placeholder={
+                    isClaim
+                      ? "Tell us how you are connected to this business."
+                      : "Tell us anything helpful about this new location."
+                  }
                   className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
                 />
               </label>
@@ -464,12 +560,17 @@ export default function LocationApplyPage() {
                 disabled={loading}
                 className="w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Submitting..." : "Submit Request"}
+                {loading
+                  ? "Submitting..."
+                  : isClaim
+                    ? "Submit Claim Request"
+                    : "Submit New Location"}
               </button>
 
               <p className="text-center text-xs leading-5 text-white/35">
-                Submissions may be reviewed before approval. This form does not
-                guarantee immediate listing access.
+                Free submissions may be reviewed before approval. Pro features
+                such as reservations, dashboard tools, analytics, and QR growth
+                tools require an upgraded plan.
               </p>
             </form>
           </div>
