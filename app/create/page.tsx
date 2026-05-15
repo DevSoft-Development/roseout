@@ -939,15 +939,7 @@ export default function CreatePage() {
                                 reviewKeywords={activity.review_keywords}
                                 reviewSnippet={activity.review_snippet}
                                 primaryTag={activity.primary_tag}
-                                distance={
-                                  selectedRestaurant
-                                    ? buildDistanceFromRestaurantLabel(
-                                        selectedRestaurant,
-                                        activity,
-                                        latestDistancePreference
-                                      ) ?? activity.distance_miles
-                                    : activity.distance_miles
-                                }
+                                distance={activity.distance_miles}
                                 distanceLabel={distanceFromRestaurantLabel}
                                 distanceHref={
                                   shouldLinkWalkingDirections
