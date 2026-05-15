@@ -67,6 +67,7 @@ export default function LocationApplyPage() {
   const [googleAddressReady, setGoogleAddressReady] = useState(false);
   const [addressPredictions, setAddressPredictions] = useState<any[]>([]);
   const [addressLoading, setAddressLoading] = useState(false);
+  const [addressStatus, setAddressStatus] = useState("");
 
   useEffect(() => {
     document.title = "Claim or Add Your Location | TheOutHaven";
@@ -101,7 +102,8 @@ export default function LocationApplyPage() {
 
   useEffect(() => {
     if (!googleLoaded) return;
-    if (!window.google?.maps?.places) return;
+    if (!window.google?.maps?.places?.AutocompleteService) return;
+    if (!window.google?.maps?.Geocoder) return;
 
     autocompleteServiceRef.current =
       new window.google.maps.places.AutocompleteService();
@@ -131,9 +133,11 @@ export default function LocationApplyPage() {
 
   const handleAddressChange = (value: string) => {
     updateField("address", value);
+    setAddressStatus("");
 
     if (!autocompleteServiceRef.current || value.trim().length < 2) {
       setAddressPredictions([]);
+      setAddressLoading(false);
       return;
     }
 
@@ -143,11 +147,32 @@ export default function LocationApplyPage() {
       {
         input: value,
         componentRestrictions: { country: "us" },
-        types: ["address"],
+        types: ["geocode"],
       },
-      (predictions: any[] | null) => {
+      (predictions: any[] | null, status: string) => {
         setAddressLoading(false);
-        setAddressPredictions(predictions || []);
+
+        console.log("Google address autocomplete status:", status);
+
+        if (status !== "OK" || !predictions) {
+          setAddressPredictions([]);
+
+          if (status === "ZERO_RESULTS") {
+            setAddressStatus("No address matches found. Try typing the full street address.");
+          } else if (status === "REQUEST_DENIED") {
+            setAddressStatus(
+              "Google address lookup was denied. Check your Google API key, allowed domains, billing, and enabled APIs."
+            );
+          } else if (status === "OVER_QUERY_LIMIT") {
+            setAddressStatus("Google address lookup is over the request limit.");
+          } else if (status) {
+            setAddressStatus(`Google address lookup issue: ${status}`);
+          }
+
+          return;
+        }
+
+        setAddressPredictions(predictions);
       }
     );
   };
@@ -158,7 +183,10 @@ export default function LocationApplyPage() {
     geocoderRef.current.geocode(
       { placeId: prediction.place_id },
       (results: any[] | null, status: string) => {
-        if (status !== "OK" || !results?.[0]) return;
+        if (status !== "OK" || !results?.[0]) {
+          setAddressStatus(`Could not read selected address: ${status}`);
+          return;
+        }
 
         const result = results[0];
         const components = result.address_components || [];
@@ -197,6 +225,7 @@ export default function LocationApplyPage() {
         }));
 
         setAddressPredictions([]);
+        setAddressStatus("");
       }
     );
   };
@@ -373,6 +402,7 @@ export default function LocationApplyPage() {
 
       setForm(getInitialForm(requestType));
       setAddressPredictions([]);
+      setAddressStatus("");
       resetCaptcha();
     } catch {
       setError("Could not submit request. Please try again.");
@@ -634,6 +664,7 @@ export default function LocationApplyPage() {
                 loading={addressLoading}
                 required
                 ready={googleAddressReady}
+                status={addressStatus}
               />
 
               <div className="grid gap-4 sm:grid-cols-3">
@@ -788,6 +819,7 @@ function AddressField({
   predictions,
   onSelectPrediction,
   loading,
+  status,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   label: string;
@@ -799,6 +831,7 @@ function AddressField({
   predictions: any[];
   onSelectPrediction: (prediction: any) => void;
   loading: boolean;
+  status: string;
 }) {
   return (
     <div className="relative">
@@ -844,6 +877,12 @@ function AddressField({
             ? "Start typing, then select an address from the list."
             : "Loading Google address suggestions..."}
       </p>
+
+      {status && (
+        <p className="mt-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">
+          {status}
+        </p>
+      )}
     </div>
   );
 }
