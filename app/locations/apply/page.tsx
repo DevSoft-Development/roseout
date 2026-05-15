@@ -52,7 +52,8 @@ export default function LocationApplyPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerActiveRef = useRef(false);
   const addressInputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteRef = useRef<any>(null);
+  const autocompleteServiceRef = useRef<any>(null);
+  const geocoderRef = useRef<any>(null);
 
   const [requestType, setRequestType] = useState<RequestType>("claim");
   const [form, setForm] = useState<FormState>(getInitialForm("claim"));
@@ -64,6 +65,8 @@ export default function LocationApplyPage() {
   const [scanError, setScanError] = useState("");
   const [googleLoaded, setGoogleLoaded] = useState(false);
   const [googleAddressReady, setGoogleAddressReady] = useState(false);
+  const [addressPredictions, setAddressPredictions] = useState<any[]>([]);
+  const [addressLoading, setAddressLoading] = useState(false);
 
   useEffect(() => {
     document.title = "Claim or Add Your Location | TheOutHaven";
@@ -99,63 +102,11 @@ export default function LocationApplyPage() {
   useEffect(() => {
     if (!googleLoaded) return;
     if (!window.google?.maps?.places) return;
-    if (!addressInputRef.current) return;
-    if (autocompleteRef.current) return;
 
-    autocompleteRef.current = new window.google.maps.places.Autocomplete(
-      addressInputRef.current,
-      {
-        fields: [
-          "formatted_address",
-          "address_components",
-          "geometry",
-          "name",
-          "place_id",
-        ],
-        types: ["geocode"],
-        componentRestrictions: { country: "us" },
-      }
-    );
+    autocompleteServiceRef.current =
+      new window.google.maps.places.AutocompleteService();
 
-    autocompleteRef.current.addListener("place_changed", () => {
-      const place = autocompleteRef.current?.getPlace();
-
-      if (!place) return;
-
-      const formattedAddress = place.formatted_address || "";
-      const components = place.address_components || [];
-
-      const getComponent = (type: string, short = false) => {
-        const component = components.find((item: any) =>
-          item.types?.includes(type)
-        );
-
-        if (!component) return "";
-
-        return short ? component.short_name || "" : component.long_name || "";
-      };
-
-      const streetNumber = getComponent("street_number");
-      const route = getComponent("route");
-      const city =
-        getComponent("locality") ||
-        getComponent("postal_town") ||
-        getComponent("sublocality") ||
-        getComponent("administrative_area_level_2");
-      const state = getComponent("administrative_area_level_1", true);
-      const zipCode = getComponent("postal_code");
-
-      const cleanStreetAddress =
-        streetNumber && route ? `${streetNumber} ${route}` : formattedAddress;
-
-      setForm((prev) => ({
-        ...prev,
-        address: cleanStreetAddress || formattedAddress || prev.address,
-        city: city || prev.city,
-        state: state || prev.state,
-        zip_code: zipCode || prev.zip_code,
-      }));
-    });
+    geocoderRef.current = new window.google.maps.Geocoder();
 
     setGoogleAddressReady(true);
   }, [googleLoaded]);
@@ -176,6 +127,78 @@ export default function LocationApplyPage() {
       ...prev,
       [field]: value,
     }));
+  };
+
+  const handleAddressChange = (value: string) => {
+    updateField("address", value);
+
+    if (!autocompleteServiceRef.current || value.trim().length < 2) {
+      setAddressPredictions([]);
+      return;
+    }
+
+    setAddressLoading(true);
+
+    autocompleteServiceRef.current.getPlacePredictions(
+      {
+        input: value,
+        componentRestrictions: { country: "us" },
+        types: ["address"],
+      },
+      (predictions: any[] | null) => {
+        setAddressLoading(false);
+        setAddressPredictions(predictions || []);
+      }
+    );
+  };
+
+  const selectAddressPrediction = (prediction: any) => {
+    if (!geocoderRef.current) return;
+
+    geocoderRef.current.geocode(
+      { placeId: prediction.place_id },
+      (results: any[] | null, status: string) => {
+        if (status !== "OK" || !results?.[0]) return;
+
+        const result = results[0];
+        const components = result.address_components || [];
+
+        const getComponent = (type: string, short = false) => {
+          const component = components.find((item: any) =>
+            item.types?.includes(type)
+          );
+
+          if (!component) return "";
+
+          return short ? component.short_name || "" : component.long_name || "";
+        };
+
+        const streetNumber = getComponent("street_number");
+        const route = getComponent("route");
+
+        const city =
+          getComponent("locality") ||
+          getComponent("postal_town") ||
+          getComponent("sublocality") ||
+          getComponent("administrative_area_level_2");
+
+        const state = getComponent("administrative_area_level_1", true);
+        const zipCode = getComponent("postal_code");
+
+        setForm((prev) => ({
+          ...prev,
+          address:
+            streetNumber && route
+              ? `${streetNumber} ${route}`
+              : result.formatted_address || prediction.description,
+          city,
+          state,
+          zip_code: zipCode,
+        }));
+
+        setAddressPredictions([]);
+      }
+    );
   };
 
   const resetCaptcha = () => {
@@ -349,6 +372,7 @@ export default function LocationApplyPage() {
       );
 
       setForm(getInitialForm(requestType));
+      setAddressPredictions([]);
       resetCaptcha();
     } catch {
       setError("Could not submit request. Please try again.");
@@ -604,7 +628,10 @@ export default function LocationApplyPage() {
                 label="Google Address"
                 placeholder="Start typing and select the business address"
                 value={form.address}
-                onChange={(value) => updateField("address", value)}
+                onChange={handleAddressChange}
+                predictions={addressPredictions}
+                onSelectPrediction={selectAddressPrediction}
+                loading={addressLoading}
                 required
                 ready={googleAddressReady}
               />
@@ -713,39 +740,6 @@ export default function LocationApplyPage() {
           </div>
         </div>
       </section>
-
-      <style jsx global>{`
-        .pac-container {
-          z-index: 999999 !important;
-          border-radius: 16px !important;
-          overflow: hidden !important;
-          background: #0d0d0d !important;
-          border: 1px solid rgba(255, 255, 255, 0.12) !important;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45) !important;
-        }
-
-        .pac-item {
-          padding: 12px 14px !important;
-          background: #0d0d0d !important;
-          color: rgba(255, 255, 255, 0.75) !important;
-          border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-          cursor: pointer !important;
-        }
-
-        .pac-item:hover {
-          background: #1a1a1a !important;
-        }
-
-        .pac-item-query {
-          color: #ffffff !important;
-          font-weight: 800 !important;
-        }
-
-        .pac-matched {
-          color: #e1062a !important;
-          font-weight: 900 !important;
-        }
-      `}</style>
     </main>
   );
 }
@@ -791,6 +785,9 @@ function AddressField({
   onChange,
   required,
   ready,
+  predictions,
+  onSelectPrediction,
+  loading,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   label: string;
@@ -799,30 +796,55 @@ function AddressField({
   onChange: (value: string) => void;
   required?: boolean;
   ready: boolean;
+  predictions: any[];
+  onSelectPrediction: (prediction: any) => void;
+  loading: boolean;
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-        {label}
-        {required ? <span className="text-[#e1062a]"> *</span> : null}
-      </span>
+    <div className="relative">
+      <label className="block">
+        <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+          {label}
+          {required ? <span className="text-[#e1062a]"> *</span> : null}
+        </span>
 
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
-      />
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
+        />
+      </label>
+
+      {predictions.length > 0 && (
+        <div className="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0d0d0d] shadow-2xl shadow-black/60">
+          {predictions.map((prediction) => (
+            <button
+              key={prediction.place_id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelectPrediction(prediction);
+              }}
+              className="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
+            >
+              {prediction.description}
+            </button>
+          ))}
+        </div>
+      )}
 
       <p className="mt-2 text-xs font-semibold text-white/35">
-        {ready
-          ? "Google address suggestions are ready. Select a result to fill city, state, and zip."
-          : "Loading Google address suggestions..."}
+        {loading
+          ? "Searching Google addresses..."
+          : ready
+            ? "Start typing, then select an address from the list."
+            : "Loading Google address suggestions..."}
       </p>
-    </label>
+    </div>
   );
 }
 
