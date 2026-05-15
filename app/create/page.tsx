@@ -892,101 +892,91 @@ export default function CreatePage() {
                           if (isAddOnResults) {
                             addOnActivitySectionRef.current = element;
                           }
-                        />
-                      );
-                    })}
-                    </ResultSection>
-                  </div>
-                )}
+                        }}
+                        className="scroll-mt-24 sm:scroll-mt-28"
+                      >
+                        <ResultSection
+                          title="Experience Picks"
+                          subtitle="Activities matched to your outing plan"
+                        >
+                          {activities.map((activity, activityIndex) => {
+                            const activityId = String(activity.id);
+                            const isSelected =
+                              selectedActivity?.id === activity.id;
+                            const reservationUrl =
+                              activity.reservation_url ||
+                              activity.reservation_link ||
+                              undefined;
+                            const distanceFromRestaurantLabel = selectedRestaurant
+                              ? buildDistanceFromRestaurantLabel(
+                                  selectedRestaurant,
+                                  activity,
+                                  latestDistancePreference
+                                )
+                              : undefined;
+                            const walkingDirectionsUrl = selectedRestaurant
+                              ? buildGoogleDirectionsUrl({
+                                  origin: selectedRestaurant,
+                                  destination: activity,
+                                  travelMode: "walking",
+                                })
+                              : undefined;
+                            const shouldLinkWalkingDirections = Boolean(
+                              latestDistancePreference === "walking" &&
+                                walkingDirectionsUrl
+                            );
 
-                {activities.length > 0 && (
-                  <div
-                    ref={(element) => {
-                      activitySectionRef.current = element;
+                            return (
+                              <ResultCard
+                                key={activityId || activityIndex}
+                                index={activityIndex}
+                                type="activity"
+                                imageUrl={activity.image_url || undefined}
+                                title={activity.activity_name}
+                                eyebrow={activity.activity_type || "Activity"}
+                                address={formatAddress(activity)}
+                                rating={activity.rating}
+                                reviewKeywords={activity.review_keywords}
+                                reviewSnippet={activity.review_snippet}
+                                primaryTag={activity.primary_tag}
+                                distance={
+                                  selectedRestaurant
+                                    ? buildDistanceFromRestaurantLabel(
+                                        selectedRestaurant,
+                                        activity,
+                                        latestDistancePreference
+                                      ) ?? activity.distance_miles
+                                    : activity.distance_miles
+                                }
+                                distanceLabel={distanceFromRestaurantLabel}
+                                distanceHref={
+                                  shouldLinkWalkingDirections
+                                    ? walkingDirectionsUrl
+                                    : undefined
+                                }
+                                selected={isSelected}
+                                priority={activityIndex === 0}
+                                selectLabel={isSelected ? "Selected" : "Select"}
+                                onSelect={() => selectActivity(activity)}
+                                detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
+                                onDetails={() => trackActivityClick(activityId)}
+                                websiteUrl={activity.website || undefined}
+                                onWebsite={() => trackActivityClick(activityId)}
+                                reservationUrl={reservationUrl}
+                                reservationLabel="Book"
+                                onReservation={() =>
+                                  trackActivityClick(activityId)
+                                }
+                              />
+                            );
+                          })}
+                        </ResultSection>
+                      </div>
+                    );
+                  }
 
-                      if (isAddOnResults) {
-                        addOnActivitySectionRef.current = element;
-                      }
-                    }}
-                    className="scroll-mt-24 sm:scroll-mt-28"
-                  >
-                    <ResultSection
-                      title="Experience Picks"
-                      subtitle="Activities matched to your outing plan"
-                    >
-                      {activities.map((activity, activityIndex) => {
-                        const activityId = String(activity.id);
-                        const isSelected =
-                          selectedActivity?.id === activity.id;
-                        const reservationUrl =
-                          activity.reservation_url ||
-                          activity.reservation_link ||
-                          undefined;
-                        const distanceFromRestaurantLabel = selectedRestaurant
-                          ? buildDistanceFromRestaurantLabel(
-                              selectedRestaurant,
-                              activity,
-                              latestDistancePreference
-                            )
-                          : undefined;
-                        const walkingDirectionsUrl = selectedRestaurant
-                          ? buildGoogleDirectionsUrl({
-                              origin: selectedRestaurant,
-                              destination: activity,
-                              travelMode: "walking",
-                            })
-                          : undefined;
-                        const shouldLinkWalkingDirections = Boolean(
-                          latestDistancePreference === "walking" &&
-                            walkingDirectionsUrl
-                        );
-
-                        return (
-                          <ResultCard
-                            key={activityId || activityIndex}
-                            index={activityIndex}
-                            type="activity"
-                            imageUrl={activity.image_url || undefined}
-                            title={activity.activity_name}
-                            eyebrow={activity.activity_type || "Activity"}
-                            address={formatAddress(activity)}
-                            rating={activity.rating}
-                            reviewKeywords={activity.review_keywords}
-                            reviewSnippet={activity.review_snippet}
-                            primaryTag={activity.primary_tag}
-                            distance={
-                              selectedRestaurant
-                                ? buildDistanceFromRestaurantLabel(
-                                    selectedRestaurant,
-                                    activity
-                                  ) ?? activity.distance_miles
-                                : activity.distance_miles
-                            }
-                            distanceLabel={distanceFromRestaurantLabel}
-                            distanceHref={
-                              shouldLinkWalkingDirections
-                                ? walkingDirectionsUrl
-                                : undefined
-                            }
-                            selected={isSelected}
-                            priority={activityIndex === 0}
-                            selectLabel={isSelected ? "Selected" : "Select"}
-                            onSelect={() => selectActivity(activity)}
-                            detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
-                            onDetails={() => trackActivityClick(activityId)}
-                            websiteUrl={activity.website || undefined}
-                            onWebsite={() => trackActivityClick(activityId)}
-                            reservationUrl={reservationUrl}
-                            reservationLabel="Book"
-                            onReservation={() =>
-                              trackActivityClick(activityId)
-                            }
-                          />
-                        );
-                      })}
-                    </ResultSection>
-                  </div>
-                )}
+                  return null;
+                })}
               </div>
             );
           })}
