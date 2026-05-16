@@ -16,7 +16,10 @@ type Restaurant = {
 
   phone?: string | null;
   website?: string | null;
+  external_reservation_url?: string | null;
   reservation_url?: string | null;
+  reservation_link?: string | null;
+  reservation_enabled?: boolean | null;
   cuisine?: string | null;
   description?: string | null;
   main_image?: string | null;

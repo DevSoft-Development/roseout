@@ -20,7 +20,10 @@ type FormState = {
   image_url: string;
   images?: string[] | null;
   website: string;
+  external_reservation_url?: string | null;
   reservation_url: string;
+  reservation_link?: string | null;
+  reservation_enabled?: boolean | null;
   phone: string;
   price_range: string;
   cuisine: string;
@@ -67,7 +70,11 @@ function calculateUpdatedScore(location: LocationRecord) {
   if (has(location.description)) score += 8;
   if (has(location.image_url)) score += 8;
   if (has(location.website)) score += 4;
-  if (has(location.reservation_url) || has(location.reservation_link)) score += 5;
+  if (
+    has(location.external_reservation_url) ||
+    has(location.reservation_url) ||
+    has(location.reservation_link)
+  ) score += 5;
   if (has(location.price_range)) score += 4;
   if (has(location.atmosphere)) score += 6;
   if (has(location.primary_tag)) score += 5;
