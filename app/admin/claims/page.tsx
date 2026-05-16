@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getLocationName } from "@/lib/locationName";
 
 type ClaimStatus = "approved" | "rejected";
 
@@ -70,7 +71,7 @@ export default function AdminClaimsPage() {
         id: claim.id,
         type: "restaurant",
         location_name:
-          claim.restaurant_name || claim.location_name || "Unnamed Restaurant",
+          getLocationName(claim, claim.location_name || "Unnamed Restaurant"),
         address: claim.address,
         city: claim.city,
         state: claim.state,
@@ -89,7 +90,7 @@ export default function AdminClaimsPage() {
         id: claim.id,
         type: "activity",
         location_name:
-          claim.activity_name || claim.location_name || "Unnamed Activity",
+          getLocationName(claim, claim.location_name || "Unnamed Activity"),
         location_type: claim.activity_type,
         address: claim.address,
         city: claim.city,

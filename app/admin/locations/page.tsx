@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import { getLocationName } from "@/lib/locationName";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
@@ -36,6 +37,7 @@ type AdminRestaurantRow = Omit<
   AdminLocation,
   "locationType" | "name" | "category"
 > & {
+  name?: string | null;
   restaurant_name: string | null;
   cuisine_type: string | null;
 };
@@ -44,6 +46,7 @@ type AdminActivityRow = Omit<
   AdminLocation,
   "locationType" | "name" | "category"
 > & {
+  name?: string | null;
   activity_name: string | null;
   activity_type: string | null;
 };
@@ -133,7 +136,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, name, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -141,7 +144,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, name, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -187,7 +190,7 @@ export default async function AdminLocationsPage({
     (restaurantsResult.data as AdminRestaurantRow[] | null)?.map((item) => ({
       id: item.id,
       locationType: "restaurants",
-      name: item.restaurant_name,
+      name: getLocationName(item, "Untitled restaurant"),
       address: item.address,
       city: item.city,
       state: item.state,
@@ -207,7 +210,7 @@ export default async function AdminLocationsPage({
     (activitiesResult.data as AdminActivityRow[] | null)?.map((item) => ({
       id: item.id,
       locationType: "activities",
-      name: item.activity_name,
+      name: getLocationName(item, "Untitled activity"),
       address: item.address,
       city: item.city,
       state: item.state,

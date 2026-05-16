@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AdminTopBar from "@/app/admin/components/AdminTopBar";
+import { getLocationName } from "@/lib/locationName";
 
 export default function AdminEngagementPage() {
   const [events, setEvents] = useState<any[]>([]);
@@ -29,7 +30,7 @@ export default function AdminEngagementPage() {
               <p className="font-bold">{event.event_type}</p>
               <p className="text-sm text-neutral-600">{event.email}</p>
               <p className="text-sm">
-                {event.restaurants?.restaurant_name || "Unknown Restaurant"}
+                {getLocationName(event.restaurants, "Unknown Restaurant")}
               </p>
               <p className="text-xs text-neutral-500">
                 {new Date(event.created_at).toLocaleString()}

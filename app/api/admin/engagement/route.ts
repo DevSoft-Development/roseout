@@ -9,7 +9,7 @@ const supabaseAdmin = createClient(
 export async function GET() {
   const { data, error } = await supabaseAdmin
     .from("restaurant_events")
-    .select("*, restaurants(restaurant_name)")
+    .select("*, restaurants(name, restaurant_name)")
     .order("created_at", { ascending: false });
 
   if (error) {

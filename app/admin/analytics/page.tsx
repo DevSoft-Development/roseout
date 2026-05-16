@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
+import { getLocationName } from "@/lib/locationName";
 
 const ADMIN_ANALYTICS_VERSION = "admin-analytics-dashboard-2026-05-12";
 
@@ -42,12 +43,12 @@ export default async function AdminAnalyticsPage() {
     await Promise.all([
       supabase
         .from("restaurants")
-        .select("id, restaurant_name, city, view_count, click_count, theouthaven_score")
+        .select("id, name, restaurant_name, city, view_count, click_count, theouthaven_score")
         .order("view_count", { ascending: false })
         .limit(10),
       supabase
         .from("activities")
-        .select("id, activity_name, city, view_count, click_count, theouthaven_score")
+        .select("id, name, activity_name, city, view_count, click_count, theouthaven_score")
         .order("view_count", { ascending: false })
         .limit(10),
       supabase
@@ -68,7 +69,7 @@ export default async function AdminAnalyticsPage() {
   const locationMetrics: LocationMetric[] = [
     ...restaurants.map((restaurant) => ({
       id: restaurant.id,
-      name: restaurant.restaurant_name,
+      name: getLocationName(restaurant, "Untitled restaurant"),
       city: restaurant.city,
       view_count: restaurant.view_count,
       click_count: restaurant.click_count,
@@ -77,7 +78,7 @@ export default async function AdminAnalyticsPage() {
     })),
     ...activities.map((activity) => ({
       id: activity.id,
-      name: activity.activity_name,
+      name: getLocationName(activity, "Untitled activity"),
       city: activity.city,
       view_count: activity.view_count,
       click_count: activity.click_count,

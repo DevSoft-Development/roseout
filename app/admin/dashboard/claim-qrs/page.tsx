@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ClaimQrPrintClient from "./ClaimQrPrintClient";
+import { getLocationName } from "@/lib/locationName";
 
 type ClaimQrLocation = {
   id: string;
@@ -21,13 +22,13 @@ export default async function AdminClaimQrPrintPage() {
   const [restaurantsResult, activitiesResult] = await Promise.all([
     supabase
       .from("restaurants")
-      .select("id, restaurant_name, address, city, state, zip_code, claim_url, qr_code_data_url")
+      .select("id, name, restaurant_name, address, city, state, zip_code, claim_url, qr_code_data_url")
       .not("qr_code_data_url", "is", null)
       .order("restaurant_name", { ascending: true })
       .limit(200),
     supabase
       .from("activities")
-      .select("id, activity_name, address, city, state, zip_code, claim_url, qr_code_data_url")
+      .select("id, name, activity_name, address, city, state, zip_code, claim_url, qr_code_data_url")
       .not("qr_code_data_url", "is", null)
       .order("activity_name", { ascending: true })
       .limit(200),
@@ -37,7 +38,7 @@ export default async function AdminClaimQrPrintPage() {
     ...(restaurantsResult.data || []).map((restaurant) => ({
       id: restaurant.id,
       type: "restaurants" as const,
-      name: restaurant.restaurant_name,
+      name: getLocationName(restaurant, "Untitled restaurant"),
       address: restaurant.address,
       city: restaurant.city,
       state: restaurant.state,
@@ -48,7 +49,7 @@ export default async function AdminClaimQrPrintPage() {
     ...(activitiesResult.data || []).map((activity) => ({
       id: activity.id,
       type: "activities" as const,
-      name: activity.activity_name,
+      name: getLocationName(activity, "Untitled activity"),
       address: activity.address,
       city: activity.city,
       state: activity.state,

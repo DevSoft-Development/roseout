@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getLocationName as getDisplayLocationName } from "@/lib/locationName";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -21,27 +22,13 @@ function getTableName(type: string) {
   return type === "activity" ? "activities" : "locations";
 }
 
-function getLocationName(location: any, type: string) {
-  if (!location) return "TheOutHaven Location";
-
-  if (type === "activity") {
-    return (
-      location.activity_name ||
-      location.location_name ||
-      location.business_name ||
-      location.title ||
-      "TheOutHaven Activity"
-    );
-  }
-
-  return (
-    location.restaurant_name ||
-    location.name ||
-    location.location_name ||
-    location.business_name ||
-    "TheOutHaven Location"
+function getReservationLocationName(location: any, type: string) {
+  return getDisplayLocationName(
+    location,
+    type === "activity" ? "TheOutHaven Activity" : "TheOutHaven Location"
   );
 }
+
 
 function getAddress(location: any) {
   return [location?.address, location?.city, location?.state, location?.zip_code]
@@ -166,7 +153,7 @@ async function notifyReservation({
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com";
 
-  const locationName = getLocationName(location, locationType);
+  const locationName = getReservationLocationName(location, locationType);
   const locationEmail = getLocationEmail(location);
   const locationPhone = getLocationPhone(location);
 
@@ -379,7 +366,7 @@ export async function GET(request: NextRequest) {
       location: {
         id: locationId,
         type: locationType,
-        name: getLocationName(location, locationType),
+        name: getReservationLocationName(location, locationType),
         address: getAddress(location),
         image_url:
           location.image_url || location.photo_url || location.image || null,

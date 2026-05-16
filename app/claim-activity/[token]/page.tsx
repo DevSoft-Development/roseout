@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { getLocationName } from "@/lib/locationName";
 
 export default function ClaimActivityPage() {
   const params = useParams();
@@ -114,7 +115,7 @@ export default function ClaimActivityPage() {
 
         <div className="mt-8 rounded-3xl bg-white p-6 text-black">
           <h2 className="text-2xl font-bold">
-            {activity?.activity_name || activity?.name || "TheOutHaven Location"}
+            {getLocationName(activity, "TheOutHaven Location")}
           </h2>
 
           <p className="mt-2 text-neutral-600">

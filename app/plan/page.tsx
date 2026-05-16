@@ -9,12 +9,13 @@ import {
   buildGooglePlaceDirectionsUrl,
 } from "@/lib/googleDirections";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
+import { getLocationName } from "@/lib/locationName";
 
 type PlanLocation = {
   id?: string;
-  restaurant_name?: string;
-  activity_name?: string;
-  name?: string;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
+  name?: string | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -103,8 +104,8 @@ function PlanPageInner() {
 
   const planTitle = useMemo(() => {
     const names = [
-      restaurant?.restaurant_name || restaurant?.name,
-      activity?.activity_name || activity?.name,
+      restaurant ? getLocationName(restaurant, "") : "",
+      activity ? getLocationName(activity, "") : "",
     ].filter(Boolean);
 
     return names.length ? names.join(" + ") : "Your TheOutHaven Plan";
@@ -373,10 +374,7 @@ function TimelineLocation({
   type: "restaurant" | "activity";
 }) {
   const active = Boolean(location);
-  const title =
-    type === "restaurant"
-      ? location?.restaurant_name || location?.name || fallbackTitle
-      : location?.activity_name || location?.name || fallbackTitle;
+  const title = location ? getLocationName(location, fallbackTitle) : fallbackTitle;
 
   const meta = [
     type === "restaurant"
@@ -465,10 +463,7 @@ function PlanActionCard({
   location: PlanLocation;
   directionsUrl?: string;
 }) {
-  const title =
-    type === "restaurant"
-      ? location.restaurant_name || location.name || "Restaurant"
-      : location.activity_name || location.name || "Activity";
+  const title = getLocationName(location, type === "restaurant" ? "Restaurant" : "Activity");
 
   const detailHref =
     type === "restaurant"
@@ -712,8 +707,8 @@ function buildFlowText(
     distanceBetweenLocations(restaurant, activity) ??
     activity.pair_distance_miles ??
     null;
-  const restaurantName = restaurant.restaurant_name || restaurant.name;
-  const activityName = activity.activity_name || activity.name;
+  const restaurantName = getLocationName(restaurant, "dinner");
+  const activityName = getLocationName(activity, "activity");
 
   if (distance !== null) {
     if (distancePreference === "walking") {

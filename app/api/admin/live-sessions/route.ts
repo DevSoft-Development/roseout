@@ -114,9 +114,9 @@ export async function GET() {
         event.metadata?.id;
 
       const restaurantName =
+        event.metadata?.name ||
         event.metadata?.restaurant_name ||
         event.metadata?.restaurantName ||
-        event.metadata?.name ||
         "Unknown Restaurant";
 
       if (

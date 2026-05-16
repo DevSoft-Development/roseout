@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
   const { data: restaurant, error } = await supabase
     .from("restaurants")
-    .select("id, restaurant_name, address, city, state, zip_code, claim_status")
+    .select("id, name, restaurant_name, address, city, state, zip_code, claim_status")
     .eq("claim_token", token)
     .maybeSingle();
 

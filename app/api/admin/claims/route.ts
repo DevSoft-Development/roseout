@@ -14,6 +14,7 @@ export async function GET() {
         status,
         created_at,
         restaurants (
+          name,
           restaurant_name,
           address,
           city,
@@ -40,6 +41,7 @@ export async function GET() {
         status,
         created_at,
         activities (
+          name,
           activity_name,
           activity_type,
           address,
@@ -59,6 +61,7 @@ export async function GET() {
       restaurantClaims:
         restaurantClaims?.map((claim: any) => ({
           ...claim,
+          name: claim.restaurants?.name,
           restaurant_name: claim.restaurants?.restaurant_name,
           address: claim.restaurants?.address,
           city: claim.restaurants?.city,
@@ -69,6 +72,7 @@ export async function GET() {
       activityClaims:
         activityClaims?.map((claim: any) => ({
           ...claim,
+          name: claim.activities?.name,
           activity_name: claim.activities?.activity_name,
           activity_type: claim.activities?.activity_type,
           address: claim.activities?.address,

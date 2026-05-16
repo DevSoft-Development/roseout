@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
+import { getLocationName } from "@/lib/locationName";
 
 type LocationRow = {
   id: string;
@@ -9,6 +10,7 @@ type LocationRow = {
   state: string | null;
   image_url: string | null;
   default_duration_minutes: number | null;
+  name?: string | null;
   restaurant_name?: string | null;
   activity_name?: string | null;
   rating?: number | null;
@@ -26,8 +28,8 @@ export default async function ReserveLocationPage({
   const tableName = isActivity ? "activities" : "restaurants";
 
   const selectFields = isActivity
-    ? "id, activity_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score"
-    : "id, restaurant_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score";
+    ? "id, name, activity_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score"
+    : "id, name, restaurant_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score";
 
   const { data, error } = await supabase
     .from(tableName)
@@ -39,9 +41,7 @@ export default async function ReserveLocationPage({
 
   const location = data as LocationRow;
 
-  const locationName = isActivity
-    ? location.activity_name || "Activity"
-    : location.restaurant_name || "Restaurant";
+  const locationName = getLocationName(location, isActivity ? "Activity" : "Restaurant");
 
   const backHref = `/locations/${isActivity ? "activities" : "restaurants"}/${id}`;
 
