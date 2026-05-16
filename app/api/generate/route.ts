@@ -2637,7 +2637,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
   };
 }
 
-const LOCATION_COLUMNS = `
+const LOCATION_SELECT = `
   id,
   location_type,
   restaurant_name,
@@ -2690,153 +2690,124 @@ const LOCATION_COLUMNS = `
   search_document
 `;
 
-const ACTIVITY_COLUMNS = `
+const ACTIVITY_SELECT = `
   id,
+  name,
   activity_name,
+  location_type,
   primary_category,
   activity_type,
-  primary_tag,
-  tags,
-  google_types,
   address,
   city,
   state,
   zip_code,
-  price_range,
-  atmosphere,
-  group_friendly,
-  external_reservation_url,
-  reservation_url,
-  reservation_link,
-  reservation_enabled,
-  website,
-  main_image,
-  image_url,
-  images,
-  status,
-  date_style_tags,
-  rating,
-  review_count,
-  quality_score,
-  popularity_score,
-  detail_url,
-  claim_url,
-  view_count,
-  click_count,
-  roseout_score,
   neighborhood,
   latitude,
   longitude,
-  phone,
-  noise_level,
-  dress_code,
-  parking_info,
-  operating_hours,
-  special_hours,
-  holiday_closures,
-  hours,
   description,
+  price_range,
+  rating,
+  review_count,
+  main_image,
+  image_url,
+  images,
+  phone,
+  website,
+  instagram_url,
+  external_reservation_url,
+  reservation_url,
+  reservation_link,
+  google_maps_url,
+  google_types,
+  tags,
+  vibe_tags,
+  best_for_tags,
+  primary_tag,
   best_for,
-  special_features,
-  signature_items,
   search_keywords,
-  ranking_badge,
+  review_keywords,
+  quality_score,
+  popularity_score,
   trend_score,
   conversion_score,
   review_score,
-  review_keywords,
-  google_maps_url,
-  price_level,
   theouthaven_score,
+  roseout_score,
+  ranking_badge,
   is_searchable,
   data_status,
   missing_fields,
   is_hidden,
-  last_quality_check_at,
-  search_document
+  status,
+  reservation_enabled,
+  operating_hours,
+  special_hours,
+  holiday_closures,
+  is_claimed,
+  is_verified,
+  is_featured,
+  last_quality_check_at
 `;
 
-const RESTAURANT_COLUMNS = `
+const RESTAURANT_SELECT = `
   id,
+  name,
   restaurant_name,
-  city,
-  state,
+  location_type,
   primary_category,
   cuisine,
   cuisine_type,
   food_type,
-  activity_type,
-  tags,
-  google_types,
-  primary_tag,
-  price_range,
-  description,
-  external_reservation_url,
-  reservation_url,
-  reservation_link,
-  reservation_enabled,
-  google_maps_url,
-  yelp_link,
-  instagram_url,
-  status,
-  mood_tags,
-  lighting,
-  noise_level,
-  atmosphere,
-  best_for,
-  phone,
-  email,
-  website,
-  neighborhood,
-  operating_hours,
-  special_hours,
-  holiday_closures,
-  hours,
-  days_of_operation,
-  kitchen_closing_time,
-  street,
-  zip_code,
   address,
+  city,
+  state,
+  zip_code,
+  neighborhood,
+  latitude,
+  longitude,
+  description,
+  price_range,
+  rating,
+  review_count,
   main_image,
   image_url,
   images,
-  date_style_tags,
-  rating,
-  review_count,
-  theouthaven_score,
-  roseout_score,
+  phone,
+  website,
+  instagram_url,
+  external_reservation_url,
+  reservation_url,
+  reservation_link,
+  google_maps_url,
+  google_types,
+  tags,
+  vibe_tags,
+  best_for_tags,
+  primary_tag,
+  best_for,
+  search_keywords,
+  review_keywords,
   quality_score,
+  popularity_score,
   trend_score,
   conversion_score,
   review_score,
-  popularity_score,
+  theouthaven_score,
+  roseout_score,
   ranking_badge,
-  yelp_id,
-  yelp_url,
-  google_place_id,
-  detail_url,
-  claim_url,
-  is_claimed,
-  claimed,
-  claim_status,
-  claimed_at,
-  claimed_by_email,
-  owner_user_id,
-  updated_at,
-  facebook_url,
-  view_count,
-  click_count,
-  claim_count,
-  owner_name,
-  owner_phone,
-  latitude,
-  longitude,
   is_searchable,
   data_status,
   missing_fields,
   is_hidden,
-  last_quality_check_at,
-  search_document
+  status,
+  reservation_enabled,
+  operating_hours,
+  special_hours,
+  holiday_closures,
+  is_claimed,
+  is_verified,
+  is_featured,
+  last_quality_check_at
 `;
 
 function applyPublicVisibilityFilters(query: any) {
@@ -2893,7 +2864,7 @@ async function fetchFallbackRecords(input: string = "") {
   // General food fallback. This keeps the request URL short because it only
   // searches food terms, not every neighborhood name.
   let foodQuery = applyPublicVisibilityFilters(
-    supabase.from("restaurants").select(RESTAURANT_COLUMNS),
+    supabase.from("restaurants").select(RESTAURANT_SELECT),
   );
   foodQuery = applyFoodFilter(foodQuery);
   restaurantQueries.push(foodQuery.limit(SEARCH_LIMITS.fallbackGeneralRecords));
@@ -2903,7 +2874,7 @@ async function fetchFallbackRecords(input: string = "") {
   if (text.includes("queens")) {
     let queensQuery = supabase
       .from("restaurants")
-      .select(RESTAURANT_COLUMNS)
+      .select(RESTAURANT_SELECT)
       .eq("state", "NY")
       .gte("latitude", 40.48)
       .lte("latitude", 40.82)
@@ -2926,7 +2897,7 @@ async function fetchFallbackRecords(input: string = "") {
   ) {
     let longIslandQuery = supabase
       .from("restaurants")
-      .select(RESTAURANT_COLUMNS)
+      .select(RESTAURANT_SELECT)
       .eq("state", "NY")
       .gte("latitude", 40.5)
       .lte("latitude", 41.35)
@@ -2949,7 +2920,7 @@ async function fetchFallbackRecords(input: string = "") {
   ) {
     let jerseyQuery = supabase
       .from("restaurants")
-      .select(RESTAURANT_COLUMNS)
+      .select(RESTAURANT_SELECT)
       .eq("state", "NJ")
       .gte("latitude", 40.45)
       .lte("latitude", 41.25)
@@ -2967,10 +2938,10 @@ async function fetchFallbackRecords(input: string = "") {
   const [locationsResult, activitiesResult, ...restaurantResults] =
     await Promise.all([
       applyPublicVisibilityFilters(
-        supabase.from("locations").select(LOCATION_COLUMNS),
+        supabase.from("locations").select(LOCATION_SELECT),
       ).limit(SEARCH_LIMITS.supportingLocations),
       applyPublicVisibilityFilters(
-        supabase.from("activities").select(ACTIVITY_COLUMNS),
+        supabase.from("activities").select(ACTIVITY_SELECT),
       ).limit(SEARCH_LIMITS.fallbackGeneralRecords),
       ...restaurantQueries,
     ]);
@@ -3008,7 +2979,7 @@ async function fetchFallbackRecords(input: string = "") {
 
 async function fetchSupportingRecords() {
   const { data, error } = await applyPublicVisibilityFilters(
-    supabase.from("locations").select(LOCATION_COLUMNS),
+    supabase.from("locations").select(LOCATION_SELECT),
   ).limit(SEARCH_LIMITS.supportingLocations);
 
   if (error) throw error;
