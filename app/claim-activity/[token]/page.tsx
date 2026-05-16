@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getLocationName } from "@/lib/locationName";
 import { getPrimaryCategory } from "@/lib/locationFields";
+import { getIsClaimed } from "@/lib/locationClaim";
 
 export default function ClaimActivityPage() {
   const params = useParams();
@@ -86,6 +87,8 @@ export default function ClaimActivityPage() {
     );
   }
 
+  const isClaimed = getIsClaimed(activity);
+
   if (submitted) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
@@ -107,7 +110,9 @@ export default function ClaimActivityPage() {
           TheOutHaven
         </p>
 
-        <h1 className="mt-3 text-4xl font-black">Claim This Location</h1>
+        <h1 className="mt-3 text-4xl font-black">
+          {isClaimed ? "Claimed" : "Claim This Location"}
+        </h1>
 
         <p className="mt-3 text-sm leading-6 text-white/60">
           Verify ownership or management access to update this TheOutHaven activity
@@ -131,7 +136,12 @@ export default function ClaimActivityPage() {
             </p>
           )}
 
-          <div className="mt-6 grid gap-4">
+          {isClaimed ? (
+            <div className="mt-6 rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
+              Claimed
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-4">
             <input
               value={form.owner_name}
               onChange={(e) =>
@@ -180,7 +190,8 @@ export default function ClaimActivityPage() {
             >
               Submit Location Claim
             </button>
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </main>

@@ -86,6 +86,8 @@ export async function POST(req: Request) {
       const { error: restaurantUpdateError } = await supabase
         .from("restaurants")
         .update({
+          is_claimed: status === "approved",
+          claimed: status === "approved",
           claim_status: status,
           claimed_by_email: status === "approved" ? claim.owner_email : null,
           claimed_at: status === "approved" ? new Date().toISOString() : null,
@@ -167,6 +169,8 @@ export async function POST(req: Request) {
       const { error: activityUpdateError } = await supabase
         .from("activities")
         .update({
+          is_claimed: status === "approved",
+          claimed: status === "approved",
           claim_status: status,
           claimed_by_email: status === "approved" ? claim.owner_email : null,
           claimed_at: status === "approved" ? new Date().toISOString() : null,

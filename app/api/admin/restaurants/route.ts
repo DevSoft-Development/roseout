@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
         rating: body.rating || 0,
         price_level: body.price_level || null,
         status: body.status || "approved",
+        is_claimed: false,
         claimed: false,
         ...claimQr,
       })

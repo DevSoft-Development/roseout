@@ -100,7 +100,9 @@ export async function POST(req: Request) {
 
     const { data: location } = await supabase
       .from(table)
-      .select(`id, ${nameField}, owner_email, owner_user_id`)
+      .select(
+        `id, ${nameField}, owner_email, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id`
+      )
       .eq("id", locationId)
       .maybeSingle();
 

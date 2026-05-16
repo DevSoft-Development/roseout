@@ -213,7 +213,12 @@ type ImportTable = "restaurants" | "activities";
 
 type ExistingLocationClaim = {
   id: string;
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
   claim_status?: string | null;
+  claimed_at?: string | null;
+  claimed_by_email?: string | null;
+  owner_user_id?: string | null;
   claim_token?: string | null;
   claim_url?: string | null;
   qr_code_data_url?: string | null;
@@ -422,7 +427,7 @@ function buildKeywords(place: GooglePlace, query: string, extras: string[] = [])
 async function findExistingLocation(table: ImportTable, placeId: string) {
   const { data, error } = await supabaseAdmin
     .from(table)
-    .select("id, claim_status, claim_token, claim_url, qr_code_data_url")
+    .select("id, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, claim_token, claim_url, qr_code_data_url")
     .eq("google_place_id", placeId)
     .limit(1);
 
