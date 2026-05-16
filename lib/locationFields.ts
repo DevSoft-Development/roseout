@@ -2,7 +2,6 @@ export type LocationCategoryFields = {
   primary_category?: string | null;
   cuisine?: string | null;
   cuisine_type?: string | null;
-  food_type?: string | null;
   activity_type?: string | null;
   primary_tag?: string | null;
   tags?: string[] | null;
@@ -14,7 +13,6 @@ export function getPrimaryCategory(location: any) {
     location?.primary_category ||
     location?.cuisine ||
     location?.cuisine_type ||
-    location?.food_type ||
     location?.activity_type ||
     location?.primary_tag ||
     "Experience"
@@ -22,7 +20,11 @@ export function getPrimaryCategory(location: any) {
 }
 
 export function getCuisine(location: any) {
-  return location?.cuisine || location?.cuisine_type || location?.food_type || null;
+  return (
+    location?.cuisine ||
+    location?.cuisine_type ||
+    null
+  );
 }
 
 export function getLocationTags(location: any) {
@@ -33,7 +35,6 @@ export function getLocationTags(location: any) {
     location?.primary_category,
     location?.cuisine,
     location?.cuisine_type,
-    location?.food_type,
     location?.activity_type,
   ];
 

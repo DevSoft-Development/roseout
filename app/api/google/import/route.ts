@@ -1561,7 +1561,6 @@ export async function POST(req: Request) {
         type === "restaurant" ||
         Boolean(item.restaurant_name) ||
         Boolean(item.cuisine) ||
-        Boolean(item.food_type) ||
         Boolean(item.cuisine_type) ||
         toArray(item.cuisine_tags).length > 0
       );
@@ -1701,7 +1700,6 @@ export async function POST(req: Request) {
       name: getLocationName(r, ""),
       city: r.city,
       cuisine: getCuisine(r),
-      food_type: r.food_type || null,
       cuisine_tags: toArray(r.cuisine_tags).slice(0, 5),
       score: clampScore(getLocationScore(r)),
       location_name_match_score: r.location_name_match_score || 0,
@@ -1890,7 +1888,6 @@ STRICT RULES:
         primary_category: getPrimaryCategory(r),
         cuisine: getCuisine(r),
         cuisine_type: r.cuisine_type || null,
-        food_type: r.food_type || null,
         tags: Array.isArray(r.tags) ? r.tags : null,
         google_types: Array.isArray(r.google_types) ? r.google_types : null,
         cuisine_tags: toArray(r.cuisine_tags).slice(0, 5),
@@ -1923,7 +1920,6 @@ STRICT RULES:
         primary_category: getPrimaryCategory(a),
         cuisine: getCuisine(a),
         cuisine_type: a.cuisine_type || null,
-        food_type: a.food_type || null,
         activity_type: a.activity_type || a.category || a.subcategory,
         tags: Array.isArray(a.tags) ? a.tags : null,
         google_types: Array.isArray(a.google_types) ? a.google_types : null,
