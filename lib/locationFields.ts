@@ -5,6 +5,8 @@ export type LocationCategoryFields = {
   activity_type?: string | null;
   primary_tag?: string | null;
   tags?: string[] | string | null;
+  vibe_tags?: string[] | string | null;
+  best_for_tags?: string[] | string | null;
   google_types?: string[] | string | null;
   atmosphere?: string[] | string | null;
   best_for?: string[] | string | null;
@@ -46,6 +48,8 @@ function normalizeTags(value: unknown) {
 export function getLocationTags(location: any) {
   const tags = [
     ...normalizeTags(location?.tags),
+    ...normalizeTags(location?.vibe_tags),
+    ...normalizeTags(location?.best_for_tags),
     ...normalizeTags(location?.google_types),
     ...normalizeTags(location?.atmosphere),
     ...normalizeTags(location?.best_for),

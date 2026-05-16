@@ -40,6 +40,103 @@ const supabaseAdmin = createClient(
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 100;
+
+const NAME_TAG_KEYWORDS = [
+  "seafood",
+  "steakhouse",
+  "steak",
+  "sushi",
+  "italian",
+  "mexican",
+  "jamaican",
+  "caribbean",
+  "soul food",
+  "brunch",
+  "breakfast",
+  "dinner",
+  "hookah",
+  "lounge",
+  "rooftop",
+  "bar",
+  "club",
+  "nightlife",
+  "bowling",
+  "arcade",
+  "museum",
+  "spa",
+  "comedy",
+  "karaoke",
+  "escape room",
+  "paint",
+  "art",
+  "wine",
+  "jazz",
+  "live music",
+];
+
+function toSearchArray(value: unknown): string[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => toSearchArray(item));
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
+      try {
+        return toSearchArray(JSON.parse(trimmed));
+      } catch {
+        // Fall back to comma splitting below.
+      }
+    }
+
+    return trimmed
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [String(value)];
+}
+
+function normalizeTagList(...values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => toSearchArray(value))
+        .map((tag) => String(tag).trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractNameTags(name: unknown) {
+  const normalizedName = String(name || "").toLowerCase();
+
+  return NAME_TAG_KEYWORDS.filter((keyword) =>
+    new RegExp(`(^|\\W)${escapeRegExp(keyword)}(\\W|$)`, "i").test(
+      normalizedName,
+    ),
+  );
+}
+
+function buildSearchDocument(parts: unknown[]) {
+  return normalizeTagList(parts)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const REQUIRED_SEARCH_FIELDS = [
   "name",
   "address",
@@ -139,12 +236,53 @@ function buildLocationPayload(table: SourceTable, row: SourceRow) {
   const externalReservationUrl = getReservationUrl(row);
   const theOutHavenScore = getTheOutHavenScore(row);
 
+  const nameTags = extractNameTags(name);
+  const existingTags = normalizeTagList(row.tags);
+  const shouldGenerateStarterTags = existingTags.length === 0;
+  const tags = normalizeTagList(
+    existingTags,
+    nameTags,
+    shouldGenerateStarterTags ? name : null,
+    shouldGenerateStarterTags ? primaryCategory : null,
+    shouldGenerateStarterTags ? row.cuisine : null,
+    shouldGenerateStarterTags ? row.cuisine_type : null,
+    shouldGenerateStarterTags ? row.activity_type : null,
+    shouldGenerateStarterTags ? row.google_types : null,
+    shouldGenerateStarterTags ? row.atmosphere : null,
+    shouldGenerateStarterTags ? row.best_for : null,
+    shouldGenerateStarterTags ? row.date_style_tags : null,
+    shouldGenerateStarterTags ? row.primary_tag : null,
+  );
+  const searchKeywords = normalizeTagList(row.search_keywords, nameTags, tags);
+  const reviewKeywords = normalizeTagList(row.review_keywords);
+  const vibeTags = normalizeTagList(row.vibe_tags);
+  const bestForTags = normalizeTagList(row.best_for_tags);
+  const googleTypes = normalizeTagList(row.google_types);
+  const dateStyleTags = normalizeTagList(row.date_style_tags);
+  const bestFor = normalizeTagList(row.best_for);
+  const atmosphere = normalizeTagList(row.atmosphere);
+
   const payload: Record<string, unknown> = {
     source_table: table,
     source_id: row.id,
     location_type: locationType,
+    restaurant_name: firstPresent<string>(row.restaurant_name),
+    activity_name: firstPresent<string>(row.activity_name),
     name,
     primary_category: primaryCategory,
+    cuisine: firstPresent<string>(row.cuisine),
+    cuisine_type: firstPresent<string>(row.cuisine_type, row.food_type),
+    activity_type: firstPresent<string>(row.activity_type),
+    primary_tag: firstPresent<string>(row.primary_tag),
+    tags,
+    vibe_tags: vibeTags,
+    best_for_tags: bestForTags,
+    google_types: googleTypes,
+    search_keywords: searchKeywords,
+    review_keywords: reviewKeywords,
+    date_style_tags: dateStyleTags,
+    best_for: bestFor,
+    atmosphere,
     main_image: mainImage,
     external_reservation_url: externalReservationUrl,
     theouthaven_score: theOutHavenScore,
@@ -166,6 +304,30 @@ function buildLocationPayload(table: SourceTable, row: SourceRow) {
     reservation_link: firstPresent<string>(row.reservation_link),
     status: firstPresent<string>(row.status),
   };
+
+  payload.search_document = buildSearchDocument([
+    name,
+    payload.restaurant_name,
+    payload.activity_name,
+    primaryCategory,
+    payload.cuisine,
+    payload.cuisine_type,
+    payload.activity_type,
+    payload.primary_tag,
+    tags,
+    vibeTags,
+    bestForTags,
+    googleTypes,
+    searchKeywords,
+    reviewKeywords,
+    dateStyleTags,
+    bestFor,
+    atmosphere,
+    payload.city,
+    payload.neighborhood,
+    payload.state,
+    payload.description,
+  ]);
 
   const missingFields = getMissingFields(payload);
   const isSearchable = missingFields.length === 0;

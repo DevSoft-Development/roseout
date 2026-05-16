@@ -13,7 +13,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationScore } from "@/lib/locationScore";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
-import { isPubliclyVisible } from "@/lib/locationVisibility";
+import { isPublicSearchVisible } from "@/lib/locationVisibility";
 import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
@@ -28,8 +28,6 @@ import {
 } from "@/lib/reservation";
 
 
-const ACTIVITY_DETAIL_COLUMNS =
-  "id, name, activity_name, location_type, address, city, state, zip_code, latitude, longitude, description, primary_category, activity_type, primary_tag, tags, google_types, price_range, atmosphere, group_friendly, external_reservation_url, reservation_url, reservation_link, reservation_enabled, website, phone, main_image, image_url, images, status, date_style_tags, rating, review_count, quality_score, popularity_score, detail_url, claim_url, view_count, click_count, roseout_score, neighborhood, noise_level, dress_code, parking_info, operating_hours, special_hours, holiday_closures, hours, best_for, special_features, signature_items, search_keywords, ranking_badge, trend_score, conversion_score, review_score, review_keywords, review_snippet, google_maps_url, price_level, theouthaven_score, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at";
 
 function toArray(value: any): string[] {
   if (!value) return [];
@@ -69,47 +67,13 @@ export default function LocationDetailPage() {
     async function loadLocation() {
       setLoading(true);
 
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from("locations")
         .select("*")
         .eq("id", id)
         .maybeSingle();
 
-      if (!data && (type === "restaurants" || type === "restaurant")) {
-        const fallback = await supabase
-          .from("restaurants")
-          .select("*")
-          .eq("id", id)
-          .maybeSingle();
-
-        data = fallback.data
-          ? {
-              ...fallback.data,
-              location_type: "restaurant",
-            }
-          : null;
-
-        error = fallback.error;
-      }
-
-      if (!data && (type === "activities" || type === "activity")) {
-        const fallback = await supabase
-          .from("activities")
-          .select(ACTIVITY_DETAIL_COLUMNS)
-          .eq("id", id)
-          .maybeSingle();
-
-        data = fallback.data
-          ? {
-              ...fallback.data,
-              location_type: "activity",
-            }
-          : null;
-
-        error = fallback.error;
-      }
-
-      if (error || !data || !isPubliclyVisible(data)) {
+      if (error || !data || !isPublicSearchVisible(data)) {
         console.error(
           "Location fetch error:",
           error?.message ||
