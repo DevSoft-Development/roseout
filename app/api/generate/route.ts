@@ -4,6 +4,7 @@ import { clampScore } from "@/lib/clampScore";
 import { getLocationName } from "@/lib/locationName";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import { getLocationScore, getSearchRankingScore } from "@/lib/locationScore";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -2408,6 +2409,12 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
 type NearbySortableLocation = {
   distance_miles?: unknown;
   theouthaven_score?: unknown;
+  roseout_score?: unknown;
+  quality_score?: unknown;
+  trend_score?: unknown;
+  conversion_score?: unknown;
+  review_score?: unknown;
+  popularity_score?: unknown;
 };
 
 function resultDistanceValue(item: NearbySortableLocation) {
@@ -2417,7 +2424,7 @@ function resultDistanceValue(item: NearbySortableLocation) {
 }
 
 function resultScoreValue(item: NearbySortableLocation) {
-  const score = Number(item.theouthaven_score);
+  const score = Number(getLocationScore(item));
 
   return Number.isFinite(score) ? score : 0;
 }
@@ -2503,10 +2510,7 @@ function scoreRestaurant(
       : PRIORITY_WEIGHTS.mismatchPenalty;
   }
 
-  score += clampScore(item.theouthaven_score || 0) * 0.25;
-  score += clampScore(item.quality_score || 0) * 0.15;
-  score += clampScore(item.popularity_score || 0) * 0.1;
-  score += clampScore(item.review_score || 0) * 0.2;
+  score += clampScore(getSearchRankingScore(item)) * 0.35;
 
   return clampScore(score);
 }
@@ -2584,10 +2588,7 @@ function scoreActivity(
     score += PRIORITY_WEIGHTS.nightlife;
   }
 
-  score += clampScore(item.theouthaven_score || 0) * 0.25;
-  score += clampScore(item.quality_score || 0) * 0.15;
-  score += clampScore(item.popularity_score || 0) * 0.1;
-  score += clampScore(item.review_score || 0) * 0.2;
+  score += clampScore(getSearchRankingScore(item)) * 0.35;
 
   return clampScore(score);
 }
@@ -2683,8 +2684,8 @@ function pairWalkingDistanceMatches(
             restaurant.restaurant_name || restaurant.name
           }`,
           pair_score:
-            Number(restaurant.theouthaven_score || 0) +
-            Number(activity.theouthaven_score || 0) +
+            Number(getLocationScore(restaurant)) +
+            Number(getLocationScore(activity)) +
             200,
         };
       })
@@ -2742,8 +2743,8 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
             String(activity.neighborhood).toLowerCase();
 
         let pairScore =
-          Number(restaurant.theouthaven_score || 0) +
-          Number(activity.theouthaven_score || 0);
+          Number(getLocationScore(restaurant)) +
+          Number(getLocationScore(activity));
 
         if (sameNeighborhood) pairScore += 80;
         if (sameCity) pairScore += 50;
@@ -2865,7 +2866,14 @@ const LOCATION_COLUMNS = `
   images,
   rating,
   review_count,
+  theouthaven_score,
+  roseout_score,
+  quality_score,
+  trend_score,
+  conversion_score,
   review_score,
+  popularity_score,
+  ranking_badge,
   review_keywords,
   review_snippet,
   google_maps_url,
@@ -2903,7 +2911,11 @@ const ACTIVITY_COLUMNS = `
   date_style_tags,
   rating,
   review_count,
+  theouthaven_score,
   quality_score,
+  trend_score,
+  conversion_score,
+  review_score,
   popularity_score,
   detail_url,
   claim_url,
@@ -2917,21 +2929,23 @@ const ACTIVITY_COLUMNS = `
   noise_level,
   dress_code,
   parking_info,
+  operating_hours,
+  special_hours,
+  holiday_closures,
   hours,
+  hours_of_operation,
+  days_of_operation,
+  kitchen_closing_time,
   description,
   best_for,
   special_features,
   signature_items,
   search_keywords,
   ranking_badge,
-  trend_score,
-  conversion_score,
-  review_score,
   review_keywords,
   google_maps_url,
   google_maps_link,
   price_level,
-  theouthaven_score,
   search_document
 `;
 
@@ -2968,6 +2982,10 @@ const RESTAURANT_COLUMNS = `
   email,
   website,
   neighborhood,
+  operating_hours,
+  special_hours,
+  holiday_closures,
+  hours,
   hours_of_operation,
   days_of_operation,
   kitchen_closing_time,
@@ -2983,8 +3001,13 @@ const RESTAURANT_COLUMNS = `
   yelp_id,
   yelp_url,
   google_place_id,
+  theouthaven_score,
   quality_score,
+  trend_score,
+  conversion_score,
+  review_score,
   popularity_score,
+  ranking_badge,
   detail_url,
   claim_url,
   is_claimed,
@@ -3572,7 +3595,7 @@ return (
           location_name_match_score: locationNameMatchScore(restaurant, input),
         };
       })
-      .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
+      .sort((a: any, b: any) => getLocationScore(b) - getLocationScore(a));
 
     const rankedActivities = activities
       .map((activity: any) => {
@@ -3598,7 +3621,7 @@ return (
           location_name_match_score: locationNameMatchScore(activity, input),
         };
       })
-      .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
+      .sort((a: any, b: any) => getLocationScore(b) - getLocationScore(a));
 
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
@@ -3732,7 +3755,7 @@ return (
       name: getLocationName(r, ""),
       city: r.city,
       cuisine: r.cuisine || r.cuisine_type,
-      score: clampScore(r.theouthaven_score),
+      score: clampScore(getLocationScore(r)),
       location_name_match_score: r.location_name_match_score || 0,
       semantic_similarity: r.semantic_similarity || 0,
       confidence_label: r.confidence_label || "low",
@@ -3747,7 +3770,7 @@ return (
       name: getLocationName(a, ""),
       city: a.city,
       type: a.activity_type || a.category || a.subcategory,
-      score: clampScore(a.theouthaven_score),
+      score: clampScore(getLocationScore(a)),
       location_name_match_score: a.location_name_match_score || 0,
       semantic_similarity: a.semantic_similarity || 0,
       confidence_label: a.confidence_label || "low",
@@ -3950,8 +3973,8 @@ STRICT RULES:
         google_types: Array.isArray(r.google_types) ? r.google_types : null,
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
-        theouthaven_score: clampScore(r.theouthaven_score),
-        smart_match_score: clampScore(r.smart_match_score || r.theouthaven_score),
+        theouthaven_score: clampScore(getLocationScore(r)),
+        smart_match_score: clampScore(r.smart_match_score || getLocationScore(r)),
         semantic_similarity: r.semantic_similarity || 0,
         semantic_score_boost: r.semantic_score_boost || 0,
         confidence: r.confidence || 0,
@@ -4001,8 +4024,8 @@ STRICT RULES:
         price_range: a.price_range,
         atmosphere: a.atmosphere,
         group_friendly: a.group_friendly,
-        theouthaven_score: clampScore(a.theouthaven_score),
-        smart_match_score: clampScore(a.smart_match_score || a.theouthaven_score),
+        theouthaven_score: clampScore(getLocationScore(a)),
+        smart_match_score: clampScore(a.smart_match_score || getLocationScore(a)),
         semantic_similarity: a.semantic_similarity || 0,
         semantic_score_boost: a.semantic_score_boost || 0,
         confidence: a.confidence || 0,

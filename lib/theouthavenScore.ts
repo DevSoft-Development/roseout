@@ -1,4 +1,5 @@
 import { getLocationTags } from "@/lib/locationFields";
+import { getSearchRankingScore } from "@/lib/locationScore";
 
 export function calculateRestaurantScore(
   restaurant: any,
@@ -23,13 +24,9 @@ export function calculateRestaurantScore(
     ruleScore += 25;
   }
 
-  const qualityScore = restaurant.quality_score || 0;
-  const popularityScore = restaurant.popularity_score || 0;
+  const rankingScore = getSearchRankingScore(restaurant);
 
-  const finalScore =
-    ruleScore * 0.65 +
-    qualityScore * 0.2 +
-    popularityScore * 0.1;
+  const finalScore = ruleScore * 0.65 + rankingScore * 0.3;
 
   return Math.round(Math.min(finalScore, 100));
 }

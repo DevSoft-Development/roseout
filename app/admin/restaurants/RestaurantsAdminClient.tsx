@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getLocationTags } from "@/lib/locationFields";
+import { getLocationScore } from "@/lib/locationScore";
 
 type Restaurant = {
   id: string;
@@ -34,6 +35,13 @@ type Restaurant = {
   image_url?: string | null;
   images?: string[] | null;
   theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   view_count?: number | null;
   click_count?: number | null;
   created_at?: string | null;
@@ -283,7 +291,7 @@ export default function RestaurantsAdminClient({
                       </p>
 
                       <div className="mt-4 flex flex-wrap gap-3 text-xs font-semibold text-[#6f5c50]">
-                        <span>Score: {restaurant.theouthaven_score ?? 0}</span>
+                        <span>Score: {getLocationScore(restaurant)}</span>
                         <span>Views: {restaurant.view_count ?? 0}</span>
                         <span>Clicks: {restaurant.click_count ?? 0}</span>
                       </div>

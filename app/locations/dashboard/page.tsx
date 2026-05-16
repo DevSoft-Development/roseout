@@ -21,8 +21,14 @@ type LocationItem = LocationClaimFields & {
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | null;
-  theouthaven_score?: number;
-  quality_score?: number;
+  theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   owner_name?: string;
   owner_email?: string;
   owner_phone?: string;

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationScore } from "@/lib/locationScore";
 
 const ADMIN_ANALYTICS_VERSION = "admin-analytics-dashboard-2026-05-12";
 
@@ -11,7 +12,14 @@ type LocationMetric = {
   city: string | null;
   view_count: number | null;
   click_count: number | null;
-  theouthaven_score: number | null;
+  theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   type: "restaurant" | "activity";
 };
 
@@ -43,12 +51,12 @@ export default async function AdminAnalyticsPage() {
     await Promise.all([
       supabase
         .from("restaurants")
-        .select("id, name, restaurant_name, city, view_count, click_count, theouthaven_score")
+        .select("id, name, restaurant_name, city, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge")
         .order("view_count", { ascending: false })
         .limit(10),
       supabase
         .from("activities")
-        .select("id, name, activity_name, city, view_count, click_count, theouthaven_score")
+        .select("id, name, activity_name, city, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge")
         .order("view_count", { ascending: false })
         .limit(10),
       supabase
@@ -74,6 +82,13 @@ export default async function AdminAnalyticsPage() {
       view_count: restaurant.view_count,
       click_count: restaurant.click_count,
       theouthaven_score: restaurant.theouthaven_score,
+      roseout_score: restaurant.roseout_score,
+      quality_score: restaurant.quality_score,
+      trend_score: restaurant.trend_score,
+      conversion_score: restaurant.conversion_score,
+      review_score: restaurant.review_score,
+      popularity_score: restaurant.popularity_score,
+      ranking_badge: restaurant.ranking_badge,
       type: "restaurant" as const,
     })),
     ...activities.map((activity) => ({
@@ -83,6 +98,13 @@ export default async function AdminAnalyticsPage() {
       view_count: activity.view_count,
       click_count: activity.click_count,
       theouthaven_score: activity.theouthaven_score,
+      roseout_score: activity.roseout_score,
+      quality_score: activity.quality_score,
+      trend_score: activity.trend_score,
+      conversion_score: activity.conversion_score,
+      review_score: activity.review_score,
+      popularity_score: activity.popularity_score,
+      ranking_badge: activity.ranking_badge,
       type: "activity" as const,
     })),
   ].sort((a, b) => Number(b.view_count || 0) - Number(a.view_count || 0));
@@ -181,7 +203,7 @@ export default async function AdminAnalyticsPage() {
                   </div>
                   <MiniStat label="Views" value={formatNumber(item.view_count)} />
                   <MiniStat label="Clicks" value={formatNumber(item.click_count)} />
-                  <MiniStat label="Score" value={formatNumber(item.theouthaven_score)} />
+                  <MiniStat label="Score" value={formatNumber(getLocationScore(item))} />
                 </Link>
               ))}
               {locationMetrics.length === 0 && (

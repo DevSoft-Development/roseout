@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import {
+  getOperatingHoursForDate,
+  timeWindowToSlots,
+} from "@/lib/locationHours";
 
 function normalizeType(value: string) {
   const type = value.toLowerCase().trim();
@@ -66,7 +70,9 @@ export async function GET(req: NextRequest) {
 
   const { data: location } = await supabase
     .from(tableName)
-    .select("id, default_duration_minutes")
+    .select(
+      "id, default_duration_minutes, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time"
+    )
     .eq("id", locationId)
     .single();
 
@@ -80,7 +86,10 @@ export async function GET(req: NextRequest) {
     .eq("reservation_date", date)
     .in("status", ["pending", "confirmed", "arrived"]);
 
-  const slots = buildSlots(durationMinutes);
+  const structuredHours = getOperatingHoursForDate(location || {}, date);
+  const slots = structuredHours
+    ? timeWindowToSlots(structuredHours, durationMinutes)
+    : buildSlots(durationMinutes);
 
   const availableSlots = slots.filter((slot) => {
     return !(reservations || []).some((reservation) =>

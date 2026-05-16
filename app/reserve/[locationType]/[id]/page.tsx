@@ -4,6 +4,11 @@ import { supabase } from "@/lib/supabase";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import {
+  formatOperatingHoursForDisplay,
+  getOperatingHours,
+} from "@/lib/locationHours";
+import { getLocationScore } from "@/lib/locationScore";
 
 type LocationRow = {
   id: string;
@@ -18,6 +23,20 @@ type LocationRow = {
   activity_name?: string | null;
   rating?: number | null;
   theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
+  operating_hours?: any;
+  special_hours?: any;
+  holiday_closures?: any;
+  hours?: string | null;
+  hours_of_operation?: string | null;
+  days_of_operation?: string[] | null;
+  kitchen_closing_time?: string | null;
 };
 
 export default async function ReserveLocationPage({
@@ -30,9 +49,13 @@ export default async function ReserveLocationPage({
   const isActivity = locationType === "activity";
   const tableName = isActivity ? "activities" : "restaurants";
 
+  const scoreFields =
+    "theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge";
+  const hoursFields =
+    "operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time";
   const selectFields = isActivity
-    ? "id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score"
-    : "id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score";
+    ? `id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, ${scoreFields}, ${hoursFields}`
+    : `id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, ${scoreFields}, ${hoursFields}`;
 
   const { data, error } = await supabase
     .from(tableName)
@@ -47,6 +70,10 @@ export default async function ReserveLocationPage({
   const locationName = getLocationName(location, isActivity ? "Activity" : "Restaurant");
 
   const backHref = `/locations/${isActivity ? "activities" : "restaurants"}/${id}`;
+  const operatingHoursDisplay = formatOperatingHoursForDisplay(
+    getOperatingHours(location)
+  );
+  const score = getLocationScore(location);
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white sm:px-6 lg:px-8">
@@ -120,7 +147,7 @@ export default async function ReserveLocationPage({
                       Score
                     </p>
                     <p className="mt-1 text-xl font-black">
-                      {location.theouthaven_score || 0}
+                      {score}
                     </p>
                   </div>
                 </div>
@@ -153,6 +180,17 @@ export default async function ReserveLocationPage({
                       Open times update after choosing a date.
                     </p>
                   </div>
+
+                  {operatingHoursDisplay && (
+                    <div className="rounded-2xl bg-white/[0.06] p-4">
+                      <p className="text-xs font-black uppercase tracking-wide text-white/40">
+                        Hours
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-white/70">
+                        {operatingHoursDisplay}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="rounded-2xl bg-white/[0.06] p-4">
                     <p className="text-xs font-black uppercase tracking-wide text-white/40">

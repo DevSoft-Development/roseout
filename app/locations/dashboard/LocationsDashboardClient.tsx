@@ -17,6 +17,7 @@ import {
 import { clampScore } from "@/lib/clampScore";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import { getLocationScore } from "@/lib/locationScore";
 import ScoreBadge from "@/components/ScoreBadge";
 import { getIsClaimed, getClaimStatusText } from "@/lib/locationClaim";
 
@@ -42,8 +43,14 @@ type LocationItem = {
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | null;
-  theouthaven_score?: number;
-  quality_score?: number;
+  theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   is_claimed?: boolean | null;
   claimed?: boolean | null;
   claim_status?: string | null;
@@ -107,7 +114,7 @@ export default function LocationsDashboardClient({
               locations.reduce(
                 (sum, item) =>
                   sum +
-                  clampScore(item.theouthaven_score ?? item.quality_score ?? 0),
+                  clampScore(getLocationScore(item)),
                 0
               ) / locations.length
             )
@@ -225,7 +232,7 @@ export default function LocationsDashboardClient({
           <div className="max-h-[68vh] space-y-3 overflow-y-auto pr-1">
             {filteredLocations.map((loc) => {
               const active = selected?.id === loc.id;
-              const score = clampScore(loc.theouthaven_score ?? loc.quality_score ?? 0);
+              const score = clampScore(getLocationScore(loc));
 
               return (
                 <button
@@ -334,9 +341,7 @@ export default function LocationsDashboardClient({
                 <div>
                   <div className="mb-6 flex flex-wrap items-center gap-3">
                     <ScoreBadge
-                      score={clampScore(
-                        selected.theouthaven_score ?? selected.quality_score ?? 0
-                      )}
+                      score={clampScore(getLocationScore(selected))}
                     />
 
                     <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">

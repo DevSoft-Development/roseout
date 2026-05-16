@@ -52,6 +52,13 @@ type PlanLocation = {
   reservation_enabled?: boolean | null;
   booking_url?: string | null;
   theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   smart_match_score?: number | null;
   latitude?: number | string | null;
   longitude?: number | string | null;

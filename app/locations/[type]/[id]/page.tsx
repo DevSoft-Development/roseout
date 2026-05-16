@@ -13,6 +13,11 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
+  formatOperatingHoursForDisplay,
+  getOperatingHours,
+} from "@/lib/locationHours";
+import { getLocationScore } from "@/lib/locationScore";
+import {
   buildGoogleMapsSearchUrl,
   getGoogleMapsUrl,
 } from "@/lib/googleDirections";
@@ -141,12 +146,7 @@ if (error || !data) {
 
   const category = getPrimaryCategory(location);
 
-  const score = clampScore(
-    location?.review_score ??
-      location?.theouthaven_score ??
-      location?.quality_score ??
-      0
-  );
+  const score = clampScore(getLocationScore(location));
 
   const address = [
     location?.address,
@@ -183,6 +183,9 @@ if (error || !data) {
   const bestFor = toArray(location?.best_for);
   const specialFeatures = toArray(location?.special_features);
   const signatureItems = toArray(location?.signature_items);
+  const operatingHoursDisplay = formatOperatingHoursForDisplay(
+    getOperatingHours(location)
+  );
 
   const baseMetadata = {
     location_id: id,
@@ -570,6 +573,12 @@ if (error || !data) {
                 eyebrow="Plan Your Visit"
                 title={isActivity ? "Book the experience." : "Reserve the table."}
               >
+                {operatingHoursDisplay && (
+                  <div className="mt-5 rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
+                    <InfoRow label="Hours" value={operatingHoursDisplay} />
+                  </div>
+                )}
+
                 <div className="mt-6 grid gap-3">
                   {reservationUrl && (
                     <a

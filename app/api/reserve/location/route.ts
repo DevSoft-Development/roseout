@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName as getDisplayLocationName } from "@/lib/locationName";
 import { getPrimaryCategory } from "@/lib/locationFields";
+import { getLocationScore } from "@/lib/locationScore";
+import {
+  getOperatingHoursForDate,
+  timeWindowToSlots,
+} from "@/lib/locationHours";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -22,6 +27,9 @@ function normalizeType(value: string) {
 function getTableName(type: string) {
   return type === "activity" ? "activities" : "locations";
 }
+
+const LOCATION_HOURS_SELECT =
+  "operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time";
 
 function getReservationLocationName(location: any, type: string) {
   return getDisplayLocationName(
@@ -283,7 +291,7 @@ export async function GET(request: NextRequest) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from(getTableName(locationType))
-      .select("*")
+      .select(`*, ${LOCATION_HOURS_SELECT}`)
       .eq("id", locationId)
       .maybeSingle();
 
@@ -311,7 +319,13 @@ export async function GET(request: NextRequest) {
     let enrichedItems = items || [];
 
     if (reservationDate) {
-      const slots = generateTimeSlots();
+      const structuredHours = getOperatingHoursForDate(location, reservationDate);
+      const slots = structuredHours
+        ? timeWindowToSlots(
+            structuredHours,
+            Number(location.default_duration_minutes || 90)
+          )
+        : generateTimeSlots();
 
       const { data: existingReservations, error: existingError } =
         await supabaseAdmin
@@ -374,6 +388,23 @@ export async function GET(request: NextRequest) {
           location.image_url || location.photo_url || location.image || null,
         images: Array.isArray(location.images) ? location.images : null,
         category: getPrimaryCategory(location),
+        theouthaven_score: getLocationScore(location),
+        roseout_score: location.roseout_score || null,
+        quality_score: location.quality_score || null,
+        trend_score: location.trend_score || null,
+        conversion_score: location.conversion_score || null,
+        review_score: location.review_score || null,
+        popularity_score: location.popularity_score || null,
+        ranking_badge: location.ranking_badge || null,
+        operating_hours: location.operating_hours || null,
+        special_hours: location.special_hours || null,
+        holiday_closures: location.holiday_closures || null,
+        hours: location.hours || null,
+        hours_of_operation: location.hours_of_operation || null,
+        days_of_operation: Array.isArray(location.days_of_operation)
+          ? location.days_of_operation
+          : null,
+        kitchen_closing_time: location.kitchen_closing_time || null,
       },
       items: partyFilteredItems,
     });
@@ -437,7 +468,7 @@ export async function POST(request: NextRequest) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from(getTableName(locationType))
-      .select("*")
+      .select(`*, ${LOCATION_HOURS_SELECT}`)
       .eq("id", locationId)
       .maybeSingle();
 
@@ -447,6 +478,22 @@ export async function POST(request: NextRequest) {
 
     if (!location) {
       return NextResponse.json({ error: "Location not found." }, { status: 404 });
+    }
+
+    const structuredHours = getOperatingHoursForDate(location, reservationDate);
+
+    if (structuredHours) {
+      const validSlots = timeWindowToSlots(
+        structuredHours,
+        Number(location.default_duration_minutes || 90)
+      );
+
+      if (!validSlots.includes(reservationTime.slice(0, 5))) {
+        return NextResponse.json(
+          { error: "This time is outside the location's operating hours." },
+          { status: 400 }
+        );
+      }
     }
 
     let selectedItem: any = null;

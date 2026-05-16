@@ -5,6 +5,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import { getIsClaimed, type LocationClaimFields } from "@/lib/locationClaim";
+import { getLocationScore } from "@/lib/locationScore";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
@@ -44,7 +45,14 @@ type AdminLocation = {
   rating: number | null;
   view_count: number | null;
   click_count: number | null;
-  theouthaven_score: number | null;
+  theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | null;
@@ -154,7 +162,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
+      "id, name, restaurant_name, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -162,7 +170,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
+      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -233,6 +241,13 @@ export default async function AdminLocationsPage({
       view_count: item.view_count,
       click_count: item.click_count,
       theouthaven_score: item.theouthaven_score,
+      roseout_score: item.roseout_score,
+      quality_score: item.quality_score,
+      trend_score: item.trend_score,
+      conversion_score: item.conversion_score,
+      review_score: item.review_score,
+      popularity_score: item.popularity_score,
+      ranking_badge: item.ranking_badge,
       main_image: item.main_image,
       image_url: item.image_url,
       images: item.images,
@@ -260,6 +275,13 @@ export default async function AdminLocationsPage({
       view_count: item.view_count,
       click_count: item.click_count,
       theouthaven_score: item.theouthaven_score,
+      roseout_score: item.roseout_score,
+      quality_score: item.quality_score,
+      trend_score: item.trend_score,
+      conversion_score: item.conversion_score,
+      review_score: item.review_score,
+      popularity_score: item.popularity_score,
+      ranking_badge: item.ranking_badge,
       main_image: item.main_image,
       image_url: item.image_url,
       images: item.images,
@@ -656,7 +678,7 @@ export default async function AdminLocationsPage({
                           Score
                         </p>
                         <p className="mt-1 text-sm font-black">
-                          {location.theouthaven_score || 0}
+                          {getLocationScore(location)}
                         </p>
                       </div>
                     </div>

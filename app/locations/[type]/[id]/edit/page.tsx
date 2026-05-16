@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
 import { getIsClaimed } from "@/lib/locationClaim";
+import { getLocationScore } from "@/lib/locationScore";
 
 type LocationType = "restaurants" | "activities";
 
@@ -33,7 +34,13 @@ type FormState = {
   noise_level: string;
   dress_code: string;
   parking_info: string;
-  hours: string;
+  operating_hours?: any;
+  special_hours?: any;
+  holiday_closures?: any;
+  hours: string | null;
+  hours_of_operation?: string | null;
+  days_of_operation?: string[] | null;
+  kitchen_closing_time?: string | null;
   best_for: string;
   special_features: string;
   signature_items: string;
@@ -45,6 +52,13 @@ type FormState = {
   owner_phone: string;
   claim_status: string;
   theouthaven_score: string | number;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   latitude: string | number;
   longitude: string | number;
 };
@@ -136,7 +150,13 @@ export default function EditLocationPage() {
     noise_level: "",
     dress_code: "",
     parking_info: "",
+    operating_hours: null,
+    special_hours: null,
+    holiday_closures: null,
     hours: "",
+    hours_of_operation: null,
+    days_of_operation: null,
+    kitchen_closing_time: null,
     best_for: "",
     special_features: "",
     signature_items: "",
@@ -148,6 +168,13 @@ export default function EditLocationPage() {
     owner_phone: "",
     claim_status: "",
     theouthaven_score: "",
+    roseout_score: null,
+    quality_score: null,
+    trend_score: null,
+    conversion_score: null,
+    review_score: null,
+    popularity_score: null,
+    ranking_badge: null,
     latitude: "",
     longitude: "",
   });
@@ -195,7 +222,15 @@ export default function EditLocationPage() {
           noise_level: data.noise_level || "",
           dress_code: data.dress_code || "",
           parking_info: data.parking_info || "",
-          hours: data.hours || "",
+          operating_hours: data.operating_hours ?? null,
+          special_hours: data.special_hours ?? null,
+          holiday_closures: data.holiday_closures ?? null,
+          hours: data.hours || data.hours_of_operation || "",
+          hours_of_operation: data.hours_of_operation || null,
+          days_of_operation: Array.isArray(data.days_of_operation)
+            ? data.days_of_operation
+            : null,
+          kitchen_closing_time: data.kitchen_closing_time || null,
           best_for: Array.isArray(data.best_for)
             ? data.best_for.join(", ")
             : data.best_for || "",
@@ -216,7 +251,14 @@ export default function EditLocationPage() {
           owner_email: data.owner_email || "",
           owner_phone: data.owner_phone || "",
           claim_status: data.claim_status || "",
-          theouthaven_score: clampScore(data.theouthaven_score ?? data.quality_score ?? 0),
+          theouthaven_score: clampScore(getLocationScore(data)),
+          roseout_score: data.roseout_score ?? null,
+          quality_score: data.quality_score ?? null,
+          trend_score: data.trend_score ?? null,
+          conversion_score: data.conversion_score ?? null,
+          review_score: data.review_score ?? null,
+          popularity_score: data.popularity_score ?? null,
+          ranking_badge: data.ranking_badge ?? null,
           latitude: data.latitude ?? "",
           longitude: data.longitude ?? "",
         });
@@ -328,7 +370,13 @@ export default function EditLocationPage() {
       noise_level: form.noise_level,
       dress_code: form.dress_code,
       parking_info: form.parking_info,
+      operating_hours: form.operating_hours ?? null,
+      special_hours: form.special_hours ?? null,
+      holiday_closures: form.holiday_closures ?? null,
       hours: form.hours,
+      hours_of_operation: form.hours_of_operation ?? null,
+      days_of_operation: form.days_of_operation ?? null,
+      kitchen_closing_time: form.kitchen_closing_time ?? null,
       best_for: toArray(form.best_for),
       special_features: toArray(form.special_features),
       signature_items: toArray(form.signature_items),
@@ -600,7 +648,7 @@ export default function EditLocationPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Public Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-                <Field label="Hours" value={form.hours} onChange={(v) => update("hours", v)} />
+                <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
               </div>
 
               <div className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">

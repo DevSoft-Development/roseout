@@ -1,4 +1,5 @@
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import { getLocationScore } from "@/lib/locationScore";
 export type SmartMatchIntent = {
   query: string;
   wantsFood: boolean;
@@ -38,6 +39,13 @@ export type SmartMatchItem = {
   address?: string | null;
   price_range?: string | null;
   theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
   rating?: number | null;
   review_count?: number | null;
   tags?: string[] | null;
@@ -726,7 +734,7 @@ export function scoreRestaurant(
   restaurant: SmartMatchItem,
   intent: SmartMatchIntent
 ) {
-  let score = Number(restaurant.theouthaven_score || 0);
+  let score = Number(getLocationScore(restaurant));
   const text = getSearchText(restaurant);
 
   if (matchesFoodIntent(restaurant, intent)) score += 30;
@@ -780,7 +788,7 @@ export function scoreActivity(
   activity: SmartMatchItem,
   intent: SmartMatchIntent
 ) {
-  let score = Number(activity.theouthaven_score || 0);
+  let score = Number(getLocationScore(activity));
   const text = getSearchText(activity);
 
   if (matchesActivityIntent(activity, intent)) score += 35;

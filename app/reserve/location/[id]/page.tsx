@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { getLocationImage } from "@/lib/locationImage";
+import {
+  formatOperatingHoursForDisplay,
+  getOperatingHours,
+} from "@/lib/locationHours";
 
 type Slot = {
   time: string;
@@ -43,6 +47,21 @@ type LocationData = {
   image_url?: string | null;
   images?: string[] | null;
   category?: string;
+  theouthaven_score?: number | null;
+  roseout_score?: number | null;
+  quality_score?: number | null;
+  trend_score?: number | null;
+  conversion_score?: number | null;
+  review_score?: number | null;
+  popularity_score?: number | null;
+  ranking_badge?: string | null;
+  operating_hours?: any;
+  special_hours?: any;
+  holiday_closures?: any;
+  hours?: string | null;
+  hours_of_operation?: string | null;
+  days_of_operation?: string[] | null;
+  kitchen_closing_time?: string | null;
 };
 
 function todayISO() {
@@ -97,6 +116,9 @@ export default function ReserveLocationPage() {
   );
 
   const autoConfirm = currentItem?.auto_confirm !== false;
+  const operatingHoursDisplay = formatOperatingHoursForDisplay(
+    getOperatingHours(location)
+  );
 
   async function loadData(quiet = false) {
     try {
@@ -269,6 +291,13 @@ export default function ReserveLocationPage() {
                       <p className="mt-5 flex items-start gap-2 text-sm font-bold leading-7 text-white/70">
                         <MapPin className="mt-1 shrink-0 text-red-300" size={17} />
                         {location.address}
+                      </p>
+                    )}
+
+                    {operatingHoursDisplay && (
+                      <p className="mt-3 flex items-start gap-2 text-sm font-bold leading-7 text-white/70">
+                        <Clock className="mt-1 shrink-0 text-red-300" size={17} />
+                        {operatingHoursDisplay}
                       </p>
                     )}
 
