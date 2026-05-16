@@ -7,6 +7,23 @@ const supabaseAdmin = createClient(
 );
 
 
+
+const ACTIVITY_UPDATE_BLOCKLIST = new Set([
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "hours_of_operation",
+  "days_of_operation",
+  "kitchen_closing_time",
+  "google_maps_link",
+]);
+
+function sanitizeActivityUpdates(updates: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(updates).filter(([key]) => !ACTIVITY_UPDATE_BLOCKLIST.has(key))
+  );
+}
+
 const ACTIVITY_WITH_OWNERS_SELECT = `
   id,
   name,
@@ -70,8 +87,6 @@ const ACTIVITY_WITH_OWNERS_SELECT = `
   special_hours,
   holiday_closures,
   hours,
-  days_of_operation,
-  kitchen_closing_time,
   best_for,
   special_features,
   signature_items,
@@ -115,7 +130,8 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const { owner_email, activity_owners, ...updates } = body;
+  const { owner_email, activity_owners, ...rawUpdates } = body;
+  const updates = sanitizeActivityUpdates(rawUpdates);
 
   const { data: activity, error } = await supabaseAdmin
     .from("activities")

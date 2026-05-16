@@ -350,8 +350,6 @@ export default function EditLocationPage() {
       special_hours: form.special_hours ?? null,
       holiday_closures: form.holiday_closures ?? null,
       hours: form.hours,
-      days_of_operation: form.days_of_operation ?? null,
-      kitchen_closing_time: form.kitchen_closing_time ?? null,
       best_for: toArray(form.best_for),
       special_features: toArray(form.special_features),
       signature_items: toArray(form.signature_items),
@@ -366,7 +364,12 @@ export default function EditLocationPage() {
       longitude: form.longitude === "" ? null : Number(form.longitude),
     };
 
-    if (type === "restaurants") payload.cuisine = form.cuisine;
+    if (type === "restaurants") {
+      payload.cuisine = form.cuisine;
+      payload.days_of_operation = form.days_of_operation ?? null;
+      payload.kitchen_closing_time = form.kitchen_closing_time ?? null;
+    }
+
     if (type === "activities") payload.activity_type = form.activity_type;
 
     const calculatedScore = calculateUpdatedScore(payload);

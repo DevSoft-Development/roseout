@@ -68,14 +68,26 @@ export async function GET(req: NextRequest) {
 
   const tableName = locationType === "activity" ? "activities" : "restaurants";
 
-  const { data: location } = await supabase
+  const selectFields =
+    locationType === "activity"
+      ? "id, default_duration_minutes, operating_hours, special_hours, holiday_closures, hours"
+      : "id, default_duration_minutes, operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time";
+
+  const { data: locationData } = await supabase
     .from(tableName)
-    .select(
-      "id, default_duration_minutes, operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time"
-    )
+    .select(selectFields)
     .eq("id", locationId)
     .single();
 
+  const location = locationData as unknown as {
+    default_duration_minutes?: number | null;
+    operating_hours?: unknown;
+    special_hours?: unknown;
+    holiday_closures?: unknown;
+    hours?: string | null;
+    days_of_operation?: string[] | null;
+    kitchen_closing_time?: string | null;
+  };
   const durationMinutes = location?.default_duration_minutes || 90;
 
   const { data: reservations } = await supabase

@@ -36,20 +36,15 @@ function locationCoordinates(location: DirectionLocation) {
   return `${latitude},${longitude}`;
 }
 
-export function getGoogleMapsUrl(location: any) {
-  return (
-    location?.google_maps_url ||
-    location?.google_maps_link ||
-    null
-  );
+export function buildGoogleMapsSearchUrl(location: DirectionLocation | null) {
+  const query = location ? locationAddress(location) || locationCoordinates(location) : "";
+  if (!query) return "";
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
-export function buildGoogleMapsSearchUrl(location: DirectionLocation | null) {
-  if (!location?.address) return "";
-
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    location.address
-  )}`;
+export function getGoogleMapsUrl(location: DirectionLocation | null | undefined) {
+  return location?.google_maps_url || buildGoogleMapsSearchUrl(location || null) || null;
 }
 
 function googleLocationQuery(location: DirectionLocation) {

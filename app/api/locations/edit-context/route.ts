@@ -18,6 +18,24 @@ function validType(type: string | null): type is LocationType {
   return type === "restaurants" || type === "activities";
 }
 
+const ACTIVITY_UPDATE_BLOCKLIST = new Set([
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "hours_of_operation",
+  "days_of_operation",
+  "kitchen_closing_time",
+  "google_maps_link",
+]);
+
+function sanitizePayloadForType(type: LocationType, payload: Record<string, unknown>) {
+  if (type !== "activities") return payload;
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !ACTIVITY_UPDATE_BLOCKLIST.has(key))
+  );
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -115,7 +133,7 @@ export async function PATCH(req: Request) {
 
     const { error } = await supabase
       .from(requestedType)
-      .update(payload)
+      .update(sanitizePayloadForType(requestedType, payload))
       .eq("id", finalId);
 
     if (error) {
