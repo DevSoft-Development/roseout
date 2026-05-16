@@ -18,6 +18,7 @@ import { clampScore } from "@/lib/clampScore";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import ScoreBadge from "@/components/ScoreBadge";
+import { getIsClaimed, getClaimStatusText } from "@/lib/locationClaim";
 
 const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-refresh-2026-05-11";
 
@@ -43,7 +44,12 @@ type LocationItem = {
   images?: string[] | null;
   theouthaven_score?: number;
   quality_score?: number;
-  claim_status?: string;
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
+  claim_status?: string | null;
+  claimed_at?: string | null;
+  claimed_by_email?: string | null;
+  owner_user_id?: string | null;
   owner_name?: string;
   owner_email?: string;
   owner_phone?: string;
@@ -93,8 +99,8 @@ export default function LocationsDashboardClient({
   const stats = useMemo(() => {
     return {
       total: locations.length,
-      claimed: locations.filter((l) => l.claim_status === "claimed").length,
-      unclaimed: locations.filter((l) => l.claim_status !== "claimed").length,
+      claimed: locations.filter((l) => getIsClaimed(l)).length,
+      unclaimed: locations.filter((l) => !getIsClaimed(l)).length,
       average:
         locations.length > 0
           ? Math.round(
@@ -270,9 +276,7 @@ export default function LocationsDashboardClient({
                         </Pill>
 
                         <Pill>
-                          {loc.claim_status === "claimed"
-                            ? "Claimed"
-                            : "Unclaimed"}
+                          {getClaimStatusText(loc)}
                         </Pill>
                       </div>
                     </div>
@@ -316,9 +320,7 @@ export default function LocationsDashboardClient({
                     </span>
 
                     <span className="rounded-full bg-[#f5b700] px-3 py-1 text-xs font-black text-black">
-                      {selected.claim_status === "claimed"
-                        ? "Claimed"
-                        : "Unclaimed"}
+                      {getClaimStatusText(selected)}
                     </span>
                   </div>
 

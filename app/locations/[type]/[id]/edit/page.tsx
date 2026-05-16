@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
+import { getIsClaimed } from "@/lib/locationClaim";
 
 type LocationType = "restaurants" | "activities";
 
@@ -48,7 +49,14 @@ type FormState = {
   longitude: string | number;
 };
 
-type LocationRecord = Record<string, unknown>;
+type LocationRecord = Record<string, unknown> & {
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
+  claim_status?: string | null;
+  claimed_at?: string | null;
+  claimed_by_email?: string | null;
+  owner_user_id?: string | null;
+};
 
 function normalizeLocationTypeParam(value: string): LocationType | null {
   if (value === "restaurants" || value === "restaurant") return "restaurants";
@@ -83,7 +91,7 @@ function calculateUpdatedScore(location: LocationRecord) {
   if (has(location.special_features)) score += 5;
   if (has(location.search_keywords)) score += 5;
   if (has(location.latitude) && has(location.longitude)) score += 5;
-  if (location.claim_status === "claimed" || location.claimed) score += 8;
+  if (getIsClaimed(location)) score += 8;
   if (location.rating) score += Math.min(Number(location.rating) * 2, 10);
 
   return clampScore(score);

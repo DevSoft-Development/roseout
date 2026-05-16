@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getPrimaryCategory } from "@/lib/locationFields";
+import { getIsClaimed, type LocationClaimFields } from "@/lib/locationClaim";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
@@ -34,7 +35,12 @@ type AdminLocation = {
   tags?: string[] | null;
   google_types?: string[] | null;
   status: string | null;
-  claimed: boolean | null;
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
+  claim_status?: string | null;
+  claimed_at?: string | null;
+  claimed_by_email?: string | null;
+  owner_user_id?: string | null;
   rating: number | null;
   view_count: number | null;
   click_count: number | null;
@@ -48,7 +54,7 @@ type AdminLocation = {
 type AdminRestaurantRow = Omit<
   AdminLocation,
   "locationType" | "name" | "category"
-> & {
+> & LocationClaimFields & {
   name?: string | null;
   restaurant_name: string | null;
   cuisine_type: string | null;
@@ -57,7 +63,7 @@ type AdminRestaurantRow = Omit<
 type AdminActivityRow = Omit<
   AdminLocation,
   "locationType" | "name" | "category"
-> & {
+> & LocationClaimFields & {
   name?: string | null;
   activity_name: string | null;
   activity_type: string | null;
@@ -148,7 +154,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, claimed, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
+      "id, name, restaurant_name, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -156,7 +162,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
+      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -167,13 +173,21 @@ export default async function AdminLocationsPage({
   }
 
   if (claim === "claimed") {
-    restaurantsQuery = restaurantsQuery.eq("claimed", true);
-    activitiesQuery = activitiesQuery.eq("claimed", true);
+    restaurantsQuery = restaurantsQuery.or(
+      "is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)"
+    );
+    activitiesQuery = activitiesQuery.or(
+      "is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)"
+    );
   }
 
   if (claim === "unclaimed") {
-    restaurantsQuery = restaurantsQuery.or("claimed.eq.false,claimed.is.null");
-    activitiesQuery = activitiesQuery.or("claimed.eq.false,claimed.is.null");
+    restaurantsQuery = restaurantsQuery.or(
+      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)"
+    );
+    activitiesQuery = activitiesQuery.or(
+      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)"
+    );
   }
 
   if (q) {
@@ -209,7 +223,12 @@ export default async function AdminLocationsPage({
       zip_code: item.zip_code,
       category: getPrimaryCategory(item),
       status: item.status,
+      is_claimed: item.is_claimed,
       claimed: item.claimed,
+      claim_status: item.claim_status,
+      claimed_at: item.claimed_at,
+      claimed_by_email: item.claimed_by_email,
+      owner_user_id: item.owner_user_id,
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
@@ -231,7 +250,12 @@ export default async function AdminLocationsPage({
       zip_code: item.zip_code,
       category: getPrimaryCategory(item),
       status: item.status,
+      is_claimed: item.is_claimed,
       claimed: item.claimed,
+      claim_status: item.claim_status,
+      claimed_at: item.claimed_at,
+      claimed_by_email: item.claimed_by_email,
+      owner_user_id: item.owner_user_id,
       rating: item.rating,
       view_count: item.view_count,
       click_count: item.click_count,
@@ -588,12 +612,12 @@ export default async function AdminLocationsPage({
 
                           <span
                             className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${
-                              location.claimed
+                              getIsClaimed(location)
                                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                 : "border-black/10 bg-[#f5eee8] text-black/50"
                             }`}
                           >
-                            {location.claimed ? "Claimed" : "Open Claim"}
+                            {getIsClaimed(location) ? "Claimed" : "Open Claim"}
                           </span>
                         </div>
                       </div>

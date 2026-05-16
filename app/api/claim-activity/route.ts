@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getIsClaimed } from "@/lib/locationClaim";
 
 export async function POST(req: Request) {
   try {
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
 
     const { data: activity, error: activityError } = await supabase
       .from("activities")
-      .select("id, claim_status")
+      .select("id, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id")
       .eq("claim_token", token)
       .maybeSingle();
 
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Invalid claim link." }, { status: 404 });
     }
 
-    if (activity.claim_status === "approved") {
+    if (getIsClaimed(activity)) {
       return Response.json(
         { error: "This activity listing has already been claimed." },
         { status: 400 }

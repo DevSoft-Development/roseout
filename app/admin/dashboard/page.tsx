@@ -37,11 +37,11 @@ export default async function CentralDashboardPage() {
     supabase
       .from("restaurants")
       .select("id", { count: "exact", head: true })
-      .eq("claimed", true),
+      .or("is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)"),
     supabase
       .from("activities")
       .select("id", { count: "exact", head: true })
-      .eq("claimed", true),
+      .or("is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)"),
     supabase
       .from("location_reservations")
       .select("id", { count: "exact", head: true }),
