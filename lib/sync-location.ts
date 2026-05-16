@@ -126,6 +126,7 @@ export const ACTIVITY_LOCATION_SELECT = `
   special_hours,
   holiday_closures,
   atmosphere,
+  qr_link,
   qr_code_data_url,
   claim_qr_url,
   claim_url,
