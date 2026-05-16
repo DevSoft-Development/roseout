@@ -10,6 +10,7 @@ import { trackActivity } from "@/lib/trackActivity";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationImage } from "@/lib/locationImage";
 
 function toArray(value: any): string[] {
   if (!value) return [];
@@ -296,9 +297,9 @@ if (error || !data) {
 
       <main className="min-h-screen bg-black pt-20 text-white">
         <section className="relative min-h-screen overflow-hidden">
-          {location.image_url ? (
+          {getLocationImage(location) ? (
             <Image
-              src={location.image_url}
+              src={getLocationImage(location)}
               alt={name}
               fill
               priority

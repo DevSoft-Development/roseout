@@ -368,8 +368,10 @@ export async function GET(request: NextRequest) {
         type: locationType,
         name: getReservationLocationName(location, locationType),
         address: getAddress(location),
+        main_image: location.main_image || null,
         image_url:
           location.image_url || location.photo_url || location.image || null,
+        images: Array.isArray(location.images) ? location.images : null,
         category:
           location.cuisine ||
           location.activity_type ||

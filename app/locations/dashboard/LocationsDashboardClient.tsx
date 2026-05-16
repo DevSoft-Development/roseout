@@ -15,6 +15,7 @@ import {
   Store,
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
+import { getLocationImage } from "@/lib/locationImage";
 import ScoreBadge from "@/components/ScoreBadge";
 
 const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-refresh-2026-05-11";
@@ -36,7 +37,9 @@ type LocationItem = {
   address?: string;
   city?: string;
   state?: string;
-  image_url?: string;
+  main_image?: string | null;
+  image_url?: string | null;
+  images?: string[] | null;
   theouthaven_score?: number;
   quality_score?: number;
   claim_status?: string;
@@ -222,9 +225,9 @@ export default function LocationsDashboardClient({
                 >
                   <div className="flex gap-3">
                     <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white/10">
-                      {loc.image_url ? (
+                      {getLocationImage(loc) ? (
                         <img
-                          src={loc.image_url}
+                          src={getLocationImage(loc)}
                           alt={loc.display_name}
                           className="h-full w-full object-cover"
                         />
@@ -282,9 +285,9 @@ export default function LocationsDashboardClient({
           {selected ? (
             <div className="overflow-hidden rounded-[2.25rem] border border-white/10 bg-[#f8f3ed] text-black shadow-2xl">
               <div className="relative h-[280px] bg-black sm:h-[360px]">
-                {selected.image_url ? (
+                {getLocationImage(selected) ? (
                   <img
-                    src={selected.image_url}
+                    src={getLocationImage(selected)}
                     alt={selected.display_name}
                     className="h-full w-full object-cover"
                   />

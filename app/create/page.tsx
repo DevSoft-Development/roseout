@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationImage } from "@/lib/locationImage";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type RestaurantCard = {
@@ -27,7 +28,9 @@ type RestaurantCard = {
   reservation_link?: string | null;
   reservation_url?: string | null;
   website?: string | null;
+  main_image?: string | null;
   image_url?: string | null;
+  images?: string[] | null;
   rating?: number | null;
   review_score?: number | null;
   review_keywords?: string[] | null;
@@ -57,7 +60,9 @@ type ActivityCard = {
   reservation_link?: string | null;
   reservation_url?: string | null;
   website?: string | null;
+  main_image?: string | null;
   image_url?: string | null;
+  images?: string[] | null;
   rating?: number | null;
   review_score?: number | null;
   review_keywords?: string[] | null;
@@ -844,7 +849,7 @@ export default function CreatePage() {
                                 key={restaurantId || restaurantIndex}
                                 index={restaurantIndex}
                                 type="restaurant"
-                                imageUrl={restaurant.image_url || undefined}
+                                imageUrl={getLocationImage(restaurant)}
                                 title={getLocationName(restaurant)}
                                 eyebrow={
                                   restaurant.cuisine ||
@@ -933,7 +938,7 @@ export default function CreatePage() {
                                 key={activityId || activityIndex}
                                 index={activityIndex}
                                 type="activity"
-                                imageUrl={activity.image_url || undefined}
+                                imageUrl={getLocationImage(activity)}
                                 title={getLocationName(activity)}
                                 eyebrow={activity.activity_type || "Activity"}
                                 address={formatAddress(activity)}
@@ -1330,7 +1335,7 @@ function PlanSummarySheet({
                     ? "No restaurant selected yet — you can continue with the activity or add one later."
                     : "Select a restaurant to complete the first part of your TheOutHaven."
               }
-              imageUrl={restaurant?.image_url || null}
+              imageUrl={restaurant ? getLocationImage(restaurant) : null}
               active={Boolean(restaurant)}
               actionLabel={
                 activity && !restaurant ? "Add Restaurant" : undefined
@@ -1369,7 +1374,7 @@ function PlanSummarySheet({
                     ? "Add an experience if you want to turn the restaurant into a full outing."
                     : "Select an experience to build the full restaurant-to-activity timeline."
               }
-              imageUrl={activity?.image_url || null}
+              imageUrl={activity ? getLocationImage(activity) : null}
               active={Boolean(activity)}
               actionLabel={
                 restaurant && !activity ? "Add Activity" : undefined

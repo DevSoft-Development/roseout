@@ -3,12 +3,15 @@ import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationImage } from "@/lib/locationImage";
 
 type LocationRow = {
   id: string;
   city: string | null;
   state: string | null;
-  image_url: string | null;
+  main_image?: string | null;
+  image_url?: string | null;
+  images?: string[] | null;
   default_duration_minutes: number | null;
   name?: string | null;
   restaurant_name?: string | null;
@@ -28,8 +31,8 @@ export default async function ReserveLocationPage({
   const tableName = isActivity ? "activities" : "restaurants";
 
   const selectFields = isActivity
-    ? "id, name, activity_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score"
-    : "id, name, restaurant_name, city, state, image_url, default_duration_minutes, rating, theouthaven_score";
+    ? "id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score"
+    : "id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score";
 
   const { data, error } = await supabase
     .from(tableName)
@@ -63,9 +66,9 @@ export default async function ReserveLocationPage({
 
         <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#120d0b] shadow-2xl">
           <div className="relative min-h-[360px] overflow-hidden bg-black">
-            {location.image_url ? (
+            {getLocationImage(location) ? (
               <img
-                src={location.image_url}
+                src={getLocationImage(location)}
                 alt={locationName}
                 className="h-[360px] w-full object-cover opacity-80"
               />

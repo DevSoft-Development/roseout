@@ -16,7 +16,9 @@ type FormState = {
   state: string;
   zip_code: string;
   neighborhood: string;
+  main_image?: string | null;
   image_url: string;
+  images?: string[] | null;
   website: string;
   reservation_url: string;
   phone: string;
