@@ -78,8 +78,10 @@ function getPrimaryCategory(location: LocationRow) {
   return (
     cleanString(location.primary_category) ||
     cleanString(location.cuisine) ||
+    cleanString(location.cuisine_type) ||
     cleanString(location.activity_type) ||
-    cleanString(location.primary_tag)
+    cleanString(location.primary_tag) ||
+    "Experience"
   );
 }
 

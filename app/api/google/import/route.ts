@@ -15,6 +15,10 @@ const openai = new OpenAI({
 });
 
 const AI_MODEL = "gpt-4o-mini";
+
+const ACTIVITY_SEARCH_COLUMNS =
+  "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, price_range, atmosphere, group_friendly, external_reservation_url, reservation_url, reservation_link, reservation_enabled, website, main_image, image_url, images, status, date_style_tags, rating, review_count, quality_score, popularity_score, detail_url, claim_url, view_count, click_count, roseout_score, neighborhood, latitude, longitude, phone, noise_level, dress_code, parking_info, operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time, description, best_for, special_features, signature_items, search_keywords, ranking_badge, trend_score, conversion_score, review_score, review_keywords, google_maps_url, price_level, theouthaven_score, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, search_document";
+
 const CACHE_HOURS = 6;
 
 const OFF_TOPIC_REPLY =
@@ -1481,7 +1485,7 @@ export async function POST(req: Request) {
 
     const { data: activitiesData, error: activitiesError } = await supabase
       .from("activities")
-      .select("*");
+      .select(ACTIVITY_SEARCH_COLUMNS);
 
     if (locationsError) {
       return Response.json({ error: locationsError.message }, { status: 500 });
@@ -1916,8 +1920,6 @@ STRICT RULES:
         id: String(a.id),
         activity_name: a.activity_name || a.name,
         primary_category: getPrimaryCategory(a),
-        cuisine: getCuisine(a),
-        cuisine_type: a.cuisine_type || null,
         activity_type: a.activity_type || a.category || a.subcategory,
         tags: Array.isArray(a.tags) ? a.tags : null,
         google_types: Array.isArray(a.google_types) ? a.google_types : null,

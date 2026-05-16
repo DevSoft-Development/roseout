@@ -10,6 +10,10 @@ export const dynamic = "force-dynamic";
 
 type LocationType = "restaurant" | "activity";
 
+
+const ACTIVITY_DASHBOARD_COLUMNS =
+  "id, name, activity_name, address, city, state, main_image, image_url, images, owner_name, owner_email, owner_phone, primary_category, activity_type, primary_tag, tags, google_types, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, view_count, click_count, claim_count, is_searchable, data_status, missing_fields, is_hidden, status, last_quality_check_at, created_at";
+
 type LocationItem = LocationClaimFields &
   LocationScoreFields &
   LocationVisibilityFields & {
@@ -80,22 +84,24 @@ export default async function DashboardPage() {
 
     const { data } = await supabase
       .from(table)
-      .select("*")
+      .select(table === "activities" ? ACTIVITY_DASHBOARD_COLUMNS : "*")
       .eq("id", impersonatedLocationId)
       .maybeSingle();
 
     if (data) {
+      const locationData = data as Record<string, any>;
+
       locations = [
-        {
-          ...data,
+        ({
+          ...locationData,
           location_type: table === "restaurants" ? "restaurant" : "activity",
           display_name: getLocationName(
-            data,
+            locationData,
             table === "restaurants"
               ? "Untitled restaurant"
               : "Untitled activity",
           ),
-        },
+        } as LocationItem),
       ];
 
       impersonationLabel = `Viewing as ${locations[0].display_name}`;
@@ -108,7 +114,7 @@ export default async function DashboardPage() {
 
     const { data: activities } = await supabase
       .from("activities")
-      .select("*")
+      .select(ACTIVITY_DASHBOARD_COLUMNS)
       .eq("owner_user_id", impersonatedUserId);
 
     locations = [
@@ -133,7 +139,7 @@ export default async function DashboardPage() {
 
     const { data: activities } = await supabase
       .from("activities")
-      .select("*")
+      .select(ACTIVITY_DASHBOARD_COLUMNS)
       .order("created_at", { ascending: false });
 
     locations = [

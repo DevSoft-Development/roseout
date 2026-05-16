@@ -27,6 +27,10 @@ import {
   getInternalReservationHref,
 } from "@/lib/reservation";
 
+
+const ACTIVITY_DETAIL_COLUMNS =
+  "id, name, activity_name, location_type, address, city, state, zip_code, latitude, longitude, description, primary_category, activity_type, primary_tag, tags, google_types, price_range, atmosphere, group_friendly, external_reservation_url, reservation_url, reservation_link, reservation_enabled, website, phone, main_image, image_url, images, status, date_style_tags, rating, review_count, quality_score, popularity_score, detail_url, claim_url, view_count, click_count, roseout_score, neighborhood, noise_level, dress_code, parking_info, operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time, best_for, special_features, signature_items, search_keywords, ranking_badge, trend_score, conversion_score, review_score, review_keywords, review_snippet, google_maps_url, price_level, theouthaven_score, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at";
+
 function toArray(value: any): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String);
@@ -91,7 +95,7 @@ export default function LocationDetailPage() {
       if (!data && (type === "activities" || type === "activity")) {
         const fallback = await supabase
           .from("activities")
-          .select("*")
+          .select(ACTIVITY_DETAIL_COLUMNS)
           .eq("id", id)
           .maybeSingle();
 
