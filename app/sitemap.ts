@@ -81,13 +81,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .select(
       "id, location_type, updated_at, created_at, is_searchable, data_status, is_hidden, status, name, address, city, state, latitude, longitude, main_image",
     )
+    .eq("is_searchable", true)
+    .eq("data_status", "clean")
     .not("is_hidden", "is", true)
-    .or(
-      [
-        "and(is_searchable.eq.true,data_status.eq.clean)",
-        "and(name.not.is.null,address.not.is.null,city.not.is.null,state.not.is.null,latitude.not.is.null,longitude.not.is.null,main_image.not.is.null)",
-      ].join(","),
-    )
+    .not("status", "in", '("closed","archived")')
     .limit(5000);
 
   const locationRoutes: MetadataRoute.Sitemap =

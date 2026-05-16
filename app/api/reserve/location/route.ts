@@ -24,7 +24,7 @@ function normalizeType(value: string) {
 }
 
 function getTableName(type: string) {
-  return type === "activity" ? "activities" : "locations";
+  return "locations";
 }
 
 function getReservationLocationName(location: any, type: string) {

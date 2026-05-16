@@ -47,13 +47,10 @@ export async function GET() {
     .from("locations")
     .select(PUBLIC_RESTAURANT_LOCATION_SELECT)
     .eq("location_type", "restaurant")
+    .eq("is_searchable", true)
+    .eq("data_status", "clean")
     .not("is_hidden", "is", true)
-    .or(
-      [
-        "and(is_searchable.eq.true,data_status.eq.clean)",
-        "and(name.not.is.null,address.not.is.null,city.not.is.null,state.not.is.null,latitude.not.is.null,longitude.not.is.null,main_image.not.is.null)",
-      ].join(","),
-    )
+    .not("status", "in", '("closed","archived")')
     .order("theouthaven_score", { ascending: false, nullsFirst: false });
 
   if (error) {

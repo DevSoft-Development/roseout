@@ -169,27 +169,26 @@ export default async function ReserveDashboardPage() {
     )
   );
 
-  const [restaurantsResult, activitiesResult] = await Promise.all([
-    restaurantIds.length
-      ? supabase
-          .from("restaurants")
-          .select("id, name, restaurant_name")
-          .in("id", restaurantIds)
-      : Promise.resolve({ data: [] }),
-    activityIds.length
-      ? supabase
-          .from("activities")
-          .select("id, name, activity_name")
-          .in("id", activityIds)
-      : Promise.resolve({ data: [] }),
-  ]);
+  const locationIds = Array.from(new Set([...restaurantIds, ...activityIds]));
+
+  const locationsResult = locationIds.length
+    ? await supabase
+        .from("locations")
+        .select("id, location_type, name, restaurant_name, activity_name")
+        .in("id", locationIds)
+    : { data: [] };
 
   const locationNames = new Map<string, string>();
-  restaurantsResult.data?.forEach((item) => {
-    locationNames.set(`restaurant:${item.id}`, getLocationName(item, "Restaurant"));
-  });
-  activitiesResult.data?.forEach((item) => {
-    locationNames.set(`activity:${item.id}`, getLocationName(item, "Activity"));
+  locationsResult.data?.forEach((item) => {
+    const locationType =
+      item.location_type === "restaurant" ? "restaurant" : "activity";
+    locationNames.set(
+      `${locationType}:${item.id}`,
+      getLocationName(
+        item,
+        locationType === "restaurant" ? "Restaurant" : "Activity",
+      ),
+    );
   });
 
   const getReservationLocationName = (reservation: ReservationItem) => {

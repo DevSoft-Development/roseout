@@ -354,14 +354,14 @@ function hasRequiredPublicFields(item: any) {
 }
 
 function isPublicSearchVisible(item: any) {
-  if (item?.is_hidden === true) return false;
-
   const status = String(item?.status || "").toLowerCase();
-  if (["closed", "archived"].includes(status)) return false;
 
   return (
-    (item?.is_searchable === true && item?.data_status === "clean") ||
-    hasRequiredPublicFields(item)
+    item?.is_searchable === true &&
+    item?.data_status === "clean" &&
+    item?.is_hidden !== true &&
+    status !== "closed" &&
+    status !== "archived"
   );
 }
 
@@ -1518,7 +1518,11 @@ export async function POST(req: Request) {
 
     const { data: locationsData, error: locationsError } = await supabase
       .from("locations")
-      .select("*");
+      .select("*")
+      .eq("is_searchable", true)
+      .eq("data_status", "clean")
+      .not("is_hidden", "is", true)
+      .not("status", "in", '("closed","archived")');
 
     if (locationsError) {
       return Response.json({ error: locationsError.message }, { status: 500 });

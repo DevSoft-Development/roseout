@@ -22,9 +22,10 @@ export default function RestaurantDashboardPage() {
     }
 
     const { data, error } = await supabase
-      .from("restaurants")
+      .from("locations")
       .select("*")
       .eq("owner_user_id", userData.user.id)
+      .eq("location_type", "restaurant")
       .single();
 
     if (error) {
@@ -40,7 +41,7 @@ export default function RestaurantDashboardPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         restaurant_id: data.id,
-        email: data.email,
+        email: data.email || data.owner_email,
         event_type: "dashboard_viewed",
       }),
     });

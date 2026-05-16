@@ -20,12 +20,14 @@ export type PublicSearchVisibilityFields = LocationVisibilityFields & {
 export function isPubliclyVisible(
   location: LocationVisibilityFields | null | undefined,
 ) {
+  const status = String(location?.status || "").toLowerCase();
+
   return (
     location?.is_searchable === true &&
     location?.data_status === "clean" &&
     location?.is_hidden !== true &&
-    location?.status !== "closed" &&
-    location?.status !== "archived"
+    status !== "closed" &&
+    status !== "archived"
   );
 }
 
@@ -51,18 +53,7 @@ export function hasRequiredPublicSearchFields(
 export function isPublicSearchVisible(
   location: PublicSearchVisibilityFields | null | undefined,
 ) {
-  const hasCleanSearchableData =
-    location?.is_searchable === true && location?.data_status === "clean";
-
-  return (
-    location?.is_hidden !== true &&
-    location?.status !== "closed" &&
-    location?.status !== "archived" &&
-    hasPublicField(location?.latitude) &&
-    hasPublicField(location?.longitude) &&
-    hasPublicField(location?.main_image) &&
-    (hasCleanSearchableData || hasRequiredPublicSearchFields(location))
-  );
+  return isPubliclyVisible(location);
 }
 
 export function getDataStatus(
@@ -83,12 +74,22 @@ export function getPublicVisibilityWarning(
   const missing = getMissingFields(location);
   const warnings = [];
 
-  if (location?.is_searchable === false) {
-    warnings.push("searchable flag is off");
+  if (location?.is_searchable !== true) {
+    warnings.push("is_searchable is not true");
   }
 
   if (getDataStatus(location) !== "clean") {
-    warnings.push(`data status is ${getDataStatus(location)}`);
+    warnings.push(`data_status is ${getDataStatus(location)}`);
+  }
+
+  if (location?.is_hidden === true) {
+    warnings.push("is_hidden is true");
+  }
+
+  const status = String(location?.status || "").toLowerCase();
+
+  if (status === "closed" || status === "archived") {
+    warnings.push(`status is ${location?.status}`);
   }
 
   warnings.push(...missing);
