@@ -12,6 +12,10 @@ import LocationReviewForm from "@/components/LocationReviewForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import {
+  buildGoogleMapsSearchUrl,
+  getGoogleMapsUrl,
+} from "@/lib/googleDirections";
+import {
   getExternalReservationUrl,
   getInternalReservationHref,
 } from "@/lib/reservation";
@@ -171,10 +175,8 @@ if (error || !data) {
       : "Reserve on Partner Site";
 
   const mapsUrl = useMemo(() => {
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-      `${name} ${address}`
-    )}`;
-  }, [name, address]);
+    return getGoogleMapsUrl(location) || buildGoogleMapsSearchUrl(location);
+  }, [location]);
 
   const tags = toArray(location?.date_style_tags);
   const reviewKeywords = toArray(location?.review_keywords);
@@ -409,14 +411,16 @@ if (error || !data) {
                     </a>
                   )}
 
-                  <a
-                    href={mapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
-                  >
-                    Directions
-                  </a>
+                  {mapsUrl ? (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
+                    >
+                      Get Directions
+                    </a>
+                  ) : null}
                 </div>
               </div>
 
@@ -591,14 +595,16 @@ if (error || !data) {
                     </a>
                   )}
 
-                  <a
-                    href={mapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
-                  >
-                    Get Directions
-                  </a>
+                  {mapsUrl ? (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+                    >
+                      Get Directions
+                    </a>
+                  ) : null}
 
                   <button
                     onClick={trackAndGoBack}

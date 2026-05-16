@@ -7,6 +7,8 @@ type DirectionLocation = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  google_maps_url?: string | null;
+  google_maps_link?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   restaurant_name?: string | null;
@@ -33,6 +35,24 @@ function locationCoordinates(location: DirectionLocation) {
   if (!latitude || !longitude) return "";
 
   return `${latitude},${longitude}`;
+}
+
+export function getGoogleMapsUrl(
+  location: DirectionLocation | null | undefined
+) {
+  return (
+    location?.google_maps_url ||
+    location?.google_maps_link ||
+    null
+  );
+}
+
+export function buildGoogleMapsSearchUrl(location: DirectionLocation | null) {
+  if (!location?.address) return "";
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    location.address
+  )}`;
 }
 
 function googleLocationQuery(location: DirectionLocation) {
@@ -66,24 +86,12 @@ export function buildGoogleDirectionsUrl({
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
-export function buildGooglePlaceDirectionsUrl({
-  destination,
-  travelMode = "driving",
-}: {
+export function buildGooglePlaceDirectionsUrl(args: {
   destination: DirectionLocation | null;
   travelMode?: GoogleDirectionsTravelMode;
 }) {
+  const { destination } = args;
   if (!destination) return "";
 
-  const destinationQuery = googleLocationQuery(destination);
-
-  if (!destinationQuery) return "";
-
-  const params = new URLSearchParams({
-    api: "1",
-    destination: destinationQuery,
-    travelmode: travelMode,
-  });
-
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
+  return getGoogleMapsUrl(destination) || buildGoogleMapsSearchUrl(destination);
 }
