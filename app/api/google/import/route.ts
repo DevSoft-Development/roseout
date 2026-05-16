@@ -16,8 +16,11 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 
+const RESTAURANT_SEARCH_COLUMNS =
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at";
+
 const ACTIVITY_SEARCH_COLUMNS =
-  "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, price_range, atmosphere, group_friendly, external_reservation_url, reservation_url, reservation_link, reservation_enabled, website, main_image, image_url, images, status, date_style_tags, rating, review_count, quality_score, popularity_score, detail_url, claim_url, view_count, click_count, roseout_score, neighborhood, latitude, longitude, phone, noise_level, dress_code, parking_info, operating_hours, special_hours, holiday_closures, hours, description, best_for, special_features, signature_items, search_keywords, ranking_badge, trend_score, conversion_score, review_score, review_keywords, google_maps_url, price_level, theouthaven_score, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, search_document";
+  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at";
 
 const CACHE_HOURS = 6;
 
@@ -1481,7 +1484,7 @@ export async function POST(req: Request) {
 
     const { data: restaurantsData, error: restaurantsError } = await supabase
       .from("restaurants")
-      .select("*");
+      .select(RESTAURANT_SEARCH_COLUMNS);
 
     const { data: activitiesData, error: activitiesError } = await supabase
       .from("activities")
