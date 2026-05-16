@@ -11,6 +11,10 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import {
+  getExternalReservationUrl,
+  getInternalReservationHref,
+} from "@/lib/reservation";
 
 function toArray(value: any): string[] {
   if (!value) return [];
@@ -150,11 +154,21 @@ if (error || !data) {
     .filter(Boolean)
     .join(", ");
 
+  const externalReservationUrl = getExternalReservationUrl(location);
+  const internalReservationHref = getInternalReservationHref(
+    location,
+    isActivity ? "activity" : "restaurant"
+  );
   const reservationUrl =
-    location?.reservation_url ||
-    location?.reservation_link ||
-    location?.booking_url ||
-    "";
+    location?.reservation_enabled === true
+      ? internalReservationHref || ""
+      : externalReservationUrl || "";
+  const isExternalReservation =
+    Boolean(reservationUrl) && location?.reservation_enabled !== true;
+  const reservationLabel =
+    location?.reservation_enabled === true
+      ? "Reserve on TheOutHaven"
+      : "Reserve on Partner Site";
 
   const mapsUrl = useMemo(() => {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -291,7 +305,8 @@ if (error || !data) {
         category={category}
         onBack={trackAndGoBack}
         reservationUrl={reservationUrl}
-        isActivity={isActivity}
+        isExternalReservation={isExternalReservation}
+        reservationLabel={reservationLabel}
         from={from}
       />
 
@@ -373,11 +388,13 @@ if (error || !data) {
                   {reservationUrl && (
                     <a
                       href={reservationUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      target={isExternalReservation ? "_blank" : undefined}
+                      rel={
+                        isExternalReservation ? "noopener noreferrer" : undefined
+                      }
                       className="rounded-full bg-red-600 px-7 py-3 text-sm font-black text-white shadow-lg shadow-red-950/50 transition hover:bg-red-500"
                     >
-                      {isActivity ? "Book Now" : "Reserve"}
+                      {reservationLabel}
                     </a>
                   )}
 
@@ -553,11 +570,13 @@ if (error || !data) {
                   {reservationUrl && (
                     <a
                       href={reservationUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      target={isExternalReservation ? "_blank" : undefined}
+                      rel={
+                        isExternalReservation ? "noopener noreferrer" : undefined
+                      }
                       className="rounded-full bg-red-600 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-red-500"
                     >
-                      {isActivity ? "Book Activity" : "Reserve Table"}
+                      {reservationLabel}
                     </a>
                   )}
 
@@ -624,11 +643,11 @@ if (error || !data) {
         <div className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-full border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur-xl md:hidden">
           <a
             href={reservationUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+            target={isExternalReservation ? "_blank" : undefined}
+            rel={isExternalReservation ? "noopener noreferrer" : undefined}
             className="block rounded-full bg-red-600 px-6 py-4 text-center text-sm font-black text-white"
           >
-            {isActivity ? "Book Now" : "Reserve"} at {name}
+            {reservationLabel} at {name}
           </a>
         </div>
       )}
@@ -642,7 +661,8 @@ function DynamicLocationHeader({
   category,
   onBack,
   reservationUrl,
-  isActivity,
+  isExternalReservation,
+  reservationLabel,
   from,
 }: {
   scrolled: boolean;
@@ -650,7 +670,8 @@ function DynamicLocationHeader({
   category: string;
   onBack: () => void;
   reservationUrl: string;
-  isActivity: boolean;
+  isExternalReservation: boolean;
+  reservationLabel: string;
   from: string;
 }) {
   return (
@@ -706,15 +727,17 @@ function DynamicLocationHeader({
           {reservationUrl && (
             <a
               href={reservationUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              target={isExternalReservation ? "_blank" : undefined}
+              rel={
+                isExternalReservation ? "noopener noreferrer" : undefined
+              }
               className={`rounded-full px-5 py-2.5 text-sm font-black shadow-lg transition ${
                 scrolled
                   ? "bg-red-600 text-white shadow-red-950/40 hover:bg-red-500"
                   : "bg-white text-black hover:bg-red-600 hover:text-white"
               }`}
             >
-              {isActivity ? "Book" : "Reserve"}
+              {reservationLabel}
             </a>
           )}
         </div>

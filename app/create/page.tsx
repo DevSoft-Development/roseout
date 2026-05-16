@@ -10,6 +10,10 @@ import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
+import {
+  getExternalReservationUrl,
+  getInternalReservationHref,
+} from "@/lib/reservation";
 
 type RestaurantCard = {
   id: string;
@@ -25,8 +29,10 @@ type RestaurantCard = {
   food_type?: string | null;
   atmosphere?: string | null;
   price_range?: string | null;
-  reservation_link?: string | null;
+  external_reservation_url?: string | null;
   reservation_url?: string | null;
+  reservation_link?: string | null;
+  reservation_enabled?: boolean | null;
   website?: string | null;
   main_image?: string | null;
   image_url?: string | null;
@@ -57,8 +63,10 @@ type ActivityCard = {
   price_range?: string | null;
   atmosphere?: string | null;
   group_friendly?: boolean | null;
-  reservation_link?: string | null;
+  external_reservation_url?: string | null;
   reservation_url?: string | null;
+  reservation_link?: string | null;
+  reservation_enabled?: boolean | null;
   website?: string | null;
   main_image?: string | null;
   image_url?: string | null;
@@ -840,8 +848,9 @@ export default function CreatePage() {
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
                             const reservationUrl =
-                              restaurant.reservation_url ||
-                              restaurant.reservation_link ||
+                              getExternalReservationUrl(restaurant) || undefined;
+                            const internalReservationHref =
+                              getInternalReservationHref(restaurant, "restaurant") ||
                               undefined;
 
                             return (
@@ -877,6 +886,10 @@ export default function CreatePage() {
                                   trackRestaurantClick(restaurantId)
                                 }
                                 reservationUrl={reservationUrl}
+                                internalReservationHref={internalReservationHref}
+                                reservationEnabled={
+                                  restaurant.reservation_enabled === true
+                                }
                                 reservationLabel="Reserve"
                                 onReservation={() =>
                                   trackRestaurantClick(restaurantId)
@@ -911,8 +924,9 @@ export default function CreatePage() {
                             const isSelected =
                               selectedActivity?.id === activity.id;
                             const reservationUrl =
-                              activity.reservation_url ||
-                              activity.reservation_link ||
+                              getExternalReservationUrl(activity) || undefined;
+                            const internalReservationHref =
+                              getInternalReservationHref(activity, "activity") ||
                               undefined;
                             const distanceFromRestaurantLabel = selectedRestaurant
                               ? buildDistanceFromRestaurantLabel(
@@ -962,6 +976,10 @@ export default function CreatePage() {
                                 websiteUrl={activity.website || undefined}
                                 onWebsite={() => trackActivityClick(activityId)}
                                 reservationUrl={reservationUrl}
+                                internalReservationHref={internalReservationHref}
+                                reservationEnabled={
+                                  activity.reservation_enabled === true
+                                }
                                 reservationLabel="Book"
                                 onReservation={() =>
                                   trackActivityClick(activityId)
@@ -1631,6 +1649,8 @@ function ResultCard({
   websiteUrl,
   onWebsite,
   reservationUrl,
+  internalReservationHref,
+  reservationEnabled,
   reservationLabel,
   onReservation,
 }: {
@@ -1656,6 +1676,8 @@ function ResultCard({
   websiteUrl?: string;
   onWebsite?: () => void;
   reservationUrl?: string;
+  internalReservationHref?: string;
+  reservationEnabled?: boolean;
   reservationLabel?: string;
   onReservation?: () => void;
 }) {
@@ -1790,7 +1812,15 @@ function ResultCard({
             </a>
           ) : null}
 
-          {reservationUrl ? (
+          {reservationEnabled && internalReservationHref ? (
+            <Link
+              href={internalReservationHref}
+              onClick={onReservation}
+              className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white"
+            >
+              Reserve on TheOutHaven
+            </Link>
+          ) : reservationUrl ? (
             <a
               href={reservationUrl}
               target="_blank"
@@ -1798,7 +1828,7 @@ function ResultCard({
               onClick={onReservation}
               className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white"
             >
-              {reservationLabel || "Book"}
+              Reserve on Partner Site
             </a>
           ) : null}
         </div>

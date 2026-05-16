@@ -11,6 +11,10 @@ import {
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import {
+  getExternalReservationUrl,
+  getInternalReservationHref,
+} from "@/lib/reservation";
 
 type PlanLocation = {
   id?: string;
@@ -36,8 +40,10 @@ type PlanLocation = {
   rating?: number | null;
   review_count?: number | null;
   website?: string | null;
+  external_reservation_url?: string | null;
   reservation_url?: string | null;
   reservation_link?: string | null;
+  reservation_enabled?: boolean | null;
   booking_url?: string | null;
   theouthaven_score?: number | null;
   smart_match_score?: number | null;
@@ -473,8 +479,8 @@ function PlanActionCard({
       ? `/locations/restaurants/${location.id}?from=/plan`
       : `/locations/${location.detail_location_type || "activities"}/${location.id}?from=/plan`;
 
-  const reservationUrl =
-    location.reservation_url || location.reservation_link || location.booking_url;
+  const reservationUrl = getExternalReservationUrl(location);
+  const internalReservationHref = getInternalReservationHref(location, type);
 
   return (
     <article className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
@@ -548,14 +554,21 @@ function PlanActionCard({
             </a>
           ) : null}
 
-          {reservationUrl ? (
+          {location.reservation_enabled === true && internalReservationHref ? (
+            <Link
+              href={internalReservationHref}
+              className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
+            >
+              Reserve on TheOutHaven
+            </Link>
+          ) : reservationUrl ? (
             <a
               href={reservationUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
             >
-              {type === "restaurant" ? "Reserve" : "Book"}
+              Reserve on Partner Site
             </a>
           ) : location.website ? (
             <a
