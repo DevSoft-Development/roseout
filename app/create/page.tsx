@@ -23,6 +23,8 @@ type RestaurantCard = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  google_maps_url?: string | null;
+  google_maps_link?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   cuisine?: string | null;
@@ -58,6 +60,8 @@ type ActivityCard = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  google_maps_url?: string | null;
+  google_maps_link?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   price_range?: string | null;

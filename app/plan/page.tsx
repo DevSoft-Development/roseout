@@ -25,6 +25,8 @@ type PlanLocation = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  google_maps_url?: string | null;
+  google_maps_link?: string | null;
   cuisine?: string | null;
   food_type?: string | null;
   cuisine_type?: string | null;
@@ -550,7 +552,7 @@ function PlanActionCard({
               rel="noopener noreferrer"
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
-              Drive Here
+              Get Directions
             </a>
           ) : null}
 
