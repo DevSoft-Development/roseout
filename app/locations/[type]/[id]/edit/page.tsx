@@ -33,7 +33,13 @@ type FormState = {
   noise_level: string;
   dress_code: string;
   parking_info: string;
-  hours: string;
+  operating_hours?: any;
+  special_hours?: any;
+  holiday_closures?: any;
+  hours: string | null;
+  hours_of_operation?: string | null;
+  days_of_operation?: string[] | null;
+  kitchen_closing_time?: string | null;
   best_for: string;
   special_features: string;
   signature_items: string;
@@ -136,7 +142,13 @@ export default function EditLocationPage() {
     noise_level: "",
     dress_code: "",
     parking_info: "",
+    operating_hours: null,
+    special_hours: null,
+    holiday_closures: null,
     hours: "",
+    hours_of_operation: null,
+    days_of_operation: null,
+    kitchen_closing_time: null,
     best_for: "",
     special_features: "",
     signature_items: "",
@@ -195,7 +207,15 @@ export default function EditLocationPage() {
           noise_level: data.noise_level || "",
           dress_code: data.dress_code || "",
           parking_info: data.parking_info || "",
-          hours: data.hours || "",
+          operating_hours: data.operating_hours ?? null,
+          special_hours: data.special_hours ?? null,
+          holiday_closures: data.holiday_closures ?? null,
+          hours: data.hours || data.hours_of_operation || "",
+          hours_of_operation: data.hours_of_operation || null,
+          days_of_operation: Array.isArray(data.days_of_operation)
+            ? data.days_of_operation
+            : null,
+          kitchen_closing_time: data.kitchen_closing_time || null,
           best_for: Array.isArray(data.best_for)
             ? data.best_for.join(", ")
             : data.best_for || "",
@@ -328,7 +348,13 @@ export default function EditLocationPage() {
       noise_level: form.noise_level,
       dress_code: form.dress_code,
       parking_info: form.parking_info,
+      operating_hours: form.operating_hours ?? null,
+      special_hours: form.special_hours ?? null,
+      holiday_closures: form.holiday_closures ?? null,
       hours: form.hours,
+      hours_of_operation: form.hours_of_operation ?? null,
+      days_of_operation: form.days_of_operation ?? null,
+      kitchen_closing_time: form.kitchen_closing_time ?? null,
       best_for: toArray(form.best_for),
       special_features: toArray(form.special_features),
       signature_items: toArray(form.signature_items),
@@ -600,7 +626,7 @@ export default function EditLocationPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Public Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-                <Field label="Hours" value={form.hours} onChange={(v) => update("hours", v)} />
+                <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
               </div>
 
               <div className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
