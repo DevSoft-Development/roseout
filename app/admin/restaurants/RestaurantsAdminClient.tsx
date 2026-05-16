@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationImage } from "@/lib/locationImage";
 
 type Restaurant = {
   id: string;
@@ -18,7 +19,9 @@ type Restaurant = {
   reservation_url?: string | null;
   cuisine?: string | null;
   description?: string | null;
+  main_image?: string | null;
   image_url?: string | null;
+  images?: string[] | null;
   theouthaven_score?: number | null;
   view_count?: number | null;
   click_count?: number | null;
@@ -231,9 +234,9 @@ export default function RestaurantsAdminClient({
                 {!isEditing ? (
                   <div className="grid gap-5 lg:grid-cols-[140px_1fr_auto]">
                     <div className="h-32 w-full overflow-hidden rounded-2xl bg-[#f4e5d8] lg:w-32">
-                      {restaurant.image_url ? (
+                      {getLocationImage(restaurant) ? (
                         <img
-                          src={restaurant.image_url}
+                          src={getLocationImage(restaurant)}
                           alt={getLocationName(restaurant, "Restaurant")}
                           className="h-full w-full object-cover"
                         />

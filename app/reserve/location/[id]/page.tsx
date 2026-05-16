@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { getLocationImage } from "@/lib/locationImage";
 
 type Slot = {
   time: string;
@@ -38,7 +39,9 @@ type LocationData = {
   name: string;
   type?: string;
   address?: string;
+  main_image?: string | null;
   image_url?: string | null;
+  images?: string[] | null;
   category?: string;
 };
 
@@ -225,11 +228,11 @@ export default function ReserveLocationPage() {
 
             <div className="mt-7 grid gap-8 lg:grid-cols-[1.05fr_520px]">
               <aside className="relative min-h-[660px] overflow-hidden rounded-[2.5rem] border border-white/10 bg-zinc-950 shadow-2xl">
-                {location?.image_url ? (
+                {getLocationImage(location) ? (
                   <div
                     className="absolute inset-0 opacity-45"
                     style={{
-                      backgroundImage: `url(${location.image_url})`,
+                      backgroundImage: `url(${getLocationImage(location)})`,
                       backgroundSize: "cover",
                       backgroundPosition: "center",
                     }}

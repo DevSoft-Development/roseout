@@ -17,7 +17,9 @@ type LocationItem = {
   address?: string;
   city?: string;
   state?: string;
-  image_url?: string;
+  main_image?: string | null;
+  image_url?: string | null;
+  images?: string[] | null;
   theouthaven_score?: number;
   quality_score?: number;
   claim_status?: string;

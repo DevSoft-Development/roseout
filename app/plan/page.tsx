@@ -10,6 +10,7 @@ import {
 } from "@/lib/googleDirections";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationImage } from "@/lib/locationImage";
 
 type PlanLocation = {
   id?: string;
@@ -29,7 +30,9 @@ type PlanLocation = {
   primary_tag?: string | null;
   price_range?: string | null;
   atmosphere?: string | null;
+  main_image?: string | null;
   image_url?: string | null;
+  images?: string[] | null;
   rating?: number | null;
   review_count?: number | null;
   website?: string | null;
@@ -407,9 +410,9 @@ function TimelineLocation({
       >
         <div className="flex min-w-0 gap-2.5 sm:gap-3">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white/[0.06] sm:h-16 sm:w-16">
-            {location?.image_url ? (
+            {active && location ? (
               <Image
-                src={location.image_url}
+                src={getLocationImage(location)}
                 alt={title}
                 fill
                 unoptimized
@@ -476,9 +479,9 @@ function PlanActionCard({
   return (
     <article className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
       <div className="relative h-[170px] bg-neutral-950">
-        {location.image_url ? (
+        {getLocationImage(location) ? (
           <Image
-            src={location.image_url}
+            src={getLocationImage(location)}
             alt={title}
             fill
             unoptimized

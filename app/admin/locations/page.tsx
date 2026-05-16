@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
+import { getLocationImage } from "@/lib/locationImage";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
@@ -29,7 +30,9 @@ type AdminLocation = {
   view_count: number | null;
   click_count: number | null;
   theouthaven_score: number | null;
-  image_url: string | null;
+  main_image?: string | null;
+  image_url?: string | null;
+  images?: string[] | null;
   created_at: string | null;
 };
 
@@ -136,7 +139,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, name, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -144,7 +147,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, image_url, created_at"
+      "id, name, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -202,7 +205,9 @@ export default async function AdminLocationsPage({
       view_count: item.view_count,
       click_count: item.click_count,
       theouthaven_score: item.theouthaven_score,
+      main_image: item.main_image,
       image_url: item.image_url,
+      images: item.images,
       created_at: item.created_at,
     })) || [];
 
@@ -222,7 +227,9 @@ export default async function AdminLocationsPage({
       view_count: item.view_count,
       click_count: item.click_count,
       theouthaven_score: item.theouthaven_score,
+      main_image: item.main_image,
       image_url: item.image_url,
+      images: item.images,
       created_at: item.created_at,
     })) || [];
 
@@ -523,9 +530,9 @@ export default async function AdminLocationsPage({
                       className="flex min-w-0 items-center gap-4"
                     >
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
-                        {location.image_url ? (
+                        {getLocationImage(location) ? (
                           <img
-                            src={location.image_url}
+                            src={getLocationImage(location)}
                             alt={location.name || "TheOutHaven location"}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />
