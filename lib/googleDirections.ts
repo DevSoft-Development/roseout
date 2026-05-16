@@ -8,7 +8,6 @@ type DirectionLocation = {
   state?: string | null;
   zip_code?: string | null;
   google_maps_url?: string | null;
-  google_maps_link?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
   restaurant_name?: string | null;
@@ -37,9 +36,7 @@ function locationCoordinates(location: DirectionLocation) {
   return `${latitude},${longitude}`;
 }
 
-export function getGoogleMapsUrl(
-  location: DirectionLocation | null | undefined
-) {
+export function getGoogleMapsUrl(location: any) {
   return (
     location?.google_maps_url ||
     location?.google_maps_link ||

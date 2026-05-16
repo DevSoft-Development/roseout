@@ -28,7 +28,6 @@ type PlanLocation = LocationScoreFields & {
   state?: string | null;
   zip_code?: string | null;
   google_maps_url?: string | null;
-  google_maps_link?: string | null;
   primary_category?: string | null;
   cuisine?: string | null;
   food_type?: string | null;

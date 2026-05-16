@@ -155,8 +155,6 @@ function buildBackfillUpdates(location: LocationRow) {
   const mainImage = getMainImage(location);
   const reservationUrl =
     cleanString(location.reservation_url) || cleanString(location.reservation_link);
-  const googleMapsUrl = cleanString(location.google_maps_link);
-
   if (!cleanString(location.name) && locationName) {
     updates.name = locationName;
   }
@@ -171,10 +169,6 @@ function buildBackfillUpdates(location: LocationRow) {
 
   if (!cleanString(location.external_reservation_url) && reservationUrl) {
     updates.external_reservation_url = reservationUrl;
-  }
-
-  if (!cleanString(location.google_maps_url) && googleMapsUrl) {
-    updates.google_maps_url = googleMapsUrl;
   }
 
   if (!isPresent(location.theouthaven_score) && isPresent(location.roseout_score)) {
