@@ -76,33 +76,37 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  const { data: restaurants } = await supabase
-    .from("restaurants")
-    .select("id, updated_at, created_at, status")
-    .or("status.eq.approved,status.eq.active,status.is.null")
+  const { data: locations } = await supabase
+    .from("locations")
+    .select(
+      "id, location_type, updated_at, created_at, is_searchable, data_status, is_hidden, status, name, address, city, state, latitude, longitude, main_image",
+    )
+    .not("is_hidden", "is", true)
+    .or(
+      [
+        "and(is_searchable.eq.true,data_status.eq.clean)",
+        "and(name.not.is.null,address.not.is.null,city.not.is.null,state.not.is.null,latitude.not.is.null,longitude.not.is.null,main_image.not.is.null)",
+      ].join(","),
+    )
     .limit(5000);
 
-  const { data: activities } = await supabase
-    .from("activities")
-    .select("id, updated_at, created_at, status")
-    .or("status.eq.approved,status.eq.active,status.is.null")
-    .limit(5000);
+  const locationRoutes: MetadataRoute.Sitemap =
+    locations
+      ?.filter(
+        (location: any) =>
+          location.status !== "closed" && location.status !== "archived",
+      )
+      .map((location: any) => {
+        const routeType =
+          location.location_type === "restaurant" ? "restaurants" : "activities";
 
-  const restaurantRoutes: MetadataRoute.Sitemap =
-    restaurants?.map((restaurant: any) => ({
-      url: `${siteUrl}/locations/restaurants/${restaurant.id}`,
-      lastModified: safeDate(restaurant.updated_at || restaurant.created_at),
-      changeFrequency: "weekly",
-      priority: 0.75,
-    })) || [];
+        return {
+          url: `${siteUrl}/locations/${routeType}/${location.id}`,
+          lastModified: safeDate(location.updated_at || location.created_at),
+          changeFrequency: "weekly",
+          priority: location.location_type === "restaurant" ? 0.75 : 0.7,
+        };
+      }) || [];
 
-  const activityRoutes: MetadataRoute.Sitemap =
-    activities?.map((activity: any) => ({
-      url: `${siteUrl}/locations/activities/${activity.id}`,
-      lastModified: safeDate(activity.updated_at || activity.created_at),
-      changeFrequency: "weekly",
-      priority: 0.7,
-    })) || [];
-
-  return [...staticRoutes, ...restaurantRoutes, ...activityRoutes];
+  return [...staticRoutes, ...locationRoutes];
 }

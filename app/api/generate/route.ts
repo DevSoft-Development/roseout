@@ -27,7 +27,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `public-location-search-v19-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `public-location-search-v20-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -661,6 +661,10 @@ function itemText(item: any) {
     item.price_range,
     item.primary_tag,
     item.review_snippet,
+    item.search_document,
+    ...toArray(item.google_types),
+    ...toArray(item.vibe_tags),
+    ...toArray(item.best_for_tags),
     ...toArray(item.review_keywords),
     ...toArray(item.date_style_tags),
     ...toArray(item.search_keywords),
@@ -713,22 +717,52 @@ function buildMatchedLocationResults(locations: any[], input: string) {
     .slice(0, 10);
 }
 
+const ACTIVITY_LOCATION_TYPES = new Set([
+  "activity",
+  "lounge",
+  "hookah",
+  "nightlife",
+  "bowling",
+  "arcade",
+  "museum",
+  "rooftop",
+  "bar",
+  "wellness",
+  "creative",
+  "event_space",
+]);
+
+function normalizeLocationType(type: unknown) {
+  return String(type || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function isRestaurantLocation(location: any) {
+  return normalizeLocationType(location?.location_type) === "restaurant";
+}
+
+function isActivityLocation(location: any) {
+  const type = normalizeLocationType(location?.location_type);
+  return type !== "restaurant" || ACTIVITY_LOCATION_TYPES.has(type);
+}
+
 function normalizeLocation(item: any) {
   const name = getLocationName(item, "");
-  const type =
+  const type = normalizeLocationType(
     item.location_type ||
-    (item.activity_name || item.activity_type ? "activity" : "restaurant");
+      (item.activity_name || item.activity_type ? "activity" : "restaurant"),
+  );
 
   return {
     ...item,
     name,
-    location_type: String(type).toLowerCase(),
+    location_type: type,
     restaurant_name:
-      String(type).toLowerCase() === "restaurant"
-        ? item.restaurant_name || name
-        : item.restaurant_name,
+      type === "restaurant" ? item.restaurant_name || name : item.restaurant_name,
     activity_name:
-      String(type).toLowerCase() === "activity"
+      isActivityLocation({ location_type: type })
         ? item.activity_name || name
         : item.activity_name,
   };
@@ -2680,6 +2714,11 @@ const LOCATION_SELECT = `
   popularity_score,
   ranking_badge,
   review_keywords,
+  vibe_tags,
+  best_for_tags,
+  search_keywords,
+  date_style_tags,
+  best_for,
   is_searchable,
   data_status,
   missing_fields,
@@ -2692,7 +2731,6 @@ const LOCATION_SELECT = `
 function applyPublicSearchFilters(query: any) {
   return query
     .not("is_hidden", "is", true)
-    .not("status", "in", '("closed","archived")')
     .not("latitude", "is", null)
     .not("longitude", "is", null)
     .not("main_image", "is", null)
@@ -2726,14 +2764,17 @@ async function fetchFallbackRecords(input: string = "") {
       })
       .join(",");
 
-  const foodColumns = [
+  const searchableColumns = [
+    "name",
     "restaurant_name",
+    "activity_name",
+    "search_document",
+    "primary_category",
     "cuisine",
     "cuisine_type",
-    "food_type",
-    "description",
+    "activity_type",
     "primary_tag",
-    "search_document",
+    "description",
   ];
 
   const foodTerms = new Set<string>();
@@ -2745,14 +2786,21 @@ async function fetchFallbackRecords(input: string = "") {
     }
   });
 
+  const textTerms = Array.from(
+    new Set([
+      ...text.split(" ").filter((term) => term.length > 2),
+      text,
+    ]),
+  );
+  const textFilter = buildTextOrFilter(searchableColumns, textTerms);
   const foodFilter =
     foodTerms.size > 0
-      ? buildTextOrFilter(foodColumns, Array.from(foodTerms))
+      ? buildTextOrFilter(searchableColumns, Array.from(foodTerms))
       : "";
 
-  const applyFoodFilter = (query: any) => {
-    if (!foodFilter) return query;
-    return query.or(foodFilter);
+  const applySearchFilter = (query: any, filter: string) => {
+    if (!filter) return query;
+    return query.or(filter);
   };
 
   const locationQueries: PromiseLike<any>[] = [
@@ -2761,12 +2809,26 @@ async function fetchFallbackRecords(input: string = "") {
       .limit(SEARCH_LIMITS.fallbackGeneralRecords),
   ];
 
-  if (foodFilter) {
+  if (textFilter) {
     locationQueries.push(
-      applyFoodFilter(
+      applySearchFilter(
         applyPublicSearchFilters(
           supabase.from("locations").select(LOCATION_SELECT),
         ),
+        textFilter,
+      )
+        .order("theouthaven_score", { ascending: false, nullsFirst: false })
+        .limit(SEARCH_LIMITS.fallbackRegionalRecords),
+    );
+  }
+
+  if (foodFilter) {
+    locationQueries.push(
+      applySearchFilter(
+        applyPublicSearchFilters(
+          supabase.from("locations").select(LOCATION_SELECT),
+        ),
+        foodFilter,
       )
         .order("theouthaven_score", { ascending: false, nullsFirst: false })
         .limit(SEARCH_LIMITS.fallbackRegionalRecords),
@@ -2975,31 +3037,13 @@ export async function POST(req: Request) {
       input,
     );
 
-    let restaurants = sourceLocations.filter((item: any) => {
-      const type = String(item.location_type || "").toLowerCase();
+    let restaurants = sourceLocations.filter(
+      (item: any) => isOutingEligibleLocation(item) && isRestaurantLocation(item),
+    );
 
-      return (
-        isOutingEligibleLocation(item) &&
-        (type === "restaurant" ||
-          Boolean(item.restaurant_name) ||
-          Boolean(item.cuisine) ||
-          Boolean(item.cuisine_type))
-      );
-    });
-
-    let activities = sourceLocations.filter((item: any) => {
-      const type = String(item.location_type || "").toLowerCase();
-
-      return (
-        isOutingEligibleLocation(item) &&
-        (type === "activity" ||
-          Boolean(item.activity_name) ||
-          Boolean(item.activity_type) ||
-          intent.activityIntents.some((activityIntent) =>
-            matchesActivityIntent(item, activityIntent),
-          ))
-      );
-    });
+    let activities = sourceLocations.filter(
+      (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
+    );
 
     const foodAddOnIntents = intent.foodIntents.filter(isFoodAddOnIntent);
     const mealFoodIntents = intent.foodIntents.filter(
