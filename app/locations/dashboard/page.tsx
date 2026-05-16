@@ -4,36 +4,39 @@ import LocationsDashboardClient from "./LocationsDashboardClient";
 import { getLocationName } from "@/lib/locationName";
 import type { LocationClaimFields } from "@/lib/locationClaim";
 import type { LocationScoreFields } from "@/lib/locationScore";
+import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 
 export const dynamic = "force-dynamic";
 
 type LocationType = "restaurant" | "activity";
 
-type LocationItem = LocationClaimFields & LocationScoreFields & {
-  id: string;
-  location_type: LocationType;
-  display_name: string;
-  name?: string | null;
-  restaurant_name?: string | null;
-  activity_name?: string | null;
-  address?: string;
-  city?: string;
-  state?: string;
-  main_image?: string | null;
-  image_url?: string | null;
-  images?: string[] | null;
-  owner_name?: string;
-  owner_email?: string;
-  owner_phone?: string;
-  primary_category?: string | null;
-  cuisine?: string | null;
-  cuisine_type?: string | null;
-  food_type?: string | null;
-  activity_type?: string | null;
-  primary_tag?: string | null;
-  tags?: string[] | null;
-  google_types?: string[] | null;
-};
+type LocationItem = LocationClaimFields &
+  LocationScoreFields &
+  LocationVisibilityFields & {
+    id: string;
+    location_type: LocationType;
+    display_name: string;
+    name?: string | null;
+    restaurant_name?: string | null;
+    activity_name?: string | null;
+    address?: string;
+    city?: string;
+    state?: string;
+    main_image?: string | null;
+    image_url?: string | null;
+    images?: string[] | null;
+    owner_name?: string;
+    owner_email?: string;
+    owner_phone?: string;
+    primary_category?: string | null;
+    cuisine?: string | null;
+    cuisine_type?: string | null;
+    food_type?: string | null;
+    activity_type?: string | null;
+    primary_tag?: string | null;
+    tags?: string[] | null;
+    google_types?: string[] | null;
+  };
 
 function adminSupabase() {
   return createClient(
@@ -43,21 +46,24 @@ function adminSupabase() {
       auth: {
         persistSession: false,
       },
-    }
+    },
   );
 }
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
 
-  const impersonatedLocationId =
-    cookieStore.get("theouthaven_impersonate_location_id")?.value;
+  const impersonatedLocationId = cookieStore.get(
+    "theouthaven_impersonate_location_id",
+  )?.value;
 
-  const impersonatedLocationType =
-    cookieStore.get("theouthaven_impersonate_location_type")?.value;
+  const impersonatedLocationType = cookieStore.get(
+    "theouthaven_impersonate_location_type",
+  )?.value;
 
-  const impersonatedUserId =
-    cookieStore.get("theouthaven_impersonate_user_id")?.value;
+  const impersonatedUserId = cookieStore.get(
+    "theouthaven_impersonate_user_id",
+  )?.value;
 
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
 
@@ -85,7 +91,9 @@ export default async function DashboardPage() {
           location_type: table === "restaurants" ? "restaurant" : "activity",
           display_name: getLocationName(
             data,
-            table === "restaurants" ? "Untitled restaurant" : "Untitled activity"
+            table === "restaurants"
+              ? "Untitled restaurant"
+              : "Untitled activity",
           ),
         },
       ];

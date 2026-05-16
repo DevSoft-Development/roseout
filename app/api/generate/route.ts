@@ -4,7 +4,12 @@ import { clampScore } from "@/lib/clampScore";
 import { getLocationScore, getSearchRankingScore } from "@/lib/locationScore";
 import { getLocationName } from "@/lib/locationName";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
-import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import {
+  getCuisine,
+  getLocationTags,
+  getPrimaryCategory,
+} from "@/lib/locationFields";
+import { isPubliclyVisible } from "@/lib/locationVisibility";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -22,7 +27,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-primary-meal-filter-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `public-visibility-v18-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   enterpriseMatches: 250,
   supportingLocations: 500,
@@ -369,33 +374,13 @@ const FOOD_INTENTS: Record<string, string[]> = {
     "surf and turf",
   ],
 
-  sushi: [
-    "sushi",
-    "omakase",
-    "nigiri",
-    "sashimi",
-    "maki",
-    "japanese sushi",
-  ],
+  sushi: ["sushi", "omakase", "nigiri", "sashimi", "maki", "japanese sushi"],
 
   ramen: ["ramen", "tonkotsu", "shoyu ramen"],
 
-  italian: [
-    "italian",
-    "pasta",
-    "risotto",
-    "trattoria",
-    "pizza italiana",
-  ],
+  italian: ["italian", "pasta", "risotto", "trattoria", "pizza italiana"],
 
-  mexican: [
-    "mexican",
-    "taco",
-    "tacos",
-    "birria",
-    "quesadilla",
-    "taqueria",
-  ],
+  mexican: ["mexican", "taco", "tacos", "birria", "quesadilla", "taqueria"],
 
   chinese: [
     "chinese",
@@ -408,154 +393,47 @@ const FOOD_INTENTS: Record<string, string[]> = {
 
   thai: ["thai", "pad thai", "thai food", "thai cuisine"],
 
-  indian: [
-    "indian",
-    "curry",
-    "tikka",
-    "masala",
-    "biryani",
-    "naan",
-  ],
+  indian: ["indian", "curry", "tikka", "masala", "biryani", "naan"],
 
-  japanese: [
-    "japanese",
-    "izakaya",
-    "yakitori",
-    "hibachi",
-    "teppanyaki",
-  ],
+  japanese: ["japanese", "izakaya", "yakitori", "hibachi", "teppanyaki"],
 
-  korean: [
-    "korean",
-    "korean bbq",
-    "kbbq",
-    "bulgogi",
-    "hot pot",
-  ],
+  korean: ["korean", "korean bbq", "kbbq", "bulgogi", "hot pot"],
 
-  vietnamese: [
-    "vietnamese",
-    "pho",
-    "banh mi",
-    "vermicelli",
-  ],
+  vietnamese: ["vietnamese", "pho", "banh mi", "vermicelli"],
 
-  filipino: [
-    "filipino",
-    "adobo",
-    "lechon",
-    "lumpia",
-  ],
+  filipino: ["filipino", "adobo", "lechon", "lumpia"],
 
-  african: [
-    "african",
-    "nigerian",
-    "ghanaian",
-    "ethiopian",
-    "senegalese",
-  ],
+  african: ["african", "nigerian", "ghanaian", "ethiopian", "senegalese"],
 
-  caribbean: [
-    "caribbean",
-    "jamaican",
-    "haitian",
-    "trinidadian",
-    "jerk",
-  ],
+  caribbean: ["caribbean", "jamaican", "haitian", "trinidadian", "jerk"],
 
-  soul_food: [
-    "soul food",
-    "southern",
-    "comfort food",
-    "fried chicken",
-  ],
+  soul_food: ["soul food", "southern", "comfort food", "fried chicken"],
 
-  mediterranean: [
-    "mediterranean",
-    "greek",
-    "falafel",
-    "gyro",
-    "hummus",
-  ],
+  mediterranean: ["mediterranean", "greek", "falafel", "gyro", "hummus"],
 
-  spanish: [
-    "spanish",
-    "paella",
-    "tapas",
-  ],
+  spanish: ["spanish", "paella", "tapas"],
 
-  french: [
-    "french",
-    "bistro",
-    "brasserie",
-  ],
+  french: ["french", "bistro", "brasserie"],
 
-  american: [
-    "american",
-    "new american",
-    "american grill",
-    "gastropub",
-  ],
+  american: ["american", "new american", "american grill", "gastropub"],
 
-  bbq: [
-    "bbq",
-    "barbecue",
-    "smokehouse",
-    "ribs",
-    "brisket",
-  ],
+  bbq: ["bbq", "barbecue", "smokehouse", "ribs", "brisket"],
 
-  halal: [
-    "halal",
-    "halal food",
-    "halal restaurant",
-  ],
+  halal: ["halal", "halal food", "halal restaurant"],
 
-  vegan: [
-    "vegan",
-    "plant based",
-    "plant-based",
-  ],
+  vegan: ["vegan", "plant based", "plant-based"],
 
-  vegetarian: [
-    "vegetarian",
-    "veggie",
-  ],
+  vegetarian: ["vegetarian", "veggie"],
 
-  healthy: [
-    "healthy",
-    "organic",
-    "salad",
-    "wellness",
-  ],
+  healthy: ["healthy", "organic", "salad", "wellness"],
 
-  brunch: [
-    "brunch",
-    "bottomless brunch",
-    "brunch spot",
-  ],
+  brunch: ["brunch", "bottomless brunch", "brunch spot"],
 
-  breakfast: [
-    "breakfast",
-    "pancakes",
-    "waffles",
-    "breakfast spot",
-  ],
+  breakfast: ["breakfast", "pancakes", "waffles", "breakfast spot"],
 
-  cafe: [
-    "cafe",
-    "coffee",
-    "espresso",
-    "latte",
-    "coffee shop",
-  ],
+  cafe: ["cafe", "coffee", "espresso", "latte", "coffee shop"],
 
-  bakery: [
-    "bakery",
-    "pastry",
-    "croissant",
-    "baked goods",
-  ],
+  bakery: ["bakery", "pastry", "croissant", "baked goods"],
 
   dessert: [
     "dessert",
@@ -568,77 +446,27 @@ const FOOD_INTENTS: Record<string, string[]> = {
     "cupcakes",
   ],
 
-  burgers: [
-    "burger",
-    "burgers",
-    "smashburger",
-  ],
+  burgers: ["burger", "burgers", "smashburger"],
 
-  pizza: [
-    "pizza",
-    "pizzeria",
-    "wood fired pizza",
-    "slice shop",
-  ],
+  pizza: ["pizza", "pizzeria", "wood fired pizza", "slice shop"],
 
-  wings: [
-    "wings",
-    "buffalo wings",
-    "chicken wings",
-  ],
+  wings: ["wings", "buffalo wings", "chicken wings"],
 
-  sandwiches: [
-    "sandwich",
-    "sandwiches",
-    "subs",
-    "heroes",
-    "hoagies",
-  ],
+  sandwiches: ["sandwich", "sandwiches", "subs", "heroes", "hoagies"],
 
-  tacos: [
-    "tacos",
-    "street tacos",
-  ],
+  tacos: ["tacos", "street tacos"],
 
-  drinks: [
-    "drinks",
-    "cocktail",
-    "cocktails",
-    "wine",
-    "bar",
-    "mixology",
-  ],
+  drinks: ["drinks", "cocktail", "cocktails", "wine", "bar", "mixology"],
 
-  wine_bar: [
-    "wine bar",
-    "wine lounge",
-  ],
+  wine_bar: ["wine bar", "wine lounge"],
 
-  rooftop: [
-    "rooftop",
-    "roof top",
-    "skyline",
-    "view",
-  ],
+  rooftop: ["rooftop", "roof top", "skyline", "view"],
 
-  lounge: [
-    "lounge",
-    "cocktail lounge",
-  ],
+  lounge: ["lounge", "cocktail lounge"],
 
-  hookah: [
-    "hookah",
-    "shisha",
-    "hookah lounge",
-    "hookah restaurant",
-  ],
+  hookah: ["hookah", "shisha", "hookah lounge", "hookah restaurant"],
 
-  cigar: [
-    "cigar",
-    "cigar lounge",
-    "cigar bar",
-    "cigar friendly",
-  ],
+  cigar: ["cigar", "cigar lounge", "cigar bar", "cigar friendly"],
 
   fine_dining: [
     "fine dining",
@@ -647,21 +475,11 @@ const FOOD_INTENTS: Record<string, string[]> = {
     "chef tasting",
   ],
 
-  buffet: [
-    "buffet",
-    "all you can eat",
-    "ayce",
-  ],
+  buffet: ["buffet", "all you can eat", "ayce"],
 
-  hibachi: [
-    "hibachi",
-    "teppanyaki",
-  ],
+  hibachi: ["hibachi", "teppanyaki"],
 
-  hot_pot: [
-    "hot pot",
-    "shabu shabu",
-  ],
+  hot_pot: ["hot pot", "shabu shabu"],
 };
 
 const ACTIVITY_INTENTS: Record<string, string[]> = {
@@ -747,7 +565,6 @@ function toArray(value: any): string[] {
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
-      
   }
   return [];
 }
@@ -769,7 +586,7 @@ function wantsPrimaryMeal(input: string) {
   const text = normalizeQuery(input);
 
   return PRIMARY_MEAL_KEYWORDS.some((keyword) =>
-    phraseIncludesNormalized(text, keyword)
+    phraseIncludesNormalized(text, keyword),
   );
 }
 
@@ -789,27 +606,27 @@ function isDessertOnlyRestaurant(item: Record<string, unknown>) {
 
   const hasDessertSignal =
     DESSERT_ONLY_RESTAURANT_KEYWORDS.some((keyword) =>
-      phraseIncludesNormalized(primaryText, keyword)
+      phraseIncludesNormalized(primaryText, keyword),
     ) ||
     DESSERT_ONLY_RESTAURANT_KEYWORDS.some((keyword) =>
-      phraseIncludesNormalized(searchable, keyword)
+      phraseIncludesNormalized(searchable, keyword),
     );
 
   if (!hasDessertSignal) return false;
 
   return !FULL_MEAL_RESTAURANT_KEYWORDS.some((keyword) =>
-    phraseIncludesNormalized(primaryText, keyword)
+    phraseIncludesNormalized(primaryText, keyword),
   );
 }
 
 function filterPrimaryMealRestaurants(
   restaurants: Record<string, unknown>[],
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   if (!intent.wantsPrimaryMeal) return restaurants;
 
   const primaryMealMatches = restaurants.filter(
-    (restaurant) => !isDessertOnlyRestaurant(restaurant)
+    (restaurant) => !isDessertOnlyRestaurant(restaurant),
   );
 
   return primaryMealMatches.length > 0 ? primaryMealMatches : restaurants;
@@ -858,9 +675,7 @@ function itemText(item: any) {
 }
 
 function locationDisplayName(item: any) {
-  return String(getLocationName(item, ""))
-    .trim()
-    .toLowerCase();
+  return String(getLocationName(item, "")).trim().toLowerCase();
 }
 
 function locationNameMatchScore(item: any, input: string) {
@@ -894,7 +709,7 @@ function buildMatchedLocationResults(locations: any[], input: string) {
     .filter((item: any) => item.location_name_match_score > 0)
     .sort(
       (a: any, b: any) =>
-        b.location_name_match_score - a.location_name_match_score
+        b.location_name_match_score - a.location_name_match_score,
     )
     .slice(0, 10);
 }
@@ -1306,8 +1121,6 @@ const LONG_ISLAND_LOCATION_TERMS = new Set([
   ...LONG_ISLAND_LOCATION_ALIASES,
 ]);
 
-
-
 function locationSearchText(item: any) {
   return normalizeQuery(
     [
@@ -1322,22 +1135,22 @@ function locationSearchText(item: any) {
       item.address,
     ]
       .filter(Boolean)
-      .join(" ")
+      .join(" "),
   );
 }
 
 function locationIntentIncludes(
   detectedLocations: string[],
-  terms: Set<string>
+  terms: Set<string>,
 ) {
   return detectedLocations.some((location) =>
-    terms.has(normalizeQuery(location))
+    terms.has(normalizeQuery(location)),
   );
 }
 
 function hasCoordinateInBounds(
   item: any,
-  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number },
 ) {
   const latitude = Number(item.latitude);
   const longitude = Number(item.longitude);
@@ -1381,7 +1194,7 @@ function matchesLongIslandLocation(item: any) {
 
   if (
     Array.from(LONG_ISLAND_LOCATION_TERMS).some((term) =>
-      searchable.includes(term)
+      searchable.includes(term),
     )
   ) {
     return true;
@@ -1403,7 +1216,7 @@ function matchesNewJerseyLocation(item: any) {
 
   return (
     Array.from(NEW_JERSEY_LOCATION_TERMS).some((term) =>
-      searchable.includes(term)
+      searchable.includes(term),
     ) ||
     hasCoordinateInBounds(item, {
       minLat: 40.45,
@@ -1666,10 +1479,9 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   const searchable = locationSearchText(item);
 
   return detectedLocations.some((location) =>
-    searchable.includes(normalizeQuery(location))
+    searchable.includes(normalizeQuery(location)),
   );
 }
-
 
 function locationIdentityKey(item: any) {
   const placeId = item.google_place_id || item.place_id;
@@ -1677,13 +1489,9 @@ function locationIdentityKey(item: any) {
   if (placeId) return normalizeQuery(String(placeId));
 
   const nameAddressKey = normalizeQuery(
-    [
-      getLocationName(item, ""),
-      item.address,
-      item.city,
-    ]
+    [getLocationName(item, ""), item.address, item.city]
       .filter(Boolean)
-      .join(" ")
+      .join(" "),
   );
 
   return nameAddressKey || normalizeQuery(String(item.id || ""));
@@ -1703,7 +1511,9 @@ function isLoungeStyleLocation(item: any) {
     searchable.includes("rooftop bar")
   );
 }
-function isExplicitFoodAtLoungeRequest(intent: ReturnType<typeof detectIntent>) {
+function isExplicitFoodAtLoungeRequest(
+  intent: ReturnType<typeof detectIntent>,
+) {
   const text = intent.text;
 
   if (!intent.wantsLounge) return false;
@@ -1743,7 +1553,7 @@ function removeDuplicateLocationsWithinType<T>(items: T[]) {
 function removeDuplicateLocationsAcrossTypes(
   restaurants: any[],
   activities: any[],
-  prefer: "restaurants" | "activities" = "activities"
+  prefer: "restaurants" | "activities" = "activities",
 ) {
   const uniqueRestaurants = removeDuplicateLocationsWithinType(restaurants);
   const uniqueActivities = removeDuplicateLocationsWithinType(activities);
@@ -1754,14 +1564,14 @@ function removeDuplicateLocationsAcrossTypes(
     return {
       restaurants: uniqueRestaurants,
       activities: uniqueActivities.filter(
-        (activity) => !restaurantKeys.has(locationIdentityKey(activity))
+        (activity) => !restaurantKeys.has(locationIdentityKey(activity)),
       ),
     };
   }
 
   return {
     restaurants: uniqueRestaurants.filter(
-      (restaurant) => !activityKeys.has(locationIdentityKey(restaurant))
+      (restaurant) => !activityKeys.has(locationIdentityKey(restaurant)),
     ),
     activities: uniqueActivities,
   };
@@ -1819,7 +1629,6 @@ const NON_OUTING_LOCATION_KEYWORDS = [
   "laundromat",
 ];
 
-
 function isOutingEligibleLocation(item: any) {
   const disqualifyingText = normalizeQuery(
     [
@@ -1837,11 +1646,11 @@ function isOutingEligibleLocation(item: any) {
       ...toArray(item.categories),
     ]
       .filter(Boolean)
-      .join(" ")
+      .join(" "),
   );
 
   return !NON_OUTING_LOCATION_KEYWORDS.some((keyword) =>
-    disqualifyingText.includes(keyword)
+    disqualifyingText.includes(keyword),
   );
 }
 
@@ -1919,10 +1728,10 @@ function detectFromMap(input: string, map: Record<string, string[]>) {
     new Set(
       Object.entries(map)
         .filter(([, keywords]) =>
-          keywords.some((keyword) => text.includes(keyword))
+          keywords.some((keyword) => text.includes(keyword)),
         )
-        .map(([key]) => key)
-    )
+        .map(([key]) => key),
+    ),
   );
 }
 
@@ -2106,7 +1915,12 @@ function budgetBoost(item: any, budget: ReturnType<typeof detectBudget>) {
   return 0;
 }
 
-function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) {
   const toRad = (value: number) => (value * Math.PI) / 180;
   const r = 3958.8;
 
@@ -2115,9 +1929,7 @@ function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) 
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
@@ -2130,7 +1942,7 @@ function walkingMinutesFromMiles(distanceMiles: number | null) {
 
 function walkingLabelBetweenStops(
   distanceMiles: number | null,
-  fromName?: string | null
+  fromName?: string | null,
 ) {
   const walkingMinutes = walkingMinutesFromMiles(distanceMiles);
 
@@ -2146,19 +1958,14 @@ function isWithinTheOutHavenServiceArea(item: any) {
   if (!lat || !lng) return true;
 
   // NYC + Long Island + Westchester + North Jersey
-  return (
-    lat >= 40.4 &&
-    lat <= 41.2 &&
-    lng >= -74.3 &&
-    lng <= -73.5
-  );
+  return lat >= 40.4 && lat <= 41.2 && lng >= -74.3 && lng <= -73.5;
 }
 
 function distanceBoost(
   item: any,
   userLat?: number,
   userLng?: number,
-  maxMiles?: number | null
+  maxMiles?: number | null,
 ) {
   if (!userLat || !userLng || !item.latitude || !item.longitude) return 0;
 
@@ -2166,7 +1973,7 @@ function distanceBoost(
     Number(userLat),
     Number(userLng),
     Number(item.latitude),
-    Number(item.longitude)
+    Number(item.longitude),
   );
 
   item.distance_miles = Number(miles.toFixed(1));
@@ -2252,7 +2059,7 @@ function weightedTagBoost(item: any, requestedTags: string[]) {
   return requestedTags.reduce(
     (total, tag) =>
       total + (itemHasTag(item, tag) ? PRIORITY_WEIGHTS.tagExact : 0),
-    0
+    0,
   );
 }
 
@@ -2260,7 +2067,7 @@ function weightedVibeBoost(item: any, vibes: string[]) {
   return vibes.reduce(
     (total, vibe) =>
       total + (itemHasTag(item, vibe) ? PRIORITY_WEIGHTS.vibeExact : 0),
-    0
+    0,
   );
 }
 
@@ -2290,7 +2097,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const wantsFoodMap = buildWantsMap(Object.keys(FOOD_INTENTS), foodIntents);
   const wantsActivityMap = buildWantsMap(
     Object.keys(ACTIVITY_INTENTS),
-    activityIntents
+    activityIntents,
   );
 
   const wantsFood =
@@ -2307,7 +2114,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   ];
 
   const mentionsAnyTheOutHavenOption = allOptions.some((option) =>
-    text.includes(option)
+    text.includes(option),
   );
 
   const wantsFullOuting =
@@ -2342,7 +2149,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
           "nightlife",
           "scenic",
           "birthday",
-        ].includes(tag)
+        ].includes(tag),
       ),
       ...(text.includes("romantic") ? ["romantic"] : []),
       ...(text.includes("fun") ? ["fun"] : []),
@@ -2350,7 +2157,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
         ? ["luxury"]
         : []),
       ...(text.includes("chill") ? ["chill"] : []),
-    ])
+    ]),
   );
 
   const budget = detectBudget(input);
@@ -2430,12 +2237,12 @@ function resultScoreValue(item: NearbySortableLocation) {
 
 function sortLocationsNearFirst<T extends NearbySortableLocation>(
   items: T[],
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   const shouldPrioritizeNearby = Boolean(
     (intent.userLat && intent.userLng) ||
-      intent.maxMiles ||
-      intent.locations.length
+    intent.maxMiles ||
+    intent.locations.length,
   );
 
   if (!shouldPrioritizeNearby) return items;
@@ -2460,7 +2267,7 @@ function sortLocationsNearFirst<T extends NearbySortableLocation>(
 function scoreRestaurant(
   item: any,
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   let score = 0;
 
@@ -2518,7 +2325,7 @@ function scoreRestaurant(
 function scoreActivity(
   item: any,
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   let score = 0;
 
@@ -2596,20 +2403,23 @@ function scoreActivity(
 
 function filterRestaurantsByFoodIntent(
   restaurants: Record<string, unknown>[],
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
-  const primaryMealRestaurants = filterPrimaryMealRestaurants(restaurants, intent);
+  const primaryMealRestaurants = filterPrimaryMealRestaurants(
+    restaurants,
+    intent,
+  );
 
   if (intent.foodIntents.length === 0) return primaryMealRestaurants;
 
   const exactMatches = primaryMealRestaurants.filter((restaurant: any) =>
-    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food))
+    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food)),
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = primaryMealRestaurants.filter((restaurant: any) =>
-    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food))
+    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food)),
   );
 
   return partialMatches.length > 0 ? partialMatches : primaryMealRestaurants;
@@ -2617,22 +2427,22 @@ function filterRestaurantsByFoodIntent(
 
 function filterActivitiesByActivityIntent(
   activities: any[],
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   if (intent.activityIntents.length === 0) return activities;
 
   const exactMatches = activities.filter((activity: any) =>
     intent.activityIntents.every((activityIntent) =>
-      matchesActivityIntent(activity, activityIntent)
-    )
+      matchesActivityIntent(activity, activityIntent),
+    ),
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = activities.filter((activity: any) =>
     intent.activityIntents.some((activityIntent) =>
-      matchesActivityIntent(activity, activityIntent)
-    )
+      matchesActivityIntent(activity, activityIntent),
+    ),
   );
 
   if (partialMatches.length > 0) return partialMatches;
@@ -2645,7 +2455,7 @@ const WALKING_PAIR_CANDIDATE_LIMIT = 80;
 
 function pairWalkingDistanceMatches(
   restaurants: any[],
-  activities: any[]
+  activities: any[],
 ): any[] {
   const pairs = restaurants
     .flatMap((restaurant) =>
@@ -2667,7 +2477,7 @@ function pairWalkingDistanceMatches(
           Number(restaurant.latitude),
           Number(restaurant.longitude),
           Number(activity.latitude),
-          Number(activity.longitude)
+          Number(activity.longitude),
         );
 
         if (distance > WALKING_DISTANCE_MILES) {
@@ -2689,7 +2499,7 @@ function pairWalkingDistanceMatches(
             Number(getLocationScore(activity)) +
             200,
         };
-      })
+      }),
     )
     .filter(Boolean)
     .filter((pair: any) => pair.distance_miles <= WALKING_DISTANCE_MILES)
@@ -2727,7 +2537,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
             Number(restaurant.latitude),
             Number(restaurant.longitude),
             Number(activity.latitude),
-            Number(activity.longitude)
+            Number(activity.longitude),
           );
         }
 
@@ -2767,7 +2577,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
           same_neighborhood: Boolean(sameNeighborhood),
           pair_score: pairScore,
         };
-      })
+      }),
     )
     .sort((a, b) => b.pair_score - a.pair_score);
 
@@ -2777,11 +2587,11 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
   const bestPairs = pairs
     .filter((pair) => {
       const restaurantId = String(
-        pair.restaurant.id || pair.restaurant.restaurant_name || ""
+        pair.restaurant.id || pair.restaurant.restaurant_name || "",
       );
 
       const activityId = String(
-        pair.activity.id || pair.activity.activity_name || ""
+        pair.activity.id || pair.activity.activity_name || "",
       );
 
       if (
@@ -2807,7 +2617,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
       pair_walking_minutes: walkingMinutesFromMiles(pair.distance_miles),
       pair_walking_label: walkingLabelBetweenStops(
         pair.distance_miles,
-        pair.activity.activity_name || pair.activity.name
+        pair.activity.activity_name || pair.activity.name,
       ),
       pair_score: pair.pair_score,
     })),
@@ -2819,14 +2629,13 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
       pair_walking_minutes: walkingMinutesFromMiles(pair.distance_miles),
       pair_walking_label: walkingLabelBetweenStops(
         pair.distance_miles,
-        pair.restaurant.restaurant_name || pair.restaurant.name
+        pair.restaurant.restaurant_name || pair.restaurant.name,
       ),
       pair_score: pair.pair_score,
     })),
     pairs: bestPairs,
   };
 }
-
 
 const LOCATION_COLUMNS = `
   id,
@@ -2879,6 +2688,12 @@ const LOCATION_COLUMNS = `
   review_snippet,
   google_maps_url,
   google_maps_link,
+  is_searchable,
+  data_status,
+  missing_fields,
+  is_hidden,
+  status,
+  last_quality_check_at,
   search_document
 `;
 
@@ -2947,6 +2762,11 @@ const ACTIVITY_COLUMNS = `
   google_maps_link,
   price_level,
   theouthaven_score,
+  is_searchable,
+  data_status,
+  missing_fields,
+  is_hidden,
+  last_quality_check_at,
   search_document
 `;
 
@@ -3027,8 +2847,21 @@ const RESTAURANT_COLUMNS = `
   owner_phone,
   latitude,
   longitude,
+  is_searchable,
+  data_status,
+  missing_fields,
+  is_hidden,
+  last_quality_check_at,
   search_document
 `;
+
+function applyPublicVisibilityFilters(query: any) {
+  return query
+    .eq("is_searchable", true)
+    .eq("data_status", "clean")
+    .neq("is_hidden", true)
+    .not("status", "in", '("closed","archived")');
+}
 
 async function fetchFallbackRecords(input: string = "") {
   const text = normalizeQuery(input);
@@ -3075,11 +2908,11 @@ async function fetchFallbackRecords(input: string = "") {
 
   // General food fallback. This keeps the request URL short because it only
   // searches food terms, not every neighborhood name.
-  let foodQuery = supabase.from("restaurants").select(RESTAURANT_COLUMNS);
-  foodQuery = applyFoodFilter(foodQuery);
-  restaurantQueries.push(
-    foodQuery.limit(SEARCH_LIMITS.fallbackGeneralRecords)
+  let foodQuery = applyPublicVisibilityFilters(
+    supabase.from("restaurants").select(RESTAURANT_COLUMNS),
   );
+  foodQuery = applyFoodFilter(foodQuery);
+  restaurantQueries.push(foodQuery.limit(SEARCH_LIMITS.fallbackGeneralRecords));
 
   // Queens fallback by coordinate bounds. This keeps ALL Queens neighborhoods
   // without sending a huge OR list in the URL.
@@ -3093,9 +2926,11 @@ async function fetchFallbackRecords(input: string = "") {
       .gte("longitude", -73.96)
       .lte("longitude", -73.68);
 
+    queensQuery = applyPublicVisibilityFilters(queensQuery);
+
     queensQuery = applyFoodFilter(queensQuery);
     restaurantQueries.push(
-      queensQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords)
+      queensQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords),
     );
   }
 
@@ -3114,9 +2949,11 @@ async function fetchFallbackRecords(input: string = "") {
       .gte("longitude", -73.8)
       .lte("longitude", -71.75);
 
+    longIslandQuery = applyPublicVisibilityFilters(longIslandQuery);
+
     longIslandQuery = applyFoodFilter(longIslandQuery);
     restaurantQueries.push(
-      longIslandQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords)
+      longIslandQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords),
     );
   }
 
@@ -3135,22 +2972,22 @@ async function fetchFallbackRecords(input: string = "") {
       .gte("longitude", -74.35)
       .lte("longitude", -73.85);
 
+    jerseyQuery = applyPublicVisibilityFilters(jerseyQuery);
+
     jerseyQuery = applyFoodFilter(jerseyQuery);
     restaurantQueries.push(
-      jerseyQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords)
+      jerseyQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords),
     );
   }
 
   const [locationsResult, activitiesResult, ...restaurantResults] =
     await Promise.all([
-      supabase
-        .from("locations")
-        .select(LOCATION_COLUMNS)
-        .limit(SEARCH_LIMITS.supportingLocations),
-      supabase
-        .from("activities")
-        .select(ACTIVITY_COLUMNS)
-        .limit(SEARCH_LIMITS.fallbackGeneralRecords),
+      applyPublicVisibilityFilters(
+        supabase.from("locations").select(LOCATION_COLUMNS),
+      ).limit(SEARCH_LIMITS.supportingLocations),
+      applyPublicVisibilityFilters(
+        supabase.from("activities").select(ACTIVITY_COLUMNS),
+      ).limit(SEARCH_LIMITS.fallbackGeneralRecords),
       ...restaurantQueries,
     ]);
 
@@ -3164,31 +3001,31 @@ async function fetchFallbackRecords(input: string = "") {
   });
 
   const seenRestaurants = new Set<string>();
-  const restaurants = restaurantRows.filter((restaurant: any) => {
-    const key = String(
-      restaurant.id ||
-        restaurant.google_place_id ||
-        `${restaurant.restaurant_name || ""}-${restaurant.address || ""}`
-    );
+  const restaurants = restaurantRows
+    .filter(isPubliclyVisible)
+    .filter((restaurant: any) => {
+      const key = String(
+        restaurant.id ||
+          restaurant.google_place_id ||
+          `${restaurant.restaurant_name || ""}-${restaurant.address || ""}`,
+      );
 
-    if (!key || seenRestaurants.has(key)) return false;
-    seenRestaurants.add(key);
-    return true;
-  });
+      if (!key || seenRestaurants.has(key)) return false;
+      seenRestaurants.add(key);
+      return true;
+    });
 
   return {
-    locations: locationsResult.data || [],
+    locations: (locationsResult.data || []).filter(isPubliclyVisible),
     restaurants,
-    activities: activitiesResult.data || [],
+    activities: (activitiesResult.data || []).filter(isPubliclyVisible),
   };
 }
 
-
 async function fetchSupportingRecords() {
-  const { data, error } = await supabase
-    .from("locations")
-    .select(LOCATION_COLUMNS)
-    .limit(SEARCH_LIMITS.supportingLocations);
+  const { data, error } = await applyPublicVisibilityFilters(
+    supabase.from("locations").select(LOCATION_COLUMNS),
+  ).limit(SEARCH_LIMITS.supportingLocations);
 
   if (error) throw error;
 
@@ -3252,7 +3089,7 @@ function mapEnterpriseActivity(activity: any) {
 
 async function fetchEnterpriseSearchRecords(
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: ReturnType<typeof detectIntent>,
 ) {
   const embedding = await createSearchEmbedding(input);
 
@@ -3284,8 +3121,12 @@ async function fetchEnterpriseSearchRecords(
   }
 
   return {
-    restaurants: (restaurantsResult.data || []).map(mapEnterpriseRestaurant),
-    activities: (activitiesResult.data || []).map(mapEnterpriseActivity),
+    restaurants: (restaurantsResult.data || [])
+      .map(mapEnterpriseRestaurant)
+      .filter(isPubliclyVisible),
+    activities: (activitiesResult.data || [])
+      .map(mapEnterpriseActivity)
+      .filter(isPubliclyVisible),
   };
 }
 
@@ -3324,99 +3165,102 @@ export async function POST(req: Request) {
 
     await logSearchQuery(input);
 
-const preliminaryIntent = detectIntent(input, body, []);
-const semanticResults = new Map<string, any>();
+    const preliminaryIntent = detectIntent(input, body, []);
+    const semanticResults = new Map<string, any>();
 
-let matchedRecords = {
-  locations: [] as any[],
-  restaurants: [] as any[],
-  activities: [] as any[],
-};
+    let matchedRecords = {
+      locations: [] as any[],
+      restaurants: [] as any[],
+      activities: [] as any[],
+    };
 
-try {
-  const [enterpriseRecords, supportingRecords] = await Promise.all([
-    fetchEnterpriseSearchRecords(input, preliminaryIntent),
-    fetchSupportingRecords(),
-  ]);
+    try {
+      const [enterpriseRecords, supportingRecords] = await Promise.all([
+        fetchEnterpriseSearchRecords(input, preliminaryIntent),
+        fetchSupportingRecords(),
+      ]);
 
-  matchedRecords = {
-    locations: supportingRecords.locations || [],
-    restaurants: enterpriseRecords.restaurants || [],
-    activities: enterpriseRecords.activities || [],
-  };
-} catch (rpcError) {
-  console.error("ENTERPRISE RPC FALLBACK:", rpcError);
-  matchedRecords = await fetchFallbackRecords(input);
-}
+      matchedRecords = {
+        locations: supportingRecords.locations || [],
+        restaurants: enterpriseRecords.restaurants || [],
+        activities: enterpriseRecords.activities || [],
+      };
 
-const mergedLocations = [
-  ...(matchedRecords.locations || []),
+      if (
+        matchedRecords.restaurants.length === 0 &&
+        matchedRecords.activities.length === 0
+      ) {
+        matchedRecords = await fetchFallbackRecords(input);
+      }
+    } catch (rpcError) {
+      console.error("ENTERPRISE RPC FALLBACK:", rpcError);
+      matchedRecords = await fetchFallbackRecords(input);
+    }
 
-  ...(matchedRecords.restaurants || []).map((restaurant: any) => ({
-    ...restaurant,
-    location_type: "restaurant",
-    name: getLocationName(restaurant, ""),
-    restaurant_name: restaurant.restaurant_name || restaurant.name,
-  })),
+    const mergedLocations = [
+      ...(matchedRecords.locations || []),
 
-  ...(matchedRecords.activities || []).map((activity: any) => ({
-    ...activity,
-    location_type: "activity",
-    name: getLocationName(activity, ""),
-    activity_name: activity.activity_name || activity.name,
-  })),
-];
+      ...(matchedRecords.restaurants || []).map((restaurant: any) => ({
+        ...restaurant,
+        location_type: "restaurant",
+        name: getLocationName(restaurant, ""),
+        restaurant_name: restaurant.restaurant_name || restaurant.name,
+      })),
 
-const locations = mergedLocations.map(normalizeLocation);
+      ...(matchedRecords.activities || []).map((activity: any) => ({
+        ...activity,
+        location_type: "activity",
+        name: getLocationName(activity, ""),
+        activity_name: activity.activity_name || activity.name,
+      })),
+    ];
 
-const intent = detectIntent(input, body, locations);
+    const locations = mergedLocations
+      .map(normalizeLocation)
+      .filter(isPubliclyVisible);
 
-const cacheKey = buildResponseCacheKey(input, intent);
+    const intent = detectIntent(input, body, locations);
 
-const { data: cached } = await supabase
-  .from("ai_response_cache")
-  .select("response, created_at")
-  .eq("cache_key", cacheKey)
-  .maybeSingle();
+    const cacheKey = buildResponseCacheKey(input, intent);
 
-if (cached?.response) {
-  const cacheAge = Date.now() - new Date(cached.created_at).getTime();
+    const { data: cached } = await supabase
+      .from("ai_response_cache")
+      .select("response, created_at")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
 
-  if (cacheAge < 1000 * 60 * 60 * CACHE_HOURS) {
-    return Response.json(cached.response);
-  }
-}
+    if (cached?.response) {
+      const cacheAge = Date.now() - new Date(cached.created_at).getTime();
 
-const usableLocations = locations.filter((item: any) => {
-  const status = String(item.status || "approved").toLowerCase();
+      if (cacheAge < 1000 * 60 * 60 * CACHE_HOURS) {
+        return Response.json(cached.response);
+      }
+    }
 
-  const isApproved =
-    status === "approved" || status === "active" || status === "";
+    const usableLocations = locations.filter(
+      (item: any) =>
+        isPubliclyVisible(item) && isWithinTheOutHavenServiceArea(item),
+    );
 
-  return isApproved && isWithinTheOutHavenServiceArea(item);
-});
-
-const sourceLocations =
-  usableLocations.length > 0 ? usableLocations : locations;
+    const sourceLocations =
+      usableLocations.length > 0 ? usableLocations : locations;
 
     const matchedLocationResults = buildMatchedLocationResults(
       sourceLocations.filter(isOutingEligibleLocation),
-      input
+      input,
     );
 
     let restaurants = sourceLocations.filter((item: any) => {
       const type = String(item.location_type || "").toLowerCase();
 
-return (
-  isOutingEligibleLocation(item) &&
-  (
-    type === "restaurant" ||
-    Boolean(item.restaurant_name) ||
-    Boolean(item.cuisine) ||
-    Boolean(item.cuisine_type)
-  )
-);
-});
+      return (
+        isOutingEligibleLocation(item) &&
+        (type === "restaurant" ||
+          Boolean(item.restaurant_name) ||
+          Boolean(item.cuisine) ||
+          Boolean(item.cuisine_type))
+      );
+    });
 
     let activities = sourceLocations.filter((item: any) => {
       const type = String(item.location_type || "").toLowerCase();
@@ -3427,14 +3271,14 @@ return (
           Boolean(item.activity_name) ||
           Boolean(item.activity_type) ||
           intent.activityIntents.some((activityIntent) =>
-            matchesActivityIntent(item, activityIntent)
+            matchesActivityIntent(item, activityIntent),
           ))
       );
     });
 
     const foodAddOnIntents = intent.foodIntents.filter(isFoodAddOnIntent);
     const mealFoodIntents = intent.foodIntents.filter(
-      (foodIntent) => !isFoodAddOnIntent(foodIntent)
+      (foodIntent) => !isFoodAddOnIntent(foodIntent),
     );
     const shouldSplitFoodAddOnStops =
       intent.wantsFullOuting &&
@@ -3458,8 +3302,8 @@ return (
         .filter(isOutingEligibleLocation)
         .filter((item: any) =>
           foodAddOnIntents.some((foodIntent) =>
-            matchesFoodIntent(item, foodIntent)
-          )
+            matchesFoodIntent(item, foodIntent),
+          ),
         )
         .map((item: any) => {
           const originalType = String(item.location_type || "").toLowerCase();
@@ -3486,7 +3330,7 @@ return (
 
       activities = filterActivitiesByActivityIntent(
         [...activities, ...foodAddOnActivities],
-        intent
+        intent,
       );
     } else {
       restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
@@ -3514,8 +3358,8 @@ return (
           isOutingEligibleLocation(item) &&
           isLoungeStyleLocation(item) &&
           intent.activityIntents.some((activityIntent) =>
-            matchesActivityIntent(item, activityIntent)
-          )
+            matchesActivityIntent(item, activityIntent),
+          ),
       );
     }
 
@@ -3525,11 +3369,11 @@ return (
 
     if (intent.locations.length > 0) {
       const locationRestaurants = restaurants.filter((item: any) =>
-        matchesLocation(item, intent.locations)
+        matchesLocation(item, intent.locations),
       );
 
       const locationActivities = activities.filter((item: any) =>
-        matchesLocation(item, intent.locations)
+        matchesLocation(item, intent.locations),
       );
 
       restaurants = locationRestaurants;
@@ -3541,13 +3385,13 @@ return (
         (item: any) =>
           isOutingEligibleLocation(item) &&
           intent.activityIntents.some((activityIntent) =>
-            matchesActivityIntent(item, activityIntent)
-          )
+            matchesActivityIntent(item, activityIntent),
+          ),
       );
 
       if (intent.locations.length > 0) {
         const locationFiltered = forcedActivityMatches.filter((item: any) =>
-          matchesLocation(item, intent.locations)
+          matchesLocation(item, intent.locations),
         );
 
         forcedActivityMatches = locationFiltered;
@@ -3565,7 +3409,7 @@ return (
     const dedupedLocationResults = removeDuplicateLocationsAcrossTypes(
       restaurants,
       activities,
-      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities"
+      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities",
     );
 
     restaurants = dedupedLocationResults.restaurants;
@@ -3576,7 +3420,7 @@ return (
         const semantic = semanticScoreBoost(restaurant, semanticResults);
         const score = clampScore(
           scoreRestaurant(restaurant, input, intent) +
-            semantic.semantic_score_boost
+            semantic.semantic_score_boost,
         );
         const confidence = confidenceFromScores({
           ...restaurant,
@@ -3602,7 +3446,8 @@ return (
       .map((activity: any) => {
         const semantic = semanticScoreBoost(activity, semanticResults);
         const score = clampScore(
-          scoreActivity(activity, input, intent) + semantic.semantic_score_boost
+          scoreActivity(activity, input, intent) +
+            semantic.semantic_score_boost,
         );
         const confidence = confidenceFromScores({
           ...activity,
@@ -3627,7 +3472,7 @@ return (
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
       rankedActivities,
-      smartIntent
+      smartIntent,
     );
 
     if (
@@ -3673,7 +3518,7 @@ return (
       walkingPairRestaurants.length > 0 && walkingPairActivities.length > 0
         ? pairWalkingDistanceMatches(
             walkingPairRestaurants,
-            walkingPairActivities
+            walkingPairActivities,
           )
         : [];
 
@@ -3717,7 +3562,7 @@ return (
               smartBalanced.activities.length > 0
             ? pairSmartMatches(
                 smartBalanced.restaurants,
-                smartBalanced.activities
+                smartBalanced.activities,
               )
             : {
                 restaurants: smartBalanced.restaurants,
@@ -3728,16 +3573,16 @@ return (
     const finalDedupedResults = removeDuplicateLocationsAcrossTypes(
       pairedResults.restaurants,
       pairedResults.activities,
-      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities"
+      isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities",
     );
 
     const topRestaurants = sortLocationsNearFirst(
       finalDedupedResults.restaurants,
-      intent
+      intent,
     );
     const topActivities = sortLocationsNearFirst(
       finalDedupedResults.activities,
-      intent
+      intent,
     );
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
@@ -3939,17 +3784,18 @@ STRICT RULES:
         location_name_match_score: item.location_name_match_score,
       })),
       pairs: pairedResults.pairs.map((pair: any) => ({
-        restaurant_name: pair.restaurant.restaurant_name || pair.restaurant.name,
+        restaurant_name:
+          pair.restaurant.restaurant_name || pair.restaurant.name,
         activity_name: pair.activity.activity_name || pair.activity.name,
         distance_miles: pair.distance_miles,
         walking_minutes: walkingMinutesFromMiles(pair.distance_miles),
         walking_label_from_restaurant: walkingLabelBetweenStops(
           pair.distance_miles,
-          pair.restaurant.restaurant_name || pair.restaurant.name
+          pair.restaurant.restaurant_name || pair.restaurant.name,
         ),
         walking_label_from_activity: walkingLabelBetweenStops(
           pair.distance_miles,
-          pair.activity.activity_name || pair.activity.name
+          pair.activity.activity_name || pair.activity.name,
         ),
         same_city: pair.same_city,
         same_neighborhood: pair.same_neighborhood,
@@ -3975,7 +3821,9 @@ STRICT RULES:
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
         theouthaven_score: clampScore(getLocationScore(r)),
-        smart_match_score: clampScore(r.smart_match_score ?? getLocationScore(r)),
+        smart_match_score: clampScore(
+          r.smart_match_score ?? getLocationScore(r),
+        ),
         semantic_similarity: r.semantic_similarity || 0,
         semantic_score_boost: r.semantic_score_boost || 0,
         confidence: r.confidence || 0,
@@ -4026,7 +3874,9 @@ STRICT RULES:
         atmosphere: a.atmosphere,
         group_friendly: a.group_friendly,
         theouthaven_score: clampScore(getLocationScore(a)),
-        smart_match_score: clampScore(a.smart_match_score ?? getLocationScore(a)),
+        smart_match_score: clampScore(
+          a.smart_match_score ?? getLocationScore(a),
+        ),
         semantic_similarity: a.semantic_similarity || 0,
         semantic_score_boost: a.semantic_score_boost || 0,
         confidence: a.confidence || 0,
@@ -4068,7 +3918,7 @@ STRICT RULES:
 
     return Response.json(
       { error: error.message || "Server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
