@@ -179,6 +179,13 @@ export default function AdminTopBar() {
     role || ""
   );
 
+  const canViewDataQuality = [
+    "superuser",
+    "admin",
+    "editor",
+    "viewer",
+  ].includes(role || "");
+
   const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
 
   const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
@@ -251,6 +258,16 @@ export default function AdminTopBar() {
               className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
             >
               Locations
+            </button>
+          )}
+
+          {canViewDataQuality && (
+            <button
+              type="button"
+              onClick={() => goTo("/admin/dashboard/data-quality")}
+              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
+            >
+              Data Quality
             </button>
           )}
 
@@ -354,6 +371,12 @@ export default function AdminTopBar() {
                 {canViewLocations && (
                   <MenuButton onClick={() => goTo("/admin/dashboard/locations")}>
                     Locations
+                  </MenuButton>
+                )}
+
+                {canViewDataQuality && (
+                  <MenuButton onClick={() => goTo("/admin/dashboard/data-quality")}>
+                    Admin Data Quality Dashboard
                   </MenuButton>
                 )}
 
