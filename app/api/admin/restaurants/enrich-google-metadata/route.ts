@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { syncRestaurantToLocation } from "@/lib/sync-location";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -601,13 +602,16 @@ async function safeUpdateRestaurant(
   const removedColumns: string[] = [];
 
   for (let attempt = 0; attempt < 12; attempt++) {
-    const { error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("restaurants")
       .update(rowForSave)
-      .eq("id", id);
+      .eq("id", id)
+      .select("*")
+      .single();
 
     if (!error) {
       return {
+        data: data as Record<string, unknown> | null,
         error: null,
         removedColumns,
       };
@@ -629,12 +633,14 @@ async function safeUpdateRestaurant(
     }
 
     return {
+      data: null,
       error,
       removedColumns,
     };
   }
 
   return {
+    data: null,
     error: {
       message:
         "Unable to update restaurant after removing unsupported columns",
@@ -915,6 +921,7 @@ export async function POST(
         }
 
         const {
+          data: updatedRestaurant,
           error: updateError,
           removedColumns,
         } =
@@ -933,6 +940,29 @@ export async function POST(
               restaurant.restaurant_name,
             error:
               updateError.message,
+            removedColumns,
+          });
+
+          continue;
+        }
+
+        try {
+          await syncRestaurantToLocation(
+            (updatedRestaurant || {
+              ...restaurant,
+              ...updatePayload,
+            }) as Record<string, unknown> & { id: string | number },
+          );
+        } catch (syncError) {
+          failed++;
+
+          results.push({
+            id: restaurant.id,
+            status: "failed",
+            name: restaurant.restaurant_name,
+            error: `Location sync failed: ${
+              syncError instanceof Error ? syncError.message : String(syncError)
+            }`,
             removedColumns,
           });
 

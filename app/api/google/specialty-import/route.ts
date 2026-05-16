@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQr";
+import { syncActivityToLocation } from "@/lib/sync-location";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -684,14 +685,29 @@ async function upsertSpecialtyActivity(place: any, query: string) {
     qr_code_data_url: qr.qr_code_data_url,
   };
 
-  const { error } = await supabaseAdmin.from("activities").upsert(row, {
-    onConflict: "google_place_id",
-    ignoreDuplicates: false,
-  });
+  const { data: activity, error } = await supabaseAdmin
+    .from("activities")
+    .upsert(row, {
+      onConflict: "google_place_id",
+      ignoreDuplicates: false,
+    })
+    .select("*")
+    .single();
 
   if (error) {
     console.error("SPECIALTY ACTIVITY UPSERT ERROR:", error);
     return { status: "failed" as const, error: error.message };
+  }
+
+  try {
+    await syncActivityToLocation(
+      activity as Record<string, unknown> & { id: string | number },
+    );
+  } catch (syncError) {
+    const message =
+      syncError instanceof Error ? syncError.message : String(syncError);
+    console.error("SPECIALTY LOCATION SYNC ERROR:", syncError);
+    return { status: "failed" as const, error: `Location sync failed: ${message}` };
   }
 
   return { status: "imported" as const };
