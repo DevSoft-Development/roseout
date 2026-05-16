@@ -11,6 +11,7 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getLocationScore } from "@/lib/locationScore";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
   formatOperatingHoursForDisplay,
@@ -145,12 +146,7 @@ if (error || !data) {
 
   const category = getPrimaryCategory(location);
 
-  const score = clampScore(
-    location?.review_score ??
-      location?.theouthaven_score ??
-      location?.quality_score ??
-      0
-  );
+  const score = clampScore(getLocationScore(location));
 
   const address = [
     location?.address,

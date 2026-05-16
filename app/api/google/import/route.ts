@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { supabase } from "@/lib/supabase";
 import { clampScore } from "@/lib/clampScore";
+import { getLocationScore, getSearchRankingScore } from "@/lib/locationScore";
 import { getLocationName } from "@/lib/locationName";
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
@@ -1192,10 +1193,8 @@ function scoreRestaurant(
       : PRIORITY_WEIGHTS.mismatchPenalty;
   }
 
-  score += clampScore(item.theouthaven_score || 0) * 0.25;
-  score += clampScore(item.quality_score || 0) * 0.15;
+  score += clampScore(getSearchRankingScore(item)) * 0.4;
   score += clampScore(item.popularity_score || 0) * 0.1;
-  score += clampScore(item.review_score || 0) * 0.2;
 
   return clampScore(score);
 }
@@ -1273,10 +1272,8 @@ function scoreActivity(
     score += PRIORITY_WEIGHTS.nightlife;
   }
 
-  score += clampScore(item.theouthaven_score || 0) * 0.25;
-  score += clampScore(item.quality_score || 0) * 0.15;
+  score += clampScore(getSearchRankingScore(item)) * 0.4;
   score += clampScore(item.popularity_score || 0) * 0.1;
-  score += clampScore(item.review_score || 0) * 0.2;
 
   return clampScore(score);
 }
@@ -1366,8 +1363,8 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
             String(activity.neighborhood).toLowerCase();
 
         let pairScore =
-          Number(restaurant.theouthaven_score || 0) +
-          Number(activity.theouthaven_score || 0);
+          Number(getLocationScore(restaurant)) +
+          Number(getLocationScore(activity));
 
         if (sameNeighborhood) pairScore += 80;
         if (sameCity) pairScore += 50;
@@ -1706,7 +1703,7 @@ export async function POST(req: Request) {
       cuisine: getCuisine(r),
       food_type: r.food_type || null,
       cuisine_tags: toArray(r.cuisine_tags).slice(0, 5),
-      score: clampScore(r.theouthaven_score),
+      score: clampScore(getLocationScore(r)),
       location_name_match_score: r.location_name_match_score || 0,
       tag: getPrimaryCategory(r),
       rating: r.rating,
@@ -1719,7 +1716,7 @@ export async function POST(req: Request) {
       name: getLocationName(a, ""),
       city: a.city,
       type: getPrimaryCategory(a),
-      score: clampScore(a.theouthaven_score),
+      score: clampScore(getLocationScore(a)),
       location_name_match_score: a.location_name_match_score || 0,
       tag: getPrimaryCategory(a),
       rating: a.rating,
@@ -1899,8 +1896,8 @@ STRICT RULES:
         cuisine_tags: toArray(r.cuisine_tags).slice(0, 5),
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
-        theouthaven_score: clampScore(r.theouthaven_score),
-        smart_match_score: clampScore(r.smart_match_score || r.theouthaven_score),
+        theouthaven_score: clampScore(getLocationScore(r)),
+        smart_match_score: clampScore(r.smart_match_score ?? getLocationScore(r)),
         location_name_match_score: r.location_name_match_score || 0,
         paired_activity_name: r.paired_activity_name || null,
         pair_distance_miles: r.pair_distance_miles || null,
@@ -1939,8 +1936,8 @@ STRICT RULES:
         price_range: a.price_range,
         atmosphere: a.atmosphere,
         group_friendly: a.group_friendly,
-        theouthaven_score: clampScore(a.theouthaven_score),
-        smart_match_score: clampScore(a.smart_match_score || a.theouthaven_score),
+        theouthaven_score: clampScore(getLocationScore(a)),
+        smart_match_score: clampScore(a.smart_match_score ?? getLocationScore(a)),
         location_name_match_score: a.location_name_match_score || 0,
         paired_restaurant_name: a.paired_restaurant_name || null,
         pair_distance_miles: a.pair_distance_miles || null,

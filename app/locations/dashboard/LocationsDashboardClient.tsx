@@ -15,6 +15,7 @@ import {
   Store,
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
+import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import ScoreBadge from "@/components/ScoreBadge";
@@ -29,7 +30,7 @@ const locationTypePathSegment: Record<LocationType, "restaurants" | "activities"
   activity: "activities",
 };
 
-type LocationItem = {
+type LocationItem = LocationScoreFields & {
   id: string;
   location_type: LocationType;
   display_name: string;
@@ -42,8 +43,6 @@ type LocationItem = {
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | null;
-  theouthaven_score?: number;
-  quality_score?: number;
   is_claimed?: boolean | null;
   claimed?: boolean | null;
   claim_status?: string | null;
@@ -107,7 +106,7 @@ export default function LocationsDashboardClient({
               locations.reduce(
                 (sum, item) =>
                   sum +
-                  clampScore(item.theouthaven_score ?? item.quality_score ?? 0),
+                  clampScore(getLocationScore(item)),
                 0
               ) / locations.length
             )
@@ -225,7 +224,7 @@ export default function LocationsDashboardClient({
           <div className="max-h-[68vh] space-y-3 overflow-y-auto pr-1">
             {filteredLocations.map((loc) => {
               const active = selected?.id === loc.id;
-              const score = clampScore(loc.theouthaven_score ?? loc.quality_score ?? 0);
+              const score = clampScore(getLocationScore(loc));
 
               return (
                 <button
@@ -335,7 +334,7 @@ export default function LocationsDashboardClient({
                   <div className="mb-6 flex flex-wrap items-center gap-3">
                     <ScoreBadge
                       score={clampScore(
-                        selected.theouthaven_score ?? selected.quality_score ?? 0
+                        getLocationScore(selected)
                       )}
                     />
 

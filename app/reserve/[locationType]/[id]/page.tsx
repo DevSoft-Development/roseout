@@ -4,12 +4,13 @@ import { supabase } from "@/lib/supabase";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
 import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
 } from "@/lib/locationHours";
 
-type LocationRow = {
+type LocationRow = LocationScoreFields & {
   id: string;
   city: string | null;
   state: string | null;
@@ -21,7 +22,6 @@ type LocationRow = {
   restaurant_name?: string | null;
   activity_name?: string | null;
   rating?: number | null;
-  theouthaven_score?: number | null;
   operating_hours?: any;
   special_hours?: any;
   holiday_closures?: any;
@@ -44,8 +44,8 @@ export default async function ReserveLocationPage({
   const hoursFields =
     "operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time";
   const selectFields = isActivity
-    ? `id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, ${hoursFields}`
-    : `id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, ${hoursFields}`;
+    ? `id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${hoursFields}`
+    : `id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${hoursFields}`;
 
   const { data, error } = await supabase
     .from(tableName)
@@ -136,7 +136,7 @@ export default async function ReserveLocationPage({
                       Score
                     </p>
                     <p className="mt-1 text-xl font-black">
-                      {location.theouthaven_score || 0}
+                      {getLocationScore(location)}
                     </p>
                   </div>
                 </div>

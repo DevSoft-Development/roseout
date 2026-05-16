@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
 import { getIsClaimed } from "@/lib/locationClaim";
+import { getLocationScore } from "@/lib/locationScore";
 
 type LocationType = "restaurants" | "activities";
 
@@ -236,7 +237,7 @@ export default function EditLocationPage() {
           owner_email: data.owner_email || "",
           owner_phone: data.owner_phone || "",
           claim_status: data.claim_status || "",
-          theouthaven_score: clampScore(data.theouthaven_score ?? data.quality_score ?? 0),
+          theouthaven_score: clampScore(getLocationScore(data)),
           latitude: data.latitude ?? "",
           longitude: data.longitude ?? "",
         });
