@@ -6,6 +6,10 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+
+const ACTIVITY_UPDATE_COLUMNS =
+  "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, updated_at";
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
@@ -42,7 +46,7 @@ export async function POST(req: NextRequest) {
     .from("activities")
     .update(updates)
     .eq("id", targetActivityId)
-    .select("*")
+    .select(ACTIVITY_UPDATE_COLUMNS)
     .single();
 
   if (error) {

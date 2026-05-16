@@ -35,7 +35,7 @@ export async function POST() {
 
   const { data: activities } = await supabaseAdmin
     .from("activities")
-    .select("*");
+    .select("id, rating, review_count, view_count, click_count, claim_count, quality_score, popularity_score");
 
   for (const restaurant of restaurants || []) {
     await supabaseAdmin
