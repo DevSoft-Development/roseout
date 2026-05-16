@@ -69,18 +69,14 @@ export async function GET(request: NextRequest) {
         .eq("location_type", locationType);
     }
 
-    const [itemsResult, reservationsResult, restaurantsResult, activitiesResult] =
+    const [itemsResult, reservationsResult, locationsResult] =
       await Promise.all([
         itemQuery,
         reservationQuery,
         supabaseAdmin
-          .from("restaurants")
-          .select("id, name, restaurant_name, city, state")
-          .order("restaurant_name", { ascending: true }),
-        supabaseAdmin
-          .from("activities")
-          .select("id, name, activity_name, city, state")
-          .order("activity_name", { ascending: true }),
+          .from("locations")
+          .select("id, location_type, name, restaurant_name, activity_name, city, state")
+          .order("name", { ascending: true }),
       ]);
 
     if (itemsResult.error) {
@@ -94,16 +90,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (restaurantsResult.error) {
+    if (locationsResult.error) {
       return NextResponse.json(
-        { error: restaurantsResult.error.message },
-        { status: 500 }
-      );
-    }
-
-    if (activitiesResult.error) {
-      return NextResponse.json(
-        { error: activitiesResult.error.message },
+        { error: locationsResult.error.message },
         { status: 500 }
       );
     }
@@ -112,22 +101,21 @@ export async function GET(request: NextRequest) {
       date: selectedDate,
       items: itemsResult.data || [],
       reservations: reservationsResult.data || [],
-      locations: [
-        ...(restaurantsResult.data || []).map((item) => ({
+      locations: (locationsResult.data || []).map((item) => {
+        const locationType =
+          item.location_type === "restaurant" ? "restaurant" : "activity";
+
+        return {
           id: item.id,
-          type: "restaurant",
-          name: getLocationName(item, "Restaurant"),
+          type: locationType,
+          name: getLocationName(
+            item,
+            locationType === "restaurant" ? "Restaurant" : "Activity",
+          ),
           city: item.city || "",
           state: item.state || "",
-        })),
-        ...(activitiesResult.data || []).map((item) => ({
-          id: item.id,
-          type: "activity",
-          name: getLocationName(item, "Activity"),
-          city: item.city || "",
-          state: item.state || "",
-        })),
-      ],
+        };
+      }),
     });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });

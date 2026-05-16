@@ -11,8 +11,7 @@ export const dynamic = "force-dynamic";
 type LocationType = "restaurant" | "activity";
 
 
-const ACTIVITY_DASHBOARD_COLUMNS =
-  "id, name, activity_name, address, city, state, main_image, image_url, images, owner_name, owner_email, owner_phone, primary_category, activity_type, primary_tag, tags, google_types, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, view_count, click_count, claim_count, is_searchable, data_status, missing_fields, is_hidden, status, last_quality_check_at, created_at";
+const LOCATION_DASHBOARD_COLUMNS = "*";
 
 type LocationItem = LocationClaimFields &
   LocationScoreFields &
@@ -54,15 +53,25 @@ function adminSupabase() {
   );
 }
 
+function toDashboardLocation(locationData: Record<string, any>): LocationItem {
+  const locationType =
+    locationData.location_type === "restaurant" ? "restaurant" : "activity";
+
+  return {
+    ...locationData,
+    location_type: locationType,
+    display_name: getLocationName(
+      locationData,
+      locationType === "restaurant" ? "Untitled restaurant" : "Untitled activity",
+    ),
+  } as LocationItem;
+}
+
 export default async function DashboardPage() {
   const cookieStore = await cookies();
 
   const impersonatedLocationId = cookieStore.get(
     "theouthaven_impersonate_location_id",
-  )?.value;
-
-  const impersonatedLocationType = cookieStore.get(
-    "theouthaven_impersonate_location_type",
   )?.value;
 
   const impersonatedUserId = cookieStore.get(
@@ -76,84 +85,35 @@ export default async function DashboardPage() {
   let locations: LocationItem[] = [];
   let impersonationLabel = "";
 
-  if (
-    impersonatedLocationId &&
-    ["restaurants", "activities"].includes(impersonatedLocationType || "")
-  ) {
-    const table = impersonatedLocationType as "restaurants" | "activities";
-
+  if (impersonatedLocationId) {
     const { data } = await supabase
-      .from(table)
-      .select(table === "activities" ? ACTIVITY_DASHBOARD_COLUMNS : "*")
+      .from("locations")
+      .select(LOCATION_DASHBOARD_COLUMNS)
       .eq("id", impersonatedLocationId)
       .maybeSingle();
 
     if (data) {
       const locationData = data as Record<string, any>;
 
-      locations = [
-        ({
-          ...locationData,
-          location_type: table === "restaurants" ? "restaurant" : "activity",
-          display_name: getLocationName(
-            locationData,
-            table === "restaurants"
-              ? "Untitled restaurant"
-              : "Untitled activity",
-          ),
-        } as LocationItem),
-      ];
-
+      locations = [toDashboardLocation(locationData)];
       impersonationLabel = `Viewing as ${locations[0].display_name}`;
     }
   } else if (impersonatedUserId) {
-    const { data: restaurants } = await supabase
-      .from("restaurants")
-      .select("*")
-      .eq("owner_user_id", impersonatedUserId);
+    const { data: ownedLocations } = await supabase
+      .from("locations")
+      .select(LOCATION_DASHBOARD_COLUMNS)
+      .eq("owner_user_id", impersonatedUserId)
+      .order("created_at", { ascending: false });
 
-    const { data: activities } = await supabase
-      .from("activities")
-      .select(ACTIVITY_DASHBOARD_COLUMNS)
-      .eq("owner_user_id", impersonatedUserId);
-
-    locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: getLocationName(r, "Untitled restaurant"),
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: getLocationName(a, "Untitled activity"),
-      })),
-    ];
-
+    locations = (ownedLocations || []).map(toDashboardLocation);
     impersonationLabel = "Viewing as location owner";
   } else if (adminUserId) {
-    const { data: restaurants } = await supabase
-      .from("restaurants")
-      .select("*")
+    const { data: allLocations } = await supabase
+      .from("locations")
+      .select(LOCATION_DASHBOARD_COLUMNS)
       .order("created_at", { ascending: false });
 
-    const { data: activities } = await supabase
-      .from("activities")
-      .select(ACTIVITY_DASHBOARD_COLUMNS)
-      .order("created_at", { ascending: false });
-
-    locations = [
-      ...(restaurants || []).map((r: any) => ({
-        ...r,
-        location_type: "restaurant" as LocationType,
-        display_name: getLocationName(r, "Untitled restaurant"),
-      })),
-      ...(activities || []).map((a: any) => ({
-        ...a,
-        location_type: "activity" as LocationType,
-        display_name: getLocationName(a, "Untitled activity"),
-      })),
-    ];
+    locations = (allLocations || []).map(toDashboardLocation);
   }
 
   return (

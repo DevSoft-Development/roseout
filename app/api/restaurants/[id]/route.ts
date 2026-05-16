@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isPubliclyVisible } from "@/lib/locationVisibility";
+import { isPublicSearchVisible } from "@/lib/locationVisibility";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,12 +14,13 @@ export async function GET(
   const { id } = await params;
 
   const { data, error } = await supabase
-    .from("restaurants")
+    .from("locations")
     .select("*")
     .eq("id", id)
+    .eq("location_type", "restaurant")
     .eq("is_searchable", true)
     .eq("data_status", "clean")
-    .neq("is_hidden", true)
+    .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')
     .single();
 
@@ -27,7 +28,7 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!isPubliclyVisible(data)) {
+  if (!isPublicSearchVisible(data)) {
     return NextResponse.json(
       { error: "Restaurant not found." },
       { status: 404 },
