@@ -9,6 +9,7 @@ import { trackAnalytics } from "@/lib/trackAnalytics";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import {
   getExternalReservationUrl,
@@ -27,8 +28,13 @@ type RestaurantCard = {
   google_maps_link?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  primary_category?: string | null;
   cuisine?: string | null;
+  cuisine_type?: string | null;
   food_type?: string | null;
+  activity_type?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
   atmosphere?: string | null;
   price_range?: string | null;
   external_reservation_url?: string | null;
@@ -54,7 +60,13 @@ type ActivityCard = {
   id: string;
   name?: string | null;
   activity_name?: string | null;
+  primary_category?: string | null;
+  cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
   activity_type?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
   detail_location_type?: "restaurants" | "activities" | null;
   address?: string | null;
   city?: string | null;
@@ -865,9 +877,7 @@ export default function CreatePage() {
                                 imageUrl={getLocationImage(restaurant)}
                                 title={getLocationName(restaurant)}
                                 eyebrow={
-                                  restaurant.cuisine ||
-                                  restaurant.food_type ||
-                                  "Restaurant"
+                                  getCuisine(restaurant) || "Restaurant"
                                 }
                                 address={formatAddress(restaurant)}
                                 rating={restaurant.rating}
@@ -958,7 +968,7 @@ export default function CreatePage() {
                                 type="activity"
                                 imageUrl={getLocationImage(activity)}
                                 title={getLocationName(activity)}
-                                eyebrow={activity.activity_type || "Activity"}
+                                eyebrow={getPrimaryCategory(activity)}
                                 address={formatAddress(activity)}
                                 rating={activity.rating}
                                 reviewKeywords={activity.review_keywords}
@@ -1344,7 +1354,7 @@ function PlanSummarySheet({
               label="Restaurant"
               title={restaurant ? getLocationName(restaurant) : "Choose a restaurant"}
               meta={[
-                restaurant?.cuisine || restaurant?.food_type || "Restaurant",
+                getCuisine(restaurant) || "Restaurant",
                 restaurant?.city || null,
                 restaurant?.rating ? `🌹 ${restaurant.rating}` : null,
               ]
@@ -1381,7 +1391,7 @@ function PlanSummarySheet({
               label="Activity"
               title={activity ? getLocationName(activity) : "Choose an activity"}
               meta={[
-                activity?.activity_type || "Experience",
+                getPrimaryCategory(activity),
                 activity?.city || null,
                 activity?.rating ? `🌹 ${activity.rating}` : null,
               ]

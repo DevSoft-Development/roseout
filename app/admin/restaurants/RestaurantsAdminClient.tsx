@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getCuisine, getLocationTags } from "@/lib/locationFields";
 
 type Restaurant = {
   id: string;
@@ -20,7 +21,14 @@ type Restaurant = {
   reservation_url?: string | null;
   reservation_link?: string | null;
   reservation_enabled?: boolean | null;
+  primary_category?: string | null;
   cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
+  activity_type?: string | null;
+  primary_tag?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
   description?: string | null;
   main_image?: string | null;
   image_url?: string | null;
@@ -171,7 +179,7 @@ export default function RestaurantsAdminClient({
         restaurant.address.toLowerCase().includes(q) ||
         restaurant.city.toLowerCase().includes(q) ||
         restaurant.state.toLowerCase().includes(q) ||
-        restaurant.cuisine?.toLowerCase().includes(q);
+        getLocationTags(restaurant).some((tag) => tag.includes(q));
 
       const matchesStatus =
         statusFilter === "all" || restaurant.status === statusFilter;
@@ -267,7 +275,7 @@ export default function RestaurantsAdminClient({
                       </p>
 
                       <p className="mt-2 text-sm text-[#6f5c50]">
-                        {restaurant.cuisine || "No cuisine listed"}
+                        {getCuisine(restaurant) || "No cuisine listed"}
                       </p>
 
                       <p className="mt-3 max-w-3xl text-sm leading-6 text-[#6f5c50]">

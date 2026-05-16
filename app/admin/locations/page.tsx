@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getPrimaryCategory } from "@/lib/locationFields";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
@@ -24,6 +25,14 @@ type AdminLocation = {
   state: string | null;
   zip_code: string | null;
   category: string | null;
+  primary_category?: string | null;
+  cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
+  activity_type?: string | null;
+  primary_tag?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
   status: string | null;
   claimed: boolean | null;
   rating: number | null;
@@ -139,7 +148,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, claimed, cuisine_type, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
+      "id, name, restaurant_name, address, city, state, zip_code, status, claimed, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -147,7 +156,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, activity_type, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
+      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, claimed, rating, view_count, click_count, theouthaven_score, main_image, image_url, images, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -198,7 +207,7 @@ export default async function AdminLocationsPage({
       city: item.city,
       state: item.state,
       zip_code: item.zip_code,
-      category: item.cuisine_type,
+      category: getPrimaryCategory(item),
       status: item.status,
       claimed: item.claimed,
       rating: item.rating,
@@ -220,7 +229,7 @@ export default async function AdminLocationsPage({
       city: item.city,
       state: item.state,
       zip_code: item.zip_code,
-      category: item.activity_type,
+      category: getPrimaryCategory(item),
       status: item.status,
       claimed: item.claimed,
       rating: item.rating,

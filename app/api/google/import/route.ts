@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { supabase } from "@/lib/supabase";
 import { clampScore } from "@/lib/clampScore";
 import { getLocationName } from "@/lib/locationName";
+import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -236,15 +237,13 @@ function itemText(item: any) {
     item.zip_code,
     item.neighborhood,
     item.borough,
-    item.cuisine,
-    item.food_type,
-    item.cuisine_type,
+    ...getLocationTags(item),
+    getCuisine(item),
+    getPrimaryCategory(item),
     ...toArray(item.cuisine_tags),
-    item.activity_type,
     item.category,
     item.categories,
     item.subcategory,
-    item.google_types,
     item.types,
     item.business_status,
     item.atmosphere,
@@ -660,13 +659,11 @@ function itemHasTag(item: any, tag: string) {
   const searchable = itemText(item);
 
   const directTags = [
-    item.activity_type,
+    ...getLocationTags(item),
     item.activity_name,
     item.category,
     item.categories,
     item.subcategory,
-    item.primary_tag,
-    ...toArray(item.google_types),
     ...toArray(item.types),
     ...toArray(item.date_style_tags),
     ...toArray(item.search_keywords),
@@ -719,10 +716,8 @@ function cuisineMatchesPrompt(item: any, input: string) {
   if (!text) return false;
 
   const cuisineTerms = [
-    item.cuisine,
-    item.food_type,
-    item.cuisine_type,
-    item.primary_tag,
+    getCuisine(item),
+    ...getLocationTags(item),
     ...toArray(item.cuisine_tags),
     ...toArray(item.search_keywords),
   ]
@@ -739,10 +734,8 @@ function cuisinePromptBoost(item: any, input: string) {
   if (!text) return 0;
 
   const cuisineTerms = [
-    item.cuisine,
-    item.food_type,
-    item.cuisine_type,
-    item.primary_tag,
+    getCuisine(item),
+    ...getLocationTags(item),
     ...toArray(item.cuisine_tags),
   ]
     .filter(Boolean)
@@ -1700,22 +1693,22 @@ export async function POST(req: Request) {
       location_type: item.location_type,
       city: item.city,
       address: item.address,
-      cuisine: item.cuisine || item.food_type || item.cuisine_type || null,
+      primary_category: getPrimaryCategory(item),
+        cuisine: getCuisine(item),
       cuisine_tags: toArray(item.cuisine_tags).slice(0, 5),
-      activity_type:
-        item.activity_type || item.category || item.subcategory || null,
+      activity_type: getPrimaryCategory(item),
       score: item.location_name_match_score,
     }));
 
     const slimRestaurants = topRestaurants.map((r: any) => ({
       name: getLocationName(r, ""),
       city: r.city,
-      cuisine: r.cuisine || r.food_type || r.cuisine_type,
+      cuisine: getCuisine(r),
       food_type: r.food_type || null,
       cuisine_tags: toArray(r.cuisine_tags).slice(0, 5),
       score: clampScore(r.theouthaven_score),
       location_name_match_score: r.location_name_match_score || 0,
-      tag: r.primary_tag,
+      tag: getPrimaryCategory(r),
       rating: r.rating,
       review_count: r.review_count,
       distance_miles: r.distance_miles || null,
@@ -1725,10 +1718,10 @@ export async function POST(req: Request) {
     const slimActivities = topActivities.map((a: any) => ({
       name: getLocationName(a, ""),
       city: a.city,
-      type: a.activity_type || a.category || a.subcategory,
+      type: getPrimaryCategory(a),
       score: clampScore(a.theouthaven_score),
       location_name_match_score: a.location_name_match_score || 0,
-      tag: a.primary_tag,
+      tag: getPrimaryCategory(a),
       rating: a.rating,
       review_count: a.review_count,
       distance_miles: a.distance_miles || null,
@@ -1865,10 +1858,10 @@ STRICT RULES:
         city: item.city,
         state: item.state,
         zip_code: item.zip_code,
-        cuisine: item.cuisine || item.food_type || item.cuisine_type || null,
+        primary_category: getPrimaryCategory(item),
+        cuisine: getCuisine(item),
         cuisine_tags: toArray(item.cuisine_tags).slice(0, 5),
-        activity_type:
-          item.activity_type || item.category || item.subcategory || null,
+        activity_type: getPrimaryCategory(item),
         website: item.website,
         phone: item.phone || null,
         google_maps_url: item.google_maps_url || null,
@@ -1897,8 +1890,12 @@ STRICT RULES:
         zip_code: r.zip_code,
         google_maps_url: r.google_maps_url || null,
         google_maps_link: r.google_maps_link || null,
-        cuisine: r.cuisine || r.food_type || r.cuisine_type || null,
+        primary_category: getPrimaryCategory(r),
+        cuisine: getCuisine(r),
+        cuisine_type: r.cuisine_type || null,
         food_type: r.food_type || null,
+        tags: Array.isArray(r.tags) ? r.tags : null,
+        google_types: Array.isArray(r.google_types) ? r.google_types : null,
         cuisine_tags: toArray(r.cuisine_tags).slice(0, 5),
         atmosphere: r.atmosphere || null,
         price_range: r.price_range || null,
@@ -1926,7 +1923,13 @@ STRICT RULES:
       activities: topActivities.map((a: any) => ({
         id: String(a.id),
         activity_name: a.activity_name || a.name,
+        primary_category: getPrimaryCategory(a),
+        cuisine: getCuisine(a),
+        cuisine_type: a.cuisine_type || null,
+        food_type: a.food_type || null,
         activity_type: a.activity_type || a.category || a.subcategory,
+        tags: Array.isArray(a.tags) ? a.tags : null,
+        google_types: Array.isArray(a.google_types) ? a.google_types : null,
         address: a.address,
         city: a.city,
         state: a.state,
