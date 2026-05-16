@@ -11,6 +11,7 @@ import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type RestaurantCard = {
   id: string;
+  name?: string | null;
   restaurant_name: string;
   address?: string | null;
   city?: string | null;
@@ -39,6 +40,7 @@ type RestaurantCard = {
 
 type ActivityCard = {
   id: string;
+  name?: string | null;
   activity_name: string;
   activity_type?: string | null;
   detail_location_type?: "restaurants" | "activities" | null;
@@ -117,6 +119,16 @@ const loadingLines = [
 ];
 
 const DEFAULT_RESULT_ORDER: ResultSectionKind[] = ["restaurants", "activities"];
+function getLocationName(location: RestaurantCard | ActivityCard | null | undefined) {
+  if (!location) return "Unknown Location";
+
+  return (
+    ("name" in location ? location.name : null) ||
+    ("restaurant_name" in location ? location.restaurant_name : null) ||
+    ("activity_name" in location ? location.activity_name : null) ||
+    "Unknown Location"
+  );
+}
 
 const RESULT_ORDER_RESTAURANT_KEYWORDS = [
   "restaurant",
@@ -843,7 +855,7 @@ export default function CreatePage() {
                                 index={restaurantIndex}
                                 type="restaurant"
                                 imageUrl={restaurant.image_url || undefined}
-                                title={restaurant.restaurant_name}
+                                title={getLocationName(restaurant)}
                                 eyebrow={
                                   restaurant.cuisine ||
                                   restaurant.food_type ||
@@ -932,7 +944,7 @@ export default function CreatePage() {
                                 index={activityIndex}
                                 type="activity"
                                 imageUrl={activity.image_url || undefined}
-                                title={activity.activity_name}
+                                title={getLocationName(activity)}
                                 eyebrow={activity.activity_type || "Activity"}
                                 address={formatAddress(activity)}
                                 rating={activity.rating}
