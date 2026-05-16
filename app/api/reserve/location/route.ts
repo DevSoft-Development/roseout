@@ -27,9 +27,6 @@ function getTableName(type: string) {
   return type === "activity" ? "activities" : "locations";
 }
 
-const LOCATION_HOURS_SELECT =
-  "operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time";
-
 function getReservationLocationName(location: any, type: string) {
   return getDisplayLocationName(
     location,
@@ -290,7 +287,7 @@ export async function GET(request: NextRequest) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from(getTableName(locationType))
-      .select(`*, ${LOCATION_HOURS_SELECT}`)
+      .select("*")
       .eq("id", locationId)
       .maybeSingle();
 
@@ -458,7 +455,7 @@ export async function POST(request: NextRequest) {
 
     const { data: location, error: locationError } = await supabaseAdmin
       .from(getTableName(locationType))
-      .select(`*, ${LOCATION_HOURS_SELECT}`)
+      .select("*")
       .eq("id", locationId)
       .maybeSingle();
 

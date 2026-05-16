@@ -40,11 +40,13 @@ export default async function ReserveLocationPage({
   const isActivity = locationType === "activity";
   const tableName = isActivity ? "activities" : "restaurants";
 
-  const hoursFields =
+  const activityHoursFields =
+    "operating_hours, special_hours, holiday_closures, hours";
+  const restaurantHoursFields =
     "operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time";
   const selectFields = isActivity
-    ? `id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${hoursFields}`
-    : `id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${hoursFields}`;
+    ? `id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${activityHoursFields}`
+    : `id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${restaurantHoursFields}`;
 
   const { data, error } = await supabase
     .from(tableName)
@@ -54,7 +56,7 @@ export default async function ReserveLocationPage({
 
   if (error || !data) notFound();
 
-  const location = data as LocationRow;
+  const location = data as unknown as LocationRow;
 
   const locationName = getLocationName(location, isActivity ? "Activity" : "Restaurant");
 
