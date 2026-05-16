@@ -8,18 +8,15 @@ export const maxDuration = 300;
 type SourceTable = "restaurants" | "activities";
 type TableParam = SourceTable | "both";
 type SourceRow = Record<string, unknown> & { id: string | number };
-
-type SyncSummary = {
-  restaurantsSynced: number;
-  activitiesSynced: number;
-  clean: number;
-  needsReview: number;
-  nextOffset: number | null;
-  nextOffsets: Partial<Record<SourceTable, number | null>>;
-};
+type DataStatus =
+  | "clean"
+  | "missing_image"
+  | "missing_coordinates"
+  | "missing_address"
+  | "needs_review";
 
 type TableSyncResult = {
-  table: SourceTable;
+  checked: number;
   synced: number;
   clean: number;
   needsReview: number;
@@ -41,7 +38,172 @@ const supabaseAdmin = createClient(
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 100;
 
-const NAME_TAG_KEYWORDS = [
+const RESTAURANT_SELECT = `
+  id,
+  name,
+  restaurant_name,
+  primary_category,
+  cuisine,
+  cuisine_type,
+  food_type,
+  primary_tag,
+  main_image,
+  image_url,
+  images,
+  external_reservation_url,
+  reservation_url,
+  reservation_link,
+  theouthaven_score,
+  roseout_score,
+  quality_score,
+  address,
+  city,
+  state,
+  zip_code,
+  neighborhood,
+  latitude,
+  longitude,
+  description,
+  price_range,
+  rating,
+  review_count,
+  phone,
+  website,
+  tags,
+  vibe_tags,
+  best_for_tags,
+  google_types,
+  search_keywords,
+  review_keywords,
+  date_style_tags,
+  best_for,
+  special_features,
+  signature_items,
+  popularity_score,
+  trend_score,
+  conversion_score,
+  review_score,
+  ranking_badge,
+  status,
+  is_hidden,
+  is_featured,
+  is_verified,
+  reservation_enabled,
+  operating_hours,
+  special_hours,
+  holiday_closures,
+  atmosphere
+`;
+
+const ACTIVITY_SELECT = `
+  id,
+  name,
+  activity_name,
+  location_type,
+  primary_category,
+  activity_type,
+  primary_tag,
+  main_image,
+  image_url,
+  images,
+  external_reservation_url,
+  reservation_url,
+  reservation_link,
+  theouthaven_score,
+  roseout_score,
+  quality_score,
+  address,
+  city,
+  state,
+  zip_code,
+  neighborhood,
+  latitude,
+  longitude,
+  description,
+  price_range,
+  rating,
+  review_count,
+  phone,
+  website,
+  tags,
+  vibe_tags,
+  best_for_tags,
+  google_types,
+  search_keywords,
+  review_keywords,
+  date_style_tags,
+  best_for,
+  special_features,
+  signature_items,
+  popularity_score,
+  trend_score,
+  conversion_score,
+  review_score,
+  ranking_badge,
+  status,
+  is_hidden,
+  is_featured,
+  is_verified,
+  reservation_enabled,
+  operating_hours,
+  special_hours,
+  holiday_closures,
+  atmosphere
+`;
+
+const SHARED_FIELDS = [
+  "address",
+  "city",
+  "state",
+  "zip_code",
+  "neighborhood",
+  "latitude",
+  "longitude",
+  "description",
+  "price_range",
+  "rating",
+  "review_count",
+  "phone",
+  "website",
+  "image_url",
+  "images",
+  "tags",
+  "vibe_tags",
+  "best_for_tags",
+  "google_types",
+  "search_keywords",
+  "review_keywords",
+  "date_style_tags",
+  "best_for",
+  "special_features",
+  "signature_items",
+  "quality_score",
+  "popularity_score",
+  "trend_score",
+  "conversion_score",
+  "review_score",
+  "ranking_badge",
+  "status",
+  "is_hidden",
+  "is_featured",
+  "is_verified",
+  "reservation_enabled",
+  "operating_hours",
+  "special_hours",
+  "holiday_closures",
+] as const;
+
+const REQUIRED_SEARCH_FIELDS = [
+  "name",
+  "address",
+  "city",
+  "state",
+  "latitude",
+  "longitude",
+  "main_image",
+] as const;
+
+const TAG_KEYWORDS = [
   "seafood",
   "steakhouse",
   "steak",
@@ -72,84 +234,23 @@ const NAME_TAG_KEYWORDS = [
   "wine",
   "jazz",
   "live music",
-];
-
-function toSearchArray(value: unknown): string[] {
-  if (!value) return [];
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => toSearchArray(item));
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-
-    if (
-      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-      (trimmed.startsWith("{") && trimmed.endsWith("}"))
-    ) {
-      try {
-        return toSearchArray(JSON.parse(trimmed));
-      } catch {
-        // Fall back to comma splitting below.
-      }
-    }
-
-    return trimmed
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return [String(value)];
-}
-
-function normalizeTagList(...values: unknown[]) {
-  return Array.from(
-    new Set(
-      values
-        .flatMap((value) => toSearchArray(value))
-        .map((tag) => String(tag).trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  );
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function extractNameTags(name: unknown) {
-  const normalizedName = String(name || "").toLowerCase();
-
-  return NAME_TAG_KEYWORDS.filter((keyword) =>
-    new RegExp(`(^|\\W)${escapeRegExp(keyword)}(\\W|$)`, "i").test(
-      normalizedName,
-    ),
-  );
-}
-
-function buildSearchDocument(parts: unknown[]) {
-  return normalizeTagList(parts)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-const REQUIRED_SEARCH_FIELDS = [
-  "name",
-  "address",
-  "city",
-  "state",
-  "latitude",
-  "longitude",
-  "main_image",
+  "romantic",
+  "birthday",
+  "group",
+  "date night",
 ] as const;
+
+const EMPTY_RESULT: TableSyncResult = {
+  checked: 0,
+  synced: 0,
+  clean: 0,
+  needsReview: 0,
+  nextOffset: null,
+  errors: [],
+};
 
 function cleanString(value: unknown) {
   if (typeof value !== "string") return null;
-
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
@@ -196,16 +297,150 @@ function getPrimaryCategory(table: SourceTable, row: SourceRow) {
         row.cuisine_type,
         row.food_type,
         row.primary_tag,
-      ) || "Experience"
+      ) || "Restaurant"
     : firstPresent<string>(
         row.primary_category,
         row.activity_type,
         row.primary_tag,
-      ) || "Experience";
+      ) || "Activity";
+}
+
+function normalizeArray(value: unknown): string[] {
+  if (!isPresent(value)) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => normalizeArray(item));
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).flatMap((item) =>
+      normalizeArray(item),
+    );
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
+      try {
+        return normalizeArray(JSON.parse(trimmed));
+      } catch {
+        // Fall through to delimiter splitting.
+      }
+    }
+
+    return trimmed
+      .split(/[,|;]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [String(value)];
+}
+
+function uniqueNormalizedStrings(...values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => normalizeArray(value))
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractTagsFromName(...values: unknown[]) {
+  const text = values
+    .flatMap((value) => normalizeArray(value))
+    .join(" ")
+    .toLowerCase();
+
+  return TAG_KEYWORDS.filter((keyword) =>
+    new RegExp(`(^|\\W)${escapeRegExp(keyword)}(\\W|$)`, "i").test(text),
+  );
 }
 
 function getMainImage(row: SourceRow) {
-  return firstPresent<string>(row.main_image, row.image_url);
+  return firstPresent<string>(
+    row.main_image,
+    row.image_url,
+    normalizeArray(row.images)[0],
+  );
+}
+
+function buildTags(table: SourceTable, row: SourceRow) {
+  const name = getLocationName(table, row);
+  const primaryCategory = getPrimaryCategory(table, row);
+
+  return uniqueNormalizedStrings(
+    row.tags,
+    extractTagsFromName(
+      name,
+      primaryCategory,
+      row.cuisine,
+      row.cuisine_type,
+      row.food_type,
+      row.activity_type,
+      row.primary_tag,
+    ),
+  );
+}
+
+function buildSearchDocument(row: SourceRow, payload: Record<string, unknown>) {
+  return uniqueNormalizedStrings(
+    payload.name,
+    payload.restaurant_name,
+    payload.activity_name,
+    payload.primary_category,
+    row.cuisine,
+    row.cuisine_type,
+    row.activity_type,
+    row.primary_tag,
+    payload.tags,
+    row.vibe_tags,
+    row.best_for_tags,
+    row.google_types,
+    row.search_keywords,
+    row.review_keywords,
+    row.date_style_tags,
+    row.best_for,
+    row.atmosphere,
+    row.city,
+    row.neighborhood,
+    row.state,
+    row.description,
+  )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getMissingFields(payload: Record<string, unknown>) {
+  return REQUIRED_SEARCH_FIELDS.filter((field) => !isPresent(payload[field]));
+}
+
+function getDataStatus(missingFields: readonly string[]): DataStatus {
+  if (missingFields.length === 0) return "clean";
+  if (missingFields.includes("main_image")) return "missing_image";
+  if (missingFields.includes("latitude") || missingFields.includes("longitude")) {
+    return "missing_coordinates";
+  }
+  if (
+    missingFields.includes("address") ||
+    missingFields.includes("city") ||
+    missingFields.includes("state")
+  ) {
+    return "missing_address";
+  }
+  return "needs_review";
 }
 
 function getReservationUrl(row: SourceRow) {
@@ -221,113 +456,66 @@ function getTheOutHavenScore(row: SourceRow) {
     row.theouthaven_score,
     row.roseout_score,
     row.quality_score,
+    0,
   );
-}
-
-function getMissingFields(payload: Record<string, unknown>) {
-  return REQUIRED_SEARCH_FIELDS.filter((field) => !isPresent(payload[field]));
 }
 
 function buildLocationPayload(table: SourceTable, row: SourceRow) {
-  const locationType = table === "restaurants" ? "restaurant" : "activity";
-  const name = getLocationName(table, row);
-  const primaryCategory = getPrimaryCategory(table, row);
-  const mainImage = getMainImage(row);
-  const externalReservationUrl = getReservationUrl(row);
-  const theOutHavenScore = getTheOutHavenScore(row);
-
-  const nameTags = extractNameTags(name);
-  const existingTags = normalizeTagList(row.tags);
-  const shouldGenerateStarterTags = existingTags.length === 0;
-  const tags = normalizeTagList(
-    existingTags,
-    nameTags,
-    shouldGenerateStarterTags ? name : null,
-    shouldGenerateStarterTags ? primaryCategory : null,
-    shouldGenerateStarterTags ? row.cuisine : null,
-    shouldGenerateStarterTags ? row.cuisine_type : null,
-    shouldGenerateStarterTags ? row.activity_type : null,
-    shouldGenerateStarterTags ? row.google_types : null,
-    shouldGenerateStarterTags ? row.atmosphere : null,
-    shouldGenerateStarterTags ? row.best_for : null,
-    shouldGenerateStarterTags ? row.date_style_tags : null,
-    shouldGenerateStarterTags ? row.primary_tag : null,
-  );
-  const searchKeywords = normalizeTagList(row.search_keywords, nameTags, tags);
-  const reviewKeywords = normalizeTagList(row.review_keywords);
-  const vibeTags = normalizeTagList(row.vibe_tags);
-  const bestForTags = normalizeTagList(row.best_for_tags);
-  const googleTypes = normalizeTagList(row.google_types);
-  const dateStyleTags = normalizeTagList(row.date_style_tags);
-  const bestFor = normalizeTagList(row.best_for);
-  const atmosphere = normalizeTagList(row.atmosphere);
+  const locationType =
+    table === "restaurants"
+      ? "restaurant"
+      : firstPresent<string>(row.location_type) || "activity";
 
   const payload: Record<string, unknown> = {
     source_table: table,
-    source_id: row.id,
+    source_id: String(row.id),
     location_type: locationType,
-    restaurant_name: firstPresent<string>(row.restaurant_name),
-    activity_name: firstPresent<string>(row.activity_name),
-    name,
-    primary_category: primaryCategory,
-    cuisine: firstPresent<string>(row.cuisine),
-    cuisine_type: firstPresent<string>(row.cuisine_type, row.food_type),
-    activity_type: firstPresent<string>(row.activity_type),
+    name: getLocationName(table, row),
+    restaurant_name:
+      table === "restaurants" ? firstPresent<string>(row.restaurant_name) : null,
+    activity_name:
+      table === "activities" ? firstPresent<string>(row.activity_name) : null,
+    primary_category: getPrimaryCategory(table, row),
+    main_image: getMainImage(row),
+    external_reservation_url: getReservationUrl(row),
+    theouthaven_score: getTheOutHavenScore(row),
     primary_tag: firstPresent<string>(row.primary_tag),
-    tags,
-    vibe_tags: vibeTags,
-    best_for_tags: bestForTags,
-    google_types: googleTypes,
-    search_keywords: searchKeywords,
-    review_keywords: reviewKeywords,
-    date_style_tags: dateStyleTags,
-    best_for: bestFor,
-    atmosphere,
-    main_image: mainImage,
-    external_reservation_url: externalReservationUrl,
-    theouthaven_score: theOutHavenScore,
-    address: firstPresent<string>(row.address),
-    city: firstPresent<string>(row.city),
-    state: firstPresent<string>(row.state),
-    zip_code: firstPresent<string>(row.zip_code),
-    latitude: firstPresent<number | string>(row.latitude),
-    longitude: firstPresent<number | string>(row.longitude),
-    neighborhood: firstPresent<string>(row.neighborhood),
-    description: firstPresent<string>(row.description, row.short_description),
-    price_range: firstPresent<string>(row.price_range),
-    rating: firstPresent<number | string>(row.rating),
-    review_count: firstPresent<number | string>(row.review_count),
-    phone: firstPresent<string>(row.phone),
-    website: firstPresent<string>(row.website),
-    image_url: firstPresent<string>(row.image_url),
-    reservation_url: firstPresent<string>(row.reservation_url),
-    reservation_link: firstPresent<string>(row.reservation_link),
-    status: firstPresent<string>(row.status),
+    tags: buildTags(table, row),
+    vibe_tags: uniqueNormalizedStrings(row.vibe_tags),
+    best_for_tags: uniqueNormalizedStrings(row.best_for_tags),
+    google_types: uniqueNormalizedStrings(row.google_types),
+    search_keywords: uniqueNormalizedStrings(
+      row.search_keywords,
+      buildTags(table, row),
+    ),
+    review_keywords: uniqueNormalizedStrings(row.review_keywords),
+    date_style_tags: uniqueNormalizedStrings(row.date_style_tags),
+    best_for: uniqueNormalizedStrings(row.best_for),
+    special_features: uniqueNormalizedStrings(row.special_features),
+    signature_items: uniqueNormalizedStrings(row.signature_items),
+    atmosphere: uniqueNormalizedStrings(row.atmosphere),
   };
 
-  payload.search_document = buildSearchDocument([
-    name,
-    payload.restaurant_name,
-    payload.activity_name,
-    primaryCategory,
-    payload.cuisine,
-    payload.cuisine_type,
-    payload.activity_type,
-    payload.primary_tag,
-    tags,
-    vibeTags,
-    bestForTags,
-    googleTypes,
-    searchKeywords,
-    reviewKeywords,
-    dateStyleTags,
-    bestFor,
-    atmosphere,
-    payload.city,
-    payload.neighborhood,
-    payload.state,
-    payload.description,
-  ]);
+  if (table === "restaurants") {
+    payload.cuisine = firstPresent<string>(row.cuisine);
+    payload.cuisine_type = firstPresent<string>(
+      row.cuisine_type,
+      row.food_type,
+    );
+  } else {
+    payload.activity_type = firstPresent<string>(row.activity_type);
+  }
+
+  for (const field of SHARED_FIELDS) {
+    if (field in payload) continue;
+    const value = row[field];
+    payload[field] = Array.isArray(value)
+      ? uniqueNormalizedStrings(value)
+      : firstPresent(value);
+  }
+
+  payload.images = normalizeArray(row.images);
+  payload.search_document = buildSearchDocument(row, payload);
 
   const missingFields = getMissingFields(payload);
   const isSearchable = missingFields.length === 0;
@@ -335,7 +523,7 @@ function buildLocationPayload(table: SourceTable, row: SourceRow) {
   return {
     ...payload,
     is_searchable: isSearchable,
-    data_status: isSearchable ? "clean" : "needs_review",
+    data_status: getDataStatus(missingFields),
     missing_fields: missingFields,
     last_quality_check_at: new Date().toISOString(),
   };
@@ -346,16 +534,17 @@ async function syncTable(
   limit: number,
   offset: number,
 ): Promise<TableSyncResult> {
-  const { data, error } = await supabaseAdmin
+  const select = table === "restaurants" ? RESTAURANT_SELECT : ACTIVITY_SELECT;
+  const { data, error } = await (supabaseAdmin as any)
     .from(table)
-    .select("*")
+    .select(select)
     .range(offset, offset + limit - 1);
 
   if (error) throw error;
 
   const rows = (data || []) as SourceRow[];
   const result: TableSyncResult = {
-    table,
+    checked: rows.length,
     synced: 0,
     clean: 0,
     needsReview: 0,
@@ -365,7 +554,7 @@ async function syncTable(
 
   for (const row of rows) {
     const payload = buildLocationPayload(table, row);
-    const { error: upsertError } = await supabaseAdmin
+    const { error: upsertError } = await (supabaseAdmin as any)
       .from("locations")
       .upsert(payload, { onConflict: "source_table,source_id" });
 
@@ -385,40 +574,6 @@ async function syncTable(
   }
 
   return result;
-}
-
-function mergeResults(results: TableSyncResult[]): SyncSummary {
-  const nextOffsets = Object.fromEntries(
-    results.map((result) => [result.table, result.nextOffset]),
-  ) as Partial<Record<SourceTable, number | null>>;
-  const offsetValues = results
-    .map((result) => result.nextOffset)
-    .filter((nextOffset): nextOffset is number => nextOffset !== null);
-
-  const initialSummary: SyncSummary = {
-    restaurantsSynced: 0,
-    activitiesSynced: 0,
-    clean: 0,
-    needsReview: 0,
-    nextOffset: null,
-    nextOffsets,
-  };
-
-  return results.reduce<SyncSummary>(
-    (summary, result) => ({
-      restaurantsSynced:
-        summary.restaurantsSynced +
-        (result.table === "restaurants" ? result.synced : 0),
-      activitiesSynced:
-        summary.activitiesSynced +
-        (result.table === "activities" ? result.synced : 0),
-      clean: summary.clean + result.clean,
-      needsReview: summary.needsReview + result.needsReview,
-      nextOffset: offsetValues.length > 0 ? Math.max(...offsetValues) : null,
-      nextOffsets,
-    }),
-    initialSummary,
-  );
 }
 
 async function runSync(req: NextRequest) {
@@ -455,23 +610,23 @@ async function runSync(req: NextRequest) {
       );
     }
 
-    const results: TableSyncResult[] = [];
+    const restaurants =
+      tableParam === "restaurants" || tableParam === "both"
+        ? await syncTable("restaurants", requestedLimit, offset)
+        : { ...EMPTY_RESULT };
 
-    if (tableParam === "restaurants" || tableParam === "both") {
-      results.push(await syncTable("restaurants", requestedLimit, offset));
-    }
-
-    if (tableParam === "activities" || tableParam === "both") {
-      results.push(await syncTable("activities", requestedLimit, offset));
-    }
+    const activities =
+      tableParam === "activities" || tableParam === "both"
+        ? await syncTable("activities", requestedLimit, offset)
+        : { ...EMPTY_RESULT };
 
     return NextResponse.json({
       success: true,
       table: tableParam,
       limit: requestedLimit,
       offset,
-      ...mergeResults(results),
-      results,
+      restaurants,
+      activities,
     });
   } catch (error: unknown) {
     console.error("sync-locations error:", error);

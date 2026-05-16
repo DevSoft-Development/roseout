@@ -329,10 +329,48 @@ function normalizeLocation(item: any) {
         ? item.restaurant_name || name
         : item.restaurant_name,
     activity_name:
-      String(type).toLowerCase() === "activity"
+      String(type).toLowerCase() !== "restaurant"
         ? item.activity_name || name
         : item.activity_name,
   };
+}
+
+function hasPublicField(value: unknown) {
+  return typeof value === "string"
+    ? value.trim().length > 0
+    : value !== null && value !== undefined;
+}
+
+function hasRequiredPublicFields(item: any) {
+  return [
+    item.name || item.restaurant_name || item.activity_name,
+    item.address,
+    item.city,
+    item.state,
+    item.latitude,
+    item.longitude,
+    item.main_image || item.image_url,
+  ].every(hasPublicField);
+}
+
+function isPublicSearchVisible(item: any) {
+  if (item?.is_hidden === true) return false;
+
+  const status = String(item?.status || "").toLowerCase();
+  if (["closed", "archived"].includes(status)) return false;
+
+  return (
+    (item?.is_searchable === true && item?.data_status === "clean") ||
+    hasRequiredPublicFields(item)
+  );
+}
+
+function isRestaurantLocation(item: any) {
+  return String(item?.location_type || "").toLowerCase() === "restaurant";
+}
+
+function isActivityLocation(item: any) {
+  return String(item?.location_type || "").toLowerCase() !== "restaurant";
 }
 
 function detectLocation(input: string, locations: any[]) {
@@ -1482,46 +1520,13 @@ export async function POST(req: Request) {
       .from("locations")
       .select("*");
 
-    const { data: restaurantsData, error: restaurantsError } = await supabase
-      .from("restaurants")
-      .select(RESTAURANT_SEARCH_COLUMNS);
-
-    const { data: activitiesData, error: activitiesError } = await supabase
-      .from("activities")
-      .select(ACTIVITY_SEARCH_COLUMNS);
-
     if (locationsError) {
       return Response.json({ error: locationsError.message }, { status: 500 });
     }
 
-    if (restaurantsError) {
-      return Response.json(
-        { error: restaurantsError.message },
-        { status: 500 }
-      );
-    }
-
-    if (activitiesError) {
-      return Response.json({ error: activitiesError.message }, { status: 500 });
-    }
-
-    const mergedLocations = [
-      ...(locationsData || []),
-      ...(restaurantsData || []).map((restaurant: any) => ({
-        ...restaurant,
-        location_type: "restaurant",
-        name: getLocationName(restaurant, ""),
-        restaurant_name: restaurant.restaurant_name || restaurant.name,
-      })),
-      ...(activitiesData || []).map((activity: any) => ({
-        ...activity,
-        location_type: "activity",
-        name: getLocationName(activity, ""),
-        activity_name: activity.activity_name || activity.name,
-      })),
-    ];
-
-    const locations = mergedLocations.map(normalizeLocation);
+    const locations = (locationsData || [])
+      .map(normalizeLocation)
+      .filter(isPublicSearchVisible);
     const intent = detectIntent(input, body, locations);
 
     const cacheKey = normalizeQuery(
@@ -1561,30 +1566,13 @@ export async function POST(req: Request) {
       input
     );
 
-    let restaurants = sourceLocations.filter((item: any) => {
-      const type = String(item.location_type || "").toLowerCase();
+    let restaurants = sourceLocations.filter((item: any) =>
+      isRestaurantLocation(item)
+    );
 
-      return (
-        type === "restaurant" ||
-        Boolean(item.restaurant_name) ||
-        Boolean(item.cuisine) ||
-        Boolean(item.cuisine_type) ||
-        toArray(item.cuisine_tags).length > 0
-      );
-    });
-
-    let activities = sourceLocations.filter((item: any) => {
-      const type = String(item.location_type || "").toLowerCase();
-
-      return (
-        type === "activity" ||
-        Boolean(item.activity_name) ||
-        Boolean(item.activity_type) ||
-        intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
-      );
-    });
+    let activities = sourceLocations.filter((item: any) =>
+      isActivityLocation(item)
+    );
 
     restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
     activities = filterActivitiesByActivityIntent(activities, intent);
