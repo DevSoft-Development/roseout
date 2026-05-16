@@ -18,7 +18,6 @@ function getPrimaryCategory(location) {
     location?.primary_category ||
     location?.cuisine ||
     location?.cuisine_type ||
-    location?.food_type ||
     location?.activity_type ||
     location?.primary_tag ||
     'Experience'
@@ -26,7 +25,11 @@ function getPrimaryCategory(location) {
 }
 
 function getCuisine(location) {
-  return location?.cuisine || location?.cuisine_type || location?.food_type || null
+  return (
+    location?.cuisine ||
+    location?.cuisine_type ||
+    null
+  )
 }
 
 function getLocationTags(location) {
@@ -37,7 +40,6 @@ function getLocationTags(location) {
     location?.primary_category,
     location?.cuisine,
     location?.cuisine_type,
-    location?.food_type,
     location?.activity_type,
   ]
 
