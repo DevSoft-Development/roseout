@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQr";
+import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -221,6 +222,8 @@ type ExistingLocationClaim = {
   owner_user_id?: string | null;
   claim_token?: string | null;
   claim_url?: string | null;
+  claim_qr_url?: string | null;
+  qr_link?: string | null;
   qr_code_data_url?: string | null;
 };
 
@@ -452,6 +455,8 @@ async function addClaimFields(
       claim_status: existing.claim_status,
       claim_token: existing.claim_token,
       claim_url: existing.claim_url,
+      qr_link: existing.qr_link,
+      claim_qr_url: existing.claim_qr_url,
       qr_code_data_url: existing.qr_code_data_url,
     };
   }
@@ -463,6 +468,8 @@ async function addClaimFields(
     claim_status: existing?.claim_status || qr.claim_status,
     claim_token: existing?.claim_token || qr.claim_token,
     claim_url: existing?.claim_url || qr.claim_url,
+    qr_link: existing?.qr_link || qr.claim_url,
+    claim_qr_url: existing?.claim_qr_url || qr.qr_code_data_url,
     qr_code_data_url: existing?.qr_code_data_url || qr.qr_code_data_url,
   };
 }
@@ -479,16 +486,31 @@ async function saveLocationRow(
   table: ImportTable,
   row: Record<string, unknown>,
   existing: ExistingLocationClaim | null
-): Promise<{ error: SaveLocationError | null; removedColumns: string[] }> {
+): Promise<{
+  data: Record<string, unknown> | null;
+  error: SaveLocationError | null;
+  removedColumns: string[];
+}> {
   const rowForSave = { ...row };
   const removedColumns: string[] = [];
 
   for (let attempt = 0; attempt < 10; attempt++) {
-    const { error } = existing?.id
-      ? await supabaseAdmin.from(table).update(rowForSave).eq("id", existing.id)
-      : await supabaseAdmin.from(table).insert(rowForSave);
+    const { data, error } = existing?.id
+      ? await supabaseAdmin
+          .from(table)
+          .update(rowForSave)
+          .eq("id", existing.id)
+          .select("*")
+          .single()
+      : await supabaseAdmin.from(table).insert(rowForSave).select("*").single();
 
-    if (!error) return { error: null, removedColumns };
+    if (!error) {
+      return {
+        data: data as Record<string, unknown>,
+        error: null,
+        removedColumns,
+      };
+    }
 
     const missingColumn = getMissingColumn(error.message);
 
@@ -498,10 +520,11 @@ async function saveLocationRow(
       continue;
     }
 
-    return { error, removedColumns };
+    return { data: null, error, removedColumns };
   }
 
   return {
+    data: null,
     error: { message: "Unable to save import row after removing unsupported columns" },
     removedColumns,
   };
@@ -608,9 +631,27 @@ async function upsertRestaurant(
     status: "approved",
   }, existing, "restaurant");
 
-  const { error } = await saveLocationRow("restaurants", row, existing);
+  const { data: restaurant, error } = await saveLocationRow(
+    "restaurants",
+    row,
+    existing,
+  );
 
   if (error) return { status: "failed" as const, error: error.message };
+
+  try {
+    await syncRestaurantToLocation(
+      (restaurant || { ...row, id: existing?.id }) as Record<string, unknown> & {
+        id: string | number;
+      },
+    );
+  } catch (syncError) {
+    return {
+      status: "failed" as const,
+      error: `Location sync failed: ${getErrorMessage(syncError)}`,
+    };
+  }
+
   return { status: "imported" as const };
 }
 
@@ -664,9 +705,27 @@ async function upsertActivity(
     status: "approved",
   }, existing, "activity");
 
-  const { error } = await saveLocationRow("activities", row, existing);
+  const { data: activity, error } = await saveLocationRow(
+    "activities",
+    row,
+    existing,
+  );
 
   if (error) return { status: "failed" as const, error: error.message };
+
+  try {
+    await syncActivityToLocation(
+      (activity || { ...row, id: existing?.id }) as Record<string, unknown> & {
+        id: string | number;
+      },
+    );
+  } catch (syncError) {
+    return {
+      status: "failed" as const,
+      error: `Location sync failed: ${getErrorMessage(syncError)}`,
+    };
+  }
+
   return { status: "imported" as const };
 }
 
