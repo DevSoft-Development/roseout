@@ -9,7 +9,7 @@ import {
   getLocationTags,
   getPrimaryCategory,
 } from "@/lib/locationFields";
-import { isPubliclyVisible } from "@/lib/locationVisibility";
+import { isPublicSearchVisible } from "@/lib/locationVisibility";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -27,9 +27,8 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `public-visibility-v18-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `public-location-search-v19-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
-  enterpriseMatches: 250,
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
   fallbackRegionalRecords: 500,
@@ -2690,132 +2689,27 @@ const LOCATION_SELECT = `
   search_document
 `;
 
-const ACTIVITY_SELECT = `
-  id,
-  name,
-  activity_name,
-  location_type,
-  primary_category,
-  activity_type,
-  address,
-  city,
-  state,
-  zip_code,
-  neighborhood,
-  latitude,
-  longitude,
-  description,
-  price_range,
-  rating,
-  review_count,
-  main_image,
-  image_url,
-  images,
-  phone,
-  website,
-  instagram_url,
-  external_reservation_url,
-  reservation_url,
-  reservation_link,
-  google_maps_url,
-  google_types,
-  tags,
-  vibe_tags,
-  best_for_tags,
-  primary_tag,
-  best_for,
-  search_keywords,
-  review_keywords,
-  quality_score,
-  popularity_score,
-  trend_score,
-  conversion_score,
-  review_score,
-  theouthaven_score,
-  roseout_score,
-  ranking_badge,
-  is_searchable,
-  data_status,
-  missing_fields,
-  is_hidden,
-  status,
-  reservation_enabled,
-  operating_hours,
-  special_hours,
-  holiday_closures,
-  is_claimed,
-  is_verified,
-  is_featured,
-  last_quality_check_at
-`;
-
-const RESTAURANT_SELECT = `
-  id,
-  name,
-  restaurant_name,
-  location_type,
-  primary_category,
-  cuisine,
-  cuisine_type,
-  food_type,
-  address,
-  city,
-  state,
-  zip_code,
-  neighborhood,
-  latitude,
-  longitude,
-  description,
-  price_range,
-  rating,
-  review_count,
-  main_image,
-  image_url,
-  images,
-  phone,
-  website,
-  instagram_url,
-  external_reservation_url,
-  reservation_url,
-  reservation_link,
-  google_maps_url,
-  google_types,
-  tags,
-  vibe_tags,
-  best_for_tags,
-  primary_tag,
-  best_for,
-  search_keywords,
-  review_keywords,
-  quality_score,
-  popularity_score,
-  trend_score,
-  conversion_score,
-  review_score,
-  theouthaven_score,
-  roseout_score,
-  ranking_badge,
-  is_searchable,
-  data_status,
-  missing_fields,
-  is_hidden,
-  status,
-  reservation_enabled,
-  operating_hours,
-  special_hours,
-  holiday_closures,
-  is_claimed,
-  is_verified,
-  is_featured,
-  last_quality_check_at
-`;
-
-function applyPublicVisibilityFilters(query: any) {
+function applyPublicSearchFilters(query: any) {
   return query
-    .eq("is_searchable", true)
-    .eq("data_status", "clean")
-    .neq("is_hidden", true)
-    .not("status", "in", '("closed","archived")');
+    .not("is_hidden", "is", true)
+    .not("status", "in", '("closed","archived")')
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .not("main_image", "is", null)
+    .or(
+      [
+        "and(is_searchable.eq.true,data_status.eq.clean)",
+        `and(${[
+          "name.not.is.null",
+          "address.not.is.null",
+          "city.not.is.null",
+          "state.not.is.null",
+          "latitude.not.is.null",
+          "longitude.not.is.null",
+          "main_image.not.is.null",
+        ].join(",")})`,
+      ].join(","),
+    );
 }
 
 async function fetchFallbackRecords(input: string = "") {
@@ -2834,7 +2728,9 @@ async function fetchFallbackRecords(input: string = "") {
 
   const foodColumns = [
     "restaurant_name",
+    "cuisine",
     "cuisine_type",
+    "food_type",
     "description",
     "primary_tag",
     "search_document",
@@ -2859,229 +2755,115 @@ async function fetchFallbackRecords(input: string = "") {
     return query.or(foodFilter);
   };
 
-  const restaurantQueries: PromiseLike<any>[] = [];
+  const locationQueries: PromiseLike<any>[] = [
+    applyPublicSearchFilters(supabase.from("locations").select(LOCATION_SELECT))
+      .order("theouthaven_score", { ascending: false, nullsFirst: false })
+      .limit(SEARCH_LIMITS.fallbackGeneralRecords),
+  ];
 
-  // General food fallback. This keeps the request URL short because it only
-  // searches food terms, not every neighborhood name.
-  let foodQuery = applyPublicVisibilityFilters(
-    supabase.from("restaurants").select(RESTAURANT_SELECT),
-  );
-  foodQuery = applyFoodFilter(foodQuery);
-  restaurantQueries.push(foodQuery.limit(SEARCH_LIMITS.fallbackGeneralRecords));
-
-  // Queens fallback by coordinate bounds. This keeps ALL Queens neighborhoods
-  // without sending a huge OR list in the URL.
-  if (text.includes("queens")) {
-    let queensQuery = supabase
-      .from("restaurants")
-      .select(RESTAURANT_SELECT)
-      .eq("state", "NY")
-      .gte("latitude", 40.48)
-      .lte("latitude", 40.82)
-      .gte("longitude", -73.96)
-      .lte("longitude", -73.68);
-
-    queensQuery = applyPublicVisibilityFilters(queensQuery);
-
-    queensQuery = applyFoodFilter(queensQuery);
-    restaurantQueries.push(
-      queensQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords),
+  if (foodFilter) {
+    locationQueries.push(
+      applyFoodFilter(
+        applyPublicSearchFilters(
+          supabase.from("locations").select(LOCATION_SELECT),
+        ),
+      )
+        .order("theouthaven_score", { ascending: false, nullsFirst: false })
+        .limit(SEARCH_LIMITS.fallbackRegionalRecords),
     );
   }
 
-  // Long Island fallback by coordinate bounds.
+  if (text.includes("queens")) {
+    locationQueries.push(
+      applyPublicSearchFilters(
+        supabase.from("locations").select(LOCATION_SELECT),
+      )
+        .eq("state", "NY")
+        .gte("latitude", 40.48)
+        .lte("latitude", 40.82)
+        .gte("longitude", -73.96)
+        .lte("longitude", -73.68)
+        .limit(SEARCH_LIMITS.fallbackRegionalRecords),
+    );
+  }
+
   if (
     text.includes("long island") ||
     text.includes("nassau") ||
     text.includes("suffolk")
   ) {
-    let longIslandQuery = supabase
-      .from("restaurants")
-      .select(RESTAURANT_SELECT)
-      .eq("state", "NY")
-      .gte("latitude", 40.5)
-      .lte("latitude", 41.35)
-      .gte("longitude", -73.8)
-      .lte("longitude", -71.75);
-
-    longIslandQuery = applyPublicVisibilityFilters(longIslandQuery);
-
-    longIslandQuery = applyFoodFilter(longIslandQuery);
-    restaurantQueries.push(
-      longIslandQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords),
+    locationQueries.push(
+      applyPublicSearchFilters(
+        supabase.from("locations").select(LOCATION_SELECT),
+      )
+        .eq("state", "NY")
+        .gte("latitude", 40.5)
+        .lte("latitude", 41.35)
+        .gte("longitude", -73.8)
+        .lte("longitude", -71.75)
+        .limit(SEARCH_LIMITS.fallbackRegionalRecords),
     );
   }
 
-  // North Jersey fallback by coordinate bounds.
   if (
     text.includes("new jersey") ||
     text.includes("north jersey") ||
     text.includes("jersey")
   ) {
-    let jerseyQuery = supabase
-      .from("restaurants")
-      .select(RESTAURANT_SELECT)
-      .eq("state", "NJ")
-      .gte("latitude", 40.45)
-      .lte("latitude", 41.25)
-      .gte("longitude", -74.35)
-      .lte("longitude", -73.85);
-
-    jerseyQuery = applyPublicVisibilityFilters(jerseyQuery);
-
-    jerseyQuery = applyFoodFilter(jerseyQuery);
-    restaurantQueries.push(
-      jerseyQuery.limit(SEARCH_LIMITS.fallbackRegionalRecords),
+    locationQueries.push(
+      applyPublicSearchFilters(
+        supabase.from("locations").select(LOCATION_SELECT),
+      )
+        .eq("state", "NJ")
+        .gte("latitude", 40.45)
+        .lte("latitude", 41.25)
+        .gte("longitude", -74.35)
+        .lte("longitude", -73.85)
+        .limit(SEARCH_LIMITS.fallbackRegionalRecords),
     );
   }
 
-  const [locationsResult, activitiesResult, ...restaurantResults] =
-    await Promise.all([
-      applyPublicVisibilityFilters(
-        supabase.from("locations").select(LOCATION_SELECT),
-      ).limit(SEARCH_LIMITS.supportingLocations),
-      applyPublicVisibilityFilters(
-        supabase.from("activities").select(ACTIVITY_SELECT),
-      ).limit(SEARCH_LIMITS.fallbackGeneralRecords),
-      ...restaurantQueries,
-    ]);
+  const locationResults = await Promise.all(locationQueries);
+  const locationRows: any[] = [];
 
-  if (locationsResult.error) throw locationsResult.error;
-  if (activitiesResult.error) throw activitiesResult.error;
-
-  const restaurantRows: any[] = [];
-  restaurantResults.forEach((result: any) => {
+  locationResults.forEach((result: any) => {
     if (result.error) throw result.error;
-    restaurantRows.push(...(result.data || []));
+    locationRows.push(...(result.data || []));
   });
 
-  const seenRestaurants = new Set<string>();
-  const restaurants = restaurantRows
-    .filter(isPubliclyVisible)
-    .filter((restaurant: any) => {
+  const seenLocations = new Set<string>();
+  const locations = locationRows
+    .filter(isPublicSearchVisible)
+    .filter((location: any) => {
       const key = String(
-        restaurant.id ||
-          restaurant.google_place_id ||
-          `${restaurant.restaurant_name || ""}-${restaurant.address || ""}`,
+        location.id ||
+          location.google_place_id ||
+          `${location.name || location.restaurant_name || location.activity_name || ""}-${
+            location.address || ""
+          }`,
       );
 
-      if (!key || seenRestaurants.has(key)) return false;
-      seenRestaurants.add(key);
+      if (!key || seenLocations.has(key)) return false;
+      seenLocations.add(key);
       return true;
     });
 
   return {
-    locations: (locationsResult.data || []).filter(isPubliclyVisible),
-    restaurants,
-    activities: (activitiesResult.data || []).filter(isPubliclyVisible),
+    locations,
+    restaurants: [],
+    activities: [],
   };
 }
 
 async function fetchSupportingRecords() {
-  const { data, error } = await applyPublicVisibilityFilters(
+  const { data, error } = await applyPublicSearchFilters(
     supabase.from("locations").select(LOCATION_SELECT),
   ).limit(SEARCH_LIMITS.supportingLocations);
 
   if (error) throw error;
 
   return {
-    locations: data || [],
-  };
-}
-
-function confidenceLabelFromSimilarity(similarity: number) {
-  if (similarity >= 0.78) return "high";
-  if (similarity >= 0.68) return "medium";
-  return "low";
-}
-
-async function createSearchEmbedding(input: string) {
-  const embeddingResponse = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input,
-  });
-
-  return embeddingResponse.data[0].embedding;
-}
-
-function mapEnterpriseRestaurant(restaurant: any) {
-  const semanticSimilarity = Number(restaurant.semantic_similarity || 0);
-  const finalScore = Number(restaurant.final_score || 0) * 100;
-
-  return {
-    ...restaurant,
-    location_type: "restaurant",
-    name: getLocationName(restaurant, ""),
-    restaurant_name: restaurant.restaurant_name || restaurant.name,
-    cuisine: restaurant.cuisine || restaurant.cuisine_type,
-    cuisine_type: restaurant.cuisine_type || restaurant.cuisine,
-    theouthaven_score: finalScore,
-    smart_match_score: finalScore,
-    semantic_similarity: semanticSimilarity,
-    semantic_score_boost: semanticSimilarity * 100,
-    confidence: semanticSimilarity,
-    confidence_label: confidenceLabelFromSimilarity(semanticSimilarity),
-  };
-}
-
-function mapEnterpriseActivity(activity: any) {
-  const semanticSimilarity = Number(activity.semantic_similarity || 0);
-  const finalScore = Number(activity.final_score || 0) * 100;
-
-  return {
-    ...activity,
-    location_type: "activity",
-    name: getLocationName(activity, ""),
-    activity_name: activity.activity_name || activity.name,
-    theouthaven_score: finalScore,
-    smart_match_score: finalScore,
-    semantic_similarity: semanticSimilarity,
-    semantic_score_boost: semanticSimilarity * 100,
-    confidence: semanticSimilarity,
-    confidence_label: confidenceLabelFromSimilarity(semanticSimilarity),
-  };
-}
-
-async function fetchEnterpriseSearchRecords(
-  input: string,
-  intent: ReturnType<typeof detectIntent>,
-) {
-  const embedding = await createSearchEmbedding(input);
-
-  const requestedCity = intent.locations[0] || null;
-  const requestedCuisine = intent.foodIntents[0] || null;
-  const requestedActivity = intent.activityIntents[0] || null;
-
-  const [restaurantsResult, activitiesResult] = await Promise.all([
-    supabase.rpc("search_restaurants_enterprise", {
-      query_embedding: embedding,
-      requested_city: requestedCity,
-      requested_cuisine: requestedCuisine,
-      match_limit: SEARCH_LIMITS.enterpriseMatches,
-    }),
-    supabase.rpc("search_activities_enterprise", {
-      query_embedding: embedding,
-      requested_city: requestedCity,
-      requested_activity: requestedActivity,
-      match_limit: SEARCH_LIMITS.enterpriseMatches,
-    }),
-  ]);
-
-  if (restaurantsResult.error) {
-    throw restaurantsResult.error;
-  }
-
-  if (activitiesResult.error) {
-    throw activitiesResult.error;
-  }
-
-  return {
-    restaurants: (restaurantsResult.data || [])
-      .map(mapEnterpriseRestaurant)
-      .filter(isPubliclyVisible),
-    activities: (activitiesResult.data || [])
-      .map(mapEnterpriseActivity)
-      .filter(isPubliclyVisible),
+    locations: (data || []).filter(isPublicSearchVisible),
   };
 }
 
@@ -3120,7 +2902,6 @@ export async function POST(req: Request) {
 
     await logSearchQuery(input);
 
-    const preliminaryIntent = detectIntent(input, body, []);
     const semanticResults = new Map<string, any>();
 
     let matchedRecords = {
@@ -3130,26 +2911,15 @@ export async function POST(req: Request) {
     };
 
     try {
-      const [enterpriseRecords, supportingRecords] = await Promise.all([
-        fetchEnterpriseSearchRecords(input, preliminaryIntent),
-        fetchSupportingRecords(),
-      ]);
-
+      matchedRecords = await fetchFallbackRecords(input);
+    } catch (searchError) {
+      console.error("PUBLIC LOCATION SEARCH ERROR:", searchError);
+      const supportingRecords = await fetchSupportingRecords();
       matchedRecords = {
         locations: supportingRecords.locations || [],
-        restaurants: enterpriseRecords.restaurants || [],
-        activities: enterpriseRecords.activities || [],
+        restaurants: [],
+        activities: [],
       };
-
-      if (
-        matchedRecords.restaurants.length === 0 &&
-        matchedRecords.activities.length === 0
-      ) {
-        matchedRecords = await fetchFallbackRecords(input);
-      }
-    } catch (rpcError) {
-      console.error("ENTERPRISE RPC FALLBACK:", rpcError);
-      matchedRecords = await fetchFallbackRecords(input);
     }
 
     const mergedLocations = [
@@ -3172,7 +2942,7 @@ export async function POST(req: Request) {
 
     const locations = mergedLocations
       .map(normalizeLocation)
-      .filter(isPubliclyVisible);
+      .filter(isPublicSearchVisible);
 
     const intent = detectIntent(input, body, locations);
 
@@ -3194,7 +2964,7 @@ export async function POST(req: Request) {
 
     const usableLocations = locations.filter(
       (item: any) =>
-        isPubliclyVisible(item) && isWithinTheOutHavenServiceArea(item),
+        isPublicSearchVisible(item) && isWithinTheOutHavenServiceArea(item),
     );
 
     const sourceLocations =
