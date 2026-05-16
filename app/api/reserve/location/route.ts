@@ -28,7 +28,7 @@ function getTableName(type: string) {
 }
 
 const LOCATION_HOURS_SELECT =
-  "operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time";
+  "operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time";
 
 function getReservationLocationName(location: any, type: string) {
   return getDisplayLocationName(
@@ -391,7 +391,6 @@ export async function GET(request: NextRequest) {
         special_hours: location.special_hours || null,
         holiday_closures: location.holiday_closures || null,
         hours: location.hours || null,
-        hours_of_operation: location.hours_of_operation || null,
         days_of_operation: Array.isArray(location.days_of_operation)
           ? location.days_of_operation
           : null,
