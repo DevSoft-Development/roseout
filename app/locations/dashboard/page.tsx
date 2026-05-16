@@ -26,7 +26,14 @@ type LocationItem = {
   owner_name?: string;
   owner_email?: string;
   owner_phone?: string;
-  primary_tag?: string;
+  primary_category?: string | null;
+  cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
+  activity_type?: string | null;
+  primary_tag?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
 };
 
 function adminSupabase() {

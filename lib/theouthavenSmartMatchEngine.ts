@@ -1,3 +1,4 @@
+import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 export type SmartMatchIntent = {
   query: string;
   wantsFood: boolean;
@@ -23,7 +24,11 @@ export type SmartMatchItem = {
   restaurant_name?: string | null;
   activity_name?: string | null;
   title?: string;
+  primary_category?: string | null;
   cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
+  activity_type?: string | null;
   category?: string | null;
   atmosphere?: string | null;
   description?: string | null;
@@ -36,6 +41,7 @@ export type SmartMatchItem = {
   rating?: number | null;
   review_count?: number | null;
   tags?: string[] | null;
+  google_types?: string[] | null;
   date_style_tags?: string[] | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
@@ -542,7 +548,7 @@ function isLongIslandCityItem(item: SmartMatchItem) {
   const locationFields = [
     item.city,
     item.neighborhood,
-    ...(item.tags || []),
+    ...getLocationTags(item),
   ]
     .filter(Boolean)
     .map((value) => normalize(String(value)));
@@ -620,7 +626,8 @@ function getSearchText(item: SmartMatchItem) {
     item.restaurant_name,
     item.activity_name,
     item.title,
-    item.cuisine,
+    getCuisine(item),
+    getPrimaryCategory(item),
     item.category,
     item.atmosphere,
     item.description,
@@ -631,7 +638,7 @@ function getSearchText(item: SmartMatchItem) {
     item.price_range,
     item.primary_tag,
     item.review_snippet,
-    ...(item.tags || []),
+    ...getLocationTags(item),
     ...(item.date_style_tags || []),
     ...(item.review_keywords || []),
   ]
@@ -658,7 +665,8 @@ export function isDessertOnlyRestaurant(item: SmartMatchItem) {
     item.name,
     item.restaurant_name,
     item.title,
-    item.cuisine,
+    getCuisine(item),
+    getPrimaryCategory(item),
     item.category,
     item.primary_tag,
   ]

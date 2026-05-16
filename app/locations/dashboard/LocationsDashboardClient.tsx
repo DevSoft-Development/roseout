@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
 import { getLocationImage } from "@/lib/locationImage";
+import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import ScoreBadge from "@/components/ScoreBadge";
 
 const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-refresh-2026-05-11";
@@ -46,7 +47,14 @@ type LocationItem = {
   owner_name?: string;
   owner_email?: string;
   owner_phone?: string;
-  primary_tag?: string;
+  primary_category?: string | null;
+  cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
+  activity_type?: string | null;
+  primary_tag?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
 };
 
 export default function LocationsDashboardClient({
@@ -72,7 +80,7 @@ export default function LocationsDashboardClient({
         location.city,
         location.state,
         location.address,
-        location.primary_tag,
+        ...getLocationTags(location),
         location.owner_email,
       ]
         .filter(Boolean)
@@ -329,11 +337,9 @@ export default function LocationsDashboardClient({
                       )}
                     />
 
-                    {selected.primary_tag && (
-                      <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">
-                        ✨ {selected.primary_tag}
-                      </span>
-                    )}
+                    <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">
+                      ✨ {getPrimaryCategory(selected)}
+                    </span>
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">

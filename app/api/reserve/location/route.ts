@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName as getDisplayLocationName } from "@/lib/locationName";
+import { getPrimaryCategory } from "@/lib/locationFields";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -372,12 +373,7 @@ export async function GET(request: NextRequest) {
         image_url:
           location.image_url || location.photo_url || location.image || null,
         images: Array.isArray(location.images) ? location.images : null,
-        category:
-          location.cuisine ||
-          location.activity_type ||
-          location.category ||
-          location.location_type ||
-          locationType,
+        category: getPrimaryCategory(location),
       },
       items: partyFilteredItems,
     });

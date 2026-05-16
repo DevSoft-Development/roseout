@@ -11,6 +11,7 @@ import {
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import {
   getExternalReservationUrl,
   getInternalReservationHref,
@@ -27,11 +28,14 @@ type PlanLocation = {
   zip_code?: string | null;
   google_maps_url?: string | null;
   google_maps_link?: string | null;
+  primary_category?: string | null;
   cuisine?: string | null;
   food_type?: string | null;
   cuisine_type?: string | null;
   cuisine_tags?: string[] | null;
   activity_type?: string | null;
+  tags?: string[] | null;
+  google_types?: string[] | null;
   detail_location_type?: "restaurants" | "activities" | null;
   primary_tag?: string | null;
   price_range?: string | null;
@@ -388,9 +392,7 @@ function TimelineLocation({
   const title = location ? getLocationName(location, fallbackTitle) : fallbackTitle;
 
   const meta = [
-    type === "restaurant"
-      ? location?.cuisine || location?.food_type || location?.cuisine_type
-      : location?.activity_type,
+    type === "restaurant" ? getCuisine(location) : getPrimaryCategory(location),
     location?.city,
     location?.rating ? `🌹 ${location.rating}` : null,
   ]
@@ -521,11 +523,8 @@ function PlanActionCard({
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">
           {titleCase(
             type === "restaurant"
-              ? location.cuisine ||
-                  location.food_type ||
-                  location.cuisine_type ||
-                  "Restaurant"
-              : location.activity_type || "Activity"
+              ? getCuisine(location) || "Restaurant"
+              : getPrimaryCategory(location)
           )}
         </p>
 

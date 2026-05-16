@@ -12,21 +12,61 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+
+function getPrimaryCategory(location) {
+  return (
+    location?.primary_category ||
+    location?.cuisine ||
+    location?.cuisine_type ||
+    location?.food_type ||
+    location?.activity_type ||
+    location?.primary_tag ||
+    'Experience'
+  )
+}
+
+function getCuisine(location) {
+  return location?.cuisine || location?.cuisine_type || location?.food_type || null
+}
+
+function getLocationTags(location) {
+  const tags = [
+    ...(Array.isArray(location?.tags) ? location.tags : []),
+    ...(Array.isArray(location?.google_types) ? location.google_types : []),
+    location?.primary_tag,
+    location?.primary_category,
+    location?.cuisine,
+    location?.cuisine_type,
+    location?.food_type,
+    location?.activity_type,
+  ]
+
+  return Array.from(
+    new Set(
+      tags
+        .filter(Boolean)
+        .map((tag) => String(tag).trim().toLowerCase())
+        .filter(Boolean)
+    )
+  )
+}
+
 function buildSearchText(item) {
   return [
     item.name,
     item.title,
     item.description,
     item.short_description,
+    getPrimaryCategory(item),
     item.category,
     item.type,
-    item.cuisine,
+    getCuisine(item),
     item.price_range,
     item.address,
     item.city,
     item.state,
     item.neighborhood,
-    item.tags,
+    ...getLocationTags(item),
     item.vibe,
     item.best_for,
   ]

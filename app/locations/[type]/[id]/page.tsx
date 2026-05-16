@@ -11,6 +11,7 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
   buildGoogleMapsSearchUrl,
   getGoogleMapsUrl,
@@ -138,9 +139,7 @@ if (error || !data) {
 
   const name = getLocationName(location, "TheOutHaven Location");
 
-  const category = isActivity
-    ? location?.activity_type || "Activity"
-    : location?.cuisine || "Restaurant";
+  const category = getPrimaryCategory(location);
 
   const score = clampScore(
     location?.review_score ??
@@ -178,7 +177,8 @@ if (error || !data) {
     return getGoogleMapsUrl(location) || buildGoogleMapsSearchUrl(location);
   }, [location]);
 
-  const tags = toArray(location?.date_style_tags);
+  const tags = getLocationTags(location);
+  const dateStyleTags = toArray(location?.date_style_tags);
   const reviewKeywords = toArray(location?.review_keywords);
   const bestFor = toArray(location?.best_for);
   const specialFeatures = toArray(location?.special_features);
@@ -456,9 +456,9 @@ if (error || !data) {
                     "This location includes signals that help TheOutHaven understand the vibe, atmosphere, and best use cases for customers searching in full sentences."}
                 </p>
 
-                {[...tags, ...reviewKeywords].length > 0 && (
+                {[...tags, ...dateStyleTags, ...reviewKeywords].length > 0 && (
                   <div className="mt-5 flex flex-wrap gap-2">
-                    {[...new Set([...tags, ...reviewKeywords])].map((tag) => (
+                    {[...new Set([...tags, ...dateStyleTags, ...reviewKeywords])].map((tag) => (
                       <span
                         key={tag}
                         className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/60"

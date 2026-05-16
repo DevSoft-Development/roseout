@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getLocationName } from "@/lib/locationName";
+import { getPrimaryCategory } from "@/lib/locationFields";
 
 export default function ClaimActivityPage() {
   const params = useParams();
@@ -124,9 +125,9 @@ export default function ClaimActivityPage() {
               .join(", ")}
           </p>
 
-          {activity?.activity_type && (
+          {activity && (
             <p className="mt-2 text-sm font-semibold text-neutral-700">
-              {activity.activity_type}
+              {getPrimaryCategory(activity)}
             </p>
           )}
 
