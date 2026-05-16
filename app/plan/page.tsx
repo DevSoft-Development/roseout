@@ -12,12 +12,13 @@ import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
+import type { LocationScoreFields } from "@/lib/locationScore";
 import {
   getExternalReservationUrl,
   getInternalReservationHref,
 } from "@/lib/reservation";
 
-type PlanLocation = {
+type PlanLocation = LocationScoreFields & {
   id?: string;
   restaurant_name?: string | null;
   activity_name?: string | null;
@@ -51,7 +52,6 @@ type PlanLocation = {
   reservation_link?: string | null;
   reservation_enabled?: boolean | null;
   booking_url?: string | null;
-  theouthaven_score?: number | null;
   smart_match_score?: number | null;
   latitude?: number | string | null;
   longitude?: number | string | null;

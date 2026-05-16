@@ -3,12 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import LocationsDashboardClient from "./LocationsDashboardClient";
 import { getLocationName } from "@/lib/locationName";
 import type { LocationClaimFields } from "@/lib/locationClaim";
+import type { LocationScoreFields } from "@/lib/locationScore";
 
 export const dynamic = "force-dynamic";
 
 type LocationType = "restaurant" | "activity";
 
-type LocationItem = LocationClaimFields & {
+type LocationItem = LocationClaimFields & LocationScoreFields & {
   id: string;
   location_type: LocationType;
   display_name: string;
@@ -21,8 +22,6 @@ type LocationItem = LocationClaimFields & {
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | null;
-  theouthaven_score?: number;
-  quality_score?: number;
   owner_name?: string;
   owner_email?: string;
   owner_phone?: string;

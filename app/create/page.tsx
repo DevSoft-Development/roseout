@@ -10,13 +10,14 @@ import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
+import type { LocationScoreFields } from "@/lib/locationScore";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import {
   getExternalReservationUrl,
   getInternalReservationHref,
 } from "@/lib/reservation";
 
-type RestaurantCard = {
+type RestaurantCard = LocationScoreFields & {
   id: string;
   name?: string | null;
   restaurant_name?: string | null;
@@ -46,7 +47,6 @@ type RestaurantCard = {
   image_url?: string | null;
   images?: string[] | null;
   rating?: number | null;
-  review_score?: number | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
   primary_tag?: string | null;
@@ -56,7 +56,7 @@ type RestaurantCard = {
   pair_walking_label?: string | null;
 };
 
-type ActivityCard = {
+type ActivityCard = LocationScoreFields & {
   id: string;
   name?: string | null;
   activity_name?: string | null;
@@ -88,7 +88,6 @@ type ActivityCard = {
   image_url?: string | null;
   images?: string[] | null;
   rating?: number | null;
-  review_score?: number | null;
   review_keywords?: string[] | null;
   review_snippet?: string | null;
   primary_tag?: string | null;
