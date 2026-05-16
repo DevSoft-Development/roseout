@@ -13,6 +13,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationScore } from "@/lib/locationScore";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import { isPubliclyVisible } from "@/lib/locationVisibility";
 import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
@@ -65,52 +66,56 @@ export default function LocationDetailPage() {
       setLoading(true);
 
       let { data, error } = await supabase
-  .from("locations")
-  .select("*")
-  .eq("id", id)
-  .maybeSingle();
+        .from("locations")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
 
-if (!data && (type === "restaurants" || type === "restaurant")) {
-  const fallback = await supabase
-    .from("restaurants")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+      if (!data && (type === "restaurants" || type === "restaurant")) {
+        const fallback = await supabase
+          .from("restaurants")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
 
-  data = fallback.data
-    ? {
-        ...fallback.data,
-        location_type: "restaurant",
+        data = fallback.data
+          ? {
+              ...fallback.data,
+              location_type: "restaurant",
+            }
+          : null;
+
+        error = fallback.error;
       }
-    : null;
 
-  error = fallback.error;
-}
+      if (!data && (type === "activities" || type === "activity")) {
+        const fallback = await supabase
+          .from("activities")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
 
-if (!data && (type === "activities" || type === "activity")) {
-  const fallback = await supabase
-    .from("activities")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+        data = fallback.data
+          ? {
+              ...fallback.data,
+              location_type: "activity",
+            }
+          : null;
 
-  data = fallback.data
-    ? {
-        ...fallback.data,
-        location_type: "activity",
+        error = fallback.error;
       }
-    : null;
 
-  error = fallback.error;
-}
-
-if (error || !data) {
-  console.error("Location fetch error:", error?.message || "No location found");
-  setLocation(null);
-  setReviews([]);
-  setLoading(false);
-  return;
-}
+      if (error || !data || !isPubliclyVisible(data)) {
+        console.error(
+          "Location fetch error:",
+          error?.message ||
+            (!data ? "No location found" : "Location is not public"),
+        );
+        setLocation(null);
+        setReviews([]);
+        setLoading(false);
+        return;
+      }
 
       const { data: reviewData } = await supabase
         .from("location_reviews")
@@ -160,7 +165,7 @@ if (error || !data) {
   const externalReservationUrl = getExternalReservationUrl(location);
   const internalReservationHref = getInternalReservationHref(
     location,
-    isActivity ? "activity" : "restaurant"
+    isActivity ? "activity" : "restaurant",
   );
   const reservationUrl =
     location?.reservation_enabled === true
@@ -184,7 +189,7 @@ if (error || !data) {
   const specialFeatures = toArray(location?.special_features);
   const signatureItems = toArray(location?.signature_items);
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
-    getOperatingHours(location)
+    getOperatingHours(location),
   );
 
   const baseMetadata = {
@@ -244,7 +249,7 @@ if (error || !data) {
             review_count: data.review_count ?? prev.review_count,
             review_keywords: data.keywords ?? prev.review_keywords,
           }
-        : prev
+        : prev,
     );
   }
 
@@ -395,7 +400,9 @@ if (error || !data) {
                       href={reservationUrl}
                       target={isExternalReservation ? "_blank" : undefined}
                       rel={
-                        isExternalReservation ? "noopener noreferrer" : undefined
+                        isExternalReservation
+                          ? "noopener noreferrer"
+                          : undefined
                       }
                       className="rounded-full bg-red-600 px-7 py-3 text-sm font-black text-white shadow-lg shadow-red-950/50 transition hover:bg-red-500"
                     >
@@ -431,8 +438,8 @@ if (error || !data) {
                 <ScoreBadge score={score} />
 
                 <p className="mt-4 text-sm leading-6 text-white/65">
-                  TheOutHaven uses location details, review words, vibe signals, and
-                  experience quality to improve recommendations.
+                  TheOutHaven uses location details, review words, vibe signals,
+                  and experience quality to improve recommendations.
                 </p>
 
                 {Number(location.review_score || 0) >= 85 && (
@@ -461,7 +468,13 @@ if (error || !data) {
 
                 {[...tags, ...dateStyleTags, ...reviewKeywords].length > 0 && (
                   <div className="mt-5 flex flex-wrap gap-2">
-                    {[...new Set([...tags, ...dateStyleTags, ...reviewKeywords])].map((tag) => (
+                    {[
+                      ...new Set([
+                        ...tags,
+                        ...dateStyleTags,
+                        ...reviewKeywords,
+                      ]),
+                    ].map((tag) => (
                       <span
                         key={tag}
                         className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/60"
@@ -571,7 +584,9 @@ if (error || !data) {
             <aside className="space-y-6 lg:sticky lg:top-36 lg:self-start">
               <LuxuryCard
                 eyebrow="Plan Your Visit"
-                title={isActivity ? "Book the experience." : "Reserve the table."}
+                title={
+                  isActivity ? "Book the experience." : "Reserve the table."
+                }
               >
                 {operatingHoursDisplay && (
                   <div className="mt-5 rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
@@ -585,7 +600,9 @@ if (error || !data) {
                       href={reservationUrl}
                       target={isExternalReservation ? "_blank" : undefined}
                       rel={
-                        isExternalReservation ? "noopener noreferrer" : undefined
+                        isExternalReservation
+                          ? "noopener noreferrer"
+                          : undefined
                       }
                       className="rounded-full bg-red-600 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-red-500"
                     >
@@ -712,7 +729,10 @@ function DynamicLocationHeader({
                 Home
               </a>
               <span>/</span>
-              <a href={from || "/create"} className="transition hover:text-white">
+              <a
+                href={from || "/create"}
+                className="transition hover:text-white"
+              >
                 Results
               </a>
               <span>/</span>
@@ -743,9 +763,7 @@ function DynamicLocationHeader({
             <a
               href={reservationUrl}
               target={isExternalReservation ? "_blank" : undefined}
-              rel={
-                isExternalReservation ? "noopener noreferrer" : undefined
-              }
+              rel={isExternalReservation ? "noopener noreferrer" : undefined}
               className={`rounded-full px-5 py-2.5 text-sm font-black shadow-lg transition ${
                 scrolled
                   ? "bg-red-600 text-white shadow-red-950/40 hover:bg-red-500"
@@ -813,13 +831,7 @@ function MiniInsight({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
+function InfoRow({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
       <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">

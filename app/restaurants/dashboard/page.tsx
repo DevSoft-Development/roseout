@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import RestaurantTopBar from "@/app/restaurants/components/RestaurantTopBar";
 import { getLocationName } from "@/lib/locationName";
+import { getPublicVisibilityWarning } from "@/lib/locationVisibility";
 
 export default function RestaurantDashboardPage() {
   const supabase = createClient();
@@ -35,14 +36,14 @@ export default function RestaurantDashboardPage() {
     setRestaurant(data);
 
     await fetch("/api/restaurants/track", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    restaurant_id: data.id,
-    email: data.email,
-    event_type: "dashboard_viewed",
-  }),
-});
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurant_id: data.id,
+        email: data.email,
+        event_type: "dashboard_viewed",
+      }),
+    });
     setLoading(false);
   };
 
@@ -91,6 +92,8 @@ export default function RestaurantDashboardPage() {
     );
   }
 
+  const visibilityWarnings = getPublicVisibilityWarning(restaurant);
+
   return (
     <main className="min-h-screen bg-black text-white">
       <RestaurantTopBar />
@@ -98,9 +101,7 @@ export default function RestaurantDashboardPage() {
       <div className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="text-4xl font-bold">Restaurant Dashboard</h1>
 
-        <p className="mt-3 text-neutral-400">
-          View your restaurant listing.
-        </p>
+        <p className="mt-3 text-neutral-400">View your restaurant listing.</p>
 
         <div className="mt-8 rounded-3xl bg-white p-6 text-black">
           <h2 className="text-2xl font-bold">
@@ -110,6 +111,13 @@ export default function RestaurantDashboardPage() {
           <p className="mt-2 rounded-xl bg-yellow-500 px-4 py-3 font-semibold">
             Status: {restaurant.status}
           </p>
+
+          {visibilityWarnings.length > 0 && (
+            <p className="mt-3 rounded-xl bg-amber-100 px-4 py-3 font-semibold text-amber-950">
+              This location is not visible in public search yet. Missing:{" "}
+              {visibilityWarnings.join(", ")}.
+            </p>
+          )}
 
           <p className="mt-4">
             {restaurant.address}, {restaurant.city}, {restaurant.state}{" "}

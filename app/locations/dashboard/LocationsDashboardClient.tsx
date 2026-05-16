@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   Building2,
+  AlertTriangle,
   CheckCircle2,
   Crown,
   ExternalLink,
@@ -15,9 +16,19 @@ import {
   Store,
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
-import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
+import {
+  getLocationScore,
+  type LocationScoreFields,
+} from "@/lib/locationScore";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import {
+  getDataStatus,
+  getMissingFields,
+  getPublicVisibilityWarning,
+  isPubliclyVisible,
+  type LocationVisibilityFields,
+} from "@/lib/locationVisibility";
 import ScoreBadge from "@/components/ScoreBadge";
 import { getIsClaimed, getClaimStatusText } from "@/lib/locationClaim";
 
@@ -25,42 +36,46 @@ const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-refresh-2026-05-11";
 
 type LocationType = "restaurant" | "activity";
 
-const locationTypePathSegment: Record<LocationType, "restaurants" | "activities"> = {
+const locationTypePathSegment: Record<
+  LocationType,
+  "restaurants" | "activities"
+> = {
   restaurant: "restaurants",
   activity: "activities",
 };
 
-type LocationItem = LocationScoreFields & {
-  id: string;
-  location_type: LocationType;
-  display_name: string;
-  name?: string | null;
-  restaurant_name?: string | null;
-  activity_name?: string | null;
-  address?: string;
-  city?: string;
-  state?: string;
-  main_image?: string | null;
-  image_url?: string | null;
-  images?: string[] | null;
-  is_claimed?: boolean | null;
-  claimed?: boolean | null;
-  claim_status?: string | null;
-  claimed_at?: string | null;
-  claimed_by_email?: string | null;
-  owner_user_id?: string | null;
-  owner_name?: string;
-  owner_email?: string;
-  owner_phone?: string;
-  primary_category?: string | null;
-  cuisine?: string | null;
-  cuisine_type?: string | null;
-  food_type?: string | null;
-  activity_type?: string | null;
-  primary_tag?: string | null;
-  tags?: string[] | null;
-  google_types?: string[] | null;
-};
+type LocationItem = LocationScoreFields &
+  LocationVisibilityFields & {
+    id: string;
+    location_type: LocationType;
+    display_name: string;
+    name?: string | null;
+    restaurant_name?: string | null;
+    activity_name?: string | null;
+    address?: string;
+    city?: string;
+    state?: string;
+    main_image?: string | null;
+    image_url?: string | null;
+    images?: string[] | null;
+    is_claimed?: boolean | null;
+    claimed?: boolean | null;
+    claim_status?: string | null;
+    claimed_at?: string | null;
+    claimed_by_email?: string | null;
+    owner_user_id?: string | null;
+    owner_name?: string;
+    owner_email?: string;
+    owner_phone?: string;
+    primary_category?: string | null;
+    cuisine?: string | null;
+    cuisine_type?: string | null;
+    food_type?: string | null;
+    activity_type?: string | null;
+    primary_tag?: string | null;
+    tags?: string[] | null;
+    google_types?: string[] | null;
+  };
 
 export default function LocationsDashboardClient({
   locations,
@@ -70,7 +85,7 @@ export default function LocationsDashboardClient({
   impersonationLabel?: string;
 }) {
   const [selected, setSelected] = useState<LocationItem | null>(
-    locations[0] || null
+    locations[0] || null,
   );
   const [query, setQuery] = useState("");
 
@@ -104,11 +119,9 @@ export default function LocationsDashboardClient({
         locations.length > 0
           ? Math.round(
               locations.reduce(
-                (sum, item) =>
-                  sum +
-                  clampScore(getLocationScore(item)),
-                0
-              ) / locations.length
+                (sum, item) => sum + clampScore(getLocationScore(item)),
+                0,
+              ) / locations.length,
             )
           : 0,
     };
@@ -121,6 +134,10 @@ export default function LocationsDashboardClient({
 
     window.location.href = "/admin/dashboard";
   }
+
+  const selectedVisibilityWarnings = selected
+    ? getPublicVisibilityWarning(selected)
+    : [];
 
   return (
     <main
@@ -225,6 +242,7 @@ export default function LocationsDashboardClient({
             {filteredLocations.map((loc) => {
               const active = selected?.id === loc.id;
               const score = clampScore(getLocationScore(loc));
+              const visibilityWarnings = getPublicVisibilityWarning(loc);
 
               return (
                 <button
@@ -274,10 +292,20 @@ export default function LocationsDashboardClient({
                             : "Activity"}
                         </Pill>
 
+                        <Pill>{getClaimStatusText(loc)}</Pill>
+
                         <Pill>
-                          {getClaimStatusText(loc)}
+                          {isPubliclyVisible(loc)
+                            ? "Public"
+                            : getDataStatus(loc)}
                         </Pill>
                       </div>
+
+                      {visibilityWarnings.length > 0 && (
+                        <p className="mt-2 line-clamp-1 text-[11px] font-bold text-amber-200">
+                          Not visible yet: {visibilityWarnings.join(", ")}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -331,16 +359,28 @@ export default function LocationsDashboardClient({
 
               <div className="grid gap-6 p-5 sm:p-8 xl:grid-cols-[1fr_320px]">
                 <div>
+                  {selectedVisibilityWarnings.length > 0 && (
+                    <VisibilityWarning missing={selectedVisibilityWarnings} />
+                  )}
+
                   <div className="mb-6 flex flex-wrap items-center gap-3">
                     <ScoreBadge
-                      score={clampScore(
-                        getLocationScore(selected)
-                      )}
+                      score={clampScore(getLocationScore(selected))}
                     />
 
                     <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">
                       ✨ {getPrimaryCategory(selected)}
                     </span>
+
+                    <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">
+                      Data: {getDataStatus(selected)}
+                    </span>
+
+                    {getMissingFields(selected).length > 0 && (
+                      <span className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-black text-amber-900">
+                        Missing {getMissingFields(selected).length}
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -383,7 +423,10 @@ export default function LocationsDashboardClient({
                             : undefined
                         }
                       />
-                      <ContactBlock label="Phone" value={selected.owner_phone} />
+                      <ContactBlock
+                        label="Phone"
+                        value={selected.owner_phone}
+                      />
                     </div>
                   </div>
                 </div>
@@ -413,7 +456,10 @@ export default function LocationsDashboardClient({
 
                   <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.06] p-4">
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 text-[#f5b700]" size={18} />
+                      <CheckCircle2
+                        className="mt-0.5 text-[#f5b700]"
+                        size={18}
+                      />
                       <div>
                         <p className="text-sm font-black">Admin Mode Ready</p>
                         <p className="mt-1 text-xs leading-5 text-white/50">
@@ -440,6 +486,26 @@ export default function LocationsDashboardClient({
         </section>
       </section>
     </main>
+  );
+}
+
+function VisibilityWarning({ missing }: { missing: string[] }) {
+  return (
+    <div className="mb-6 rounded-[1.75rem] border border-amber-300 bg-amber-50 p-5 text-amber-950">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={20} />
+        <div>
+          <p className="text-sm font-black">
+            This location is not visible in public search yet. Missing:{" "}
+            {missing.join(", ")}.
+          </p>
+          <p className="mt-1 text-xs font-semibold text-amber-900/70">
+            Public search requires is_searchable, clean data_status, no hidden
+            flag, and an open lifecycle status.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -482,18 +548,14 @@ function InfoCard({
         {title}
       </p>
       <p className="mt-2 text-sm font-black">{value}</p>
-      {subvalue && <p className="mt-1 text-xs font-semibold text-black/45">{subvalue}</p>}
+      {subvalue && (
+        <p className="mt-1 text-xs font-semibold text-black/45">{subvalue}</p>
+      )}
     </div>
   );
 }
 
-function ContactBlock({
-  label,
-  value,
-}: {
-  label: string;
-  value?: string;
-}) {
+function ContactBlock({ label, value }: { label: string; value?: string }) {
   return (
     <div className="rounded-2xl bg-black/[0.04] p-4">
       <p className="text-xs font-black uppercase tracking-[0.16em] text-black/35">

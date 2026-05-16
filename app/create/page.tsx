@@ -11,91 +11,94 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import type { LocationScoreFields } from "@/lib/locationScore";
+import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import {
   getExternalReservationUrl,
   getInternalReservationHref,
 } from "@/lib/reservation";
 
-type RestaurantCard = LocationScoreFields & {
-  id: string;
-  name?: string | null;
-  restaurant_name?: string | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip_code?: string | null;
-  google_maps_url?: string | null;
-  google_maps_link?: string | null;
-  latitude?: number | string | null;
-  longitude?: number | string | null;
-  primary_category?: string | null;
-  cuisine?: string | null;
-  cuisine_type?: string | null;
-  food_type?: string | null;
-  activity_type?: string | null;
-  tags?: string[] | null;
-  google_types?: string[] | null;
-  atmosphere?: string | null;
-  price_range?: string | null;
-  external_reservation_url?: string | null;
-  reservation_url?: string | null;
-  reservation_link?: string | null;
-  reservation_enabled?: boolean | null;
-  website?: string | null;
-  main_image?: string | null;
-  image_url?: string | null;
-  images?: string[] | null;
-  rating?: number | null;
-  review_keywords?: string[] | null;
-  review_snippet?: string | null;
-  primary_tag?: string | null;
-  distance_miles?: number | null;
-  pair_distance_miles?: number | null;
-  pair_walking_minutes?: number | null;
-  pair_walking_label?: string | null;
-};
+type RestaurantCard = LocationScoreFields &
+  LocationVisibilityFields & {
+    id: string;
+    name?: string | null;
+    restaurant_name?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip_code?: string | null;
+    google_maps_url?: string | null;
+    google_maps_link?: string | null;
+    latitude?: number | string | null;
+    longitude?: number | string | null;
+    primary_category?: string | null;
+    cuisine?: string | null;
+    cuisine_type?: string | null;
+    food_type?: string | null;
+    activity_type?: string | null;
+    tags?: string[] | null;
+    google_types?: string[] | null;
+    atmosphere?: string | null;
+    price_range?: string | null;
+    external_reservation_url?: string | null;
+    reservation_url?: string | null;
+    reservation_link?: string | null;
+    reservation_enabled?: boolean | null;
+    website?: string | null;
+    main_image?: string | null;
+    image_url?: string | null;
+    images?: string[] | null;
+    rating?: number | null;
+    review_keywords?: string[] | null;
+    review_snippet?: string | null;
+    primary_tag?: string | null;
+    distance_miles?: number | null;
+    pair_distance_miles?: number | null;
+    pair_walking_minutes?: number | null;
+    pair_walking_label?: string | null;
+  };
 
-type ActivityCard = LocationScoreFields & {
-  id: string;
-  name?: string | null;
-  activity_name?: string | null;
-  primary_category?: string | null;
-  cuisine?: string | null;
-  cuisine_type?: string | null;
-  food_type?: string | null;
-  activity_type?: string | null;
-  tags?: string[] | null;
-  google_types?: string[] | null;
-  detail_location_type?: "restaurants" | "activities" | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip_code?: string | null;
-  google_maps_url?: string | null;
-  google_maps_link?: string | null;
-  latitude?: number | string | null;
-  longitude?: number | string | null;
-  price_range?: string | null;
-  atmosphere?: string | null;
-  group_friendly?: boolean | null;
-  external_reservation_url?: string | null;
-  reservation_url?: string | null;
-  reservation_link?: string | null;
-  reservation_enabled?: boolean | null;
-  website?: string | null;
-  main_image?: string | null;
-  image_url?: string | null;
-  images?: string[] | null;
-  rating?: number | null;
-  review_keywords?: string[] | null;
-  review_snippet?: string | null;
-  primary_tag?: string | null;
-  distance_miles?: number | null;
-  pair_distance_miles?: number | null;
-  pair_walking_minutes?: number | null;
-  pair_walking_label?: string | null;
-};
+type ActivityCard = LocationScoreFields &
+  LocationVisibilityFields & {
+    id: string;
+    name?: string | null;
+    activity_name?: string | null;
+    primary_category?: string | null;
+    cuisine?: string | null;
+    cuisine_type?: string | null;
+    food_type?: string | null;
+    activity_type?: string | null;
+    tags?: string[] | null;
+    google_types?: string[] | null;
+    detail_location_type?: "restaurants" | "activities" | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip_code?: string | null;
+    google_maps_url?: string | null;
+    google_maps_link?: string | null;
+    latitude?: number | string | null;
+    longitude?: number | string | null;
+    price_range?: string | null;
+    atmosphere?: string | null;
+    group_friendly?: boolean | null;
+    external_reservation_url?: string | null;
+    reservation_url?: string | null;
+    reservation_link?: string | null;
+    reservation_enabled?: boolean | null;
+    website?: string | null;
+    main_image?: string | null;
+    image_url?: string | null;
+    images?: string[] | null;
+    rating?: number | null;
+    review_keywords?: string[] | null;
+    review_snippet?: string | null;
+    primary_tag?: string | null;
+    distance_miles?: number | null;
+    pair_distance_miles?: number | null;
+    pair_walking_minutes?: number | null;
+    pair_walking_label?: string | null;
+  };
 
 type DistancePreference = "walking" | "miles";
 
@@ -216,7 +219,7 @@ export default function CreatePage() {
   const [input, setInput] = useState("");
   const [addOnInput, setAddOnInput] = useState("");
   const [typedPlaceholder, setTypedPlaceholder] = useState(
-    INITIAL_TYPING_PROMPT
+    INITIAL_TYPING_PROMPT,
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -226,8 +229,9 @@ export default function CreatePage() {
   const [error, setError] = useState("");
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<RestaurantCard | null>(null);
-  const [selectedActivity, setSelectedActivity] =
-    useState<ActivityCard | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityCard | null>(
+    null,
+  );
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
 
@@ -245,24 +249,25 @@ export default function CreatePage() {
   const latestAssistant = useMemo(
     () =>
       [...messages].reverse().find((message) => message.role === "assistant"),
-    [messages]
+    [messages],
   );
 
   const hasSelection = Boolean(selectedRestaurant || selectedActivity);
   const hasResults = Boolean(
     (latestAssistant?.restaurants?.length || 0) +
-      (latestAssistant?.activities?.length || 0)
+    (latestAssistant?.activities?.length || 0),
   );
 
   const latestDistancePreference =
     latestAssistant?.distancePreference || "miles";
 
-  const latestResultOrder = latestAssistant?.resultOrder || DEFAULT_RESULT_ORDER;
+  const latestResultOrder =
+    latestAssistant?.resultOrder || DEFAULT_RESULT_ORDER;
 
   const selectedPlanText = buildSelectedPlanText(
     selectedRestaurant,
     selectedActivity,
-    latestResultOrder
+    latestResultOrder,
   );
 
   useEffect(() => {
@@ -355,7 +360,7 @@ export default function CreatePage() {
           itemType,
           eventType: "view",
         });
-      }
+      },
     );
   }, [latestAssistant]);
 
@@ -401,7 +406,7 @@ export default function CreatePage() {
       () => {
         setLocationSaved(false);
         setError("Please allow location access or search by neighborhood.");
-      }
+      },
     );
   }
 
@@ -463,7 +468,7 @@ export default function CreatePage() {
   }
 
   function handleAddOnInputChange(
-    event: React.ChangeEvent<HTMLTextAreaElement>
+    event: React.ChangeEvent<HTMLTextAreaElement>,
   ) {
     setAddOnInput(event.target.value);
   }
@@ -503,7 +508,7 @@ export default function CreatePage() {
 
   async function submitSearch(
     cleanInput: string,
-    options: { addOnTarget?: AddOnTarget; preservePlan?: boolean } = {}
+    options: { addOnTarget?: AddOnTarget; preservePlan?: boolean } = {},
   ) {
     if (!cleanInput || loading) return;
 
@@ -529,7 +534,7 @@ export default function CreatePage() {
 
     setTimeout(
       addOnTarget ? scrollToAddOnLoadingCards : scrollToResultsPanel,
-      140
+      140,
     );
 
     try {
@@ -598,13 +603,13 @@ export default function CreatePage() {
           addOnTarget
             ? scrollToAddOnResultsSection(addOnTarget)
             : scrollToResultsPanel(),
-        250
+        250,
       );
     } catch (err: unknown) {
       setError(
         err instanceof Error
           ? err.message
-          : "Something went wrong. Please try again."
+          : "Something went wrong. Please try again.",
       );
     } finally {
       setLoading(false);
@@ -633,7 +638,7 @@ export default function CreatePage() {
     const addOnTarget = inferAddOnTarget(
       cleanInput,
       selectedRestaurant,
-      selectedActivity
+      selectedActivity,
     );
 
     setAddOnInput("");
@@ -721,9 +726,7 @@ export default function CreatePage() {
               <div className="relative">
                 {!input && (
                   <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    <span>
-                      {typedPlaceholder}
-                    </span>
+                    <span>{typedPlaceholder}</span>
                   </div>
                 )}
 
@@ -863,10 +866,13 @@ export default function CreatePage() {
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
                             const reservationUrl =
-                              getExternalReservationUrl(restaurant) || undefined;
-                            const internalReservationHref =
-                              getInternalReservationHref(restaurant, "restaurant") ||
+                              getExternalReservationUrl(restaurant) ||
                               undefined;
+                            const internalReservationHref =
+                              getInternalReservationHref(
+                                restaurant,
+                                "restaurant",
+                              ) || undefined;
 
                             return (
                               <ResultCard
@@ -875,9 +881,7 @@ export default function CreatePage() {
                                 type="restaurant"
                                 imageUrl={getLocationImage(restaurant)}
                                 title={getLocationName(restaurant)}
-                                eyebrow={
-                                  getCuisine(restaurant) || "Restaurant"
-                                }
+                                eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
                                 rating={restaurant.rating}
                                 reviewKeywords={restaurant.review_keywords}
@@ -899,7 +903,9 @@ export default function CreatePage() {
                                   trackRestaurantClick(restaurantId)
                                 }
                                 reservationUrl={reservationUrl}
-                                internalReservationHref={internalReservationHref}
+                                internalReservationHref={
+                                  internalReservationHref
+                                }
                                 reservationEnabled={
                                   restaurant.reservation_enabled === true
                                 }
@@ -939,15 +945,18 @@ export default function CreatePage() {
                             const reservationUrl =
                               getExternalReservationUrl(activity) || undefined;
                             const internalReservationHref =
-                              getInternalReservationHref(activity, "activity") ||
-                              undefined;
-                            const distanceFromRestaurantLabel = selectedRestaurant
-                              ? buildDistanceFromRestaurantLabel(
-                                  selectedRestaurant,
-                                  activity,
-                                  latestDistancePreference
-                                )
-                              : undefined;
+                              getInternalReservationHref(
+                                activity,
+                                "activity",
+                              ) || undefined;
+                            const distanceFromRestaurantLabel =
+                              selectedRestaurant
+                                ? buildDistanceFromRestaurantLabel(
+                                    selectedRestaurant,
+                                    activity,
+                                    latestDistancePreference,
+                                  )
+                                : undefined;
                             const walkingDirectionsUrl = selectedRestaurant
                               ? buildGoogleDirectionsUrl({
                                   origin: selectedRestaurant,
@@ -957,7 +966,7 @@ export default function CreatePage() {
                               : undefined;
                             const shouldLinkWalkingDirections = Boolean(
                               latestDistancePreference === "walking" &&
-                                walkingDirectionsUrl
+                              walkingDirectionsUrl,
                             );
 
                             return (
@@ -989,7 +998,9 @@ export default function CreatePage() {
                                 websiteUrl={activity.website || undefined}
                                 onWebsite={() => trackActivityClick(activityId)}
                                 reservationUrl={reservationUrl}
-                                internalReservationHref={internalReservationHref}
+                                internalReservationHref={
+                                  internalReservationHref
+                                }
                                 reservationEnabled={
                                   activity.reservation_enabled === true
                                 }
@@ -1143,7 +1154,7 @@ function resultIdentityKey(item: RestaurantCard | ActivityCard) {
   const nameAddressKey = normalizeResultIdentityValue(
     [name, item.address, item.city, item.state, item.zip_code]
       .filter(Boolean)
-      .join(" ")
+      .join(" "),
   );
 
   return nameAddressKey || normalizeResultIdentityValue(String(item.id || ""));
@@ -1170,14 +1181,14 @@ function resultDistanceValue(item: RestaurantCard | ActivityCard) {
 }
 
 function sortResultsNearFirst<T extends RestaurantCard | ActivityCard>(
-  items: T[]
+  items: T[],
 ) {
   if (!items.some((item) => Number.isFinite(Number(item.distance_miles)))) {
     return items;
   }
 
   return [...items].sort(
-    (a, b) => resultDistanceValue(a) - resultDistanceValue(b)
+    (a, b) => resultDistanceValue(a) - resultDistanceValue(b),
   );
 }
 
@@ -1191,7 +1202,7 @@ function dedupeSearchResults({
   const dedupedRestaurants = dedupeResultList(restaurants);
   const restaurantKeys = new Set(dedupedRestaurants.map(resultIdentityKey));
   const dedupedActivities = dedupeResultList(activities).filter(
-    (activity) => !restaurantKeys.has(resultIdentityKey(activity))
+    (activity) => !restaurantKeys.has(resultIdentityKey(activity)),
   );
 
   return {
@@ -1351,7 +1362,9 @@ function PlanSummarySheet({
             <TimelineStep
               step="1"
               label="Restaurant"
-              title={restaurant ? getLocationName(restaurant) : "Choose a restaurant"}
+              title={
+                restaurant ? getLocationName(restaurant) : "Choose a restaurant"
+              }
               meta={[
                 getCuisine(restaurant) || "Restaurant",
                 restaurant?.city || null,
@@ -1388,7 +1401,9 @@ function PlanSummarySheet({
             <TimelineStep
               step="2"
               label="Activity"
-              title={activity ? getLocationName(activity) : "Choose an activity"}
+              title={
+                activity ? getLocationName(activity) : "Choose an activity"
+              }
               meta={[
                 getPrimaryCategory(activity),
                 activity?.city || null,
@@ -1407,9 +1422,7 @@ function PlanSummarySheet({
               }
               imageUrl={activity ? getLocationImage(activity) : null}
               active={Boolean(activity)}
-              actionLabel={
-                restaurant && !activity ? "Add Activity" : undefined
-              }
+              actionLabel={restaurant && !activity ? "Add Activity" : undefined}
               onAction={restaurant && !activity ? onAddActivity : undefined}
             />
           </div>
@@ -1909,11 +1922,11 @@ function getFirstKeywordIndex(input: string, keywords: string[]) {
 function inferResultOrder(input: string): ResultSectionKind[] {
   const activityIndex = getFirstKeywordIndex(
     input,
-    RESULT_ORDER_ACTIVITY_KEYWORDS
+    RESULT_ORDER_ACTIVITY_KEYWORDS,
   );
   const restaurantIndex = getFirstKeywordIndex(
     input,
-    RESULT_ORDER_RESTAURANT_KEYWORDS
+    RESULT_ORDER_RESTAURANT_KEYWORDS,
   );
 
   if (activityIndex < restaurantIndex) {
@@ -1926,10 +1939,10 @@ function inferResultOrder(input: string): ResultSectionKind[] {
 function getOrderedResultSections(resultOrder?: ResultSectionKind[]) {
   const ordered = resultOrder?.length ? resultOrder : DEFAULT_RESULT_ORDER;
   const uniqueOrdered = ordered.filter(
-    (sectionKind, index) => ordered.indexOf(sectionKind) === index
+    (sectionKind, index) => ordered.indexOf(sectionKind) === index,
   );
   const missingSections = DEFAULT_RESULT_ORDER.filter(
-    (sectionKind) => !uniqueOrdered.includes(sectionKind)
+    (sectionKind) => !uniqueOrdered.includes(sectionKind),
   );
 
   return [...uniqueOrdered, ...missingSections];
@@ -1944,13 +1957,17 @@ function getResultInstruction(resultOrder: ResultSectionKind[]) {
 function buildSelectedPlanText(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null,
-  resultOrder: ResultSectionKind[]
+  resultOrder: ResultSectionKind[],
 ) {
   return getOrderedResultSections(resultOrder)
     .map((sectionKind) =>
       sectionKind === "activities"
-        ? (activity ? getLocationName(activity) : null)
-        : (restaurant ? getLocationName(restaurant) : null)
+        ? activity
+          ? getLocationName(activity)
+          : null
+        : restaurant
+          ? getLocationName(restaurant)
+          : null,
     )
     .filter(Boolean)
     .join(" + ");
@@ -2012,7 +2029,7 @@ function getWhyPicked({
 
 function getAddOnTargetLabel(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && !activity) return "activity";
   if (activity && !restaurant) return "restaurant";
@@ -2022,7 +2039,7 @@ function getAddOnTargetLabel(
 function inferAddOnTarget(
   input: string,
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ): AddOnTarget {
   if (restaurant && !activity) return "activity";
   if (activity && !restaurant) return "restaurant";
@@ -2053,7 +2070,7 @@ function inferAddOnTarget(
 
 function getPlanSummaryDescription(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && activity) {
     return "Review your restaurant and activity flow before moving to the full plan.";
@@ -2072,7 +2089,7 @@ function getPlanSummaryDescription(
 
 function getPlanNextStepText(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (restaurant && activity) {
     return "Open the full plan to confirm the route, timing, booking links, and final details.";
@@ -2106,7 +2123,7 @@ function haversineMiles(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ) {
   const toRad = (value: number) => (value * Math.PI) / 180;
   const radius = 3958.8;
@@ -2115,16 +2132,14 @@ function haversineMiles(
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function distanceBetweenLocations(
   restaurant: RestaurantCard | null,
-  activity: ActivityCard | null
+  activity: ActivityCard | null,
 ) {
   if (!restaurant || !activity) return null;
 
@@ -2138,8 +2153,8 @@ function distanceBetweenLocations(
       restaurantCoords.latitude,
       restaurantCoords.longitude,
       activityCoords.latitude,
-      activityCoords.longitude
-    ).toFixed(1)
+      activityCoords.longitude,
+    ).toFixed(1),
   );
 }
 
@@ -2160,7 +2175,7 @@ function queryRequestsWalkingDistance(input: string) {
 function buildDistanceFromRestaurantLabel(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null,
-  distancePreference: DistancePreference
+  distancePreference: DistancePreference,
 ) {
   if (!restaurant || !activity) return undefined;
 
@@ -2190,7 +2205,7 @@ function buildDistanceFromRestaurantLabel(
 function buildDistanceText(
   restaurant: RestaurantCard | null,
   activity: ActivityCard | null,
-  distancePreference: DistancePreference
+  distancePreference: DistancePreference,
 ) {
   if (restaurant && activity) {
     const distance =
@@ -2222,7 +2237,8 @@ function buildDistanceText(
     return "Restaurant → Activity timeline";
   }
 
-  if (restaurant) return "Restaurant selected • Add an activity if you want one.";
+  if (restaurant)
+    return "Restaurant selected • Add an activity if you want one.";
   if (activity) return "Activity selected • Add a restaurant if you want one.";
 
   return "Choose a restaurant or activity to start your outing.";

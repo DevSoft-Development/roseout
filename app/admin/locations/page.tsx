@@ -5,7 +5,16 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import { getIsClaimed, type LocationClaimFields } from "@/lib/locationClaim";
-import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
+import {
+  getLocationScore,
+  type LocationScoreFields,
+} from "@/lib/locationScore";
+import {
+  getDataStatus,
+  getMissingFields,
+  isPubliclyVisible,
+  type LocationVisibilityFields,
+} from "@/lib/locationVisibility";
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
@@ -18,56 +27,59 @@ type SearchParams = {
   page?: string;
 };
 
-type AdminLocation = LocationScoreFields & {
-  id: string;
-  locationType: "restaurants" | "activities";
-  name: string | null;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  zip_code: string | null;
-  category: string | null;
-  primary_category?: string | null;
-  cuisine?: string | null;
-  cuisine_type?: string | null;
-  food_type?: string | null;
-  activity_type?: string | null;
-  primary_tag?: string | null;
-  tags?: string[] | null;
-  google_types?: string[] | null;
-  status: string | null;
-  is_claimed?: boolean | null;
-  claimed?: boolean | null;
-  claim_status?: string | null;
-  claimed_at?: string | null;
-  claimed_by_email?: string | null;
-  owner_user_id?: string | null;
-  rating: number | null;
-  view_count: number | null;
-  click_count: number | null;
-  main_image?: string | null;
-  image_url?: string | null;
-  images?: string[] | null;
-  created_at: string | null;
-};
+type AdminLocation = LocationScoreFields &
+  LocationVisibilityFields & {
+    id: string;
+    locationType: "restaurants" | "activities";
+    name: string | null;
+    address: string | null;
+    city: string | null;
+    state: string | null;
+    zip_code: string | null;
+    category: string | null;
+    primary_category?: string | null;
+    cuisine?: string | null;
+    cuisine_type?: string | null;
+    food_type?: string | null;
+    activity_type?: string | null;
+    primary_tag?: string | null;
+    tags?: string[] | null;
+    google_types?: string[] | null;
+    status: string | null;
+    is_claimed?: boolean | null;
+    claimed?: boolean | null;
+    claim_status?: string | null;
+    claimed_at?: string | null;
+    claimed_by_email?: string | null;
+    owner_user_id?: string | null;
+    rating: number | null;
+    view_count: number | null;
+    click_count: number | null;
+    main_image?: string | null;
+    image_url?: string | null;
+    images?: string[] | null;
+    created_at: string | null;
+  };
 
 type AdminRestaurantRow = Omit<
   AdminLocation,
   "locationType" | "name" | "category"
-> & LocationClaimFields & {
-  name?: string | null;
-  restaurant_name: string | null;
-  cuisine_type: string | null;
-};
+> &
+  LocationClaimFields & {
+    name?: string | null;
+    restaurant_name: string | null;
+    cuisine_type: string | null;
+  };
 
 type AdminActivityRow = Omit<
   AdminLocation,
   "locationType" | "name" | "category"
-> & LocationClaimFields & {
-  name?: string | null;
-  activity_name: string | null;
-  activity_type: string | null;
-};
+> &
+  LocationClaimFields & {
+    name?: string | null;
+    activity_name: string | null;
+    activity_type: string | null;
+  };
 
 function formatNumber(value: number | null | undefined) {
   return Number(value || 0).toLocaleString();
@@ -86,16 +98,20 @@ function formatFullAddress(item: {
 
   const cityStateZip = [city, state, zip].filter(Boolean).join(", ");
 
-  return [street, cityStateZip].filter(Boolean).join(" • ") || "Address not listed";
+  return (
+    [street, cityStateZip].filter(Boolean).join(" • ") || "Address not listed"
+  );
 }
 
 function statusBadge(status?: string | null) {
   const value = status || "unknown";
 
-  if (value === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (value === "approved")
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (value === "pending") return "border-amber-200 bg-amber-50 text-amber-700";
   if (value === "rejected") return "border-red-200 bg-red-50 text-red-700";
-  if (value === "draft") return "border-neutral-200 bg-neutral-100 text-neutral-700";
+  if (value === "draft")
+    return "border-neutral-200 bg-neutral-100 text-neutral-700";
 
   return "border-neutral-200 bg-neutral-100 text-neutral-600";
 }
@@ -154,7 +170,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at"
+      "id, name, restaurant_name, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -162,7 +178,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at"
+      "id, name, activity_name, primary_category, cuisine, cuisine_type, food_type, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -174,43 +190,47 @@ export default async function AdminLocationsPage({
 
   if (claim === "claimed") {
     restaurantsQuery = restaurantsQuery.or(
-      "is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)"
+      "is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)",
     );
     activitiesQuery = activitiesQuery.or(
-      "is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)"
+      "is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)",
     );
   }
 
   if (claim === "unclaimed") {
     restaurantsQuery = restaurantsQuery.or(
-      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)"
+      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)",
     );
     activitiesQuery = activitiesQuery.or(
-      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)"
+      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)",
     );
   }
 
   if (q) {
     restaurantsQuery = restaurantsQuery.or(
-      `restaurant_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,cuisine_type.ilike.%${q}%`
+      `restaurant_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,cuisine_type.ilike.%${q}%`,
     );
 
     activitiesQuery = activitiesQuery.or(
-      `activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,activity_type.ilike.%${q}%`
+      `activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,activity_type.ilike.%${q}%`,
     );
   }
 
-  const [restaurantsResult, activitiesResult, totalRestaurantsResult, totalActivitiesResult] =
-    await Promise.all([
-      shouldLoadRestaurants
-        ? restaurantsQuery
-        : Promise.resolve({ data: [], error: null }),
-      shouldLoadActivities
-        ? activitiesQuery
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from("restaurants").select("id", { count: "exact", head: true }),
-      supabase.from("activities").select("id", { count: "exact", head: true }),
-    ]);
+  const [
+    restaurantsResult,
+    activitiesResult,
+    totalRestaurantsResult,
+    totalActivitiesResult,
+  ] = await Promise.all([
+    shouldLoadRestaurants
+      ? restaurantsQuery
+      : Promise.resolve({ data: [], error: null }),
+    shouldLoadActivities
+      ? activitiesQuery
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("restaurants").select("id", { count: "exact", head: true }),
+    supabase.from("activities").select("id", { count: "exact", head: true }),
+  ]);
 
   const restaurantRows: AdminLocation[] =
     (restaurantsResult.data as AdminRestaurantRow[] | null)?.map((item) => ({
@@ -223,6 +243,11 @@ export default async function AdminLocationsPage({
       zip_code: item.zip_code,
       category: getPrimaryCategory(item),
       status: item.status,
+      is_searchable: item.is_searchable,
+      data_status: item.data_status,
+      missing_fields: item.missing_fields,
+      is_hidden: item.is_hidden,
+      last_quality_check_at: item.last_quality_check_at,
       is_claimed: item.is_claimed,
       claimed: item.claimed,
       claim_status: item.claim_status,
@@ -257,6 +282,11 @@ export default async function AdminLocationsPage({
       zip_code: item.zip_code,
       category: getPrimaryCategory(item),
       status: item.status,
+      is_searchable: item.is_searchable,
+      data_status: item.data_status,
+      missing_fields: item.missing_fields,
+      is_hidden: item.is_hidden,
+      last_quality_check_at: item.last_quality_check_at,
       is_claimed: item.is_claimed,
       claimed: item.claimed,
       claim_status: item.claim_status,
@@ -319,9 +349,9 @@ export default async function AdminLocationsPage({
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Manage restaurants and activities from one unified page. Filter by
-                location type, approval status, claim status, address, city, zip,
-                category, and performance.
+                Manage restaurants and activities from one unified page. Filter
+                by location type, approval status, claim status, address, city,
+                zip, category, and performance.
               </p>
             </div>
 
@@ -598,7 +628,7 @@ export default async function AdminLocationsPage({
 
                           <span
                             className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${typeBadge(
-                              location.locationType
+                              location.locationType,
                             )}`}
                           >
                             {location.locationType === "restaurants"
@@ -608,10 +638,22 @@ export default async function AdminLocationsPage({
 
                           <span
                             className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${statusBadge(
-                              location.status
+                              location.status,
                             )}`}
                           >
                             {location.status || "unknown"}
+                          </span>
+
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${
+                              isPubliclyVisible(location)
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-amber-200 bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {isPubliclyVisible(location)
+                              ? "Searchable"
+                              : getDataStatus(location)}
                           </span>
                         </div>
 
@@ -633,6 +675,18 @@ export default async function AdminLocationsPage({
                           >
                             {getIsClaimed(location) ? "Claimed" : "Open Claim"}
                           </span>
+
+                          {getMissingFields(location).length > 0 && (
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black uppercase text-amber-700">
+                              Missing {getMissingFields(location).length}
+                            </span>
+                          )}
+
+                          {location.is_hidden === true && (
+                            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
+                              Hidden
+                            </span>
+                          )}
                         </div>
                       </div>
                     </Link>
