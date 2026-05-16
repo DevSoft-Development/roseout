@@ -26,7 +26,6 @@ type LocationRow = LocationScoreFields & {
   special_hours?: any;
   holiday_closures?: any;
   hours?: string | null;
-  hours_of_operation?: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
 };
@@ -42,7 +41,7 @@ export default async function ReserveLocationPage({
   const tableName = isActivity ? "activities" : "restaurants";
 
   const hoursFields =
-    "operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time";
+    "operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time";
   const selectFields = isActivity
     ? `id, name, activity_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${hoursFields}`
     : `id, name, restaurant_name, city, state, main_image, image_url, images, default_duration_minutes, rating, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, ${hoursFields}`;

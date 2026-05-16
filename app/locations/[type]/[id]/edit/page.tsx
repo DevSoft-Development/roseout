@@ -38,7 +38,6 @@ type FormState = {
   special_hours?: any;
   holiday_closures?: any;
   hours: string | null;
-  hours_of_operation?: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
   best_for: string;
@@ -147,7 +146,6 @@ export default function EditLocationPage() {
     special_hours: null,
     holiday_closures: null,
     hours: "",
-    hours_of_operation: null,
     days_of_operation: null,
     kitchen_closing_time: null,
     best_for: "",
@@ -211,8 +209,7 @@ export default function EditLocationPage() {
           operating_hours: data.operating_hours ?? null,
           special_hours: data.special_hours ?? null,
           holiday_closures: data.holiday_closures ?? null,
-          hours: data.hours || data.hours_of_operation || "",
-          hours_of_operation: data.hours_of_operation || null,
+          hours: data.hours || "",
           days_of_operation: Array.isArray(data.days_of_operation)
             ? data.days_of_operation
             : null,
@@ -353,7 +350,6 @@ export default function EditLocationPage() {
       special_hours: form.special_hours ?? null,
       holiday_closures: form.holiday_closures ?? null,
       hours: form.hours,
-      hours_of_operation: form.hours_of_operation ?? null,
       days_of_operation: form.days_of_operation ?? null,
       kitchen_closing_time: form.kitchen_closing_time ?? null,
       best_for: toArray(form.best_for),

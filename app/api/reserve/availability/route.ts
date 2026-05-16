@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
   const { data: location } = await supabase
     .from(tableName)
     .select(
-      "id, default_duration_minutes, operating_hours, special_hours, holiday_closures, hours, hours_of_operation, days_of_operation, kitchen_closing_time"
+      "id, default_duration_minutes, operating_hours, special_hours, holiday_closures, hours, days_of_operation, kitchen_closing_time"
     )
     .eq("id", locationId)
     .single();

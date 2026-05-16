@@ -3,7 +3,6 @@ export type LocationHoursFields = {
   special_hours?: any;
   holiday_closures?: any;
   hours?: string | null;
-  hours_of_operation?: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
 };
@@ -12,7 +11,6 @@ export function getOperatingHours(location: any) {
   return (
     location?.operating_hours ||
     location?.hours ||
-    location?.hours_of_operation ||
     null
   );
 }

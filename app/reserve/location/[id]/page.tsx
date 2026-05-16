@@ -51,7 +51,6 @@ type LocationData = {
   special_hours?: any;
   holiday_closures?: any;
   hours?: string | null;
-  hours_of_operation?: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
 };

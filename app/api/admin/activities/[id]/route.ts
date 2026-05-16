@@ -70,7 +70,6 @@ const ACTIVITY_WITH_OWNERS_SELECT = `
   special_hours,
   holiday_closures,
   hours,
-  hours_of_operation,
   days_of_operation,
   kitchen_closing_time,
   best_for,
