@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getLocationName } from "@/lib/locationName";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ReserveLiveRefresh from "@/components/ReserveLiveRefresh";
@@ -172,26 +173,26 @@ export default async function ReserveDashboardPage() {
     restaurantIds.length
       ? supabase
           .from("restaurants")
-          .select("id, restaurant_name")
+          .select("id, name, restaurant_name")
           .in("id", restaurantIds)
       : Promise.resolve({ data: [] }),
     activityIds.length
       ? supabase
           .from("activities")
-          .select("id, activity_name")
+          .select("id, name, activity_name")
           .in("id", activityIds)
       : Promise.resolve({ data: [] }),
   ]);
 
   const locationNames = new Map<string, string>();
   restaurantsResult.data?.forEach((item) => {
-    locationNames.set(`restaurant:${item.id}`, item.restaurant_name || "Restaurant");
+    locationNames.set(`restaurant:${item.id}`, getLocationName(item, "Restaurant"));
   });
   activitiesResult.data?.forEach((item) => {
-    locationNames.set(`activity:${item.id}`, item.activity_name || "Activity");
+    locationNames.set(`activity:${item.id}`, getLocationName(item, "Activity"));
   });
 
-  const getLocationName = (reservation: ReservationItem) => {
+  const getReservationLocationName = (reservation: ReservationItem) => {
     const key = `${reservation.location_type}:${reservation.location_id}`;
     return locationNames.get(key) || reservation.bookable_item_name || "Unknown location";
   };
@@ -240,7 +241,7 @@ export default async function ReserveDashboardPage() {
         key,
         id: item.location_id,
         type: item.location_type,
-        name: getLocationName(item),
+        name: getReservationLocationName(item),
         total: 0,
         today: 0,
         pending: 0,
@@ -468,7 +469,7 @@ export default async function ReserveDashboardPage() {
                       {reservation.customer_name || "Guest reservation"}
                     </h3>
                     <p className="mt-1 text-sm text-black/50">
-                      {getLocationName(reservation)} · {reservation.bookable_item_name || "General reservation"}
+                      {getReservationLocationName(reservation)} · {reservation.bookable_item_name || "General reservation"}
                     </p>
                     {reservation.special_request && (
                       <p className="mt-2 rounded-2xl bg-black/[0.04] px-3 py-2 text-xs font-bold text-black/50">

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { supabase } from "@/lib/supabase";
 import { clampScore } from "@/lib/clampScore";
+import { getLocationName } from "@/lib/locationName";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -265,7 +266,7 @@ function itemText(item: any) {
 }
 
 function locationDisplayName(item: any) {
-  return String(item.restaurant_name || item.activity_name || item.name || "")
+  return String(getLocationName(item, ""))
     .trim()
     .toLowerCase();
 }
@@ -307,7 +308,7 @@ function buildMatchedLocationResults(locations: any[], input: string) {
 }
 
 function normalizeLocation(item: any) {
-  const name = item.name || item.restaurant_name || item.activity_name || "";
+  const name = getLocationName(item, "");
   const type =
     item.location_type ||
     (item.activity_name || item.activity_type ? "activity" : "restaurant");
@@ -758,9 +759,7 @@ function cuisinePromptBoost(item: any, input: string) {
 }
 
 function matchesActivityIntent(item: any, activityIntent: string) {
-  const activityName = String(
-    item.activity_name || item.name || ""
-  ).toLowerCase();
+  const activityName = String(getLocationName(item, "")).toLowerCase();
 
   const normalizedIntent = activityIntent.replace(/_/g, " ");
   const keywords = ACTIVITY_INTENTS[activityIntent] || [normalizedIntent];
@@ -1228,7 +1227,7 @@ function scoreActivity(
   }
 
   intent.activityIntents.forEach((activity) => {
-    const name = String(item.activity_name || item.name || "").toLowerCase();
+    const name = String(getLocationName(item, "")).toLowerCase();
     const normalizedActivity = activity.replace(/_/g, " ");
     const keywords = ACTIVITY_INTENTS[activity] || [normalizedActivity];
 
@@ -1514,13 +1513,13 @@ export async function POST(req: Request) {
       ...(restaurantsData || []).map((restaurant: any) => ({
         ...restaurant,
         location_type: "restaurant",
-        name: restaurant.restaurant_name || restaurant.name,
+        name: getLocationName(restaurant, ""),
         restaurant_name: restaurant.restaurant_name || restaurant.name,
       })),
       ...(activitiesData || []).map((activity: any) => ({
         ...activity,
         location_type: "activity",
-        name: activity.activity_name || activity.name,
+        name: getLocationName(activity, ""),
         activity_name: activity.activity_name || activity.name,
       })),
     ];
@@ -1697,7 +1696,7 @@ export async function POST(req: Request) {
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
-      name: item.restaurant_name || item.activity_name || item.name,
+      name: getLocationName(item, ""),
       location_type: item.location_type,
       city: item.city,
       address: item.address,
@@ -1709,7 +1708,7 @@ export async function POST(req: Request) {
     }));
 
     const slimRestaurants = topRestaurants.map((r: any) => ({
-      name: r.restaurant_name || r.name,
+      name: getLocationName(r, ""),
       city: r.city,
       cuisine: r.cuisine || r.food_type || r.cuisine_type,
       food_type: r.food_type || null,
@@ -1724,7 +1723,7 @@ export async function POST(req: Request) {
     }));
 
     const slimActivities = topActivities.map((a: any) => ({
-      name: a.activity_name || a.name,
+      name: getLocationName(a, ""),
       city: a.city,
       type: a.activity_type || a.category || a.subcategory,
       score: clampScore(a.theouthaven_score),
@@ -1860,7 +1859,7 @@ STRICT RULES:
       },
       matched_locations: matchedLocationResults.map((item: any) => ({
         id: String(item.id),
-        name: item.restaurant_name || item.activity_name || item.name,
+        name: getLocationName(item, ""),
         location_type: item.location_type,
         address: item.address,
         city: item.city,

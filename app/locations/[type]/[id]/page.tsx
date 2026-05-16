@@ -9,6 +9,7 @@ import ScoreBadge from "@/components/ScoreBadge";
 import { trackActivity } from "@/lib/trackActivity";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationReviewForm from "@/components/LocationReviewForm";
+import { getLocationName } from "@/lib/locationName";
 
 function toArray(value: any): string[] {
   if (!value) return [];
@@ -65,7 +66,6 @@ if (!data && (type === "restaurants" || type === "restaurant")) {
     ? {
         ...fallback.data,
         location_type: "restaurant",
-        name: fallback.data.restaurant_name,
       }
     : null;
 
@@ -83,7 +83,6 @@ if (!data && (type === "activities" || type === "activity")) {
     ? {
         ...fallback.data,
         location_type: "activity",
-        name: fallback.data.activity_name,
       }
     : null;
 
@@ -128,11 +127,7 @@ if (error || !data) {
     type === "activities" ||
     type === "activity";
 
-  const name =
-    location?.restaurant_name ||
-    location?.activity_name ||
-    location?.name ||
-    "TheOutHaven Location";
+  const name = getLocationName(location, "TheOutHaven Location");
 
   const category = isActivity
     ? location?.activity_type || "Activity"

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import RestaurantTopBar from "@/app/restaurants/components/RestaurantTopBar";
+import { getLocationName } from "@/lib/locationName";
 
 export default function RestaurantDashboardPage() {
   const supabase = createClient();
@@ -103,7 +104,7 @@ export default function RestaurantDashboardPage() {
 
         <div className="mt-8 rounded-3xl bg-white p-6 text-black">
           <h2 className="text-2xl font-bold">
-            {restaurant.restaurant_name}
+            {getLocationName(restaurant, "Restaurant")}
           </h2>
 
           <p className="mt-2 rounded-xl bg-yellow-500 px-4 py-3 font-semibold">

@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { getLocationName } from "@/lib/locationName";
 
 type Restaurant = {
   id: string;
+  name?: string | null;
   restaurant_name: string;
   address: string;
   city: string;
@@ -159,7 +161,7 @@ export default function RestaurantsAdminClient({
       const q = search.toLowerCase();
 
       const matchesSearch =
-        restaurant.restaurant_name.toLowerCase().includes(q) ||
+        getLocationName(restaurant, "").toLowerCase().includes(q) ||
         restaurant.address.toLowerCase().includes(q) ||
         restaurant.city.toLowerCase().includes(q) ||
         restaurant.state.toLowerCase().includes(q) ||
@@ -232,7 +234,7 @@ export default function RestaurantsAdminClient({
                       {restaurant.image_url ? (
                         <img
                           src={restaurant.image_url}
-                          alt={restaurant.restaurant_name}
+                          alt={getLocationName(restaurant, "Restaurant")}
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -245,7 +247,7 @@ export default function RestaurantsAdminClient({
                     <div>
                       <div className="mb-2 flex flex-wrap items-center gap-2">
                         <h2 className="text-2xl font-bold">
-                          {restaurant.restaurant_name}
+                          {getLocationName(restaurant, "Restaurant")}
                         </h2>
 
                         <span className="rounded-full bg-[#fff0e3] px-3 py-1 text-xs font-semibold capitalize text-[#b66a3c]">

@@ -7,12 +7,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
+import { getLocationName } from "@/lib/locationName";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 
 type RestaurantCard = {
   id: string;
   name?: string | null;
-  restaurant_name: string;
+  restaurant_name?: string | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -41,7 +42,7 @@ type RestaurantCard = {
 type ActivityCard = {
   id: string;
   name?: string | null;
-  activity_name: string;
+  activity_name?: string | null;
   activity_type?: string | null;
   detail_location_type?: "restaurants" | "activities" | null;
   address?: string | null;
@@ -119,17 +120,6 @@ const loadingLines = [
 ];
 
 const DEFAULT_RESULT_ORDER: ResultSectionKind[] = ["restaurants", "activities"];
-function getLocationName(location: RestaurantCard | ActivityCard | null | undefined) {
-  if (!location) return "Unknown Location";
-
-  return (
-    ("name" in location ? location.name : null) ||
-    ("restaurant_name" in location ? location.restaurant_name : null) ||
-    ("activity_name" in location ? location.activity_name : null) ||
-    "Unknown Location"
-  );
-}
-
 const RESULT_ORDER_RESTAURANT_KEYWORDS = [
   "restaurant",
   "restaurants",
@@ -1113,8 +1103,7 @@ function normalizeResultIdentityValue(value: string) {
 }
 
 function resultIdentityKey(item: RestaurantCard | ActivityCard) {
-  const name =
-    "restaurant_name" in item ? item.restaurant_name : item.activity_name;
+  const name = getLocationName(item, "");
   const nameAddressKey = normalizeResultIdentityValue(
     [name, item.address, item.city, item.state, item.zip_code]
       .filter(Boolean)
@@ -1326,7 +1315,7 @@ function PlanSummarySheet({
             <TimelineStep
               step="1"
               label="Restaurant"
-              title={restaurant?.restaurant_name || "Choose a restaurant"}
+              title={restaurant ? getLocationName(restaurant) : "Choose a restaurant"}
               meta={[
                 restaurant?.cuisine || restaurant?.food_type || "Restaurant",
                 restaurant?.city || null,
@@ -1363,7 +1352,7 @@ function PlanSummarySheet({
             <TimelineStep
               step="2"
               label="Activity"
-              title={activity?.activity_name || "Choose an activity"}
+              title={activity ? getLocationName(activity) : "Choose an activity"}
               meta={[
                 activity?.activity_type || "Experience",
                 activity?.city || null,
@@ -1912,8 +1901,8 @@ function buildSelectedPlanText(
   return getOrderedResultSections(resultOrder)
     .map((sectionKind) =>
       sectionKind === "activities"
-        ? activity?.activity_name
-        : restaurant?.restaurant_name
+        ? (activity ? getLocationName(activity) : null)
+        : (restaurant ? getLocationName(restaurant) : null)
     )
     .filter(Boolean)
     .join(" + ");
@@ -2136,18 +2125,18 @@ function buildDistanceFromRestaurantLabel(
 
   if (distancePreference === "walking") {
     if (isCrossAreaWalkingPair(restaurant, activity)) {
-      return `Not walkable from ${restaurant.restaurant_name}`;
+      return `Not walkable from ${getLocationName(restaurant)}`;
     }
 
     const walkingMinutes =
       activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
     return walkingMinutes
-      ? `${walkingMinutes} min walk from ${restaurant.restaurant_name}`
+      ? `${walkingMinutes} min walk from ${getLocationName(restaurant)}`
       : undefined;
   }
 
-  return `${formatPairDistanceMiles(distance)} miles from ${restaurant.restaurant_name}`;
+  return `${formatPairDistanceMiles(distance)} miles from ${getLocationName(restaurant)}`;
 }
 
 function buildDistanceText(
@@ -2164,18 +2153,18 @@ function buildDistanceText(
     if (distance !== null) {
       if (distancePreference === "walking") {
         if (isCrossAreaWalkingPair(restaurant, activity)) {
-          return `Not walkable between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+          return `Not walkable between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
         }
 
         const walkingMinutes =
           activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
 
         if (walkingMinutes) {
-          return `${walkingMinutes} min walk between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+          return `${walkingMinutes} min walk between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
         }
       }
 
-      return `${formatPairDistanceMiles(distance)} miles between ${restaurant.restaurant_name} and ${activity.activity_name}`;
+      return `${formatPairDistanceMiles(distance)} miles between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
     }
 
     if (restaurant.city && activity.city && restaurant.city === activity.city) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getLocationName } from "@/lib/locationName";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
 
     const { data: restaurants } = await supabase
       .from("restaurants")
-      .select("id,restaurant_name,city,state,owner_email,address")
+      .select("id,name,restaurant_name,city,state,owner_email,address")
       .or(
         `restaurant_name.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,owner_email.ilike.%${q}%,address.ilike.%${q}%`
       )
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
 
     const { data: activities } = await supabase
       .from("activities")
-      .select("id,activity_name,city,state,owner_email,address")
+      .select("id,name,activity_name,city,state,owner_email,address")
       .or(
         `activity_name.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,owner_email.ilike.%${q}%,address.ilike.%${q}%`
       )
@@ -68,7 +69,7 @@ export async function GET(req: Request) {
         type: "location",
         locationType: "restaurants",
         id: r.id,
-        title: r.restaurant_name || "Untitled restaurant",
+        title: getLocationName(r, "Untitled restaurant"),
         subtitle:
           [r.city, r.state].filter(Boolean).join(", ") ||
           r.address ||
@@ -80,7 +81,7 @@ export async function GET(req: Request) {
         type: "location",
         locationType: "activities",
         id: a.id,
-        title: a.activity_name || "Untitled activity",
+        title: getLocationName(a, "Untitled activity"),
         subtitle:
           [a.city, a.state].filter(Boolean).join(", ") ||
           a.address ||

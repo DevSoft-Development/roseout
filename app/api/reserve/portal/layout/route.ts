@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { getLocationName } from "@/lib/locationName";
 
 const ACTIVE_STATUSES = ["pending", "confirmed", "arrived", "seated"];
 
@@ -74,11 +75,11 @@ export async function GET(request: NextRequest) {
         reservationQuery,
         supabaseAdmin
           .from("restaurants")
-          .select("id, restaurant_name, city, state")
+          .select("id, name, restaurant_name, city, state")
           .order("restaurant_name", { ascending: true }),
         supabaseAdmin
           .from("activities")
-          .select("id, activity_name, city, state")
+          .select("id, name, activity_name, city, state")
           .order("activity_name", { ascending: true }),
       ]);
 
@@ -115,14 +116,14 @@ export async function GET(request: NextRequest) {
         ...(restaurantsResult.data || []).map((item) => ({
           id: item.id,
           type: "restaurant",
-          name: item.restaurant_name || "Restaurant",
+          name: getLocationName(item, "Restaurant"),
           city: item.city || "",
           state: item.state || "",
         })),
         ...(activitiesResult.data || []).map((item) => ({
           id: item.id,
           type: "activity",
-          name: item.activity_name || "Activity",
+          name: getLocationName(item, "Activity"),
           city: item.city || "",
           state: item.state || "",
         })),

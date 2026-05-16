@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import AdminTopBar from "@/app/admin/components/AdminTopBar";
+import { getLocationName } from "@/lib/locationName";
 
 export default function AdminLabelsPage() {
   const supabase = createClient();
@@ -66,7 +67,7 @@ export default function AdminLabelsPage() {
         </div>
 
         <div class="text">
-          <h2>${r.restaurant_name || ""}</h2>
+          <h2>${getLocationName(r, "")}</h2>
 
           <p class="address">
             ${r.address || ""}
@@ -227,13 +228,13 @@ export default function AdminLabelsPage() {
               {r.qr_code_data_url && (
                 <img
                   src={r.qr_code_data_url}
-                  alt={`${r.restaurant_name} QR`}
+                  alt={`${getLocationName(r, "Restaurant")} QR`}
                   className="h-20 w-20"
                 />
               )}
 
               <div>
-                <h2 className="font-bold">{r.restaurant_name}</h2>
+                <h2 className="font-bold">{getLocationName(r, "Restaurant")}</h2>
                 <p className="text-sm text-neutral-600">
                   {r.address}, {r.city}, {r.state} {r.zip_code}
                 </p>

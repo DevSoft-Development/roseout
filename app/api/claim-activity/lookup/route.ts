@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const { data: activity, error } = await supabase
     .from("activities")
     .select(
-      "id, activity_name, activity_type, address, city, state, zip_code, claim_status"
+      "id, name, activity_name, activity_type, address, city, state, zip_code, claim_status"
     )
     .eq("claim_token", token)
     .maybeSingle();

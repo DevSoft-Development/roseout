@@ -30,8 +30,9 @@ type LocationItem = {
   id: string;
   location_type: LocationType;
   display_name: string;
-  restaurant_name?: string;
-  activity_name?: string;
+  name?: string | null;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
   address?: string;
   city?: string;
   state?: string;

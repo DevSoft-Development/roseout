@@ -19,9 +19,9 @@ const FULL_OUTING_RESULT_LIMIT = 6;
 
 export type SmartMatchItem = {
   id?: string;
-  name?: string;
-  restaurant_name?: string;
-  activity_name?: string;
+  name?: string | null;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
   title?: string;
   cuisine?: string | null;
   category?: string | null;

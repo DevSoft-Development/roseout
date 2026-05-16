@@ -1,3 +1,5 @@
+import { getLocationName } from "@/lib/locationName";
+
 export type GoogleDirectionsTravelMode = "walking" | "driving";
 
 type DirectionLocation = {
@@ -33,12 +35,9 @@ function locationCoordinates(location: DirectionLocation) {
   return `${latitude},${longitude}`;
 }
 
-function locationName(location: DirectionLocation) {
-  return location.restaurant_name || location.activity_name || location.name || "";
-}
-
 function googleLocationQuery(location: DirectionLocation) {
-  return locationAddress(location) || locationCoordinates(location) || locationName(location);
+  const name = getLocationName(location, "");
+  return locationAddress(location) || locationCoordinates(location) || name;
 }
 
 export function buildGoogleDirectionsUrl({

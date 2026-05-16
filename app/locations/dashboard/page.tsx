@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import LocationsDashboardClient from "./LocationsDashboardClient";
+import { getLocationName } from "@/lib/locationName";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,9 @@ type LocationItem = {
   id: string;
   location_type: LocationType;
   display_name: string;
-  restaurant_name?: string;
-  activity_name?: string;
+  name?: string | null;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
   address?: string;
   city?: string;
   state?: string;
@@ -73,10 +75,10 @@ export default async function DashboardPage() {
         {
           ...data,
           location_type: table === "restaurants" ? "restaurant" : "activity",
-          display_name:
-            table === "restaurants"
-              ? data.restaurant_name || "Untitled restaurant"
-              : data.activity_name || "Untitled activity",
+          display_name: getLocationName(
+            data,
+            table === "restaurants" ? "Untitled restaurant" : "Untitled activity"
+          ),
         },
       ];
 
@@ -97,12 +99,12 @@ export default async function DashboardPage() {
       ...(restaurants || []).map((r: any) => ({
         ...r,
         location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
+        display_name: getLocationName(r, "Untitled restaurant"),
       })),
       ...(activities || []).map((a: any) => ({
         ...a,
         location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
+        display_name: getLocationName(a, "Untitled activity"),
       })),
     ];
 
@@ -122,12 +124,12 @@ export default async function DashboardPage() {
       ...(restaurants || []).map((r: any) => ({
         ...r,
         location_type: "restaurant" as LocationType,
-        display_name: r.restaurant_name || "Untitled restaurant",
+        display_name: getLocationName(r, "Untitled restaurant"),
       })),
       ...(activities || []).map((a: any) => ({
         ...a,
         location_type: "activity" as LocationType,
-        display_name: a.activity_name || "Untitled activity",
+        display_name: getLocationName(a, "Untitled activity"),
       })),
     ];
   }
