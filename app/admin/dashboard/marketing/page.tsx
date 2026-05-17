@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import MarketingCampaignActions from "@/components/marketing/MarketingCampaignActions";
+import LinkedCaptionPreview from "@/components/marketing/LinkedCaptionPreview";
+import { shortenDisplayedLink } from "@/lib/marketing/links";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Marketing Center | TheOutHaven Admin",
+  title: { absolute: "Marketing Center | TheOutHaven Admin" },
   description: "Create and monitor TheOutHaven marketing campaigns.",
 };
 
@@ -153,8 +156,8 @@ export default async function MarketingCenterPage({
                 Build location-aware promos, generate platform copy, preview every message, schedule sends, and keep consent-safe logs for every attempt.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <a href="#campaign-builder" className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03]">Create Marketing Campaign</a>
-                <a href="#analytics" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">View Analytics</a>
+                <Link href="#campaign-builder" className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03]">Create Marketing Campaign</Link>
+                <Link href="#analytics" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">View Analytics</Link>
                 <Link href="/admin/dashboard/locations" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">Choose Location</Link>
               </div>
             </div>
@@ -179,11 +182,20 @@ export default async function MarketingCenterPage({
           </div>
         </section>
 
+        <section id="analytics" className="mt-5 grid gap-4 md:grid-cols-3 xl:grid-cols-9">
+          {analytics.map((stat) => (
+            <div key={stat.label} className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl">
+              <p className="text-[10px] font-black uppercase tracking-wide text-white/40">{stat.label}</p>
+              <p className={`mt-2 text-3xl font-black ${stat.tone}`}>{formatNumber(stat.value)}</p>
+            </div>
+          ))}
+        </section>
+
         <nav className="mt-5 flex gap-2 overflow-x-auto rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-2">
           {tabs.map((tab) => (
-            <a key={tab} href={`#${tab.toLowerCase().replace(/\s+/g, "-")}`} className="shrink-0 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white/60 transition hover:bg-rose-600 hover:text-white">
+            <Link key={tab} href={`#${tab.toLowerCase().replace(/\s+/g, "-")}`} className="shrink-0 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white/60 transition hover:bg-rose-600 hover:text-white">
               {tab}
-            </a>
+            </Link>
           ))}
         </nav>
 
@@ -233,6 +245,17 @@ export default async function MarketingCenterPage({
                     <p className="text-lg font-black">{params.location_name || "No location selected yet"}</p>
                     <p className="mt-1 text-sm font-bold text-black/50">{[params.category, params.city, params.state].filter(Boolean).join(" • ") || "Choose from restaurants, activities, or locations."}</p>
                     <p className="mt-1 line-clamp-2 text-xs font-medium text-black/45">{params.address || params.description || "Use the location admin list buttons to pre-fill campaign copy and CTA links."}</p>
+                    {params.public_url && (
+                      <a
+                        href={params.public_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={params.public_url}
+                        className="mt-2 inline-flex max-w-full rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 underline decoration-rose-300/50 underline-offset-4"
+                      >
+                        <span className="truncate">{shortenDisplayedLink(params.public_url)}</span>
+                      </a>
+                    )}
                     <Link href="/admin/dashboard/locations" className="mt-3 inline-flex rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white">Browse locations</Link>
                   </div>
                 </div>
@@ -279,11 +302,7 @@ export default async function MarketingCenterPage({
                   Confirmation step: use Save Draft first. Send Now requires confirming audience count, channel, and consent checks in the API.
                 </div>
               </div>
-              <div className="flex flex-wrap gap-3 lg:col-span-2">
-                <button type="button" className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/20">Save Draft</button>
-                <button type="button" className="rounded-full border border-black/10 bg-[#1b1210] px-6 py-3 text-sm font-black text-white">Schedule</button>
-                <button type="button" className="rounded-full border border-red-200 bg-red-50 px-6 py-3 text-sm font-black text-red-700">Confirm & Send Now</button>
-              </div>
+              <MarketingCampaignActions />
             </form>
           </div>
 
@@ -294,18 +313,18 @@ export default async function MarketingCenterPage({
               <div className="mt-5 space-y-3">
                 <div id="social-posts" className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">Social preview</p>
-                  <p className="mt-2 text-sm leading-6 text-white/70">{copy.social}</p>
+                  <LinkedCaptionPreview text={copy.social} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70" />
                   <p className="mt-2 text-xs font-black text-rose-200">{copy.hashtags}</p>
                 </div>
                 <div id="email-blast" className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">Email preview</p>
                   <p className="mt-2 font-black">{copy.emailSubject}</p>
-                  <p className="mt-2 text-sm leading-6 text-white/60">{copy.emailBody}</p>
+                  <LinkedCaptionPreview text={copy.emailBody} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/60" />
                   <p className="mt-3 text-[11px] text-white/35">Includes unsubscribe footer automatically.</p>
                 </div>
                 <div id="text-blast" className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">SMS preview</p>
-                  <p className="mt-2 text-sm leading-6 text-white/70">{copy.sms}</p>
+                  <LinkedCaptionPreview text={copy.sms} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70" />
                 </div>
               </div>
             </div>
@@ -326,7 +345,7 @@ export default async function MarketingCenterPage({
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-700">Campaigns</p>
               <h2 className="mt-2 text-2xl font-black">Recent marketing campaigns</h2>
             </div>
-            <a href="#campaign-builder" className="rounded-full bg-[#1b1210] px-5 py-3 text-sm font-black text-white">Create Marketing Campaign</a>
+            <Link href="#campaign-builder" className="rounded-full bg-[#1b1210] px-5 py-3 text-sm font-black text-white">Create Marketing Campaign</Link>
           </div>
           {!campaigns.length ? (
             <div className="p-12 text-center">
@@ -368,14 +387,6 @@ export default async function MarketingCenterPage({
           </div>
         </section>
 
-        <section id="analytics" className="mt-5 grid gap-4 md:grid-cols-3 xl:grid-cols-9">
-          {analytics.map((stat) => (
-            <div key={stat.label} className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-xl">
-              <p className="text-[10px] font-black uppercase tracking-wide text-white/40">{stat.label}</p>
-              <p className={`mt-2 text-3xl font-black ${stat.tone}`}>{formatNumber(stat.value)}</p>
-            </div>
-          ))}
-        </section>
       </div>
     </main>
   );
