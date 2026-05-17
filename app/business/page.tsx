@@ -1,459 +1,249 @@
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
-type Billing = "monthly" | "yearly";
+const primaryCta = "/locations/apply?plan=free";
+const proCta = "/checkout?plan=pro&billing=monthly";
+
+const platformPillars = [
+  {
+    title: "Get Discovered",
+    eyebrow: "Discovery",
+    features: [
+      "Customer discovery",
+      "Curated searches",
+      "Visibility across experiences",
+      "SEO-friendly business pages",
+      "Photos, social, and reservation links",
+    ],
+  },
+  {
+    title: "AI-Powered Matching",
+    eyebrow: "Recommendations",
+    features: [
+      "Smart recommendations",
+      "Cuisine + vibe matching",
+      "Date-night pairing",
+      "Group activity suggestions",
+      "Personalized discovery",
+    ],
+  },
+  {
+    title: "TheOutHaven Reserve",
+    eyebrow: "Reservations",
+    features: [
+      "Online reservations",
+      "Waitlists",
+      "SMS reminders",
+      "Calendar add",
+      "Guest management",
+    ],
+  },
+  {
+    title: "Hospitality Operations",
+    eyebrow: "Operations",
+    features: [
+      "Layout builder",
+      "Tables, rooms, and lanes",
+      "Drag-and-drop management",
+      "Live hostess mode",
+      "Real-time occupancy",
+    ],
+  },
+];
+
+const operationsBullets = [
+  "Live reservations",
+  "Waitlist texting",
+  "Table & room assignment",
+  "Guest notes",
+  "Mobile hostess mode",
+];
+
+const venueTypes = [
+  "Restaurants",
+  "Lounges",
+  "Hookah",
+  "Nightlife",
+  "Bowling",
+  "Karaoke",
+  "Rooftops",
+  "Arcades",
+  "Event Spaces",
+  "Wellness",
+  "Creative Experiences",
+];
+
+const includedFeatures = [
+  "Business profile page",
+  "Discovery visibility",
+  "AI-powered recommendations",
+  "Photos & media",
+  "Website/social links",
+  "Google Maps integration",
+  "External reservation links",
+  "QR claim tools",
+  "Customer traffic from searches",
+  "Basic location management",
+];
+
+const reserveFeatures = [
+  "Reservations",
+  "Layout Builder",
+  "SMS Reminders",
+  "Waitlists",
+  "Hostess Dashboard",
+  "Analytics",
+  "Guest Notes",
+  "Calendar Add",
+];
+
+const freeFeatures = [
+  "Business profile",
+  "Discovery visibility",
+  "AI recommendations",
+  "Photos/contact/social links",
+  "External reservation links",
+  "QR tools",
+  "Basic management",
+];
+
+const proFeatures = [
+  "Everything in Free plus:",
+  "Native reservations",
+  "Layout builder",
+  "SMS reminders",
+  "Waitlist texting",
+  "Live dashboard",
+  "Guest notes",
+  "Analytics",
+  "Calendar add",
+  "No per-cover fees",
+];
 
 export default function BusinessPage() {
-  const [billing, setBilling] = useState<Billing>("monthly");
-  const isYearly = billing === "yearly";
-
-  const proPrice = isYearly ? "$79" : "$99";
-  const proHref = `/checkout?plan=pro&billing=${billing}`;
-
   return (
-    <main className="min-h-screen bg-black text-white">
+    <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
       <TheOutHavenHeader />
 
-      <section className="relative overflow-hidden px-6 pt-32 pb-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.28),transparent_38%),linear-gradient(180deg,#050505,#000)]" />
+      <HeroSection />
 
-        <div className="relative mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+      <Section className="pt-0">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {platformPillars.map((pillar, index) => (
+            <PillarCard key={pillar.title} index={index + 1} {...pillar} />
+          ))}
+        </div>
+      </Section>
+
+      <Section className="border-y border-white/10 bg-[#080808]">
+        <div className="grid gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
+          <SectionHeader
+            eyebrow="Live operations"
+            title="Run Your Venue in Real Time"
+            text="Manage tables, booths, rooms, lanes, and guest flow from one live dashboard."
+          />
+
+          <OperationsShowcase />
+        </div>
+
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {operationsBullets.map((item) => (
+            <MiniFeature key={item}>{item}</MiniFeature>
+          ))}
+        </div>
+      </Section>
+
+      <Section>
+        <SectionHeader
+          eyebrow="Venue types"
+          title="Built for modern hospitality"
+          centered
+        />
+
+        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {venueTypes.map((venue) => (
+            <VenueCard key={venue} title={venue} />
+          ))}
+        </div>
+      </Section>
+
+      <Section className="border-y border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.16),transparent_34%),#080808]">
+        <SectionHeader
+          eyebrow="Every plan"
+          title="Included With Every Plan"
+          text="Start with the core discovery engine before adding advanced operations."
+        />
+
+        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {includedFeatures.map((feature) => (
+            <IncludedTile key={feature}>{feature}</IncludedTile>
+          ))}
+        </div>
+      </Section>
+
+      <Section>
+        <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-              For Restaurants, Venues & Experiences
-            </p>
-
-            <h1 className="mt-5 text-5xl font-black leading-tight tracking-tight md:text-7xl">
-              Get Discovered with TheOutHaven. Manage Reservations with TheOutHaven Reserve.
-            </h1>
-
-            <p className="mt-6 max-w-3xl text-lg leading-8 text-white/60">
-              TheOutHaven helps restaurants, lounges, nightlife venues, and
-              activity spaces attract customers through curated discovery and
-              manage reservations with TheOutHaven Reserve.
-            </p>
-
-            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-              <Link
-                href="/locations/apply?plan=free"
-                className="rounded-2xl bg-[#e1062a] px-8 py-4 text-center text-sm font-black text-white shadow-2xl shadow-red-500/30 transition hover:bg-red-500"
-              >
-                Join Free →
-              </Link>
-
-              <Link
-                href="#plans"
-                className="rounded-2xl border border-white/15 bg-white/5 px-8 py-4 text-center text-sm font-black text-white/80 transition hover:bg-white hover:text-black"
-              >
-                Compare Plans
-              </Link>
+            <SectionHeader
+              eyebrow="Pro operations"
+              title="Unlock TheOutHaven Reserve"
+              text="Advanced reservations and hospitality operations for modern venues."
+            />
+            <div className="mt-6 inline-flex rounded-full border border-[#e1062a]/40 bg-[#e1062a]/15 px-5 py-3 text-sm font-black text-white shadow-2xl shadow-red-500/10">
+              No Per-Cover Fees
             </div>
           </div>
 
-          <div className="rounded-[2.25rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-red-500/10">
-            <div className="rounded-[1.75rem] bg-[#0b0b0b] p-6">
-              <p className="text-sm font-black uppercase tracking-[0.25em] text-[#e1062a]">
-                Discovery + Reserve
-              </p>
-
-              <h2 className="mt-4 text-3xl font-black">
-                Discovery for guests. Reserve for operations.
-              </h2>
-
-              <div className="mt-6 space-y-4">
-                <HeroPoint
-                  title="Curated discovery"
-                  text="TheOutHaven helps guests find the right restaurants, lounges, nightlife, and experiences."
-                />
-                <HeroPoint
-                  title="TheOutHaven Reserve"
-                  text="Run reservations, waitlists, reminders, and guest details with a dedicated hospitality product."
-                />
-                <HeroPoint
-                  title="TheOutHaven Reserve Dashboard"
-                  text="Give your team a live operating view for reservations, waitlists, and guest flow."
-                />
-              </div>
-            </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {reserveFeatures.map((feature) => (
+              <ReserveFeature key={feature} title={feature} />
+            ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      <section className="px-6 pb-16">
-        <div className="mx-auto grid max-w-7xl gap-5 md:grid-cols-4">
-          <Stat value="Discovery" label="Appear in customer searches" />
-          <Stat value="Reserve" label="Power guest bookings" />
-          <Stat value="Operations" label="Manage the floor in real time" />
-          <Stat value="Analytics" label="Track views, clicks, and interest" />
+      <Section id="plans" className="border-y border-white/10 bg-[#080808]">
+        <SectionHeader eyebrow="Simple pricing" title="Two ways to grow" centered />
+
+        <div className="mt-10 grid gap-5 lg:grid-cols-2">
+          <PricingCard
+            title="TheOutHaven Discovery"
+            price="Free"
+            description="Claim your location and appear where customers discover their next plan."
+            features={freeFeatures}
+            cta="Claim Your Location"
+            href={primaryCta}
+          />
+          <PricingCard
+            title="TheOutHaven Reserve"
+            price="$99"
+            period="/month"
+            description="Add native reservations, live floor management, and guest operations."
+            features={proFeatures}
+            cta="Start Pro"
+            href={proCta}
+            highlighted
+          />
         </div>
-      </section>
+      </Section>
 
-      <section
-        id="plans"
-        className="border-y border-white/10 bg-[#070707] px-6 py-20"
-      >
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-12 grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-                Plans
-              </p>
-
-              <h2 className="mt-4 text-4xl font-black md:text-5xl">
-                Start free. Upgrade when you’re ready to grow.
-              </h2>
-
-              <p className="mt-5 text-lg leading-8 text-white/60">
-                TheOutHaven Discovery gives your business a polished presence in
-                curated recommendations. TheOutHaven Reserve adds the operational
-                tools to convert discovery into managed reservations.
-              </p>
-            </div>
-
-            <div className="inline-flex w-fit rounded-2xl border border-white/10 bg-black p-1">
-              <button
-                type="button"
-                onClick={() => setBilling("monthly")}
-                className={`rounded-xl px-5 py-3 text-sm font-black transition ${
-                  billing === "monthly"
-                    ? "bg-white text-black"
-                    : "text-white/55 hover:text-white"
-                }`}
-              >
-                Monthly
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setBilling("yearly")}
-                className={`rounded-xl px-5 py-3 text-sm font-black transition ${
-                  billing === "yearly"
-                    ? "bg-[#e1062a] text-white"
-                    : "text-white/55 hover:text-white"
-                }`}
-              >
-                Yearly
-                <span className="ml-2 rounded-full bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.12em]">
-                  Save 20%
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <PlanCard
-              title="TheOutHaven Discovery"
-              subtitle="For businesses that want curated visibility across TheOutHaven."
-              price="$0"
-              period="/mo"
-              href="/locations/apply?plan=free"
-              cta="Start TheOutHaven Discovery"
-              features={[
-                "Discovery visibility",
-                "Business profile",
-                "Photos/contact/social links",
-                "External reservation links",
-                "QR tools",
-                "Recommendation placement",
-              ]}
-            />
-
-            <PlanCard
-              featured
-              title="TheOutHaven Reserve"
-              subtitle="For hospitality teams that need reservations, floor operations, guest messaging, and insights."
-              price={proPrice}
-              period="/mo"
-              oldPrice={isYearly ? "$99/mo" : undefined}
-              note={isYearly ? "Billed yearly at $948/year" : "Monthly billing"}
-              href={proHref}
-              cta={isYearly ? "Choose Yearly Reserve" : "Choose Monthly Reserve"}
-              features={[
-                "TheOutHaven Reserve reservations",
-                "Layout builder",
-                "Live hostess dashboard",
-                "SMS reminders",
-                "Waitlist texting",
-                "Calendar add",
-                "Guest notes",
-                "Analytics",
-                "No cover fees",
-              ]}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white px-6 py-20 text-black">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-10 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Brand Structure
-            </p>
-
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              TheOutHaven Discovery vs TheOutHaven Reserve
-            </h2>
-          </div>
-
-          <div className="overflow-hidden rounded-[2rem] border border-black/10 shadow-2xl shadow-black/10">
-            <ComparisonRow item="Discovery visibility" free="Included" pro="Included" />
-            <ComparisonRow item="Business profile" free="Included" pro="Included" />
-            <ComparisonRow item="Photos/contact/social links" free="Included" pro="Included" />
-            <ComparisonRow item="External reservation links" free="Included" pro="Included" />
-            <ComparisonRow item="QR tools" free="Included" pro="Included" />
-            <ComparisonRow item="Recommendation placement" free="Included" pro="Enhanced" />
-            <ComparisonRow item="TheOutHaven Reserve reservations" free="—" pro="Included" />
-            <ComparisonRow item="Layout builder" free="—" pro="Included" />
-            <ComparisonRow item="Live hostess dashboard" free="—" pro="Included" />
-            <ComparisonRow item="TheOutHaven Reserve SMS Reminders" free="—" pro="Included" />
-            <ComparisonRow item="TheOutHaven Reserve Waitlist" free="—" pro="Included" />
-            <ComparisonRow item="Calendar add" free="—" pro="Included" />
-            <ComparisonRow item="Guest notes" free="—" pro="Included" />
-            <ComparisonRow item="Analytics" free="—" pro="Included" />
-            <ComparisonRow item="No cover fees" free="—" pro="Included" />
-            <ComparisonRow item="Best use" free="Discovery/experience" pro="Operational hospitality software" />
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-white/10 bg-[#070707] px-6 py-20">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              TheOutHaven Reserve
-            </p>
-
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Unlock TheOutHaven Reserve
-            </h2>
-
-            <p className="mt-5 text-lg leading-8 text-white/60">
-              TheOutHaven Reserve gives hospitality teams a premium operating
-              layer for reservations, floor layouts, guest messaging, waitlists,
-              and real-time visibility.
-            </p>
-
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <OperationsFeature
-                title="TheOutHaven Reserve Layout Builder"
-                text="Drag tables, rooms, lanes, courts, sections, and event spaces into a live layout."
-              />
-              <OperationsFeature
-                title="TheOutHaven Reserve Reservations"
-                text="Accept, confirm, and organize booking requests from one clean workspace."
-              />
-              <OperationsFeature
-                title="Guest notes"
-                text="Keep names, party sizes, preferences, occasions, and contact details close to the reservation."
-              />
-              <OperationsFeature
-                title="Reservation status"
-                text="Track pending, confirmed, declined, completed, and waitlisted guests."
-              />
-              <OperationsFeature
-                title="TheOutHaven Reserve Waitlist"
-                text="Send TheOutHaven Reserve Waitlist updates when a table, room, lane, or section is ready."
-              />
-              <OperationsFeature
-                title="Reserve analytics"
-                text="Understand demand, profile clicks, reservation activity, and guest patterns."
-              />
-            </div>
-          </div>
-
-          <div className="rounded-[2.25rem] border border-white/10 bg-black p-5 shadow-2xl shadow-red-500/10">
-            <div className="rounded-[1.75rem] border border-white/10 bg-[#0d0d0d] p-6">
-              <div className="flex items-center justify-between border-b border-white/10 pb-5">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
-                    Live Operations
-                  </p>
-                  <h3 className="mt-2 text-2xl font-black">
-                    Powered by TheOutHaven Reserve
-                  </h3>
-                </div>
-
-                <span className="rounded-full bg-[#e1062a]/15 px-3 py-2 text-xs font-black text-[#ff8a9b]">
-                  Live
-                </span>
-              </div>
-
-              <div className="mt-6 grid gap-4">
-                <OperationsRow
-                  name="Dinner Reservation"
-                  detail="Tonight · 7:30 PM · Party of 4"
-                  status="New"
-                />
-                <OperationsRow
-                  name="Birthday Dinner"
-                  detail="Friday · 8:00 PM · Party of 8"
-                  status="Pending"
-                />
-                <OperationsRow
-                  name="Date Night Booking"
-                  detail="Saturday · 6:45 PM · Party of 2"
-                  status="Confirmed"
-                />
-              </div>
-
-              <div className="mt-6 grid gap-4 sm:grid-cols-3">
-                <MiniMetric value="18" label="Requests" />
-                <MiniMetric value="11" label="Confirmed" />
-                <MiniMetric value="42" label="Profile clicks" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="how-it-works" className="px-6 py-20">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-12 max-w-3xl">
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              How It Works
-            </p>
-
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              A simple path from signup to customer action.
-            </h2>
-
-            <p className="mt-5 text-lg leading-8 text-white/60">
-              TheOutHaven helps your business become discoverable in moments
-              when customers are already deciding where to go.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Step
-              number="01"
-              title="Choose your plan"
-              text="Start with TheOutHaven Discovery or unlock TheOutHaven Reserve for reservations and guest management."
-            />
-            <Step
-              number="02"
-              title="Claim or add your business"
-              text="Submit your restaurant, lounge, venue, activity, or experience for review."
-            />
-            <Step
-              number="03"
-              title="Build your profile"
-              text="Add details, photos, links, categories, and the experiences you want to be known for."
-            />
-            <Step
-              number="04"
-              title="Launch TheOutHaven Reserve"
-              text="TheOutHaven Reserve helps teams manage bookings, waitlists, reminders, guest notes, and analytics."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-white/10 bg-[#070707] px-6 py-20">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-12 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Who Should Join
-            </p>
-
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Built for places people go to experience something.
-            </h2>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            <DarkCard
-              title="Restaurants"
-              text="Dinner, brunch, rooftops, casual dining, fine dining, and group-friendly spots."
-            />
-            <DarkCard
-              title="Lounges & Nightlife"
-              text="Hookah lounges, cocktail lounges, rooftops, bars, music, and late-night experiences."
-            />
-            <DarkCard
-              title="Activities"
-              text="Bowling, karaoke, arcades, comedy clubs, museums, paint nights, and games."
-            />
-            <DarkCard
-              title="Venues"
-              text="Event spaces, birthday locations, private rooms, and memorable group outing spaces."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white px-6 py-20 text-black">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Grow With Us
-            </p>
-
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Reach customers while TheOutHaven grows.
-            </h2>
-
-            <p className="mt-5 text-lg leading-8 text-black/60">
-              Join early, strengthen your presence, and position your business
-              inside a platform built around curated discovery and dedicated
-              hospitality operations with TheOutHaven Reserve.
-            </p>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-3">
-            <GrowthCard
-              title="More discovery"
-              text="Be part of customer searches for date nights, birthdays, brunch, and nightlife."
-            />
-            <GrowthCard
-              title="More operational control"
-              text="Use TheOutHaven Reserve to turn customer interest into managed reservations, reminders, and guest records."
-            />
-            <GrowthCard
-              title="More control"
-              text="Use TheOutHaven Reserve to monitor bookings, waitlists, profile views, and guest interest."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="px-6 py-24">
-        <div className="mx-auto max-w-7xl rounded-[2.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.22),transparent_42%),#080808] p-8 text-center md:p-14">
+      <section className="relative overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,6,42,0.2),transparent_38%)]" />
+        <div className="relative mx-auto max-w-5xl rounded-[2rem] border border-white/10 bg-white/[0.04] p-8 text-center shadow-2xl shadow-red-500/10 sm:p-12 lg:p-16">
           <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-            Sign Up Flow
+            TheOutHaven for Business
           </p>
-
-          <h2 className="mt-4 text-4xl font-black md:text-6xl">
-            Join TheOutHaven in minutes.
+          <h2 className="mt-5 text-4xl font-black tracking-tight md:text-6xl">
+            Modern Hospitality Starts Here
           </h2>
-
-          <div className="mx-auto mt-10 grid max-w-5xl gap-5 md:grid-cols-4">
-            <Flow title="1. Pick a plan" text="Choose TheOutHaven Discovery or TheOutHaven Reserve." />
-            <Flow title="2. Submit business" text="Add your location details." />
-            <Flow title="3. Get reviewed" text="We verify your listing." />
-            <Flow
-              title="4. Go live"
-              text="Start getting discovered with TheOutHaven and manage reservations with TheOutHaven Reserve."
-            />
-          </div>
-
-          <div className="mt-10 flex flex-col justify-center gap-4 sm:flex-row">
-            <Link
-              href="/locations/apply?plan=free"
-              className="rounded-2xl bg-[#e1062a] px-9 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/30 transition hover:bg-red-500"
-            >
-              Start TheOutHaven Discovery →
-            </Link>
-
-            <Link
-              href={proHref}
-              className="rounded-2xl border border-white/15 bg-white px-9 py-4 text-sm font-black text-black transition hover:bg-white/85"
-            >
-              Unlock Reserve
-            </Link>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-white/60 md:text-lg">
+            Get discovered, manage guests, and grow with TheOutHaven.
+          </p>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <CtaLink href={primaryCta}>Claim Your Location</CtaLink>
+            <CtaLink href={proCta} variant="secondary">
+              Start Pro
+            </CtaLink>
           </div>
         </div>
       </section>
@@ -461,214 +251,355 @@ export default function BusinessPage() {
   );
 }
 
-function HeroPoint({ title, text }: { title: string; text: string }) {
+function HeroSection() {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-      <h3 className="font-black text-white">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-white/50">{text}</p>
+    <section className="relative overflow-hidden px-4 pb-16 pt-28 sm:px-6 sm:pb-20 sm:pt-32 lg:px-8 lg:pb-24">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.26),transparent_32%),radial-gradient(circle_at_80%_10%,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,#080808_0%,#050505_76%)]" />
+      <div className="absolute left-1/2 top-20 h-72 w-72 -translate-x-1/2 rounded-full bg-[#e1062a]/10 blur-3xl" />
+
+      <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
+            Modern hospitality platform
+          </p>
+          <h1 className="mt-5 max-w-4xl text-5xl font-black leading-[0.98] tracking-tight sm:text-6xl lg:text-7xl">
+            TheOutHaven for Business
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/68">
+            Discovery, AI-powered recommendations, reservations, and hospitality operations — all in one platform.
+          </p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <CtaLink href={primaryCta}>Claim Your Location</CtaLink>
+            <CtaLink href={proCta} variant="secondary">
+              Start Pro
+            </CtaLink>
+          </div>
+        </div>
+
+        <DashboardVisual />
+      </div>
+    </section>
+  );
+}
+
+function DashboardVisual() {
+  const timeline = ["6:00", "6:30", "7:15", "8:00"];
+
+  return (
+    <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-3 shadow-2xl shadow-red-500/10 backdrop-blur sm:rounded-[2.5rem] sm:p-5">
+      <div className="overflow-hidden rounded-[1.55rem] border border-white/10 bg-[#070707] sm:rounded-[2rem]">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-4 sm:px-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#e1062a]">
+              TheOutHaven OS
+            </p>
+            <p className="mt-1 text-lg font-black">Tonight&apos;s floor</p>
+          </div>
+          <div className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-300">
+            Live
+          </div>
+        </div>
+
+        <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_0.78fr]">
+          <div className="rounded-[1.35rem] border border-white/10 bg-black p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm font-black text-white/80">Layout</p>
+              <p className="text-xs font-bold text-white/40">84% occupied</p>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              {Array.from({ length: 12 }).map((_, index) => (
+                <div
+                  key={index}
+                  className={`h-14 rounded-2xl border text-center text-xs font-black leading-[3.5rem] ${
+                    index % 5 === 0
+                      ? "border-amber-300/30 bg-amber-300/15 text-amber-200"
+                      : index % 3 === 0
+                        ? "border-[#e1062a]/40 bg-[#e1062a]/20 text-red-100"
+                        : "border-emerald-300/30 bg-emerald-300/15 text-emerald-100"
+                  }`}
+                >
+                  {index % 4 === 0 ? "Room" : `T${index + 1}`}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-sm font-black">AI match</p>
+              <p className="mt-2 text-xs leading-5 text-white/50">
+                Date night · rooftop · 7:15 PM · cocktails
+              </p>
+              <div className="mt-3 h-2 rounded-full bg-white/10">
+                <div className="h-2 w-[86%] rounded-full bg-[#e1062a]" />
+              </div>
+            </div>
+            {timeline.map((time, index) => (
+              <div
+                key={time}
+                className="flex items-center justify-between rounded-2xl border border-white/10 bg-black px-4 py-3"
+              >
+                <div>
+                  <p className="text-sm font-black">{time}</p>
+                  <p className="text-xs text-white/45">
+                    {index % 2 === 0 ? "Reserved table" : "Waitlist ready"}
+                  </p>
+                </div>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/60">
+                  SMS
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
+function OperationsShowcase() {
   return (
-    <div className="rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-6 text-center">
-      <p className="text-2xl font-black text-white">{value}</p>
-      <p className="mt-2 text-sm font-semibold text-white/45">{label}</p>
+    <div className="rounded-[2rem] border border-white/10 bg-black p-4 shadow-2xl shadow-black/40 sm:p-5">
+      <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
+        <div className="rounded-[1.5rem] border border-white/10 bg-[#0d0d0d] p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="font-black">Hostess dashboard</p>
+            <span className="rounded-full bg-[#e1062a] px-3 py-1 text-xs font-black">
+              Drag & drop
+            </span>
+          </div>
+          <div className="grid grid-cols-6 gap-2">
+            {Array.from({ length: 24 }).map((_, index) => (
+              <div
+                key={index}
+                className={`h-10 rounded-xl ${
+                  index % 7 === 0
+                    ? "bg-[#e1062a]/70"
+                    : index % 4 === 0
+                      ? "bg-amber-300/55"
+                      : "bg-emerald-300/45"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {[
+            ["Patio booth", "7:00 PM · 4 guests", "Seated"],
+            ["Karaoke room", "7:30 PM · 8 guests", "Ready"],
+            ["Lane 04", "8:15 PM · birthday", "Hold"],
+          ].map(([name, detail, status]) => (
+            <div
+              key={name}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+            >
+              <div>
+                <p className="font-black">{name}</p>
+                <p className="mt-1 text-xs text-white/45">{detail}</p>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
+                {status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-function PlanCard({
+function Section({
+  children,
+  className = "",
+  id,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  id?: string;
+}) {
+  return (
+    <section id={id} className={`px-4 py-16 sm:px-6 sm:py-20 lg:px-8 ${className}`}>
+      <div className="mx-auto max-w-7xl">{children}</div>
+    </section>
+  );
+}
+
+function SectionHeader({
+  eyebrow,
   title,
-  subtitle,
+  text,
+  centered = false,
+}: {
+  eyebrow: string;
+  title: string;
+  text?: string;
+  centered?: boolean;
+}) {
+  return (
+    <div className={centered ? "mx-auto max-w-3xl text-center" : "max-w-3xl"}>
+      <p className="text-xs font-black uppercase tracking-[0.32em] text-[#e1062a]">
+        {eyebrow}
+      </p>
+      <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
+        {title}
+      </h2>
+      {text && <p className="mt-4 text-base leading-7 text-white/58 md:text-lg">{text}</p>}
+    </div>
+  );
+}
+
+function PillarCard({
+  title,
+  eyebrow,
+  features,
+  index,
+}: {
+  title: string;
+  eyebrow: string;
+  features: string[];
+  index: number;
+}) {
+  return (
+    <article className="group rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/20 transition duration-300 hover:-translate-y-1 hover:border-[#e1062a]/45 hover:bg-white/[0.065]">
+      <div className="flex items-center justify-between">
+        <span className="rounded-full bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#ff4b66]">
+          {eyebrow}
+        </span>
+        <span className="text-sm font-black text-white/25">0{index}</span>
+      </div>
+      <h3 className="mt-6 text-2xl font-black tracking-tight">{title}</h3>
+      <ul className="mt-5 space-y-3">
+        {features.map((feature) => (
+          <li key={feature} className="flex gap-3 text-sm font-semibold leading-6 text-white/62">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e1062a]" />
+            {feature}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function MiniFeature({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm font-black text-white/78">
+      {children}
+    </div>
+  );
+}
+
+function VenueCard({ title }: { title: string }) {
+  return (
+    <article className="rounded-[1.5rem] border border-white/10 bg-black p-5 transition hover:border-[#e1062a]/45 hover:bg-[#100609]">
+      <h3 className="text-lg font-black">{title}</h3>
+      <p className="mt-3 text-xs font-black uppercase tracking-[0.14em] text-white/38">
+        Reservations • Discovery • Guest Management
+      </p>
+    </article>
+  );
+}
+
+function IncludedTile({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-28 rounded-[1.5rem] border border-white/10 bg-black/55 p-5 text-sm font-black leading-6 text-white/75">
+      <div className="mb-4 h-8 w-8 rounded-full bg-[#e1062a]/18 ring-1 ring-[#e1062a]/30" />
+      {children}
+    </div>
+  );
+}
+
+function ReserveFeature({ title }: { title: string }) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-5">
+      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#e1062a] text-sm font-black shadow-lg shadow-red-500/20">
+        ✓
+      </div>
+      <h3 className="font-black">{title}</h3>
+    </div>
+  );
+}
+
+function PricingCard({
+  title,
   price,
   period,
-  oldPrice,
-  note,
+  description,
   features,
   cta,
   href,
-  featured = false,
+  highlighted = false,
 }: {
   title: string;
-  subtitle: string;
   price: string;
-  period: string;
-  oldPrice?: string;
-  note?: string;
+  period?: string;
+  description: string;
   features: string[];
   cta: string;
   href: string;
-  featured?: boolean;
+  highlighted?: boolean;
 }) {
   return (
-    <div
-      className={`relative flex h-full flex-col rounded-[2.25rem] border p-7 shadow-2xl transition duration-300 hover:-translate-y-2 ${
-        featured
-          ? "border-[#e1062a]/70 bg-[#14070a] shadow-red-500/20"
+    <article
+      className={`relative flex h-full flex-col rounded-[2rem] border p-6 shadow-2xl sm:p-8 ${
+        highlighted
+          ? "border-[#e1062a]/70 bg-[linear-gradient(180deg,rgba(225,6,42,0.2),rgba(255,255,255,0.045))] shadow-red-500/15"
           : "border-white/10 bg-black shadow-black/40"
       }`}
     >
-      {featured && (
-        <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2">
-          <span className="whitespace-nowrap rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-red-500/30">
-            Best For Growth
-          </span>
-        </div>
+      {highlighted && (
+        <span className="mb-5 w-fit rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">
+          Pro
+        </span>
       )}
-
-      <h3 className="mt-4 text-3xl font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-white/55">{subtitle}</p>
-
+      <h3 className="text-3xl font-black tracking-tight">{title}</h3>
+      <p className="mt-3 text-sm leading-6 text-white/55">{description}</p>
       <div className="mt-6 flex items-end gap-1">
         <p className="text-5xl font-black">{price}</p>
-        <p className="pb-2 text-sm font-bold text-white/45">{period}</p>
+        {period && <p className="pb-2 text-sm font-black text-white/45">{period}</p>}
       </div>
-
-      {oldPrice && (
-        <p className="mt-2 text-sm font-bold text-white/35 line-through">
-          {oldPrice}
-        </p>
-      )}
-
-      {note && (
-        <p className="mt-3 rounded-full bg-white/5 px-4 py-2 text-xs font-black text-white/55">
-          {note}
-        </p>
-      )}
-
-      <div className="mt-7 flex-1 space-y-3">
-        {features.map((feature) => (
-          <div
+      <ul className="mt-7 flex-1 space-y-3">
+        {features.map((feature, index) => (
+          <li
             key={feature}
-            className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+            className={`rounded-2xl border border-white/10 p-4 text-sm font-semibold leading-6 ${
+              highlighted && index === 0
+                ? "bg-[#e1062a]/15 text-white"
+                : "bg-white/[0.035] text-white/66"
+            }`}
           >
-            <p className="text-sm font-semibold leading-6 text-white/65">
-              ✓ {feature}
-            </p>
-          </div>
+            {index === 0 && highlighted ? feature : `✓ ${feature}`}
+          </li>
         ))}
-      </div>
-
-      <Link
-        href={href}
-        className={`mt-7 inline-flex w-full justify-center rounded-2xl px-6 py-4 text-sm font-black transition ${
-          featured
-            ? "bg-[#e1062a] text-white hover:bg-red-500"
-            : "border border-white/15 bg-white/5 text-white/80 hover:bg-white hover:text-black"
-        }`}
-      >
+      </ul>
+      <CtaLink href={href} className="mt-7 w-full justify-center" variant={highlighted ? "primary" : "secondary"}>
         {cta}
-      </Link>
-    </div>
+      </CtaLink>
+    </article>
   );
 }
 
-function ComparisonRow({
-  item,
-  free,
-  pro,
+function CtaLink({
+  href,
+  children,
+  variant = "primary",
+  className = "",
 }: {
-  item: string;
-  free: string;
-  pro: string;
+  href: string;
+  children: React.ReactNode;
+  variant?: "primary" | "secondary";
+  className?: string;
 }) {
   return (
-    <div className="grid grid-cols-3 border-b border-black/10 bg-white text-sm last:border-b-0 md:text-base">
-      <div className="p-4 font-black">{item}</div>
-      <div className="border-l border-black/10 p-4 font-semibold text-black/60">
-        {free}
-      </div>
-      <div className="border-l border-black/10 bg-[#fff5f6] p-4 font-black text-[#e1062a]">
-        {pro}
-      </div>
-    </div>
-  );
-}
-
-function Step({
-  number,
-  title,
-  text,
-}: {
-  number: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-7">
-      <p className="text-sm font-black text-[#e1062a]">{number}</p>
-      <h3 className="mt-4 text-xl font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-white/50">{text}</p>
-    </div>
-  );
-}
-
-function OperationsFeature({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black p-5">
-      <h3 className="font-black text-white">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-white/50">{text}</p>
-    </div>
-  );
-}
-
-function OperationsRow({
-  name,
-  detail,
-  status,
-}: {
-  name: string;
-  detail: string;
-  status: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-      <div>
-        <p className="font-black text-white">{name}</p>
-        <p className="mt-1 text-sm text-white/45">{detail}</p>
-      </div>
-
-      <span className="rounded-full bg-[#e1062a] px-3 py-1 text-xs font-black text-white">
-        {status}
-      </span>
-    </div>
-  );
-}
-
-function MiniMetric({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black p-4 text-center">
-      <p className="text-2xl font-black text-white">{value}</p>
-      <p className="mt-1 text-xs font-bold text-white/45">{label}</p>
-    </div>
-  );
-}
-
-function DarkCard({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-[2rem] border border-white/10 bg-black p-6">
-      <h3 className="text-xl font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-white/50">{text}</p>
-    </div>
-  );
-}
-
-function GrowthCard({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-[2rem] border border-black/10 bg-white p-6 shadow-lg shadow-black/5">
-      <h3 className="text-xl font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-black/60">{text}</p>
-    </div>
-  );
-}
-
-function Flow({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-[2rem] border border-white/10 bg-black/50 p-6">
-      <h3 className="text-lg font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-6 text-white/50">{text}</p>
-    </div>
+    <Link
+      href={href}
+      className={`inline-flex items-center justify-center rounded-2xl px-7 py-4 text-sm font-black transition duration-200 ${
+        variant === "primary"
+          ? "bg-[#e1062a] text-white shadow-2xl shadow-red-500/25 hover:bg-red-500"
+          : "border border-white/15 bg-white/[0.05] text-white/85 hover:bg-white hover:text-black"
+      } ${className}`}
+    >
+      {children}
+    </Link>
   );
 }
