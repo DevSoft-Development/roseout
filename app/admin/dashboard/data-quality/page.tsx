@@ -22,13 +22,13 @@ const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-17";
 const ADMIN_DATA_QUALITY_BASE_PATH = "/admin/dashboard/data-quality";
 
 const RESTAURANT_SELECT =
-  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, updated_at, created_at";
 
 const ACTIVITY_SELECT =
-  "id, name, activity_name, location_type, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, created_at";
+  "id, name, activity_name, location_type, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, created_at";
 
 const LOCATION_SELECT =
-  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
+  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, updated_at, created_at";
 
 type QualityFilter =
   | "all"
@@ -93,13 +93,13 @@ type FilterOption = {
 
 const filterOptions: FilterOption[] = [
   { key: "all", label: "All" },
-  { key: "clean", label: "Clean" },
-  { key: "needs_review", label: "Needs Review" },
+  { key: "clean", label: "Search Ready" },
+  { key: "needs_review", label: "Pending Review" },
   { key: "missing_image", label: "Missing Image" },
   { key: "missing_category", label: "Missing Category" },
   { key: "missing_coordinates", label: "Missing Coordinates" },
   { key: "missing_address", label: "Missing Address" },
-  { key: "hidden", label: "Hidden" },
+  { key: "hidden", label: "Hidden from Search" },
   { key: "closed", label: "Closed" },
 ];
 
@@ -108,10 +108,10 @@ function formatNumber(value: number | null | undefined) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "Pending Quality Review";
+  if (!value) return "Pending Review";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Pending Quality Review";
+  if (Number.isNaN(date.getTime())) return "Pending Review";
 
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -123,10 +123,10 @@ function formatDate(value: string | null | undefined) {
 }
 
 function formatRelativeDate(value: string | null | undefined, prefix: string) {
-  if (!value) return "Pending Quality Review";
+  if (!value) return "Pending Review";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Pending Quality Review";
+  if (Number.isNaN(date.getTime())) return "Pending Review";
 
   const diffMs = Date.now() - date.getTime();
   const absMs = Math.abs(diffMs);
@@ -143,7 +143,10 @@ function formatRelativeDate(value: string | null | undefined, prefix: string) {
   ];
 
   const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  const [unitMs, unit] = units.find(([size]) => absMs >= size) || [minute, "minute"];
+  const [unitMs, unit] = units.find(([size]) => absMs >= size) || [
+    minute,
+    "minute",
+  ];
   const amount = Math.round(diffMs / unitMs) * -1;
 
   return `${prefix} ${formatter.format(amount, unit)}`;
@@ -174,10 +177,21 @@ function normalizeMissingField(field: string) {
 function getPrimaryCategory(location: QualityLocation | RawLocationRow) {
   return (
     cleanString(location.primary_category) ||
-    cleanString((location as RawLocationRow & { cuisine?: string | null }).cuisine) ||
-    cleanString((location as RawLocationRow & { cuisine_type?: string | null }).cuisine_type) ||
-    cleanString((location as RawLocationRow & { activity_type?: string | null }).activity_type) ||
-    cleanString((location as RawLocationRow & { primary_tag?: string | null }).primary_tag) ||
+    cleanString(
+      (location as RawLocationRow & { cuisine?: string | null }).cuisine,
+    ) ||
+    cleanString(
+      (location as RawLocationRow & { cuisine_type?: string | null })
+        .cuisine_type,
+    ) ||
+    cleanString(
+      (location as RawLocationRow & { activity_type?: string | null })
+        .activity_type,
+    ) ||
+    cleanString(
+      (location as RawLocationRow & { primary_tag?: string | null })
+        .primary_tag,
+    ) ||
     null
   );
 }
@@ -209,13 +223,59 @@ function getQualityScoreClass(score: number | null | undefined) {
   return "border-[#b84b55]/50 bg-gradient-to-br from-[#7d1e2b] to-[#3a1217] text-white";
 }
 
-function getSearchableLabel(location: QualityLocation, missingFields: string[]) {
-  const status = getDisplayDataStatus(location);
+function isClosedLocation(location: QualityLocation) {
+  const status = String(location.status || "").toLowerCase();
+  return status === "closed" || status === "archived";
+}
 
-  if (location.is_searchable === true && status === "clean") return "Search Ready";
+function needsVerification(location: QualityLocation, missingFields: string[]) {
+  return (
+    missingFields.includes("latitude") ||
+    missingFields.includes("longitude") ||
+    missingFields.includes("address") ||
+    missingFields.includes("city") ||
+    missingFields.includes("state") ||
+    missingFields.includes("zip_code") ||
+    getDisplayDataStatus(location) === "missing_coordinates" ||
+    getDisplayDataStatus(location) === "missing_address"
+  );
+}
+
+function getQualityStatusLabel(
+  location: QualityLocation,
+  inferredMissingFields: string[],
+) {
+  const storedMissingFields = getMissingFields(location);
+
+  if (isClosedLocation(location)) return "Closed";
   if (location.is_hidden === true) return "Hidden from Search";
-  if (missingFields.length > 0) return "Missing Required Fields";
-  return "Needs Completion";
+  if (storedMissingFields.length > 0) return "Needs Completion";
+  if (needsVerification(location, inferredMissingFields))
+    return "Needs Verification";
+  if (
+    location.is_searchable === true &&
+    getDisplayDataStatus(location) === "clean"
+  ) {
+    return "Search Ready";
+  }
+  if (!location.last_quality_check_at) return "Pending Review";
+
+  return "Pending Review";
+}
+
+function getQualityStatusHelper(label: string) {
+  if (label === "Pending Review") {
+    return "Imported recently and not fully verified yet.";
+  }
+
+  return null;
+}
+
+function getSearchableLabel(
+  location: QualityLocation,
+  missingFields: string[],
+) {
+  return getQualityStatusLabel(location, missingFields);
 }
 
 function getInferredMissingFields(location: QualityLocation) {
@@ -244,11 +304,14 @@ function getDisplayDataStatus(location: QualityLocation) {
   const inferredMissing = getInferredMissingFields(location);
 
   if (location.is_hidden === true) return "hidden";
-  if (String(location.status || "").toLowerCase() === "closed") return "closed";
+  if (isClosedLocation(location)) return "closed";
   if (helperStatus === "clean" && inferredMissing.length === 0) return "clean";
   if (inferredMissing.includes("main_image")) return "missing_image";
   if (inferredMissing.includes("primary_category")) return "missing_category";
-  if (inferredMissing.includes("latitude") || inferredMissing.includes("longitude")) {
+  if (
+    inferredMissing.includes("latitude") ||
+    inferredMissing.includes("longitude")
+  ) {
     return "missing_coordinates";
   }
   if (
@@ -260,21 +323,22 @@ function getDisplayDataStatus(location: QualityLocation) {
     return "missing_address";
   }
 
-  if (helperStatus !== "clean" && helperStatus !== "needs_review") return helperStatus;
+  if (helperStatus !== "clean" && helperStatus !== "needs_review")
+    return helperStatus;
 
   return "needs_review";
 }
 
 function formatDataStatus(status: string) {
   const labels: Record<string, string> = {
-    clean: "Clean",
-    missing_image: "Missing Image",
-    missing_category: "Missing Category",
-    missing_coordinates: "Missing Coordinates",
-    missing_address: "Missing Address",
-    hidden: "Hidden",
+    clean: "Search Ready",
+    missing_image: "Needs Completion",
+    missing_category: "Needs Completion",
+    missing_coordinates: "Needs Verification",
+    missing_address: "Needs Verification",
+    hidden: "Hidden from Search",
     closed: "Closed",
-    needs_review: "Needs Review",
+    needs_review: "Pending Review",
   };
 
   return labels[status] || normalizeMissingField(status);
@@ -282,17 +346,24 @@ function formatDataStatus(status: string) {
 
 function getStatusClass(status: string) {
   if (status === "clean") return "border-[#d9bd7c] bg-[#fff4d6] text-[#3b2512]";
-  if (status === "missing_image") return "border-[#d9a45f] bg-[#fff0dc] text-[#7b421f]";
-  if (status === "missing_category") return "border-[#d9bd7c] bg-[#f6ead2] text-[#5b3d18]";
-  if (status === "missing_coordinates") return "border-[#c8794b] bg-[#f7dfcf] text-[#783c24]";
-  if (status === "missing_address") return "border-[#d19d71] bg-[#f6e4d5] text-[#6d3d24]";
-  if (status === "hidden" || status === "closed") return "border-[#aa3b46] bg-[#f5d9dc] text-[#7b1f2b]";
+  if (status === "missing_image")
+    return "border-[#d9a45f] bg-[#fff0dc] text-[#7b421f]";
+  if (status === "missing_category")
+    return "border-[#d9bd7c] bg-[#f6ead2] text-[#5b3d18]";
+  if (status === "missing_coordinates")
+    return "border-[#c8794b] bg-[#f7dfcf] text-[#783c24]";
+  if (status === "missing_address")
+    return "border-[#d19d71] bg-[#f6e4d5] text-[#6d3d24]";
+  if (status === "hidden" || status === "closed")
+    return "border-[#aa3b46] bg-[#f5d9dc] text-[#7b1f2b]";
   return "border-[#b86b78] bg-[#f2dce0] text-[#6f2131]";
 }
 
 function isMissingAddress(location: QualityLocation) {
   const missing = getInferredMissingFields(location);
-  return ["address", "city", "state", "zip_code"].some((field) => missing.includes(field));
+  return ["address", "city", "state", "zip_code"].some((field) =>
+    missing.includes(field),
+  );
 }
 
 function isMissingCoordinates(location: QualityLocation) {
@@ -310,17 +381,27 @@ function matchesFilter(location: QualityLocation, filter: QualityFilter) {
   if (filter === "all") return true;
   if (filter === "clean") return dataStatus === "clean";
   if (filter === "hidden") return location.is_hidden === true;
-  if (filter === "closed") return String(location.status || "").toLowerCase() === "closed";
-  if (filter === "missing_image") return dataStatus === "missing_image" || isMissingImage(location);
+  if (filter === "closed") return isClosedLocation(location);
+  if (filter === "missing_image")
+    return dataStatus === "missing_image" || isMissingImage(location);
   if (filter === "missing_category") {
-    return dataStatus === "missing_category" || getInferredMissingFields(location).includes("primary_category");
+    return (
+      dataStatus === "missing_category" ||
+      getInferredMissingFields(location).includes("primary_category")
+    );
   }
   if (filter === "missing_coordinates") {
-    return dataStatus === "missing_coordinates" || isMissingCoordinates(location);
+    return (
+      dataStatus === "missing_coordinates" || isMissingCoordinates(location)
+    );
   }
-  if (filter === "missing_address") return dataStatus === "missing_address" || isMissingAddress(location);
+  if (filter === "missing_address")
+    return dataStatus === "missing_address" || isMissingAddress(location);
 
-  return dataStatus === "needs_review" || (location.is_searchable !== true && dataStatus !== "clean");
+  return (
+    dataStatus === "needs_review" ||
+    (location.is_searchable !== true && dataStatus !== "clean")
+  );
 }
 
 function buildFilterUrl(filter: QualityFilter, q: string) {
@@ -329,7 +410,9 @@ function buildFilterUrl(filter: QualityFilter, q: string) {
   if (q) params.set("q", q);
 
   const query = params.toString();
-  return query ? `${ADMIN_DATA_QUALITY_BASE_PATH}?${query}` : ADMIN_DATA_QUALITY_BASE_PATH;
+  return query
+    ? `${ADMIN_DATA_QUALITY_BASE_PATH}?${query}`
+    : ADMIN_DATA_QUALITY_BASE_PATH;
 }
 
 function typeBadgeClass(type: QualityLocation["locationType"]) {
@@ -361,7 +444,10 @@ function mapActivity(row: RawLocationRow): QualityLocation {
 }
 
 function mapLocation(row: RawLocationRow): QualityLocation {
-  const isActivity = row.source_table === "activities" || row.location_type === "activity" || Boolean(row.activity_name);
+  const isActivity =
+    row.source_table === "activities" ||
+    row.location_type === "activity" ||
+    Boolean(row.activity_name);
   return {
     ...row,
     table: "locations",
@@ -385,54 +471,118 @@ export default async function AdminDataQualityPage({
   const page = Math.max(1, Number(params.page || 1) || 1);
   const pageSize = 60;
   const rangeTo = page * pageSize - 1;
-  const activeFilter = filterOptions.some((option) => option.key === requestedFilter)
+  const activeFilter = filterOptions.some(
+    (option) => option.key === requestedFilter,
+  )
     ? (requestedFilter as QualityFilter)
     : "all";
 
   const searchTerm = q.replace(/[%_,]/g, " ").trim();
-  const restaurantSearchFields = ["name", "restaurant_name", "address", "city", "state", "neighborhood", "phone", "primary_category", "cuisine", "cuisine_type", "primary_tag", "google_place_id", "claim_code", "data_status"];
-  const activitySearchFields = ["name", "activity_name", "address", "city", "state", "neighborhood", "phone", "primary_category", "activity_type", "primary_tag", "google_place_id", "claim_code", "data_status"];
-  const locationSearchFields = ["name", "restaurant_name", "activity_name", "address", "city", "state", "neighborhood", "phone", "primary_category", "cuisine", "cuisine_type", "activity_type", "primary_tag", "google_place_id", "claim_code", "data_status"];
-  const applySearch = <T extends { or: (filters: string) => T }>(query: T, fields: string[]) => {
+  const restaurantSearchFields = [
+    "name",
+    "restaurant_name",
+    "address",
+    "city",
+    "state",
+    "neighborhood",
+    "phone",
+    "primary_category",
+    "cuisine",
+    "cuisine_type",
+    "primary_tag",
+    "google_place_id",
+    "claim_code",
+    "data_status",
+  ];
+  const activitySearchFields = [
+    "name",
+    "activity_name",
+    "address",
+    "city",
+    "state",
+    "neighborhood",
+    "phone",
+    "primary_category",
+    "activity_type",
+    "primary_tag",
+    "google_place_id",
+    "claim_code",
+    "data_status",
+  ];
+  const locationSearchFields = [
+    "name",
+    "restaurant_name",
+    "activity_name",
+    "address",
+    "city",
+    "state",
+    "neighborhood",
+    "phone",
+    "primary_category",
+    "cuisine",
+    "cuisine_type",
+    "activity_type",
+    "primary_tag",
+    "google_place_id",
+    "claim_code",
+    "data_status",
+  ];
+  const applySearch = <T extends { or: (filters: string) => T }>(
+    query: T,
+    fields: string[],
+  ) => {
     if (!searchTerm) return query;
     const pattern = `%${searchTerm}%`;
-    return query.or(fields.map((field) => `${field}.ilike.${pattern}`).join(","));
+    return query.or(
+      fields.map((field) => `${field}.ilike.${pattern}`).join(","),
+    );
   };
 
-  const [restaurantsResult, activitiesResult, locationsResult] = await Promise.all([
-    applySearch(
-      supabase
-        .from("restaurants")
-        .select(RESTAURANT_SELECT)
-        .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-        .order("updated_at", { ascending: false })
-        .range(0, rangeTo),
-      restaurantSearchFields,
-    ),
-    applySearch(
-      supabase
-        .from("activities")
-        .select(ACTIVITY_SELECT)
-        .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-        .order("created_at", { ascending: false })
-        .range(0, rangeTo),
-      activitySearchFields,
-    ),
-    applySearch(
-      supabase
-        .from("locations")
-        .select(LOCATION_SELECT)
-        .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-        .order("updated_at", { ascending: false })
-        .range(0, rangeTo),
-      locationSearchFields,
-    ),
-  ]);
+  const [restaurantsResult, activitiesResult, locationsResult] =
+    await Promise.all([
+      applySearch(
+        supabase
+          .from("restaurants")
+          .select(RESTAURANT_SELECT)
+          .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+          .order("updated_at", { ascending: false })
+          .range(0, rangeTo),
+        restaurantSearchFields,
+      ),
+      applySearch(
+        supabase
+          .from("activities")
+          .select(ACTIVITY_SELECT)
+          .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+          .order("created_at", { ascending: false })
+          .range(0, rangeTo),
+        activitySearchFields,
+      ),
+      applySearch(
+        supabase
+          .from("locations")
+          .select(LOCATION_SELECT)
+          .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+          .order("updated_at", { ascending: false })
+          .range(0, rangeTo),
+        locationSearchFields,
+      ),
+    ]);
 
-  const restaurantRows = ((restaurantsResult.data || []) as RawLocationRow[]).map(mapRestaurant);
-  const activityRows = ((activitiesResult.data || []) as RawLocationRow[]).map(mapActivity);
-  const locationRows = ((locationsResult.data || []) as RawLocationRow[]).map(mapLocation);
-  const allLocations = [...locationRows, ...restaurantRows, ...activityRows].sort((a, b) => {
+  const restaurantRows = (
+    (restaurantsResult.data || []) as RawLocationRow[]
+  ).map(mapRestaurant);
+  const activityRows = ((activitiesResult.data || []) as RawLocationRow[]).map(
+    mapActivity,
+  );
+  const locationRows = ((locationsResult.data || []) as RawLocationRow[]).map(
+    mapLocation,
+  );
+  const allLocations = [
+    ...locationRows,
+    ...restaurantRows,
+    ...activityRows,
+  ].sort((a, b) => {
     const dateA = a.last_quality_check_at || getUpdatedDate(a) || "";
     const dateB = b.last_quality_check_at || getUpdatedDate(b) || "";
     return dateA.localeCompare(dateB);
@@ -440,22 +590,28 @@ export default async function AdminDataQualityPage({
 
   const searchedLocations = allLocations;
 
-
-  const locations = searchedLocations.filter((location) => matchesFilter(location, activeFilter));
+  const locations = searchedLocations.filter((location) =>
+    matchesFilter(location, activeFilter),
+  );
 
   const counts = {
     total: searchedLocations.length,
-    clean: searchedLocations.filter((location) => getDisplayDataStatus(location) === "clean").length,
+    clean: searchedLocations.filter(
+      (location) => getDisplayDataStatus(location) === "clean",
+    ).length,
     missingImage: searchedLocations.filter(isMissingImage).length,
     missingCategory: searchedLocations.filter((location) =>
       getInferredMissingFields(location).includes("primary_category"),
     ).length,
     missingCoordinates: searchedLocations.filter(isMissingCoordinates).length,
     missingAddress: searchedLocations.filter(isMissingAddress).length,
-    needsReview: searchedLocations.filter((location) => matchesFilter(location, "needs_review")).length,
+    needsReview: searchedLocations.filter((location) =>
+      matchesFilter(location, "needs_review"),
+    ).length,
   };
 
-  const error = restaurantsResult.error || activitiesResult.error || locationsResult.error;
+  const error =
+    restaurantsResult.error || activitiesResult.error || locationsResult.error;
 
   return (
     <main
@@ -475,9 +631,10 @@ export default async function AdminDataQualityPage({
                 Data Quality Dashboard
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
-                Review locations, restaurants, and activities that are not searchable because
-                required data is missing. This admin view intentionally includes
-                incomplete, hidden, and closed listings so they can be fixed.
+                Review locations, restaurants, and activities that are not
+                searchable because required data is missing. This admin view
+                intentionally includes incomplete, hidden, and closed listings
+                so they can be fixed.
               </p>
             </div>
 
@@ -504,9 +661,13 @@ export default async function AdminDataQualityPage({
             ["Search Ready", counts.clean, "text-[#f5dd9d]"],
             ["Missing image", counts.missingImage, "text-[#e7b979]"],
             ["Missing category", counts.missingCategory, "text-[#d9bd7c]"],
-            ["Missing coordinates", counts.missingCoordinates, "text-[#d89055]"],
+            [
+              "Missing coordinates",
+              counts.missingCoordinates,
+              "text-[#d89055]",
+            ],
             ["Missing address", counts.missingAddress, "text-[#e4c4a9]"],
-            ["Needs review", counts.needsReview, "text-[#e7a0ad]"],
+            ["Pending review", counts.needsReview, "text-[#e7a0ad]"],
           ].map(([label, value, tone]) => (
             <div
               key={String(label)}
@@ -552,7 +713,8 @@ export default async function AdminDataQualityPage({
                   Quality queue
                 </p>
                 <h2 className="mt-1 text-xl font-black">
-                  {formatNumber(locations.length)} listing{locations.length === 1 ? "" : "s"}
+                  {formatNumber(locations.length)} listing
+                  {locations.length === 1 ? "" : "s"}
                 </h2>
               </div>
               <p className="text-sm font-bold text-black/45">
@@ -574,178 +736,211 @@ export default async function AdminDataQualityPage({
 
           {locations.length === 0 ? (
             <div className="p-8 text-center">
-              <p className="text-lg font-black">No locations match this filter.</p>
+              <p className="text-lg font-black">
+                No locations match this filter.
+              </p>
               <p className="mt-2 text-sm font-bold text-black/45">
                 Try All or run cleanup to refresh quality metadata.
               </p>
             </div>
           ) : (
             <>
-            <div className="divide-y divide-black/10">
-              {locations.map((location) => {
-                const image = getMainImage(location);
-                const dataStatus = getDisplayDataStatus(location);
-                const missingFields = getInferredMissingFields(location);
-                const primaryCategory = getPrimaryCategory(location);
-                const cityState = [location.city, location.state].filter(Boolean).join(", ") || "City/state missing";
-                const isSearchable = location.is_searchable === true;
-                const updatedDate = getUpdatedDate(location);
+              <div className="divide-y divide-black/10">
+                {locations.map((location) => {
+                  const image = getMainImage(location);
+                  const dataStatus = getDisplayDataStatus(location);
+                  const missingFields = getInferredMissingFields(location);
+                  const primaryCategory = getPrimaryCategory(location);
+                  const cityState =
+                    [location.city, location.state]
+                      .filter(Boolean)
+                      .join(", ") || "City/state missing";
+                  const isSearchable = location.is_searchable === true;
+                  const updatedDate = getUpdatedDate(location);
+                  const qualityStatusLabel = getQualityStatusLabel(
+                    location,
+                    missingFields,
+                  );
+                  const qualityStatusHelper =
+                    getQualityStatusHelper(qualityStatusLabel);
 
-                return (
-                  <article
-                    key={`${location.table}-${location.id}`}
-                    className="grid gap-3 p-3 transition hover:bg-white/70 rounded-3xl border border-black/10 bg-white/45 shadow-sm 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:shadow-none xl:grid xl:grid-cols-[minmax(260px,1.4fr)_120px_160px_145px_90px_140px_110px_105px] xl:items-center"
-                  >
-                    <div className="flex min-w-0 gap-3">
-                      <div className="h-[76px] w-[76px] flex-none overflow-hidden rounded-xl bg-[#eadfd8]">
-                        {image ? (
-                          <Image
-                            src={image}
-                            alt={location.displayName}
-                            width={88}
-                            height={88}
-                            unoptimized
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs font-black text-black/35">
-                            No image
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-black">
-                          {location.displayName}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${typeBadgeClass(location.locationType)}`}>
-                            {location.locationType}
-                          </span>
-                          <span className="rounded-full bg-[#efe5dd] px-2 py-0.5 text-[10px] font-black uppercase text-black/50">
-                            {primaryCategory || "Category missing"}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs font-bold text-black/50">
-                          {cityState}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
-                        Data status
-                      </p>
-                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getStatusClass(dataStatus)}`}>
-                        {formatDataStatus(dataStatus)}
-                      </span>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
-                        Missing fields
-                      </p>
-                      {missingFields.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {missingFields.slice(0, 4).map((field) => (
-                            <span
-                              key={field}
-                              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase text-amber-800"
-                            >
-                              {normalizeMissingField(field)}
-                            </span>
-                          ))}
-                          {missingFields.length > 4 && (
-                            <span className="rounded-full bg-black/10 px-2 py-1 text-[10px] font-black uppercase text-black/50">
-                              +{missingFields.length - 4}
-                            </span>
+                  return (
+                    <article
+                      key={`${location.table}-${location.id}`}
+                      className="grid gap-3 p-3 transition hover:bg-white/70 rounded-3xl border border-black/10 bg-white/45 shadow-sm 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:shadow-none xl:grid xl:grid-cols-[minmax(260px,1.4fr)_120px_160px_145px_90px_140px_110px_105px] xl:items-center"
+                    >
+                      <div className="flex min-w-0 gap-3">
+                        <div className="h-[76px] w-[76px] flex-none overflow-hidden rounded-xl bg-[#eadfd8]">
+                          {image ? (
+                            <Image
+                              src={image}
+                              alt={location.displayName}
+                              width={88}
+                              height={88}
+                              unoptimized
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-xs font-black text-black/35">
+                              No image
+                            </div>
                           )}
                         </div>
-                      ) : (
-                        <span className="text-sm font-bold text-black/40">None</span>
-                      )}
-                    </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-black">
+                            {location.displayName}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${typeBadgeClass(location.locationType)}`}
+                            >
+                              {location.locationType}
+                            </span>
+                            <span className="rounded-full bg-[#efe5dd] px-2 py-0.5 text-[10px] font-black uppercase text-black/50">
+                              {primaryCategory || "Category missing"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs font-bold text-black/50">
+                            {cityState}
+                          </p>
+                        </div>
+                      </div>
 
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
-                        Searchable
-                      </p>
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${
-                          isSearchable && dataStatus === "clean"
-                            ? "border-[#d9bd7c] bg-[#fff4d6] text-[#3b2512]"
-                            : location.is_hidden === true
-                              ? "border-[#aa3b46] bg-[#f5d9dc] text-[#7b1f2b]"
-                              : "border-[#d9a45f] bg-[#fff0dc] text-[#7b421f]"
-                        }`}
-                      >
-                        {getSearchableLabel(location, missingFields)}
-                      </span>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
-                        Quality score
-                      </p>
-                      <p className={`inline-flex min-w-12 justify-center rounded-full border px-2.5 py-1 text-sm font-black ${getQualityScoreClass(location.quality_score)}`}>
-                        {formatNumber(location.quality_score)}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
-                        Last quality check
-                      </p>
-                      <p className="text-sm font-black text-black/65">
-                        {formatRelativeDate(location.last_quality_check_at, "Checked")}
-                      </p>
-                      {updatedDate && (
-                        <p className="mt-1 text-xs font-bold text-black/35" title={formatDate(updatedDate)}>
-                          {formatRelativeDate(updatedDate, "Updated")}
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
+                          Data status
                         </p>
-                      )}
-                    </div>
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getStatusClass(dataStatus)}`}
+                        >
+                          {qualityStatusLabel}
+                        </span>
+                        {qualityStatusHelper && (
+                          <p className="mt-1 text-xs font-bold text-black/45">
+                            {qualityStatusHelper}
+                          </p>
+                        )}
+                      </div>
 
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
-                        Flags
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {location.is_hidden === true && (
-                          <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-700">
-                            Hidden
-                          </span>
-                        )}
-                        {String(location.status || "").toLowerCase() === "closed" && (
-                          <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-700">
-                            Closed
-                          </span>
-                        )}
-                        {location.status && String(location.status).toLowerCase() !== "closed" && (
-                          <span className="rounded-full bg-[#efe5dd] px-2 py-1 text-[10px] font-black uppercase text-black/45">
-                            {location.status}
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
+                          Missing fields
+                        </p>
+                        {missingFields.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {missingFields.slice(0, 4).map((field) => (
+                              <span
+                                key={field}
+                                className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase text-amber-800"
+                              >
+                                {normalizeMissingField(field)}
+                              </span>
+                            ))}
+                            {missingFields.length > 4 && (
+                              <span className="rounded-full bg-black/10 px-2 py-1 text-[10px] font-black uppercase text-black/50">
+                                +{missingFields.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm font-bold text-black/40">
+                            None
                           </span>
                         )}
                       </div>
-                    </div>
 
-                    <div className="flex gap-1.5 xl:flex-col">
-                      <Link
-                        href={`/locations/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
-                        className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1.5 text-center text-[11px] font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
-                      >
-                        View
-                      </Link>
-                      <Link
-                        href={`/admin/dashboard/locations/edit/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
-                        className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-3 py-1.5 text-center text-[11px] font-black text-white shadow-sm transition hover:scale-[1.03]"
-                      >
-                        Edit
-                      </Link>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
+                          Searchable
+                        </p>
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${
+                            isSearchable && dataStatus === "clean"
+                              ? "border-[#d9bd7c] bg-[#fff4d6] text-[#3b2512]"
+                              : location.is_hidden === true
+                                ? "border-[#aa3b46] bg-[#f5d9dc] text-[#7b1f2b]"
+                                : "border-[#d9a45f] bg-[#fff0dc] text-[#7b421f]"
+                          }`}
+                        >
+                          {getSearchableLabel(location, missingFields)}
+                        </span>
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
+                          Quality score
+                        </p>
+                        <p
+                          className={`inline-flex min-w-12 justify-center rounded-full border px-2.5 py-1 text-sm font-black ${getQualityScoreClass(location.quality_score)}`}
+                        >
+                          {formatNumber(location.quality_score)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
+                          Last quality check
+                        </p>
+                        <p className="text-sm font-black text-black/65">
+                          {formatRelativeDate(
+                            location.last_quality_check_at,
+                            "Checked",
+                          )}
+                        </p>
+                        {updatedDate && (
+                          <p
+                            className="mt-1 text-xs font-bold text-black/35"
+                            title={formatDate(updatedDate)}
+                          >
+                            {formatRelativeDate(updatedDate, "Updated")}
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
+                          Flags
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {location.is_hidden === true && (
+                            <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-700">
+                              Hidden
+                            </span>
+                          )}
+                          {String(location.status || "").toLowerCase() ===
+                            "closed" && (
+                            <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase text-red-700">
+                              Closed
+                            </span>
+                          )}
+                          {location.status &&
+                            String(location.status).toLowerCase() !==
+                              "closed" && (
+                              <span className="rounded-full bg-[#efe5dd] px-2 py-1 text-[10px] font-black uppercase text-black/45">
+                                {location.status}
+                              </span>
+                            )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-1.5 xl:flex-col">
+                        <Link
+                          href={`/locations/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
+                          className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1.5 text-center text-[11px] font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
+                        >
+                          View
+                        </Link>
+                        <Link
+                          href={`/admin/dashboard/locations/edit/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
+                          className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-3 py-1.5 text-center text-[11px] font-black text-white shadow-sm transition hover:scale-[1.03]"
+                        >
+                          Edit
+                        </Link>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
               {locations.length >= page * pageSize && (
                 <div className="border-t border-black/10 bg-[#efe5dd] p-4 text-center">
                   <Link

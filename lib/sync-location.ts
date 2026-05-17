@@ -20,6 +20,7 @@ export const RESTAURANT_LOCATION_SELECT = `
   cuisine_type,
   food_type,
   primary_tag,
+  google_place_id,
   main_image,
   image_url,
   images,
@@ -83,6 +84,7 @@ export const ACTIVITY_LOCATION_SELECT = `
   primary_category,
   activity_type,
   primary_tag,
+  google_place_id,
   main_image,
   image_url,
   images,
@@ -393,7 +395,10 @@ function getDataStatus(missingFields: readonly string[]): DataStatus {
   if (missingFields.length === 0) return "clean";
   if (missingFields.includes("main_image")) return "missing_image";
   if (missingFields.includes("primary_category")) return "missing_category";
-  if (missingFields.includes("latitude") || missingFields.includes("longitude")) {
+  if (
+    missingFields.includes("latitude") ||
+    missingFields.includes("longitude")
+  ) {
     return "missing_coordinates";
   }
   if (
@@ -427,7 +432,8 @@ export function buildLocationPayload(table: SourceTable, row: SourceRow) {
   const locationType =
     table === "restaurants"
       ? "restaurant"
-      : firstPresent<string>(row.location_type, row.activity_type) || "activity";
+      : firstPresent<string>(row.location_type, row.activity_type) ||
+        "activity";
 
   const payload: Record<string, unknown> = {
     source_table: table,
@@ -435,7 +441,9 @@ export function buildLocationPayload(table: SourceTable, row: SourceRow) {
     location_type: locationType,
     name: getLocationName(table, row),
     restaurant_name:
-      table === "restaurants" ? firstPresent<string>(row.restaurant_name) : null,
+      table === "restaurants"
+        ? firstPresent<string>(row.restaurant_name)
+        : null,
     activity_name:
       table === "activities" ? firstPresent<string>(row.activity_name) : null,
     primary_category: getPrimaryCategory(table, row),
@@ -443,6 +451,7 @@ export function buildLocationPayload(table: SourceTable, row: SourceRow) {
     external_reservation_url: getReservationUrl(row),
     theouthaven_score: getTheOutHavenScore(row),
     primary_tag: firstPresent<string>(row.primary_tag),
+    google_place_id: firstPresent<string>(row.google_place_id),
     tags: buildTags(table, row),
     vibe_tags: uniqueNormalizedStrings(row.vibe_tags),
     best_for_tags: uniqueNormalizedStrings(row.best_for_tags),
@@ -462,7 +471,10 @@ export function buildLocationPayload(table: SourceTable, row: SourceRow) {
 
   if (table === "restaurants") {
     payload.cuisine = firstPresent<string>(row.cuisine);
-    payload.cuisine_type = firstPresent<string>(row.cuisine_type, row.food_type);
+    payload.cuisine_type = firstPresent<string>(
+      row.cuisine_type,
+      row.food_type,
+    );
   } else {
     payload.activity_type = firstPresent<string>(row.activity_type);
   }
@@ -494,7 +506,10 @@ export function buildLocationPayload(table: SourceTable, row: SourceRow) {
   };
 }
 
-export async function syncSourceRowToLocation(table: SourceTable, row: SourceRow) {
+export async function syncSourceRowToLocation(
+  table: SourceTable,
+  row: SourceRow,
+) {
   const payload = buildLocationPayload(table, row);
   const { error } = await supabaseAdmin
     .from("locations")
