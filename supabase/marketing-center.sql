@@ -186,3 +186,11 @@ create index if not exists marketing_campaigns_status_idx on public.marketing_ca
 create index if not exists marketing_campaigns_location_idx on public.marketing_campaigns (location_source_type, location_source_id);
 create index if not exists marketing_send_logs_campaign_channel_idx on public.marketing_send_logs (campaign_id, channel, status);
 create index if not exists social_posts_campaign_platform_idx on public.social_posts (campaign_id, platform);
+
+create table if not exists public.marketing_settings (
+  id uuid primary key default gen_random_uuid(),
+  key text unique not null,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);

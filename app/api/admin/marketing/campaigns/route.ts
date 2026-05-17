@@ -64,6 +64,8 @@ export async function POST(req: Request) {
     location_description: normalizeStringOrNull(body.location_description),
     public_location_url: normalizeStringOrNull(body.public_location_url),
     social_captions: typeof body.social_captions === "object" && body.social_captions ? body.social_captions : {},
+    generated_prompt: normalizeStringOrNull(body.generated_prompt),
+    generated_payload: typeof body.generated_payload === "object" && body.generated_payload ? body.generated_payload : {},
     hashtags: normalizeStringArray(body.hashtags),
     email_subject: normalizeStringOrNull(body.email_subject),
     email_body: normalizeStringOrNull(body.email_body),

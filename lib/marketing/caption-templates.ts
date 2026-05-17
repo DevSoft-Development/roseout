@@ -214,7 +214,7 @@ function placeLine(city: string, state: string) {
   return [city, state].filter(Boolean).join(", ");
 }
 
-function selectedTemplate(category: CaptionCategory, hook: string, name: string, place: string, linkInBioCta: string) {
+function selectedTemplate(category: CaptionCategory, hook: string, name: string, place: string, linkInBioCta: string, hasLocation: boolean) {
   const templateNumber = stableIndex(`${category}:${hook}:${name}`, 6);
   const locationLine = place ? `${name} in ${place}` : name;
 
@@ -239,8 +239,9 @@ export function hasRawUrl(text: string) {
 }
 
 export function buildMarketingSocialPackage(input: CaptionTemplateInput): MarketingSocialPackage {
-  const locationName = normalizeText(input.locationName, "this TheOutHaven spot");
-  const city = normalizeText(input.city, "NYC");
+  const hasLocation = Boolean(input.locationName?.trim());
+  const locationName = normalizeText(input.locationName, "TheOutHaven");
+  const city = normalizeText(input.city);
   const state = normalizeText(input.state);
   const category = normalizeCaptionCategory(input.captionCategory || input.category, `${locationName}:${city}:${input.description || ""}`);
   const fullUrl = normalizeText(input.fullUrl, "https://theouthaven.com");
@@ -248,15 +249,62 @@ export function buildMarketingSocialPackage(input: CaptionTemplateInput): Market
   const linkInBioCta = linkInBioCtas[stableIndex(`${hook}:${locationName}`, linkInBioCtas.length)];
   const shortLink = buildShortBrandedLink(fullUrl, locationName);
   const place = placeLine(city, state);
+  const locationLine = place ? `${locationName} in ${place}` : locationName;
   const categoryLabel = category.replace(/\b\w/g, (letter) => letter.toUpperCase());
-  const baseCaption = selectedTemplate(category, hook, locationName, place, linkInBioCta);
-  const instagramCaption = stripRawUrls(baseCaption.includes("Link in bio") ? baseCaption : `${baseCaption}\n\n${linkInBioCta}`);
-  const tiktokCaption = stripRawUrls(`POV: ${hook.toLowerCase()} ✨\n\n${locationName} is the kind of ${category} plan people save immediately.\n\n${linkInBioCta}\n\n${hashtagGroups[category].slice(0, 3).join(" ")}`);
-  const youtubeTitle = `${categoryLabel}: ${locationName}`.slice(0, 90);
-  const youtubeDescription = `Plan ${category} at ${locationName}${place ? ` in ${place}` : ""}.\n\n${hook}.\n\nFull TheOutHaven listing: ${fullUrl}\n\n${hashtagGroups[category].join(" ")}`;
-  const emailSubject = `${locationName} is your next ${category} plan`;
-  const emailBody = `Looking for ${category}? ${locationName}${place ? ` in ${place}` : ""} is ready for your next TheOutHaven night out.\n\n${hook}.\n\nSee the full listing and plan your visit: ${fullUrl}`;
-  const smsBody = `${locationName}: ${category} idea from TheOutHaven. Plan it here: ${shortLink} Reply STOP to opt out.`;
+  const baseCaption = selectedTemplate(category, hook, locationName, place, linkInBioCta, hasLocation);
+  const instagramCaption = stripRawUrls(hasLocation
+    ? `POV: date night at ${locationName} hits different ✨
+
+Dinner, drinks, and the perfect vibe for your next night out.
+
+${linkInBioCta}
+
+${hashtagGroups[category].join(" ")}`
+    : (baseCaption.includes("Link in bio") ? baseCaption : `${baseCaption}
+
+${linkInBioCta}`));
+  const tiktokCaption = stripRawUrls(hasLocation
+    ? `${locationName} might be your next date-night move 👀
+
+Would you go here?
+
+Search it on TheOutHaven 🔗 Link in bio
+
+${hashtagGroups[category].slice(0, 3).join(" ")}`
+    : `POV: ${hook.toLowerCase()} ✨
+
+TheOutHaven is where you find the kind of ${category} plans people save immediately.
+
+${linkInBioCta}
+
+${hashtagGroups[category].slice(0, 3).join(" ")}`);
+  const youtubeTitle = (hasLocation ? `Date Night at ${locationName}` : `${categoryLabel} from TheOutHaven`).slice(0, 90);
+  const youtubeDescription = hasLocation
+    ? `Plan this date on TheOutHaven: ${fullUrl}
+
+${locationLine} is ready for your next night out.
+
+${hashtagGroups[category].join(" ")}`
+    : `Plan your next date on TheOutHaven: ${fullUrl}
+
+${hook}.
+
+${hashtagGroups[category].join(" ")}`;
+  const emailSubject = hasLocation ? `Your next date night idea: ${locationName}` : "Your next date night idea from TheOutHaven";
+  const emailBody = hasLocation
+    ? `Looking for ${category}? ${locationLine} is ready for your next TheOutHaven night out.
+
+${hook}.
+
+See the full listing and plan your visit: ${fullUrl}`
+    : `Looking for ${category}? TheOutHaven helps you find a plan that fits the vibe.
+
+${hook}.
+
+Start planning here: ${fullUrl}`;
+  const smsBody = hasLocation
+    ? `Date idea: ${locationName}. Plan it here: ${shortLink} Reply STOP to opt out.`
+    : `Date idea from TheOutHaven. Plan it here: ${shortLink} Reply STOP to opt out.`;
 
   return {
     instagram_caption: instagramCaption,

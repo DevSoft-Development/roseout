@@ -21,6 +21,9 @@ type SocialGeneratorPreviewProps = {
   address: string;
   description: string;
   fullUrl: string;
+  locationId?: string;
+  locationSourceTable?: string;
+  selectedPlatforms?: string[];
 };
 
 const platformLabels: Record<Platform, string> = {
@@ -48,6 +51,9 @@ export default function SocialGeneratorPreview({
   address,
   description,
   fullUrl,
+  locationId = "",
+  locationSourceTable = "",
+  selectedPlatforms = ["instagram", "tiktok", "youtube", "email", "sms"],
 }: SocialGeneratorPreviewProps) {
   const [selectedCategory, setSelectedCategory] = useState<CaptionCategory>(initialPackage.caption_category);
   const [generated, setGenerated] = useState(initialPackage);
@@ -62,30 +68,70 @@ export default function SocialGeneratorPreview({
     setIsRegenerating(true);
     setCopyStatus("");
 
-    const nextPackage = buildMarketingSocialPackage({
-      locationName,
-      category: locationCategory,
-      city,
-      state,
-      address,
-      description,
-      fullUrl,
-      captionCategory: selectedCategory,
-    });
-
-    setGenerated(nextPackage);
-    setActivePlatform("instagram");
-    setIsRegenerating(false);
+    try {
+      const response = await fetch("/api/admin/marketing/social/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location_id: locationId,
+          location_source_table: locationSourceTable,
+          location_name: locationName,
+          location_city: city,
+          location_state: state,
+          location_category: locationCategory,
+          location_address: address,
+          public_url: fullUrl,
+          public_location_url: fullUrl,
+          location_description: description,
+          caption_category: selectedCategory,
+          selected_platforms: selectedPlatforms,
+        }),
+      });
+      if (!response.ok) throw new Error("Regeneration failed");
+      const nextPackage = (await response.json()) as MarketingSocialPackage;
+      setGenerated(nextPackage);
+      setActivePlatform("instagram");
+    } catch {
+      const nextPackage = buildMarketingSocialPackage({
+        locationName,
+        category: locationCategory,
+        city,
+        state,
+        address,
+        description,
+        fullUrl,
+        captionCategory: selectedCategory,
+      });
+      setGenerated(nextPackage);
+      setActivePlatform("instagram");
+    } finally {
+      setIsRegenerating(false);
+    }
   };
 
   const copyPlatform = async (platform: Platform) => {
     const text = platformText(platform, generated);
     await navigator.clipboard.writeText(text);
-    setCopyStatus(`${platformLabels[platform]} copy copied.`);
+    if (platform === "instagram" || platform === "tiktok") {
+      setCopyStatus("Caption copied. Upload your photo/video, then paste this caption.");
+    } else {
+      setCopyStatus(`${platformLabels[platform]} copy copied.`);
+    }
   };
 
   return (
     <div className="space-y-4">
+      <input type="hidden" name="instagram_caption" value={generated.instagram_caption} readOnly />
+      <input type="hidden" name="tiktok_caption" value={generated.tiktok_caption} readOnly />
+      <input type="hidden" name="youtube_title" value={generated.youtube_title} readOnly />
+      <input type="hidden" name="youtube_description" value={generated.youtube_description} readOnly />
+      <input type="hidden" name="caption_category" value={generated.caption_category} readOnly />
+      <input type="hidden" name="caption_hook" value={generated.hook} readOnly />
+      <input type="hidden" name="link_in_bio_cta" value={generated.link_in_bio_cta} readOnly />
+      <input type="hidden" name="short_link" value={generated.short_link} readOnly />
+      {generated.instagram_caption.split(/\s+/).filter((word) => word.startsWith("#")).map((hashtag) => (
+        <input key={hashtag} type="hidden" name="hashtags" value={hashtag} readOnly />
+      ))}
       <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
         <label className="space-y-2">
           <span className="text-xs font-black uppercase tracking-wide text-black/45">Caption category</span>
@@ -156,9 +202,13 @@ export default function SocialGeneratorPreview({
               onClick={() => copyPlatform(platform)}
               className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-[11px] font-black text-white/65 transition hover:bg-white/10 hover:text-white"
             >
-              Copy {platformLabels[platform]}
+              Copy {platformLabels[platform]}{platform === "instagram" || platform === "tiktok" ? " Caption" : ""}
             </button>
           ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-[11px] font-black text-white/65 transition hover:bg-white/10 hover:text-white">Open Instagram</a>
+          <a href="https://www.tiktok.com/upload" target="_blank" rel="noopener noreferrer" className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-[11px] font-black text-white/65 transition hover:bg-white/10 hover:text-white">Open TikTok</a>
         </div>
         {copyStatus && <p className="mt-3 text-xs font-bold text-emerald-200" role="status">{copyStatus}</p>}
       </div>

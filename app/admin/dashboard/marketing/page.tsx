@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import MarketingCampaignActions from "@/components/marketing/MarketingCampaignActions";
+import MarketingCampaignCardActions from "@/components/marketing/MarketingCampaignCardActions";
 import LinkedCaptionPreview from "@/components/marketing/LinkedCaptionPreview";
 import SocialGeneratorPreview from "@/components/marketing/SocialGeneratorPreview";
 import { shortenDisplayedLink } from "@/lib/marketing/links";
@@ -27,6 +28,8 @@ type SearchParams = {
   address?: string;
   description?: string;
   public_url?: string;
+  status?: string;
+  campaign_id?: string;
 };
 
 type Campaign = {
@@ -41,6 +44,9 @@ type Campaign = {
   sms_text?: string | null;
   scheduled_at?: string | null;
   created_at?: string | null;
+  updated_at?: string | null;
+  social_captions?: Record<string, string> | null;
+  generated_payload?: Record<string, unknown> | null;
 };
 
 type SendLog = {
@@ -109,6 +115,7 @@ export default async function MarketingCenterPage({
 }) {
   await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
   const params = await searchParams;
+  const activeStatus = ["draft", "scheduled", "sent", "failed"].includes(params.status || "") ? params.status : "all";
   const copy = prefillCopy(params);
   const fullUrl = params.public_url || "https://theouthaven.com";
   const initialSocialPackage = buildMarketingSocialPackage({
@@ -123,11 +130,15 @@ export default async function MarketingCenterPage({
   });
 
   const [campaignsResult, logsResult, totalCampaigns, drafts, scheduled, sent, failed] = await Promise.all([
-    supabaseAdmin
-      .from("marketing_campaigns")
-      .select("id,name,campaign_type,status,selected_platforms,audience_segment,location_name,email_subject,sms_text,scheduled_at,created_at")
-      .order("created_at", { ascending: false })
-      .limit(8),
+    (() => {
+      let query = supabaseAdmin
+        .from("marketing_campaigns")
+        .select("id,name,campaign_type,status,selected_platforms,audience_segment,location_name,email_subject,sms_text,scheduled_at,created_at,updated_at,social_captions,generated_payload")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (activeStatus !== "all") query = query.eq("status", activeStatus);
+      return query;
+    })(),
     supabaseAdmin.from("marketing_send_logs").select("channel,status").limit(5000),
     safeCount("marketing_campaigns"),
     safeCount("marketing_campaigns", [{ column: "status", value: "draft" }]),
@@ -172,6 +183,8 @@ export default async function MarketingCenterPage({
                 <Link href="#campaign-builder" className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03]">Create Marketing Campaign</Link>
                 <Link href="#analytics" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">View Analytics</Link>
                 <Link href="/admin/dashboard/locations" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">Choose Location</Link>
+                <Link href="/admin/dashboard/marketing/settings" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">Settings</Link>
+                <Link href="/admin/dashboard/marketing?status=draft#campaigns" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white">View Drafts</Link>
               </div>
             </div>
 
@@ -235,19 +248,42 @@ export default async function MarketingCenterPage({
             </div>
 
             <form className="grid gap-4 p-5 lg:grid-cols-2">
+              <input type="hidden" name="campaign_id" value={params.campaign_id || ""} readOnly />
+              <input type="hidden" name="location_id" value={params.location_id || params.source_id || ""} readOnly />
+              <input type="hidden" name="location_source_id" value={params.source_id || params.location_id || ""} readOnly />
+              <input type="hidden" name="location_source_table" value={params.source_table || ""} readOnly />
+              <input type="hidden" name="location_name" value={params.location_name || ""} readOnly />
+              <input type="hidden" name="location_category" value={params.category || ""} readOnly />
+              <input type="hidden" name="location_city" value={params.city || ""} readOnly />
+              <input type="hidden" name="location_state" value={params.state || ""} readOnly />
+              <input type="hidden" name="location_address" value={params.address || ""} readOnly />
+              <input type="hidden" name="location_description" value={params.description || ""} readOnly />
+              <input type="hidden" name="location_image_url" value={params.image || ""} readOnly />
+              <input type="hidden" name="public_url" value={fullUrl} readOnly />
               <label className="space-y-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Campaign name</span>
-                <input defaultValue={copy.campaignName} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <input name="name" defaultValue={copy.campaignName} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <label className="space-y-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Campaign type</span>
-                <select defaultValue="all_channels" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400">
+                <select name="campaign_type" defaultValue="all_channels" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400">
                   <option value="social_post">Social Post</option>
                   <option value="email_blast">Email Blast</option>
                   <option value="text_blast">Text Blast</option>
                   <option value="all_channels">All Channels</option>
                 </select>
               </label>
+              <div className="space-y-2 lg:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wide text-black/45">Selected platforms</span>
+                <div className="flex flex-wrap gap-2">
+                  {["instagram", "tiktok", "youtube", "email", "sms"].map((platform) => (
+                    <label key={platform} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-black uppercase text-black/60">
+                      <input name="selected_platforms" type="checkbox" defaultChecked value={platform} className="mr-2 accent-rose-600" />
+                      {platform}
+                    </label>
+                  ))}
+                </div>
+              </div>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Location selector</span>
                 <div className="grid gap-3 rounded-[1.25rem] border border-black/10 bg-[#fffaf6] p-4 sm:grid-cols-[96px_1fr]">
@@ -269,13 +305,16 @@ export default async function MarketingCenterPage({
                         <span className="truncate">{shortenDisplayedLink(params.public_url)}</span>
                       </a>
                     )}
-                    <Link href="/admin/dashboard/locations" className="mt-3 inline-flex rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white">Browse locations</Link>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link href="/admin/dashboard/locations" className="inline-flex rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white">Browse locations</Link>
+                      <Link href="/admin/dashboard/locations" className="inline-flex rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-black text-black/60">Change location</Link>
+                    </div>
                   </div>
                 </div>
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">AI campaign generator prompt</span>
-                <textarea defaultValue={`Promote ${params.location_name || "a featured TheOutHaven location"} for a weekend outing with a friendly CTA.`} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <textarea name="generated_prompt" defaultValue={`Promote ${params.location_name || "a featured TheOutHaven location"} for a weekend outing with a friendly CTA.`} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <div className="space-y-3 lg:col-span-2">
                 <div>
@@ -291,11 +330,13 @@ export default async function MarketingCenterPage({
                   address={params.address || ""}
                   description={params.description || ""}
                   fullUrl={fullUrl}
+                  locationId={params.location_id || params.source_id || ""}
+                  locationSourceTable={params.source_table || ""}
                 />
               </div>
               <label className="space-y-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Audience selector</span>
-                <select defaultValue="opted_in_all" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400">
+                <select name="audience_segment" defaultValue="opted_in_all" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400">
                   <option value="opted_in_all">All opted-in subscribers</option>
                   <option value="email_opted_in">Email opted-in only</option>
                   <option value="sms_opted_in">SMS opted-in only</option>
@@ -304,20 +345,20 @@ export default async function MarketingCenterPage({
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Email subject</span>
-                <input defaultValue={initialSocialPackage.email_subject} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <input name="email_subject" defaultValue={initialSocialPackage.email_subject} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Email body</span>
-                <textarea defaultValue={initialSocialPackage.email_body} className="min-h-32 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <textarea name="email_body" defaultValue={initialSocialPackage.email_body} className="min-h-32 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">SMS text</span>
-                <textarea defaultValue={initialSocialPackage.sms_body} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <textarea name="sms_text" defaultValue={initialSocialPackage.sms_body} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <div className="grid gap-3 lg:col-span-2 sm:grid-cols-2">
                 <label className="space-y-2">
                   <span className="text-xs font-black uppercase tracking-wide text-black/45">Schedule at</span>
-                  <input type="datetime-local" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                  <input name="scheduled_at" type="datetime-local" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
                 </label>
                 <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
                   Confirmation step: use Save Draft first. Send Now requires confirming audience count, channel, and consent checks in the API.
@@ -364,33 +405,89 @@ export default async function MarketingCenterPage({
           <div className="flex flex-col gap-3 border-b border-black/10 bg-white/75 p-5 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-700">Campaigns</p>
-              <h2 className="mt-2 text-2xl font-black">Recent marketing campaigns</h2>
+              <h2 className="mt-2 text-2xl font-black">Campaigns and drafts</h2>
+              <p className="mt-1 text-sm font-bold text-black/45">Filter by status and open any draft to copy platform-ready captions.</p>
             </div>
-            <Link href="#campaign-builder" className="rounded-full bg-[#1b1210] px-5 py-3 text-sm font-black text-white">Create Marketing Campaign</Link>
+            <div className="flex flex-wrap gap-2">
+              <Link href="#campaign-builder" className="rounded-full bg-[#1b1210] px-5 py-3 text-sm font-black text-white">Create Marketing Campaign</Link>
+              <Link href="/admin/dashboard/marketing/settings" className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-black/60">Settings</Link>
+            </div>
+          </div>
+          <div className="flex gap-2 overflow-x-auto border-b border-black/10 bg-white/45 p-3">
+            {[
+              { label: "All", value: "all" },
+              { label: "Drafts", value: "draft" },
+              { label: "Scheduled", value: "scheduled" },
+              { label: "Sent", value: "sent" },
+              { label: "Failed", value: "failed" },
+            ].map((filter) => (
+              <Link
+                key={filter.value}
+                href={filter.value === "all" ? "/admin/dashboard/marketing#campaigns" : `/admin/dashboard/marketing?status=${filter.value}#campaigns`}
+                className={`shrink-0 rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide ${activeStatus === filter.value ? "border-rose-300 bg-rose-50 text-rose-700" : "border-black/10 bg-white text-black/45"}`}
+              >
+                {filter.label}
+              </Link>
+            ))}
           </div>
           {!campaigns.length ? (
             <div className="p-12 text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-2xl">📣</div>
-              <p className="mt-4 text-lg font-black">No campaigns yet</p>
+              <p className="mt-4 text-lg font-black">No campaigns found</p>
               <p className="mt-1 text-sm text-black/50">Create your first draft campaign above, then generate social, email, and SMS content.</p>
             </div>
           ) : (
-            <div className="grid gap-4 p-5 lg:grid-cols-2">
-              {campaigns.map((campaign) => (
-                <article key={campaign.id} className="rounded-[1.5rem] border border-black/10 bg-white p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-black/35">{typeLabel(campaign.campaign_type)}</p>
-                      <h3 className="mt-1 text-xl font-black">{campaign.name || "Untitled campaign"}</h3>
+            <div className="space-y-6 p-5">
+              {statuses.map((status) => {
+                const statusCampaigns = campaigns.filter((campaign) => (campaign.status || "draft") === status);
+                if (!statusCampaigns.length) return null;
+                return (
+                  <div key={status}>
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-xl font-black capitalize">{status} Campaigns</h3>
+                      <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${statusClass(status)}`}>{statusCampaigns.length}</span>
                     </div>
-                    <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${statusClass(campaign.status)}`}>{campaign.status || "draft"}</span>
+                    <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                      {statusCampaigns.map((campaign) => {
+                        const socialCaptions = campaign.social_captions || {};
+                        const generatedPayload = campaign.generated_payload || {};
+                        const instagramCaption = socialCaptions.instagram || (typeof generatedPayload.instagram_caption === "string" ? generatedPayload.instagram_caption : "");
+                        const tiktokCaption = socialCaptions.tiktok || (typeof generatedPayload.tiktok_caption === "string" ? generatedPayload.tiktok_caption : "");
+                        return (
+                          <article key={campaign.id} className="rounded-[1.5rem] border border-black/10 bg-white p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-black/35">{typeLabel(campaign.campaign_type)}</p>
+                                <h4 className="mt-1 text-xl font-black">{campaign.name || "Untitled campaign"}</h4>
+                              </div>
+                              <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${statusClass(campaign.status)}`}>{campaign.status || "draft"}</span>
+                            </div>
+                            <p className="mt-3 text-sm font-bold text-black/50">{campaign.location_name || campaign.audience_segment || "General TheOutHaven audience"}</p>
+                            <div className="mt-3 grid gap-2 text-xs font-bold text-black/45 sm:grid-cols-2">
+                              <p>Created: {campaign.created_at ? new Date(campaign.created_at).toLocaleString() : "—"}</p>
+                              <p>Updated: {campaign.updated_at ? new Date(campaign.updated_at).toLocaleString() : "—"}</p>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {(campaign.selected_platforms || []).length ? campaign.selected_platforms!.map((platform) => <span key={platform} className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">{platform}</span>) : <span className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">No platforms selected</span>}
+                            </div>
+                            <div className="mt-3 grid gap-2 md:grid-cols-2">
+                              <div className="rounded-2xl border border-black/10 bg-[#fffaf6] p-3">
+                                <p className="text-[10px] font-black uppercase text-black/35">Instagram preview</p>
+                                <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-xs font-bold text-black/55">{instagramCaption || "No Instagram caption saved yet."}</p>
+                              </div>
+                              <div className="rounded-2xl border border-black/10 bg-[#fffaf6] p-3">
+                                <p className="text-[10px] font-black uppercase text-black/35">TikTok preview</p>
+                                <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-xs font-bold text-black/55">{tiktokCaption || "No TikTok caption saved yet."}</p>
+                              </div>
+                            </div>
+                            <MarketingCampaignCardActions campaignId={campaign.id} instagramCaption={instagramCaption} tiktokCaption={tiktokCaption} />
+                          </article>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <p className="mt-3 text-sm font-bold text-black/50">{campaign.location_name || campaign.audience_segment || "General TheOutHaven audience"}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {(campaign.selected_platforms || []).length ? campaign.selected_platforms!.map((platform) => <span key={platform} className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">{platform}</span>) : <span className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">No platforms selected</span>}
-                  </div>
-                </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
