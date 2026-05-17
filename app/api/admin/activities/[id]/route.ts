@@ -96,7 +96,6 @@ const ACTIVITY_WITH_OWNERS_SELECT = `
   google_maps_url,
   price_level,
   created_at,
-  updated_at,
   activity_owners (
     id,
     user_id,

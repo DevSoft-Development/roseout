@@ -9,6 +9,7 @@ type LocationTable = "restaurants" | "activities";
 type DataStatus =
   | "clean"
   | "missing_image"
+  | "missing_category"
   | "missing_coordinates"
   | "missing_address"
   | "needs_review";
@@ -23,6 +24,7 @@ type CleanupSummary = {
   clean: number;
   needsReview: number;
   missingImage: number;
+  missingCategory: number;
   missingCoordinates: number;
   missingAddress: number;
   nextOffset: number | null;
@@ -81,7 +83,7 @@ function getPrimaryCategory(location: LocationRow) {
     cleanString(location.cuisine_type) ||
     cleanString(location.activity_type) ||
     cleanString(location.primary_tag) ||
-    "Experience"
+    null
   );
 }
 
@@ -112,6 +114,7 @@ function getMissingFields(location: LocationRow) {
 function getDataStatus(missingFields: string[]): DataStatus {
   if (missingFields.length === 0) return "clean";
   if (missingFields.includes("main_image")) return "missing_image";
+  if (missingFields.includes("primary_category")) return "missing_category";
 
   if (
     missingFields.includes("latitude") ||
@@ -186,6 +189,7 @@ function createEmptySummary(nextOffset: number | null = null): CleanupSummary {
     clean: 0,
     needsReview: 0,
     missingImage: 0,
+    missingCategory: 0,
     missingCoordinates: 0,
     missingAddress: 0,
     nextOffset,
@@ -196,6 +200,7 @@ function incrementSummary(summary: CleanupSummary, dataStatus: DataStatus) {
   if (dataStatus === "clean") summary.clean += 1;
   if (dataStatus === "needs_review") summary.needsReview += 1;
   if (dataStatus === "missing_image") summary.missingImage += 1;
+  if (dataStatus === "missing_category") summary.missingCategory += 1;
   if (dataStatus === "missing_coordinates") summary.missingCoordinates += 1;
   if (dataStatus === "missing_address") summary.missingAddress += 1;
 }
@@ -211,6 +216,7 @@ function mergeSummaries(summaries: CleanupSummary[]): CleanupSummary {
       clean: total.clean + summary.clean,
       needsReview: total.needsReview + summary.needsReview,
       missingImage: total.missingImage + summary.missingImage,
+      missingCategory: total.missingCategory + summary.missingCategory,
       missingCoordinates: total.missingCoordinates + summary.missingCoordinates,
       missingAddress: total.missingAddress + summary.missingAddress,
       nextOffset: nextOffsets.length > 0 ? Math.max(...nextOffsets) : null,

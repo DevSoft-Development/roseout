@@ -16,23 +16,24 @@ export const metadata: Metadata = {
   description: "Audit location visibility and missing data.",
 };
 
-const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-16";
+const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-17";
 const ADMIN_DATA_QUALITY_BASE_PATH = "/admin/dashboard/data-quality";
 
 const RESTAURANT_SELECT =
-  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
 
 const ACTIVITY_SELECT =
-  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
+  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, created_at";
 
 const LOCATION_SELECT =
-  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, food_type, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
+  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, food_type, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
 
 type QualityFilter =
   | "all"
   | "clean"
   | "needs_review"
   | "missing_image"
+  | "missing_category"
   | "missing_coordinates"
   | "missing_address"
   | "hidden"
@@ -52,6 +53,11 @@ type RawLocationRow = LocationVisibilityFields & {
   source_table?: string | null;
   source_id?: string | null;
   primary_category?: string | null;
+  cuisine?: string | null;
+  cuisine_type?: string | null;
+  food_type?: string | null;
+  activity_type?: string | null;
+  primary_tag?: string | null;
   address?: string | null;
   city?: string | null;
   state?: string | null;
@@ -63,6 +69,7 @@ type RawLocationRow = LocationVisibilityFields & {
   images?: string[] | null;
   quality_score?: number | null;
   updated_at?: string | null;
+  created_at?: string | null;
 };
 
 type QualityLocation = RawLocationRow & {
@@ -83,7 +90,8 @@ const filterOptions: FilterOption[] = [
   { key: "clean", label: "Clean" },
   { key: "needs_review", label: "Needs Review" },
   { key: "missing_image", label: "Missing Image" },
-  { key: "missing_coordinates", label: "Needs Verified Coordinates" },
+  { key: "missing_category", label: "Missing Category" },
+  { key: "missing_coordinates", label: "Missing Coordinates" },
   { key: "missing_address", label: "Missing Address" },
   { key: "hidden", label: "Hidden" },
   { key: "closed", label: "Closed" },
@@ -94,10 +102,10 @@ function formatNumber(value: number | null | undefined) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "Not checked";
+  if (!value) return "Pending Quality Review";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not checked";
+  if (Number.isNaN(date.getTime())) return "Pending Quality Review";
 
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -106,6 +114,33 @@ function formatDate(value: string | null | undefined) {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatRelativeDate(value: string | null | undefined, prefix: string) {
+  if (!value) return "Pending Quality Review";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Pending Quality Review";
+
+  const diffMs = Date.now() - date.getTime();
+  const absMs = Math.abs(diffMs);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (absMs < minute) return `${prefix} just now`;
+
+  const units: Array<[number, Intl.RelativeTimeFormatUnit]> = [
+    [day, "day"],
+    [hour, "hour"],
+    [minute, "minute"],
+  ];
+
+  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const [unitMs, unit] = units.find(([size]) => absMs >= size) || [minute, "minute"];
+  const amount = Math.round(diffMs / unitMs) * -1;
+
+  return `${prefix} ${formatter.format(amount, unit)}`;
 }
 
 function cleanString(value: unknown) {
@@ -121,16 +156,67 @@ function hasValue(value: unknown) {
 }
 
 function normalizeMissingField(field: string) {
+  if (field === "main_image") return "Main Image";
+  if (field === "primary_category") return "Primary Category";
+  if (field === "zip_code") return "ZIP Code";
+
   return field
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getPrimaryCategory(location: QualityLocation | RawLocationRow) {
+  return (
+    cleanString(location.primary_category) ||
+    cleanString((location as RawLocationRow & { cuisine?: string | null }).cuisine) ||
+    cleanString((location as RawLocationRow & { cuisine_type?: string | null }).cuisine_type) ||
+    cleanString((location as RawLocationRow & { activity_type?: string | null }).activity_type) ||
+    cleanString((location as RawLocationRow & { primary_tag?: string | null }).primary_tag) ||
+    null
+  );
+}
+
+function getMainImage(location: QualityLocation | RawLocationRow) {
+  const image = getLocationImage(location);
+  return image && image !== "/placeholder.jpg" ? image : null;
+}
+
+function getUpdatedDate(record: RawLocationRow) {
+  return record.updated_at || record.created_at || null;
+}
+
+function getQualityScoreClass(score: number | null | undefined) {
+  const value = Number(score || 0);
+
+  if (value >= 90) {
+    return "border-rose-100/40 bg-gradient-to-br from-rose-500 via-[#b61f3a] to-[#6f151f] text-white shadow-rose-950/20";
+  }
+
+  if (value >= 75) {
+    return "border-[#e7c987]/60 bg-gradient-to-br from-[#fff2ce] via-[#e7c987] to-[#b9873e] text-[#2a170e] shadow-amber-950/10";
+  }
+
+  if (value >= 50) {
+    return "border-[#d89055]/60 bg-gradient-to-br from-[#f1c38f] to-[#a95f31] text-[#2a170e]";
+  }
+
+  return "border-[#b84b55]/50 bg-gradient-to-br from-[#7d1e2b] to-[#3a1217] text-white";
+}
+
+function getSearchableLabel(location: QualityLocation, missingFields: string[]) {
+  const status = getDisplayDataStatus(location);
+
+  if (location.is_searchable === true && status === "clean") return "Search Ready";
+  if (location.is_hidden === true) return "Hidden from Search";
+  if (missingFields.length > 0) return "Missing Required Fields";
+  return "Needs Completion";
 }
 
 function getInferredMissingFields(location: QualityLocation) {
   const missing = new Set(getMissingFields(location));
 
   if (!cleanString(getLocationName(location, ""))) missing.add("name");
-  if (!hasValue(location.primary_category)) missing.add("primary_category");
+  if (!getPrimaryCategory(location)) missing.add("primary_category");
   if (!hasValue(location.address)) missing.add("address");
   if (!hasValue(location.city)) missing.add("city");
   if (!hasValue(location.state)) missing.add("state");
@@ -138,8 +224,11 @@ function getInferredMissingFields(location: QualityLocation) {
   if (!hasValue(location.latitude)) missing.add("latitude");
   if (!hasValue(location.longitude)) missing.add("longitude");
 
-  const image = getLocationImage(location);
-  if (!image || image === "/placeholder.jpg") missing.add("main_image");
+  if (!getMainImage(location)) missing.add("main_image");
+
+  if (getPrimaryCategory(location)) missing.delete("primary_category");
+  if (getMainImage(location)) missing.delete("main_image");
+  if (cleanString(getLocationName(location, ""))) missing.delete("name");
 
   return Array.from(missing);
 }
@@ -151,8 +240,8 @@ function getDisplayDataStatus(location: QualityLocation) {
   if (location.is_hidden === true) return "hidden";
   if (String(location.status || "").toLowerCase() === "closed") return "closed";
   if (helperStatus === "clean" && inferredMissing.length === 0) return "clean";
-  if (helperStatus !== "clean") return helperStatus;
   if (inferredMissing.includes("main_image")) return "missing_image";
+  if (inferredMissing.includes("primary_category")) return "missing_category";
   if (inferredMissing.includes("latitude") || inferredMissing.includes("longitude")) {
     return "missing_coordinates";
   }
@@ -165,20 +254,34 @@ function getDisplayDataStatus(location: QualityLocation) {
     return "missing_address";
   }
 
+  if (helperStatus !== "clean" && helperStatus !== "needs_review") return helperStatus;
+
   return "needs_review";
 }
 
 function formatDataStatus(status: string) {
-  return normalizeMissingField(status);
+  const labels: Record<string, string> = {
+    clean: "Clean",
+    missing_image: "Missing Image",
+    missing_category: "Missing Category",
+    missing_coordinates: "Missing Coordinates",
+    missing_address: "Missing Address",
+    hidden: "Hidden",
+    closed: "Closed",
+    needs_review: "Needs Review",
+  };
+
+  return labels[status] || normalizeMissingField(status);
 }
 
 function getStatusClass(status: string) {
-  if (status === "clean") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "missing_image") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "missing_coordinates") return "border-orange-200 bg-orange-50 text-orange-700";
-  if (status === "missing_address") return "border-yellow-200 bg-yellow-50 text-yellow-800";
-  if (status === "hidden" || status === "closed") return "border-red-200 bg-red-50 text-red-700";
-  return "border-blue-200 bg-blue-50 text-blue-700";
+  if (status === "clean") return "border-[#d9bd7c] bg-[#fff4d6] text-[#3b2512]";
+  if (status === "missing_image") return "border-[#d9a45f] bg-[#fff0dc] text-[#7b421f]";
+  if (status === "missing_category") return "border-[#d9bd7c] bg-[#f6ead2] text-[#5b3d18]";
+  if (status === "missing_coordinates") return "border-[#c8794b] bg-[#f7dfcf] text-[#783c24]";
+  if (status === "missing_address") return "border-[#d19d71] bg-[#f6e4d5] text-[#6d3d24]";
+  if (status === "hidden" || status === "closed") return "border-[#aa3b46] bg-[#f5d9dc] text-[#7b1f2b]";
+  return "border-[#b86b78] bg-[#f2dce0] text-[#6f2131]";
 }
 
 function isMissingAddress(location: QualityLocation) {
@@ -203,6 +306,9 @@ function matchesFilter(location: QualityLocation, filter: QualityFilter) {
   if (filter === "hidden") return location.is_hidden === true;
   if (filter === "closed") return String(location.status || "").toLowerCase() === "closed";
   if (filter === "missing_image") return dataStatus === "missing_image" || isMissingImage(location);
+  if (filter === "missing_category") {
+    return dataStatus === "missing_category" || getInferredMissingFields(location).includes("primary_category");
+  }
   if (filter === "missing_coordinates") {
     return dataStatus === "missing_coordinates" || isMissingCoordinates(location);
   }
@@ -285,7 +391,7 @@ export default async function AdminDataQualityPage({
       .from("activities")
       .select(ACTIVITY_SELECT)
       .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-      .order("updated_at", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1000),
     supabase
       .from("locations")
@@ -299,8 +405,8 @@ export default async function AdminDataQualityPage({
   const activityRows = ((activitiesResult.data || []) as RawLocationRow[]).map(mapActivity);
   const locationRows = ((locationsResult.data || []) as RawLocationRow[]).map(mapLocation);
   const allLocations = [...locationRows, ...restaurantRows, ...activityRows].sort((a, b) => {
-    const dateA = a.last_quality_check_at || a.updated_at || "";
-    const dateB = b.last_quality_check_at || b.updated_at || "";
+    const dateA = a.last_quality_check_at || getUpdatedDate(a) || "";
+    const dateB = b.last_quality_check_at || getUpdatedDate(b) || "";
     return dateA.localeCompare(dateB);
   });
 
@@ -330,6 +436,9 @@ export default async function AdminDataQualityPage({
     total: searchedLocations.length,
     clean: searchedLocations.filter((location) => getDisplayDataStatus(location) === "clean").length,
     missingImage: searchedLocations.filter(isMissingImage).length,
+    missingCategory: searchedLocations.filter((location) =>
+      getInferredMissingFields(location).includes("primary_category"),
+    ).length,
     missingCoordinates: searchedLocations.filter(isMissingCoordinates).length,
     missingAddress: searchedLocations.filter(isMissingAddress).length,
     needsReview: searchedLocations.filter((location) => matchesFilter(location, "needs_review")).length,
@@ -340,9 +449,9 @@ export default async function AdminDataQualityPage({
   return (
     <main
       data-page-version={ADMIN_DATA_QUALITY_VERSION}
-      className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8"
+      className="min-h-screen overflow-x-hidden bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8"
     >
-      <div className="mx-auto max-w-[1600px]">
+      <div className="mx-auto max-w-[1600px] overflow-x-hidden">
         <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_55%,#140f0a)] p-5 shadow-2xl sm:p-6">
           <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />
 
@@ -378,14 +487,15 @@ export default async function AdminDataQualityPage({
           </div>
         )}
 
-        <section className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <section className="mt-5 grid max-w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
           {[
             ["Total", counts.total, "text-white"],
-            ["Clean", counts.clean, "text-emerald-200"],
-            ["Missing image", counts.missingImage, "text-amber-200"],
-            ["This location needs verified coordinates", counts.missingCoordinates, "text-orange-200"],
-            ["Missing address", counts.missingAddress, "text-yellow-200"],
-            ["Needs review", counts.needsReview, "text-blue-200"],
+            ["Search Ready", counts.clean, "text-[#f5dd9d]"],
+            ["Missing image", counts.missingImage, "text-[#e7b979]"],
+            ["Missing category", counts.missingCategory, "text-[#d9bd7c]"],
+            ["Missing coordinates", counts.missingCoordinates, "text-[#d89055]"],
+            ["Missing address", counts.missingAddress, "text-[#e4c4a9]"],
+            ["Needs review", counts.needsReview, "text-[#e7a0ad]"],
           ].map(([label, value, tone]) => (
             <div
               key={String(label)}
@@ -403,13 +513,13 @@ export default async function AdminDataQualityPage({
 
         <CleanupActions />
 
-        <section className="mt-5 rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
-          <form className="grid gap-3 lg:grid-cols-[1fr_120px]">
+        <section className="mt-5 max-w-full rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
+          <form className="grid max-w-full gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
             <input
               name="q"
               defaultValue={q}
               placeholder="Search name, city, state, address, status, or missing field..."
-              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300"
+              className="h-11 min-w-0 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300"
             />
             <input type="hidden" name="filter" value={activeFilter === "all" ? "" : activeFilter} />
             <button
@@ -437,7 +547,7 @@ export default async function AdminDataQualityPage({
           </div>
         </section>
 
-        <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
+        <section className="mt-5 max-w-full overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
           <div className="border-b border-black/10 px-4 py-4 sm:px-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -454,7 +564,7 @@ export default async function AdminDataQualityPage({
             </div>
           </div>
 
-          <div className="hidden border-b border-black/10 bg-[#efe5dd] px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-black/40 lg:grid lg:grid-cols-[minmax(280px,1.4fr)_140px_190px_170px_150px_160px_160px_130px] lg:items-center">
+          <div className="hidden border-b border-black/10 bg-[#efe5dd] px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-black/40 2xl:grid 2xl:grid-cols-[minmax(260px,1.35fr)_140px_180px_170px_130px_170px_140px_120px] 2xl:items-center">
             <span>Name / Type / City, State / Image</span>
             <span>Data status</span>
             <span>Missing fields</span>
@@ -475,16 +585,18 @@ export default async function AdminDataQualityPage({
           ) : (
             <div className="divide-y divide-black/10">
               {locations.map((location) => {
-                const image = getLocationImage(location);
+                const image = getMainImage(location);
                 const dataStatus = getDisplayDataStatus(location);
                 const missingFields = getInferredMissingFields(location);
+                const primaryCategory = getPrimaryCategory(location);
                 const cityState = [location.city, location.state].filter(Boolean).join(", ") || "City/state missing";
                 const isSearchable = location.is_searchable === true;
+                const updatedDate = getUpdatedDate(location);
 
                 return (
                   <article
                     key={`${location.table}-${location.id}`}
-                    className="grid gap-4 p-4 transition hover:bg-white/70 lg:grid-cols-[minmax(280px,1.4fr)_140px_190px_170px_150px_160px_160px_130px] lg:items-center"
+                    className="grid gap-4 p-4 transition hover:bg-white/70 rounded-3xl border border-black/10 bg-white/45 shadow-sm 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:shadow-none 2xl:grid-cols-[minmax(260px,1.35fr)_140px_180px_170px_130px_170px_140px_120px] 2xl:items-center"
                   >
                     <div className="flex min-w-0 gap-3">
                       <div className="h-20 w-24 flex-none overflow-hidden rounded-2xl bg-[#eadfd8]">
@@ -509,7 +621,7 @@ export default async function AdminDataQualityPage({
                             {location.locationType}
                           </span>
                           <span className="rounded-full bg-[#efe5dd] px-3 py-1 text-[11px] font-black uppercase text-black/50">
-                            {location.primary_category || "Category missing"}
+                            {primaryCategory || "Category missing"}
                           </span>
                         </div>
                         <p className="mt-2 text-sm font-bold text-black/50">
@@ -519,7 +631,7 @@ export default async function AdminDataQualityPage({
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 lg:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
                         Data status
                       </p>
                       <span className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase ${getStatusClass(dataStatus)}`}>
@@ -528,7 +640,7 @@ export default async function AdminDataQualityPage({
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 lg:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
                         Missing fields
                       </p>
                       {missingFields.length > 0 ? (
@@ -553,43 +665,47 @@ export default async function AdminDataQualityPage({
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 lg:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
                         Searchable
                       </p>
                       <span
                         className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase ${
-                          isSearchable
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : "border-red-200 bg-red-50 text-red-700"
+                          isSearchable && dataStatus === "clean"
+                            ? "border-[#d9bd7c] bg-[#fff4d6] text-[#3b2512]"
+                            : location.is_hidden === true
+                              ? "border-[#aa3b46] bg-[#f5d9dc] text-[#7b1f2b]"
+                              : "border-[#d9a45f] bg-[#fff0dc] text-[#7b421f]"
                         }`}
                       >
-                        {isSearchable ? "Searchable" : "Not searchable"}
+                        {getSearchableLabel(location, missingFields)}
                       </span>
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 lg:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
                         Quality score
                       </p>
-                      <p className="text-2xl font-black">
+                      <p className={`inline-flex min-w-16 justify-center rounded-2xl border px-3 py-2 text-2xl font-black ${getQualityScoreClass(location.quality_score)}`}>
                         {formatNumber(location.quality_score)}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 lg:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
                         Last quality check
                       </p>
                       <p className="text-sm font-black text-black/65">
-                        {formatDate(location.last_quality_check_at)}
+                        {formatRelativeDate(location.last_quality_check_at, "Checked")}
                       </p>
-                      <p className="mt-1 text-xs font-bold text-black/35">
-                        Updated {formatDate(location.updated_at)}
-                      </p>
+                      {updatedDate && (
+                        <p className="mt-1 text-xs font-bold text-black/35" title={formatDate(updatedDate)}>
+                          {formatRelativeDate(updatedDate, "Updated")}
+                        </p>
+                      )}
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 lg:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
                         Flags
                       </p>
                       <div className="flex flex-wrap gap-1.5">
@@ -611,7 +727,7 @@ export default async function AdminDataQualityPage({
                       </div>
                     </div>
 
-                    <div className="flex gap-2 lg:flex-col">
+                    <div className="flex gap-2 2xl:flex-col">
                       <Link
                         href={`/locations/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
