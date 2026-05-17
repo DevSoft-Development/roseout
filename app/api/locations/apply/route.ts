@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
+import { normalizeClaimCode } from "@/lib/claimQr";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,51 @@ export async function GET(req: Request) {
   }
 }
 
+async function validateClaimAccess(supabase: ReturnType<typeof adminSupabase>, body: Record<string, unknown>) {
+  const token = clean(body.claim_token);
+  const code = normalizeClaimCode(body.claim_code);
+
+  if (!token && !code) {
+    return { ok: false, error: "To protect businesses, claiming requires the QR code or claim code provided by the location." };
+  }
+
+  const column = token ? "claim_token" : "claim_code";
+  const value = token || code;
+
+  const { data: location, error: locationError } = await supabase
+    .from("locations")
+    .select("id, name, restaurant_name, activity_name, location_type, address, city, state, zip_code, source_table, source_id")
+    .eq(column, value)
+    .maybeSingle();
+
+  if (locationError) throw locationError;
+  if (location) return { ok: true, location };
+
+  for (const table of ["restaurants", "activities"] as const) {
+    const nameColumn = table === "restaurants" ? "restaurant_name" : "activity_name";
+    const { data, error } = await supabase
+      .from(table)
+      .select(`id, name, ${nameColumn}, address, city, state, zip_code`)
+      .eq(column, value)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) {
+      return {
+        ok: true,
+        location: {
+          ...data,
+          location_type: table === "restaurants" ? "restaurant" : "activity",
+          source_table: table,
+          source_id: String(data.id),
+        },
+      };
+    }
+  }
+
+  return { ok: false, error: "Invalid claim code or QR claim link." };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -93,6 +139,8 @@ export async function POST(req: Request) {
     const external_reservation_url = clean(body.external_reservation_url);
     const main_image = clean(body.main_image || body.image_url);
     const rawNotes = clean(body.notes);
+    const claim_token = clean(body.claim_token);
+    const claim_code = normalizeClaimCode(body.claim_code);
     const extraNotes = [
       primary_category ? `Primary category: ${primary_category}` : "",
       instagram ? `Instagram / Social: ${instagram}` : "",
@@ -133,6 +181,14 @@ export async function POST(req: Request) {
 
     const supabase = adminSupabase();
 
+    if (String(body.flow || "").toLowerCase() === "claim" || request_type.toLowerCase().includes("claim")) {
+      const claimAccess = await validateClaimAccess(supabase, body as Record<string, unknown>);
+
+      if (!claimAccess.ok) {
+        return Response.json({ error: claimAccess.error }, { status: 403 });
+      }
+    }
+
     const { data, error } = await supabase
       .from("location_claim_requests")
       .insert({
@@ -152,7 +208,7 @@ export async function POST(req: Request) {
         owner_name,
         owner_email,
         owner_phone: owner_phone || null,
-        notes: notes || null,
+        notes: [notes, claim_code ? `Claim code verified: ${claim_code}` : "", claim_token ? "QR claim token verified." : ""].filter(Boolean).join("\n\n") || null,
         status: "pending",
       })
       .select("id")

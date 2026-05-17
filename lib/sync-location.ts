@@ -69,7 +69,8 @@ export const RESTAURANT_LOCATION_SELECT = `
   qr_code_data_url,
   claim_qr_url,
   claim_url,
-  claim_token
+  claim_token,
+  claim_code
 `;
 
 export const ACTIVITY_LOCATION_SELECT = `
@@ -130,7 +131,8 @@ export const ACTIVITY_LOCATION_SELECT = `
   qr_code_data_url,
   claim_qr_url,
   claim_url,
-  claim_token
+  claim_token,
+  claim_code
 `;
 
 const SHARED_FIELDS = [
@@ -181,6 +183,7 @@ const QR_FIELDS = [
   "claim_qr_url",
   "claim_url",
   "claim_token",
+  "claim_code",
 ] as const;
 
 const REQUIRED_SEARCH_FIELDS = [

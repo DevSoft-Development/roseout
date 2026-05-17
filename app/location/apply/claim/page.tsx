@@ -94,6 +94,9 @@ export default function ClaimLocationPage() {
   const [error, setError] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
+  const [claimCode, setClaimCode] = useState("");
+  const [claimAccess, setClaimAccess] = useState<{ mode: "token" | "code"; value: string } | null>(null);
+  const [validatingClaim, setValidatingClaim] = useState(false);
 
   useEffect(() => {
     document.title = "Claim Existing Location | TheOutHaven";
@@ -110,6 +113,43 @@ export default function ClaimLocationPage() {
       delete window.onTheOutHavenClaimTurnstileSuccess;
       delete window.onTheOutHavenClaimTurnstileExpired;
     };
+  }, []);
+
+  const loadClaimAccess = async (params: { token?: string; code?: string }) => {
+    setValidatingClaim(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const searchParams = new URLSearchParams();
+      if (params.token) searchParams.set("token", params.token);
+      if (params.code) searchParams.set("code", params.code);
+
+      const res = await fetch(`/api/locations/claim/lookup?${searchParams.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setClaimAccess(null);
+        setError(data.error || "Invalid claim QR code or claim code.");
+        return;
+      }
+
+      selectLocation(data.location);
+      setClaimAccess(data.claimAccess);
+      setSearchMessage("Claim code verified. Complete owner/contact info to submit for admin review.");
+    } catch {
+      setClaimAccess(null);
+      setError("Could not validate claim access. Please try again.");
+    } finally {
+      setValidatingClaim(false);
+    }
+  };
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (token) loadClaimAccess({ token });
+    // This should only run once on first load so a scanned QR token can unlock the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -144,7 +184,7 @@ export default function ClaimLocationPage() {
         setResults(nextResults);
         setSearchMessage(
           nextResults.length
-            ? "Select the location you want to claim."
+            ? "Search results are view-only. Use the QR code or claim code at the location to claim."
             : "No matches found. Try another search or add a new location."
         );
       } catch (searchError) {
@@ -273,7 +313,12 @@ export default function ClaimLocationPage() {
     setSuccess("");
 
     if (!selectedLocation) {
-      setError("Please search for and select the location you want to claim.");
+      setError("Please validate the QR code or claim code for the location you want to claim.");
+      return;
+    }
+
+    if (!claimAccess) {
+      setError("To protect businesses, claiming requires the QR code or claim code provided by the location.");
       return;
     }
 
@@ -309,6 +354,8 @@ export default function ClaimLocationPage() {
           plan: "free",
           flow: "claim",
           captchaToken,
+          claim_token: claimAccess.mode === "token" ? claimAccess.value : "",
+          claim_code: claimAccess.mode === "code" ? claimAccess.value : "",
         }),
       });
       const data = await res.json();
@@ -324,6 +371,7 @@ export default function ClaimLocationPage() {
       );
       setForm(initialForm);
       setSelectedLocation(null);
+      setClaimAccess(null);
       setQuery("");
       setResults([]);
       resetCaptcha();
@@ -384,6 +432,31 @@ export default function ClaimLocationPage() {
                 {searching ? "Searching locations..." : searchMessage}
               </p>
 
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-black p-4">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+                  Enter Claim Code
+                </p>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={claimCode}
+                    onChange={(event) => setClaimCode(event.target.value.toUpperCase())}
+                    placeholder="OH-7K92QF"
+                    className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-3 text-sm font-black uppercase tracking-[0.12em] text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => loadClaimAccess({ code: claimCode })}
+                    disabled={validatingClaim || claimCode.trim().length < 4}
+                    className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-black transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {validatingClaim ? "Checking..." : "Validate Code"}
+                  </button>
+                </div>
+                <p className="mt-3 text-xs font-bold text-white/40">
+                  You can browse listings below, but submitting a claim requires the QR code or the printed claim code at the location.
+                </p>
+              </div>
               {results.length > 0 && (
                 <div className="mt-4 space-y-3">
                   {results.map((location) => {
@@ -393,7 +466,7 @@ export default function ClaimLocationPage() {
                       <button
                         key={location.id}
                         type="button"
-                        onClick={() => selectLocation(location)}
+                        onClick={() => { selectLocation(location); setClaimAccess(null); }}
                         className={`w-full rounded-2xl border p-4 text-left transition ${
                           selected
                             ? "border-[#e1062a] bg-[#e1062a]/15"
@@ -484,6 +557,15 @@ export default function ClaimLocationPage() {
                   <p className="mt-2 text-sm font-bold text-white/45">
                     {getLocationAddress(selectedLocation) || "Address unavailable"}
                   </p>
+                  {claimAccess ? (
+                    <p className="mt-3 rounded-full bg-emerald-500/15 px-3 py-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-200">
+                      Claim access verified by {claimAccess.mode === "token" ? "QR code" : "claim code"}
+                    </p>
+                  ) : (
+                    <p className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-400/10 p-3 text-xs font-bold leading-5 text-amber-100">
+                      To protect businesses, claiming requires the QR code or claim code provided by the location.
+                    </p>
+                  )}
                   {(selectedLocation.location_type ||
                     selectedLocation.primary_category) && (
                     <p className="mt-3 text-xs font-black uppercase tracking-[0.2em] text-[#e1062a]">
@@ -558,10 +640,10 @@ export default function ClaimLocationPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !claimAccess}
                 className="w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Submitting..." : "Submit Claim Request"}
+                {loading ? "Submitting..." : claimAccess ? "Submit Claim Request" : "Validate QR or Claim Code First"}
               </button>
             </form>
           </div>

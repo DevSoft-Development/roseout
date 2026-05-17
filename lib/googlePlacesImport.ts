@@ -220,6 +220,7 @@ type ExistingLocationClaim = {
   claimed_at?: string | null;
   claimed_by_email?: string | null;
   owner_user_id?: string | null;
+  claim_code?: string | null;
   claim_token?: string | null;
   claim_url?: string | null;
   claim_qr_url?: string | null;
@@ -430,7 +431,7 @@ function buildKeywords(place: GooglePlace, query: string, extras: string[] = [])
 async function findExistingLocation(table: ImportTable, placeId: string) {
   const { data, error } = await supabaseAdmin
     .from(table)
-    .select("id, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, claim_token, claim_url, qr_code_data_url")
+    .select("id, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url")
     .eq("google_place_id", placeId)
     .limit(1);
 
@@ -446,6 +447,7 @@ async function addClaimFields(
 ) {
   if (
     existing?.claim_status &&
+    existing?.claim_code &&
     existing?.claim_token &&
     existing?.claim_url &&
     existing?.qr_code_data_url
@@ -453,6 +455,7 @@ async function addClaimFields(
     return {
       ...row,
       claim_status: existing.claim_status,
+      claim_code: existing.claim_code,
       claim_token: existing.claim_token,
       claim_url: existing.claim_url,
       qr_link: existing.qr_link,
@@ -466,6 +469,7 @@ async function addClaimFields(
   return {
     ...row,
     claim_status: existing?.claim_status || qr.claim_status,
+    claim_code: existing?.claim_code || qr.claim_code,
     claim_token: existing?.claim_token || qr.claim_token,
     claim_url: existing?.claim_url || qr.claim_url,
     qr_link: existing?.qr_link || qr.claim_url,

@@ -12,6 +12,7 @@ type ClaimQrLocation = {
   state: string | null;
   zip_code: string | null;
   claim_url: string | null;
+  claim_code: string | null;
   qr_code_data_url: string | null;
 };
 
@@ -42,6 +43,7 @@ function getSearchText(location: ClaimQrLocation) {
     location.state,
     location.zip_code,
     location.claim_url,
+    location.claim_code,
     location.type,
   ]
     .filter(Boolean)
@@ -230,8 +232,14 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                   <p>{location.address?.trim() || "Address not listed"}</p>
                   {cityStateZip && <p>{cityStateZip}</p>}
                 </div>
+                <p className="mt-3 text-[10px] font-black uppercase tracking-[0.16em] text-black/45">
+                  Or enter claim code manually
+                </p>
+                <p className="font-mono text-lg font-black tracking-[0.14em] text-black">
+                  {location.claim_code || "Code pending"}
+                </p>
                 {displayClaimUrl && (
-                  <p className="mt-3 break-all text-[10px] font-bold text-black/35">
+                  <p className="mt-2 break-all text-[10px] font-bold text-black/35">
                     {displayClaimUrl}
                   </p>
                 )}
