@@ -14,6 +14,7 @@ alter table public.locations
   add column if not exists restaurant_name text,
   add column if not exists activity_name text,
   add column if not exists primary_category text,
+  add column if not exists google_place_id text,
   add column if not exists cuisine text,
   add column if not exists cuisine_type text,
   add column if not exists activity_type text,
@@ -66,3 +67,23 @@ create index if not exists locations_search_keywords_gin_idx
 
 create index if not exists locations_google_types_gin_idx
   on public.locations using gin (google_types);
+
+create index if not exists locations_google_place_id_idx
+  on public.locations (google_place_id)
+  where google_place_id is not null;
+
+update public.locations l
+set google_place_id = r.google_place_id
+from public.restaurants r
+where l.source_table = 'restaurants'
+  and l.source_id = r.id::text
+  and l.google_place_id is null
+  and r.google_place_id is not null;
+
+update public.locations l
+set google_place_id = a.google_place_id
+from public.activities a
+where l.source_table = 'activities'
+  and l.source_id = a.id::text
+  and l.google_place_id is null
+  and a.google_place_id is not null;

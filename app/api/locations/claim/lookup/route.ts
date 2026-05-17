@@ -51,12 +51,19 @@ async function lookupLocations(mode: LookupMode, value: string) {
   return (data || null) as ClaimLocation | null;
 }
 
-async function lookupSource(table: "restaurants" | "activities", mode: LookupMode, value: string) {
+async function lookupSource(
+  table: "restaurants" | "activities",
+  mode: LookupMode,
+  value: string,
+) {
   const column = mode === "token" ? "claim_token" : "claim_code";
-  const nameColumn = table === "restaurants" ? "restaurant_name" : "activity_name";
+  const nameColumn =
+    table === "restaurants" ? "restaurant_name" : "activity_name";
   const { data, error } = await adminSupabase()
     .from(table)
-    .select(`id, name, ${nameColumn}, primary_category, address, city, state, zip_code, main_image, image_url, is_claimed, claimed, claim_status`)
+    .select(
+      `id, name, ${nameColumn}, primary_category, address, city, state, zip_code, main_image, image_url, is_claimed, claim_status`,
+    )
     .eq(column, value)
     .maybeSingle();
 
@@ -78,7 +85,10 @@ export async function GET(req: Request) {
   const code = normalizeClaimCode(rawCode);
 
   if (!token && !code) {
-    return Response.json({ error: "Enter a claim code or open a valid QR claim link." }, { status: 400 });
+    return Response.json(
+      { error: "Enter a claim code or open a valid QR claim link." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -91,10 +101,16 @@ export async function GET(req: Request) {
       (await lookupSource("activities", mode, value));
 
     if (!location) {
-      return Response.json({ error: "Claim code or QR link was not found." }, { status: 404 });
+      return Response.json(
+        { error: "Claim code or QR link was not found." },
+        { status: 404 },
+      );
     }
 
-    return Response.json({ location: removePrivateFields(location), claimAccess: { mode, value } });
+    return Response.json({
+      location: removePrivateFields(location),
+      claimAccess: { mode, value },
+    });
   } catch (error: unknown) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Server error" },
