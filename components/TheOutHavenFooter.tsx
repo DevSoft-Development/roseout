@@ -55,8 +55,8 @@ export default function TheOutHavenFooter() {
           title="Business"
           links={[
             { label: "For Businesses", href: "/business" },
-            { label: "Claim Listing", href: "/locations/apply" },
-            { label: "Add Location", href: "/locations/apply" },
+            { label: "Claim Listing", href: "/location/apply/claim" },
+            { label: "Add Location", href: "/location/apply/new" },
           ]}
         />
 

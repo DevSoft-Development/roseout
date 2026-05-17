@@ -1,7 +1,7 @@
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
-const primaryCta = "/locations/apply?plan=free";
+const primaryCta = "/location/apply";
 const proCta = "/checkout?plan=pro&billing=monthly";
 
 const platformPillars = [
