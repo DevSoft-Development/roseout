@@ -60,6 +60,8 @@ export default function MarketingCampaignActions({ redirectToDrafts = true }: Ma
       location_address: formValue(formData, "location_address"),
       location_description: formValue(formData, "location_description"),
       public_location_url: formValue(formData, "public_url"),
+      source_platform: formValues(formData, "selected_platforms").find((platform) => platform === "instagram" || platform === "tiktok") || "instagram",
+      caption_category: formValue(formData, "caption_category"),
       cta_url: formValue(formData, "public_url"),
       generated_prompt: formValue(formData, "generated_prompt"),
       social_captions: {
@@ -101,7 +103,7 @@ export default function MarketingCampaignActions({ redirectToDrafts = true }: Ma
       if (!response.ok) throw new Error(result.error || "Unable to save draft.");
 
       setAction("success");
-      setMessage("Draft saved. You can find it in Draft Campaigns.");
+      setMessage(result.campaign?.public_url ? `Draft saved. Bio link: ${result.campaign.public_url}` : "Draft saved. You can find it in Draft Campaigns.");
       router.refresh();
       if (redirectToDrafts) window.location.href = "/admin/dashboard/marketing?status=draft#campaigns";
     } catch (error) {

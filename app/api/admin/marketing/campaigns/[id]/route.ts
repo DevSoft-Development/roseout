@@ -9,6 +9,7 @@ import {
   requireMarketingAdminApi,
   requireMarketingViewerApi,
 } from "@/lib/marketing-admin";
+import { buildCampaignSlug, campaignPublicUrl, getUniqueCampaignSlug } from "@/lib/marketing-public";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,23 @@ export async function PATCH(req: Request, context: RouteContext) {
   if ("video_url" in body) updates.video_url = normalizeStringOrNull(body.video_url);
   if ("cta_url" in body) updates.cta_url = normalizeStringOrNull(body.cta_url);
   if ("scheduled_at" in body) updates.scheduled_at = normalizeStringOrNull(body.scheduled_at);
+  if ("source_platform" in body) updates.source_platform = normalizeStringOrNull(body.source_platform);
+  if ("caption_category" in body) updates.caption_category = normalizeStringOrNull(body.caption_category);
+  if ("public_slug" in body) {
+    const publicSlug = await getUniqueCampaignSlug(normalizeStringOrNull(body.public_slug) || buildCampaignSlug({ name: normalizeStringOrNull(body.name), locationName: normalizeStringOrNull(body.location_name), captionCategory: normalizeStringOrNull(body.caption_category) || normalizeStringOrNull(body.location_category), city: normalizeStringOrNull(body.location_city) }), id);
+    updates.public_slug = publicSlug;
+    updates.public_url = campaignPublicUrl(publicSlug);
+  }
+
+  const needsPublicSlug = "name" in body || "location_name" in body || "location_category" in body || "location_city" in body || "caption_category" in body;
+  if (needsPublicSlug) {
+    const { data: existing } = await supabaseAdmin.from("marketing_campaigns").select("public_slug").eq("id", id).maybeSingle();
+    if (!existing?.public_slug) {
+      const publicSlug = await getUniqueCampaignSlug(buildCampaignSlug({ name: normalizeStringOrNull(body.name), locationName: normalizeStringOrNull(body.location_name), captionCategory: normalizeStringOrNull(body.caption_category) || normalizeStringOrNull(body.location_category), city: normalizeStringOrNull(body.location_city) }), id);
+      updates.public_slug = publicSlug;
+      updates.public_url = campaignPublicUrl(publicSlug);
+    }
+  }
 
   const { data, error: updateError } = await supabaseAdmin
     .from("marketing_campaigns")

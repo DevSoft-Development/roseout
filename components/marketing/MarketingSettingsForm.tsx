@@ -13,6 +13,7 @@ const textFields = [
   ["tiktok_bio_link", "TikTok bio link"],
   ["youtube_channel_link", "YouTube channel link"],
   ["default_marketing_landing_page", "Default marketing landing page"],
+  ["active_bio_campaign_slug", "Active bio campaign slug"],
   ["default_short_link_domain", "Default short link domain"],
   ["default_cta_text", "Default CTA text"],
   ["default_hashtag_groups", "Default hashtag groups"],

@@ -47,6 +47,8 @@ type Campaign = {
   updated_at?: string | null;
   social_captions?: Record<string, string> | null;
   generated_payload?: Record<string, unknown> | null;
+  public_slug?: string | null;
+  public_url?: string | null;
 };
 
 type SendLog = {
@@ -133,7 +135,7 @@ export default async function MarketingCenterPage({
     (() => {
       let query = supabaseAdmin
         .from("marketing_campaigns")
-        .select("id,name,campaign_type,status,selected_platforms,audience_segment,location_name,email_subject,sms_text,scheduled_at,created_at,updated_at,social_captions,generated_payload")
+        .select("id,name,campaign_type,status,selected_platforms,audience_segment,location_name,email_subject,sms_text,scheduled_at,created_at,updated_at,social_captions,generated_payload,public_slug,public_url")
         .order("created_at", { ascending: false })
         .limit(100);
       if (activeStatus !== "all") query = query.eq("status", activeStatus);
@@ -480,7 +482,7 @@ export default async function MarketingCenterPage({
                                 <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-xs font-bold text-black/55">{tiktokCaption || "No TikTok caption saved yet."}</p>
                               </div>
                             </div>
-                            <MarketingCampaignCardActions campaignId={campaign.id} instagramCaption={instagramCaption} tiktokCaption={tiktokCaption} />
+                            <MarketingCampaignCardActions campaignId={campaign.id} instagramCaption={instagramCaption} tiktokCaption={tiktokCaption} publicSlug={campaign.public_slug} publicUrl={campaign.public_url} />
                           </article>
                         );
                       })}
