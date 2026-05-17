@@ -79,7 +79,7 @@ export default function PricingPage() {
 
           <div className="mt-8 flex gap-4 justify-center">
             <Link
-              href="/locations/apply?plan=free"
+              href="/location/apply"
               className="px-6 py-3 bg-rose-600 rounded-full hover:bg-rose-500"
             >
               Get Started Free
@@ -102,7 +102,7 @@ export default function PricingPage() {
             <p className="text-4xl mt-2">$0</p>
 
             <Link
-              href="/locations/apply?plan=free"
+              href="/location/apply"
               className="block mt-6 bg-white/10 text-center py-3 rounded-lg"
             >
               Start Free
