@@ -13,6 +13,7 @@ type CleanupResult = {
   clean?: number;
   needsReview?: number;
   missingImage?: number;
+  missingCategory?: number;
   missingCoordinates?: number;
   missingAddress?: number;
   nextOffset?: number | null;
@@ -23,6 +24,7 @@ type CleanupResult = {
     clean: number;
     needsReview: number;
     missingImage: number;
+    missingCategory: number;
     missingCoordinates: number;
     missingAddress: number;
     nextOffset: number | null;
@@ -106,7 +108,7 @@ export default function CleanupActions() {
         <div
           className={`mt-5 rounded-3xl border p-4 ${
             result.success
-              ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-50"
+              ? "border-[#d9bd7c]/25 bg-[#d9bd7c]/10 text-[#fff4d6]"
               : "border-rose-400/25 bg-rose-500/10 text-rose-50"
           }`}
         >
@@ -119,13 +121,14 @@ export default function CleanupActions() {
 
           {result.success && (
             <>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                 {[
                   ["Checked", result.checked],
-                  ["Clean", result.clean],
+                  ["Search ready", result.clean],
                   ["Needs review", result.needsReview],
                   ["Missing image", result.missingImage],
-                  ["This location needs verified coordinates", result.missingCoordinates],
+                  ["Missing category", result.missingCategory],
+                  ["Missing coordinates", result.missingCoordinates],
                   ["Missing address", result.missingAddress],
                 ].map(([label, value]) => (
                   <div
@@ -153,7 +156,7 @@ export default function CleanupActions() {
                         {tableResult.table}
                       </p>
                       <p className="mt-2 text-sm font-bold text-white/70">
-                        Checked {formatNumber(tableResult.checked)} · Clean {formatNumber(tableResult.clean)} · Needs review {formatNumber(tableResult.needsReview)}
+                        Checked {formatNumber(tableResult.checked)} · Search ready {formatNumber(tableResult.clean)} · Needs review {formatNumber(tableResult.needsReview)}
                       </p>
                       {tableResult.errors && tableResult.errors.length > 0 && (
                         <p className="mt-2 text-xs font-bold text-amber-100">

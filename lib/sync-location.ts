@@ -4,6 +4,7 @@ type SourceTable = "restaurants" | "activities";
 type DataStatus =
   | "clean"
   | "missing_image"
+  | "missing_category"
   | "missing_coordinates"
   | "missing_address"
   | "needs_review";
@@ -275,12 +276,12 @@ function getPrimaryCategory(table: SourceTable, row: SourceRow) {
         row.cuisine_type,
         row.food_type,
         row.primary_tag,
-      ) || "Restaurant"
+      )
     : firstPresent<string>(
         row.primary_category,
         row.activity_type,
         row.primary_tag,
-      ) || "Activity";
+      );
 }
 
 function normalizeArray(value: unknown): string[] {
@@ -391,6 +392,7 @@ function getMissingFields(payload: Record<string, unknown>) {
 function getDataStatus(missingFields: readonly string[]): DataStatus {
   if (missingFields.length === 0) return "clean";
   if (missingFields.includes("main_image")) return "missing_image";
+  if (missingFields.includes("primary_category")) return "missing_category";
   if (missingFields.includes("latitude") || missingFields.includes("longitude")) {
     return "missing_coordinates";
   }
