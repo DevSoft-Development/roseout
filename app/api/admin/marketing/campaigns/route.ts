@@ -10,6 +10,7 @@ import {
   requireMarketingAdminApi,
   requireMarketingViewerApi,
 } from "@/lib/marketing-admin";
+import { buildCampaignSlug, campaignPublicUrl, getUniqueCampaignSlug } from "@/lib/marketing-public";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,15 @@ export async function POST(req: Request) {
   const campaignType = normalizeCampaignType(body.campaign_type);
   const status = normalizeCampaignStatus(body.status);
 
+  const captionCategory = normalizeStringOrNull(body.caption_category);
+  const sourcePlatform = normalizeStringOrNull(body.source_platform) || normalizeStringArray(body.selected_platforms).find((platform) => platform === "instagram" || platform === "tiktok") || null;
+  const publicSlug = await getUniqueCampaignSlug(buildCampaignSlug({
+    name,
+    locationName: normalizeStringOrNull(body.location_name),
+    captionCategory: captionCategory || normalizeStringOrNull(body.location_category),
+    city: normalizeStringOrNull(body.location_city),
+  }));
+
   const payload = {
     name,
     campaign_type: campaignType,
@@ -63,6 +73,10 @@ export async function POST(req: Request) {
     location_address: normalizeStringOrNull(body.location_address),
     location_description: normalizeStringOrNull(body.location_description),
     public_location_url: normalizeStringOrNull(body.public_location_url),
+    public_slug: publicSlug,
+    public_url: campaignPublicUrl(publicSlug),
+    source_platform: sourcePlatform,
+    caption_category: captionCategory,
     social_captions: typeof body.social_captions === "object" && body.social_captions ? body.social_captions : {},
     generated_prompt: normalizeStringOrNull(body.generated_prompt),
     generated_payload: typeof body.generated_payload === "object" && body.generated_payload ? body.generated_payload : {},

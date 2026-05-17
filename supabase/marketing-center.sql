@@ -194,3 +194,31 @@ create table if not exists public.marketing_settings (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Link-in-bio campaign landing pages.
+alter table public.marketing_campaigns
+  add column if not exists public_slug text,
+  add column if not exists public_url text,
+  add column if not exists source_platform text,
+  add column if not exists caption_category text;
+
+create unique index if not exists marketing_campaigns_public_slug_uidx
+  on public.marketing_campaigns (public_slug)
+  where public_slug is not null;
+
+create table if not exists public.marketing_link_clicks (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid nullable references public.marketing_campaigns(id) on delete set null,
+  slug text not null,
+  referrer text nullable,
+  user_agent text nullable,
+  utm_source text nullable,
+  created_at timestamptz default now()
+);
+
+create index if not exists marketing_link_clicks_campaign_created_idx on public.marketing_link_clicks (campaign_id, created_at desc);
+create index if not exists marketing_link_clicks_slug_created_idx on public.marketing_link_clicks (slug, created_at desc);
+
+insert into public.marketing_settings (key, value)
+values ('active_bio_campaign_slug', '""'::jsonb)
+on conflict (key) do nothing;
