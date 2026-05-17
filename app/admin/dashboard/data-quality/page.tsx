@@ -67,7 +67,7 @@ const filterOptions: FilterOption[] = [
   { key: "clean", label: "Clean" },
   { key: "needs_review", label: "Needs Review" },
   { key: "missing_image", label: "Missing Image" },
-  { key: "missing_coordinates", label: "Missing Coordinates" },
+  { key: "missing_coordinates", label: "Needs Verified Coordinates" },
   { key: "missing_address", label: "Missing Address" },
   { key: "hidden", label: "Hidden" },
   { key: "closed", label: "Closed" },
@@ -344,7 +344,7 @@ export default async function AdminDataQualityPage({
             ["Total", counts.total, "text-white"],
             ["Clean", counts.clean, "text-emerald-200"],
             ["Missing image", counts.missingImage, "text-amber-200"],
-            ["Missing coordinates", counts.missingCoordinates, "text-orange-200"],
+            ["This location needs verified coordinates", counts.missingCoordinates, "text-orange-200"],
             ["Missing address", counts.missingAddress, "text-yellow-200"],
             ["Needs review", counts.needsReview, "text-blue-200"],
           ].map(([label, value, tone]) => (

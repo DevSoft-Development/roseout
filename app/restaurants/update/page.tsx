@@ -1,13 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase-browser";
 import RestaurantTopBar from "@/app/restaurants/components/RestaurantTopBar";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
+
+type RestaurantRecord = Record<string, unknown> & { id?: string };
+
+function stringValue(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
 
 export default function RestaurantUpdatePage() {
   const supabase = createClient();
 
-  const [restaurant, setRestaurant] = useState<any>(null);
+  const [restaurant, setRestaurant] = useState<RestaurantRecord | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -37,10 +47,7 @@ export default function RestaurantUpdatePage() {
   };
 
   const update = (key: string, value: string) => {
-    setRestaurant((prev: any) => ({
-      ...prev,
-      [key]: value,
-    }));
+    setRestaurant((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
   const saveRestaurant = async () => {
@@ -65,7 +72,9 @@ export default function RestaurantUpdatePage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadRestaurant();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -91,22 +100,39 @@ export default function RestaurantUpdatePage() {
       <RestaurantTopBar />
 
       <div className="mx-auto max-w-3xl px-6 py-12">
-        <a href="/restaurants/dashboard" className="underline">
+        <Link href="/restaurants/dashboard" className="underline">
           ← Back to Dashboard
-        </a>
+        </Link>
 
         <h1 className="mt-6 text-4xl font-bold">Edit Listing</h1>
 
         <div className="mt-8 space-y-4 rounded-3xl bg-white p-6 text-black">
-          <input className="w-full rounded-xl border px-4 py-3" value={restaurant.restaurant_name || ""} onChange={(e) => update("restaurant_name", e.target.value)} />
-          <input className="w-full rounded-xl border px-4 py-3" value={restaurant.address || ""} onChange={(e) => update("address", e.target.value)} />
-          <input className="w-full rounded-xl border px-4 py-3" value={restaurant.city || ""} onChange={(e) => update("city", e.target.value)} />
-          <input className="w-full rounded-xl border px-4 py-3" value={restaurant.state || ""} onChange={(e) => update("state", e.target.value)} />
-          <input className="w-full rounded-xl border px-4 py-3" value={restaurant.zip_code || ""} onChange={(e) => update("zip_code", e.target.value)} />
+          <input className="w-full rounded-xl border px-4 py-3" value={stringValue(restaurant.restaurant_name)} onChange={(e) => update("restaurant_name", e.target.value)} />
+          <GoogleAddressAutocomplete
+            value={stringValue(restaurant.address)}
+            address={stringValue(restaurant.address)}
+            city={stringValue(restaurant.city)}
+            state={stringValue(restaurant.state)}
+            zip_code={stringValue(restaurant.zip_code)}
+            neighborhood={stringValue(restaurant.neighborhood)}
+            latitude={stringValue(restaurant.latitude)}
+            longitude={stringValue(restaurant.longitude)}
+            google_place_id={stringValue(restaurant.google_place_id)}
+            formatted_address={stringValue(restaurant.formatted_address)}
+            onAddressChange={(value) => update("address", value)}
+            onAddressSelect={(selected: GoogleAddressFields) =>
+              setRestaurant((prev) => (prev ? { ...prev, ...selected } : prev))
+            }
+            inputClassName="mt-2 w-full rounded-xl border px-4 py-3"
+            labelClassName="text-sm font-bold"
+          />
+          <input className="w-full rounded-xl border px-4 py-3" value={stringValue(restaurant.city)} onChange={(e) => update("city", e.target.value)} placeholder="City" />
+          <input className="w-full rounded-xl border px-4 py-3" value={stringValue(restaurant.state)} onChange={(e) => update("state", e.target.value)} placeholder="State" />
+          <input className="w-full rounded-xl border px-4 py-3" value={stringValue(restaurant.zip_code)} onChange={(e) => update("zip_code", e.target.value)} placeholder="Zip code" />
 
           <textarea
             className="min-h-32 w-full rounded-xl border px-4 py-3"
-            value={restaurant.description || ""}
+            value={stringValue(restaurant.description)}
             onChange={(e) => update("description", e.target.value)}
           />
 

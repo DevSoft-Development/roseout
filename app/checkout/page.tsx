@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Script from "next/script";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -24,8 +27,7 @@ import {
 
 declare global {
   interface Window {
-    google?: any;
-    turnstile?: any;
+    turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void };
   }
 }
 
@@ -46,7 +48,6 @@ const trustPoints = [
 ];
 
 export default function CheckoutInfoPage() {
-  const [googleReady, setGoogleReady] = useState(false);
   const [turnstileReady, setTurnstileReady] = useState(false);
   const turnstileRef = useRef<HTMLDivElement | null>(null);
   const hasRenderedTurnstile = useRef(false);
@@ -103,7 +104,7 @@ export default function CheckoutInfoPage() {
 
     if (!turnstileReady) return;
     if (!siteKey) return;
-    if (!window.turnstile) return;
+    if (!window.turnstile?.render) return;
     if (!turnstileRef.current) return;
     if (hasRenderedTurnstile.current) return;
 
@@ -117,14 +118,6 @@ export default function CheckoutInfoPage() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
-      <Script
-        src={`https://maps.googleapis.com/maps/api/js?key=${
-          process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
-        }&libraries=places`}
-        strategy="afterInteractive"
-        onLoad={() => setGoogleReady(true)}
-      />
-
       <Script
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
@@ -204,7 +197,7 @@ export default function CheckoutInfoPage() {
                 required
               />
 
-              <GoogleLocationAddressField googleReady={googleReady} />
+              <GoogleLocationAddressField />
 
               <Field
                 icon={User}
@@ -496,92 +489,69 @@ export default function CheckoutInfoPage() {
   );
 }
 
-function GoogleLocationAddressField({ googleReady }: { googleReady: boolean }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const [displayAddress, setDisplayAddress] = useState("");
-  const [address, setAddress] = useState("");
-  const [googlePlaceId, setGooglePlaceId] = useState("");
-  const [googlePlaceName, setGooglePlaceName] = useState("");
-  const [photoRefs, setPhotoRefs] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!googleReady) return;
-    if (!inputRef.current) return;
-    if (!window.google?.maps?.places) return;
-
-    const autocomplete = new window.google.maps.places.Autocomplete(
-      inputRef.current,
-      {
-        types: ["establishment", "geocode"],
-        componentRestrictions: { country: "us" },
-        fields: ["formatted_address", "place_id", "name", "photos"],
-      }
-    );
-
-    const listener = autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-
-      const formattedAddress = place.formatted_address || "";
-      const placeId = place.place_id || "";
-      const placeName = place.name || "";
-
-      const refs =
-        place.photos
-          ?.slice(0, 10)
-          .map((photo: any) => photo.getUrl({ maxWidth: 1200 }))
-          .filter(Boolean) || [];
-
-      setDisplayAddress(formattedAddress);
-      setAddress(formattedAddress);
-      setGooglePlaceId(placeId);
-      setGooglePlaceName(placeName);
-      setPhotoRefs(refs);
-    });
-
-    return () => {
-      if (window.google?.maps?.event && listener) {
-        window.google.maps.event.removeListener(listener);
-      }
-    };
-  }, [googleReady]);
+function GoogleLocationAddressField() {
+  const [addressFields, setAddressFields] = useState<GoogleAddressFields>({
+    address: "",
+    city: "",
+    state: "",
+    zip_code: "",
+    neighborhood: "",
+    latitude: "",
+    longitude: "",
+    google_place_id: "",
+    formatted_address: "",
+  });
 
   return (
     <div>
-      <label className="mb-2 block text-sm font-semibold text-zinc-300">
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-300">
+        <MapPin className="h-4 w-4 text-rose-300" />
         Location Address
-      </label>
-
-      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-4 py-4 transition focus-within:border-rose-400/60">
-        <MapPin className="h-5 w-5 shrink-0 text-rose-300" />
-
-        <input
-          ref={inputRef}
-          value={displayAddress}
-          onChange={(event) => {
-            setDisplayAddress(event.target.value);
-            setAddress(event.target.value);
-            setGooglePlaceId("");
-            setGooglePlaceName("");
-            setPhotoRefs([]);
-          }}
-          required
-          placeholder={
-            googleReady
-              ? "Start typing the location address..."
-              : "Loading address search..."
-          }
-          className="w-full bg-transparent text-sm text-white outline-none placeholder:text-zinc-600"
-        />
       </div>
 
-      <input type="hidden" name="address" value={address || displayAddress} />
-      <input type="hidden" name="google_place_id" value={googlePlaceId} />
-      <input type="hidden" name="google_place_name" value={googlePlaceName} />
-      <input
-        type="hidden"
-        name="google_photo_refs"
-        value={JSON.stringify(photoRefs)}
+      <GoogleAddressAutocomplete
+        value={addressFields.address}
+        address={addressFields.address}
+        city={addressFields.city}
+        state={addressFields.state}
+        zip_code={addressFields.zip_code}
+        neighborhood={addressFields.neighborhood}
+        latitude={addressFields.latitude}
+        longitude={addressFields.longitude}
+        google_place_id={addressFields.google_place_id}
+        formatted_address={addressFields.formatted_address}
+        label="Address"
+        placeholder="Start typing the location address..."
+        required
+        onAddressChange={(value) =>
+          setAddressFields((prev) => ({
+            ...prev,
+            address: value,
+            google_place_id: "",
+            formatted_address: "",
+            latitude: "",
+            longitude: "",
+          }))
+        }
+        onAddressSelect={(selected) =>
+          setAddressFields((prev) => ({ ...prev, ...selected }))
+        }
+        inputClassName="mt-2 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-rose-400/60"
+        labelClassName="sr-only"
+        statusClassName="mt-2 text-xs font-semibold text-zinc-500"
+        dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0d0d0d] shadow-2xl shadow-black/60"
+        predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
+        hiddenInputNames={{
+          address: "address",
+          city: "city",
+          state: "state",
+          zip_code: "zip_code",
+          neighborhood: "neighborhood",
+          latitude: "latitude",
+          longitude: "longitude",
+          google_place_id: "google_place_id",
+          formatted_address: "formatted_address",
+        }}
       />
     </div>
   );

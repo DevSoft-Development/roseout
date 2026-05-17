@@ -4,10 +4,13 @@ import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
 
 declare global {
   interface Window {
-    turnstile?: any;
+    turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void };
     onTheOutHavenTurnstileSuccess?: (token: string) => void;
     onTheOutHavenTurnstileExpired?: () => void;
   }
@@ -15,9 +18,8 @@ declare global {
 
 type RequestType = "claim" | "add";
 
-type AddressPrediction = {
-  place_id: string;
-  description: string;
+type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => {
+  detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>>;
 };
 
 type FormState = {
@@ -29,6 +31,11 @@ type FormState = {
   city: string;
   state: string;
   zip_code: string;
+  neighborhood: string;
+  latitude: string;
+  longitude: string;
+  google_place_id: string;
+  formatted_address: string;
   owner_name: string;
   owner_email: string;
   owner_phone: string;
@@ -45,6 +52,11 @@ const getInitialForm = (requestType: RequestType): FormState => ({
   city: "",
   state: "",
   zip_code: "",
+  neighborhood: "",
+  latitude: "",
+  longitude: "",
+  google_place_id: "",
+  formatted_address: "",
   owner_name: "",
   owner_email: "",
   owner_phone: "",
@@ -54,7 +66,6 @@ const getInitialForm = (requestType: RequestType): FormState => ({
 export default function LocationApplyPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerActiveRef = useRef(false);
-  const addressInputRef = useRef<HTMLInputElement | null>(null);
 
   const [requestType, setRequestType] = useState<RequestType>("claim");
   const [form, setForm] = useState<FormState>(getInitialForm("claim"));
@@ -64,11 +75,6 @@ export default function LocationApplyPage() {
   const [error, setError] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
-  const [addressPredictions, setAddressPredictions] = useState<
-    AddressPrediction[]
-  >([]);
-  const [addressLoading, setAddressLoading] = useState(false);
-  const [addressStatus, setAddressStatus] = useState("");
 
   useEffect(() => {
     document.title = "Claim or Add Your Location | TheOutHaven";
@@ -105,87 +111,10 @@ export default function LocationApplyPage() {
     }));
   };
 
-  const handleAddressChange = async (value: string) => {
-    updateField("address", value);
-    setAddressStatus("");
-
-    if (value.trim().length < 2) {
-      setAddressPredictions([]);
-      setAddressLoading(false);
-      return;
-    }
-
-    setAddressLoading(true);
-
-    try {
-      const res = await fetch("/api/google/address-autocomplete", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ input: value }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setAddressPredictions([]);
-        setAddressStatus(data.error || "Google address lookup failed.");
-        return;
-      }
-
-      setAddressPredictions(data.predictions || []);
-
-      if (!data.predictions?.length) {
-        setAddressStatus("No address matches found. Try typing more details.");
-      }
-    } catch {
-      setAddressPredictions([]);
-      setAddressStatus("Google address lookup failed.");
-    } finally {
-      setAddressLoading(false);
-    }
-  };
-
-  const selectAddressPrediction = async (prediction: AddressPrediction) => {
-    setAddressPredictions([]);
-    setAddressLoading(true);
-    setAddressStatus("");
-
-    try {
-      const res = await fetch("/api/google/address-details", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ placeId: prediction.place_id }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setAddressStatus(data.error || "Could not read selected address.");
-        return;
-      }
-
-      setForm((prev) => ({
-        ...prev,
-        address: data.address || prediction.description || prev.address,
-        city: data.city || prev.city,
-        state: data.state || prev.state,
-        zip_code: data.zip_code || prev.zip_code,
-      }));
-    } catch {
-      setAddressStatus("Could not read selected address.");
-    } finally {
-      setAddressLoading(false);
-    }
-  };
-
   const resetCaptcha = () => {
     setCaptchaToken("");
 
-    if (window.turnstile) {
+    if (window.turnstile?.reset) {
       window.turnstile.reset();
     }
   };
@@ -225,7 +154,7 @@ export default function LocationApplyPage() {
         await videoRef.current.play();
       }
 
-      const BarcodeDetectorClass = (window as any).BarcodeDetector;
+      const BarcodeDetectorClass = (window as Window & { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
 
       if (!BarcodeDetectorClass) {
         setScanError(
@@ -353,8 +282,6 @@ export default function LocationApplyPage() {
       );
 
       setForm(getInitialForm(requestType));
-      setAddressPredictions([]);
-      setAddressStatus("");
       resetCaptcha();
     } catch {
       setError("Could not submit request. Please try again.");
@@ -600,17 +527,32 @@ export default function LocationApplyPage() {
                 onChange={(value) => updateField("website", value)}
               />
 
-              <AddressField
-                inputRef={addressInputRef}
-                label="Google Address"
+              <GoogleAddressAutocomplete
+                label="Address"
                 placeholder="Start typing and select the business address"
                 value={form.address}
-                onChange={handleAddressChange}
-                predictions={addressPredictions}
-                onSelectPrediction={selectAddressPrediction}
-                loading={addressLoading}
+                address={form.address}
+                city={form.city}
+                state={form.state}
+                zip_code={form.zip_code}
+                neighborhood={form.neighborhood}
+                latitude={form.latitude}
+                longitude={form.longitude}
+                google_place_id={form.google_place_id}
+                formatted_address={form.formatted_address}
+                onAddressChange={(value) => updateField("address", value)}
+                onAddressSelect={(selected: GoogleAddressFields) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    ...selected,
+                  }))
+                }
+                inputClassName="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
+                labelClassName="text-xs font-black uppercase tracking-[0.2em] text-white/40"
+                statusClassName="mt-2 text-xs font-semibold text-white/35"
+                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0d0d0d] shadow-2xl shadow-black/60"
+                predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
                 required
-                status={addressStatus}
               />
 
               <div className="grid gap-4 sm:grid-cols-3">
@@ -751,81 +693,6 @@ function Field({
         className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
       />
     </label>
-  );
-}
-
-function AddressField({
-  inputRef,
-  label,
-  placeholder,
-  value,
-  onChange,
-  required,
-  predictions,
-  onSelectPrediction,
-  loading,
-  status,
-}: {
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  label: string;
-  placeholder: string;
-  value: string;
-  onChange: (value: string) => void;
-  required?: boolean;
-  predictions: AddressPrediction[];
-  onSelectPrediction: (prediction: AddressPrediction) => void;
-  loading: boolean;
-  status: string;
-}) {
-  return (
-    <div className="relative">
-      <label className="block">
-        <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-          {label}
-          {required ? <span className="text-[#e1062a]"> *</span> : null}
-        </span>
-
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          autoComplete="off"
-          className="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
-        />
-      </label>
-
-      {predictions.length > 0 && (
-        <div className="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0d0d0d] shadow-2xl shadow-black/60">
-          {predictions.map((prediction) => (
-            <button
-              key={prediction.place_id}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onSelectPrediction(prediction);
-              }}
-              className="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
-            >
-              {prediction.description}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <p className="mt-2 text-xs font-semibold text-white/35">
-        {loading
-          ? "Searching Google addresses..."
-          : "Start typing, then select an address from the list."}
-      </p>
-
-      {status && (
-        <p className="mt-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">
-          {status}
-        </p>
-      )}
-    </div>
   );
 }
 

@@ -29,6 +29,13 @@ export async function POST(req: Request) {
     const website = clean(body.website);
     const address = clean(body.address);
     const city = clean(body.city);
+    const state = clean(body.state);
+    const zip_code = clean(body.zip_code);
+    const neighborhood = clean(body.neighborhood);
+    const latitude = clean(body.latitude);
+    const longitude = clean(body.longitude);
+    const google_place_id = clean(body.google_place_id);
+    const formatted_address = clean(body.formatted_address);
     const owner_name = clean(body.owner_name);
     const owner_email = clean(body.owner_email).toLowerCase();
     const owner_phone = clean(body.owner_phone);
@@ -73,6 +80,13 @@ export async function POST(req: Request) {
         website: website || null,
         address: address || null,
         city: city || null,
+        state: state || null,
+        zip_code: zip_code || null,
+        neighborhood: neighborhood || null,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
+        google_place_id: google_place_id || null,
+        formatted_address: formatted_address || null,
         owner_name,
         owner_email,
         owner_phone: owner_phone || null,
@@ -101,6 +115,8 @@ export async function POST(req: Request) {
             <p><strong>Website:</strong> ${website || "N/A"}</p>
             <p><strong>Address:</strong> ${address || "N/A"}</p>
             <p><strong>City:</strong> ${city || "N/A"}</p>
+            <p><strong>State:</strong> ${state || "N/A"}</p>
+            <p><strong>Zip:</strong> ${zip_code || "N/A"}</p>
             <hr />
             <p><strong>Owner / Manager:</strong> ${owner_name}</p>
             <p><strong>Email:</strong> ${owner_email}</p>
@@ -131,9 +147,9 @@ export async function POST(req: Request) {
       message: "Request submitted. We’ll review and follow up shortly.",
       id: data.id,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return Response.json(
-      { error: error.message || "Server error" },
+      { error: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }

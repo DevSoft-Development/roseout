@@ -5,6 +5,9 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getLocationTags } from "@/lib/locationFields";
 import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
 
 type Restaurant = LocationScoreFields & {
   id: string;
@@ -14,6 +17,11 @@ type Restaurant = LocationScoreFields & {
   city: string;
   state: string;
   zip_code: string;
+  neighborhood?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  google_place_id?: string | null;
+  formatted_address?: string | null;
   status: string;
 
   phone?: string | null;
@@ -67,6 +75,11 @@ export default function RestaurantsAdminClient({
       city: restaurant.city,
       state: restaurant.state,
       zip_code: restaurant.zip_code,
+      neighborhood: restaurant.neighborhood ?? "",
+      latitude: restaurant.latitude ?? "",
+      longitude: restaurant.longitude ?? "",
+      google_place_id: restaurant.google_place_id ?? "",
+      formatted_address: restaurant.formatted_address ?? "",
       status: restaurant.status,
       phone: restaurant.phone ?? "",
       website: restaurant.website ?? "",
@@ -104,6 +117,11 @@ export default function RestaurantsAdminClient({
         city: form.city ?? "",
         state: form.state ?? "",
         zip_code: form.zip_code ?? "",
+        neighborhood: form.neighborhood ?? null,
+        latitude: form.latitude === "" || form.latitude === undefined ? null : Number(form.latitude),
+        longitude: form.longitude === "" || form.longitude === undefined ? null : Number(form.longitude),
+        google_place_id: form.google_place_id ?? null,
+        formatted_address: form.formatted_address ?? null,
         status: form.status ?? "pending",
         phone: form.phone ?? null,
         website: form.website ?? null,
@@ -141,6 +159,11 @@ export default function RestaurantsAdminClient({
                 city: form.city ?? r.city,
                 state: form.state ?? r.state,
                 zip_code: form.zip_code ?? r.zip_code,
+                neighborhood: form.neighborhood ?? r.neighborhood,
+                latitude: form.latitude ?? r.latitude,
+                longitude: form.longitude ?? r.longitude,
+                google_place_id: form.google_place_id ?? r.google_place_id,
+                formatted_address: form.formatted_address ?? r.formatted_address,
                 status: form.status ?? r.status,
                 phone: form.phone ?? r.phone,
                 website: form.website ?? r.website,
@@ -336,11 +359,30 @@ export default function RestaurantsAdminClient({
                         onChange={(value) => updateForm("cuisine", value)}
                       />
 
-                      <Input
-                        label="Address"
-                        value={form.address ?? ""}
-                        onChange={(value) => updateForm("address", value)}
-                      />
+                      <div className="md:col-span-2">
+                        <GoogleAddressAutocomplete
+                          label="Address"
+                          value={form.address ?? ""}
+                          address={form.address ?? ""}
+                          city={form.city ?? ""}
+                          state={form.state ?? ""}
+                          zip_code={form.zip_code ?? ""}
+                          neighborhood={form.neighborhood ?? ""}
+                          latitude={form.latitude ?? ""}
+                          longitude={form.longitude ?? ""}
+                          google_place_id={form.google_place_id ?? ""}
+                          formatted_address={form.formatted_address ?? ""}
+                          isAdmin
+                          showCoordinateRepairTools
+                          onAddressChange={(value) => updateForm("address", value)}
+                          onAddressSelect={(selected: GoogleAddressFields) =>
+                            setForm((prev) => ({ ...prev, ...selected }))
+                          }
+                          inputClassName="mt-2 w-full rounded-2xl border border-[#ead8c7] px-4 py-3 text-sm outline-none focus:border-[#b66a3c]"
+                          labelClassName="text-xs font-bold uppercase tracking-[0.18em] text-[#8a7568]"
+                          buttonClassName="mt-3 rounded-full border border-[#ead8c7] bg-[#fff8f1] px-4 py-2 text-xs font-bold text-[#8a4a28] transition hover:bg-[#f4e5d8] disabled:opacity-60"
+                        />
+                      </div>
 
                       <Input
                         label="City"

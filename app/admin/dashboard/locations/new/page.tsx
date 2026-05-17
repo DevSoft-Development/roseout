@@ -2,11 +2,25 @@
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
 
 export default function NewAdminLocationPage() {
   const [locationType, setLocationType] = useState("restaurant");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [addressFields, setAddressFields] = useState<GoogleAddressFields>({
+    address: "",
+    city: "",
+    state: "",
+    zip_code: "",
+    neighborhood: "",
+    latitude: "",
+    longitude: "",
+    google_place_id: "",
+    formatted_address: "",
+  });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,10 +97,67 @@ export default function NewAdminLocationPage() {
             </label>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Input name="address" label="Address" />
-              <Input name="city" label="City" />
-              <Input name="state" label="State" />
-              <Input name="zip_code" label="ZIP" />
+              <div className="md:col-span-2">
+                <GoogleAddressAutocomplete
+                  value={addressFields.address}
+                  address={addressFields.address}
+                  city={addressFields.city}
+                  state={addressFields.state}
+                  zip_code={addressFields.zip_code}
+                  neighborhood={addressFields.neighborhood}
+                  latitude={addressFields.latitude}
+                  longitude={addressFields.longitude}
+                  google_place_id={addressFields.google_place_id}
+                  formatted_address={addressFields.formatted_address}
+                  isAdmin
+                  showCoordinateRepairTools
+                  onAddressChange={(value) =>
+                    setAddressFields((prev) => ({ ...prev, address: value }))
+                  }
+                  onAddressSelect={(selected) =>
+                    setAddressFields((prev) => ({ ...prev, ...selected }))
+                  }
+                  hiddenInputNames={{
+                    address: "address",
+                    latitude: "latitude",
+                    longitude: "longitude",
+                    google_place_id: "google_place_id",
+                    formatted_address: "formatted_address",
+                  }}
+                />
+              </div>
+              <Input
+                name="city"
+                label="City"
+                value={addressFields.city}
+                onChange={(value) =>
+                  setAddressFields((prev) => ({ ...prev, city: value }))
+                }
+              />
+              <Input
+                name="state"
+                label="State"
+                value={addressFields.state}
+                onChange={(value) =>
+                  setAddressFields((prev) => ({ ...prev, state: value }))
+                }
+              />
+              <Input
+                name="zip_code"
+                label="ZIP"
+                value={addressFields.zip_code}
+                onChange={(value) =>
+                  setAddressFields((prev) => ({ ...prev, zip_code: value }))
+                }
+              />
+              <Input
+                name="neighborhood"
+                label="Neighborhood"
+                value={addressFields.neighborhood}
+                onChange={(value) =>
+                  setAddressFields((prev) => ({ ...prev, neighborhood: value }))
+                }
+              />
               <Input name="phone" label="Phone" />
               <Input name="website" label="Website" />
               {locationType === "activity" ? (
@@ -126,12 +197,24 @@ export default function NewAdminLocationPage() {
   );
 }
 
-function Input({ name, label }: { name: string; label: string }) {
+function Input({
+  name,
+  label,
+  value,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  value?: string;
+  onChange?: (value: string) => void;
+}) {
   return (
     <label className="block">
       <span className="text-sm font-black">{label}</span>
       <input
         name={name}
+        value={value}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         className="mt-2 h-12 w-full rounded-2xl border border-black/10 px-4 font-bold outline-none focus:border-rose-500"
         placeholder={label}
       />

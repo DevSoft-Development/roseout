@@ -30,6 +30,11 @@ export async function POST(request: NextRequest) {
         city: body.city || null,
         state: body.state || null,
         zip_code: body.zip_code || null,
+        neighborhood: body.neighborhood || null,
+        latitude: body.latitude === "" || body.latitude === undefined ? null : Number(body.latitude),
+        longitude: body.longitude === "" || body.longitude === undefined ? null : Number(body.longitude),
+        google_place_id: body.google_place_id || null,
+        formatted_address: body.formatted_address || null,
         phone: body.phone || null,
         website: body.website || null,
         booking_url: body.booking_url || body.website || null,
@@ -55,9 +60,9 @@ export async function POST(request: NextRequest) {
       claim_url: data.claim_url,
       qr_code_data_url: data.qr_code_data_url,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error.message || "Could not create activity." },
+      { error: error instanceof Error ? error.message : "Could not create activity." },
       { status: 500 }
     );
   }
