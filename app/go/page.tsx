@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
+import type React from "react";
 import Link from "next/link";
 import {
   campaignCaption,
   campaignImage,
   campaignPlace,
   campaignTitle,
-  loadActiveBioSlug,
-  loadFeaturedLocations,
   loadPublicCampaigns,
-  locationCategory,
-  locationHref,
-  locationImage,
-  locationName,
   type PublicCampaign,
 } from "@/lib/marketing-public";
 
@@ -22,110 +17,172 @@ export const metadata: Metadata = {
   description: "Find the restaurant, activity, date idea, or campaign you saw on TheOutHaven social.",
 };
 
-function CampaignCard({ campaign, featured = false }: { campaign: PublicCampaign; featured?: boolean }) {
-  const slug = campaign.public_slug || "";
+const categoryCards = [
+  { title: "Restaurants", text: "Dinner, brunch, lounges, and save-worthy food finds.", href: "/create?prompt=restaurants" },
+  { title: "Activities", text: "Bowling, museums, games, shows, and more things to do.", href: "/create?prompt=activities" },
+  { title: "Date Ideas", text: "Ready-to-plan combinations for better nights out.", href: "/plan" },
+  { title: "Hidden Gems", text: "Underrated spots and local picks worth opening now.", href: "/create?prompt=hidden%20gems" },
+];
+
+const steps = [
+  ["01", "Find the spot", "Search what you saw or open the latest featured campaign."],
+  ["02", "Plan your outing", "Keep the exact social location and add nearby complements."],
+  ["03", "Enjoy your night", "Use directions, reservation links, and details in one place."],
+];
+
+function buildCampaignPlanHref(campaign: PublicCampaign) {
+  const params = new URLSearchParams({
+    campaignSlug: campaign.public_slug || "",
+    planExact: "true",
+  });
+
+  if (campaign.location_source_id) params.set("locationId", campaign.location_source_id);
+  if (campaign.location_source_type) params.set("sourceTable", campaign.location_source_type);
+
+  return `/create?${params.toString()}`;
+}
+
+function Pill({ children, dark = false }: { children: React.ReactNode; dark?: boolean }) {
   return (
-    <Link href={slug ? `/go/${slug}` : "/go"} className={`group overflow-hidden rounded-[1.75rem] border bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl ${featured ? "border-rose-200" : "border-black/10"}`}>
-      <div className={`relative ${featured ? "h-64" : "h-44"} bg-[#eadfd8]`}>
+    <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${dark ? "bg-[#1b1210] text-white" : "bg-white/90 text-[#1b1210]"}`}>
+      {children}
+    </span>
+  );
+}
+
+function CampaignCard({ campaign }: { campaign: PublicCampaign }) {
+  const slug = campaign.public_slug || "";
+  const place = campaignPlace(campaign);
+
+  return (
+    <article className="group flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-2xl">
+      <Link href={slug ? `/go/${slug}` : "/go"} className="relative block h-56 overflow-hidden bg-[#eadfd8]">
         <img src={campaignImage(campaign)} alt={campaign.location_name || campaignTitle(campaign)} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-        <span className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#1b1210]">
-          {campaign.caption_category || campaign.location_category || "Featured"}
-        </span>
-        {featured && <span className="absolute right-4 top-4 rounded-full bg-rose-600 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white">Active bio link</span>}
-        <div className="absolute bottom-4 left-4 right-4 text-white">
-          <h2 className={`${featured ? "text-3xl" : "text-xl"} font-black leading-tight`}>{campaignTitle(campaign)}</h2>
-          <p className="mt-1 text-sm font-bold text-white/75">{[campaign.location_name, campaignPlace(campaign)].filter(Boolean).join(" • ") || "Tap to plan"}</p>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+        <div className="absolute left-4 top-4 flex flex-wrap gap-2">
+          <Pill>{campaign.caption_category || campaign.location_category || "Featured"}</Pill>
+          {campaign.source_platform ? <Pill dark>{campaign.source_platform}</Pill> : null}
+        </div>
+      </Link>
+
+      <div className="flex flex-1 flex-col p-5">
+        <h3 className="text-xl font-black leading-tight tracking-[-0.03em] text-[#1b1210]">{campaignTitle(campaign)}</h3>
+        <p className="mt-2 text-sm font-black uppercase tracking-[0.14em] text-rose-700">{[campaign.location_city, campaign.location_state].filter(Boolean).join(", ") || place || "TheOutHaven pick"}</p>
+        <p className="mt-3 line-clamp-3 text-sm font-semibold leading-6 text-black/55">{campaign.location_description || campaignCaption(campaign)}</p>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <Link href={buildCampaignPlanHref(campaign)} className="rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-700 px-4 py-3 text-center text-xs font-black text-white shadow-lg shadow-rose-950/15">Plan this outing</Link>
+          <Link href={slug ? `/go/${slug}` : "/go"} className="rounded-full bg-[#1b1210] px-4 py-3 text-center text-xs font-black text-white">View campaign</Link>
         </div>
       </div>
-      <div className="p-4">
-        <p className="line-clamp-3 text-sm font-semibold leading-6 text-black/55">{campaign.location_description || campaignCaption(campaign)}</p>
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <span className="rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white">Open campaign</span>
-          <span className="text-xs font-black uppercase tracking-wide text-rose-700">Plan this →</span>
-        </div>
-      </div>
-    </Link>
+    </article>
   );
 }
 
 export default async function GoPage() {
-  const [campaigns, activeSlug, locations] = await Promise.all([
-    loadPublicCampaigns(12),
-    loadActiveBioSlug(),
-    loadFeaturedLocations(8),
-  ]);
-
-  const activeCampaign = campaigns.find((campaign) => campaign.public_slug === activeSlug) || null;
-  const latestCampaigns = activeCampaign ? campaigns.filter((campaign) => campaign.id !== activeCampaign.id) : campaigns;
+  const campaigns = await loadPublicCampaigns(12);
 
   return (
     <main className="min-h-screen bg-[#fff8f3] text-[#1b1210]">
-      <section className="mx-auto max-w-3xl px-4 pb-12 pt-5">
-        <div className="relative overflow-hidden rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_32%),linear-gradient(135deg,#1b1210,#090706_65%,#3a1715)] p-5 text-white shadow-2xl">
-          <div className="absolute right-[-70px] top-[-70px] h-52 w-52 rounded-full bg-rose-500/30 blur-3xl" />
-          <div className="relative z-10">
+      <section className="relative overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(244,63,94,0.28),transparent_32%),linear-gradient(135deg,#1b1210_0%,#050505_62%,#3a1715_100%)] px-4 pb-14 pt-24 text-white sm:px-6 lg:pt-32">
+        <div className="absolute right-[-8rem] top-10 h-72 w-72 rounded-full bg-rose-500/25 blur-3xl" />
+        <div className="absolute bottom-[-9rem] left-[-8rem] h-72 w-72 rounded-full bg-red-700/20 blur-3xl" />
+        <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
+          <div>
             <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-200">TheOutHaven social</p>
-            <h1 className="mt-3 text-4xl font-black tracking-tight">What did you see on social?</h1>
-            <p className="mt-3 text-sm font-semibold leading-6 text-white/65">Search the spot, open the latest campaign, or jump into a date idea without going back to the homepage.</p>
-            <form action="/create" className="mt-5 rounded-full border border-white/15 bg-white p-2 shadow-xl">
-              <div className="flex items-center gap-2">
-                <input name="q" placeholder="Search the spot you saw" className="min-w-0 flex-1 rounded-full px-4 py-3 text-sm font-bold text-[#1b1210] outline-none" />
-                <button className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white">Search</button>
+            <h1 className="mt-5 max-w-4xl text-5xl font-black leading-[0.92] tracking-[-0.06em] sm:text-7xl lg:text-8xl">
+              What did you see on <span className="text-rose-400">social?</span>
+            </h1>
+            <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-white/68 sm:text-lg">Search the spot, open the latest campaign, or jump into a date idea without going back to the homepage.</p>
+            <form action="/create" className="mt-7 max-w-2xl rounded-[1.35rem] border border-white/15 bg-white p-2 shadow-2xl shadow-black/30 sm:rounded-full">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input name="prompt" placeholder="Search the spot you saw" className="min-w-0 flex-1 rounded-full px-5 py-4 text-sm font-bold text-[#1b1210] outline-none" />
+                <button className="rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-700 px-7 py-4 text-sm font-black text-white shadow-lg shadow-rose-950/20">Search</button>
               </div>
             </form>
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mt-5 flex flex-wrap gap-3">
               {[
-                ["Restaurants", "/create?q=restaurants"],
-                ["Activities", "/create?q=activities"],
+                ["Restaurants", "/create?prompt=restaurants"],
+                ["Activities", "/create?prompt=activities"],
                 ["Date Ideas", "/plan"],
               ].map(([label, href]) => (
-                <Link key={label} href={href} className="rounded-2xl border border-white/10 bg-white/[0.08] px-3 py-3 text-center text-xs font-black text-white/80">{label}</Link>
+                <Link key={label} href={href} className="rounded-full border border-white/15 bg-white/[0.08] px-5 py-3 text-sm font-black text-white/82 backdrop-blur transition hover:bg-white/15">{label}</Link>
               ))}
             </div>
           </div>
-        </div>
 
-        {activeCampaign && (
-          <section className="mt-5">
-            <CampaignCard campaign={activeCampaign} featured />
-          </section>
-        )}
-
-        <section className="mt-8">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-700">Latest featured posts</p>
-              <h2 className="mt-1 text-2xl font-black">Campaigns from social</h2>
-            </div>
-            <Link href="/plan" className="rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white">Plan your date</Link>
-          </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {latestCampaigns.length ? latestCampaigns.map((campaign) => <CampaignCard key={campaign.id} campaign={campaign} />) : (
-              <div className="rounded-[1.75rem] border border-black/10 bg-white p-6 text-center sm:col-span-2">
-                <p className="text-lg font-black">No public campaigns yet</p>
-                <p className="mt-1 text-sm font-semibold text-black/50">Search for a restaurant, activity, or date idea above.</p>
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.08] p-3 shadow-2xl shadow-black/30 backdrop-blur-xl">
+            <div className="rounded-[1.6rem] bg-[#fff8f3] p-4 text-[#1b1210]">
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-700">Latest Featured Posts</p>
+              <div className="mt-4 grid gap-3">
+                {campaigns.slice(0, 3).map((campaign) => (
+                  <Link key={campaign.id} href={campaign.public_slug ? `/go/${campaign.public_slug}` : "/go"} className="grid grid-cols-[88px_1fr] gap-3 rounded-[1.25rem] bg-white p-3 shadow-sm">
+                    <img src={campaignImage(campaign)} alt={campaignTitle(campaign)} className="h-24 w-[88px] rounded-[1rem] object-cover" />
+                    <div className="min-w-0 py-1">
+                      <p className="truncate text-base font-black">{campaignTitle(campaign)}</p>
+                      <p className="mt-1 truncate text-xs font-bold text-black/45">{[campaign.location_name, campaignPlace(campaign)].filter(Boolean).join(" • ")}</p>
+                      <span className="mt-3 inline-flex rounded-full bg-[#1b1210] px-3 py-1.5 text-[10px] font-black text-white">View campaign</span>
+                    </div>
+                  </Link>
+                ))}
               </div>
-            )}
+            </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="mt-8">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-700">Campaign/location cards</p>
-          <h2 className="mt-1 text-2xl font-black">Featured locations</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {locations.map((location) => (
-              <Link key={location.id} href={locationHref(location)} className="grid grid-cols-[96px_1fr] gap-3 rounded-[1.5rem] border border-black/10 bg-white p-3 shadow-sm">
-                <img src={locationImage(location)} alt={locationName(location)} className="h-24 w-24 rounded-[1.1rem] object-cover" />
-                <div className="min-w-0 py-1">
-                  <p className="truncate text-base font-black">{locationName(location)}</p>
-                  <p className="mt-1 text-xs font-black uppercase tracking-wide text-rose-700">{locationCategory(location)}</p>
-                  <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-black/45">{[location.city, location.state].filter(Boolean).join(", ") || location.description || "Featured on TheOutHaven"}</p>
-                </div>
-              </Link>
-            ))}
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-700">Latest Featured Posts</p>
+            <h2 className="mt-2 text-4xl font-black tracking-[-0.05em] sm:text-5xl">Campaigns from social</h2>
           </div>
-        </section>
+          <Link href="/go" className="w-fit rounded-full bg-[#1b1210] px-5 py-3 text-sm font-black text-white">View all campaigns</Link>
+        </div>
+        <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {campaigns.length ? campaigns.map((campaign) => <CampaignCard key={campaign.id} campaign={campaign} />) : (
+            <div className="rounded-[1.75rem] border border-black/10 bg-white p-8 text-center md:col-span-2 xl:col-span-3">
+              <p className="text-lg font-black">No public campaigns yet</p>
+              <p className="mt-1 text-sm font-semibold text-black/50">Search for a restaurant, activity, or date idea above.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6">
+        <div className="overflow-hidden rounded-[2rem] bg-[radial-gradient(circle_at_top_right,rgba(244,63,94,0.25),transparent_32%),linear-gradient(135deg,#1b1210,#050505_70%,#3a1715)] p-6 text-white shadow-2xl sm:p-9">
+          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <h2 className="text-3xl font-black tracking-[-0.04em]">Can’t find what you saw?</h2>
+              <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/62">Search any restaurant, activity, or location to start planning your perfect outing.</p>
+            </div>
+            <Link href="/create" className="rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-700 px-7 py-4 text-center text-sm font-black text-white shadow-lg shadow-rose-950/20">Search now</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-14 sm:px-6">
+        <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-700">Explore by category</p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {categoryCards.map((card) => (
+            <Link key={card.title} href={card.href} className="rounded-[1.75rem] border border-black/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
+              <h3 className="text-2xl font-black tracking-[-0.04em]">{card.title}</h3>
+              <p className="mt-3 text-sm font-semibold leading-6 text-black/55">{card.text}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-20 sm:px-6">
+        <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-700">How it works</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {steps.map(([number, title, text]) => (
+            <div key={title} className="rounded-[1.75rem] border border-black/10 bg-white p-6 shadow-sm">
+              <span className="text-sm font-black text-rose-700">{number}</span>
+              <h3 className="mt-3 text-2xl font-black tracking-[-0.04em]">{title}</h3>
+              <p className="mt-3 text-sm font-semibold leading-6 text-black/55">{text}</p>
+            </div>
+          ))}
+        </div>
       </section>
     </main>
   );

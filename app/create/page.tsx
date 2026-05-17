@@ -115,6 +115,28 @@ type ApiResponse = {
   activities?: ActivityCard[];
 };
 
+type ExactCampaignLocation = {
+  id: string;
+  sourceTable: string;
+  sourceId: string;
+  name: string;
+  type: "restaurant" | "activity";
+  imageUrl?: string | null;
+  city?: string | null;
+  state?: string | null;
+  address?: string | null;
+  description?: string | null;
+  publicUrl?: string | null;
+  primaryCategory?: string | null;
+  locationType?: string | null;
+  [key: string]: unknown;
+};
+
+type CampaignLocationResponse = {
+  location?: ExactCampaignLocation;
+  error?: string;
+};
+
 type AddOnTarget = "restaurant" | "activity";
 type ResultSectionKind = "restaurants" | "activities";
 
@@ -225,6 +247,7 @@ export default function CreatePage() {
   const [activeAddOnTarget, setActiveAddOnTarget] =
     useState<AddOnTarget | null>(null);
   const [error, setError] = useState("");
+  const [exactCampaignLoading, setExactCampaignLoading] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<RestaurantCard | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<ActivityCard | null>(
@@ -277,9 +300,16 @@ export default function CreatePage() {
 
     if (initialPromptHandled.current) return;
 
-    const prompt = new URLSearchParams(window.location.search)
-      .get("prompt")
-      ?.trim();
+    const params = new URLSearchParams(window.location.search);
+    const campaignSlug = params.get("campaignSlug")?.trim();
+    const planExact = params.get("planExact") === "true";
+    const prompt = params.get("prompt")?.trim();
+
+    if (planExact && campaignSlug) {
+      initialPromptHandled.current = true;
+      loadExactCampaignPlan(params);
+      return;
+    }
 
     if (!prompt) return;
 
@@ -361,6 +391,107 @@ export default function CreatePage() {
       },
     );
   }, [latestAssistant]);
+
+
+  function toExactPlanCard(location: ExactCampaignLocation): RestaurantCard | ActivityCard {
+    const shared = {
+      ...location,
+      id: location.sourceId || location.id,
+      name: location.name,
+      address: location.address || null,
+      city: location.city || null,
+      state: location.state || null,
+      description: location.description || null,
+      primary_category: location.primaryCategory || null,
+      main_image: location.imageUrl || null,
+      image_url: location.imageUrl || null,
+      detail_location_type: location.type === "activity" ? "activities" : "restaurants",
+    };
+
+    if (location.type === "activity") {
+      return {
+        ...shared,
+        activity_name: location.name,
+        activity_type: location.primaryCategory || null,
+      } as ActivityCard;
+    }
+
+    return {
+      ...shared,
+      restaurant_name: location.name,
+      cuisine_type: location.primaryCategory || null,
+    } as RestaurantCard;
+  }
+
+  async function loadExactCampaignPlan(params: URLSearchParams) {
+    const campaignSlug = params.get("campaignSlug") || "";
+    const nearby = params.get("nearby") === "true";
+    if (!campaignSlug) return;
+
+    setExactCampaignLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/marketing/campaign-location?${params.toString()}`);
+      const data: CampaignLocationResponse = await response.json();
+
+      if (!response.ok || !data.location) {
+        throw new Error(data.error || "The campaign location could not be loaded.");
+      }
+
+      const card = toExactPlanCard(data.location);
+      const isActivity = data.location.type === "activity";
+      const restaurant = isActivity ? null : (card as RestaurantCard);
+      const activity = isActivity ? (card as ActivityCard) : null;
+      const resultOrder: ResultSectionKind[] = isActivity ? ["activities", "restaurants"] : ["restaurants", "activities"];
+
+      setSelectedRestaurant(restaurant);
+      setSelectedActivity(activity);
+      setMessages([
+        {
+          role: "assistant",
+          content: "This campaign location is locked in as your starting pick. TheOutHaven will only add nearby complementary spots around it.",
+          restaurants: restaurant ? [restaurant] : [],
+          activities: activity ? [activity] : [],
+          distancePreference: "miles",
+          resultOrder,
+        },
+      ]);
+      setShowPlanSummary(true);
+
+      const plan = {
+        restaurant,
+        activity,
+        locations: [restaurant, activity].filter(Boolean),
+        distancePreference: "miles",
+        campaignSlug,
+        planExact: true,
+        savedAt: Date.now(),
+      };
+
+      localStorage.setItem("theouthaven_plan", JSON.stringify(plan));
+
+      if (nearby) {
+        const nearbyPrompt = `near ${data.location.name}`;
+        window.setTimeout(() => submitSearch(nearbyPrompt, { addOnTarget: isActivity ? "restaurant" : "activity", preservePlan: true }), 0);
+        return;
+      }
+
+      const planParams = new URLSearchParams({
+        campaignSlug,
+        planExact: "true",
+        locationId: data.location.sourceId || data.location.id,
+        sourceTable: data.location.sourceTable,
+      });
+      if (restaurant?.id) planParams.set("restaurantId", restaurant.id);
+      if (activity?.id) planParams.set("activityId", activity.id);
+      router.replace(`/plan?${planParams.toString()}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "The campaign location could not be loaded.");
+    } finally {
+      setExactCampaignLoading(false);
+    }
+  }
 
   function getSavedLocation(): UserLocation | null {
     if (typeof window === "undefined") return null;
@@ -662,11 +793,14 @@ export default function CreatePage() {
   function savePlan() {
     if (typeof window === "undefined") return;
 
+    const currentParams = new URLSearchParams(window.location.search);
     const plan = {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
       locations: [selectedRestaurant, selectedActivity].filter(Boolean),
       distancePreference: latestDistancePreference,
+      campaignSlug: currentParams.get("campaignSlug") || undefined,
+      planExact: currentParams.get("planExact") === "true" || undefined,
       savedAt: Date.now(),
     };
 
@@ -682,6 +816,14 @@ export default function CreatePage() {
       params.set("activityId", String(selectedActivity.id));
     }
 
+    const campaignSlug = currentParams.get("campaignSlug");
+    if (campaignSlug) params.set("campaignSlug", campaignSlug);
+    if (currentParams.get("planExact") === "true") params.set("planExact", "true");
+    const locationId = currentParams.get("locationId");
+    if (locationId) params.set("locationId", locationId);
+    const sourceTable = currentParams.get("sourceTable");
+    if (sourceTable) params.set("sourceTable", sourceTable);
+
     router.push(`/plan?${params.toString()}`);
   }
 
@@ -691,7 +833,7 @@ export default function CreatePage() {
         <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5 overflow-hidden lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div className="flex min-w-0 max-w-full flex-col justify-center">
             <div className="mb-3 inline-flex w-fit max-w-full rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
-              AI Outing Planner
+              {exactCampaignLoading ? "Loading Campaign Pick" : "AI Outing Planner"}
             </div>
 
             <h1 className="max-w-full break-words text-[2.45rem] font-black leading-[0.92] tracking-[-0.055em] text-white xs:text-4xl sm:text-6xl lg:text-7xl">
@@ -1580,7 +1722,7 @@ function StartPanel() {
             How it works
           </p>
           <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
-            Plan your outing in one serach.
+            Plan your outing in one search.
           </h2>
         </div>
       </div>

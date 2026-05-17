@@ -64,7 +64,29 @@ type SavedPlan = {
   activity?: PlanLocation | null;
   locations?: PlanLocation[];
   distancePreference?: "walking" | "miles";
+  campaignSlug?: string;
+  planExact?: boolean;
   savedAt?: number;
+};
+
+type ExactCampaignLocation = {
+  id: string;
+  sourceTable: string;
+  sourceId: string;
+  name: string;
+  type: "restaurant" | "activity";
+  imageUrl?: string | null;
+  city?: string | null;
+  state?: string | null;
+  address?: string | null;
+  description?: string | null;
+  primaryCategory?: string | null;
+  [key: string]: unknown;
+};
+
+type CampaignLocationResponse = {
+  location?: ExactCampaignLocation;
+  error?: string;
 };
 
 const PLAN_KEY = "theouthaven_plan";
@@ -82,23 +104,98 @@ function PlanPageInner() {
   const searchParams = useSearchParams();
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [loadingExactCampaign, setLoadingExactCampaign] = useState(false);
 
-  const restaurantId = searchParams.get("restaurantId");
-  const activityId = searchParams.get("activityId");
+
+  function toPlanLocation(location: ExactCampaignLocation): PlanLocation {
+    return {
+      ...location,
+      id: location.sourceId || location.id,
+      name: location.name,
+      restaurant_name: location.type === "restaurant" ? location.name : null,
+      activity_name: location.type === "activity" ? location.name : null,
+      address: location.address || null,
+      city: location.city || null,
+      state: location.state || null,
+      description: location.description || null,
+      primary_category: location.primaryCategory || null,
+      cuisine_type: location.type === "restaurant" ? location.primaryCategory || null : null,
+      activity_type: location.type === "activity" ? location.primaryCategory || null : null,
+      detail_location_type: location.type === "activity" ? "activities" : "restaurants",
+      main_image: location.imageUrl || null,
+      image_url: location.imageUrl || null,
+    } as PlanLocation;
+  }
+
+  async function loadExactCampaignPlan(campaignSlug: string) {
+    setLoadingExactCampaign(true);
+
+    try {
+      const params = new URLSearchParams({
+        campaignSlug,
+        planExact: "true",
+      });
+      const locationId = searchParams.get("locationId");
+      if (locationId) params.set("locationId", locationId);
+      const sourceTable = searchParams.get("sourceTable");
+      if (sourceTable) params.set("sourceTable", sourceTable);
+
+      const response = await fetch(`/api/marketing/campaign-location?${params.toString()}`);
+      const data: CampaignLocationResponse = await response.json();
+
+      if (!response.ok || !data.location) {
+        throw new Error(data.error || "Campaign location not found.");
+      }
+
+      const card = toPlanLocation(data.location);
+      const nextPlan: SavedPlan = {
+        restaurant: data.location.type === "restaurant" ? card : null,
+        activity: data.location.type === "activity" ? card : null,
+        locations: [card],
+        distancePreference: "miles",
+        campaignSlug,
+        planExact: true,
+        savedAt: Date.now(),
+      };
+
+      localStorage.setItem(PLAN_KEY, JSON.stringify(nextPlan));
+      setPlan(nextPlan);
+    } catch {
+      setPlan(null);
+    } finally {
+      setLoadingExactCampaign(false);
+    }
+  }
 
   useEffect(() => {
     document.title = "Your TheOutHaven Plan | TheOutHaven";
-    setMounted(true);
 
-    try {
-      const saved = localStorage.getItem(PLAN_KEY);
-      if (saved) {
-        setPlan(JSON.parse(saved));
+    window.setTimeout(() => {
+      setMounted(true);
+
+      const campaignSlug = searchParams.get("campaignSlug");
+      const planExact = searchParams.get("planExact") === "true";
+
+      try {
+        const saved = localStorage.getItem(PLAN_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as SavedPlan;
+          const savedMatchesCampaign = !campaignSlug || parsed.campaignSlug === campaignSlug || parsed.planExact;
+          if (savedMatchesCampaign && (parsed.restaurant || parsed.activity)) {
+            setPlan(parsed);
+            return;
+          }
+        }
+      } catch {
+        setPlan(null);
       }
-    } catch {
-      setPlan(null);
-    }
-  }, []);
+
+      if (planExact && campaignSlug) {
+        loadExactCampaignPlan(campaignSlug);
+      }
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const restaurant = plan?.restaurant || null;
   const activity = plan?.activity || null;
@@ -180,7 +277,7 @@ function PlanPageInner() {
         className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8"
       >
         {!hasPlan ? (
-          <EmptyPlan />
+          loadingExactCampaign ? <PlanLoading /> : <EmptyPlan />
         ) : (
           <div className="grid gap-5 lg:grid-cols-[0.82fr_1.18fr]">
             <aside className="h-fit rounded-[1.2rem] border border-white/10 bg-[#080808] p-4 shadow-2xl shadow-black/40 sm:p-5">

@@ -214,7 +214,7 @@ function placeLine(city: string, state: string) {
   return [city, state].filter(Boolean).join(", ");
 }
 
-function selectedTemplate(category: CaptionCategory, hook: string, name: string, place: string, linkInBioCta: string, hasLocation: boolean) {
+function selectedTemplate(category: CaptionCategory, hook: string, name: string, place: string, linkInBioCta: string) {
   const templateNumber = stableIndex(`${category}:${hook}:${name}`, 6);
   const locationLine = place ? `${name} in ${place}` : name;
 
@@ -251,7 +251,7 @@ export function buildMarketingSocialPackage(input: CaptionTemplateInput): Market
   const place = placeLine(city, state);
   const locationLine = place ? `${locationName} in ${place}` : locationName;
   const categoryLabel = category.replace(/\b\w/g, (letter) => letter.toUpperCase());
-  const baseCaption = selectedTemplate(category, hook, locationName, place, linkInBioCta, hasLocation);
+  const baseCaption = selectedTemplate(category, hook, locationName, place, linkInBioCta);
   const instagramCaption = stripRawUrls(hasLocation
     ? `POV: date night at ${locationName} hits different ✨
 
@@ -280,12 +280,12 @@ ${linkInBioCta}
 ${hashtagGroups[category].slice(0, 3).join(" ")}`);
   const youtubeTitle = (hasLocation ? `Date Night at ${locationName}` : `${categoryLabel} from TheOutHaven`).slice(0, 90);
   const youtubeDescription = hasLocation
-    ? `Plan this date on TheOutHaven: ${fullUrl}
+    ? `Plan this outing on TheOutHaven: ${fullUrl}
 
 ${locationLine} is ready for your next night out.
 
 ${hashtagGroups[category].join(" ")}`
-    : `Plan your next date on TheOutHaven: ${fullUrl}
+    : `Plan your next outing on TheOutHaven: ${fullUrl}
 
 ${hook}.
 
@@ -296,7 +296,7 @@ ${hashtagGroups[category].join(" ")}`;
 
 ${hook}.
 
-See the full listing and plan your visit: ${fullUrl}`
+See the full listing and plan your outing: ${fullUrl}`
     : `Looking for ${category}? TheOutHaven helps you find a plan that fits the vibe.
 
 ${hook}.
