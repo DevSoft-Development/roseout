@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { ACTIVE_RESERVATION_STATUSES, rangesOverlap } from "@/lib/reservationOperations";
 import {
   getOperatingHoursForDate,
   timeWindowToSlots,
@@ -92,24 +93,48 @@ export async function GET(req: NextRequest) {
 
   const { data: reservations } = await supabase
     .from("location_reservations")
-    .select("id, reservation_time, status")
+    .select("id, bookable_item_id, reservation_time, duration_minutes, turn_time_minutes, status")
     .eq("location_id", locationId)
     .eq("location_type", locationType)
     .eq("reservation_date", date)
-    .in("status", ["pending", "confirmed", "arrived"]);
+    .in("status", ACTIVE_RESERVATION_STATUSES);
+
+  const { data: layoutItems } = await supabase
+    .from("layout_items")
+    .select("id, capacity, status, is_active")
+    .eq("location_id", locationId)
+    .eq("source_table", locationType)
+    .eq("is_active", true)
+    .not("status", "in", "(blocked,maintenance)");
 
   const structuredHours = getOperatingHoursForDate(location || {}, date);
   const slots = structuredHours
     ? timeWindowToSlots(structuredHours, durationMinutes)
     : buildSlots(durationMinutes);
 
+  const usableLayoutItems = layoutItems || [];
+
   const availableSlots = slots.filter((slot) => {
+    if (usableLayoutItems.length) {
+      return usableLayoutItems.some((item) => {
+        return !(reservations || []).some((reservation) => {
+          if (reservation.bookable_item_id !== item.id) return false;
+          return rangesOverlap(
+            slot,
+            durationMinutes,
+            String(reservation.reservation_time || "00:00"),
+            Number(reservation.duration_minutes || reservation.turn_time_minutes || durationMinutes),
+          );
+        });
+      });
+    }
+
     return !(reservations || []).some((reservation) =>
       overlaps(
         slot,
         durationMinutes,
         String(reservation.reservation_time || "00:00"),
-        durationMinutes
+        Number(reservation.duration_minutes || reservation.turn_time_minutes || durationMinutes)
       )
     );
   });

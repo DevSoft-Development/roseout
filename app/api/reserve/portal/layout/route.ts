@@ -2,20 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { getLocationName } from "@/lib/locationName";
+import {
+  ACTIVE_RESERVATION_STATUSES,
+  LAYOUT_ITEM_STATUSES,
+  cleanString,
+  logStaffActivity,
+  normalizeReservationType,
+  rangesOverlap,
+  sendReservationSms,
+} from "@/lib/reservationOperations";
 
-const ACTIVE_STATUSES = ["pending", "confirmed", "arrived", "seated"];
-
-function cleanString(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeLocationType(value: unknown) {
-  const type = cleanString(value).toLowerCase();
-
-  if (type === "activity" || type === "activities") return "activity";
-
-  return "restaurant";
-}
+const LEGACY_TABLE = "location_bookable_items";
+const NEUTRAL_TABLE = "layout_items";
 
 function dateKey(value: Date) {
   return value.toISOString().split("T")[0];
@@ -25,93 +23,289 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiRole([
-    "superuser",
-    "admin",
-    "editor",
-    "viewer",
-  ]);
+function isMissingTable(error: any) {
+  return error?.code === "42P01" || String(error?.message || "").includes("does not exist");
+}
 
+function normalizeStatus(value: unknown) {
+  const status = cleanString(value).toLowerCase();
+  return LAYOUT_ITEM_STATUSES.includes(status as any) ? status : "available";
+}
+
+function toLegacyItem(item: any) {
+  return {
+    id: item.id,
+    location_id: item.location_id,
+    location_type: item.location_type || item.source_table || "restaurant",
+    item_name: item.item_name,
+    item_type: item.item_type,
+    capacity_min: Number(item.capacity_min || item.capacity || 1),
+    capacity_max: Number(item.capacity_max || item.capacity || 4),
+    max_concurrent: Number(item.max_concurrent || 1),
+    auto_confirm: item.auto_confirm !== false,
+    is_active: item.is_active !== false,
+    layout_x: Number(item.layout_x || item.x_position || 0),
+    layout_y: Number(item.layout_y || item.y_position || 0),
+    layout_width: Number(item.layout_width || item.width || 1),
+    layout_height: Number(item.layout_height || item.height || 1),
+    layout_zone: item.layout_zone || item.item_type || "Main Area",
+    rotation: Number(item.rotation || 0),
+    status: item.status || "available",
+    source_table: item.source_table || item.location_type || "restaurant",
+    source_id: item.source_id || null,
+    sort_order: Number(item.sort_order || 0),
+  };
+}
+
+async function selectLayoutItems(locationId: string, locationType: string) {
+  let query = supabaseAdmin
+    .from(NEUTRAL_TABLE)
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("y_position", { ascending: true })
+    .order("x_position", { ascending: true });
+
+  if (locationId) {
+    query = query.eq("location_id", locationId).eq("source_table", locationType);
+  }
+
+  const result = await query;
+
+  if (!result.error) return { data: (result.data || []).map(toLegacyItem), source: NEUTRAL_TABLE };
+  if (!isMissingTable(result.error)) return { error: result.error, data: [], source: NEUTRAL_TABLE };
+
+  let legacyQuery = supabaseAdmin
+    .from(LEGACY_TABLE)
+    .select("*")
+    .order("layout_zone", { ascending: true })
+    .order("layout_y", { ascending: true })
+    .order("layout_x", { ascending: true })
+    .order("item_name", { ascending: true });
+
+  if (locationId) {
+    legacyQuery = legacyQuery.eq("location_id", locationId).eq("location_type", locationType);
+  }
+
+  const legacy = await legacyQuery;
+  return {
+    data: (legacy.data || []).map(toLegacyItem),
+    error: legacy.error,
+    source: LEGACY_TABLE,
+  };
+}
+
+async function updateLayoutItem(id: string, payload: any) {
+  const neutral = await supabaseAdmin
+    .from(NEUTRAL_TABLE)
+    .update({
+      item_type: payload.item_type,
+      item_name: payload.item_name,
+      item_number: payload.item_number,
+      capacity: payload.capacity,
+      x_position: payload.layout_x,
+      y_position: payload.layout_y,
+      width: payload.layout_width,
+      height: payload.layout_height,
+      rotation: payload.rotation,
+      status: payload.status,
+      is_active: payload.is_active,
+      sort_order: payload.sort_order,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (!neutral.error) return toLegacyItem(neutral.data);
+  if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
+
+  const legacy = await supabaseAdmin
+    .from(LEGACY_TABLE)
+    .update({
+      item_type: payload.item_type,
+      item_name: payload.item_name,
+      capacity_min: payload.capacity,
+      capacity_max: payload.capacity,
+      layout_x: payload.layout_x,
+      layout_y: payload.layout_y,
+      layout_width: payload.layout_width,
+      layout_height: payload.layout_height,
+      is_active: payload.is_active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (legacy.error) throw new Error(legacy.error.message);
+  return toLegacyItem(legacy.data);
+}
+
+async function createLayoutItem(body: any) {
+  const locationType = normalizeReservationType(body.location_type || body.source_table);
+  const payload = {
+    location_id: cleanString(body.location_id),
+    source_table: locationType,
+    source_id: cleanString(body.source_id) || null,
+    item_type: cleanString(body.item_type) || "table",
+    item_name: cleanString(body.item_name) || "New layout item",
+    item_number: cleanString(body.item_number) || null,
+    capacity: Math.max(1, Number(body.capacity || 2)),
+    x_position: Number(body.layout_x || body.x_position || 0),
+    y_position: Number(body.layout_y || body.y_position || 0),
+    width: Math.max(1, Number(body.layout_width || body.width || 1)),
+    height: Math.max(1, Number(body.layout_height || body.height || 1)),
+    rotation: Number(body.rotation || 0),
+    status: normalizeStatus(body.status),
+    is_active: body.is_active !== false,
+    sort_order: Number(body.sort_order || 0),
+  };
+
+  const neutral = await supabaseAdmin.from(NEUTRAL_TABLE).insert(payload).select("*").single();
+  if (!neutral.error) return toLegacyItem(neutral.data);
+  if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
+
+  const legacy = await supabaseAdmin
+    .from(LEGACY_TABLE)
+    .insert({
+      location_id: payload.location_id,
+      location_type: locationType,
+      item_type: payload.item_type,
+      item_name: payload.item_name,
+      capacity_min: payload.capacity,
+      capacity_max: payload.capacity,
+      max_concurrent: 1,
+      auto_confirm: true,
+      is_active: payload.is_active,
+      layout_x: payload.x_position,
+      layout_y: payload.y_position,
+      layout_width: payload.width,
+      layout_height: payload.height,
+      layout_zone: payload.item_type,
+    })
+    .select("*")
+    .single();
+
+  if (legacy.error) throw new Error(legacy.error.message);
+  return toLegacyItem(legacy.data);
+}
+
+async function deleteLayoutItem(id: string) {
+  const neutral = await supabaseAdmin.from(NEUTRAL_TABLE).delete().eq("id", id);
+  if (!neutral.error) return;
+  if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
+
+  const legacy = await supabaseAdmin.from(LEGACY_TABLE).update({ is_active: false }).eq("id", id);
+  if (legacy.error) throw new Error(legacy.error.message);
+}
+
+async function assertNoOverlap(reservationId: string, itemId: string) {
+  const { data: reservation, error: reservationError } = await supabaseAdmin
+    .from("location_reservations")
+    .select("id, location_id, location_type, reservation_date, reservation_time, duration_minutes, turn_time_minutes, party_size")
+    .eq("id", reservationId)
+    .single();
+
+  if (reservationError) throw new Error(reservationError.message);
+
+  const { data: item, error: itemError } = await supabaseAdmin
+    .from(NEUTRAL_TABLE)
+    .select("id, capacity, status, is_active, item_name, item_type")
+    .eq("id", itemId)
+    .maybeSingle();
+
+  if (itemError && !isMissingTable(itemError)) throw new Error(itemError.message);
+
+  if (item) {
+    if (item.is_active === false || ["blocked", "maintenance"].includes(item.status)) {
+      throw new Error("This layout item is blocked or under maintenance.");
+    }
+    if (Number(reservation.party_size || 1) > Number(item.capacity || 1)) {
+      throw new Error("This layout item does not fit the party size.");
+    }
+  }
+
+  const { data: active, error: activeError } = await supabaseAdmin
+    .from("location_reservations")
+    .select("id, reservation_time, duration_minutes, turn_time_minutes")
+    .eq("location_id", reservation.location_id)
+    .eq("location_type", reservation.location_type)
+    .eq("bookable_item_id", itemId)
+    .eq("reservation_date", reservation.reservation_date)
+    .neq("id", reservationId)
+    .in("status", ACTIVE_RESERVATION_STATUSES);
+
+  if (activeError) throw new Error(activeError.message);
+
+  const reservationDuration = Number(reservation.duration_minutes || reservation.turn_time_minutes || 90);
+  const conflicts = (active || []).some((entry: any) =>
+    rangesOverlap(
+      String(reservation.reservation_time || "00:00"),
+      reservationDuration,
+      String(entry.reservation_time || "00:00"),
+      Number(entry.duration_minutes || entry.turn_time_minutes || 90),
+    ),
+  );
+
+  if (conflicts) {
+    throw new Error("This layout item already has an overlapping reservation.");
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
   if (auth.error) return auth.error;
 
   try {
     const { searchParams } = new URL(request.url);
-
     const locationId = cleanString(searchParams.get("locationId"));
-    const locationType = normalizeLocationType(searchParams.get("type"));
+    const locationType = normalizeReservationType(searchParams.get("type"));
     const selectedDate = cleanString(searchParams.get("date")) || dateKey(new Date());
-
-    let itemQuery = supabaseAdmin
-      .from("location_bookable_items")
-      .select(
-        "id, location_id, location_type, item_name, item_type, capacity_min, capacity_max, max_concurrent, auto_confirm, is_active, layout_x, layout_y, layout_width, layout_height, layout_zone"
-      )
-      .order("layout_zone", { ascending: true })
-      .order("layout_y", { ascending: true })
-      .order("layout_x", { ascending: true })
-      .order("item_name", { ascending: true });
 
     let reservationQuery = supabaseAdmin
       .from("location_reservations")
       .select("*")
       .eq("reservation_date", selectedDate)
-      .in("status", ACTIVE_STATUSES)
+      .in("status", ["pending", ...ACTIVE_RESERVATION_STATUSES])
       .order("reservation_time", { ascending: true });
 
+    let waitlistQuery = supabaseAdmin
+      .from("reservation_waitlist")
+      .select("*")
+      .in("status", ["waiting", "notified"])
+      .order("created_at", { ascending: true });
+
     if (locationId) {
-      itemQuery = itemQuery
-        .eq("location_id", locationId)
-        .eq("location_type", locationType);
-
-      reservationQuery = reservationQuery
-        .eq("location_id", locationId)
-        .eq("location_type", locationType);
+      reservationQuery = reservationQuery.eq("location_id", locationId).eq("location_type", locationType);
+      waitlistQuery = waitlistQuery.eq("location_id", locationId);
     }
 
-    const [itemsResult, reservationsResult, locationsResult] =
-      await Promise.all([
-        itemQuery,
-        reservationQuery,
-        supabaseAdmin
-          .from("locations")
-          .select("id, location_type, name, restaurant_name, activity_name, city, state")
-          .order("name", { ascending: true }),
-      ]);
+    const [itemsResult, reservationsResult, locationsResult, waitlistResult] = await Promise.all([
+      selectLayoutItems(locationId, locationType),
+      reservationQuery,
+      supabaseAdmin
+        .from("locations")
+        .select("id, location_type, name, restaurant_name, activity_name, city, state")
+        .order("name", { ascending: true }),
+      waitlistQuery,
+    ]);
 
-    if (itemsResult.error) {
-      return NextResponse.json({ error: itemsResult.error.message }, { status: 500 });
-    }
-
-    if (reservationsResult.error) {
-      return NextResponse.json(
-        { error: reservationsResult.error.message },
-        { status: 500 }
-      );
-    }
-
-    if (locationsResult.error) {
-      return NextResponse.json(
-        { error: locationsResult.error.message },
-        { status: 500 }
-      );
-    }
+    if (itemsResult.error) return NextResponse.json({ error: itemsResult.error.message }, { status: 500 });
+    if (reservationsResult.error) return NextResponse.json({ error: reservationsResult.error.message }, { status: 500 });
+    if (locationsResult.error) return NextResponse.json({ error: locationsResult.error.message }, { status: 500 });
 
     return NextResponse.json({
       date: selectedDate,
       items: itemsResult.data || [],
+      itemSource: itemsResult.source,
       reservations: reservationsResult.data || [],
+      waitlist: waitlistResult.error && !isMissingTable(waitlistResult.error) ? [] : waitlistResult.data || [],
       locations: (locationsResult.data || []).map((item) => {
-        const locationType =
-          item.location_type === "restaurant" ? "restaurant" : "activity";
-
+        const type = item.location_type === "restaurant" ? "restaurant" : "activity";
         return {
           id: item.id,
-          type: locationType,
-          name: getLocationName(
-            item,
-            locationType === "restaurant" ? "Restaurant" : "Activity",
-          ),
+          type,
+          name: getLocationName(item, type === "restaurant" ? "Restaurant" : "Activity"),
           city: item.city || "",
           state: item.state || "",
         };
@@ -124,133 +318,112 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const auth = await requireAdminApiRole(["superuser", "admin", "editor"]);
-
   if (auth.error) return auth.error;
 
   try {
     const body = await request.json();
     const action = cleanString(body.action);
 
-    if (action === "move_layout_item") {
+    if (["create_layout_item", "duplicate_layout_item"].includes(action)) {
+      const source = body.source_item || body;
+      const item = await createLayoutItem({
+        ...source,
+        item_name: action === "duplicate_layout_item" ? `${source.item_name || "Layout item"} Copy` : source.item_name,
+        layout_x: Number(source.layout_x || source.x_position || 0) + (action === "duplicate_layout_item" ? 1 : 0),
+        layout_y: Number(source.layout_y || source.y_position || 0) + (action === "duplicate_layout_item" ? 1 : 0),
+      });
+      await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
+      return NextResponse.json({ success: true, item });
+    }
+
+    if (action === "delete_layout_item") {
       const id = cleanString(body.id);
+      if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
+      await deleteLayoutItem(id);
+      await logStaffActivity({ action, details: { itemId: id } });
+      return NextResponse.json({ success: true });
+    }
 
-      if (!id) {
-        return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
-      }
-
-      const { data, error } = await supabaseAdmin
-        .from("location_bookable_items")
-        .update({
-          layout_x: Number(body.layout_x || 0),
-          layout_y: Number(body.layout_y || 0),
-          layout_width: Math.max(1, Number(body.layout_width || 1)),
-          layout_height: Math.max(1, Number(body.layout_height || 1)),
-          layout_zone: cleanString(body.layout_zone) || "Main Area",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select("*")
-        .single();
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
-      return NextResponse.json({ success: true, item: data });
+    if (["move_layout_item", "update_layout_item", "update_item_status"].includes(action)) {
+      const id = cleanString(body.id);
+      if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
+      const item = await updateLayoutItem(id, {
+        item_type: cleanString(body.item_type) || "table",
+        item_name: cleanString(body.item_name) || "Layout item",
+        item_number: cleanString(body.item_number) || null,
+        capacity: Math.max(1, Number(body.capacity || body.capacity_max || 2)),
+        layout_x: Number(body.layout_x || 0),
+        layout_y: Number(body.layout_y || 0),
+        layout_width: Math.max(1, Number(body.layout_width || 1)),
+        layout_height: Math.max(1, Number(body.layout_height || 1)),
+        rotation: Number(body.rotation || 0),
+        status: normalizeStatus(body.status),
+        is_active: body.is_active !== false,
+        sort_order: Number(body.sort_order || 0),
+      });
+      await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
+      return NextResponse.json({ success: true, item });
     }
 
     if (action === "update_reservation_status") {
       const reservationId = cleanString(body.reservation_id);
       const status = cleanString(body.status).toLowerCase();
+      const allowedStatuses = ["pending", "confirmed", "arrived", "seated", "occupied", "completed", "cancelled", "declined", "no_show"];
+      if (!reservationId) return NextResponse.json({ error: "Missing reservation id." }, { status: 400 });
+      if (!allowedStatuses.includes(status)) return NextResponse.json({ error: "Invalid reservation status." }, { status: 400 });
 
-      if (!reservationId) {
-        return NextResponse.json(
-          { error: "Missing reservation id." },
-          { status: 400 }
-        );
-      }
-
-      const allowedStatuses = [
-        "pending",
-        "confirmed",
-        "arrived",
-        "seated",
-        "completed",
-        "cancelled",
-        "declined",
-        "no_show",
-      ];
-
-      if (!allowedStatuses.includes(status)) {
-        return NextResponse.json(
-          { error: "Invalid reservation status." },
-          { status: 400 }
-        );
-      }
-
-      const updatePayload: Record<string, string> = {
-        status,
-        updated_at: new Date().toISOString(),
-      };
-
+      const updatePayload: Record<string, string> = { status, updated_at: new Date().toISOString() };
       if (status === "arrived") updatePayload.arrived_at = new Date().toISOString();
-      if (status === "seated") updatePayload.seated_at = new Date().toISOString();
-      if (status === "completed") {
-        updatePayload.completed_at = new Date().toISOString();
-      }
+      if (status === "seated" || status === "occupied") updatePayload.seated_at = new Date().toISOString();
+      if (status === "completed") updatePayload.completed_at = new Date().toISOString();
 
-      const { data, error } = await supabaseAdmin
-        .from("location_reservations")
-        .update(updatePayload)
-        .eq("id", reservationId)
-        .select("*")
-        .single();
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
+      const { data, error } = await supabaseAdmin.from("location_reservations").update(updatePayload).eq("id", reservationId).select("*").single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      await logStaffActivity({ locationId: data.location_id, reservationId, action: `reservation_${status}` });
       return NextResponse.json({ success: true, reservation: data });
     }
 
     if (action === "move_reservation") {
       const reservationId = cleanString(body.reservation_id);
       const itemId = cleanString(body.bookable_item_id);
+      if (!reservationId || !itemId) return NextResponse.json({ error: "Missing reservation or layout item id." }, { status: 400 });
+      await assertNoOverlap(reservationId, itemId);
 
-      if (!reservationId || !itemId) {
-        return NextResponse.json(
-          { error: "Missing reservation or option id." },
-          { status: 400 }
-        );
-      }
-
-      const { data: item, error: itemError } = await supabaseAdmin
-        .from("location_bookable_items")
-        .select("id, item_name, item_type")
-        .eq("id", itemId)
-        .single();
-
-      if (itemError) {
-        return NextResponse.json({ error: itemError.message }, { status: 500 });
-      }
-
+      const items = await selectLayoutItems("", "restaurant");
+      const item = (items.data || []).find((candidate: any) => candidate.id === itemId);
       const { data, error } = await supabaseAdmin
         .from("location_reservations")
         .update({
-          bookable_item_id: item.id,
-          bookable_item_name: item.item_name,
-          bookable_item_type: item.item_type,
+          bookable_item_id: itemId,
+          bookable_item_name: item?.item_name || null,
+          bookable_item_type: item?.item_type || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", reservationId)
         .select("*")
         .single();
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      await logStaffActivity({ locationId: data.location_id, reservationId, action, details: { itemId } });
       return NextResponse.json({ success: true, reservation: data });
+    }
+
+    if (action === "notify_waitlist") {
+      const waitlistId = cleanString(body.waitlist_id);
+      if (!waitlistId) return NextResponse.json({ error: "Missing waitlist id." }, { status: 400 });
+      const { data: waitlist, error } = await supabaseAdmin
+        .from("reservation_waitlist")
+        .update({ status: "notified", notified_at: new Date().toISOString(), expires_at: new Date(Date.now() + 10 * 60_000).toISOString() })
+        .eq("id", waitlistId)
+        .select("*")
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      await sendReservationSms({
+        locationId: waitlist.location_id,
+        to: waitlist.customer_phone,
+        messageType: "waitlist_ready",
+        body: "Your table/room/lane is ready. Please return within 10 minutes.",
+      });
+      return NextResponse.json({ success: true, waitlist });
     }
 
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
