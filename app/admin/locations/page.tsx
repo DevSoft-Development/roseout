@@ -776,6 +776,13 @@ export default async function AdminLocationsPage({
                       >
                         Edit
                       </Link>
+
+                      <Link
+                        href={`/admin/dashboard/marketing?source_table=${location.locationType}&source_id=${location.id}&location_id=${location.id}&location_name=${encodeURIComponent(location.name || "Untitled Location")}&image=${encodeURIComponent(getLocationImage(location) || "")}&category=${encodeURIComponent(location.category || "")}&city=${encodeURIComponent(location.city || "")}&state=${encodeURIComponent(location.state || "")}&address=${encodeURIComponent(formatFullAddress(location))}&public_url=${encodeURIComponent(`/locations/${location.locationType}/${location.id}`)}`}
+                        className="flex-1 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-center text-xs font-black text-rose-700 transition hover:bg-rose-600 hover:text-white"
+                      >
+                        Create Marketing
+                      </Link>
                     </div>
                   </div>
                 </div>
