@@ -291,6 +291,16 @@ export default function AdminTopBar() {
             </button>
           )}
 
+          {canViewClaims && (
+            <button
+              type="button"
+              onClick={() => goTo("/admin/dashboard/claim-tools")}
+              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
+            >
+              Claim Tools
+            </button>
+          )}
+
           {canViewImport && (
             <button
               type="button"
@@ -493,6 +503,12 @@ export default function AdminTopBar() {
                 {canViewClaims && (
                   <MenuButton onClick={() => goTo("/admin/claims")}>
                     Claims
+                  </MenuButton>
+                )}
+
+                {canViewClaims && (
+                  <MenuButton onClick={() => goTo("/admin/dashboard/claim-tools")}>
+                    Claim Tools
                   </MenuButton>
                 )}
 

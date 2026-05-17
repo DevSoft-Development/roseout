@@ -13,6 +13,7 @@ type ClaimQrLocation = {
   state: string | null;
   zip_code: string | null;
   claim_url: string | null;
+  claim_code: string | null;
   qr_code_data_url: string | null;
 };
 
@@ -22,13 +23,13 @@ export default async function AdminClaimQrPrintPage() {
   const [restaurantsResult, activitiesResult] = await Promise.all([
     supabase
       .from("restaurants")
-      .select("id, name, restaurant_name, address, city, state, zip_code, claim_url, qr_code_data_url")
+      .select("id, name, restaurant_name, address, city, state, zip_code, claim_url, claim_code, qr_code_data_url")
       .not("qr_code_data_url", "is", null)
       .order("restaurant_name", { ascending: true })
       .limit(200),
     supabase
       .from("activities")
-      .select("id, name, activity_name, address, city, state, zip_code, claim_url, qr_code_data_url")
+      .select("id, name, activity_name, address, city, state, zip_code, claim_url, claim_code, qr_code_data_url")
       .not("qr_code_data_url", "is", null)
       .order("activity_name", { ascending: true })
       .limit(200),
@@ -44,6 +45,7 @@ export default async function AdminClaimQrPrintPage() {
       state: restaurant.state,
       zip_code: restaurant.zip_code,
       claim_url: restaurant.claim_url,
+      claim_code: restaurant.claim_code,
       qr_code_data_url: restaurant.qr_code_data_url,
     })),
     ...(activitiesResult.data || []).map((activity) => ({
@@ -55,6 +57,7 @@ export default async function AdminClaimQrPrintPage() {
       state: activity.state,
       zip_code: activity.zip_code,
       claim_url: activity.claim_url,
+      claim_code: activity.claim_code,
       qr_code_data_url: activity.qr_code_data_url,
     })),
   ];

@@ -153,6 +153,13 @@ export default async function CentralDashboardPage() {
       cta: "Print QRs",
     },
     {
+      eyebrow: "Claims",
+      title: "Claim Tools",
+      text: "Search locations, copy claim codes and links, preview QR codes, and regenerate claim access.",
+      href: "/admin/dashboard/claim-tools",
+      cta: "Open tools",
+    },
+    {
       eyebrow: "Customer Flow",
       title: "Create Plan",
       text: "Test how customers search, discover, and select outing plans.",
