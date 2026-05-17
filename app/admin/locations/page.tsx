@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import AdminLocationsSearchBox from "./AdminLocationsSearchBox";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
@@ -169,6 +170,7 @@ export default async function AdminLocationsPage({
   const params = await searchParams;
 
   const q = params.q?.trim() || "";
+  const safeQ = q.replace(/[%_,]/g, " ").trim();
   const type = params.type || "all";
   const status = params.status || "all";
   const claim = params.claim || "all";
@@ -187,7 +189,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
+      "id, name, restaurant_name, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
@@ -196,7 +198,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
+      "id, name, activity_name, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
@@ -225,13 +227,13 @@ export default async function AdminLocationsPage({
     );
   }
 
-  if (q) {
+  if (safeQ) {
     restaurantsQuery = restaurantsQuery.or(
-      `restaurant_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,cuisine_type.ilike.%${q}%`,
+      `name.ilike.%${safeQ}%,restaurant_name.ilike.%${safeQ}%,address.ilike.%${safeQ}%,city.ilike.%${safeQ}%,state.ilike.%${safeQ}%,zip_code.ilike.%${safeQ}%,phone.ilike.%${safeQ}%,primary_category.ilike.%${safeQ}%,cuisine.ilike.%${safeQ}%,cuisine_type.ilike.%${safeQ}%,food_type.ilike.%${safeQ}%,primary_tag.ilike.%${safeQ}%,google_place_id.ilike.%${safeQ}%,claim_code.ilike.%${safeQ}%,data_status.ilike.%${safeQ}%`,
     );
 
     activitiesQuery = activitiesQuery.or(
-      `activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,activity_type.ilike.%${q}%`,
+      `name.ilike.%${safeQ}%,activity_name.ilike.%${safeQ}%,address.ilike.%${safeQ}%,city.ilike.%${safeQ}%,state.ilike.%${safeQ}%,zip_code.ilike.%${safeQ}%,phone.ilike.%${safeQ}%,primary_category.ilike.%${safeQ}%,activity_type.ilike.%${safeQ}%,primary_tag.ilike.%${safeQ}%,google_place_id.ilike.%${safeQ}%,claim_code.ilike.%${safeQ}%,data_status.ilike.%${safeQ}%`,
     );
   }
 
@@ -447,12 +449,7 @@ export default async function AdminLocationsPage({
 
         <section className="mt-5 rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
           <form className="grid gap-3 lg:grid-cols-[1fr_170px_170px_170px_150px_120px]">
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search name, address, city, state, zip, cuisine, or activity type..."
-              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300"
-            />
+            <AdminLocationsSearchBox initialQuery={q} type={type} status={status} claim={claim} pageSize={pageSize} />
 
             <select
               name="type"

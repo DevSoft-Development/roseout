@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
+import DataQualitySearchBox from "./DataQualitySearchBox";
 import CleanupActions from "./CleanupActions";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getLocationImage } from "@/lib/locationImage";
@@ -20,13 +22,13 @@ const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-17";
 const ADMIN_DATA_QUALITY_BASE_PATH = "/admin/dashboard/data-quality";
 
 const RESTAURANT_SELECT =
-  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
 
 const ACTIVITY_SELECT =
-  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, created_at";
+  "id, name, activity_name, location_type, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, created_at";
 
 const LOCATION_SELECT =
-  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, food_type, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
+  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at, created_at";
 
 type QualityFilter =
   | "all"
@@ -42,6 +44,7 @@ type QualityFilter =
 type SearchParams = {
   filter?: string;
   q?: string;
+  page?: string;
 };
 
 type RawLocationRow = LocationVisibilityFields & {
@@ -57,6 +60,9 @@ type RawLocationRow = LocationVisibilityFields & {
   cuisine_type?: string | null;
   food_type?: string | null;
   activity_type?: string | null;
+  phone?: string | null;
+  google_place_id?: string | null;
+  claim_code?: string | null;
   primary_tag?: string | null;
   address?: string | null;
   city?: string | null;
@@ -376,29 +382,51 @@ export default async function AdminDataQualityPage({
   const params = await searchParams;
   const q = params.q?.trim() || "";
   const requestedFilter = params.filter || "all";
+  const page = Math.max(1, Number(params.page || 1) || 1);
+  const pageSize = 60;
+  const rangeTo = page * pageSize - 1;
   const activeFilter = filterOptions.some((option) => option.key === requestedFilter)
     ? (requestedFilter as QualityFilter)
     : "all";
 
+  const searchTerm = q.replace(/[%_,]/g, " ").trim();
+  const restaurantSearchFields = ["name", "restaurant_name", "address", "city", "state", "neighborhood", "phone", "primary_category", "cuisine", "cuisine_type", "primary_tag", "google_place_id", "claim_code", "data_status"];
+  const activitySearchFields = ["name", "activity_name", "address", "city", "state", "neighborhood", "phone", "primary_category", "activity_type", "primary_tag", "google_place_id", "claim_code", "data_status"];
+  const locationSearchFields = ["name", "restaurant_name", "activity_name", "address", "city", "state", "neighborhood", "phone", "primary_category", "cuisine", "cuisine_type", "activity_type", "primary_tag", "google_place_id", "claim_code", "data_status"];
+  const applySearch = <T extends { or: (filters: string) => T }>(query: T, fields: string[]) => {
+    if (!searchTerm) return query;
+    const pattern = `%${searchTerm}%`;
+    return query.or(fields.map((field) => `${field}.ilike.${pattern}`).join(","));
+  };
+
   const [restaurantsResult, activitiesResult, locationsResult] = await Promise.all([
-    supabase
-      .from("restaurants")
-      .select(RESTAURANT_SELECT)
-      .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-      .order("updated_at", { ascending: false })
-      .limit(1000),
-    supabase
-      .from("activities")
-      .select(ACTIVITY_SELECT)
-      .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-      .order("created_at", { ascending: false })
-      .limit(1000),
-    supabase
-      .from("locations")
-      .select(LOCATION_SELECT)
-      .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-      .order("updated_at", { ascending: false })
-      .limit(1000),
+    applySearch(
+      supabase
+        .from("restaurants")
+        .select(RESTAURANT_SELECT)
+        .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+        .order("updated_at", { ascending: false })
+        .range(0, rangeTo),
+      restaurantSearchFields,
+    ),
+    applySearch(
+      supabase
+        .from("activities")
+        .select(ACTIVITY_SELECT)
+        .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+        .order("created_at", { ascending: false })
+        .range(0, rangeTo),
+      activitySearchFields,
+    ),
+    applySearch(
+      supabase
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+        .order("updated_at", { ascending: false })
+        .range(0, rangeTo),
+      locationSearchFields,
+    ),
   ]);
 
   const restaurantRows = ((restaurantsResult.data || []) as RawLocationRow[]).map(mapRestaurant);
@@ -410,25 +438,8 @@ export default async function AdminDataQualityPage({
     return dateA.localeCompare(dateB);
   });
 
-  const searchedLocations = q
-    ? allLocations.filter((location) => {
-        const haystack = [
-          location.displayName,
-          location.locationType,
-          location.city,
-          location.state,
-          location.address,
-          location.primary_category,
-          getDisplayDataStatus(location),
-          ...getInferredMissingFields(location),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
+  const searchedLocations = allLocations;
 
-        return haystack.includes(q.toLowerCase());
-      })
-    : allLocations;
 
   const locations = searchedLocations.filter((location) => matchesFilter(location, activeFilter));
 
@@ -514,21 +525,7 @@ export default async function AdminDataQualityPage({
         <CleanupActions />
 
         <section className="mt-5 max-w-full rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
-          <form className="grid max-w-full gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search name, city, state, address, status, or missing field..."
-              className="h-11 min-w-0 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300"
-            />
-            <input type="hidden" name="filter" value={activeFilter === "all" ? "" : activeFilter} />
-            <button
-              type="submit"
-              className="h-11 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.02]"
-            >
-              Search
-            </button>
-          </form>
+          <DataQualitySearchBox initialQuery={q} activeFilter={activeFilter} />
 
           <div className="mt-4 flex flex-wrap gap-2">
             {filterOptions.map((option) => (
@@ -564,7 +561,7 @@ export default async function AdminDataQualityPage({
             </div>
           </div>
 
-          <div className="hidden border-b border-black/10 bg-[#efe5dd] px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-black/40 2xl:grid 2xl:grid-cols-[minmax(260px,1.35fr)_140px_180px_170px_130px_170px_140px_120px] 2xl:items-center">
+          <div className="hidden border-b border-black/10 bg-[#efe5dd] px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-black/40 2xl:grid xl:grid xl:grid-cols-[minmax(260px,1.4fr)_120px_160px_145px_90px_140px_110px_105px] xl:items-center">
             <span>Name / Type / City, State / Image</span>
             <span>Data status</span>
             <span>Missing fields</span>
@@ -583,6 +580,7 @@ export default async function AdminDataQualityPage({
               </p>
             </div>
           ) : (
+            <>
             <div className="divide-y divide-black/10">
               {locations.map((location) => {
                 const image = getMainImage(location);
@@ -596,14 +594,17 @@ export default async function AdminDataQualityPage({
                 return (
                   <article
                     key={`${location.table}-${location.id}`}
-                    className="grid gap-4 p-4 transition hover:bg-white/70 rounded-3xl border border-black/10 bg-white/45 shadow-sm 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:shadow-none 2xl:grid-cols-[minmax(260px,1.35fr)_140px_180px_170px_130px_170px_140px_120px] 2xl:items-center"
+                    className="grid gap-3 p-3 transition hover:bg-white/70 rounded-3xl border border-black/10 bg-white/45 shadow-sm 2xl:rounded-none 2xl:border-0 2xl:bg-transparent 2xl:shadow-none xl:grid xl:grid-cols-[minmax(260px,1.4fr)_120px_160px_145px_90px_140px_110px_105px] xl:items-center"
                   >
                     <div className="flex min-w-0 gap-3">
-                      <div className="h-20 w-24 flex-none overflow-hidden rounded-2xl bg-[#eadfd8]">
+                      <div className="h-[76px] w-[76px] flex-none overflow-hidden rounded-xl bg-[#eadfd8]">
                         {image ? (
-                          <img
+                          <Image
                             src={image}
                             alt={location.displayName}
+                            width={88}
+                            height={88}
+                            unoptimized
                             className="h-full w-full object-cover"
                           />
                         ) : (
@@ -613,34 +614,34 @@ export default async function AdminDataQualityPage({
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-lg font-black">
+                        <p className="truncate text-base font-black">
                           {location.displayName}
                         </p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <span className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${typeBadgeClass(location.locationType)}`}>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${typeBadgeClass(location.locationType)}`}>
                             {location.locationType}
                           </span>
-                          <span className="rounded-full bg-[#efe5dd] px-3 py-1 text-[11px] font-black uppercase text-black/50">
+                          <span className="rounded-full bg-[#efe5dd] px-2 py-0.5 text-[10px] font-black uppercase text-black/50">
                             {primaryCategory || "Category missing"}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm font-bold text-black/50">
+                        <p className="mt-1 text-xs font-bold text-black/50">
                           {cityState}
                         </p>
                       </div>
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
                         Data status
                       </p>
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase ${getStatusClass(dataStatus)}`}>
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getStatusClass(dataStatus)}`}>
                         {formatDataStatus(dataStatus)}
                       </span>
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
                         Missing fields
                       </p>
                       {missingFields.length > 0 ? (
@@ -665,11 +666,11 @@ export default async function AdminDataQualityPage({
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
                         Searchable
                       </p>
                       <span
-                        className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase ${
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${
                           isSearchable && dataStatus === "clean"
                             ? "border-[#d9bd7c] bg-[#fff4d6] text-[#3b2512]"
                             : location.is_hidden === true
@@ -682,16 +683,16 @@ export default async function AdminDataQualityPage({
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
                         Quality score
                       </p>
-                      <p className={`inline-flex min-w-16 justify-center rounded-2xl border px-3 py-2 text-2xl font-black ${getQualityScoreClass(location.quality_score)}`}>
+                      <p className={`inline-flex min-w-12 justify-center rounded-full border px-2.5 py-1 text-sm font-black ${getQualityScoreClass(location.quality_score)}`}>
                         {formatNumber(location.quality_score)}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
                         Last quality check
                       </p>
                       <p className="text-sm font-black text-black/65">
@@ -705,7 +706,7 @@ export default async function AdminDataQualityPage({
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 2xl:hidden">
+                      <p className="text-[10px] font-black uppercase tracking-wide text-black/35 xl:hidden">
                         Flags
                       </p>
                       <div className="flex flex-wrap gap-1.5">
@@ -727,16 +728,16 @@ export default async function AdminDataQualityPage({
                       </div>
                     </div>
 
-                    <div className="flex gap-2 2xl:flex-col">
+                    <div className="flex gap-1.5 xl:flex-col">
                       <Link
                         href={`/locations/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
-                        className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
+                        className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1.5 text-center text-[11px] font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         View
                       </Link>
                       <Link
                         href={`/admin/dashboard/locations/edit/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
-                        className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
+                        className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-3 py-1.5 text-center text-[11px] font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit
                       </Link>
@@ -745,6 +746,17 @@ export default async function AdminDataQualityPage({
                 );
               })}
             </div>
+              {locations.length >= page * pageSize && (
+                <div className="border-t border-black/10 bg-[#efe5dd] p-4 text-center">
+                  <Link
+                    href={`${buildFilterUrl(activeFilter, q)}${buildFilterUrl(activeFilter, q).includes("?") ? "&" : "?"}page=${page + 1}`}
+                    className="inline-flex rounded-full border border-black/10 bg-white px-5 py-2 text-xs font-black uppercase tracking-wide text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
+                  >
+                    Load more results
+                  </Link>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>
