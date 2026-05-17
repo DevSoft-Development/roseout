@@ -27,13 +27,13 @@ export default function BusinessPage() {
             </p>
 
             <h1 className="mt-5 text-5xl font-black leading-tight tracking-tight md:text-7xl">
-              Get discovered when customers are ready to go out.
+              Get Discovered with TheOutHaven. Manage Reservations with TheOutHaven Reserve.
             </h1>
 
             <p className="mt-6 max-w-3xl text-lg leading-8 text-white/60">
-              TheOutHaven connects restaurants, lounges, activities, venues, and
-              local experiences with people actively planning dinner, birthdays,
-              date nights, nightlife, brunch, and group outings.
+              TheOutHaven helps restaurants, lounges, nightlife venues, and
+              activity spaces attract customers through curated discovery and
+              manage reservations with TheOutHaven Reserve.
             </p>
 
             <div className="mt-9 flex flex-col gap-4 sm:flex-row">
@@ -56,25 +56,25 @@ export default function BusinessPage() {
           <div className="rounded-[2.25rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-red-500/10">
             <div className="rounded-[1.75rem] bg-[#0b0b0b] p-6">
               <p className="text-sm font-black uppercase tracking-[0.25em] text-[#e1062a]">
-                Business Growth
+                Discovery + Reserve
               </p>
 
               <h2 className="mt-4 text-3xl font-black">
-                From discovery to reservation.
+                Discovery for guests. Reserve for operations.
               </h2>
 
               <div className="mt-6 space-y-4">
                 <HeroPoint
-                  title="AI discovery"
-                  text="Show up when customers search for places to go."
+                  title="Curated discovery"
+                  text="TheOutHaven helps guests find the right restaurants, lounges, nightlife, and experiences."
                 />
                 <HeroPoint
-                  title="Reservation system"
-                  text="Pro businesses can accept reservation requests directly through TheOutHaven."
+                  title="TheOutHaven Reserve"
+                  text="Run reservations, waitlists, reminders, and guest details with a dedicated hospitality product."
                 />
                 <HeroPoint
-                  title="Real-time dashboard"
-                  text="Monitor new reservations, customer interest, and booking activity from your business dashboard."
+                  title="TheOutHaven Reserve Dashboard"
+                  text="Give your team a live operating view for reservations, waitlists, and guest flow."
                 />
               </div>
             </div>
@@ -85,8 +85,8 @@ export default function BusinessPage() {
       <section className="px-6 pb-16">
         <div className="mx-auto grid max-w-7xl gap-5 md:grid-cols-4">
           <Stat value="Discovery" label="Appear in customer searches" />
-          <Stat value="Reservations" label="Accept customer booking requests" />
-          <Stat value="Dashboard" label="Monitor reservations in real time" />
+          <Stat value="Reserve" label="Power guest bookings" />
+          <Stat value="Operations" label="Manage the floor in real time" />
           <Stat value="Analytics" label="Track views, clicks, and interest" />
         </div>
       </section>
@@ -107,9 +107,9 @@ export default function BusinessPage() {
               </h2>
 
               <p className="mt-5 text-lg leading-8 text-white/60">
-                Free gives your business basic visibility. Pro gives you stronger
-                discovery, a reservation system, real-time reservation monitoring,
-                analytics, QR growth tools, and more control over your listing.
+                TheOutHaven Discovery gives your business a polished presence in
+                curated recommendations. TheOutHaven Reserve adds the operational
+                tools to convert discovery into managed reservations.
               </p>
             </div>
 
@@ -145,51 +145,42 @@ export default function BusinessPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <PlanCard
-              title="Free"
-              subtitle="For businesses that want basic visibility."
+              title="TheOutHaven Discovery"
+              subtitle="For businesses that want curated visibility across TheOutHaven."
               price="$0"
               period="/mo"
               href="/locations/apply?plan=free"
-              cta="Start Free"
+              cta="Start TheOutHaven Discovery"
               features={[
-                "Basic AI discovery",
-                "Appear in search results",
-                "Claim or submit your listing",
-                "Business name, address, category, and details",
-                "Basic profile visibility",
-                "One featured image",
+                "Discovery visibility",
+                "Business profile",
+                "Photos/contact/social links",
+                "External reservation links",
+                "QR tools",
+                "Recommendation placement",
               ]}
             />
 
             <PlanCard
               featured
-              title="TheOutHaven Pro"
-              subtitle="For businesses that want stronger placement, reservations, and conversion tools."
+              title="TheOutHaven Reserve"
+              subtitle="For hospitality teams that need reservations, floor operations, guest messaging, and insights."
               price={proPrice}
               period="/mo"
               oldPrice={isYearly ? "$99/mo" : undefined}
               note={isYearly ? "Billed yearly at $948/year" : "Monthly billing"}
               href={proHref}
-              cta={isYearly ? "Choose Yearly Pro" : "Choose Monthly Pro"}
+              cta={isYearly ? "Choose Yearly Reserve" : "Choose Monthly Reserve"}
               features={[
-                "Priority AI discovery",
-                "Enhanced profile placement",
-                "Built-in reservation system",
-                "Visual layout builder",
-                "Hostess/operator view",
-                "SMS confirmations and reminders",
+                "TheOutHaven Reserve reservations",
+                "Layout builder",
+                "Live hostess dashboard",
+                "SMS reminders",
                 "Waitlist texting",
-                "Add-to-calendar links",
-                "Basic guest notes",
-                "Basic analytics",
-                "Accept customer reservation requests",
-                "Real-time reservation dashboard",
-                "Monitor new reservations and customer interest",
-                "TheOutHaven Reserve",
-                "QR Growth Tools",
-                "Up to 10 photos",
-                "Booking, website, phone, and menu links",
-                "Full listing customization",
+                "Calendar add",
+                "Guest notes",
+                "Analytics",
+                "No cover fees",
               ]}
             />
           </div>
@@ -200,34 +191,31 @@ export default function BusinessPage() {
         <div className="mx-auto max-w-7xl">
           <div className="mb-10 text-center">
             <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Plan Comparison
+              Brand Structure
             </p>
 
             <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Free vs Pro
+              TheOutHaven Discovery vs TheOutHaven Reserve
             </h2>
           </div>
 
           <div className="overflow-hidden rounded-[2rem] border border-black/10 shadow-2xl shadow-black/10">
-            <ComparisonRow item="AI discovery" free="Basic" pro="Priority" />
-            <ComparisonRow item="Search visibility" free="Standard" pro="Enhanced" />
-            <ComparisonRow item="Claim business listing" free="Yes" pro="Yes" />
-            <ComparisonRow item="Photos" free="1" pro="Up to 10" />
-            <ComparisonRow item="Reservation system" free="—" pro="Included" />
+            <ComparisonRow item="Discovery visibility" free="Included" pro="Included" />
+            <ComparisonRow item="Business profile" free="Included" pro="Included" />
+            <ComparisonRow item="Photos/contact/social links" free="Included" pro="Included" />
+            <ComparisonRow item="External reservation links" free="Included" pro="Included" />
+            <ComparisonRow item="QR tools" free="Included" pro="Included" />
+            <ComparisonRow item="Recommendation placement" free="Included" pro="Enhanced" />
+            <ComparisonRow item="TheOutHaven Reserve reservations" free="—" pro="Included" />
             <ComparisonRow item="Layout builder" free="—" pro="Included" />
-            <ComparisonRow item="Hostess/operator view" free="—" pro="Included" />
-            <ComparisonRow item="SMS confirmations/reminders" free="—" pro="Included" />
-            <ComparisonRow item="Waitlist texting" free="—" pro="Included" />
+            <ComparisonRow item="Live hostess dashboard" free="—" pro="Included" />
+            <ComparisonRow item="TheOutHaven Reserve SMS Reminders" free="—" pro="Included" />
+            <ComparisonRow item="TheOutHaven Reserve Waitlist" free="—" pro="Included" />
             <ComparisonRow item="Calendar add" free="—" pro="Included" />
-            <ComparisonRow item="Guest notes" free="—" pro="Basic" />
-            <ComparisonRow item="Accept reservation requests" free="—" pro="Included" />
-            <ComparisonRow item="Real-time reservation dashboard" free="—" pro="Included" />
-            <ComparisonRow item="Monitor customer booking interest" free="—" pro="Included" />
-            <ComparisonRow item="Analytics" free="Basic views" pro="Advanced insights" />
-            <ComparisonRow item="QR growth tools" free="—" pro="Included" />
-            <ComparisonRow item="TheOutHaven Reserve" free="—" pro="Included" />
-            <ComparisonRow item="Profile customization" free="Limited" pro="Full control" />
-            <ComparisonRow item="Best for" free="Getting listed" pro="Growing bookings" />
+            <ComparisonRow item="Guest notes" free="—" pro="Included" />
+            <ComparisonRow item="Analytics" free="—" pro="Included" />
+            <ComparisonRow item="No cover fees" free="—" pro="Included" />
+            <ComparisonRow item="Best use" free="Discovery/experience" pro="Operational hospitality software" />
           </div>
         </div>
       </section>
@@ -236,43 +224,43 @@ export default function BusinessPage() {
         <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Pro Reservation Dashboard
+              TheOutHaven Reserve
             </p>
 
             <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Monitor reservations in real time.
+              Unlock TheOutHaven Reserve
             </h2>
 
             <p className="mt-5 text-lg leading-8 text-white/60">
-              TheOutHaven Pro gives businesses a dashboard to view reservation
-              requests, customer details, booking activity, and customer interest
-              as it comes in.
+              TheOutHaven Reserve gives hospitality teams a premium operating
+              layer for reservations, floor layouts, guest messaging, waitlists,
+              and real-time visibility.
             </p>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <DashboardFeature
-                title="Visual floor maps"
+              <OperationsFeature
+                title="TheOutHaven Reserve Layout Builder"
                 text="Drag tables, rooms, lanes, courts, sections, and event spaces into a live layout."
               />
-              <DashboardFeature
-                title="New reservations"
-                text="See incoming reservation requests from customers."
+              <OperationsFeature
+                title="TheOutHaven Reserve Reservations"
+                text="Accept, confirm, and organize booking requests from one clean workspace."
               />
-              <DashboardFeature
-                title="Customer details"
-                text="View guest name, date, time, party size, and contact details."
+              <OperationsFeature
+                title="Guest notes"
+                text="Keep names, party sizes, preferences, occasions, and contact details close to the reservation."
               />
-              <DashboardFeature
-                title="Booking status"
-                text="Track pending, confirmed, declined, and completed reservations."
+              <OperationsFeature
+                title="Reservation status"
+                text="Track pending, confirmed, declined, completed, and waitlisted guests."
               />
-              <DashboardFeature
-                title="Waitlist texting"
-                text="Notify guests when their table, room, or lane is ready."
+              <OperationsFeature
+                title="TheOutHaven Reserve Waitlist"
+                text="Send TheOutHaven Reserve Waitlist updates when a table, room, lane, or section is ready."
               />
-              <DashboardFeature
-                title="Growth insights"
-                text="Monitor views, clicks, QR scans, reservation interest, and no-shows."
+              <OperationsFeature
+                title="Reserve analytics"
+                text="Understand demand, profile clicks, reservation activity, and guest patterns."
               />
             </div>
           </div>
@@ -282,10 +270,10 @@ export default function BusinessPage() {
               <div className="flex items-center justify-between border-b border-white/10 pb-5">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
-                    Live Dashboard
+                    Live Operations
                   </p>
                   <h3 className="mt-2 text-2xl font-black">
-                    Reservation Activity
+                    Powered by TheOutHaven Reserve
                   </h3>
                 </div>
 
@@ -295,17 +283,17 @@ export default function BusinessPage() {
               </div>
 
               <div className="mt-6 grid gap-4">
-                <DashboardRow
+                <OperationsRow
                   name="Dinner Reservation"
                   detail="Tonight · 7:30 PM · Party of 4"
                   status="New"
                 />
-                <DashboardRow
+                <OperationsRow
                   name="Birthday Dinner"
                   detail="Friday · 8:00 PM · Party of 8"
                   status="Pending"
                 />
-                <DashboardRow
+                <OperationsRow
                   name="Date Night Booking"
                   detail="Saturday · 6:45 PM · Party of 2"
                   status="Confirmed"
@@ -343,7 +331,7 @@ export default function BusinessPage() {
             <Step
               number="01"
               title="Choose your plan"
-              text="Start with Free or upgrade to Pro for priority placement, reservations, and growth tools."
+              text="Start with TheOutHaven Discovery or unlock TheOutHaven Reserve for reservations and guest management."
             />
             <Step
               number="02"
@@ -357,8 +345,8 @@ export default function BusinessPage() {
             />
             <Step
               number="04"
-              title="Manage reservations"
-              text="Pro businesses can monitor reservation requests and customer booking activity from the dashboard."
+              title="Launch TheOutHaven Reserve"
+              text="TheOutHaven Reserve helps teams manage bookings, waitlists, reminders, guest notes, and analytics."
             />
           </div>
         </div>
@@ -410,8 +398,8 @@ export default function BusinessPage() {
 
             <p className="mt-5 text-lg leading-8 text-black/60">
               Join early, strengthen your presence, and position your business
-              inside a platform built around outings, discovery, reservations,
-              and local experiences.
+              inside a platform built around curated discovery and dedicated
+              hospitality operations with TheOutHaven Reserve.
             </p>
           </div>
 
@@ -421,12 +409,12 @@ export default function BusinessPage() {
               text="Be part of customer searches for date nights, birthdays, brunch, and nightlife."
             />
             <GrowthCard
-              title="More reservations"
-              text="Use the Pro reservation system to turn customer interest into booking requests."
+              title="More operational control"
+              text="Use TheOutHaven Reserve to turn customer interest into managed reservations, reminders, and guest records."
             />
             <GrowthCard
               title="More control"
-              text="Use your dashboard to monitor activity, reservations, profile views, and customer interest."
+              text="Use TheOutHaven Reserve to monitor bookings, waitlists, profile views, and guest interest."
             />
           </div>
         </div>
@@ -443,12 +431,12 @@ export default function BusinessPage() {
           </h2>
 
           <div className="mx-auto mt-10 grid max-w-5xl gap-5 md:grid-cols-4">
-            <Flow title="1. Pick a plan" text="Choose Free or Pro." />
+            <Flow title="1. Pick a plan" text="Choose TheOutHaven Discovery or TheOutHaven Reserve." />
             <Flow title="2. Submit business" text="Add your location details." />
             <Flow title="3. Get reviewed" text="We verify your listing." />
             <Flow
               title="4. Go live"
-              text="Start getting discovered and manage reservations if you’re Pro."
+              text="Start getting discovered with TheOutHaven and manage reservations with TheOutHaven Reserve."
             />
           </div>
 
@@ -457,14 +445,14 @@ export default function BusinessPage() {
               href="/locations/apply?plan=free"
               className="rounded-2xl bg-[#e1062a] px-9 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/30 transition hover:bg-red-500"
             >
-              Start Free →
+              Start TheOutHaven Discovery →
             </Link>
 
             <Link
               href={proHref}
               className="rounded-2xl border border-white/15 bg-white px-9 py-4 text-sm font-black text-black transition hover:bg-white/85"
             >
-              Upgrade to Pro
+              Unlock Reserve
             </Link>
           </div>
         </div>
@@ -617,7 +605,7 @@ function Step({
   );
 }
 
-function DashboardFeature({ title, text }: { title: string; text: string }) {
+function OperationsFeature({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black p-5">
       <h3 className="font-black text-white">{title}</h3>
@@ -626,7 +614,7 @@ function DashboardFeature({ title, text }: { title: string; text: string }) {
   );
 }
 
-function DashboardRow({
+function OperationsRow({
   name,
   detail,
   status,
