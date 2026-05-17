@@ -70,7 +70,8 @@ export const RESTAURANT_LOCATION_SELECT = `
   claim_qr_url,
   claim_url,
   claim_token,
-  claim_code
+  claim_code,
+  owner_user_id
 `;
 
 export const ACTIVITY_LOCATION_SELECT = `
@@ -132,7 +133,8 @@ export const ACTIVITY_LOCATION_SELECT = `
   claim_qr_url,
   claim_url,
   claim_token,
-  claim_code
+  claim_code,
+  owner_user_id
 `;
 
 const SHARED_FIELDS = [
@@ -172,6 +174,7 @@ const SHARED_FIELDS = [
   "is_featured",
   "is_verified",
   "reservation_enabled",
+  "owner_user_id",
   "operating_hours",
   "special_hours",
   "holiday_closures",
@@ -452,6 +455,7 @@ export function buildLocationPayload(table: SourceTable, row: SourceRow) {
     special_features: uniqueNormalizedStrings(row.special_features),
     signature_items: uniqueNormalizedStrings(row.signature_items),
     atmosphere: uniqueNormalizedStrings(row.atmosphere),
+    owner_user_id: firstPresent<string>(row.owner_user_id),
   };
 
   if (table === "restaurants") {

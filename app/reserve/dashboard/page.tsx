@@ -1,8 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import AdminTopBar from "@/app/admin/components/AdminTopBar";
 import { getLocationName } from "@/lib/locationName";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ReserveLiveRefresh from "@/components/ReserveLiveRefresh";
+
+export const metadata: Metadata = {
+  title: "Reserve Dashboard | TheOutHaven Admin",
+  description: "Internal reservation operations dashboard for TheOutHaven admins.",
+};
 
 type ReservationItem = {
   id: string;
@@ -271,7 +278,9 @@ export default async function ReserveDashboardPage() {
   const confirmedReservations = Number(confirmedReservationsResult.count || 0);
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
+    <>
+      <AdminTopBar />
+      <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px]">
         <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_60%,#140f0a)] p-5 shadow-2xl sm:p-6">
           <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />
@@ -596,6 +605,7 @@ export default async function ReserveDashboardPage() {
           </div>
         </section>
       </div>
-    </main>
+      </main>
+    </>
   );
 }

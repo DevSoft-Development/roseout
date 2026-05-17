@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import CleanupActions from "./CleanupActions";
 import { requireAdminRole } from "@/lib/admin-auth";
@@ -9,6 +10,11 @@ import {
   type LocationVisibilityFields,
 } from "@/lib/locationVisibility";
 import { supabase } from "@/lib/supabase";
+
+export const metadata: Metadata = {
+  title: "Data Quality",
+  description: "Audit location visibility and missing data.",
+};
 
 const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-16";
 const ADMIN_DATA_QUALITY_BASE_PATH = "/admin/dashboard/data-quality";

@@ -106,7 +106,7 @@ export async function GET(req: Request) {
     const nameColumn = table === "restaurants" ? "restaurant_name" : "activity_name";
     const { data, error } = await auth.supabase
       .from(table)
-      .select(`id, name, ${nameColumn}, address, city, state, phone, google_place_id, claim_status, is_claimed, claimed, claim_code, claim_url, claim_qr_url, qr_code_data_url`)
+      .select(`id, name, ${nameColumn}, address, city, state, phone, google_place_id, is_claimed, claimed, claim_code, claim_url, claim_qr_url, qr_code_data_url`)
       .or([
         `name.ilike.${search}`,
         `${nameColumn}.ilike.${search}`,

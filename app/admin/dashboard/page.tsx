@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { listSupportTickets } from "@/lib/support";
+
+export const metadata: Metadata = {
+  title: "Admin Dashboard",
+  description: "Central admin overview for TheOutHaven.",
+};
 
 const ADMIN_DASHBOARD_VERSION = "admin-dashboard-reserve-support-2026-05-12";
 

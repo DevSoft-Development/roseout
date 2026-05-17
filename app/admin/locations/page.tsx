@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
@@ -18,6 +19,12 @@ import {
 
 const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
+const PAGE_SIZE_OPTIONS = [100, 250, 500, 1000] as const;
+
+export const metadata: Metadata = {
+  title: "Locations | TheOutHaven Admin",
+  description: "Search, filter, edit, and audit TheOutHaven locations.",
+};
 
 type SearchParams = {
   q?: string;
@@ -25,6 +32,7 @@ type SearchParams = {
   status?: string;
   claim?: string;
   page?: string;
+  pageSize?: string;
 };
 
 type AdminLocation = LocationScoreFields &
@@ -130,12 +138,14 @@ function buildQueryUrl({
   status,
   claim,
   page = 1,
+  pageSize,
 }: {
   q: string;
   type: string;
   status: string;
   claim: string;
   page?: number;
+  pageSize?: number;
 }) {
   const params = new URLSearchParams();
 
@@ -144,6 +154,7 @@ function buildQueryUrl({
   if (status !== "all") params.set("status", status);
   if (claim !== "all") params.set("claim", claim);
   params.set("page", String(page));
+  if (pageSize) params.set("pageSize", String(pageSize));
 
   return `${ADMIN_LOCATIONS_BASE_PATH}?${params.toString()}`;
 }
@@ -162,7 +173,13 @@ export default async function AdminLocationsPage({
   const status = params.status || "all";
   const claim = params.claim || "all";
   const page = Math.max(1, Number(params.page || 1));
-  const pageSize = 50;
+  const requestedPageSize = Number(params.pageSize || 100);
+  const pageSize = PAGE_SIZE_OPTIONS.includes(requestedPageSize as (typeof PAGE_SIZE_OPTIONS)[number])
+    ? requestedPageSize
+    : 100;
+  const perTablePageSize = type === "all" ? Math.ceil(pageSize / 2) : pageSize;
+  const queryFrom = (page - 1) * perTablePageSize;
+  const queryTo = queryFrom + perTablePageSize - 1;
 
   const shouldLoadRestaurants = type === "all" || type === "restaurants";
   const shouldLoadActivities = type === "all" || type === "activities";
@@ -171,17 +188,19 @@ export default async function AdminLocationsPage({
     .from("restaurants")
     .select(
       "id, name, restaurant_name, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, primary_tag, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
+      { count: "exact" },
     )
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .range(queryFrom, queryTo);
 
   let activitiesQuery = supabase
     .from("activities")
     .select(
       "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
+      { count: "exact" },
     )
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .range(queryFrom, queryTo);
 
   if (status !== "all") {
     restaurantsQuery = restaurantsQuery.eq("status", status);
@@ -224,10 +243,10 @@ export default async function AdminLocationsPage({
   ] = await Promise.all([
     shouldLoadRestaurants
       ? restaurantsQuery
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [], error: null, count: 0 }),
     shouldLoadActivities
       ? activitiesQuery
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [], error: null, count: 0 }),
     supabase.from("restaurants").select("id", { count: "exact", head: true }),
     supabase.from("activities").select("id", { count: "exact", head: true }),
   ]);
@@ -316,12 +335,14 @@ export default async function AdminLocationsPage({
     return dateB - dateA;
   });
 
-  const totalFiltered = allLocations.length;
+  const totalFiltered =
+    (shouldLoadRestaurants ? restaurantsResult.count || 0 : 0) +
+    (shouldLoadActivities ? activitiesResult.count || 0 : 0);
   const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
   const safePage = Math.min(page, totalPages);
   const from = (safePage - 1) * pageSize;
-  const to = from + pageSize;
-  const locations = allLocations.slice(from, to);
+  const to = from + allLocations.length;
+  const locations = allLocations;
 
   const totalRestaurants = totalRestaurantsResult.count || 0;
   const totalActivities = totalActivitiesResult.count || 0;
@@ -345,7 +366,7 @@ export default async function AdminLocationsPage({
               </p>
 
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                Locations Admin
+                Locations
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
@@ -425,7 +446,7 @@ export default async function AdminLocationsPage({
         </section>
 
         <section className="mt-5 rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
-          <form className="grid gap-3 lg:grid-cols-[1fr_180px_180px_180px_120px]">
+          <form className="grid gap-3 lg:grid-cols-[1fr_170px_170px_170px_150px_120px]">
             <input
               name="q"
               defaultValue={q}
@@ -487,6 +508,18 @@ export default async function AdminLocationsPage({
               </option>
             </select>
 
+            <select
+              name="pageSize"
+              defaultValue={pageSize}
+              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-bold text-white outline-none focus:border-rose-300"
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} className="text-black" value={option}>
+                  {option} / page
+                </option>
+              ))}
+            </select>
+
             <input type="hidden" name="page" value="1" />
 
             <button
@@ -511,6 +544,7 @@ export default async function AdminLocationsPage({
                   status,
                   claim,
                   page: 1,
+                  pageSize,
                 })}
                 className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
                   type === item.nextType
@@ -533,6 +567,7 @@ export default async function AdminLocationsPage({
                   status: status === item ? "all" : item,
                   claim,
                   page: 1,
+                  pageSize,
                 })}
                 className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
                   status === item
@@ -555,6 +590,7 @@ export default async function AdminLocationsPage({
                   status,
                   claim: claim === item ? "all" : item,
                   page: 1,
+                  pageSize,
                 })}
                 className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
                   claim === item
@@ -759,6 +795,7 @@ export default async function AdminLocationsPage({
               status,
               claim,
               page: Math.max(1, safePage - 1),
+              pageSize,
             })}
             className={`rounded-full px-5 py-3 text-sm font-black transition ${
               safePage <= 1
@@ -780,6 +817,7 @@ export default async function AdminLocationsPage({
               status,
               claim,
               page: Math.min(totalPages, safePage + 1),
+              pageSize,
             })}
             className={`rounded-full px-5 py-3 text-sm font-black transition ${
               safePage >= totalPages

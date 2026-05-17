@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import ClaimToolsClient from "./ClaimToolsClient";
+
+export const metadata: Metadata = {
+  title: "Claim Tools",
+  description: "Search claim codes, links, and QR codes.",
+};
 
 export default async function AdminClaimToolsPage() {
   await requireAdminRole(["superuser", "admin", "editor", "viewer"]);

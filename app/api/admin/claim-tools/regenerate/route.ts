@@ -28,16 +28,21 @@ export async function POST(req: Request) {
 
     const table = body.source_table as Table;
     const id = String(body.source_id);
+    const selectFields =
+      table === "locations"
+        ? "id, source_table, source_id, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url"
+        : "id, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url";
     const { data: row, error } = await supabaseAdmin
       .from(table)
-      .select("id, source_table, source_id, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url")
+      .select(selectFields)
       .eq("id", id)
       .maybeSingle();
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
     if (!row) return Response.json({ error: "Location not found." }, { status: 404 });
 
-    const fields = await ensureClaimFields(row, {
+    const claimRow = row as unknown as Record<string, unknown>;
+    const fields = await ensureClaimFields(claimRow, {
       table,
       regenerateCode: body.field === "claim_code" || body.field === "all",
       regenerateToken: body.field === "claim_token" || body.field === "qr" || body.field === "all",
@@ -53,11 +58,11 @@ export async function POST(req: Request) {
         .update(fields)
         .eq("source_table", table)
         .eq("source_id", id);
-    } else if (row.source_table && row.source_id && ["restaurants", "activities"].includes(String(row.source_table))) {
+    } else if (claimRow.source_table && claimRow.source_id && ["restaurants", "activities"].includes(String(claimRow.source_table))) {
       await supabaseAdmin
-        .from(String(row.source_table) as "restaurants" | "activities")
+        .from(String(claimRow.source_table) as "restaurants" | "activities")
         .update(fields)
-        .eq("id", String(row.source_id));
+        .eq("id", String(claimRow.source_id));
     }
 
     return Response.json({ success: true, fields });
