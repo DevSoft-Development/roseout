@@ -14,10 +14,11 @@ export const dynamic = "force-dynamic";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 function fallbackGeneration(input: Record<string, unknown>, ctaUrl: string) {
+  const locationName = normalizeString(input.location_name);
   return buildMarketingSocialPackage({
-    locationName: normalizeString(input.location_name, "this TheOutHaven spot"),
-    category: normalizeString(input.location_category, "outing"),
-    city: normalizeString(input.location_city, "NYC"),
+    locationName: locationName || undefined,
+    category: normalizeString(input.location_category, locationName ? "outing" : "NYC hidden gems"),
+    city: normalizeString(input.location_city),
     state: normalizeString(input.location_state),
     address: normalizeString(input.location_address),
     description: normalizeString(input.location_description),
@@ -58,7 +59,9 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const campaignId = normalizeString(body.campaign_id);
-  const ctaUrl = normalizeString(body.cta_url) || locationUrl(body.location_source_type, body.location_source_id, body.public_location_url);
+  const locationSourceType = normalizeString(body.location_source_type) || normalizeString(body.location_source_table);
+  const publicLocationUrl = normalizeString(body.public_location_url) || normalizeString(body.public_url);
+  const ctaUrl = normalizeString(body.cta_url) || locationUrl(locationSourceType, normalizeString(body.location_source_id) || normalizeString(body.location_id), publicLocationUrl);
 
   const baseGeneration = fallbackGeneration(body, ctaUrl);
   let generated: MarketingSocialPackage = baseGeneration;
@@ -67,9 +70,12 @@ export async function POST(req: Request) {
     const prompt = `Create a viral but brand-safe marketing package for TheOutHaven. Return only JSON with exactly these keys: instagram_caption, tiktok_caption, youtube_title, youtube_description, email_subject, email_body, sms_body, caption_category, hook, link_in_bio_cta, short_link, full_url.
 Rules:
 - Instagram and TikTok captions must not contain raw URLs and must use "Link in bio".
+- Always include the location name naturally when a location name is provided.
+- Include city/state only when useful and never invent location details.
+- If no location is selected, write general TheOutHaven captions.
 - YouTube description must include the full URL.
 - Email body must include the full clickable URL.
-- SMS body must use the short branded link.
+- SMS body must use the short branded link and opt-out language.
 - Caption category must be one of: ${captionCategories.join(", ")}.
 Location name: ${normalizeString(body.location_name)}
 Category: ${normalizeString(body.location_category)}
