@@ -16,13 +16,23 @@ type SearchResult = {
   subscription_status?: string | null;
 };
 
+type AdminLink = {
+  label: string;
+  href: string;
+  visible: boolean;
+};
+
+type AdminLinkGroup = {
+  title: string;
+  links: AdminLink[];
+};
+
 export default function AdminTopBar() {
   const supabase = createClient();
 
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-
   const [showUserSearch, setShowUserSearch] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -67,9 +77,8 @@ export default function AdminTopBar() {
 
       try {
         const res = await fetch(
-          `/api/admin/search?q=${encodeURIComponent(cleanQuery)}`
+          `/api/admin/search?q=${encodeURIComponent(cleanQuery)}`,
         );
-
         const data = await res.json();
         setResults(data.results || []);
       } catch {
@@ -111,9 +120,7 @@ export default function AdminTopBar() {
 
     const res = await fetch("/api/admin/impersonate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
 
@@ -131,19 +138,14 @@ export default function AdminTopBar() {
 
   const loginAsLocation = async (
     locationId: string,
-    locationType: "restaurants" | "activities"
+    locationType: "restaurants" | "activities",
   ) => {
     setImpersonatingId(locationId);
 
     const res = await fetch("/api/admin/impersonate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        locationId,
-        locationType,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locationId, locationType }),
     });
 
     const data = await res.json();
@@ -167,50 +169,87 @@ export default function AdminTopBar() {
 
   const name =
     user?.user_metadata?.full_name || user?.user_metadata?.name || "Admin";
-
   const email = user?.email || "";
   const initial = name?.charAt(0)?.toUpperCase() || "A";
-
   const canViewDashboard = ["superuser", "admin", "editor", "viewer"].includes(
-    role || ""
+    role || "",
   );
-
   const canViewLocations = ["superuser", "admin", "editor", "viewer"].includes(
-    role || ""
+    role || "",
   );
-
   const canViewDataQuality = [
     "superuser",
     "admin",
     "editor",
     "viewer",
   ].includes(role || "");
-
   const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
-
   const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
-    role || ""
+    role || "",
   );
-
-  const canViewImport = ["superuser", "admin", "viewer"].includes(
-    role || ""
-  );
-
+  const canViewImport = ["superuser", "admin", "viewer"].includes(role || "");
   const canViewUsers = ["superuser", "admin"].includes(role || "");
+
+  const mainLinks: AdminLink[] = [
+    { label: "Dashboard", href: "/admin/dashboard", visible: canViewDashboard },
+    { label: "Locations", href: "/admin/dashboard/locations", visible: canViewLocations },
+    { label: "Reservations", href: "/admin/dashboard/reservations", visible: canViewDashboard },
+    { label: "Import", href: "/admin/dashboard/import", visible: canViewImport },
+    { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canViewClaims },
+  ];
+
+  const groups: AdminLinkGroup[] = [
+    {
+      title: "Location Management",
+      links: [
+        { label: "Locations", href: "/admin/dashboard/locations", visible: canViewLocations },
+        { label: "Data Quality", href: "/admin/dashboard/data-quality", visible: canViewDataQuality },
+        { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canViewClaims },
+        { label: "Claim QRs", href: "/admin/dashboard/claim-qrs", visible: canViewClaims || canViewLocations },
+      ],
+    },
+    {
+      title: "Operations",
+      links: [
+        { label: "Reservations", href: "/admin/dashboard/reservations", visible: canViewDashboard },
+        { label: "Reserve Dashboard", href: "/reserve/dashboard", visible: canViewDashboard },
+        { label: "Layouts", href: "/admin/dashboard/reservations/location-layout", visible: canViewDashboard },
+        { label: "Waitlist", href: "/admin/dashboard/reservation", visible: canViewDashboard },
+      ],
+    },
+    {
+      title: "Imports",
+      links: [
+        { label: "Google Import", href: "/admin/dashboard/import", visible: canViewImport },
+        { label: "Specialty Import", href: "/admin/dashboard/import?mode=specialty", visible: canViewImport },
+        { label: "Backfills", href: "/admin/dashboard/data-quality", visible: canViewDataQuality },
+      ],
+    },
+    {
+      title: "System",
+      links: [
+        { label: "Users", href: "/admin/dashboard/users", visible: canViewUsers },
+        { label: "Settings", href: "/admin/dashboard/support", visible: canViewUsers },
+        { label: "Logs", href: "/admin/import-history", visible: canViewImport },
+        { label: "SEO", href: "/admin/rankings", visible: canViewAnalytics },
+        { label: "Live Sessions", href: "/admin/live-sessions", visible: canViewAnalytics },
+        { label: "Analytics", href: "/admin/dashboard/analytics", visible: canViewAnalytics },
+      ],
+    },
+  ];
 
   return (
     <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
-      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <button
           type="button"
           onClick={() => goTo("/admin/dashboard")}
-          className="group flex items-center gap-3"
+          className="group flex min-w-0 items-center gap-3"
         >
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-300/30 bg-[#f8f3ef] text-lg font-black text-[#8b0f2f] shadow-lg shadow-rose-950/30 transition group-hover:scale-105">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/30 bg-[#f8f3ef] text-lg font-black text-[#8b0f2f] shadow-lg shadow-rose-950/30 transition group-hover:scale-105">
             R
           </div>
-
-          <div className="text-left">
+          <div className="hidden text-left sm:block">
             <p className="text-lg font-black tracking-tight text-white">
               TheOutHaven
             </p>
@@ -220,136 +259,52 @@ export default function AdminTopBar() {
           </div>
         </button>
 
-        <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] p-1 lg:flex">
-          {canViewDashboard && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Dashboard
-            </button>
-          )}
-
-          {canViewDashboard && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/support")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Tickets
-            </button>
-          )}
-
-          {canViewDashboard && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/reservations")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Reservations
-            </button>
-          )}
-
-          {canViewLocations && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/locations")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Locations
-            </button>
-          )}
-
-          {canViewDataQuality && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/data-quality")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Data Quality
-            </button>
-          )}
-
-          {canViewUsers && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/users")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Users
-            </button>
-          )}
-
-          {canViewClaims && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/claims")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Claims
-            </button>
-          )}
-
-          {canViewClaims && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/claim-tools")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Claim Tools
-            </button>
-          )}
-
-          {canViewImport && (
-            <button
-              type="button"
-              onClick={() => goTo("/admin/dashboard/import")}
-              className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
-            >
-              Import
-            </button>
-          )}
-        </div>
+        <nav className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 lg:flex">
+          {mainLinks
+            .filter((link) => link.visible)
+            .map((link) => (
+              <button
+                key={link.href}
+                type="button"
+                onClick={() => goTo(link.href)}
+                className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
+              >
+                {link.label}
+              </button>
+            ))}
+        </nav>
 
         <div className="relative" ref={dropdownRef}>
           <button
             type="button"
             onClick={() => setOpen((prev) => !prev)}
-            className="flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 shadow-inner shadow-white/5 transition hover:bg-white/[0.1]"
+            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-2 py-2 shadow-inner shadow-white/5 transition hover:bg-white/[0.1] sm:gap-3 sm:px-3"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f8f3ef] text-sm font-black text-[#8b0f2f] shadow-lg shadow-rose-950/20">
               {initial}
             </div>
-
             <div className="hidden text-left md:block">
               <p className="text-sm font-bold leading-tight">{name}</p>
               <p className="max-w-[180px] truncate text-xs text-white/45">
                 {email}
               </p>
             </div>
-
             <span className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/50">
               {open ? "▲" : "▼"}
             </span>
           </button>
 
           {open && (
-            <div className="absolute right-0 z-[9999] mt-4 w-[calc(100vw-2rem)] max-w-96 overflow-hidden rounded-[2rem] border border-white/10 bg-[#12090d] text-white shadow-2xl shadow-black/70">
+            <div className="absolute right-0 z-[9999] mt-4 w-[calc(100vw-2rem)] max-w-[28rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#12090d] text-white shadow-2xl shadow-black/70">
               <div className="relative overflow-hidden border-b border-white/10 bg-gradient-to-br from-rose-500/25 via-fuchsia-500/15 to-black px-5 py-5">
                 <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-rose-500/20 blur-3xl" />
-
                 <div className="relative flex items-center gap-4">
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f8f3ef] text-xl font-black text-[#8b0f2f]">
                     {initial}
                   </div>
-
                   <div className="min-w-0">
                     <p className="truncate text-base font-black">{name}</p>
-                    <p className="mt-1 truncate text-xs text-white/55">
-                      {email}
-                    </p>
-
+                    <p className="mt-1 truncate text-xs text-white/55">{email}</p>
                     {role && (
                       <span className="mt-3 inline-flex rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-rose-100 ring-1 ring-white/10">
                         {role}
@@ -360,42 +315,40 @@ export default function AdminTopBar() {
               </div>
 
               <div className="max-h-[78vh] overflow-y-auto p-3">
-                {canViewDashboard && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard")}>
-                    Dashboard
-                  </MenuButton>
-                )}
+                <div className="grid gap-2 lg:hidden">
+                  {mainLinks
+                    .filter((link) => link.visible)
+                    .map((link) => (
+                      <MenuButton key={link.href} onClick={() => goTo(link.href)}>
+                        {link.label}
+                      </MenuButton>
+                    ))}
+                </div>
 
-                {canViewDashboard && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/support")}>
-                    Ticket System
-                  </MenuButton>
-                )}
+                <div className="my-3 border-t border-white/10" />
 
-                {canViewDashboard && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/reservations")}>
-                    Reservation System
-                  </MenuButton>
-                )}
+                {groups.map((group) => {
+                  const visibleLinks = group.links.filter((link) => link.visible);
+                  if (!visibleLinks.length) return null;
 
-                {canViewLocations && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/locations")}>
-                    Locations
-                  </MenuButton>
-                )}
-
-                {canViewDataQuality && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/data-quality")}>
-                    Admin Data Quality Dashboard
-                  </MenuButton>
-                )}
+                  return (
+                    <div key={group.title} className="mb-4 last:mb-0">
+                      <p className="px-4 pb-2 text-[10px] font-black uppercase tracking-[0.24em] text-rose-200/55">
+                        {group.title}
+                      </p>
+                      <div className="grid gap-1">
+                        {visibleLinks.map((link) => (
+                          <MenuButton key={`${group.title}-${link.href}`} onClick={() => goTo(link.href)}>
+                            {link.label}
+                          </MenuButton>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
 
                 {canViewUsers && (
-                  <>
-                    <MenuButton onClick={() => goTo("/admin/dashboard/users")}>
-                      Users Dashboard
-                    </MenuButton>
-
+                  <div className="mt-3 border-t border-white/10 pt-3">
                     <button
                       type="button"
                       onClick={() => setShowUserSearch((prev) => !prev)}
@@ -427,13 +380,11 @@ export default function AdminTopBar() {
                             </p>
                           )}
 
-                          {!searching &&
-                            query.trim().length >= 2 &&
-                            results.length === 0 && (
-                              <p className="px-1 text-xs text-white/40">
-                                No users or locations found.
-                              </p>
-                            )}
+                          {!searching && query.trim().length >= 2 && results.length === 0 && (
+                            <p className="px-1 text-xs text-white/40">
+                              No users or locations found.
+                            </p>
+                          )}
 
                           {results.map((item) => (
                             <button
@@ -454,22 +405,17 @@ export default function AdminTopBar() {
                                   <p className="truncate text-sm font-black text-white">
                                     {item.title}
                                   </p>
-
                                   <p className="mt-0.5 truncate text-xs text-white/45">
                                     {item.subtitle}
                                   </p>
-
                                   {item.phone && (
                                     <p className="mt-0.5 text-xs text-white/35">
                                       {item.phone}
                                     </p>
                                   )}
                                 </div>
-
                                 <span className="rounded-full bg-rose-500 px-3 py-1 text-[10px] font-black uppercase text-white">
-                                  {impersonatingId === item.id
-                                    ? "Opening"
-                                    : "View"}
+                                  {impersonatingId === item.id ? "Opening" : "View"}
                                 </span>
                               </div>
 
@@ -477,7 +423,6 @@ export default function AdminTopBar() {
                                 <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold capitalize text-white/60">
                                   {item.type === "user" ? "User" : "Location"}
                                 </span>
-
                                 <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold capitalize text-white/60">
                                   {item.locationType
                                     ? item.locationType === "restaurants"
@@ -485,7 +430,6 @@ export default function AdminTopBar() {
                                       : "Activity"
                                     : item.meta}
                                 </span>
-
                                 {item.subscription_status && (
                                   <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold capitalize text-white/60">
                                     {item.subscription_status}
@@ -497,37 +441,7 @@ export default function AdminTopBar() {
                         </div>
                       </div>
                     )}
-                  </>
-                )}
-
-                {canViewClaims && (
-                  <MenuButton onClick={() => goTo("/admin/claims")}>
-                    Claims
-                  </MenuButton>
-                )}
-
-                {canViewClaims && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/claim-tools")}>
-                    Claim Tools
-                  </MenuButton>
-                )}
-
-                {canViewAnalytics && (
-                  <MenuButton onClick={() => goTo("/admin/live-sessions")}>
-                    Live Sessions
-                  </MenuButton>
-                )}
-
-                {canViewAnalytics && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/analytics")}>
-                    Analytics Dashboard
-                  </MenuButton>
-                )}
-
-                {canViewImport && (
-                  <MenuButton onClick={() => goTo("/admin/dashboard/import")}>
-                    Import
-                  </MenuButton>
+                  </div>
                 )}
 
                 <div className="my-3 border-t border-white/10" />

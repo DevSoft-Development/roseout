@@ -67,11 +67,25 @@ export default function LocationDetailPage() {
     async function loadLocation() {
       setLoading(true);
 
-      const { data, error } = await supabase
+      const sourceTable = type === "activities" || type === "activity" ? "activities" : "restaurants";
+      let { data, error } = await supabase
         .from("locations")
         .select("*")
-        .eq("id", id)
+        .or(`id.eq.${id},and(source_table.eq.${sourceTable},source_id.eq.${id})`)
         .maybeSingle();
+
+      if (!data && !error) {
+        const slugResult = await supabase
+          .from("locations")
+          .select("*")
+          .eq("slug", id)
+          .maybeSingle();
+
+        if (!slugResult.error) {
+          data = slugResult.data;
+          error = slugResult.error;
+        }
+      }
 
       if (error || !data || !isPublicSearchVisible(data)) {
         console.error(
@@ -88,7 +102,7 @@ export default function LocationDetailPage() {
       const { data: reviewData } = await supabase
         .from("location_reviews")
         .select("*")
-        .eq("location_id", id)
+        .eq("location_id", data.id || id)
         .order("created_at", { ascending: false });
 
       setLocation(data);
@@ -97,7 +111,7 @@ export default function LocationDetailPage() {
     }
 
     if (id) loadLocation();
-  }, [id, supabase]);
+  }, [id, supabase, type]);
 
   useEffect(() => {
     function onScroll() {
