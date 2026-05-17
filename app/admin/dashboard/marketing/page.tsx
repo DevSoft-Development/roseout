@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import MarketingCampaignActions from "@/components/marketing/MarketingCampaignActions";
 import LinkedCaptionPreview from "@/components/marketing/LinkedCaptionPreview";
+import SocialGeneratorPreview from "@/components/marketing/SocialGeneratorPreview";
 import { shortenDisplayedLink } from "@/lib/marketing/links";
+import { buildMarketingSocialPackage } from "@/lib/marketing/caption-templates";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -108,6 +110,17 @@ export default async function MarketingCenterPage({
   await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
   const params = await searchParams;
   const copy = prefillCopy(params);
+  const fullUrl = params.public_url || "https://theouthaven.com";
+  const initialSocialPackage = buildMarketingSocialPackage({
+    locationName: params.location_name || "Selected Location",
+    category: params.category || "NYC hidden gems",
+    city: params.city || "NYC",
+    state: params.state || "",
+    address: params.address || "",
+    description: params.description || "",
+    fullUrl,
+    captionCategory: params.category || "NYC hidden gems",
+  });
 
   const [campaignsResult, logsResult, totalCampaigns, drafts, scheduled, sent, failed] = await Promise.all([
     supabaseAdmin
@@ -264,14 +277,22 @@ export default async function MarketingCenterPage({
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">AI campaign generator prompt</span>
                 <textarea defaultValue={`Promote ${params.location_name || "a featured TheOutHaven location"} for a weekend outing with a friendly CTA.`} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
-              <label className="space-y-2 lg:col-span-2">
-                <span className="text-xs font-black uppercase tracking-wide text-black/45">Social caption</span>
-                <textarea defaultValue={copy.social} className="min-h-28 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs font-black uppercase tracking-wide text-black/45">Hashtags</span>
-                <input defaultValue={copy.hashtags} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
-              </label>
+              <div className="space-y-3 lg:col-span-2">
+                <div>
+                  <span className="text-xs font-black uppercase tracking-wide text-black/45">AI / social generator</span>
+                  <p className="mt-1 text-xs font-bold text-black/45">Pick a creative category, regenerate a viral caption package, preview each platform, and copy channel-ready text.</p>
+                </div>
+                <SocialGeneratorPreview
+                  initialPackage={initialSocialPackage}
+                  locationName={params.location_name || "Selected Location"}
+                  locationCategory={params.category || "NYC hidden gems"}
+                  city={params.city || "NYC"}
+                  state={params.state || ""}
+                  address={params.address || ""}
+                  description={params.description || ""}
+                  fullUrl={fullUrl}
+                />
+              </div>
               <label className="space-y-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Audience selector</span>
                 <select defaultValue="opted_in_all" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400">
@@ -283,15 +304,15 @@ export default async function MarketingCenterPage({
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Email subject</span>
-                <input defaultValue={copy.emailSubject} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <input defaultValue={initialSocialPackage.email_subject} className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">Email body</span>
-                <textarea defaultValue={copy.emailBody} className="min-h-32 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <textarea defaultValue={initialSocialPackage.email_body} className="min-h-32 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <label className="space-y-2 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wide text-black/45">SMS text</span>
-                <textarea defaultValue={copy.sms} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
+                <textarea defaultValue={initialSocialPackage.sms_body} className="min-h-24 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
               </label>
               <div className="grid gap-3 lg:col-span-2 sm:grid-cols-2">
                 <label className="space-y-2">
@@ -312,19 +333,19 @@ export default async function MarketingCenterPage({
               <h2 className="mt-2 text-2xl font-black">All-channel package</h2>
               <div className="mt-5 space-y-3">
                 <div id="social-posts" className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">Social preview</p>
-                  <LinkedCaptionPreview text={copy.social} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70" />
-                  <p className="mt-2 text-xs font-black text-rose-200">{copy.hashtags}</p>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">Instagram / TikTok rules</p>
+                  <LinkedCaptionPreview text={initialSocialPackage.instagram_caption} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70" />
+                  <p className="mt-3 rounded-2xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-[11px] font-bold text-emerald-100">No raw URLs. Captions use “Link in bio”.</p>
                 </div>
                 <div id="email-blast" className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">Email preview</p>
-                  <p className="mt-2 font-black">{copy.emailSubject}</p>
-                  <LinkedCaptionPreview text={copy.emailBody} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/60" />
-                  <p className="mt-3 text-[11px] text-white/35">Includes unsubscribe footer automatically.</p>
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">Email / YouTube rules</p>
+                  <p className="mt-2 font-black">{initialSocialPackage.email_subject}</p>
+                  <LinkedCaptionPreview text={initialSocialPackage.email_body} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/60" />
+                  <p className="mt-3 text-[11px] text-white/35">Email and YouTube previews render full URLs as clickable links.</p>
                 </div>
                 <div id="text-blast" className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">SMS preview</p>
-                  <LinkedCaptionPreview text={copy.sms} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70" />
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/40">SMS short link</p>
+                  <LinkedCaptionPreview text={initialSocialPackage.sms_body} className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70" />
                 </div>
               </div>
             </div>
