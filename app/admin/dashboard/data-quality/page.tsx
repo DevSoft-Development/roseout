@@ -19,8 +19,14 @@ export const metadata: Metadata = {
 const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-16";
 const ADMIN_DATA_QUALITY_BASE_PATH = "/admin/dashboard/data-quality";
 
-const SELECT_FIELDS =
-  "id, name, restaurant_name, activity_name, location_type, primary_category, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
+const RESTAURANT_SELECT =
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
+
+const ACTIVITY_SELECT =
+  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
+
+const LOCATION_SELECT =
+  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, food_type, activity_type, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, status, quality_score, last_quality_check_at, updated_at";
 
 type QualityFilter =
   | "all"
@@ -43,6 +49,8 @@ type RawLocationRow = LocationVisibilityFields & {
   restaurant_name?: string | null;
   activity_name?: string | null;
   location_type?: string | null;
+  source_table?: string | null;
+  source_id?: string | null;
   primary_category?: string | null;
   address?: string | null;
   city?: string | null;
@@ -59,7 +67,9 @@ type RawLocationRow = LocationVisibilityFields & {
 
 type QualityLocation = RawLocationRow & {
   locationType: "restaurant" | "activity";
-  table: "restaurants" | "activities";
+  table: "restaurants" | "activities" | "locations";
+  detailType: "restaurants" | "activities";
+  detailId: string;
   displayName: string;
 };
 
@@ -220,6 +230,8 @@ function mapRestaurant(row: RawLocationRow): QualityLocation {
   return {
     ...row,
     table: "restaurants",
+    detailType: "restaurants",
+    detailId: row.id,
     locationType: "restaurant",
     displayName: getLocationName(row, "Untitled restaurant"),
   };
@@ -229,8 +241,22 @@ function mapActivity(row: RawLocationRow): QualityLocation {
   return {
     ...row,
     table: "activities",
+    detailType: "activities",
+    detailId: row.id,
     locationType: "activity",
     displayName: getLocationName(row, "Untitled activity"),
+  };
+}
+
+function mapLocation(row: RawLocationRow): QualityLocation {
+  const isActivity = row.source_table === "activities" || row.location_type === "activity" || Boolean(row.activity_name);
+  return {
+    ...row,
+    table: "locations",
+    detailType: isActivity ? "activities" : "restaurants",
+    detailId: row.source_id || row.id,
+    locationType: isActivity ? "activity" : "restaurant",
+    displayName: getLocationName(row, "Untitled location"),
   };
 }
 
@@ -248,16 +274,22 @@ export default async function AdminDataQualityPage({
     ? (requestedFilter as QualityFilter)
     : "all";
 
-  const [restaurantsResult, activitiesResult] = await Promise.all([
+  const [restaurantsResult, activitiesResult, locationsResult] = await Promise.all([
     supabase
       .from("restaurants")
-      .select(SELECT_FIELDS)
+      .select(RESTAURANT_SELECT)
       .order("last_quality_check_at", { ascending: true, nullsFirst: true })
       .order("updated_at", { ascending: false })
       .limit(1000),
     supabase
       .from("activities")
-      .select(SELECT_FIELDS)
+      .select(ACTIVITY_SELECT)
+      .order("last_quality_check_at", { ascending: true, nullsFirst: true })
+      .order("updated_at", { ascending: false })
+      .limit(1000),
+    supabase
+      .from("locations")
+      .select(LOCATION_SELECT)
       .order("last_quality_check_at", { ascending: true, nullsFirst: true })
       .order("updated_at", { ascending: false })
       .limit(1000),
@@ -265,7 +297,8 @@ export default async function AdminDataQualityPage({
 
   const restaurantRows = ((restaurantsResult.data || []) as RawLocationRow[]).map(mapRestaurant);
   const activityRows = ((activitiesResult.data || []) as RawLocationRow[]).map(mapActivity);
-  const allLocations = [...restaurantRows, ...activityRows].sort((a, b) => {
+  const locationRows = ((locationsResult.data || []) as RawLocationRow[]).map(mapLocation);
+  const allLocations = [...locationRows, ...restaurantRows, ...activityRows].sort((a, b) => {
     const dateA = a.last_quality_check_at || a.updated_at || "";
     const dateB = b.last_quality_check_at || b.updated_at || "";
     return dateA.localeCompare(dateB);
@@ -302,7 +335,7 @@ export default async function AdminDataQualityPage({
     needsReview: searchedLocations.filter((location) => matchesFilter(location, "needs_review")).length,
   };
 
-  const error = restaurantsResult.error || activitiesResult.error;
+  const error = restaurantsResult.error || activitiesResult.error || locationsResult.error;
 
   return (
     <main
@@ -322,7 +355,7 @@ export default async function AdminDataQualityPage({
                 Data Quality Dashboard
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
-                Review restaurants and activities that are not searchable because
+                Review locations, restaurants, and activities that are not searchable because
                 required data is missing. This admin view intentionally includes
                 incomplete, hidden, and closed listings so they can be fixed.
               </p>
@@ -580,13 +613,13 @@ export default async function AdminDataQualityPage({
 
                     <div className="flex gap-2 lg:flex-col">
                       <Link
-                        href={`/locations/${location.table}/${location.id}?from=/admin/dashboard/data-quality`}
+                        href={`/locations/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         View
                       </Link>
                       <Link
-                        href={`/admin/dashboard/locations/edit/${location.table}/${location.id}?from=/admin/dashboard/data-quality`}
+                        href={`/admin/dashboard/locations/edit/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}
                         className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit

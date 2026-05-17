@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
 
 type EventItem = {
   id: string;
@@ -128,7 +127,6 @@ export default function AdminLiveSessionsClient() {
 
   return (
     <main className="min-h-screen bg-[#080407] text-white">
-      <AdminTopBar />
 
       <section className="relative overflow-hidden border-b border-white/10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(244,63,94,0.25),transparent_35%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.18),transparent_30%)]" />

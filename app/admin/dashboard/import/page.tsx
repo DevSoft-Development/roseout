@@ -128,6 +128,9 @@ const queryCountOptions = [
 ];
 
 export default function ImportPage() {
+  useEffect(() => {
+    document.title = "Import | TheOutHaven Admin";
+  }, []);
   const [logs, setLogs] = useState<ImportLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);

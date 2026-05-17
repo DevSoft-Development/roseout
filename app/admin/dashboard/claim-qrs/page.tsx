@@ -52,7 +52,7 @@ function buildClaimQrUrl({
   q: string;
   filter: string;
   page: number;
-  pageSize: number;
+  pageSize: number | "all";
 }) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
@@ -81,17 +81,20 @@ export default async function AdminClaimQrPrintPage({
   const q = params.q?.trim() || "";
   const filter = params.filter || "all";
   const page = Math.max(1, Number(params.page || 1));
+  const loadAll = params.pageSize === "all";
   const requestedPageSize = Number(params.pageSize || 400);
-  const pageSize = PAGE_SIZE_OPTIONS.includes(requestedPageSize as (typeof PAGE_SIZE_OPTIONS)[number])
-    ? requestedPageSize
-    : 400;
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const pageSize = loadAll
+    ? 100000
+    : PAGE_SIZE_OPTIONS.includes(requestedPageSize as (typeof PAGE_SIZE_OPTIONS)[number])
+      ? requestedPageSize
+      : 400;
+  const from = loadAll ? 0 : (page - 1) * pageSize;
+  const to = loadAll ? 99999 : from + pageSize - 1;
 
   let query = supabase
     .from("locations")
     .select(
-      "id, name, restaurant_name, activity_name, location_type, source_table, address, city, state, zip_code, claim_url, claim_code, qr_code_data_url, claim_qr_url, is_claimed, claimed",
+      "id, name, restaurant_name, activity_name, location_type, source_table, address, city, state, zip_code, claim_url, claim_code, qr_code_data_url, claim_qr_url, is_claimed, phone, google_place_id",
       { count: "exact" },
     )
     .order("name", { ascending: true })
@@ -99,7 +102,7 @@ export default async function AdminClaimQrPrintPage({
 
   if (q) {
     query = query.or(
-      `name.ilike.%${q}%,restaurant_name.ilike.%${q}%,activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,claim_code.ilike.%${q}%`,
+      `name.ilike.%${q}%,restaurant_name.ilike.%${q}%,activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,phone.ilike.%${q}%,google_place_id.ilike.%${q}%,claim_code.ilike.%${q}%`,
     );
   }
 
@@ -108,17 +111,15 @@ export default async function AdminClaimQrPrintPage({
   } else if (filter === "missing_claim_code") {
     query = query.is("claim_code", null);
   } else if (filter === "claimed") {
-    query = query.or("is_claimed.eq.true,and(is_claimed.is.null,claimed.eq.true)");
+    query = query.eq("is_claimed", true);
   } else if (filter === "unclaimed") {
-    query = query.or(
-      "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)",
-    );
+    query = query.or("is_claimed.eq.false,is_claimed.is.null");
   }
 
   const { data, error, count } = await query;
   const total = count || 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
+  const totalPages = loadAll ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const safePage = loadAll ? 1 : Math.min(page, totalPages);
 
   const locations: ClaimQrLocation[] = (data || []).map((row) => ({
     id: row.id,
@@ -180,7 +181,7 @@ export default async function AdminClaimQrPrintPage({
             </select>
             <select
               name="pageSize"
-              defaultValue={pageSize}
+              defaultValue={loadAll ? "all" : pageSize}
               className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-bold text-white outline-none focus:border-rose-300"
             >
               {PAGE_SIZE_OPTIONS.map((option) => (
@@ -188,6 +189,7 @@ export default async function AdminClaimQrPrintPage({
                   {option} / page
                 </option>
               ))}
+              <option className="text-black" value="all">Load all</option>
             </select>
             <input type="hidden" name="page" value="1" />
             <button className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg" type="submit">
@@ -221,7 +223,7 @@ export default async function AdminClaimQrPrintPage({
 
         <div className="no-print mt-5 flex flex-wrap items-center justify-between gap-4">
           <Link
-            href={buildClaimQrUrl({ q, filter, page: Math.max(1, safePage - 1), pageSize })}
+            href={buildClaimQrUrl({ q, filter, page: Math.max(1, safePage - 1), pageSize: loadAll ? "all" : pageSize })}
             className={`rounded-full px-5 py-3 text-sm font-black transition ${
               safePage <= 1
                 ? "pointer-events-none border border-white/10 bg-white/[0.04] text-white/30"
@@ -231,10 +233,10 @@ export default async function AdminClaimQrPrintPage({
             Previous
           </Link>
           <p className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/55">
-            Showing {total ? from + 1 : 0}-{Math.min(from + locations.length, total)} of {formatNumber(total)} • Page {safePage} of {totalPages}
+            Showing {total ? from + 1 : 0}-{Math.min(from + locations.length, total)} of {formatNumber(total)} • {loadAll ? "All loaded" : `Page ${safePage} of ${totalPages}`}
           </p>
           <Link
-            href={buildClaimQrUrl({ q, filter, page: Math.min(totalPages, safePage + 1), pageSize })}
+            href={buildClaimQrUrl({ q, filter, page: Math.min(totalPages, safePage + 1), pageSize: loadAll ? "all" : pageSize })}
             className={`rounded-full px-5 py-3 text-sm font-black transition ${
               safePage >= totalPages
                 ? "pointer-events-none border border-white/10 bg-white/[0.04] text-white/30"

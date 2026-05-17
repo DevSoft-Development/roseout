@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
 import { getLocationName } from "@/lib/locationName";
 
 export default function AdminLabelsPage() {
@@ -180,7 +179,6 @@ export default function AdminLabelsPage() {
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <AdminTopBar />
 
       <div className="mx-auto max-w-6xl px-6 py-12">
         <h1 className="text-4xl font-bold">Bulk Print Labels</h1>

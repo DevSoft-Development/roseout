@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type ClaimToolResult = {
   id: string;
@@ -115,6 +115,21 @@ export default function ClaimToolsClient() {
       setBusyKey("");
     }
   }
+
+  useEffect(() => {
+    const cleanQuery = query.trim();
+    if (cleanQuery.length < 2) {
+      setResults([]);
+      setMessage("Type at least 2 characters to search claim tools.");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      runSearch(cleanQuery);
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const selectedPrint = useMemo(() => results.filter((result) => result.claim_code || result.qr_code_data_url), [results]);
 

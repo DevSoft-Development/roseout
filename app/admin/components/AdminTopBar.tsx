@@ -189,6 +189,7 @@ export default function AdminTopBar() {
   );
   const canViewImport = ["superuser", "admin", "viewer"].includes(role || "");
   const canViewUsers = ["superuser", "admin"].includes(role || "");
+  const canViewSupport = ["superuser", "admin", "editor", "reviewer", "viewer"].includes(role || "");
 
   const mainLinks: AdminLink[] = [
     { label: "Dashboard", href: "/admin/dashboard", visible: canViewDashboard },
@@ -196,6 +197,7 @@ export default function AdminTopBar() {
     { label: "Reservations", href: "/admin/dashboard/reservations", visible: canViewDashboard },
     { label: "Import", href: "/admin/dashboard/import", visible: canViewImport },
     { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canViewClaims },
+    { label: "Support", href: "/admin/dashboard/support", visible: canViewSupport },
   ];
 
   const groups: AdminLinkGroup[] = [
@@ -221,19 +223,14 @@ export default function AdminTopBar() {
       title: "Imports",
       links: [
         { label: "Google Import", href: "/admin/dashboard/import", visible: canViewImport },
-        { label: "Specialty Import", href: "/admin/dashboard/import?mode=specialty", visible: canViewImport },
-        { label: "Backfills", href: "/admin/dashboard/data-quality", visible: canViewDataQuality },
+        { label: "Import Logs", href: "/admin/dashboard/logs", visible: canViewImport },
       ],
     },
     {
-      title: "System",
+      title: "Support",
       links: [
-        { label: "Users", href: "/admin/dashboard/users", visible: canViewUsers },
-        { label: "Settings", href: "/admin/dashboard/support", visible: canViewUsers },
-        { label: "Logs", href: "/admin/import-history", visible: canViewImport },
-        { label: "SEO", href: "/admin/rankings", visible: canViewAnalytics },
-        { label: "Live Sessions", href: "/admin/live-sessions", visible: canViewAnalytics },
-        { label: "Analytics", href: "/admin/dashboard/analytics", visible: canViewAnalytics },
+        { label: "Support System", href: "/admin/dashboard/support", visible: canViewSupport },
+        { label: "Logs", href: "/admin/dashboard/logs", visible: canViewImport || canViewUsers },
       ],
     },
   ];
