@@ -24,6 +24,9 @@ type FormState = {
   main_image?: string | null;
   image_url: string;
   images?: string[] | null;
+  is_searchable?: string;
+  data_status?: string;
+  missing_fields?: string;
   website: string;
   external_reservation_url?: string | null;
   reservation_url: string;
@@ -171,6 +174,9 @@ export default function EditLocationPage() {
     longitude: "",
     google_place_id: "",
     formatted_address: "",
+    is_searchable: "",
+    data_status: "",
+    missing_fields: "",
   });
 
   useEffect(() => {
@@ -249,6 +255,9 @@ export default function EditLocationPage() {
           longitude: data.longitude ?? "",
           google_place_id: data.google_place_id || "",
           formatted_address: data.formatted_address || "",
+          is_searchable: typeof data.is_searchable === "boolean" ? String(data.is_searchable) : "",
+          data_status: data.data_status || "",
+          missing_fields: Array.isArray(data.missing_fields) ? data.missing_fields.join(", ") : data.missing_fields || "",
         });
       } catch {
         setMessage("Location failed to load.");
@@ -426,6 +435,8 @@ export default function EditLocationPage() {
   };
 
   const safeScore = clampScore(form.theouthaven_score);
+  const galleryImages = [form.image_url, ...(form.images || [])].filter(Boolean) as string[];
+  const publicPreviewHref = `/locations/${type}/${effectiveId || id}`;
 
   const isSuccess =
     message.includes("✅") ||
@@ -503,19 +514,32 @@ export default function EditLocationPage() {
             </div>
           )}
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-end">
+          <div className="grid gap-8 lg:grid-cols-[180px_1fr_340px] lg:items-end">
+            <div className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/35 shadow-2xl">
+              {form.image_url ? (
+                <Image src={form.image_url} alt={form.name || "Location"} width={360} height={260} className="h-44 w-full object-cover" />
+              ) : (
+                <div className="flex h-44 items-center justify-center text-xs font-black uppercase tracking-[0.2em] text-white/30">No Image</div>
+              )}
+            </div>
+
             <div>
               <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-200/70">
-                TheOutHaven Reserve
+                TheOutHaven Admin · Location Studio
               </p>
 
               <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
-                Edit Location
+                {form.name || "Edit Location"}
               </h1>
 
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Tag>{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</Tag>
+                <Tag>{form.claim_status || "Unclaimed"}</Tag>
+                <Tag>{form.data_status || "Quality review"}</Tag>
+              </div>
+
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">
-                Refine this listing, improve search matching, and preview the
-                way it appears across TheOutHaven.
+                Refine this listing with a cleaner section hierarchy, premium media, address intelligence, discovery signals, reserve settings, claim tools, and data quality controls.
               </p>
             </div>
 
@@ -544,9 +568,15 @@ export default function EditLocationPage() {
           </div>
         )}
 
+        <nav className="mb-6 flex gap-2 overflow-x-auto rounded-full border border-white/10 bg-white/[0.04] p-2 text-xs font-black uppercase tracking-[0.18em] text-white/55">
+          {["Basic Info", "Address", "Images & Media", "Discovery & AI", "Reservations", "Claim & QR", "Visibility & Data Quality"].map((item) => (
+            <a key={item} href={`#${item.toLowerCase().replaceAll(" ", "-").replaceAll("&", "and")}`} className="shrink-0 rounded-full px-4 py-2 transition hover:bg-white hover:text-black">{item}</a>
+          ))}
+        </nav>
+
         <div className="grid gap-6 lg:grid-cols-[1fr_410px]">
           <section className="space-y-6">
-            <Panel title="Basic Listing Details">
+            <Panel id="basic-info" title="Basic Info">
               <Field label="Location Name" value={form.name} onChange={(v) => update("name", v)} />
 
               <TextArea
@@ -591,7 +621,7 @@ export default function EditLocationPage() {
               />
             </Panel>
 
-            <Panel title="Address & Nearby Search">
+            <Panel id="address" title="Address">
               <GoogleAddressAutocomplete
                 label="Address"
                 value={form.address}
@@ -629,7 +659,21 @@ export default function EditLocationPage() {
               <input type="hidden" value={String(form.longitude || "")} readOnly />
             </Panel>
 
-            <Panel title="Experience Matching Details">
+            <Panel id="images-and-media" title="Images & Media">
+              <Field label="Image Upload" value="" onChange={() => {}} placeholder="Upload control coming soon" helper="Use the image URL field for production images today." />
+              <Field label="Main Image URL" value={form.image_url} onChange={(v) => update("image_url", v)} />
+              <div className="grid gap-3 sm:grid-cols-3">
+                {(galleryImages.length ? galleryImages : [""]).slice(0, 6).map((image, index) => (
+                  <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-32 w-full object-cover" /> : <div className="flex h-32 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
+                    <div className="p-3 text-xs font-black uppercase tracking-[0.16em] text-white/45">{index === 0 ? "Main image" : `Photo ${index + 1}`}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs font-semibold text-white/35">Drag reorder and multi-upload can connect to storage when the media backend is enabled.</p>
+            </Panel>
+
+            <Panel id="discovery-and-ai" title="Discovery & AI">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Atmosphere" value={form.atmosphere} onChange={(v) => update("atmosphere", v)} />
                 <Field label="Noise Level" value={form.noise_level} onChange={(v) => update("noise_level", v)} />
@@ -642,7 +686,7 @@ export default function EditLocationPage() {
               <Field label="Signature Items / Highlights" helper="Separate with commas." value={form.signature_items} onChange={(v) => update("signature_items", v)} />
             </Panel>
 
-            <Panel title="Search Tags & Ranking">
+            <Panel id="visibility-and-data-quality" title="Visibility & Data Quality">
               <Field label="Date Style Tags" helper="Separate with commas." value={form.date_style_tags} onChange={(v) => update("date_style_tags", v)} />
               <Field label="Search Keywords" helper="Separate with commas." value={form.search_keywords} onChange={(v) => update("search_keywords", v)} />
 
@@ -650,11 +694,15 @@ export default function EditLocationPage() {
                 <Field label="TheOutHaven Score" value={String(safeScore)} onChange={(v) => update("theouthaven_score", v)} helper="This updates automatically when you save." />
                 <Field label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} />
               </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} helper="true / false" />
+                <Field label="Data Status" value={form.data_status || ""} onChange={(v) => update("data_status", v)} />
+                <Field label="Missing Fields" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Visible for admins only." />
+              </div>
+              <a href={publicPreviewHref} target="_blank" className="inline-flex w-fit rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">Preview public page</a>
             </Panel>
 
-            <Panel title="Links & Owner Contact">
-              <Field label="Image URL" value={form.image_url} onChange={(v) => update("image_url", v)} />
-
+            <Panel id="reservations" title="Reservations, Claim & QR">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Website" value={form.website} onChange={(v) => update("website", v)} />
                 <Field label="Reservation / Booking URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} />
@@ -665,7 +713,7 @@ export default function EditLocationPage() {
                 <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
               </div>
 
-              <div className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
+              <div id="claim-and-qr" className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
                 <p className="mb-4 text-xs font-black uppercase tracking-[0.25em] text-white/45">
                   Owner Contact
                 </p>
@@ -678,13 +726,18 @@ export default function EditLocationPage() {
               </div>
             </Panel>
 
-            <button
-              onClick={saveLocation}
-              disabled={saving || optimizing}
-              className="w-full rounded-full bg-white px-5 py-4 font-black text-black transition hover:bg-rose-100 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save All Changes"}
-            </button>
+            <div className="sticky bottom-4 z-30 rounded-[1.5rem] border border-white/10 bg-black/75 p-3 shadow-2xl backdrop-blur-xl">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-bold text-white/45">Unsaved edits stay local until you save this premium location profile.</p>
+                <button
+                  onClick={saveLocation}
+                  disabled={saving || optimizing}
+                  className="rounded-full bg-white px-6 py-3 font-black text-black transition hover:bg-rose-100 disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save All Changes"}
+                </button>
+              </div>
+            </div>
           </section>
 
           <aside className="lg:sticky lg:top-28 lg:self-start">
@@ -754,9 +807,9 @@ export default function EditLocationPage() {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[2rem] border border-white/10 bg-[#12090d] p-6 text-white shadow-2xl">
+    <section id={id} className="scroll-mt-32 rounded-[2rem] border border-white/10 bg-[#12090d] p-6 text-white shadow-2xl">
       <p className="mb-5 text-xs font-black uppercase tracking-[0.25em] text-white/45">
         {title}
       </p>
