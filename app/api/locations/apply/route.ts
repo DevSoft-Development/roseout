@@ -19,6 +19,55 @@ function clean(value: unknown) {
   return String(value || "").trim();
 }
 
+function normalizeSearchTerm(value: string | null) {
+  return clean(value)
+    .replace(/[,%]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const query = normalizeSearchTerm(searchParams.get("query"));
+
+  if (query.length < 2) {
+    return Response.json({ locations: [] });
+  }
+
+  try {
+    const supabase = adminSupabase();
+    const search = `%${query}%`;
+
+    const { data, error } = await supabase
+      .from("locations")
+      .select(
+        "id, name, restaurant_name, activity_name, location_type, primary_category, address, city, state, zip_code, main_image, image_url"
+      )
+      .or(
+        [
+          `name.ilike.${search}`,
+          `restaurant_name.ilike.${search}`,
+          `activity_name.ilike.${search}`,
+          `city.ilike.${search}`,
+          `state.ilike.${search}`,
+          `address.ilike.${search}`,
+        ].join(",")
+      )
+      .limit(12);
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 500 });
+    }
+
+    return Response.json({ locations: data || [] });
+  } catch (error: unknown) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -39,7 +88,20 @@ export async function POST(req: Request) {
     const owner_name = clean(body.owner_name);
     const owner_email = clean(body.owner_email).toLowerCase();
     const owner_phone = clean(body.owner_phone);
-    const notes = clean(body.notes);
+    const primary_category = clean(body.primary_category);
+    const instagram = clean(body.instagram);
+    const external_reservation_url = clean(body.external_reservation_url);
+    const main_image = clean(body.main_image || body.image_url);
+    const rawNotes = clean(body.notes);
+    const extraNotes = [
+      primary_category ? `Primary category: ${primary_category}` : "",
+      instagram ? `Instagram / Social: ${instagram}` : "",
+      external_reservation_url
+        ? `External reservation URL: ${external_reservation_url}`
+        : "",
+      main_image ? `Main image: ${main_image}` : "",
+    ].filter(Boolean);
+    const notes = [rawNotes, ...extraNotes].filter(Boolean).join("\n\n");
 
     if (!location_name) {
       return Response.json(

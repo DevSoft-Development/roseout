@@ -233,7 +233,7 @@ export default function AboutPage() {
             </p>
 
             <Link
-              href="/locations/apply"
+              href="/location/apply"
               className="mt-6 inline-flex rounded-2xl bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
             >
               Claim Your Listing →

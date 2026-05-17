@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     const goal = String(formData.get("goal") || "");
 
     if (plan !== "pro") {
-      return NextResponse.redirect(`${siteUrl}/locations/apply?plan=free`, {
+      return NextResponse.redirect(`${siteUrl}/location/apply`, {
         status: 303,
       });
     }
