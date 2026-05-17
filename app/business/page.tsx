@@ -175,11 +175,17 @@ export default function BusinessPage() {
                 "Priority AI discovery",
                 "Enhanced profile placement",
                 "Built-in reservation system",
+                "Visual layout builder",
+                "Hostess/operator view",
+                "SMS confirmations and reminders",
+                "Waitlist texting",
+                "Add-to-calendar links",
+                "Basic guest notes",
+                "Basic analytics",
                 "Accept customer reservation requests",
                 "Real-time reservation dashboard",
                 "Monitor new reservations and customer interest",
                 "TheOutHaven Reserve",
-                "Advanced analytics",
                 "QR Growth Tools",
                 "Up to 10 photos",
                 "Booking, website, phone, and menu links",
@@ -208,6 +214,12 @@ export default function BusinessPage() {
             <ComparisonRow item="Claim business listing" free="Yes" pro="Yes" />
             <ComparisonRow item="Photos" free="1" pro="Up to 10" />
             <ComparisonRow item="Reservation system" free="—" pro="Included" />
+            <ComparisonRow item="Layout builder" free="—" pro="Included" />
+            <ComparisonRow item="Hostess/operator view" free="—" pro="Included" />
+            <ComparisonRow item="SMS confirmations/reminders" free="—" pro="Included" />
+            <ComparisonRow item="Waitlist texting" free="—" pro="Included" />
+            <ComparisonRow item="Calendar add" free="—" pro="Included" />
+            <ComparisonRow item="Guest notes" free="—" pro="Basic" />
             <ComparisonRow item="Accept reservation requests" free="—" pro="Included" />
             <ComparisonRow item="Real-time reservation dashboard" free="—" pro="Included" />
             <ComparisonRow item="Monitor customer booking interest" free="—" pro="Included" />
@@ -239,6 +251,10 @@ export default function BusinessPage() {
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
               <DashboardFeature
+                title="Visual floor maps"
+                text="Drag tables, rooms, lanes, courts, sections, and event spaces into a live layout."
+              />
+              <DashboardFeature
                 title="New reservations"
                 text="See incoming reservation requests from customers."
               />
@@ -251,8 +267,12 @@ export default function BusinessPage() {
                 text="Track pending, confirmed, declined, and completed reservations."
               />
               <DashboardFeature
+                title="Waitlist texting"
+                text="Notify guests when their table, room, or lane is ready."
+              />
+              <DashboardFeature
                 title="Growth insights"
-                text="Monitor views, clicks, QR scans, and reservation interest."
+                text="Monitor views, clicks, QR scans, reservation interest, and no-shows."
               />
             </div>
           </div>

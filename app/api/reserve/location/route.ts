@@ -4,6 +4,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName as getDisplayLocationName } from "@/lib/locationName";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import {
+  ACTIVE_RESERVATION_STATUSES,
+  rangesOverlap,
+  sendReservationSms,
+} from "@/lib/reservationOperations";
+import {
   getOperatingHoursForDate,
   timeWindowToSlots,
 } from "@/lib/locationHours";
@@ -253,8 +258,11 @@ async function notifyReservation({
       html: ownerHtml,
       replyTo: reservation.customer_email || undefined,
     }),
-    sendSms({
+    sendReservationSms({
+      locationId: reservation.location_id,
+      reservationId: reservation.id,
       to: reservation.customer_phone,
+      messageType: "reservation_confirmed",
       body: `Your reservation at ${locationName} for ${
         reservation.reservation_date
       } at ${formatTime(
@@ -521,13 +529,12 @@ export async function POST(request: NextRequest) {
       const { data: existingReservations, error: existingError } =
         await supabaseAdmin
           .from("location_reservations")
-          .select("id")
+          .select("id, reservation_time, duration_minutes, turn_time_minutes")
           .eq("location_id", locationId)
           .eq("location_type", locationType)
           .eq("bookable_item_id", selectedItem.id)
           .eq("reservation_date", reservationDate)
-          .eq("reservation_time", reservationTime)
-          .in("status", ["pending", "confirmed"]);
+          .in("status", ACTIVE_RESERVATION_STATUSES);
 
       if (existingError) {
         return NextResponse.json(
@@ -536,13 +543,20 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const currentCount = existingReservations?.length || 0;
-      const maxConcurrent = Number(selectedItem.max_concurrent || 1);
+      const durationMinutes = Number(location.default_duration_minutes || selectedItem.turn_time_minutes || 90);
+      const hasOverlap = (existingReservations || []).some((reservation: any) =>
+        rangesOverlap(
+          reservationTime,
+          durationMinutes,
+          String(reservation.reservation_time || "00:00"),
+          Number(reservation.duration_minutes || reservation.turn_time_minutes || durationMinutes),
+        ),
+      );
 
-      if (currentCount >= maxConcurrent) {
+      if (hasOverlap) {
         return NextResponse.json(
           {
-            error: "This time slot is fully booked. Please select another time.",
+            error: "This table, room, lane, or section already has an overlapping reservation.",
           },
           { status: 400 }
         );
@@ -585,6 +599,24 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const reservationStart = new Date(`${reservationDate}T${reservationTime.slice(0, 5)}:00`);
+    const reminderRows = [
+      { reminder_type: "reminder_24h", scheduled_for: new Date(reservationStart.getTime() - 24 * 60 * 60 * 1000).toISOString() },
+      { reminder_type: "reminder_2h", scheduled_for: new Date(reservationStart.getTime() - 2 * 60 * 60 * 1000).toISOString() },
+    ]
+      .filter((item) => new Date(item.scheduled_for).getTime() > Date.now())
+      .map((item) => ({
+        reservation_id: reservation.id,
+        location_id: locationId,
+        reminder_type: item.reminder_type,
+        scheduled_for: item.scheduled_for,
+        status: "scheduled",
+      }));
+
+    if (reminderRows.length) {
+      await supabaseAdmin.from("reservation_reminders").insert(reminderRows);
     }
 
     await notifyReservation({

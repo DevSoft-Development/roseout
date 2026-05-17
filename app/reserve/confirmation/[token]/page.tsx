@@ -122,6 +122,22 @@ export default function ReservationConfirmationPage() {
       }&item=${reservation.bookable_item_id || ""}`
     : "/create";
 
+  const calendarHref = reservation
+    ? `/api/reserve/calendar/${reservation.id}`
+    : "#";
+
+  const googleCalendarHref = reservation
+    ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+        `TheOutHaven reservation${reservation.bookable_item_name ? `: ${reservation.bookable_item_name}` : ""}`
+      )}&details=${encodeURIComponent(
+        `Reservation for ${reservation.customer_name}, party of ${reservation.party_size}.`
+      )}&dates=${reservation.reservation_date.replaceAll("-", "")}T${reservation.reservation_time
+        .slice(0, 5)
+        .replace(":", "")}00/${reservation.reservation_date.replaceAll("-", "")}T${reservation.reservation_time
+        .slice(0, 5)
+        .replace(":", "")}00`
+    : "#";
+
   return (
     <>
       <TheOutHavenHeader />
@@ -237,6 +253,34 @@ export default function ReservationConfirmationPage() {
                         </p>
                       </div>
                     )}
+
+                    <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+                      <p className="text-xs font-black uppercase tracking-[0.25em] text-white/35">
+                        Add to Calendar
+                      </p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                        <a
+                          href={googleCalendarHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-full bg-white px-4 py-3 text-center text-xs font-black text-black"
+                        >
+                          Google Calendar
+                        </a>
+                        <a
+                          href={calendarHref}
+                          className="rounded-full bg-white/10 px-4 py-3 text-center text-xs font-black text-white"
+                        >
+                          Apple Calendar
+                        </a>
+                        <a
+                          href={calendarHref}
+                          className="rounded-full bg-white/10 px-4 py-3 text-center text-xs font-black text-white"
+                        >
+                          Outlook
+                        </a>
+                      </div>
+                    </div>
                   </div>
 
                   {isCancelled ? (
