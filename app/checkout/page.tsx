@@ -543,15 +543,92 @@ function GoogleLocationAddressField() {
         predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
         hiddenInputNames={{
           address: "address",
-          city: "city",
-          state: "state",
-          zip_code: "zip_code",
           neighborhood: "neighborhood",
           latitude: "latitude",
           longitude: "longitude",
           google_place_id: "google_place_id",
           formatted_address: "formatted_address",
         }}
+      />
+
+      <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_0.45fr_0.55fr]">
+        <LocationTextField
+          label="City"
+          name="city"
+          value={addressFields.city}
+          onChange={(value) =>
+            setAddressFields((prev) => ({ ...prev, city: value }))
+          }
+          placeholder="City"
+          required
+        />
+
+        <LocationTextField
+          label="State"
+          name="state"
+          value={addressFields.state}
+          onChange={(value) =>
+            setAddressFields((prev) => ({ ...prev, state: value }))
+          }
+          placeholder="State"
+          required
+        />
+
+        <LocationTextField
+          label="Zip Code"
+          name="zip_code"
+          value={addressFields.zip_code}
+          onChange={(value) =>
+            setAddressFields((prev) => ({ ...prev, zip_code: value }))
+          }
+          placeholder="Zip Code"
+          inputMode="numeric"
+          autoComplete="postal-code"
+          required
+        />
+      </div>
+    </div>
+  );
+}
+
+function LocationTextField({
+  label,
+  name,
+  value,
+  onChange,
+  placeholder,
+  required = false,
+  maxLength,
+  inputMode,
+  autoComplete,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  required?: boolean;
+  maxLength?: number;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  autoComplete?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-zinc-300">
+        {label}
+      </label>
+
+      <input
+        type="text"
+        name={name}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        required={required}
+        maxLength={maxLength}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-rose-400/60"
       />
     </div>
   );
