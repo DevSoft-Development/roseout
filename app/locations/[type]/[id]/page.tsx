@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
@@ -8,7 +9,6 @@ import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
 import { trackActivity } from "@/lib/trackActivity";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
-import LocationReviewForm from "@/components/LocationReviewForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationScore } from "@/lib/locationScore";
@@ -29,7 +29,49 @@ import {
 
 
 
-function toArray(value: any): string[] {
+type LocationDetailRecord = Record<string, unknown> & {
+  id?: string | null;
+  name?: string | null;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
+  business_name?: string | null;
+  primary_category?: string | null;
+  cuisine_type?: string | null;
+  detail_location_type?: string | null;
+  location_type?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip_code?: string | null;
+  neighborhood?: string | null;
+  price_range?: string | null;
+  primary_tag?: string | null;
+  description?: string | null;
+  website?: string | null;
+  reservation_enabled?: boolean | null;
+  review_count?: number | string | null;
+  review_score?: number | string | null;
+  cuisine?: string | null;
+  activity_type?: string | null;
+  atmosphere?: string | null;
+  quality_score?: number | string | null;
+  popularity_score?: number | string | null;
+  main_image?: string | null;
+  image_url?: string | null;
+  images?: string[] | string | null;
+};
+type ReviewRecord = Record<string, unknown> & {
+  id?: string | number | null;
+  customer_name?: string | null;
+  rating?: number | string | null;
+  review_text?: string | null;
+  ai_keywords?: string[] | string | null;
+  vibe?: string | null;
+  noise_level?: string | null;
+  service_quality?: string | null;
+};
+
+function toArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String);
 
@@ -58,8 +100,8 @@ export default function LocationDetailPage() {
       ? document.referrer
       : "/create");
 
-  const [location, setLocation] = useState<any>(null);
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [location, setLocation] = useState<LocationDetailRecord | null>(null);
+  const [reviews, setReviews] = useState<ReviewRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [scrolled, setScrolled] = useState(false);
 
@@ -144,9 +186,9 @@ export default function LocationDetailPage() {
     .filter(Boolean)
     .join(", ");
 
-  const externalReservationUrl = getExternalReservationUrl(location);
+  const externalReservationUrl = getExternalReservationUrl(location || {});
   const internalReservationHref = getInternalReservationHref(
-    location,
+    location || {},
     isActivity ? "activity" : "restaurant",
   );
   const reservationUrl =
@@ -173,6 +215,20 @@ export default function LocationDetailPage() {
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
     getOperatingHours(location),
   );
+  const galleryImages = Array.from(
+    new Set([getLocationImage(location), ...toArray(location?.images), location?.main_image, location?.image_url].filter(Boolean)),
+  ) as string[];
+  const recommendationBullets = buildRecommendationBullets({
+    category,
+    cuisine: location?.cuisine || location?.activity_type,
+    atmosphere: location?.atmosphere,
+    reviewKeywords,
+    bestFor,
+    qualityScore: location?.quality_score || score,
+    popularityScore: location?.popularity_score,
+    vibeTags: [...tags, ...dateStyleTags],
+    city: location?.city,
+  });
 
   const baseMetadata = {
     location_id: id,
@@ -201,38 +257,6 @@ export default function LocationDetailPage() {
     });
 
     goBack();
-  }
-
-  function handleReviewSubmitted(data: any) {
-    const newReview = {
-      id: `temp-${Date.now()}`,
-      customer_name: data.customer_name || "TheOutHaven Guest",
-      rating: data.rating || 5,
-      review_text: data.review_text || "Review submitted successfully.",
-      created_at: new Date().toISOString(),
-      ai_keywords: data.ai?.keywords || [],
-      ai_sentiment: data.ai?.sentiment || "neutral",
-      ai_score_boost: data.ai?.score_boost || 0,
-      vibe: data.ai?.vibe || null,
-      noise_level: data.ai?.noise_level || null,
-      date_night: data.ai?.date_night || false,
-      service_quality: data.ai?.service_quality || null,
-      food_quality: data.ai?.food_quality || null,
-      ambiance_quality: data.ai?.ambiance_quality || null,
-    };
-
-    setReviews((prev) => [newReview, ...prev]);
-
-    setLocation((prev: any) =>
-      prev
-        ? {
-            ...prev,
-            review_score: data.review_score ?? prev.review_score,
-            review_count: data.review_count ?? prev.review_count,
-            review_keywords: data.keywords ?? prev.review_keywords,
-          }
-        : prev,
-    );
   }
 
   if (loading) {
@@ -310,14 +334,14 @@ export default function LocationDetailPage() {
               alt={name}
               fill
               priority
-              className="object-cover opacity-45"
+              className="object-cover opacity-60"
             />
           ) : (
             <div className="absolute inset-0 bg-black" />
           )}
 
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(225,6,42,0.34),transparent_34%),radial-gradient(circle_at_78%_8%,rgba(127,29,29,0.4),transparent_28%)]" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/35" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/20" />
 
           <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-5 pb-10 pt-24 sm:px-8">
             <div className="mt-auto grid items-end gap-8 pb-8 lg:grid-cols-[1fr_330px]">
@@ -340,6 +364,11 @@ export default function LocationDetailPage() {
                   <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
                     🌸 {location.review_count || reviews.length || 0} Reviews
                   </span>
+                  {galleryImages.length > 1 && (
+                    <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
+                      {galleryImages.length} Photos
+                    </span>
+                  )}
                 </div>
 
                 <h1 className="mt-5 max-w-5xl text-5xl font-black tracking-tight sm:text-6xl lg:text-8xl">
@@ -362,19 +391,6 @@ export default function LocationDetailPage() {
                   {location.description ||
                     "A curated TheOutHaven location selected for memorable outings, quality experiences, and strong match potential."}
                 </p>
-
-                {reviewKeywords.length > 0 && (
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {reviewKeywords.slice(0, 6).map((keyword) => (
-                      <span
-                        key={keyword}
-                        className="rounded-full border border-red-500/25 bg-red-500/10 px-3 py-1 text-xs font-black text-red-100"
-                      >
-                        {keyword}
-                      </span>
-                    ))}
-                  </div>
-                )}
 
                 <div className="mt-8 flex flex-wrap gap-3">
                   {reservationUrl && (
@@ -434,6 +450,16 @@ export default function LocationDetailPage() {
           </div>
         </section>
 
+        <section className="border-y border-white/10 bg-[#0d0707] px-5 py-5">
+          <div className="mx-auto grid max-w-7xl gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <QuickDetail label="Category" value={category} />
+            <QuickDetail label="Neighborhood" value={location.neighborhood || location.city || "Explore area"} />
+            <QuickDetail label="Hours" value={operatingHoursDisplay || "Confirm directly"} />
+            <QuickDetail label="Reservations" value={reservationUrl ? "Available" : "Call or visit website"} />
+            <QuickDetail label="Best for" value={bestFor[0] || location.primary_tag || "Curated outing"} />
+          </div>
+        </section>
+
         <section className="relative overflow-hidden bg-black px-5 py-16">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(225,6,42,0.18),transparent_30%)]" />
 
@@ -441,32 +467,38 @@ export default function LocationDetailPage() {
             <div className="space-y-6">
               <LuxuryCard
                 eyebrow="Why TheOutHaven Recommends It"
-                title="Built for better matches."
+                title="Editorial match notes."
               >
-                <p className="text-sm leading-7 text-white/60">
-                  {location.description ||
-                    "This location includes signals that help TheOutHaven understand the vibe, atmosphere, and best use cases for customers searching in full sentences."}
-                </p>
+                <div className="grid gap-3">
+                  {recommendationBullets.map((bullet) => (
+                    <div key={bullet} className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-4 text-sm font-semibold leading-7 text-white/72">
+                      {bullet}
+                    </div>
+                  ))}
+                </div>
+              </LuxuryCard>
 
-                {[...tags, ...dateStyleTags, ...reviewKeywords].length > 0 && (
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    {[
-                      ...new Set([
-                        ...tags,
-                        ...dateStyleTags,
-                        ...reviewKeywords,
-                      ]),
-                    ].map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-white/60"
-                      >
-                        {tag}
-                      </span>
+              <LuxuryCard eyebrow="About / Experience" title="What to expect.">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <EditorialTile label="Atmosphere" value={location.atmosphere || location.primary_tag || "Curated hospitality setting"} />
+                  <EditorialTile label="Signature" value={signatureItems[0] || specialFeatures[0] || "Memorable experience moments"} />
+                  <EditorialTile label="Experience" value={location.description || "Selected for guests looking for elevated plans with a clear sense of place."} />
+                  <EditorialTile label="Planning note" value={reservationUrl ? "Reserve ahead for the smoothest visit." : "Confirm hours and availability before heading out."} />
+                </div>
+              </LuxuryCard>
+
+              {galleryImages.length > 1 && (
+                <LuxuryCard eyebrow="Photo Gallery" title="A closer look.">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {galleryImages.slice(1, 7).map((image, index) => (
+                      <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="group overflow-hidden rounded-[1.35rem] border border-white/10 bg-white/[0.04]">
+                        <Image src={image} alt={`${name} gallery photo ${index + 1}`} width={520} height={380} className="h-52 w-full object-cover transition duration-500 group-hover:scale-105" />
+                      </a>
                     ))}
                   </div>
-                )}
-              </LuxuryCard>
+                  <p className="mt-4 text-xs font-bold text-white/40">Tap any photo to open it full size. Mobile guests can swipe horizontally in the browser photo view.</p>
+                </LuxuryCard>
+              )}
 
               {bestFor.length > 0 && (
                 <DetailGrid title="Best For" items={bestFor} />
@@ -486,7 +518,7 @@ export default function LocationDetailPage() {
               >
                 {reviews.length === 0 ? (
                   <p className="text-sm leading-7 text-white/60">
-                    No reviews yet. Be the first to type a full-sentence review.
+                    Curated and imported review snippets will appear here when available. Public review submission is hidden until visits can be verified.
                   </p>
                 ) : (
                   <div className="mt-6 space-y-4">
@@ -553,14 +585,6 @@ export default function LocationDetailPage() {
                   </div>
                 )}
               </LuxuryCard>
-
-              <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-1 shadow-2xl backdrop-blur-xl">
-                <LocationReviewForm
-                  locationId={location.id}
-                  locationName={name}
-                  onReviewSubmitted={handleReviewSubmitted}
-                />
-              </section>
             </div>
 
             <aside className="space-y-6 lg:sticky lg:top-36 lg:self-start">
@@ -639,11 +663,11 @@ export default function LocationDetailPage() {
                   />
 
                   <InfoRow
-                    label="AI Keywords"
+                    label="Recommendation Signals"
                     value={
                       reviewKeywords.length > 0
-                        ? reviewKeywords.slice(0, 6).join(", ")
-                        : "Not enough reviews yet"
+                        ? `${reviewKeywords.length} imported signals`
+                        : "Not enough verified data yet"
                     }
                   />
                 </div>
@@ -707,9 +731,9 @@ function DynamicLocationHeader({
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/45">
-              <a href="/" className="transition hover:text-white">
+              <Link href="/" className="transition hover:text-white">
                 Home
-              </a>
+              </Link>
               <span>/</span>
               <a
                 href={from || "/create"}
@@ -798,6 +822,68 @@ function DetailGrid({ title, items }: { title: string; items: string[] }) {
       </div>
     </LuxuryCard>
   );
+}
+
+
+function QuickDetail({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">{label}</p>
+      <p className="mt-2 line-clamp-2 text-sm font-black text-white/80">{value}</p>
+    </div>
+  );
+}
+
+function EditorialTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-200/60">{label}</p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-white/70">{value}</p>
+    </div>
+  );
+}
+
+function buildRecommendationBullets({
+  category,
+  cuisine,
+  atmosphere,
+  reviewKeywords,
+  bestFor,
+  qualityScore,
+  popularityScore,
+  vibeTags,
+  city,
+}: {
+  category: string;
+  cuisine?: string | null;
+  atmosphere?: string | null;
+  reviewKeywords: string[];
+  bestFor: string[];
+  qualityScore?: number | string | null;
+  popularityScore?: number | string | null;
+  vibeTags: string[];
+  city?: string | null;
+}) {
+  const primary = cuisine || category;
+  const bullets = [
+    `A strong match for guests looking for ${primary || "a polished experience"}${city ? ` in ${city}` : ""}.`,
+    bestFor[0]
+      ? `Especially useful for ${bestFor.slice(0, 2).join(" and ").toLowerCase()} plans where the setting matters.`
+      : `A polished option for date nights, celebrations, and intentional outings.`,
+    atmosphere
+      ? `The overall feel leans ${String(atmosphere).toLowerCase()}, helping guests choose the right mood before they go.`
+      : reviewKeywords[0]
+        ? `Imported review language points to ${reviewKeywords.slice(0, 2).join(" and ").toLowerCase()} as notable guest signals.`
+        : `Recommended when guests want a more elevated plan without sorting through generic listings.`,
+  ];
+
+  if (Number(qualityScore || 0) >= 80 || Number(popularityScore || 0) >= 80) {
+    bullets.push("Quality and popularity signals make it a standout candidate for high-intent searches.");
+  } else if (vibeTags[0]) {
+    bullets.push(`TheOutHaven sees this as a natural fit for ${vibeTags.slice(0, 2).join(" and ").toLowerCase()} moments.`);
+  }
+
+  return bullets.slice(0, 4);
 }
 
 function MiniInsight({ label, value }: { label: string; value: string }) {
