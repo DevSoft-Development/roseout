@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
 import { getIsClaimed } from "@/lib/locationClaim";
 import { getLocationScore } from "@/lib/locationScore";
 
@@ -34,9 +37,9 @@ type FormState = {
   noise_level: string;
   dress_code: string;
   parking_info: string;
-  operating_hours?: any;
-  special_hours?: any;
-  holiday_closures?: any;
+  operating_hours?: unknown;
+  special_hours?: unknown;
+  holiday_closures?: unknown;
   hours: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
@@ -53,6 +56,8 @@ type FormState = {
   theouthaven_score: string | number;
   latitude: string | number;
   longitude: string | number;
+  google_place_id: string;
+  formatted_address: string;
 };
 
 type LocationRecord = Record<string, unknown> & {
@@ -161,6 +166,8 @@ export default function EditLocationPage() {
     theouthaven_score: "",
     latitude: "",
     longitude: "",
+    google_place_id: "",
+    formatted_address: "",
   });
 
   useEffect(() => {
@@ -237,6 +244,8 @@ export default function EditLocationPage() {
           theouthaven_score: clampScore(getLocationScore(data)),
           latitude: data.latitude ?? "",
           longitude: data.longitude ?? "",
+          google_place_id: data.google_place_id || "",
+          formatted_address: data.formatted_address || "",
         });
       } catch {
         setMessage("Location failed to load.");
@@ -362,6 +371,8 @@ export default function EditLocationPage() {
       claim_status: form.claim_status,
       latitude: form.latitude === "" ? null : Number(form.latitude),
       longitude: form.longitude === "" ? null : Number(form.longitude),
+      google_place_id: form.google_place_id || null,
+      formatted_address: form.formatted_address || null,
     };
 
     if (type === "restaurants") {
@@ -578,7 +589,31 @@ export default function EditLocationPage() {
             </Panel>
 
             <Panel title="Address & Nearby Search">
-              <Field label="Address" value={form.address} onChange={(v) => update("address", v)} />
+              <GoogleAddressAutocomplete
+                label="Address"
+                value={form.address}
+                address={form.address}
+                city={form.city}
+                state={form.state}
+                zip_code={form.zip_code}
+                neighborhood={form.neighborhood}
+                latitude={form.latitude}
+                longitude={form.longitude}
+                google_place_id={form.google_place_id}
+                formatted_address={form.formatted_address}
+                isAdmin={from.startsWith("/admin")}
+                showCoordinateRepairTools={from.startsWith("/admin")}
+                onAddressChange={(value) => update("address", value)}
+                onAddressSelect={(selected: GoogleAddressFields) =>
+                  setForm((prev) => ({ ...prev, ...selected }))
+                }
+                inputClassName="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-400"
+                labelClassName="text-xs font-black uppercase tracking-[0.18em] text-white/45"
+                statusClassName="mt-2 text-xs font-bold text-white/45"
+                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#121212] shadow-2xl"
+                predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
+                buttonClassName="mt-3 rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black text-rose-100 transition hover:bg-rose-500 hover:text-white disabled:opacity-50"
+              />
 
               <div className="grid gap-4 md:grid-cols-4">
                 <Field label="City" value={form.city} onChange={(v) => update("city", v)} />
@@ -587,10 +622,8 @@ export default function EditLocationPage() {
                 <Field label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Latitude" value={String(form.latitude || "")} onChange={(v) => update("latitude", v)} />
-                <Field label="Longitude" value={String(form.longitude || "")} onChange={(v) => update("longitude", v)} />
-              </div>
+              <input type="hidden" value={String(form.latitude || "")} readOnly />
+              <input type="hidden" value={String(form.longitude || "")} readOnly />
             </Panel>
 
             <Panel title="Experience Matching Details">

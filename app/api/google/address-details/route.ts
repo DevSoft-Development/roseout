@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
+type AddressComponent = {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GOOGLE_API_KEY =
   process.env.GOOGLE_PLACES_API_KEY ||
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  process.env.GOOGLE_MAPS_API_KEY;
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,10 +31,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const googleRes = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+    const googleRes = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
       headers: {
         "X-Goog-Api-Key": GOOGLE_API_KEY,
-        "X-Goog-FieldMask": "formattedAddress,addressComponents",
+        "X-Goog-FieldMask": "id,formattedAddress,addressComponents,location",
       },
     });
 
@@ -47,10 +52,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const components = data.addressComponents || [];
+    const components: AddressComponent[] = data.addressComponents || [];
 
     const getComponent = (type: string, short = false) => {
-      const component = components.find((item: any) =>
+      const component = components.find((item) =>
         item.types?.includes(type)
       );
 
@@ -76,8 +81,16 @@ export async function POST(req: NextRequest) {
         getComponent("administrative_area_level_2"),
       state: getComponent("administrative_area_level_1", true),
       zip_code: getComponent("postal_code"),
+      neighborhood:
+        getComponent("neighborhood") ||
+        getComponent("sublocality") ||
+        getComponent("sublocality_level_1"),
+      latitude: data.location?.latitude ?? null,
+      longitude: data.location?.longitude ?? null,
+      google_place_id: data.id || placeId,
+      formatted_address: data.formattedAddress || "",
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Address details failed." },
       { status: 500 }

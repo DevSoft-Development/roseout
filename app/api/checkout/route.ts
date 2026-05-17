@@ -29,6 +29,14 @@ export async function POST(request: NextRequest) {
     const email = String(formData.get("email") || "");
     const phone = String(formData.get("phone") || "");
     const address = String(formData.get("address") || "");
+    const city = String(formData.get("city") || "");
+    const state = String(formData.get("state") || "");
+    const zipCode = String(formData.get("zip_code") || "");
+    const neighborhood = String(formData.get("neighborhood") || "");
+    const latitude = String(formData.get("latitude") || "");
+    const longitude = String(formData.get("longitude") || "");
+    const googlePlaceId = String(formData.get("google_place_id") || "");
+    const formattedAddress = String(formData.get("formatted_address") || "");
     const businessType = String(formData.get("businessType") || "");
     const goal = String(formData.get("goal") || "");
 
@@ -61,6 +69,14 @@ export async function POST(request: NextRequest) {
       "metadata[email]": email,
       "metadata[phone]": phone,
       "metadata[address]": address,
+      "metadata[city]": city,
+      "metadata[state]": state,
+      "metadata[zip_code]": zipCode,
+      "metadata[neighborhood]": neighborhood,
+      "metadata[latitude]": latitude,
+      "metadata[longitude]": longitude,
+      "metadata[google_place_id]": googlePlaceId,
+      "metadata[formatted_address]": formattedAddress,
       "metadata[businessType]": businessType,
       "metadata[goal]": goal,
 
@@ -70,6 +86,14 @@ export async function POST(request: NextRequest) {
       "subscription_data[metadata][email]": email,
       "subscription_data[metadata][phone]": phone,
       "subscription_data[metadata][address]": address,
+      "subscription_data[metadata][city]": city,
+      "subscription_data[metadata][state]": state,
+      "subscription_data[metadata][zip_code]": zipCode,
+      "subscription_data[metadata][neighborhood]": neighborhood,
+      "subscription_data[metadata][latitude]": latitude,
+      "subscription_data[metadata][longitude]": longitude,
+      "subscription_data[metadata][google_place_id]": googlePlaceId,
+      "subscription_data[metadata][formatted_address]": formattedAddress,
       "subscription_data[metadata][businessType]": businessType,
       "subscription_data[metadata][goal]": goal,
     });
@@ -98,9 +122,9 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.redirect(session.url, { status: 303 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message || "Checkout failed." },
+      { error: error instanceof Error ? error.message : "Checkout failed." },
       { status: 500 }
     );
   }

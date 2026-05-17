@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
+type PlaceSuggestion = {
+  placePrediction?: {
+    placeId?: string;
+    text?: { text?: string };
+  };
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GOOGLE_API_KEY =
   process.env.GOOGLE_PLACES_API_KEY ||
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  process.env.GOOGLE_MAPS_API_KEY;
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     const predictions =
       data?.suggestions
-        ?.map((item: any) => {
+        ?.map((item: PlaceSuggestion) => {
           const prediction = item.placePrediction;
 
           return {
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest) {
             description: prediction?.text?.text || "",
           };
         })
-        ?.filter((item: any) => item.place_id && item.description) || [];
+        ?.filter((item: { place_id: string; description: string }) => item.place_id && item.description) || [];
 
     return NextResponse.json({ predictions });
   } catch {

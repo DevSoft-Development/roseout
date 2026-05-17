@@ -28,6 +28,11 @@ export async function POST(req: Request) {
         city: body.city,
         state: body.state,
         zip_code: body.zip_code,
+        neighborhood: body.neighborhood || null,
+        latitude: body.latitude === "" || body.latitude === undefined ? null : Number(body.latitude),
+        longitude: body.longitude === "" || body.longitude === undefined ? null : Number(body.longitude),
+        google_place_id: body.google_place_id || null,
+        formatted_address: body.formatted_address || null,
 
         status: "approved",
 
@@ -45,9 +50,9 @@ export async function POST(req: Request) {
       qrCodeDataUrl: data.qr_code_data_url,
       qrLink: data.claim_url,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return Response.json(
-      { error: error.message || "Server error" },
+      { error: error instanceof Error ? error.message : "Server error" },
       { status: 500 }
     );
   }

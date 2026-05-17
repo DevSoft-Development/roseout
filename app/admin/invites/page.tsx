@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import AdminTopBar from "@/app/admin/components/AdminTopBar";
+import GoogleAddressAutocomplete, {
+  type GoogleAddressFields,
+} from "@/components/GoogleAddressAutocomplete";
 
 export default function AdminInvitesPage() {
   const supabase = createClient();
@@ -14,6 +17,11 @@ export default function AdminInvitesPage() {
     city: "",
     state: "",
     zip_code: "",
+    neighborhood: "",
+    latitude: "",
+    longitude: "",
+    google_place_id: "",
+    formatted_address: "",
   });
 
   const [qrCode, setQrCode] = useState("");
@@ -108,11 +116,26 @@ setQrLink(data.qrLink);
             onChange={(e) => update("contact_name", e.target.value)}
           />
 
-          <input
-            className="w-full rounded-xl border px-4 py-3"
-            placeholder="Restaurant Address"
+          <GoogleAddressAutocomplete
             value={form.address}
-            onChange={(e) => update("address", e.target.value)}
+            address={form.address}
+            city={form.city}
+            state={form.state}
+            zip_code={form.zip_code}
+            neighborhood={form.neighborhood}
+            latitude={form.latitude}
+            longitude={form.longitude}
+            google_place_id={form.google_place_id}
+            formatted_address={form.formatted_address}
+            isAdmin
+            showCoordinateRepairTools
+            placeholder="Restaurant Address"
+            onAddressChange={(value) => update("address", value)}
+            onAddressSelect={(selected: GoogleAddressFields) =>
+              setForm((prev) => ({ ...prev, ...selected }))
+            }
+            inputClassName="mt-2 w-full rounded-xl border px-4 py-3"
+            labelClassName="sr-only"
           />
 
           <input

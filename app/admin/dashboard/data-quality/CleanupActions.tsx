@@ -125,7 +125,7 @@ export default function CleanupActions() {
                   ["Clean", result.clean],
                   ["Needs review", result.needsReview],
                   ["Missing image", result.missingImage],
-                  ["Missing coordinates", result.missingCoordinates],
+                  ["This location needs verified coordinates", result.missingCoordinates],
                   ["Missing address", result.missingAddress],
                 ].map(([label, value]) => (
                   <div
