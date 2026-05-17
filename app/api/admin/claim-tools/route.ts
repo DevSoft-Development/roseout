@@ -43,7 +43,7 @@ function mapLocation(row: Record<string, unknown>): ClaimToolApiResult {
     source_table: row.source_table || "locations",
     source_id: row.source_id || row.id,
     claim_status: row.claim_status || null,
-    is_claimed: Boolean(row.is_claimed || row.claimed),
+    is_claimed: Boolean(row.is_claimed),
     claim_code: row.claim_code || null,
     claim_url: row.claim_url || null,
     qr_code_data_url: row.qr_code_data_url || row.claim_qr_url || null,
@@ -62,7 +62,7 @@ function mapSource(row: Record<string, unknown>, table: "restaurants" | "activit
     source_table: table,
     source_id: row.id,
     claim_status: row.claim_status || null,
-    is_claimed: Boolean(row.is_claimed || row.claimed),
+    is_claimed: Boolean(row.is_claimed),
     claim_code: row.claim_code || null,
     claim_url: row.claim_url || null,
     qr_code_data_url: row.qr_code_data_url || row.claim_qr_url || null,
@@ -93,7 +93,7 @@ export async function GET(req: Request) {
 
   const { data: locations, error: locationError } = await auth.supabase
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, location_type, address, city, state, source_table, source_id, claim_status, is_claimed, claimed, claim_code, claim_url, claim_qr_url, qr_code_data_url")
+    .select("id, name, restaurant_name, activity_name, location_type, address, city, state, source_table, source_id, claim_status, is_claimed, claimed_at, claimed_by_email, claim_code, claim_url, claim_qr_url, qr_code_data_url")
     .or(locationOr)
     .limit(25);
 
@@ -106,7 +106,7 @@ export async function GET(req: Request) {
     const nameColumn = table === "restaurants" ? "restaurant_name" : "activity_name";
     const { data, error } = await auth.supabase
       .from(table)
-      .select(`id, name, ${nameColumn}, address, city, state, phone, google_place_id, is_claimed, claimed, claim_code, claim_url, claim_qr_url, qr_code_data_url`)
+      .select(`id, name, ${nameColumn}, address, city, state, phone, google_place_id, is_claimed, claim_code, claim_url, claim_qr_url, qr_code_data_url`)
       .or([
         `name.ilike.${search}`,
         `${nameColumn}.ilike.${search}`,

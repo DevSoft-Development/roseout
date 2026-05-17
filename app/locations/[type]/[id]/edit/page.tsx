@@ -109,6 +109,9 @@ function calculateUpdatedScore(location: LocationRecord) {
 }
 
 export default function EditLocationPage() {
+  useEffect(() => {
+    document.title = "Edit Location | TheOutHaven Admin";
+  }, []);
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();

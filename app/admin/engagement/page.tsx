@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
 import { getLocationName } from "@/lib/locationName";
 
 export default function AdminEngagementPage() {
@@ -19,7 +18,6 @@ export default function AdminEngagementPage() {
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <AdminTopBar />
 
       <div className="mx-auto max-w-6xl px-6 py-12">
         <h1 className="text-4xl font-bold">Restaurant Engagement</h1>

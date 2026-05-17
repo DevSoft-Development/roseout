@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketClient from "@/components/support/SupportTicketClient";
 import { listSupportTickets } from "@/lib/support";
+
+export const metadata: Metadata = {
+  title: "Support",
+  description: "Admin support inbox for customer messages, claims, reservations, and billing notes.",
+};
 
 const SUPPORT_DASHBOARD_VERSION = "support-dashboard-refresh-2026-05-12";
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
 import GoogleAddressAutocomplete, {
   type GoogleAddressFields,
 } from "@/components/GoogleAddressAutocomplete";
@@ -92,7 +91,6 @@ setQrLink(data.qrLink);
 
   return (
     <main className="min-h-screen bg-black text-white">
-      <AdminTopBar />
 
       <div className="mx-auto max-w-2xl px-6 py-12">
         <h1 className="text-4xl font-bold">Manually Add Restaurant</h1>

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
 import { getLocationName } from "@/lib/locationName";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
@@ -279,7 +278,6 @@ export default async function ReserveDashboardPage() {
 
   return (
     <>
-      <AdminTopBar />
       <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px]">
         <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_60%,#140f0a)] p-5 shadow-2xl sm:p-6">

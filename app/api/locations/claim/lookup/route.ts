@@ -21,7 +21,6 @@ type ClaimLocation = {
   source_table?: string | null;
   source_id?: string | null;
   is_claimed?: boolean | null;
-  claimed?: boolean | null;
   claim_status?: string | null;
 };
 
@@ -34,7 +33,7 @@ function adminSupabase() {
 }
 
 const PUBLIC_LOCATION_SELECT =
-  "id, name, restaurant_name, activity_name, location_type, primary_category, address, city, state, zip_code, main_image, image_url, source_table, source_id, is_claimed, claimed, claim_status";
+  "id, name, restaurant_name, activity_name, location_type, primary_category, address, city, state, zip_code, main_image, image_url, source_table, source_id, is_claimed, claim_status";
 
 function removePrivateFields(location: ClaimLocation) {
   return location;

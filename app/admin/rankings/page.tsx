@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import AdminTopBar from "@/app/admin/components/AdminTopBar";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +31,6 @@ export default function AdminRankingsPage() {
 
   return (
     <main className="min-h-screen bg-[#080407] text-white">
-      <AdminTopBar />
 
       <section className="mx-auto max-w-7xl px-6 py-10">
         <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">

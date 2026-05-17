@@ -1,6 +1,5 @@
 export type LocationClaimFields = {
   is_claimed?: boolean | null;
-  claimed?: boolean | null;
   claim_status?: string | null;
   claimed_at?: string | null;
   claimed_by_email?: string | null;
@@ -8,11 +7,7 @@ export type LocationClaimFields = {
 };
 
 export function getIsClaimed(location: any) {
-  return Boolean(
-    location?.is_claimed ??
-    location?.claimed ??
-    false
-  );
+  return Boolean(location?.is_claimed);
 }
 
 export function getClaimStatusText(location: LocationClaimFields) {
