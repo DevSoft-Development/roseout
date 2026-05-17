@@ -2,6 +2,7 @@
 
 import type React from "react";
 import type { User } from "@supabase/supabase-js";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -190,11 +191,13 @@ export default function AdminTopBar() {
   const canViewImport = ["superuser", "admin", "viewer"].includes(role || "");
   const canViewUsers = ["superuser", "admin"].includes(role || "");
   const canViewSupport = ["superuser", "admin", "editor", "reviewer", "viewer"].includes(role || "");
+  const canViewMarketing = ["superuser", "admin", "editor", "viewer"].includes(role || "");
 
   const mainLinks: AdminLink[] = [
     { label: "Dashboard", href: "/admin/dashboard", visible: canViewDashboard },
     { label: "Locations", href: "/admin/dashboard/locations", visible: canViewLocations },
     { label: "Reservations", href: "/admin/dashboard/reservations", visible: canViewDashboard },
+    { label: "Marketing", href: "/admin/dashboard/marketing", visible: canViewMarketing },
     { label: "Import", href: "/admin/dashboard/import", visible: canViewImport },
     { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canViewClaims },
     { label: "Support", href: "/admin/dashboard/support", visible: canViewSupport },
@@ -224,6 +227,12 @@ export default function AdminTopBar() {
       links: [
         { label: "Google Import", href: "/admin/dashboard/import", visible: canViewImport },
         { label: "Import Logs", href: "/admin/dashboard/logs", visible: canViewImport },
+      ],
+    },
+    {
+      title: "Marketing",
+      links: [
+        { label: "Marketing Center", href: "/admin/dashboard/marketing", visible: canViewMarketing },
       ],
     },
     {
@@ -260,14 +269,13 @@ export default function AdminTopBar() {
           {mainLinks
             .filter((link) => link.visible)
             .map((link) => (
-              <button
+              <Link
                 key={link.href}
-                type="button"
-                onClick={() => goTo(link.href)}
+                href={link.href}
                 className="rounded-full px-4 py-2 text-sm font-bold text-white/70 transition hover:bg-white hover:text-black"
               >
                 {link.label}
-              </button>
+              </Link>
             ))}
         </nav>
 
@@ -316,9 +324,9 @@ export default function AdminTopBar() {
                   {mainLinks
                     .filter((link) => link.visible)
                     .map((link) => (
-                      <MenuButton key={link.href} onClick={() => goTo(link.href)}>
+                      <MenuLink key={link.href} href={link.href} onClick={() => setOpen(false)}>
                         {link.label}
-                      </MenuButton>
+                      </MenuLink>
                     ))}
                 </div>
 
@@ -335,9 +343,9 @@ export default function AdminTopBar() {
                       </p>
                       <div className="grid gap-1">
                         {visibleLinks.map((link) => (
-                          <MenuButton key={`${group.title}-${link.href}`} onClick={() => goTo(link.href)}>
+                          <MenuLink key={`${group.title}-${link.href}`} href={link.href} onClick={() => setOpen(false)}>
                             {link.label}
-                          </MenuButton>
+                          </MenuLink>
                         ))}
                       </div>
                     </div>
@@ -459,20 +467,22 @@ export default function AdminTopBar() {
   );
 }
 
-function MenuButton({
+function MenuLink({
   children,
+  href,
   onClick,
 }: {
   children: React.ReactNode;
+  href: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Link
+      href={href}
       onClick={onClick}
-      className="w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-white/75 transition hover:bg-white/10 hover:text-white"
+      className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-white/75 transition hover:bg-white/10 hover:text-white"
     >
       {children}
-    </button>
+    </Link>
   );
 }
