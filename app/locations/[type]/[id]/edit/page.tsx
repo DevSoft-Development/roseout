@@ -10,6 +10,7 @@ import GoogleAddressAutocomplete, {
 } from "@/components/GoogleAddressAutocomplete";
 import { getIsClaimed } from "@/lib/locationClaim";
 import { getLocationScore } from "@/lib/locationScore";
+import { supabase } from "@/lib/supabase";
 
 type LocationType = "restaurants" | "activities";
 
@@ -133,6 +134,8 @@ export default function EditLocationPage() {
   const [message, setMessage] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [effectiveId, setEffectiveId] = useState(id);
+  const [newGalleryImage, setNewGalleryImage] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [form, setForm] = useState<FormState>({
     name: "",
@@ -142,7 +145,9 @@ export default function EditLocationPage() {
     state: "",
     zip_code: "",
     neighborhood: "",
+    main_image: "",
     image_url: "",
+    images: [],
     website: "",
     reservation_url: "",
     phone: "",
@@ -211,7 +216,9 @@ export default function EditLocationPage() {
           state: data.state || "",
           zip_code: data.zip_code || "",
           neighborhood: data.neighborhood || "",
-          image_url: data.image_url || "",
+          main_image: data.main_image || data.image_url || "",
+          image_url: data.image_url || data.main_image || "",
+          images: Array.isArray(data.images) ? data.images.filter(Boolean) : [],
           website: data.website || "",
           reservation_url: data.reservation_url || data.reservation_link || "",
           phone: data.phone || "",
@@ -358,7 +365,9 @@ export default function EditLocationPage() {
       state: form.state,
       zip_code: form.zip_code,
       neighborhood: form.neighborhood,
-      image_url: form.image_url,
+      main_image: form.main_image || form.image_url || null,
+      image_url: form.image_url || form.main_image || null,
+      images: form.images || [],
       website: form.website,
       reservation_url: form.reservation_url,
       phone: form.phone,
@@ -435,7 +444,76 @@ export default function EditLocationPage() {
   };
 
   const safeScore = clampScore(form.theouthaven_score);
-  const galleryImages = [form.image_url, ...(form.images || [])].filter(Boolean) as string[];
+  const mainImage = form.main_image || form.image_url || "";
+  const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
+
+  const setMainImage = (url: string) => {
+    setForm((prev) => ({
+      ...prev,
+      main_image: url,
+      image_url: url,
+      images: Array.from(new Set([...(prev.images || []), url])).filter(Boolean),
+    }));
+  };
+
+  const addGalleryImage = () => {
+    const url = newGalleryImage.trim();
+    if (!url) return;
+
+    setForm((prev) => ({
+      ...prev,
+      main_image: prev.main_image || prev.image_url || url,
+      image_url: prev.image_url || prev.main_image || url,
+      images: Array.from(new Set([...(prev.images || []), url])).filter(Boolean),
+    }));
+    setNewGalleryImage("");
+  };
+
+  const removeGalleryImage = (url: string) => {
+    setForm((prev) => {
+      const nextImages = (prev.images || []).filter((image) => image !== url);
+      const wasMain = (prev.main_image || prev.image_url) === url;
+      const nextMain = wasMain ? nextImages[0] || "" : prev.main_image || prev.image_url || "";
+
+      return {
+        ...prev,
+        images: nextImages,
+        main_image: nextMain,
+        image_url: nextMain,
+      };
+    });
+  };
+
+  const uploadGalleryImage = async (file: File | null) => {
+    if (!file) return;
+    setUploadingImage(true);
+    setMessage("");
+
+    const extension = file.name.split(".").pop() || "jpg";
+    const path = `locations/${type}/${effectiveId || id}/${Date.now()}.${extension}`;
+    const { data, error } = await supabase.storage.from("location-images").upload(path, file, { upsert: true });
+
+    if (error) {
+      setMessage("Image upload is not enabled for this environment. Paste an image URL instead.");
+      setUploadingImage(false);
+      return;
+    }
+
+    const { data: publicUrl } = supabase.storage.from("location-images").getPublicUrl(data.path);
+    const url = publicUrl.publicUrl;
+    if (url) {
+      setNewGalleryImage(url);
+      setForm((prev) => ({
+        ...prev,
+        main_image: prev.main_image || prev.image_url || url,
+        image_url: prev.image_url || prev.main_image || url,
+        images: Array.from(new Set([...(prev.images || []), url])).filter(Boolean),
+      }));
+      setMessage("✅ Image uploaded. Save changes to keep it on this listing.");
+    }
+    setUploadingImage(false);
+  };
+
   const publicPreviewHref = `/locations/${type}/${effectiveId || id}`;
 
   const isSuccess =
@@ -474,13 +552,13 @@ export default function EditLocationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#080407] pt-28 text-white">
+    <main className="min-h-screen bg-[#080407] pt-20 text-white">
       <section className="relative overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(244,63,94,0.28),_transparent_34%),linear-gradient(135deg,#16080d,#080407_62%,#000)]">
         <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-rose-600/20 blur-3xl" />
         <div className="absolute bottom-[-170px] left-[-120px] h-96 w-96 rounded-full bg-fuchsia-600/10 blur-3xl" />
 
-        <div className="relative mx-auto max-w-7xl px-5 py-8 sm:px-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="relative mx-auto max-w-7xl px-5 py-5 sm:px-8">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <button
               onClick={() => router.push(from)}
               className="rounded-full border border-white/10 bg-white/[0.06] px-5 py-2.5 text-sm font-black text-white/85 transition hover:bg-white hover:text-black"
@@ -514,12 +592,12 @@ export default function EditLocationPage() {
             </div>
           )}
 
-          <div className="grid gap-8 lg:grid-cols-[180px_1fr_340px] lg:items-end">
-            <div className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/35 shadow-2xl">
-              {form.image_url ? (
-                <Image src={form.image_url} alt={form.name || "Location"} width={360} height={260} className="h-44 w-full object-cover" />
+          <div className="grid gap-8 lg:grid-cols-[96px_1fr_190px] lg:items-center">
+            <div className="overflow-hidden rounded-[1.25rem] border border-white/10 bg-black/35 shadow-2xl">
+              {mainImage ? (
+                <Image src={mainImage} alt={form.name || "Location"} width={360} height={260} className="h-24 w-full object-cover" />
               ) : (
-                <div className="flex h-44 items-center justify-center text-xs font-black uppercase tracking-[0.2em] text-white/30">No Image</div>
+                <div className="flex h-24 items-center justify-center text-xs font-black uppercase tracking-[0.2em] text-white/30">No Image</div>
               )}
             </div>
 
@@ -528,7 +606,7 @@ export default function EditLocationPage() {
                 TheOutHaven Admin · Location Studio
               </p>
 
-              <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
+              <h1 className="mt-3 max-w-3xl text-3xl font-black tracking-tight sm:text-4xl">
                 {form.name || "Edit Location"}
               </h1>
 
@@ -538,16 +616,16 @@ export default function EditLocationPage() {
                 <Tag>{form.data_status || "Quality review"}</Tag>
               </div>
 
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">
+              <p className="mt-3 max-w-2xl text-xs leading-5 text-white/60">
                 Refine this listing with a cleaner section hierarchy, premium media, address intelligence, discovery signals, reserve settings, claim tools, and data quality controls.
               </p>
             </div>
 
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl backdrop-blur">
-              <p className="mb-4 text-xs font-black uppercase tracking-[0.25em] text-white/45">
+            <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-3 shadow-2xl backdrop-blur">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/45">
                 Current Score
               </p>
-              <div className="rounded-[1.5rem] border border-white/10 bg-black/35 p-5 text-white">
+              <div className="rounded-[1rem] border border-white/10 bg-black/35 p-3 text-white">
                 <ScoreBadge score={safeScore} />
               </div>
             </div>
@@ -569,7 +647,7 @@ export default function EditLocationPage() {
         )}
 
         <nav className="mb-6 flex gap-2 overflow-x-auto rounded-full border border-white/10 bg-white/[0.04] p-2 text-xs font-black uppercase tracking-[0.18em] text-white/55">
-          {["Basic Info", "Address", "Images & Media", "Discovery & AI", "Reservations", "Claim & QR", "Visibility & Data Quality"].map((item) => (
+          {["Basic Info", "Address", "Images", "Discovery", "Reservations", "Claim & QR", "Data Quality"].map((item) => (
             <a key={item} href={`#${item.toLowerCase().replaceAll(" ", "-").replaceAll("&", "and")}`} className="shrink-0 rounded-full px-4 py-2 transition hover:bg-white hover:text-black">{item}</a>
           ))}
         </nav>
@@ -659,21 +737,45 @@ export default function EditLocationPage() {
               <input type="hidden" value={String(form.longitude || "")} readOnly />
             </Panel>
 
-            <Panel id="images-and-media" title="Images & Media">
-              <Field label="Image Upload" value="" onChange={() => {}} placeholder="Upload control coming soon" helper="Use the image URL field for production images today." />
-              <Field label="Main Image URL" value={form.image_url} onChange={(v) => update("image_url", v)} />
+            <Panel id="images" title="Images">
+              <Field label="Main Image URL" value={mainImage} onChange={setMainImage} helper="Saved to main_image and image_url for compatibility." />
+
+              <div className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
+                <label className="text-xs font-black uppercase tracking-[0.2em] text-white/45">Upload image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={uploadingImage}
+                  onChange={(event) => uploadGalleryImage(event.target.files?.[0] || null)}
+                  className="mt-2 block w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white file:mr-4 file:rounded-full file:border-0 file:bg-rose-500 file:px-4 file:py-2 file:text-xs file:font-black file:text-white disabled:opacity-50"
+                />
+                <p className="mt-2 text-xs font-semibold text-white/35">If the storage bucket is not available, URL updates still work.</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                <Field label="Add Gallery Image URL" value={newGalleryImage} onChange={setNewGalleryImage} placeholder="https://..." />
+                <button type="button" onClick={addGalleryImage} className="self-end rounded-full bg-rose-500 px-5 py-3 text-xs font-black uppercase tracking-wide text-white transition hover:bg-rose-600">Add image</button>
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-3">
-                {(galleryImages.length ? galleryImages : [""]).slice(0, 6).map((image, index) => (
+                {(galleryImages.length ? galleryImages : [""]).slice(0, 9).map((image, index) => (
                   <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-32 w-full object-cover" /> : <div className="flex h-32 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
-                    <div className="p-3 text-xs font-black uppercase tracking-[0.16em] text-white/45">{index === 0 ? "Main image" : `Photo ${index + 1}`}</div>
+                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
+                    <div className="space-y-2 p-3">
+                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">{image === mainImage ? "Main image" : `Photo ${index + 1}`}</div>
+                      {image && (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setMainImage(image)} className="flex-1 rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase text-white/70 hover:bg-white hover:text-black">Set main</button>
+                          <button type="button" onClick={() => removeGalleryImage(image)} className="flex-1 rounded-full border border-rose-300/30 bg-rose-500/10 px-3 py-1.5 text-[10px] font-black uppercase text-rose-100 hover:bg-rose-500 hover:text-white">Remove</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-              <p className="text-xs font-semibold text-white/35">Drag reorder and multi-upload can connect to storage when the media backend is enabled.</p>
             </Panel>
 
-            <Panel id="discovery-and-ai" title="Discovery & AI">
+            <Panel id="discovery" title="Discovery">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Atmosphere" value={form.atmosphere} onChange={(v) => update("atmosphere", v)} />
                 <Field label="Noise Level" value={form.noise_level} onChange={(v) => update("noise_level", v)} />
@@ -686,7 +788,34 @@ export default function EditLocationPage() {
               <Field label="Signature Items / Highlights" helper="Separate with commas." value={form.signature_items} onChange={(v) => update("signature_items", v)} />
             </Panel>
 
-            <Panel id="visibility-and-data-quality" title="Visibility & Data Quality">
+
+            <Panel id="reservations" title="Reservations">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Website" value={form.website} onChange={(v) => update("website", v)} />
+                <Field label="Reservation / Booking URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Public Phone" value={form.phone} onChange={(v) => update("phone", v)} />
+                <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
+              </div>
+
+              </Panel>
+
+            <Panel id="claim-and-qr" title="Claim & QR">
+              <div className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
+                <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/45">
+                  Owner Contact
+                </p>
+
+                <div className="grid gap-4">
+                  <Field label="Owner Name" value={form.owner_name} onChange={(v) => update("owner_name", v)} />
+                  <Field label="Owner Email" value={form.owner_email} onChange={(v) => update("owner_email", v)} />
+                  <Field label="Owner Phone" value={form.owner_phone} onChange={(v) => update("owner_phone", v)} />
+                </div>
+              </div>
+            </Panel>
+            <Panel id="data-quality" title="Data Quality">
               <Field label="Date Style Tags" helper="Separate with commas." value={form.date_style_tags} onChange={(v) => update("date_style_tags", v)} />
               <Field label="Search Keywords" helper="Separate with commas." value={form.search_keywords} onChange={(v) => update("search_keywords", v)} />
 
@@ -700,30 +829,6 @@ export default function EditLocationPage() {
                 <Field label="Missing Fields" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Visible for admins only." />
               </div>
               <a href={publicPreviewHref} target="_blank" className="inline-flex w-fit rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">Preview public page</a>
-            </Panel>
-
-            <Panel id="reservations" title="Reservations, Claim & QR">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Website" value={form.website} onChange={(v) => update("website", v)} />
-                <Field label="Reservation / Booking URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Public Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-                <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
-              </div>
-
-              <div id="claim-and-qr" className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
-                <p className="mb-4 text-xs font-black uppercase tracking-[0.25em] text-white/45">
-                  Owner Contact
-                </p>
-
-                <div className="grid gap-4">
-                  <Field label="Owner Name" value={form.owner_name} onChange={(v) => update("owner_name", v)} />
-                  <Field label="Owner Email" value={form.owner_email} onChange={(v) => update("owner_email", v)} />
-                  <Field label="Owner Phone" value={form.owner_phone} onChange={(v) => update("owner_phone", v)} />
-                </div>
-              </div>
             </Panel>
 
             <div className="sticky bottom-4 z-30 rounded-[1.5rem] border border-white/10 bg-black/75 p-3 shadow-2xl backdrop-blur-xl">
@@ -742,9 +847,9 @@ export default function EditLocationPage() {
 
           <aside className="lg:sticky lg:top-28 lg:self-start">
             <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#12090d] text-white shadow-2xl">
-              {form.image_url ? (
+              {mainImage ? (
                 <Image
-                  src={form.image_url}
+                  src={mainImage}
                   alt={form.name || "Location preview"}
                   width={700}
                   height={420}
@@ -771,7 +876,7 @@ export default function EditLocationPage() {
                     .join(", ") || "Address will appear here"}
                 </p>
 
-                <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-black/35 p-5">
+                <div className="mt-5 rounded-[1rem] border border-white/10 bg-black/35 p-3">
                   <ScoreBadge score={safeScore} />
                 </div>
 
