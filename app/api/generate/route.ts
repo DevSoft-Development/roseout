@@ -28,7 +28,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-borough-safe-meal-filter-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `dessert-addon-strict-v18-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -718,6 +718,136 @@ const NON_MEAL_FOOD_TYPES = [
 function isNonMealFoodPlace(item: any) {
   const text = itemText(item);
   return NON_MEAL_FOOD_TYPES.some((term) => phraseIncludesNormalized(text, term));
+}
+
+const DESSERT_TERMS = [
+  "dessert",
+  "desserts",
+  "bakery",
+  "bakeshop",
+  "pastry",
+  "pastries",
+  "cake",
+  "cakes",
+  "cupcake",
+  "cupcakes",
+  "ice cream",
+  "gelato",
+  "frozen yogurt",
+  "froyo",
+  "chocolate",
+  "chocolatier",
+  "sweets",
+  "sweet shop",
+  "cookie",
+  "cookies",
+  "donut",
+  "doughnut",
+  "waffle",
+  "crepe",
+  "crepes",
+  "pudding",
+  "candy",
+  "macaron",
+  "macarons",
+];
+
+const CLEAR_NON_DESSERT_ACTIVITY_TERMS = [
+  "candle",
+  "candle making",
+  "dance",
+  "dance studio",
+  "studio",
+  "paint",
+  "painting",
+  "pottery",
+  "ceramic",
+  "ceramics",
+  "gym",
+  "fitness",
+  "spa",
+  "massage",
+  "museum",
+  "gallery",
+  "arcade",
+  "bowling",
+  "axe",
+  "escape room",
+  "karaoke",
+  "hookah",
+  "lounge",
+  "bar",
+  "club",
+  "nightclub",
+];
+
+const STRONG_DESSERT_TERMS = [
+  "bakery",
+  "dessert",
+  "ice cream",
+  "gelato",
+  "cake",
+  "pastry",
+  "chocolate",
+  "cookie",
+  "cupcake",
+];
+
+function userAskedForDessert(
+  intent: ReturnType<typeof detectIntent>,
+  rawInput?: string,
+) {
+  const text = `${rawInput || ""} ${(intent?.foodIntents || []).join(" ")} ${(intent?.activityIntents || []).join(" ")}`.toLowerCase();
+
+  return [
+    "dessert",
+    "desserts",
+    "ice cream",
+    "gelato",
+    "bakery",
+    "cake",
+    "cupcake",
+    "pastry",
+    "sweet",
+    "sweets",
+  ].some((term) => text.includes(term));
+}
+
+function isDessertLocation(item: any) {
+  const text = itemText(item);
+
+  const hasDessertSignal = DESSERT_TERMS.some((term) =>
+    text.includes(term),
+  );
+
+  const hasStrongNonDessertActivitySignal =
+    CLEAR_NON_DESSERT_ACTIVITY_TERMS.some((term) => text.includes(term));
+
+  if (!hasDessertSignal) return false;
+
+  if (
+    hasStrongNonDessertActivitySignal &&
+    !STRONG_DESSERT_TERMS.some((term) => text.includes(term))
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isClearlyNotDessertLocation(item: any) {
+  const text = itemText(item);
+  const hasDessertSignal = DESSERT_TERMS.some((term) => text.includes(term));
+  if (hasDessertSignal) return false;
+
+  return CLEAR_NON_DESSERT_ACTIVITY_TERMS.some((term) =>
+    text.includes(term),
+  );
+}
+
+function hasClearNonDessertActivityTerm(item: any) {
+  const text = itemText(item);
+  return CLEAR_NON_DESSERT_ACTIVITY_TERMS.some((term) => text.includes(term));
 }
 
 
@@ -2733,6 +2863,17 @@ function calculateSearchQualityScore(
 
   if (wantsNearbyOrWalking && (!item.latitude || !item.longitude)) score -= 180;
 
+  if (userAskedForDessert(intent, input)) {
+    const dessertLocation = isDessertLocation(item);
+
+    if (dessertLocation) score += 150;
+    if (STRONG_DESSERT_TERMS.some((term) => text.includes(term))) {
+      score += 200;
+    }
+    if (isClearlyNotDessertLocation(item)) score -= 500;
+    if (!dessertLocation && hasClearNonDessertActivityTerm(item)) score -= 1000;
+  }
+
   return score;
 }
 
@@ -2919,6 +3060,18 @@ function scoreActivity(
 
   if (intent.wantsNightclub && matchesActivityIntent(item, "nightclub")) {
     score += PRIORITY_WEIGHTS.nightlife;
+  }
+
+  if (userAskedForDessert(intent, input)) {
+    const text = itemText(item);
+    const dessertLocation = isDessertLocation(item);
+
+    if (dessertLocation) score += 150;
+    if (STRONG_DESSERT_TERMS.some((term) => text.includes(term))) {
+      score += 200;
+    }
+    if (isClearlyNotDessertLocation(item)) score -= 500;
+    if (!dessertLocation && hasClearNonDessertActivityTerm(item)) score -= 1000;
   }
 
   score += clampScore(getSearchRankingScore(item)) * 0.4;
@@ -3624,6 +3777,9 @@ export async function POST(req: Request) {
       .filter(isPublicSearchVisible);
 
     const intent = detectIntent(input, body, locations);
+    const dessertAddonSearch = userAskedForDessert(intent, input);
+    const isStrictFoodAddonSearch =
+      dessertAddonSearch || userAskedForNonMealFood(intent);
     const userPreferenceSignals = await loadUserPreferenceSignals(body);
 
     const cacheKey = buildResponseCacheKey(input, intent);
@@ -3679,10 +3835,16 @@ export async function POST(req: Request) {
     if (userAskedForNonMealFood(intent)) {
       const nonMealFoodActivities = sourceLocations
         .filter(isOutingEligibleLocation)
-        .filter((item: any) => isNonMealFoodPlace(item))
+        .filter((item: any) =>
+          dessertAddonSearch ? isDessertLocation(item) : isNonMealFoodPlace(item),
+        )
         .map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
 
       activities = [...activities, ...nonMealFoodActivities];
+    }
+
+    if (dessertAddonSearch) {
+      activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
     const foodAddOnIntents = intent.foodIntents.filter(isFoodAddOnIntent);
@@ -3708,22 +3870,36 @@ export async function POST(req: Request) {
         foodIntents: mealFoodIntents,
       });
 
-      const foodAddOnActivities = sourceLocations
+      let foodAddOnActivities = sourceLocations
         .filter(isOutingEligibleLocation)
         .filter((item: any) =>
           foodAddOnIntents.some((foodIntent) =>
             matchesFoodIntent(item, foodIntent),
           ),
-        )
-        .map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
+        );
+
+      if (dessertAddonSearch) {
+        foodAddOnActivities = foodAddOnActivities.filter((item: any) =>
+          isDessertLocation(item),
+        );
+      }
 
       activities = filterActivitiesByActivityIntent(
-        [...activities, ...foodAddOnActivities],
+        [
+          ...activities,
+          ...foodAddOnActivities.map((item: any) =>
+            mapNonMealFoodPlaceToActivity(item, intent),
+          ),
+        ],
         intent,
       );
     } else {
       restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
       activities = filterActivitiesByActivityIntent(activities, intent);
+    }
+
+    if (dessertAddonSearch) {
+      activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
     if (restaurants.length === 0 && intent.wantsRestaurant) {
@@ -3787,9 +3963,19 @@ export async function POST(req: Request) {
         forcedActivityMatches = locationFiltered;
       }
 
+      if (dessertAddonSearch) {
+        forcedActivityMatches = forcedActivityMatches.filter((item: any) =>
+          isDessertLocation(item),
+        );
+      }
+
       if (forcedActivityMatches.length > 0) {
         activities = forcedActivityMatches;
       }
+    }
+
+    if (dessertAddonSearch) {
+      activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
     if (isLoungeActivityOnlyRequest(intent)) {
@@ -3805,13 +3991,31 @@ export async function POST(req: Request) {
       );
     }
 
-    if (activities.length === 0 && intent.wantsActivity) {
+    if (activities.length === 0 && dessertAddonSearch) {
+      activities = fallbackByGeoStages(
+        broaderSourceLocations,
+        (item: any) => isOutingEligibleLocation(item) && isDessertLocation(item),
+        intent,
+        strictWalkingRequest,
+      ).map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
+    } else if (activities.length === 0 && isStrictFoodAddonSearch) {
+      activities = fallbackByGeoStages(
+        broaderSourceLocations,
+        (item: any) => isOutingEligibleLocation(item) && isNonMealFoodPlace(item),
+        intent,
+        strictWalkingRequest,
+      ).map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
+    } else if (activities.length === 0 && intent.wantsActivity) {
       activities = fallbackByGeoStages(
         broaderSourceLocations,
         (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
         intent,
         strictWalkingRequest,
       );
+    }
+
+    if (dessertAddonSearch) {
+      activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
     const dedupedLocationResults = removeDuplicateLocationsAcrossTypes(
@@ -3821,7 +4025,11 @@ export async function POST(req: Request) {
     );
 
     restaurants = dedupedLocationResults.restaurants;
-    activities = dedupedLocationResults.activities;
+    activities = dessertAddonSearch
+      ? dedupedLocationResults.activities.filter((item: any) =>
+          isDessertLocation(item),
+        )
+      : dedupedLocationResults.activities;
 
     let rankedRestaurants = restaurants
       .map((restaurant: any) => {
@@ -4139,10 +4347,14 @@ STRICT RULES:
 - If the user asks for a restaurant with activities, date night, full outing, nearby, walkable, or walking distance, prioritize restaurant/activity pairs within 1.25 miles.
 `;
 
+    const dessertSearchWithoutDessertResults =
+      dessertAddonSearch && topActivities.length === 0;
+
     const hasResults =
-      topRestaurants.length > 0 ||
-      topActivities.length > 0 ||
-      matchedLocationResults.length > 0;
+      !dessertSearchWithoutDessertResults &&
+      (topRestaurants.length > 0 ||
+        topActivities.length > 0 ||
+        matchedLocationResults.length > 0);
 
     const response = hasResults
       ? await openai.responses.create({
@@ -4171,13 +4383,15 @@ STRICT RULES:
         strictActivityMode: smartIntent.strictActivityMode,
       },
       reply:
-        pairedResults.pairs.length > 0
-          ? response?.output_text ||
-            "Here are walkable restaurant and activity matches."
-          : strictWalkingRequest
-            ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
-            : response?.output_text ||
-              "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
+        dessertSearchWithoutDessertResults
+          ? "I couldn’t find a true dessert spot nearby. Try a broader area or search for bakery, ice cream, or cafe."
+          : pairedResults.pairs.length > 0
+            ? response?.output_text ||
+              "Here are walkable restaurant and activity matches."
+            : strictWalkingRequest
+              ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
+              : response?.output_text ||
+                "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
       intent: {
         requestedTags: intent.requestedTags,
         foodIntents: intent.foodIntents,
