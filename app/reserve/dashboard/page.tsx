@@ -21,8 +21,8 @@ type ReservationItem = {
   status: string | null;
   location_id: string | null;
   location_type: string | null;
-  bookable_item_name: string | null;
-  bookable_item_type: string | null;
+  reservable_item_name: string | null;
+  reservable_item_type: string | null;
   special_request: string | null;
   created_at: string | null;
 };
@@ -149,7 +149,7 @@ export default async function ReserveDashboardPage() {
     supabase
       .from("location_reservations")
       .select(
-        "id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, status, location_id, location_type, bookable_item_name, bookable_item_type, special_request, created_at"
+        "id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, status, location_id, location_type, reservable_item_name, reservable_item_type, special_request, created_at"
       )
       .gte("reservation_date", today)
       .lte("reservation_date", weekEndKey)
@@ -199,7 +199,7 @@ export default async function ReserveDashboardPage() {
 
   const getReservationLocationName = (reservation: ReservationItem) => {
     const key = `${reservation.location_type}:${reservation.location_id}`;
-    return locationNames.get(key) || reservation.bookable_item_name || "Unknown location";
+    return locationNames.get(key) || reservation.reservable_item_name || "Unknown location";
   };
 
   const todaysReservations = safeReservations.filter(
@@ -290,13 +290,13 @@ export default async function ReserveDashboardPage() {
               </p>
 
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                Reservations Dashboard
+                Reservation Dashboard
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Live overview across every bookable location: reservations,
+                Live overview across every reservable location: reservations,
                 parties, pending requests, confirmations, capacity, and
-                location-level demand from the active reservation pipeline.
+                location-level demand from the active reservation status flow.
               </p>
             </div>
 
@@ -475,7 +475,7 @@ export default async function ReserveDashboardPage() {
                       {reservation.customer_name || "Guest reservation"}
                     </h3>
                     <p className="mt-1 text-sm text-black/50">
-                      {getReservationLocationName(reservation)} · {reservation.bookable_item_name || "General reservation"}
+                      {getReservationLocationName(reservation)} · {reservation.reservable_item_name || "General reservation"}
                     </p>
                     {reservation.special_request && (
                       <p className="mt-2 rounded-2xl bg-black/[0.04] px-3 py-2 text-xs font-bold text-black/50">

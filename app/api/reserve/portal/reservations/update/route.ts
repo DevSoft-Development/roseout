@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 const allowedStatuses = [
   "pending",
   "confirmed",
+  "arrived",
   "declined",
   "cancelled",
   "completed",
@@ -62,12 +63,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const updatePayload: Record<string, string> = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (status === "arrived") updatePayload.arrived_at = new Date().toISOString();
+    if (status === "completed") updatePayload.completed_at = new Date().toISOString();
+    if (status === "cancelled") updatePayload.customer_cancelled_at = new Date().toISOString();
+
     const { data, error } = await supabaseAdmin
       .from("location_reservations")
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", reservationId)
       .eq("location_id", locationId)
       .eq("location_type", locationType)
