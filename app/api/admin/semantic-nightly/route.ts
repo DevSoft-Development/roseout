@@ -129,18 +129,41 @@ function buildSemanticTags(location: Record<string, unknown>, semanticText: stri
 }
 
 function buildIntentTags(location: Record<string, unknown>, semanticText: string) {
-  const text = semanticText.toLowerCase();
+  const text = [
+    semanticText,
+    location.name,
+    location.restaurant_name,
+    location.activity_name,
+    location.category,
+    location.primary_category,
+    location.cuisine,
+    location.activity_type,
+    location.type,
+    location.source_table,
+    location.description,
+    ...toArray(location.tags),
+    ...toArray(location.vibe_tags),
+    ...toArray(location.google_types),
+  ]
+    .map(cleanText)
+    .join(" ")
+    .toLowerCase();
   const tags: string[] = [];
-  const type = cleanText(location.location_type).toLowerCase();
+  const locationType = cleanText(location.location_type || location.type).toLowerCase();
+  const sourceTable = cleanText(location.source_table).toLowerCase();
+  const categoryText = [cleanText(location.category), cleanText(location.primary_category)].join(" ").toLowerCase();
 
-  if (type === "restaurant" || includesAny(text, RESTAURANT_TERMS)) tags.push("restaurant");
+  if (locationType === "restaurant" || sourceTable.includes("restaurant") || includesAny(text, RESTAURANT_TERMS)) tags.push("restaurant");
   if (includesAny(text, DESSERT_TERMS)) tags.push("dessert");
   if (includesAny(text, NIGHTLIFE_TERMS)) tags.push("nightlife");
-  if (type === "activity" || includesAny(text, ACTIVITY_TERMS)) tags.push("activity");
+  if (locationType === "activity" || sourceTable.includes("activity") || includesAny(text, ACTIVITY_TERMS)) tags.push("activity");
   if (includesAny(text, ROMANTIC_TERMS)) tags.push("romantic");
   if (includesAny(text, GROUP_TERMS)) tags.push("group");
   if (includesAny(text, BIRTHDAY_TERMS)) tags.push("birthday");
   if (includesAny(text, FAMILY_TERMS)) tags.push("family");
+
+  if (includesAny(categoryText, ["lounge", "bar", "hookah", "nightlife"])) tags.push("nightlife");
+  if (includesAny(categoryText, ["dessert", "bakery", "ice cream", "pastry", "cake"])) tags.push("dessert");
 
   return uniqueTags(tags);
 }
@@ -220,13 +243,16 @@ async function runSemanticNightly(request: NextRequest) {
   if (authError) return authError;
 
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
-  const batchSize = Math.min(Math.max(Number(body.batch_size || request.nextUrl.searchParams.get("batch_size") || DEFAULT_BATCH_SIZE), 1), 100);
+  const searchParams = request.nextUrl.searchParams;
+  const processAll = searchParams.get("all") === "true";
+  const batchSize = Math.min(Math.max(Number(searchParams.get("limit") || body.batch_size || searchParams.get("batch_size") || DEFAULT_BATCH_SIZE), 1), 100);
+  const offset = Math.max(Number(searchParams.get("offset") || body.offset || 0), 0);
 
-  const { data: locations, error } = await supabaseAdmin
-    .from("locations")
-    .select("*")
-    .or("needs_semantic_refresh.is.true,needs_semantic_refresh.is.null")
-    .limit(batchSize);
+  let query = supabaseAdmin.from("locations").select("*").range(offset, offset + batchSize - 1);
+  if (!processAll) {
+    query = query.or("needs_semantic_refresh.is.true,needs_semantic_refresh.is.null");
+  }
+  const { data: locations, error } = await query;
 
   if (error) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -253,8 +279,7 @@ async function runSemanticNightly(request: NextRequest) {
     if (!id) continue;
 
     try {
-      const semanticSearchText = buildSemanticSearchText(location);
-      if (!semanticSearchText) continue;
+      const semanticSearchText = buildSemanticSearchText(location) || cleanText(location.name || location.restaurant_name || location.activity_name || id);
 
       const embedding = await openai.embeddings.create({
         model: EMBEDDING_MODEL,
@@ -291,6 +316,9 @@ async function runSemanticNightly(request: NextRequest) {
   return NextResponse.json({
     success: failures.length === 0,
     processed: processedNames.length,
+    limit: batchSize,
+    offset,
+    all: processAll,
     updated_location_names: processedNames,
     failures,
   });
