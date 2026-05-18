@@ -79,7 +79,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { data: locations } = await supabase
     .from("locations")
     .select(
-      "id, location_type, updated_at, created_at, is_searchable, data_status, is_hidden, status, name, address, city, state, latitude, longitude, main_image",
+      "id, location_type, created_at, is_searchable, data_status, is_hidden, status, name, address, city, state, latitude, longitude, main_image",
     )
     .eq("is_searchable", true)
     .eq("data_status", "clean")
@@ -99,7 +99,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
         return {
           url: `${siteUrl}/locations/${routeType}/${location.id}`,
-          lastModified: safeDate(location.updated_at || location.created_at),
+          lastModified: safeDate(location.created_at),
           changeFrequency: "weekly",
           priority: location.location_type === "restaurant" ? 0.75 : 0.7,
         };

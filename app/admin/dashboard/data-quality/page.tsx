@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 
 const ADMIN_DATA_QUALITY_VERSION = "admin-data-quality-2026-05-17";
 const ADMIN_DATA_QUALITY_BASE_PATH = "/admin/dashboard/data-quality";
+const LOCATION_SAFE_ORDER_COLUMN = "id";
 
 const RESTAURANT_SELECT =
   "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, updated_at, created_at";
@@ -28,7 +29,7 @@ const ACTIVITY_SELECT =
   "id, name, activity_name, location_type, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, created_at";
 
 const LOCATION_SELECT =
-  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, updated_at, created_at";
+  "id, name, restaurant_name, activity_name, location_type, source_table, source_id, primary_category, cuisine, cuisine_type, activity_type, primary_tag, phone, google_place_id, claim_code, address, city, state, zip_code, latitude, longitude, main_image, image_url, images, is_searchable, data_status, missing_fields, is_hidden, is_verified, status, quality_score, last_quality_check_at, created_at";
 
 type QualityFilter =
   | "all"
@@ -563,7 +564,7 @@ export default async function AdminDataQualityPage({
           .from("locations")
           .select(LOCATION_SELECT)
           .order("last_quality_check_at", { ascending: true, nullsFirst: true })
-          .order("updated_at", { ascending: false })
+          .order(LOCATION_SAFE_ORDER_COLUMN, { ascending: false })
           .range(0, rangeTo),
         locationSearchFields,
       ),
