@@ -21,28 +21,13 @@ const OPTIONAL_UPDATE_COLUMNS = new Set([
   "needs_semantic_refresh",
 ]);
 
-const DESSERT_TERMS = [
-  "bakery",
-  "dessert",
-  "dessert cafe",
-  "ice cream",
-  "gelato",
-  "cake",
-  "pastry",
-  "cookies",
-  "cookie",
-  "sweets",
-  "sweet",
-  "chocolate",
-];
-
-const NIGHTLIFE_TERMS = ["hookah", "lounge", "bar", "nightlife", "cocktail", "club", "nightclub", "rooftop"];
-const ACTIVITY_TERMS = ["activity", "activities", "museum", "escape", "bowling", "arcade", "class", "studio", "karaoke", "mini golf", "paint"];
-const RESTAURANT_TERMS = ["restaurant", "dinner", "brunch", "lunch", "breakfast", "food", "cuisine", "dining", "cafe"];
-const ROMANTIC_TERMS = ["romantic", "date night", "intimate", "anniversary", "cozy"];
-const GROUP_TERMS = ["group", "friends", "party", "large party", "team"];
-const BIRTHDAY_TERMS = ["birthday", "celebration", "celebrate"];
-const FAMILY_TERMS = ["family", "kids", "children", "all ages"];
+const NIGHTLIFE_TERMS = ["lounge", "bar", "hookah", "nightclub", "nightlife", "cocktail", "club"];
+const DESSERT_TERMS = ["dessert", "bakery", "ice cream", "cake", "pastry", "cookie", "cookies", "chocolate", "sweets"];
+const ROMANTIC_TERMS = ["romantic", "date night", "upscale", "intimate"];
+const BIRTHDAY_TERMS = ["birthday", "celebration"];
+const GROUP_TERMS = ["group", "private party", "team"];
+const FAMILY_TERMS = ["family", "kids", "children"];
+const FOOD_TERMS = ["restaurant", "food", "dining", "cuisine", "brunch", "lunch", "dinner", "cafe"];
 
 function getBearerToken(request: NextRequest) {
   const auth = request.headers.get("authorization") || "";
@@ -57,25 +42,19 @@ function isCronAuthorized(request: NextRequest) {
 
 async function authorizeAdminOrCron(request: NextRequest) {
   if (process.env.NODE_ENV === "development" || isCronAuthorized(request)) return null;
-
   const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
   return error;
 }
 
-function toArray(value: unknown): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
 function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function toArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map((item) => cleanText(item)).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => cleanText(item)).filter(Boolean);
+  return [];
 }
 
 function safeNumber(value: unknown) {
@@ -92,25 +71,36 @@ function uniqueTags(tags: string[]) {
 }
 
 function buildSemanticSearchText(location: Record<string, unknown>) {
-  return [
+  const parts = [
     location.name,
     location.restaurant_name,
     location.activity_name,
     location.description,
+    location.address,
     location.city,
     location.state,
     location.cuisine,
     location.cuisine_type,
     location.category,
     location.primary_category,
+    location.activity_type,
+    location.primary_tag,
+    location.source_table,
     ...toArray(location.tags),
     ...toArray(location.vibe_tags),
     ...toArray(location.best_for_tags),
+    ...toArray(location.google_types),
   ]
-    .map(cleanText)
-    .filter(Boolean)
-    .join(" · ")
-    .slice(0, 7000);
+    .map((value) => cleanText(value))
+    .filter(Boolean);
+
+  const joined = parts.join(" · ").slice(0, 7000);
+  if (joined) return joined;
+
+  const city = cleanText(location.city) || "Unknown city";
+  const state = cleanText(location.state) || "Unknown state";
+  const category = cleanText(location.source_table) || cleanText(location.location_type) || cleanText(location.category) || "general";
+  return `Unnamed location in ${city} ${state} categorized as ${category}`;
 }
 
 function buildSemanticTags(location: Record<string, unknown>, semanticText: string) {
@@ -121,98 +111,73 @@ function buildSemanticTags(location: Record<string, unknown>, semanticText: stri
     cleanText(location.cuisine),
     cleanText(location.cuisine_type),
     cleanText(location.activity_type),
+    cleanText(location.primary_tag),
+    cleanText(location.source_table),
     ...toArray(location.tags),
     ...toArray(location.vibe_tags),
     ...toArray(location.best_for_tags),
+    ...toArray(location.google_types),
     ...semanticText.split(/\s+/).filter((word) => word.length > 3).slice(0, 30),
   ]).slice(0, 80);
 }
 
 function buildIntentTags(location: Record<string, unknown>, semanticText: string) {
-  const text = semanticText.toLowerCase();
   const tags: string[] = [];
+  const sourceTable = cleanText(location.source_table).toLowerCase();
   const type = cleanText(location.location_type).toLowerCase();
+  const compositeText = [
+    semanticText,
+    cleanText(location.name),
+    cleanText(location.restaurant_name),
+    cleanText(location.activity_name),
+    cleanText(location.category),
+    cleanText(location.primary_category),
+    cleanText(location.activity_type),
+    ...toArray(location.tags),
+    ...toArray(location.google_types),
+  ]
+    .join(" ")
+    .toLowerCase();
 
-  if (type === "restaurant" || includesAny(text, RESTAURANT_TERMS)) tags.push("restaurant");
-  if (includesAny(text, DESSERT_TERMS)) tags.push("dessert");
-  if (includesAny(text, NIGHTLIFE_TERMS)) tags.push("nightlife");
-  if (type === "activity" || includesAny(text, ACTIVITY_TERMS)) tags.push("activity");
-  if (includesAny(text, ROMANTIC_TERMS)) tags.push("romantic");
-  if (includesAny(text, GROUP_TERMS)) tags.push("group");
-  if (includesAny(text, BIRTHDAY_TERMS)) tags.push("birthday");
-  if (includesAny(text, FAMILY_TERMS)) tags.push("family");
+  if (sourceTable.includes("restaurant") || type.includes("restaurant") || cleanText(location.restaurant_name) || cleanText(location.cuisine)) tags.push("restaurant");
+  if (sourceTable.includes("activity") || type.includes("activity") || cleanText(location.activity_name)) tags.push("activity");
+  if (includesAny(compositeText, NIGHTLIFE_TERMS)) tags.push("nightlife");
+  if (includesAny(compositeText, DESSERT_TERMS)) tags.push("dessert");
+  if (includesAny(compositeText, ROMANTIC_TERMS)) tags.push("romantic");
+  if (includesAny(compositeText, BIRTHDAY_TERMS)) tags.push("birthday");
+  if (includesAny(compositeText, GROUP_TERMS)) tags.push("group");
+  if (includesAny(compositeText, FAMILY_TERMS)) tags.push("family");
 
-  return uniqueTags(tags);
+  const unique = uniqueTags(tags);
+  if (unique.length > 0) return unique;
+
+  const fallbackText = [sourceTable, cleanText(location.category), cleanText(location.primary_category)].join(" ").toLowerCase();
+  return [includesAny(fallbackText, FOOD_TERMS) ? "restaurant" : "activity"];
 }
 
-function calculateQualityScore(location: Record<string, unknown>) {
-  const fields = [
-    location.name || location.restaurant_name || location.activity_name,
-    location.description,
-    location.address,
-    location.city,
-    location.state,
-    location.phone,
-    location.website,
-    location.google_place_id,
-    location.reservation_link || location.reservation_url || location.external_reservation_url || location.booking_url,
-    location.rating,
-  ];
+function calculateQualityScore(location: Record<string, unknown>) { const fields = [location.name || location.restaurant_name || location.activity_name, location.description, location.address, location.city, location.state, location.phone, location.website, location.google_place_id, location.reservation_link || location.reservation_url || location.external_reservation_url || location.booking_url, location.rating]; return Number(((fields.filter((field) => cleanText(field).length > 0 || safeNumber(field) > 0).length / fields.length) * 100).toFixed(2)); }
+function calculateAnalyticsScore(analytics: Record<string, unknown> | null | undefined) { if (!analytics) return 0; const views = safeNumber(analytics.views); const clicks = safeNumber(analytics.clicks); const saves = safeNumber(analytics.saves); const bookings = safeNumber(analytics.bookings); const skips = safeNumber(analytics.skips); return Number(Math.max(0, views * 0.05 + clicks * 0.5 + saves * 1.5 + bookings * 4 - skips * 0.35).toFixed(2)); }
+function calculateRecommendationScore(location: Record<string, unknown>, qualityScore: number, analyticsScore: number) { const rating = safeNumber(location.rating); const hasReservation = Boolean(location.reservation_link || location.reservation_url || location.external_reservation_url || location.booking_url || location.reservation_enabled); const promoted = Boolean(location.is_promoted) || ["pro", "premium", "growth", "launch"].includes(cleanText(location.subscription_plan).toLowerCase()); return Number(Math.max(0, qualityScore * 0.35 + analyticsScore * 0.25 + rating * 10 + (hasReservation ? 8 : 0) + (promoted ? 10 : 0)).toFixed(2)); }
 
-  return Number(((fields.filter((field) => cleanText(field).length > 0 || safeNumber(field) > 0).length / fields.length) * 100).toFixed(2));
-}
-
-function calculateAnalyticsScore(analytics: Record<string, unknown> | null | undefined) {
-  if (!analytics) return 0;
-
-  const views = safeNumber(analytics.views);
-  const clicks = safeNumber(analytics.clicks);
-  const saves = safeNumber(analytics.saves);
-  const bookings = safeNumber(analytics.bookings);
-  const skips = safeNumber(analytics.skips);
-
-  return Number(Math.max(0, views * 0.05 + clicks * 0.5 + saves * 1.5 + bookings * 4 - skips * 0.35).toFixed(2));
-}
-
-function calculateRecommendationScore(location: Record<string, unknown>, qualityScore: number, analyticsScore: number) {
-  const rating = safeNumber(location.rating);
-  const hasReservation = Boolean(location.reservation_link || location.reservation_url || location.external_reservation_url || location.booking_url || location.reservation_enabled);
-  const promoted = Boolean(location.is_promoted) || ["pro", "premium", "growth", "launch"].includes(cleanText(location.subscription_plan).toLowerCase());
-
-  return Number(
-    Math.max(
-      0,
-      qualityScore * 0.35 +
-        analyticsScore * 0.25 +
-        rating * 10 +
-        (hasReservation ? 8 : 0) +
-        (promoted ? 10 : 0),
-    ).toFixed(2),
-  );
-}
-
-function missingColumnName(message: string) {
-  const quoted = message.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+(?:of relation\s+"?[a-zA-Z0-9_]+"?\s+)?does not exist/i);
-  return quoted?.[1] || null;
-}
+function missingColumnName(message: string) { const quoted = message.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+(?:of relation\s+"?[a-zA-Z0-9_]+"?\s+)?does not exist/i); return quoted?.[1] || null; }
 
 async function safeUpdateLocation(id: string, payload: Record<string, unknown>) {
   let remainingPayload = { ...payload };
-
   for (let attempt = 0; attempt < OPTIONAL_UPDATE_COLUMNS.size + 1; attempt += 1) {
     const { error } = await supabaseAdmin.from("locations").update(remainingPayload).eq("id", id);
-    if (!error) return { success: true, skippedColumns: [] as string[] };
-
+    if (!error) return { success: true };
     const missingColumn = missingColumnName(error.message || "");
-    if (!missingColumn || !OPTIONAL_UPDATE_COLUMNS.has(missingColumn)) {
-      return { success: false, error: error.message, skippedColumns: [] as string[] };
-    }
-
+    if (!missingColumn || !OPTIONAL_UPDATE_COLUMNS.has(missingColumn)) return { success: false, error: error.message };
     const { [missingColumn]: _removed, ...nextPayload } = remainingPayload;
     remainingPayload = nextPayload;
   }
+  return { success: false, error: "Unable to update location after removing missing optional columns." };
+}
 
-  return { success: false, error: "Unable to update location after removing missing optional columns.", skippedColumns: [] as string[] };
+function parseBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return ["1", "true", "yes"].includes(value.toLowerCase());
+  return false;
 }
 
 async function runSemanticNightly(request: NextRequest) {
@@ -220,54 +185,53 @@ async function runSemanticNightly(request: NextRequest) {
   if (authError) return authError;
 
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
-  const batchSize = Math.min(Math.max(Number(body.batch_size || request.nextUrl.searchParams.get("batch_size") || DEFAULT_BATCH_SIZE), 1), 100);
+  const query = request.nextUrl.searchParams;
+  const limit = Math.min(Math.max(Number(body.limit || body.batch_size || query.get("limit") || query.get("batch_size") || DEFAULT_BATCH_SIZE), 1), 200);
+  const offset = Math.max(Number(body.offset || query.get("offset") || 0), 0);
+  const all = parseBoolean(body.all ?? query.get("all"));
+  const missing = parseBoolean(body.missing ?? query.get("missing"));
 
-  const { data: locations, error } = await supabaseAdmin
-    .from("locations")
-    .select("*")
-    .or("needs_semantic_refresh.is.true,needs_semantic_refresh.is.null")
-    .limit(batchSize);
+  let selector = supabaseAdmin.from("locations").select("*", { count: "exact" }).order("updated_at", { ascending: true }).range(offset, offset + limit - 1);
 
-  if (error) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  if (missing) {
+    selector = selector.or("semantic_search_text.is.null,semantic_search_text.eq.,intent_tags.is.null,recommendation_score.is.null,analytics_score.is.null,intent_tags.eq.{}");
+  } else if (!all) {
+    selector = selector.eq("needs_semantic_refresh", true);
   }
 
-  const ids = (locations || []).map((location: any) => location.id).filter(Boolean);
+  const { data: locations, error } = await selector;
+  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+
+  const ids = (locations || []).map((location: any) => String(location.id)).filter(Boolean);
   const analyticsByLocation = new Map<string, Record<string, unknown>>();
-
   if (ids.length > 0) {
-    const { data: analytics } = await supabaseAdmin
-      .from("location_analytics")
-      .select("*")
-      .in("location_id", ids);
-
+    const { data: analytics } = await supabaseAdmin.from("location_analytics").select("*").in("location_id", ids);
     (analytics || []).forEach((row: any) => analyticsByLocation.set(String(row.location_id), row));
   }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const processedNames: string[] = [];
+  let updated = 0;
+  let skipped = 0;
   const failures: Array<{ id: string; error: string }> = [];
 
   for (const location of locations || []) {
     const id = String(location.id || "");
     if (!id) continue;
-
     try {
       const semanticSearchText = buildSemanticSearchText(location);
-      if (!semanticSearchText) continue;
-
-      const embedding = await openai.embeddings.create({
-        model: EMBEDDING_MODEL,
-        input: semanticSearchText,
-      });
-
+      const intentTags = buildIntentTags(location, semanticSearchText);
+      if (!semanticSearchText || intentTags.length === 0) {
+        skipped += 1;
+        continue;
+      }
+      const embedding = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: semanticSearchText });
       const qualityScore = calculateQualityScore(location);
       const analyticsScore = calculateAnalyticsScore(analyticsByLocation.get(id));
       const recommendationScore = calculateRecommendationScore(location, qualityScore, analyticsScore);
       const payload = {
         semantic_search_text: semanticSearchText,
         semantic_tags: buildSemanticTags(location, semanticSearchText),
-        intent_tags: buildIntentTags(location, semanticSearchText),
+        intent_tags: intentTags,
         quality_score: qualityScore,
         analytics_score: analyticsScore,
         recommendation_score: recommendationScore,
@@ -275,31 +239,45 @@ async function runSemanticNightly(request: NextRequest) {
         embedding_updated_at: new Date().toISOString(),
         needs_semantic_refresh: false,
       };
-
       const updateResult = await safeUpdateLocation(id, payload);
       if (!updateResult.success) {
         failures.push({ id, error: updateResult.error || "Update failed" });
         continue;
       }
-
-      processedNames.push(cleanText(location.name || location.restaurant_name || location.activity_name) || id);
+      updated += 1;
     } catch (locationError) {
       failures.push({ id, error: locationError instanceof Error ? locationError.message : String(locationError) });
     }
   }
 
+  const missingFilter = "semantic_search_text.is.null,semantic_search_text.eq.,intent_tags.is.null,intent_tags.eq.{}";
+  const [missingTextRes, missingIntentRes, sampleMissingRes] = await Promise.all([
+    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).or("semantic_search_text.is.null,semantic_search_text.eq."),
+    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).or("intent_tags.is.null,intent_tags.eq.{}"),
+    supabaseAdmin.from("locations").select("id,name,restaurant_name,activity_name,source_table,location_type,city,state").or(missingFilter).limit(10),
+  ]);
+
+  const sampleMissingLocations = (sampleMissingRes.data || []).map((row: any) => ({
+    id: row.id,
+    name: row.name || row.restaurant_name || row.activity_name || "Unnamed",
+    source_table: row.source_table || null,
+    type: row.location_type || null,
+    city: row.city || null,
+    state: row.state || null,
+  }));
+
   return NextResponse.json({
     success: failures.length === 0,
-    processed: processedNames.length,
-    updated_location_names: processedNames,
+    mode: missing ? "missing" : all ? "all" : "refresh_only",
+    processed: (locations || []).length,
+    updated,
+    skipped,
     failures,
+    remaining_missing_semantic_search_text: missingTextRes.count || 0,
+    remaining_missing_intent_tags: missingIntentRes.count || 0,
+    sample_missing_locations: sampleMissingLocations,
   });
 }
 
-export async function GET(request: NextRequest) {
-  return runSemanticNightly(request);
-}
-
-export async function POST(request: NextRequest) {
-  return runSemanticNightly(request);
-}
+export async function GET(request: NextRequest) { return runSemanticNightly(request); }
+export async function POST(request: NextRequest) { return runSemanticNightly(request); }
