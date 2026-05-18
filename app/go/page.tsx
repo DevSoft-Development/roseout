@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type React from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   campaignCaption,
@@ -53,20 +54,36 @@ function Pill({ children, dark = false }: { children: React.ReactNode; dark?: bo
 function CampaignCard({ campaign }: { campaign: PublicCampaign }) {
   const slug = campaign.public_slug || "";
   const place = campaignPlace(campaign);
+  const imageUrl = campaign.location_image_url?.trim();
+  const title = campaignTitle(campaign);
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-2xl">
-      <Link href={slug ? `/go/${slug}` : "/go"} className="relative block h-56 overflow-hidden bg-[#eadfd8]">
-        <img src={campaignImage(campaign)} alt={campaign.location_name || campaignTitle(campaign)} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
-        <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-          <Pill>{campaign.caption_category || campaign.location_category || "Featured"}</Pill>
-          {campaign.source_platform ? <Pill dark>{campaign.source_platform}</Pill> : null}
+      <Link href={slug ? `/go/${slug}` : "/go"} className="relative block overflow-hidden bg-[radial-gradient(circle_at_top_right,rgba(244,63,94,0.26),transparent_34%),linear-gradient(135deg,#1b1210,#050505_70%,#3a1715)]">
+        <div className="relative aspect-[4/3] w-full">
+          {imageUrl ? (
+            <Image
+              src={imageUrl}
+              alt={campaign.location_name || title}
+              fill
+              sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+              className="object-cover transition duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-white">
+              <p className="text-2xl font-black tracking-[-0.04em]">{title}</p>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+          <div className="absolute left-4 right-4 top-4 flex flex-wrap gap-2">
+            <Pill>{campaign.caption_category || campaign.location_category || "Featured"}</Pill>
+            {campaign.source_platform ? <Pill dark>{campaign.source_platform}</Pill> : null}
+          </div>
         </div>
       </Link>
 
       <div className="flex flex-1 flex-col p-5">
-        <h3 className="text-xl font-black leading-tight tracking-[-0.03em] text-[#1b1210]">{campaignTitle(campaign)}</h3>
+        <h3 className="text-xl font-black leading-tight tracking-[-0.03em] text-[#1b1210]">{title}</h3>
         <p className="mt-2 text-sm font-black uppercase tracking-[0.14em] text-rose-700">{[campaign.location_city, campaign.location_state].filter(Boolean).join(", ") || place || "TheOutHaven pick"}</p>
         <p className="mt-3 line-clamp-3 text-sm font-semibold leading-6 text-black/55">{campaign.location_description || campaignCaption(campaign)}</p>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
@@ -116,7 +133,9 @@ export default async function GoPage() {
               <div className="mt-4 grid gap-3">
                 {campaigns.slice(0, 3).map((campaign) => (
                   <Link key={campaign.id} href={campaign.public_slug ? `/go/${campaign.public_slug}` : "/go"} className="grid grid-cols-[88px_1fr] gap-3 rounded-[1.25rem] bg-white p-3 shadow-sm">
-                    <img src={campaignImage(campaign)} alt={campaignTitle(campaign)} className="h-24 w-[88px] rounded-[1rem] object-cover" />
+                    <div className="relative h-24 w-[88px] overflow-hidden rounded-[1rem] bg-[#eadfd8]">
+                      <Image src={campaignImage(campaign)} alt={campaignTitle(campaign)} fill sizes="88px" className="object-cover" />
+                    </div>
                     <div className="min-w-0 py-1">
                       <p className="truncate text-base font-black">{campaignTitle(campaign)}</p>
                       <p className="mt-1 truncate text-xs font-bold text-black/45">{[campaign.location_name, campaignPlace(campaign)].filter(Boolean).join(" • ")}</p>
