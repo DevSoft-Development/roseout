@@ -592,7 +592,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const status = selectedItem?.auto_confirm === false ? "pending" : "confirmed";
+    const depositAmount = Number(location.default_deposit_amount || 0);
+    const depositRequired = Boolean(location.deposits_enabled && depositAmount > 0);
+    const status = depositRequired
+      ? "pending"
+      : selectedItem?.auto_confirm === false
+        ? "pending"
+        : "confirmed";
     const customerToken = crypto.randomUUID();
     const confirmationCode = crypto.randomBytes(3).toString("hex").toUpperCase();
 
@@ -620,6 +626,9 @@ export async function POST(request: NextRequest) {
 
         special_request: specialRequest || null,
         special_requests: specialRequest || null,
+        deposit_required: depositRequired,
+        deposit_amount: depositRequired ? depositAmount : 0,
+        deposit_status: depositRequired ? "pending" : null,
         status,
         source: "theouthaven",
         user_id: user?.id || null,
@@ -677,6 +686,9 @@ export async function POST(request: NextRequest) {
         reservation_id: reservation.id,
         amount_paid: reservation.amount_paid || reservation.total_paid || 0,
         status,
+        deposit_required: depositRequired,
+        deposit_amount: depositRequired ? depositAmount : 0,
+        deposit_status: depositRequired ? "pending" : null,
       },
     });
 
@@ -689,6 +701,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       reservation,
+      deposit_required: depositRequired,
       auto_confirmed: status === "confirmed",
     });
   } catch (error: any) {

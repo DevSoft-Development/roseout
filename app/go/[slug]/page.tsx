@@ -16,6 +16,7 @@ import {
   trackCampaignClick,
 } from "@/lib/marketing-public";
 import { resolveCampaignLocation } from "@/lib/locations/resolve-location";
+import ShareButtons from "@/components/sharing/ShareButtons";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${campaignTitle(campaign)} | TheOutHaven`,
     description: campaign.location_description || campaignCaption(campaign),
     openGraph: {
+      title: campaignTitle(campaign),
+      description: campaign.location_description || campaignCaption(campaign),
+      images: [{ url: campaignImage(campaign), width: 1200, height: 630, alt: campaignTitle(campaign) }],
+      type: "article",
+    },
+    twitter: {
+      card: "summary_large_image",
       title: campaignTitle(campaign),
       description: campaign.location_description || campaignCaption(campaign),
       images: [campaignImage(campaign)],
@@ -66,6 +74,8 @@ export default async function CampaignLandingPage({ params, searchParams }: Page
   const planHref = buildExactPlanHref(slug, locationId, sourceTable);
   const imageUrl = campaign.location_image_url?.trim();
   const imageAlt = campaign.location_name || campaignTitle(campaign);
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
+  const shareUrl = `${siteUrl}/go/${slug}`;
 
   return (
     <main className="min-h-screen bg-[#fff8f3] text-[#1b1210]">
@@ -118,8 +128,10 @@ export default async function CampaignLandingPage({ params, searchParams }: Page
               <Link href={planHref} className="rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-700 px-5 py-4 text-center text-sm font-black text-white shadow-lg shadow-rose-950/20">Plan this outing</Link>
               {publicLocationUrl ? <Link href={publicLocationUrl} className="rounded-full bg-[#1b1210] px-5 py-4 text-center text-sm font-black text-white">View location</Link> : <Link href="/create" className="rounded-full bg-[#1b1210] px-5 py-4 text-center text-sm font-black text-white">View location</Link>}
               <Link href={`/reserve?location=${encodeURIComponent(locationId || campaign.location_name || "")}`} className="rounded-full border border-[#1b1210] bg-white px-5 py-4 text-center text-sm font-black text-[#1b1210] sm:border-black/10">Reserve if available</Link>
-              <Link href={`/create?campaignSlug=${encodeURIComponent(slug)}&planExact=true&nearby=true${locationId ? `&locationId=${encodeURIComponent(locationId)}` : ""}${sourceTable ? `&sourceTable=${encodeURIComponent(sourceTable)}` : ""}`} className="rounded-full border border-[#1b1210] bg-white px-5 py-4 text-center text-sm font-black text-[#1b1210] sm:border-black/10">Find nearby spots</Link>
+              <Link href={`/create?campaignSlug=${encodeURIComponent(slug)}&planExact=true&nearby=true${locationId ? `&locationId=${encodeURIComponent(locationId)}` : ""}${sourceTable ? `&sourceTable=${encodeURIComponent(sourceTable)}` : ""}`} className="rounded-full border border-[#1b1210] bg-white px-5 py-4 text-center text-sm font-black text-[#1b1210] sm:border-black/10">Plan Similar Outing</Link>
             </div>
+
+            <ShareButtons title={campaignTitle(campaign)} url={shareUrl} />
 
             {campaign.hashtags?.length ? (
               <div className="mt-6 flex flex-wrap gap-2">

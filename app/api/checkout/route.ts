@@ -1,25 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBusinessProPriceId, getSiteUrl, stripeRequest } from "@/lib/stripe/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-    const priceId = process.env.STRIPE_THEOUTHAVEN_PRO_PRICE_ID;
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
-
-    if (!stripeSecretKey) {
-      return NextResponse.json(
-        { error: "Missing STRIPE_SECRET_KEY" },
-        { status: 500 }
-      );
-    }
-
-    if (!priceId) {
-      return NextResponse.json(
-        { error: "Missing STRIPE_THEOUTHAVEN_PRO_PRICE_ID" },
-        { status: 500 }
-      );
-    }
+    const priceId = getBusinessProPriceId();
+    const siteUrl = getSiteUrl();
 
     const formData = await request.formData();
 
@@ -98,25 +83,11 @@ export async function POST(request: NextRequest) {
       "subscription_data[metadata][goal]": goal,
     });
 
-    const stripeResponse = await fetch(
-      "https://api.stripe.com/v1/checkout/sessions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${stripeSecretKey}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body,
-      }
-    );
+    const session = await stripeRequest<{ url?: string }>("/checkout/sessions", { body });
 
-    const session = await stripeResponse.json();
-
-    if (!stripeResponse.ok || !session.url) {
+    if (!session.url) {
       return NextResponse.json(
-        {
-          error: session.error?.message || "Unable to create Stripe checkout.",
-        },
+        { error: "Unable to create Stripe checkout." },
         { status: 500 }
       );
     }
