@@ -16,11 +16,7 @@ export default function SemanticCleanupButton() {
     setState({ loading: true, message: "Running semantic cleanup..." });
 
     try {
-      const response = await fetch("/api/admin/semantic-nightly", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batch_size: 50 }),
-      });
+      const response = await fetch("/api/admin/semantic-nightly?all=true&limit=100", { method: "POST" });
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok || data.success === false) {
@@ -50,7 +46,7 @@ export default function SemanticCleanupButton() {
             Semantic Search
           </p>
           <p className="mt-1 text-sm font-bold text-white/65">
-            Refresh embeddings, intent tags, analytics scores, and recommendation scores.
+            Backfill semantic data, embeddings, and scoring fields for all locations.
           </p>
         </div>
         <button
@@ -59,7 +55,7 @@ export default function SemanticCleanupButton() {
           disabled={state.loading}
           className="rounded-full bg-gradient-to-r from-rose-500 to-amber-400 px-5 py-3 text-xs font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
         >
-          {state.loading ? "Running..." : "Run Semantic Cleanup"}
+          {state.loading ? "Running..." : "Backfill Semantic Data"}
         </button>
       </div>
 

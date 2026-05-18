@@ -57,6 +57,10 @@ function buildWarnings(query: string, item: SearchResultItem, type: "restaurant"
 
   if (!Array.isArray(item.intent_tags) || item.intent_tags.length === 0) warnings.push("missing intent_tags");
   if (!normalizeText(item.semantic_search_text).trim()) warnings.push("missing semantic_search_text");
+  if (item.analytics_score == null) warnings.push("missing analytics_score");
+  if (item.recommendation_score == null) warnings.push("missing recommendation_score");
+  if (item.quality_score == null) warnings.push("missing quality_score");
+  if (item.semantic_similarity === 0 && !normalizeText(item.semantic_search_text).trim()) warnings.push("invalid semantic match");
   if (item.latitude == null || item.longitude == null) warnings.push("missing coordinates");
 
   if (queryText.includes("dessert") && includesAny(searchable, ["candle", "dance", "fitness", "class"])) {
@@ -81,6 +85,10 @@ function buildWarnings(query: string, item: SearchResultItem, type: "restaurant"
   return warnings;
 }
 
+function isInvalidSemanticRecord(item: SearchResultItem) {
+  return item.semantic_similarity === 0 && !normalizeText(item.semantic_search_text).trim();
+}
+
 async function runQuery(origin: string, query: string) {
   const res = await fetch(`${origin}/api/generate`, {
     method: "POST",
@@ -92,6 +100,10 @@ async function runQuery(origin: string, query: string) {
   const data = await res.json();
   const restaurants = Array.isArray(data.restaurants) ? data.restaurants.slice(0, 10) : [];
   const activities = Array.isArray(data.activities) ? data.activities.slice(0, 10) : [];
+  const validRestaurants = restaurants.filter((item: SearchResultItem) => !isInvalidSemanticRecord(item));
+  const validActivities = activities.filter((item: SearchResultItem) => !isInvalidSemanticRecord(item));
+  const topRestaurants = (validRestaurants.length > 0 ? validRestaurants : restaurants).slice(0, 10);
+  const topActivities = (validActivities.length > 0 ? validActivities : activities).slice(0, 10);
 
   const mapItem = (item: SearchResultItem, type: "restaurant" | "activity") => ({
     id: item.id,
@@ -110,8 +122,8 @@ async function runQuery(origin: string, query: string) {
 
   return {
     query,
-    top_restaurants: restaurants.map((item: SearchResultItem) => mapItem(item, "restaurant")),
-    top_activities: activities.map((item: SearchResultItem) => mapItem(item, "activity")),
+    top_restaurants: topRestaurants.map((item: SearchResultItem) => mapItem(item, "restaurant")),
+    top_activities: topActivities.map((item: SearchResultItem) => mapItem(item, "activity")),
   };
 }
 
