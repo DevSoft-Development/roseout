@@ -243,6 +243,41 @@ export default function LocationDetailPage() {
   const galleryImages = Array.from(
     new Set([getLocationImage(location), ...toArray(location?.images), location?.main_image, location?.image_url].filter(Boolean)),
   ) as string[];
+  useEffect(() => {
+    if (!location?.id) return;
+
+    fetch("/api/analytics/location-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        location_id: location.id,
+        event_type: "profile_view",
+        event_source: "profile",
+        metadata: {
+          location_type: location.location_type || type,
+          location_name: name,
+        },
+      }),
+    }).catch(() => undefined);
+  }, [location?.id, location?.location_type, name, type]);
+
+  function trackBusinessEvent(eventType: "reservation_started" | "website_click" | "directions_click") {
+    if (!location?.id) return;
+
+    fetch("/api/analytics/location-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        location_id: location.id,
+        event_type: eventType,
+        event_source: "profile",
+        metadata: baseMetadata,
+      }),
+    }).catch(() => undefined);
+  }
+
   const recommendationBullets = buildRecommendationBullets({
     category,
     cuisine: location?.cuisine || location?.activity_type,
@@ -427,6 +462,7 @@ export default function LocationDetailPage() {
                           ? "noopener noreferrer"
                           : undefined
                       }
+                      onClick={() => trackBusinessEvent("reservation_started")}
                       className="rounded-full bg-red-600 px-7 py-3 text-sm font-black text-white shadow-lg shadow-red-950/50 transition hover:bg-red-500"
                     >
                       {reservationLabel}
@@ -434,7 +470,7 @@ export default function LocationDetailPage() {
                   )}
 
                   {secondaryReservationUrl && (
-                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-red-300/30 px-7 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/10">
+                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackBusinessEvent("reservation_started")} className="rounded-full border border-red-300/30 px-7 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/10">
                       Reserve Externally
                     </a>
                   )}
@@ -444,6 +480,7 @@ export default function LocationDetailPage() {
                       href={location.website}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackBusinessEvent("website_click")}
                       className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
                     >
                       Website
@@ -455,6 +492,7 @@ export default function LocationDetailPage() {
                       href={mapsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackBusinessEvent("directions_click")}
                       className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
                     >
                       {location.website || reservationUrl ? "Get Directions" : "View on Google Maps"}
@@ -647,6 +685,7 @@ export default function LocationDetailPage() {
                           ? "noopener noreferrer"
                           : undefined
                       }
+                      onClick={() => trackBusinessEvent("reservation_started")}
                       className="rounded-full bg-red-600 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-red-500"
                     >
                       {reservationLabel}
@@ -654,7 +693,7 @@ export default function LocationDetailPage() {
                   )}
 
                   {secondaryReservationUrl && (
-                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-red-300/30 px-5 py-3 text-center text-sm font-black text-red-100 transition hover:bg-red-500/10">
+                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackBusinessEvent("reservation_started")} className="rounded-full border border-red-300/30 px-5 py-3 text-center text-sm font-black text-red-100 transition hover:bg-red-500/10">
                       Reserve Externally
                     </a>
                   )}
@@ -664,6 +703,7 @@ export default function LocationDetailPage() {
                       href={location.website}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackBusinessEvent("website_click")}
                       className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
                     >
                       Visit Website
@@ -675,6 +715,7 @@ export default function LocationDetailPage() {
                       href={mapsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackBusinessEvent("directions_click")}
                       className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
                     >
                       {location.website || reservationUrl ? "Get Directions" : "View on Google Maps"}

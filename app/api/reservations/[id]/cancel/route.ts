@@ -5,6 +5,7 @@ import { canCancelReservation } from "@/lib/reservations/status";
 import { sendReservationCancelledEmail, sendWaitlistAvailableEmail } from "@/lib/email/reservation-emails";
 import { sendReservationCancelledSMS, sendWaitlistSMS } from "@/lib/sms/reservation-sms";
 import { getLocationName } from "@/lib/locationName";
+import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 
 type ReservationForWaitlist = {
   location_id: string;
@@ -99,6 +100,19 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       .eq("location_id", existing.location_id)
       .eq("reservation_date", existing.reservation_date)
       .eq("reservation_time", String(existing.reservation_time).slice(0, 5));
+
+    await trackLocationAnalyticsEvent({
+      locationId: existing.location_id,
+      userId: user?.id || existing.user_id || null,
+      eventType: "reservation_cancelled",
+      eventSource: "reservation",
+      metadata: {
+        party_size: existing.party_size,
+        reservation_date: existing.reservation_date,
+        reservation_time: existing.reservation_time,
+        reservation_id: existing.id,
+      },
+    });
 
     const notifiedWaitlist = await notifyFirstWaitlistMatch(existing, locationName);
 

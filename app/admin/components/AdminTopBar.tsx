@@ -211,6 +211,11 @@ export default function AdminTopBar() {
       visible: canViewDashboard,
     },
     {
+      label: "Analytics",
+      href: "/admin/dashboard/analytics",
+      visible: canViewDashboard,
+    },
+    {
       label: "Marketing",
       href: "/admin/dashboard/marketing",
       visible: canViewMarketing,
@@ -264,6 +269,11 @@ export default function AdminTopBar() {
         {
           label: "Reservations",
           href: "/admin/dashboard/reservations",
+          visible: canViewDashboard,
+        },
+        {
+          label: "Analytics",
+          href: "/admin/dashboard/analytics",
           visible: canViewDashboard,
         },
         {

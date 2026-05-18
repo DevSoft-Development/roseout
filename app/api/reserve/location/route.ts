@@ -14,6 +14,7 @@ import {
   timeWindowToSlots,
 } from "@/lib/locationHours";
 import { checkReservationAvailability } from "@/lib/reservations/availability";
+import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -663,6 +664,21 @@ export async function POST(request: NextRequest) {
     if (slotLockId) {
       await supabaseAdmin.from("reservation_slot_locks").delete().eq("id", slotLockId);
     }
+
+    await trackLocationAnalyticsEvent({
+      locationId,
+      userId: user?.id || null,
+      eventType: "reservation_completed",
+      eventSource: "reservation",
+      metadata: {
+        party_size: partySize,
+        reservation_date: reservationDate,
+        reservation_time: reservationTime,
+        reservation_id: reservation.id,
+        amount_paid: reservation.amount_paid || reservation.total_paid || 0,
+        status,
+      },
+    });
 
     await notifyReservation({
       location,
