@@ -33,6 +33,7 @@ export default function AdminTopBar() {
   const [activeDesktopMenu, setActiveDesktopMenu] = useState<string | null>(null);
   const desktopNavRef = useRef<HTMLElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -92,6 +93,12 @@ export default function AdminTopBar() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
   }, []);
 
   const canView = ["superuser", "admin", "editor", "viewer"].includes(role || "");
@@ -175,6 +182,23 @@ export default function AdminTopBar() {
 
   const visibleGroups = useMemo(() => groups.filter((g) => g.visible), [groups]);
 
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const openDesktopMenu = (label: string) => {
+    clearCloseTimer();
+    setActiveDesktopMenu(label);
+  };
+
+  const closeDesktopMenuWithDelay = () => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => setActiveDesktopMenu(null), 180);
+  };
+
   const goTo = (p: string) => {
     setOpen(false);
     setShowUserSearch(false);
@@ -202,8 +226,7 @@ export default function AdminTopBar() {
 
         <nav
           ref={desktopNavRef}
-          className="relative hidden items-center gap-1 lg:flex"
-          onMouseLeave={() => setActiveDesktopMenu(null)}
+          className="relative hidden items-center gap-1 overflow-visible lg:flex"
           aria-label="Admin sections"
         >
           {visibleGroups.map((group) => {
@@ -212,11 +235,11 @@ export default function AdminTopBar() {
             const isActive = hasActiveChild || (group.label === "Overview" && pathname === "/admin/dashboard");
 
             return (
-              <div key={group.label} className="relative">
+              <div key={group.label} className="relative pt-1" onMouseEnter={() => openDesktopMenu(group.label)} onMouseLeave={closeDesktopMenuWithDelay}>
                 <button
                   type="button"
-                  onMouseEnter={() => setActiveDesktopMenu(group.label)}
-                  onFocus={() => setActiveDesktopMenu(group.label)}
+                  onMouseEnter={() => openDesktopMenu(group.label)}
+                  onFocus={() => openDesktopMenu(group.label)}
                   onClick={() => setActiveDesktopMenu((current) => (current === group.label ? null : group.label))}
                   className={`rounded-full px-4 py-2 text-sm font-bold transition-colors duration-150 ${
                     isActive
@@ -234,10 +257,10 @@ export default function AdminTopBar() {
                   id={`admin-menu-${group.label.toLowerCase()}`}
                   role="menu"
                   aria-label={`${group.label} menu`}
-                  className={`absolute left-0 top-[calc(100%+0.55rem)] min-w-64 rounded-2xl border border-white/10 bg-[#12090d] p-2 shadow-2xl transition-all duration-180 ${
+                  className={`absolute left-0 top-full min-w-64 rounded-2xl border border-white/10 bg-[#12090d] p-2 shadow-2xl transition-all duration-180 ${
                     isOpen
                       ? "pointer-events-auto z-[120] translate-y-0 opacity-100"
-                      : "pointer-events-none -z-10 -translate-y-1 opacity-0"
+                      : "pointer-events-none z-[-1] -translate-y-1 opacity-0"
                   }`}
                 >
                   {group.links
