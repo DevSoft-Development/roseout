@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/admin/run-google-import?type=both&limit=2&batch=all&areas=nyc&maxQueries=2",
-      "schedule": "0 4 * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/admin/backfill-review-counts",
