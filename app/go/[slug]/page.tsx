@@ -17,6 +17,11 @@ import {
 } from "@/lib/marketing-public";
 import { resolveCampaignLocation } from "@/lib/locations/resolve-location";
 import ShareButtons from "@/components/sharing/ShareButtons";
+import {
+  CampaignLandingActionLinks,
+  CampaignLocationViewBoundary,
+  NearbyLocationLink,
+} from "@/components/marketing/CampaignLandingAnalytics";
 
 export const dynamic = "force-dynamic";
 
@@ -117,19 +122,21 @@ export default async function CampaignLandingPage({ params, searchParams }: Page
               <p className="mt-3 text-base font-bold text-black/50">{[resolvedLocation?.name || campaign.location_name, place].filter(Boolean).join(" • ") || "Plan-ready social find"}</p>
             </div>
 
-            <div className="mt-2 rounded-[1.5rem] border border-black/10 bg-white p-5 shadow-sm lg:mt-8">
+            <CampaignLocationViewBoundary locationId={locationId} campaignId={campaign.id} sourceSection="campaign_outing" className="mt-2 rounded-[1.5rem] border border-black/10 bg-white p-5 shadow-sm lg:mt-8">
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-700">Selected location</p>
               <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">{resolvedLocation?.name || campaign.location_name || "Featured TheOutHaven plan"}</h2>
               <p className="mt-2 text-sm font-bold text-black/45">{[resolvedLocation?.primaryCategory || campaign.location_category || campaign.caption_category, [resolvedLocation?.city || campaign.location_city, resolvedLocation?.state || campaign.location_state].filter(Boolean).join(", ") || place].filter(Boolean).join(" • ")}</p>
               <p className="mt-5 text-base font-semibold leading-7 text-black/65">{resolvedLocation?.description || campaign.location_description || campaignCaption(campaign) || "This is the campaign landing page for the post you saw. Use the actions below to plan it, view the location, or find something nearby."}</p>
-            </div>
+            </CampaignLocationViewBoundary>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Link href={planHref} className="rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-700 px-5 py-4 text-center text-sm font-black text-white shadow-lg shadow-rose-950/20">Plan this outing</Link>
-              {publicLocationUrl ? <Link href={publicLocationUrl} className="rounded-full bg-[#1b1210] px-5 py-4 text-center text-sm font-black text-white">View location</Link> : <Link href="/create" className="rounded-full bg-[#1b1210] px-5 py-4 text-center text-sm font-black text-white">View location</Link>}
-              <Link href={`/reserve?location=${encodeURIComponent(locationId || campaign.location_name || "")}`} className="rounded-full border border-[#1b1210] bg-white px-5 py-4 text-center text-sm font-black text-[#1b1210] sm:border-black/10">Reserve if available</Link>
-              <Link href={`/create?campaignSlug=${encodeURIComponent(slug)}&planExact=true&nearby=true${locationId ? `&locationId=${encodeURIComponent(locationId)}` : ""}${sourceTable ? `&sourceTable=${encodeURIComponent(sourceTable)}` : ""}`} className="rounded-full border border-[#1b1210] bg-white px-5 py-4 text-center text-sm font-black text-[#1b1210] sm:border-black/10">Plan Similar Outing</Link>
-            </div>
+            <CampaignLandingActionLinks
+              locationId={locationId}
+              campaignId={campaign.id}
+              planHref={planHref}
+              publicLocationUrl={publicLocationUrl}
+              reserveHref={`/reserve?location=${encodeURIComponent(locationId || campaign.location_name || "")}`}
+              similarHref={`/create?campaignSlug=${encodeURIComponent(slug)}&planExact=true&nearby=true${locationId ? `&locationId=${encodeURIComponent(locationId)}` : ""}${sourceTable ? `&sourceTable=${encodeURIComponent(sourceTable)}` : ""}`}
+            />
 
             <ShareButtons title={campaignTitle(campaign)} url={shareUrl} />
 
@@ -151,14 +158,14 @@ export default async function CampaignLandingPage({ params, searchParams }: Page
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {nearby.map((location) => (
-              <Link key={location.id} href={locationHref(location)} className="grid grid-cols-[96px_1fr] gap-3 rounded-[1.5rem] border border-black/10 bg-white p-3 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-                <img src={locationImage(location)} alt={locationName(location)} className="h-24 w-24 rounded-[1.1rem] object-cover" />
+              <NearbyLocationLink key={location.id} locationId={location.id} href={locationHref(location)}>
+                <Image src={locationImage(location)} alt={locationName(location)} width={96} height={96} sizes="96px" className="h-24 w-24 rounded-[1.1rem] object-cover" />
                 <div className="min-w-0 py-1">
                   <p className="truncate text-base font-black">{locationName(location)}</p>
                   <p className="mt-1 text-xs font-black uppercase tracking-wide text-rose-700">{locationCategory(location)}</p>
                   <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-black/45">{[location.city, location.state].filter(Boolean).join(", ") || location.description || "Nearby TheOutHaven pick"}</p>
                 </div>
-              </Link>
+              </NearbyLocationLink>
             ))}
           </div>
         </section>

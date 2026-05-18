@@ -6,6 +6,8 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
+import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
+import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
@@ -150,6 +152,10 @@ type UserLocation = {
 const LOCATION_KEY = "theouthaven_user_location";
 const RESULT_CARD_UI_VERSION = "results-card-clean-v2";
 const WALKING_MINUTES_PER_MILE = 20;
+const CREATE_RESULTS_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
+  source_page: "/create",
+  source_section: "search_results",
+};
 
 const typingSearches = [
   "Steak restaurant with bowling in Queens",
@@ -813,6 +819,7 @@ export default function CreatePage() {
       itemType: "restaurant",
       eventType: "click",
     });
+    trackLocationEvent(id, "click", CREATE_RESULTS_ANALYTICS_METADATA);
     trackBusinessEvent(id, "search_click", { item_type: "restaurant" });
   }
 
@@ -822,7 +829,24 @@ export default function CreatePage() {
       itemType: "activity",
       eventType: "click",
     });
+    trackLocationEvent(id, "click", CREATE_RESULTS_ANALYTICS_METADATA);
     trackBusinessEvent(id, "search_click", { item_type: "activity" });
+  }
+
+  function trackRestaurantSave(id: string) {
+    trackLocationEvent(id, "save", CREATE_RESULTS_ANALYTICS_METADATA);
+  }
+
+  function trackActivitySave(id: string) {
+    trackLocationEvent(id, "save", CREATE_RESULTS_ANALYTICS_METADATA);
+  }
+
+  function trackRestaurantBooking(id: string) {
+    trackLocationEvent(id, "booking", CREATE_RESULTS_ANALYTICS_METADATA);
+  }
+
+  function trackActivityBooking(id: string) {
+    trackLocationEvent(id, "booking", CREATE_RESULTS_ANALYTICS_METADATA);
   }
 
   function savePlan() {
@@ -840,6 +864,14 @@ export default function CreatePage() {
     };
 
     localStorage.setItem("theouthaven_plan", JSON.stringify(plan));
+
+    if (selectedRestaurant?.id) {
+      trackRestaurantSave(String(selectedRestaurant.id));
+    }
+
+    if (selectedActivity?.id) {
+      trackActivitySave(String(selectedActivity.id));
+    }
 
     const params = new URLSearchParams();
 
@@ -1068,8 +1100,12 @@ export default function CreatePage() {
                                 selectLabel={isSelected ? "Selected" : "Select"}
                                 onSelect={() => {
                                   trackRestaurantClick(restaurantId);
+                                  trackRestaurantSave(restaurantId);
                                   selectRestaurantAndMaybeScroll(restaurant);
                                 }}
+                                onCardClick={() => trackRestaurantClick(restaurantId)}
+                                locationId={restaurantId}
+                                analyticsMetadata={CREATE_RESULTS_ANALYTICS_METADATA}
                                 detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
                                 onDetails={() =>
                                   trackRestaurantClick(restaurantId)
@@ -1086,9 +1122,9 @@ export default function CreatePage() {
                                 reservationEnabled={
                                   restaurant.reservation_enabled === true
                                 }
-                                reservationLabel="Reserve"
                                 onReservation={() => {
                                   trackRestaurantClick(restaurantId);
+                                  trackRestaurantBooking(restaurantId);
                                   trackBusinessEvent(restaurantId, "reservation_started", {
                                     item_type: "restaurant",
                                     party_size: selectedRestaurant?.id === restaurant.id ? undefined : null,
@@ -1175,8 +1211,12 @@ export default function CreatePage() {
                                 selectLabel={isSelected ? "Selected" : "Select"}
                                 onSelect={() => {
                                   trackActivityClick(activityId);
+                                  trackActivitySave(activityId);
                                   selectActivity(activity);
                                 }}
+                                onCardClick={() => trackActivityClick(activityId)}
+                                locationId={activityId}
+                                analyticsMetadata={CREATE_RESULTS_ANALYTICS_METADATA}
                                 detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
                                 onDetails={() => trackActivityClick(activityId)}
                                 websiteUrl={activity.website || undefined}
@@ -1191,9 +1231,9 @@ export default function CreatePage() {
                                 reservationEnabled={
                                   activity.reservation_enabled === true
                                 }
-                                reservationLabel="Book"
                                 onReservation={() => {
                                   trackActivityClick(activityId);
+                                  trackActivityBooking(activityId);
                                   trackBusinessEvent(activityId, "reservation_started", { item_type: "activity" });
                                 }}
                               />
@@ -1858,6 +1898,7 @@ function ResultCard({
   priority,
   selectLabel,
   onSelect,
+  onCardClick,
   detailsHref,
   onDetails,
   websiteUrl,
@@ -1865,8 +1906,9 @@ function ResultCard({
   reservationUrl,
   internalReservationHref,
   reservationEnabled,
-  reservationLabel,
   onReservation,
+  locationId,
+  analyticsMetadata,
 }: {
   index: number;
   type: "restaurant" | "activity";
@@ -1885,6 +1927,7 @@ function ResultCard({
   priority: boolean;
   selectLabel: string;
   onSelect: () => void;
+  onCardClick?: () => void;
   detailsHref: string;
   onDetails: () => void;
   websiteUrl?: string;
@@ -1892,8 +1935,9 @@ function ResultCard({
   reservationUrl?: string;
   internalReservationHref?: string;
   reservationEnabled?: boolean;
-  reservationLabel?: string;
   onReservation?: () => void;
+  locationId?: string | null;
+  analyticsMetadata?: LocationAnalyticsMetadata;
 }) {
   const whyPicked = getWhyPicked({
     primaryTag,
@@ -1901,10 +1945,16 @@ function ResultCard({
     reviewSnippet,
     type,
   });
+  const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
 
   return (
     <article
+      ref={viewRef}
       data-ui-version={RESULT_CARD_UI_VERSION}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a,button")) return;
+        onCardClick?.();
+      }}
       className={`group relative flex h-full min-h-[420px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.05rem] border bg-[#101010] shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[445px] sm:rounded-[1.1rem] ${
         selected
           ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
