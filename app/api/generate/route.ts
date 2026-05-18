@@ -2927,6 +2927,84 @@ function scoreActivity(
   return clampScore(score);
 }
 
+
+type UserPreferenceSignals = {
+  favorite_cuisines: string[];
+  favorite_neighborhoods: string[];
+  favorite_outing_types: string[];
+  average_budget?: string | null;
+  nightlife_preference?: boolean | null;
+  romantic_preference?: boolean | null;
+  luxury_preference?: boolean | null;
+};
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => normalizeQuery(String(item))).filter(Boolean) : [];
+}
+
+async function loadUserPreferenceSignals(body: any): Promise<UserPreferenceSignals | null> {
+  const userId = typeof body.user_id === "string" ? body.user_id : "";
+  if (!userId) return null;
+
+  const { data } = await supabase
+    .from("user_preferences")
+    .select("favorite_cuisines, favorite_neighborhoods, favorite_outing_types, average_budget, nightlife_preference, romantic_preference, luxury_preference")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  return {
+    favorite_cuisines: asStringArray((data as any).favorite_cuisines),
+    favorite_neighborhoods: asStringArray((data as any).favorite_neighborhoods),
+    favorite_outing_types: asStringArray((data as any).favorite_outing_types),
+    average_budget: (data as any).average_budget || null,
+    nightlife_preference: Boolean((data as any).nightlife_preference),
+    romantic_preference: Boolean((data as any).romantic_preference),
+    luxury_preference: Boolean((data as any).luxury_preference),
+  };
+}
+
+function promotionBoost(item: any, baseScore: number, intent: ReturnType<typeof detectIntent>) {
+  if (!item?.is_promoted) return 0;
+
+  const endsAt = item.promotion_ends_at ? new Date(item.promotion_ends_at).getTime() : null;
+  if (endsAt && endsAt < Date.now()) return 0;
+
+  if (baseScore < 120 || isStrongGeoMismatch(item, intent)) return 0;
+
+  const tier = normalizeQuery(String(item.promotion_tier || "starter"));
+  const tierBoost = tier.includes("launch") ? 85 : tier.includes("growth") ? 65 : 45;
+
+  return Math.min(85, tierBoost);
+}
+
+function personalizationBoost(item: any, prefs: UserPreferenceSignals | null, intent: ReturnType<typeof detectIntent>) {
+  if (!prefs || isStrongGeoMismatch(item, intent)) return 0;
+
+  const text = itemText(item);
+  let boost = 0;
+
+  if (prefs.favorite_cuisines.some((cuisine) => cuisine && text.includes(cuisine))) boost += 45;
+  if (prefs.favorite_neighborhoods.some((neighborhood) => neighborhood && text.includes(neighborhood))) boost += 35;
+  if (prefs.favorite_outing_types.some((outingType) => outingType && text.includes(outingType))) boost += 35;
+  if (prefs.average_budget && normalizeQuery(String(item.price_range || item.price || "")).includes(normalizeQuery(prefs.average_budget))) boost += 15;
+  if (prefs.nightlife_preference && (isHookahPlace(item) || matchesActivityIntent(item, "nightclub") || text.includes("lounge") || text.includes("bar"))) boost += 30;
+  if (prefs.romantic_preference && (text.includes("romantic") || text.includes("date night") || text.includes("intimate"))) boost += 25;
+  if (prefs.luxury_preference && (text.includes("upscale") || text.includes("luxury") || text.includes("fine dining"))) boost += 25;
+
+  return Math.min(100, boost);
+}
+
+function applyMarketplaceBoosts(
+  item: any,
+  baseScore: number,
+  intent: ReturnType<typeof detectIntent>,
+  prefs: UserPreferenceSignals | null,
+) {
+  return clampScore(baseScore + promotionBoost(item, baseScore, intent) + personalizationBoost(item, prefs, intent));
+}
+
 function filterRestaurantsByFoodIntent(
   restaurants: Record<string, unknown>[],
   intent: ReturnType<typeof detectIntent>,
@@ -3260,6 +3338,12 @@ const LOCATION_SELECT = `
   review_score,
   popularity_score,
   ranking_badge,
+  subscription_plan,
+  is_promoted,
+  promotion_tier,
+  promotion_starts_at,
+  promotion_ends_at,
+  promotion_budget,
   review_keywords,
   vibe_tags,
   best_for_tags,
@@ -3540,6 +3624,7 @@ export async function POST(req: Request) {
       .filter(isPublicSearchVisible);
 
     const intent = detectIntent(input, body, locations);
+    const userPreferenceSignals = await loadUserPreferenceSignals(body);
 
     const cacheKey = buildResponseCacheKey(input, intent);
 
@@ -3741,10 +3826,11 @@ export async function POST(req: Request) {
     let rankedRestaurants = restaurants
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
-        const score = clampScore(
+        const baseScore = clampScore(
           scoreRestaurant(restaurant, input, intent) +
             semantic.semantic_score_boost,
         );
+        const score = applyMarketplaceBoosts(restaurant, baseScore, intent, userPreferenceSignals);
         const confidence = confidenceFromScores({
           ...restaurant,
           smart_match_score: score,
@@ -3768,10 +3854,11 @@ export async function POST(req: Request) {
     let rankedActivities = activities
       .map((activity: any) => {
         const semantic = semanticScoreBoost(activity, semanticResults);
-        const score = clampScore(
+        const baseScore = clampScore(
           scoreActivity(activity, input, intent) +
             semantic.semantic_score_boost,
         );
+        const score = applyMarketplaceBoosts(activity, baseScore, intent, userPreferenceSignals);
         const confidence = confidenceFromScores({
           ...activity,
           smart_match_score: score,
