@@ -27,7 +27,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `public-location-search-v21-search-quality-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-borough-safe-meal-filter-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -432,6 +432,14 @@ const FOOD_INTENTS: Record<string, string[]> = {
 
   cafe: ["cafe", "coffee", "espresso", "latte", "coffee shop"],
 
+  coffee: ["coffee", "espresso", "latte", "coffee shop"],
+
+  juice: ["juice", "juice bar", "fresh juice"],
+
+  smoothie: ["smoothie", "smoothies", "smoothie bar", "açaí", "acai"],
+
+  quick_bites: ["quick bites", "quick bite", "snack", "snacks", "grab and go"],
+
   bakery: ["bakery", "pastry", "croissant", "baked goods"],
 
   dessert: [
@@ -527,7 +535,15 @@ const PRIORITY_WEIGHTS = {
   distance: 140,
 };
 
-const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
+const FOOD_ADD_ON_INTENTS = new Set([
+  "dessert",
+  "cafe",
+  "drinks",
+  "juice",
+  "smoothie",
+  "coffee",
+  "quick_bites",
+]);
 const WALKING_MINUTES_PER_MILE = 20;
 
 function isFoodAddOnIntent(foodIntent: string) {
@@ -675,6 +691,94 @@ function itemText(item: any) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+const NON_MEAL_FOOD_TYPES = [
+  "juice",
+  "juice bar",
+  "smoothie",
+  "smoothies",
+  "açaí",
+  "acai",
+  "tea",
+  "bubble tea",
+  "boba",
+  "coffee",
+  "cafe",
+  "bakery",
+  "dessert",
+  "ice cream",
+  "frozen yogurt",
+  "yogurt",
+  "donut",
+  "pastry",
+];
+
+function isNonMealFoodPlace(item: any) {
+  const text = itemText(item);
+  return NON_MEAL_FOOD_TYPES.some((term) => phraseIncludesNormalized(text, term));
+}
+
+function userAskedForNonMealFood(intent: ReturnType<typeof detectIntent>) {
+  return intent.foodIntents.some((food) =>
+    [
+      "dessert",
+      "cafe",
+      "drinks",
+      "juice",
+      "smoothie",
+      "coffee",
+      "quick_bites",
+    ].includes(food),
+  );
+}
+
+function isMealRestaurant(item: any, intent: ReturnType<typeof detectIntent>) {
+  const type = String(item.location_type || "").toLowerCase();
+  const text = itemText(item);
+
+  const hasRestaurantSignal =
+    type === "restaurant" ||
+    Boolean(item.restaurant_name) ||
+    text.includes("restaurant") ||
+    text.includes("dining") ||
+    text.includes("dinner") ||
+    text.includes("brunch") ||
+    text.includes("lunch");
+
+  if (!hasRestaurantSignal) return false;
+
+  if (isNonMealFoodPlace(item) && !userAskedForNonMealFood(intent)) {
+    return false;
+  }
+
+  return true;
+}
+
+function mapNonMealFoodPlaceToActivity(
+  item: any,
+  intent: ReturnType<typeof detectIntent>,
+) {
+  const originalType = String(item.location_type || "").toLowerCase();
+  const requestedNonMealType = intent.foodIntents
+    .filter((foodIntent) => FOOD_ADD_ON_INTENTS.has(foodIntent))
+    .map((foodIntent) => foodIntent.replace(/_/g, " "))
+    .join(" / ");
+
+  return {
+    ...item,
+    location_type: "activity",
+    detail_location_type:
+      originalType === "restaurant" ? "restaurants" : "activities",
+    activity_name:
+      item.activity_name || item.restaurant_name || item.name || "Food stop",
+    activity_type:
+      item.activity_type ||
+      item.category ||
+      item.subcategory ||
+      requestedNonMealType ||
+      "Food stop",
+  };
 }
 
 function locationDisplayName(item: any) {
@@ -1100,7 +1204,6 @@ const NEW_JERSEY_LOCATION_ALIASES = [
   "kearny",
   "harrison",
   "elizabeth",
-  "union",
   "maplewood",
   "montclair",
   "bloomfield",
@@ -2874,14 +2977,30 @@ function sameMajorWalkingArea(first: any, second: any) {
   return true;
 }
 
+function hasSameWalkingArea(a: any, b: any) {
+  const aArea = inferWalkingArea(a);
+  const bArea = inferWalkingArea(b);
+  if (!aArea || !bArea) return true;
+  return aArea === bArea;
+}
+
 function pairWalkingDistanceMatches(
   restaurants: any[],
   activities: any[],
+  strictWalkingRequest = false,
 ): any[] {
   const pairs = restaurants
     .flatMap((restaurant) =>
       activities.map((activity) => {
         if (!hasValidCoordinates(restaurant) || !hasValidCoordinates(activity)) {
+          return null;
+        }
+
+        if (isCrossAreaWalkingPair(restaurant, activity)) {
+          return null;
+        }
+
+        if (!hasSameWalkingArea(restaurant, activity)) {
           return null;
         }
 
@@ -2896,7 +3015,11 @@ function pairWalkingDistanceMatches(
           Number(activity.longitude),
         );
 
-        if (!Number.isFinite(distance) || distance > WALKING_DISTANCE_MILES) {
+        if (
+          !Number.isFinite(distance) ||
+          distance <= 0 ||
+          distance > WALKING_DISTANCE_MILES
+        ) {
           return null;
         }
 
@@ -2913,7 +3036,8 @@ function pairWalkingDistanceMatches(
           Number(activity.theouthaven_score || getLocationScore(activity)) +
           200 +
           walkingDistanceScore(distance) +
-          (distance <= 0.75 ? 40 : 0);
+          (strictWalkingRequest && distance <= 0.75 ? 80 : 0) +
+          (strictWalkingRequest && distance > 0.75 ? -60 : 0);
 
         return {
           restaurant,
@@ -3426,13 +3550,22 @@ export async function POST(req: Request) {
       input,
     );
 
-    let restaurants = sourceLocations.filter(
-      (item: any) => isOutingEligibleLocation(item) && isRestaurantLocation(item),
-    );
+    let restaurants = sourceLocations.filter((item: any) => {
+      return isOutingEligibleLocation(item) && isMealRestaurant(item, intent);
+    });
 
     let activities = sourceLocations.filter(
       (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
     );
+
+    if (userAskedForNonMealFood(intent)) {
+      const nonMealFoodActivities = sourceLocations
+        .filter(isOutingEligibleLocation)
+        .filter((item: any) => isNonMealFoodPlace(item))
+        .map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
+
+      activities = [...activities, ...nonMealFoodActivities];
+    }
 
     const foodAddOnIntents = intent.foodIntents.filter(isFoodAddOnIntent);
     const mealFoodIntents = intent.foodIntents.filter(
@@ -3448,7 +3581,8 @@ export async function POST(req: Request) {
         intent.text.includes("lunch") ||
         intent.text.includes("brunch") ||
         intent.text.includes("food") ||
-        intent.text.includes("eat"));
+        intent.text.includes("eat") ||
+        intent.activityIntents.length > 0);
 
     if (shouldSplitFoodAddOnStops) {
       restaurants = filterRestaurantsByFoodIntent(restaurants, {
@@ -3463,28 +3597,7 @@ export async function POST(req: Request) {
             matchesFoodIntent(item, foodIntent),
           ),
         )
-        .map((item: any) => {
-          const originalType = String(item.location_type || "").toLowerCase();
-
-          return {
-            ...item,
-            location_type: "activity",
-            detail_location_type:
-              originalType === "restaurant" ? "restaurants" : "activities",
-            activity_name:
-              item.activity_name ||
-              item.restaurant_name ||
-              item.name ||
-              "Dessert stop",
-            activity_type:
-              item.activity_type ||
-              item.category ||
-              item.subcategory ||
-              foodAddOnIntents
-                .map((foodIntent) => foodIntent.replace(/_/g, " "))
-                .join(" / "),
-          };
-        });
+        .map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
 
       activities = filterActivitiesByActivityIntent(
         [...activities, ...foodAddOnActivities],
@@ -3501,6 +3614,7 @@ export async function POST(req: Request) {
 
         return (
           isOutingEligibleLocation(item) &&
+          isMealRestaurant(item, intent) &&
           (searchable.includes("restaurant") ||
             searchable.includes("dining") ||
             searchable.includes("food") ||
@@ -3567,7 +3681,7 @@ export async function POST(req: Request) {
     if (restaurants.length === 0 && intent.wantsRestaurant && !isLoungeActivityOnlyRequest(intent)) {
       restaurants = fallbackByGeoStages(
         broaderSourceLocations,
-        (item: any) => isOutingEligibleLocation(item) && isRestaurantLocation(item),
+        (item: any) => isOutingEligibleLocation(item) && isMealRestaurant(item, intent),
         intent,
         strictWalkingRequest,
       );
@@ -3715,6 +3829,7 @@ export async function POST(req: Request) {
         ? pairWalkingDistanceMatches(
             walkingPairRestaurants,
             walkingPairActivities,
+            strictWalkingRequest,
           )
         : [];
 

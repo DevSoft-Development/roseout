@@ -1,4 +1,11 @@
-export type WalkingArea = "manhattan" | "queens" | "new_jersey";
+export type WalkingArea =
+  | "manhattan"
+  | "brooklyn"
+  | "queens"
+  | "bronx"
+  | "staten_island"
+  | "long_island"
+  | "new_jersey";
 
 type WalkingLocation = {
   address?: string | null;
@@ -15,8 +22,6 @@ type WalkingLocation = {
 
 const MANHATTAN_LOCATION_ALIASES = [
   "manhattan",
-  "new york",
-  "new york city",
   "soho",
   "tribeca",
   "chelsea",
@@ -51,6 +56,32 @@ const MANHATTAN_LOCATION_ALIASES = [
   "chinatown",
   "little italy",
   "union square",
+];
+
+const BROOKLYN_LOCATION_ALIASES = [
+  "brooklyn",
+  "williamsburg",
+  "bushwick",
+  "bed stuy",
+  "bedford stuyvesant",
+  "downtown brooklyn",
+  "dumbo",
+  "brooklyn heights",
+  "fort greene",
+  "park slope",
+  "prospect heights",
+  "crown heights",
+  "flatbush",
+  "east flatbush",
+  "bay ridge",
+  "greenpoint",
+  "carroll gardens",
+  "cobble hill",
+  "red hook",
+  "sunset park",
+  "coney island",
+  "brighton beach",
+  "sheepshead bay",
 ];
 
 const QUEENS_LOCATION_ALIASES = [
@@ -98,7 +129,6 @@ const NEW_JERSEY_LOCATION_ALIASES = [
   "kearny",
   "harrison",
   "elizabeth",
-  "union",
   "maplewood",
   "montclair",
   "bloomfield",
@@ -165,15 +195,6 @@ function coordinateWalkingArea(item: WalkingLocation): WalkingArea | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
 
   if (
-    latitude >= 40.65 &&
-    latitude <= 40.95 &&
-    longitude >= -74.35 &&
-    longitude <= -74.02
-  ) {
-    return "new_jersey";
-  }
-
-  if (
     latitude >= 40.68 &&
     latitude <= 40.9 &&
     longitude >= -74.03 &&
@@ -183,12 +204,30 @@ function coordinateWalkingArea(item: WalkingLocation): WalkingArea | null {
   }
 
   if (
+    latitude >= 40.55 &&
+    latitude <= 40.74 &&
+    longitude >= -74.05 &&
+    longitude <= -73.83
+  ) {
+    return "brooklyn";
+  }
+
+  if (
     latitude >= 40.48 &&
     latitude <= 40.82 &&
     longitude >= -73.96 &&
     longitude <= -73.68
   ) {
     return "queens";
+  }
+
+  if (
+    latitude >= 40.65 &&
+    latitude <= 40.95 &&
+    longitude >= -74.35 &&
+    longitude <= -74.02
+  ) {
+    return "new_jersey";
   }
 
   return null;
@@ -209,6 +248,13 @@ export function inferWalkingArea(item: WalkingLocation): WalkingArea | null {
   }
 
   if (
+    borough.includes("brooklyn") ||
+    textIncludesAny(text, BROOKLYN_LOCATION_ALIASES)
+  ) {
+    return "brooklyn";
+  }
+
+  if (
     borough.includes("queens") ||
     textIncludesAny(text, QUEENS_LOCATION_ALIASES)
   ) {
@@ -217,10 +263,15 @@ export function inferWalkingArea(item: WalkingLocation): WalkingArea | null {
 
   if (
     borough.includes("manhattan") ||
-    city === "new york" ||
     textIncludesAny(text, MANHATTAN_LOCATION_ALIASES)
   ) {
     return "manhattan";
+  }
+
+  // City is often "New York" for Manhattan, Brooklyn, and Queens records, so
+  // do not infer Manhattan from city alone. Fall back to coordinates instead.
+  if (city === "new york" || city === "new york city") {
+    return coordinateWalkingArea(item);
   }
 
   return coordinateWalkingArea(item);
