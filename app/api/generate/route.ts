@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { clampScore } from "@/lib/clampScore";
 import { getLocationScore, getSearchRankingScore } from "@/lib/locationScore";
 import { getLocationName } from "@/lib/locationName";
-import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
+import { inferWalkingArea, isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import {
   getCuisine,
   getLocationTags,
@@ -27,7 +27,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `public-location-search-v20-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `public-location-search-v21-search-quality-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -755,8 +755,9 @@ function normalizeLocation(item: any) {
       (item.activity_name || item.activity_type ? "activity" : "restaurant"),
   );
 
-  return {
+  const normalized = {
     ...item,
+    id: item.id,
     name,
     location_type: type,
     restaurant_name:
@@ -765,7 +766,29 @@ function normalizeLocation(item: any) {
       isActivityLocation({ location_type: type })
         ? item.activity_name || name
         : item.activity_name,
+    address: item.address || null,
+    city: item.city || null,
+    state: item.state || null,
+    latitude: item.latitude ?? null,
+    longitude: item.longitude ?? null,
+    cuisine: item.cuisine || item.cuisine_type || null,
+    cuisine_type: item.cuisine_type || item.cuisine || null,
+    activity_type: item.activity_type || item.category || item.subcategory || null,
+    tags: Array.isArray(item.tags) ? item.tags : toArray(item.tags),
+    vibe_tags: Array.isArray(item.vibe_tags)
+      ? item.vibe_tags
+      : toArray(item.vibe_tags),
+    best_for_tags: Array.isArray(item.best_for_tags)
+      ? item.best_for_tags
+      : toArray(item.best_for_tags),
+    rating: item.rating ?? null,
+    review_count: item.review_count ?? null,
+    quality_score: item.quality_score ?? 0,
+    popularity_score: item.popularity_score ?? 0,
+    search_score: item.search_score ?? item.theouthaven_score ?? item.roseout_score ?? 0,
   };
+
+  return normalized;
 }
 
 const MANHATTAN_LOCATION_ALIASES = [
@@ -1514,6 +1537,210 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   return detectedLocations.some((location) =>
     searchable.includes(normalizeQuery(location)),
   );
+}
+
+
+type StrongGeoArea =
+  | "manhattan"
+  | "queens"
+  | "brooklyn"
+  | "bronx"
+  | "long_island"
+  | "new_jersey";
+
+const BROOKLYN_LOCATION_TERMS = new Set([
+  "brooklyn",
+  "williamsburg",
+  "bushwick",
+  "greenpoint",
+  "dumbo",
+  "downtown brooklyn",
+  "brooklyn heights",
+  "fort greene",
+  "clinton hill",
+  "bed stuy",
+  "bedford stuyvesant",
+  "crown heights",
+  "prospect heights",
+  "park slope",
+  "flatbush",
+  "sunset park",
+  "bay ridge",
+  "red hook",
+  "gowanus",
+  "carroll gardens",
+  "cobble hill",
+  "boerum hill",
+  "bensonhurst",
+  "sheepshead bay",
+  "brighton beach",
+  "coney island",
+  "canarsie",
+  "brownsville",
+  "east new york",
+]);
+
+const BRONX_LOCATION_TERMS = new Set([
+  "bronx",
+  "the bronx",
+  "mott haven",
+  "fordham",
+  "riverdale",
+  "kingsbridge",
+  "pelham bay",
+  "throgs neck",
+  "soundview",
+  "hunts point",
+]);
+
+const MANHATTAN_BOUNDS = {
+  minLat: 40.68,
+  maxLat: 40.9,
+  minLng: -74.03,
+  maxLng: -73.9,
+};
+const QUEENS_BOUNDS = { minLat: 40.48, maxLat: 40.82, minLng: -73.96, maxLng: -73.68 };
+const BROOKLYN_BOUNDS = { minLat: 40.56, maxLat: 40.74, minLng: -74.05, maxLng: -73.83 };
+const BRONX_BOUNDS = { minLat: 40.78, maxLat: 40.92, minLng: -73.93, maxLng: -73.75 };
+
+function requestedStrongGeoAreas(intent: ReturnType<typeof detectIntent>) {
+  const requested = expandDetectedLocations(intent.locations || []);
+  const areas = new Set<StrongGeoArea>();
+
+  requested.forEach((location) => {
+    const normalized = normalizeQuery(location);
+
+    if (normalized === "manhattan" || MANHATTAN_LOCATION_ALIASES.includes(normalized)) {
+      areas.add("manhattan");
+    }
+    if (normalized === "queens" || QUEENS_LOCATION_ALIASES.includes(normalized)) {
+      areas.add("queens");
+    }
+    if (BROOKLYN_LOCATION_TERMS.has(normalized)) areas.add("brooklyn");
+    if (BRONX_LOCATION_TERMS.has(normalized)) areas.add("bronx");
+    if (LONG_ISLAND_LOCATION_TERMS.has(normalized)) areas.add("long_island");
+    if (NEW_JERSEY_LOCATION_TERMS.has(normalized)) areas.add("new_jersey");
+  });
+
+  return areas;
+}
+
+function inferStrongGeoArea(item: any): StrongGeoArea | null {
+  const searchable = locationSearchText(item);
+  const walkingArea = inferWalkingArea(item);
+
+  if (walkingArea === "new_jersey") return "new_jersey";
+  if (walkingArea === "queens") return "queens";
+
+  if (
+    searchable.includes("brooklyn") ||
+    Array.from(BROOKLYN_LOCATION_TERMS).some((term) => searchable.includes(term)) ||
+    hasCoordinateInBounds(item, BROOKLYN_BOUNDS)
+  ) {
+    return "brooklyn";
+  }
+
+  if (
+    searchable.includes("bronx") ||
+    Array.from(BRONX_LOCATION_TERMS).some((term) => searchable.includes(term)) ||
+    hasCoordinateInBounds(item, BRONX_BOUNDS)
+  ) {
+    return "bronx";
+  }
+
+  if (walkingArea === "manhattan" || hasCoordinateInBounds(item, MANHATTAN_BOUNDS)) {
+    return "manhattan";
+  }
+
+  if (matchesLongIslandLocation(item)) return "long_island";
+  if (hasCoordinateInBounds(item, QUEENS_BOUNDS)) return "queens";
+
+  return null;
+}
+
+function hasRequestedStateMismatch(item: any, intent: ReturnType<typeof detectIntent>) {
+  const requested = expandDetectedLocations(intent.locations || []);
+  const itemState = normalizeQuery(String(item.state || ""));
+
+  if (!itemState || requested.length === 0) return false;
+
+  const wantsNJ = requested.some((location) => NEW_JERSEY_LOCATION_TERMS.has(location));
+  const wantsNY = requested.some(
+    (location) =>
+      location === "nyc" ||
+      location === "new york" ||
+      location === "new york city" ||
+      location === "manhattan" ||
+      location === "brooklyn" ||
+      location === "queens" ||
+      location === "bronx" ||
+      location === "long island" ||
+      LONG_ISLAND_LOCATION_TERMS.has(location) ||
+      QUEENS_LOCATION_ALIASES.includes(location) ||
+      MANHATTAN_LOCATION_ALIASES.includes(location) ||
+      BROOKLYN_LOCATION_TERMS.has(location) ||
+      BRONX_LOCATION_TERMS.has(location),
+  );
+
+  return (wantsNJ && itemState !== "nj" && itemState !== "new jersey") ||
+    (wantsNY && itemState !== "ny" && itemState !== "new york");
+}
+
+function isStrongGeoMismatch(item: any, intent: ReturnType<typeof detectIntent>): boolean {
+  if (!intent.locations || intent.locations.length === 0) return false;
+
+  const requestedAreas = requestedStrongGeoAreas(intent);
+  const itemArea = inferStrongGeoArea(item);
+
+  if (requestedAreas.size > 0) {
+    if (!itemArea) return hasRequestedStateMismatch(item, intent);
+    return !requestedAreas.has(itemArea);
+  }
+
+  if (hasRequestedStateMismatch(item, intent)) return true;
+
+  return !matchesLocation(item, intent.locations);
+}
+
+function applyStrongGeoFilter<T>(items: T[], intent: ReturnType<typeof detectIntent>) {
+  if (!intent.locations || intent.locations.length === 0) return items;
+
+  const filtered = items.filter((item: any) => !isStrongGeoMismatch(item, intent));
+
+  return filtered.length > 0 ? filtered : items;
+}
+
+function sameRequestedState(item: any, intent: ReturnType<typeof detectIntent>) {
+  const requested = expandDetectedLocations(intent.locations || []);
+  const state = normalizeQuery(String(item.state || ""));
+
+  if (requested.some((location) => NEW_JERSEY_LOCATION_TERMS.has(location))) {
+    return state === "nj" || state === "new jersey";
+  }
+
+  if (requested.length > 0) return state === "ny" || state === "new york";
+
+  return true;
+}
+
+function fallbackByGeoStages(
+  sourceLocations: any[],
+  predicate: (item: any) => boolean,
+  intent: ReturnType<typeof detectIntent>,
+  strictWalkingRequest: boolean,
+) {
+  const base = sourceLocations.filter(predicate);
+  if (base.length === 0) return [];
+
+  const sameCityOrBorough = base.filter((item) => matchesLocation(item, intent.locations));
+  if (sameCityOrBorough.length > 0) return sameCityOrBorough;
+
+  const sameState = base.filter((item) => sameRequestedState(item, intent));
+  if (sameState.length > 0) return sameState;
+
+  if (strictWalkingRequest && intent.locations.length > 0) return [];
+
+  return base;
 }
 
 function locationIdentityKey(item: any) {
@@ -2297,6 +2524,135 @@ function sortLocationsNearFirst<T extends NearbySortableLocation>(
   });
 }
 
+
+function calculateSearchQualityScore(
+  item: any,
+  input: string,
+  intent: ReturnType<typeof detectIntent>,
+) {
+  let score = 0;
+  const query = normalizeQuery(input);
+  const name = locationDisplayName(item);
+  const text = itemText(item);
+  const rating = Number(item.rating || 0);
+  const reviewCount = Number(item.review_count || 0);
+  const qualityScore = Number(item.quality_score || 0);
+  const popularityScore = Number(item.popularity_score || 0);
+
+  if (name && query) {
+    if (query === name) score += 700;
+    else if (query.includes(name) || name.includes(query)) score += 350;
+    else {
+      const queryWords = query.split(" ").filter((word) => word.length > 2);
+      const nameWords = name.split(" ").filter((word) => word.length > 2);
+      const overlap = nameWords.filter((word) => queryWords.includes(word)).length;
+      score += overlap * 65;
+    }
+  }
+
+  if (intent.locations.length > 0) {
+    if (isStrongGeoMismatch(item, intent)) score -= 500;
+    else if (matchesLocation(item, intent.locations)) score += 180;
+    else score -= 120;
+  }
+
+  intent.foodIntents.forEach((foodIntent) => {
+    score += matchesFoodIntent(item, foodIntent) ? 160 : -35;
+  });
+
+  intent.activityIntents.forEach((activityIntent) => {
+    score += matchesActivityIntent(item, activityIntent) ? 160 : -35;
+  });
+
+  [...intent.vibes, ...intent.requestedTags].forEach((tag) => {
+    if (itemHasTag(item, tag) || text.includes(normalizeQuery(tag))) score += 55;
+  });
+
+  if (rating >= 4.7) score += 120;
+  else if (rating >= 4.5) score += 95;
+  else if (rating >= 4.2) score += 65;
+  else if (rating >= 4.0) score += 25;
+  else if (rating > 0) score -= 140;
+
+  if (reviewCount > 0) score += Math.min(150, Math.log10(reviewCount + 1) * 55);
+  score += Math.min(180, Math.max(0, qualityScore) * 0.75);
+  score += Math.min(120, Math.max(0, popularityScore) * 0.45);
+  score += Math.min(100, Math.max(0, Number(item.search_score || 0)) * 0.35);
+
+  const distance = Number(item.distance_miles);
+  if (Number.isFinite(distance)) {
+    if (distance <= 0.5) score += 120;
+    else if (distance <= 1) score += 95;
+    else if (distance <= 2) score += 70;
+    else if (distance <= 5) score += 35;
+    else if (distance > 10) score -= 60;
+  }
+
+  const wantsNearbyOrWalking =
+    intent.maxMiles ||
+    query.includes("nearby") ||
+    query.includes("near me") ||
+    query.includes("walking distance") ||
+    query.includes("walkable") ||
+    query.includes("close by");
+
+  if (wantsNearbyOrWalking && (!item.latitude || !item.longitude)) score -= 180;
+
+  return score;
+}
+
+function diversifyResults<T extends Record<string, any>>(items: T[], maxResults: number) {
+  const sorted = [...items].sort(
+    (a, b) => Number(b.theouthaven_score || b.smart_match_score || 0) - Number(a.theouthaven_score || a.smart_match_score || 0),
+  );
+  const selected: T[] = [];
+  const deferred: T[] = [];
+  const seenNames = new Set<string>();
+  const topSixTypeCounts = new Map<string, number>();
+  const topSixAreaCounts = new Map<string, number>();
+  const specificLocationRequested = sorted.some((item: any) => item.__specific_location_requested);
+
+  sorted.forEach((item) => {
+    const nameKey = normalizeQuery(getLocationName(item, ""));
+    if (nameKey && seenNames.has(nameKey)) return;
+
+    const typeKey = normalizeQuery(
+      item.cuisine || item.cuisine_type || item.activity_type || item.primary_category || item.location_type || "other",
+    );
+    const areaKey = normalizeQuery(item.neighborhood || item.city || item.borough || "unknown");
+    const inTopSix = selected.length < 6;
+    const tooMuchSameType = inTopSix && typeKey && (topSixTypeCounts.get(typeKey) || 0) >= 2;
+    const tooMuchSameArea =
+      inTopSix &&
+      !specificLocationRequested &&
+      areaKey &&
+      areaKey !== "unknown" &&
+      (topSixAreaCounts.get(areaKey) || 0) >= 3;
+
+    if (tooMuchSameType || tooMuchSameArea) {
+      deferred.push(item);
+      return;
+    }
+
+    selected.push(item);
+    if (nameKey) seenNames.add(nameKey);
+    if (selected.length <= 6) {
+      topSixTypeCounts.set(typeKey, (topSixTypeCounts.get(typeKey) || 0) + 1);
+      topSixAreaCounts.set(areaKey, (topSixAreaCounts.get(areaKey) || 0) + 1);
+    }
+  });
+
+  deferred.forEach((item) => {
+    if (selected.length >= maxResults) return;
+    const nameKey = normalizeQuery(getLocationName(item, ""));
+    if (nameKey && seenNames.has(nameKey)) return;
+    selected.push(item);
+    if (nameKey) seenNames.add(nameKey);
+  });
+
+  return selected.slice(0, maxResults);
+}
+
 function scoreRestaurant(
   item: any,
   input: string,
@@ -2305,6 +2661,7 @@ function scoreRestaurant(
   let score = 0;
 
   score += locationNameMatchScore(item, input);
+  score += calculateSearchQualityScore(item, input, intent);
   score += keywordBoost(item, input);
   score += weightedVibeBoost(item, intent.vibes);
   score += weightedTagBoost(item, intent.requestedTags);
@@ -2363,6 +2720,7 @@ function scoreActivity(
   let score = 0;
 
   score += locationNameMatchScore(item, input);
+  score += calculateSearchQualityScore(item, input, intent);
 
   if (intent.locations.length > 0) {
     const text = itemText(item);
@@ -2486,6 +2844,36 @@ function filterActivitiesByActivityIntent(
 const WALKING_DISTANCE_MILES = 1.25;
 const WALKING_PAIR_CANDIDATE_LIMIT = 80;
 
+function hasValidCoordinates(item: any) {
+  const latitude = Number(item.latitude);
+  const longitude = Number(item.longitude);
+
+  return Number.isFinite(latitude) && Number.isFinite(longitude);
+}
+
+function walkingDistanceScore(distance: number) {
+  if (distance <= 0.25) return 120;
+  if (distance <= 0.5) return 90;
+  if (distance <= 0.75) return 60;
+  if (distance <= 1) return 25;
+  return -75;
+}
+
+function sameMajorWalkingArea(first: any, second: any) {
+  if (isCrossAreaWalkingPair(first, second)) return false;
+
+  const firstArea = inferStrongGeoArea(first);
+  const secondArea = inferStrongGeoArea(second);
+
+  if (firstArea && secondArea && firstArea !== secondArea) return false;
+
+  const firstState = normalizeQuery(String(first.state || ""));
+  const secondState = normalizeQuery(String(second.state || ""));
+  if (firstState && secondState && firstState !== secondState) return false;
+
+  return true;
+}
+
 function pairWalkingDistanceMatches(
   restaurants: any[],
   activities: any[],
@@ -2493,16 +2881,11 @@ function pairWalkingDistanceMatches(
   const pairs = restaurants
     .flatMap((restaurant) =>
       activities.map((activity) => {
-        if (
-          !restaurant.latitude ||
-          !restaurant.longitude ||
-          !activity.latitude ||
-          !activity.longitude
-        ) {
+        if (!hasValidCoordinates(restaurant) || !hasValidCoordinates(activity)) {
           return null;
         }
 
-        if (isCrossAreaWalkingPair(restaurant, activity)) {
+        if (!sameMajorWalkingArea(restaurant, activity)) {
           return null;
         }
 
@@ -2513,11 +2896,24 @@ function pairWalkingDistanceMatches(
           Number(activity.longitude),
         );
 
-        if (distance > WALKING_DISTANCE_MILES) {
+        if (!Number.isFinite(distance) || distance > WALKING_DISTANCE_MILES) {
           return null;
         }
 
         const walkingMinutes = walkingMinutesFromMiles(distance);
+        const sameCity =
+          normalizeQuery(String(restaurant.city || "")) ===
+          normalizeQuery(String(activity.city || ""));
+        const sameNeighborhood =
+          normalizeQuery(String(restaurant.neighborhood || "")) &&
+          normalizeQuery(String(restaurant.neighborhood || "")) ===
+            normalizeQuery(String(activity.neighborhood || ""));
+        const pairScore =
+          Number(restaurant.theouthaven_score || getLocationScore(restaurant)) +
+          Number(activity.theouthaven_score || getLocationScore(activity)) +
+          200 +
+          walkingDistanceScore(distance) +
+          (distance <= 0.75 ? 40 : 0);
 
         return {
           restaurant,
@@ -2527,21 +2923,16 @@ function pairWalkingDistanceMatches(
           walking_label: `${walkingMinutes} min walk from ${
             restaurant.restaurant_name || restaurant.name
           }`,
-          pair_score:
-            Number(getLocationScore(restaurant)) +
-            Number(getLocationScore(activity)) +
-            200,
+          same_city: Boolean(sameCity),
+          same_neighborhood: Boolean(sameNeighborhood),
+          pair_score: pairScore,
         };
       }),
     )
     .filter(Boolean)
-    .filter((pair: any) => pair.distance_miles <= WALKING_DISTANCE_MILES)
     .sort((a: any, b: any) => {
-      if (a.distance_miles !== b.distance_miles) {
-        return a.distance_miles - b.distance_miles;
-      }
-
-      return b.pair_score - a.pair_score;
+      if (b.pair_score !== a.pair_score) return b.pair_score - a.pair_score;
+      return a.distance_miles - b.distance_miles;
     });
 
   return pairs.slice(0, 5);
@@ -3015,8 +3406,20 @@ export async function POST(req: Request) {
         isPublicSearchVisible(item) && isWithinTheOutHavenServiceArea(item),
     );
 
-    const sourceLocations =
+    const strictWalkingRequest =
+      input.toLowerCase().includes("walking distance") ||
+      input.toLowerCase().includes("walkable") ||
+      input.toLowerCase().includes("walk from");
+
+    const broaderSourceLocations =
       usableLocations.length > 0 ? usableLocations : locations;
+    let sourceLocations = applyStrongGeoFilter(broaderSourceLocations, intent);
+
+    console.log("GENERATE SEARCH DEBUG", {
+      locations: intent.locations,
+      source_count: broaderSourceLocations.length,
+      filtered_count: sourceLocations.length,
+    });
 
     const matchedLocationResults = buildMatchedLocationResults(
       sourceLocations.filter(isOutingEligibleLocation),
@@ -3123,16 +3526,16 @@ export async function POST(req: Request) {
     }
 
     if (intent.locations.length > 0) {
-      const locationRestaurants = restaurants.filter((item: any) =>
-        matchesLocation(item, intent.locations),
+      const locationRestaurants = restaurants.filter(
+        (item: any) => !isStrongGeoMismatch(item, intent),
       );
 
-      const locationActivities = activities.filter((item: any) =>
-        matchesLocation(item, intent.locations),
+      const locationActivities = activities.filter(
+        (item: any) => !isStrongGeoMismatch(item, intent),
       );
 
-      restaurants = locationRestaurants;
-      activities = locationActivities;
+      restaurants = locationRestaurants.length > 0 ? locationRestaurants : restaurants;
+      activities = locationActivities.length > 0 ? locationActivities : activities;
     }
 
     if (intent.activityIntents.length > 0) {
@@ -3161,6 +3564,24 @@ export async function POST(req: Request) {
       restaurants = [];
     }
 
+    if (restaurants.length === 0 && intent.wantsRestaurant && !isLoungeActivityOnlyRequest(intent)) {
+      restaurants = fallbackByGeoStages(
+        broaderSourceLocations,
+        (item: any) => isOutingEligibleLocation(item) && isRestaurantLocation(item),
+        intent,
+        strictWalkingRequest,
+      );
+    }
+
+    if (activities.length === 0 && intent.wantsActivity) {
+      activities = fallbackByGeoStages(
+        broaderSourceLocations,
+        (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
+        intent,
+        strictWalkingRequest,
+      );
+    }
+
     const dedupedLocationResults = removeDuplicateLocationsAcrossTypes(
       restaurants,
       activities,
@@ -3170,7 +3591,7 @@ export async function POST(req: Request) {
     restaurants = dedupedLocationResults.restaurants;
     activities = dedupedLocationResults.activities;
 
-    const rankedRestaurants = restaurants
+    let rankedRestaurants = restaurants
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
         const score = clampScore(
@@ -3197,7 +3618,7 @@ export async function POST(req: Request) {
       })
       .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
 
-    const rankedActivities = activities
+    let rankedActivities = activities
       .map((activity: any) => {
         const semantic = semanticScoreBoost(activity, semanticResults);
         const score = clampScore(
@@ -3223,6 +3644,26 @@ export async function POST(req: Request) {
         };
       })
       .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
+
+    rankedRestaurants = diversifyResults(
+      rankedRestaurants.map((item: any) => ({
+        ...item,
+        __specific_location_requested: intent.locations.length > 0,
+      })),
+      24,
+    );
+    rankedActivities = diversifyResults(
+      rankedActivities.map((item: any) => ({
+        ...item,
+        __specific_location_requested: intent.locations.length > 0,
+      })),
+      24,
+    );
+
+    console.log("GENERATE RANKING DEBUG", {
+      ranked_restaurant_count: rankedRestaurants.length,
+      ranked_activity_count: rankedActivities.length,
+    });
 
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
@@ -3277,10 +3718,9 @@ export async function POST(req: Request) {
           )
         : [];
 
-    const strictWalkingRequest =
-      input.toLowerCase().includes("walking distance") ||
-      input.toLowerCase().includes("walkable") ||
-      input.toLowerCase().includes("walk from");
+    console.log("GENERATE WALKING DEBUG", {
+      walking_pair_count: walkingPairs.length,
+    });
 
     const pairedResults =
       walkingPairs.length > 0
