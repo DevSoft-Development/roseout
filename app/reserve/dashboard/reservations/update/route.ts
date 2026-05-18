@@ -4,6 +4,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 const allowedStatuses = [
   "pending",
   "confirmed",
+  "checked_in",
+  "arrived",
+  "waitlisted",
   "declined",
   "cancelled",
   "completed",
@@ -56,6 +59,9 @@ export async function POST(request: NextRequest) {
       .from("location_reservations")
       .update({
         status,
+        checked_in_at: status === "checked_in" || status === "arrived" ? new Date().toISOString() : undefined,
+        completed_at: status === "completed" ? new Date().toISOString() : undefined,
+        cancelled_at: status === "cancelled" ? new Date().toISOString() : undefined,
         updated_at: new Date().toISOString(),
       })
       .eq("id", reservationId)

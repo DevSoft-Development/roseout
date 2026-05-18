@@ -2,7 +2,9 @@ import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const ACTIVE_RESERVATION_STATUSES = [
+  "pending",
   "confirmed",
+  "checked_in",
   "arrived",
   "seated",
   "occupied",

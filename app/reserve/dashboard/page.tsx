@@ -311,6 +311,13 @@ export default async function ReserveDashboardPage() {
               </Link>
 
               <Link
+                href="/reserve/dashboard/waitlist"
+                className="rounded-full border border-purple-300/20 bg-purple-500/15 px-5 py-3 text-sm font-black text-purple-100 transition hover:bg-purple-500/25"
+              >
+                Manage Waitlist
+              </Link>
+
+              <Link
                 href="/admin/dashboard/support"
                 className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
               >
