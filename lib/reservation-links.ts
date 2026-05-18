@@ -9,7 +9,11 @@ export const RESERVATION_PROVIDERS: ReservationProvider[] = [
   { host: "opentable.com", name: "OpenTable" },
   { host: "exploretock.com", name: "Tock" },
   { host: "sevenrooms.com", name: "SevenRooms" },
-  { host: "yelp.com", name: "Yelp Reservations", pathIncludes: ["/reservations"] },
+  {
+    host: "yelp.com",
+    name: "Yelp Reservations",
+    pathIncludes: ["/reservations"],
+  },
   { host: "book.squareup.com", name: "Square" },
   { host: "calendly.com", name: "Calendly" },
   { host: "mindbodyonline.com", name: "Mindbody" },
@@ -38,7 +42,9 @@ function matchesHost(hostname: string, providerHost: string) {
   return hostname === providerHost || hostname.endsWith(`.${providerHost}`);
 }
 
-export function getReservationProvider(url: unknown): ReservationProvider | null {
+export function getReservationProvider(
+  url: unknown,
+): ReservationProvider | null {
   const parsed = getUrl(url);
   if (!parsed) return null;
 
@@ -71,7 +77,9 @@ export function normalizeReservationUrl(url: unknown) {
   return parsed.toString();
 }
 
-export function extractReservationUrl(place: Record<string, unknown> | null | undefined) {
+export function extractReservationUrl(
+  place: Record<string, unknown> | null | undefined,
+) {
   if (!place) return null;
 
   const candidates = [
@@ -83,6 +91,7 @@ export function extractReservationUrl(place: Record<string, unknown> | null | un
     place.websiteUri,
     place.website,
     place.googleMapsUri,
+    place.googleMapsUrl,
     place.url,
   ];
 
@@ -94,7 +103,9 @@ export function extractReservationUrl(place: Record<string, unknown> | null | un
   return null;
 }
 
-export function getBestExternalReservationUrl(location: Record<string, unknown> | null | undefined) {
+export function getBestExternalReservationUrl(
+  location: Record<string, unknown> | null | undefined,
+) {
   if (!location) return null;
   return extractReservationUrl({
     reservation_url: location.reservation_url,
