@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { extractReservationUrl } from "@/lib/reservation-links";
+import {
+  extractReservationUrl,
+  getGooglePlaceIdFromRow,
+  GOOGLE_PLACE_DETAILS_FIELD_MASK,
+  GOOGLE_TEXT_SEARCH_FIELD_MASK,
+  type GooglePlaceDetails,
+} from "@/lib/reservation-links";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +21,10 @@ type BackfillRow = Record<string, unknown> & {
   name?: string | null;
   restaurant_name?: string | null;
   activity_name?: string | null;
+  address?: string | null;
+  street_address?: string | null;
+  city?: string | null;
+  state?: string | null;
   google_place_id?: string | null;
   google_id?: string | null;
   place_id?: string | null;
@@ -27,21 +37,11 @@ type BackfillRow = Record<string, unknown> & {
   rating?: number | string | null;
 };
 
-type GooglePlaceDetails = {
-  id?: string;
-  displayName?: { text?: string; languageCode?: string };
-  websiteUri?: string;
-  googleMapsUri?: string;
-  nationalPhoneNumber?: string;
-  internationalPhoneNumber?: string;
-  rating?: number;
-  userRatingCount?: number;
-  priceLevel?: string;
-};
-
 type Failure = {
   id: string | number | null;
   name: string | null;
+  google_place_id?: string | null;
+  status?: number;
   error: string;
 };
 
@@ -52,7 +52,9 @@ type TableSummary = {
   updated: number;
   skippedAlreadyHasLink: number;
   skippedNoGooglePlaceId: number;
+  skippedInvalidPlaceId: number;
   skippedNoBookingLink: number;
+  refreshedPlaceIds: number;
   failed: number;
   failures: Failure[];
   dryRun: boolean;
@@ -65,17 +67,27 @@ type ErrorResponse = {
   step: string;
 };
 
-const GOOGLE_FIELD_MASK = [
-  "id",
-  "displayName",
-  "websiteUri",
-  "googleMapsUri",
-  "nationalPhoneNumber",
-  "internationalPhoneNumber",
-  "rating",
-  "userRatingCount",
-  "priceLevel",
-].join(",");
+type GooglePlaceErrorPayload = {
+  error?: { code?: number; message?: string; status?: string };
+};
+
+type GooglePlaceDetailsResult = {
+  details: GooglePlaceDetails;
+  placeId: string;
+  refreshedPlaceId: boolean;
+};
+
+class GooglePlaceApiError extends Error {
+  status: number;
+  googleStatus?: string;
+
+  constructor(message: string, status: number, googleStatus?: string) {
+    super(message);
+    this.name = "GooglePlaceApiError";
+    this.status = status;
+    this.googleStatus = googleStatus;
+  }
+}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error
@@ -154,33 +166,45 @@ async function requireAuthorization(request: NextRequest) {
   return error;
 }
 
+function parseGooglePayload(text: string) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as GooglePlaceDetails & GooglePlaceErrorPayload;
+  } catch {
+    return null;
+  }
+}
+
+function isInvalidPlaceIdError(error: unknown) {
+  return (
+    error instanceof GooglePlaceApiError &&
+    (error.status === 404 || error.googleStatus === "NOT_FOUND")
+  );
+}
+
 async function fetchGoogleDetails(placeId: string) {
   const key = getGoogleKey();
   if (!key) throw new Error("Missing Google Places API key");
 
-  const response = await fetch(
-    `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
-    {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": GOOGLE_FIELD_MASK,
-      },
+  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
+  const response = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": GOOGLE_PLACE_DETAILS_FIELD_MASK,
     },
-  );
+  });
 
   const text = await response.text();
-  const data = text
-    ? (JSON.parse(text) as GooglePlaceDetails & {
-        error?: { message?: string };
-      })
-    : null;
+  const data = parseGooglePayload(text);
 
   if (!response.ok) {
-    throw new Error(
+    throw new GooglePlaceApiError(
       data?.error?.message || `Google Places error: ${response.status}`,
+      response.status,
+      data?.error?.status,
     );
   }
 
@@ -230,7 +254,7 @@ function getRowName(row: BackfillRow) {
 }
 
 function getGooglePlaceId(row: BackfillRow) {
-  return firstExistingString(row, ["google_place_id", "google_id", "place_id"]);
+  return getGooglePlaceIdFromRow(row);
 }
 
 function existingReservation(row: BackfillRow) {
@@ -239,6 +263,85 @@ function existingReservation(row: BackfillRow) {
     "booking_url",
     "reservation_link",
   ]);
+}
+
+function getTextSearchQuery(row: BackfillRow) {
+  const name = getRowName(row);
+  if (!name) return null;
+
+  const address = firstExistingString(row, [
+    "address",
+    "street_address",
+    "formatted_address",
+    "formattedAddress",
+  ]);
+  const city = stringValue(row.city);
+  const state = stringValue(row.state);
+
+  if (!address && !city && !state) return null;
+  return [name, address, city, state].filter(Boolean).join(" ");
+}
+
+async function fetchFreshPlaceFromTextSearch(row: BackfillRow) {
+  const key = getGoogleKey();
+  if (!key) throw new Error("Missing Google Places API key");
+
+  const textQuery = getTextSearchQuery(row);
+  if (!textQuery) return null;
+
+  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": GOOGLE_TEXT_SEARCH_FIELD_MASK,
+    },
+    body: JSON.stringify({
+      textQuery,
+      maxResultCount: 1,
+    }),
+  });
+
+  const text = await response.text();
+  const data = text
+    ? (JSON.parse(text) as {
+        places?: GooglePlaceDetails[];
+        error?: { message?: string; status?: string };
+      })
+    : null;
+
+  if (!response.ok) {
+    throw new GooglePlaceApiError(
+      data?.error?.message || `Google Places Text Search error: ${response.status}`,
+      response.status,
+      data?.error?.status,
+    );
+  }
+
+  return data?.places?.[0] || null;
+}
+
+async function fetchDetailsWithFallback(row: BackfillRow, placeId: string) {
+  try {
+    return {
+      details: await fetchGoogleDetails(placeId),
+      placeId,
+      refreshedPlaceId: false,
+    } satisfies GooglePlaceDetailsResult;
+  } catch (error) {
+    if (!isInvalidPlaceIdError(error)) throw error;
+
+    const freshPlace = await fetchFreshPlaceFromTextSearch(row);
+    const freshPlaceId = stringValue(freshPlace?.id);
+    if (!freshPlaceId) throw error;
+
+    return {
+      details: await fetchGoogleDetails(freshPlaceId),
+      placeId: freshPlaceId,
+      refreshedPlaceId: true,
+    } satisfies GooglePlaceDetailsResult;
+  }
 }
 
 function addUpdateValue(
@@ -256,6 +359,7 @@ function buildUpdatePayload(
   row: BackfillRow,
   details: GooglePlaceDetails,
   reservationUrl: string | null,
+  freshPlaceId: string | null,
 ) {
   const payload: Record<string, string | number> = {};
   const website = stringValue(details.websiteUri);
@@ -265,6 +369,7 @@ function buildUpdatePayload(
     stringValue(details.internationalPhoneNumber);
   const rating = numberValue(details.rating);
 
+  addUpdateValue(payload, row, "google_place_id", freshPlaceId);
   addUpdateValue(payload, row, "website", website);
   addUpdateValue(payload, row, "google_maps_url", googleMapsUrl);
   addUpdateValue(payload, row, "phone", phone);
@@ -289,7 +394,9 @@ function createTableSummary(
     updated: 0,
     skippedAlreadyHasLink: 0,
     skippedNoGooglePlaceId: 0,
+    skippedInvalidPlaceId: 0,
     skippedNoBookingLink: 0,
+    refreshedPlaceIds: 0,
     failed: 0,
     failures: [],
     dryRun,
@@ -306,24 +413,47 @@ async function processRow(
 ) {
   const id = getRowId(row);
   const name = getRowName(row);
+  const originalGooglePlaceId = getGooglePlaceId(row);
 
   try {
-    const googlePlaceId = getGooglePlaceId(row);
-
-    if (!googlePlaceId) return { status: "skippedNoGooglePlaceId" as const };
+    if (!originalGooglePlaceId)
+      return { status: "skippedNoGooglePlaceId" as const };
     if (onlyMissing && existingReservation(row))
       return { status: "skippedAlreadyHasLink" as const };
 
-    const details = await fetchGoogleDetails(googlePlaceId);
-    const rating = numberValue(details.rating) || numberValue(row.rating);
+    let detailsResult: GooglePlaceDetailsResult;
+    try {
+      detailsResult = await fetchDetailsWithFallback(row, originalGooglePlaceId);
+    } catch (error) {
+      if (isInvalidPlaceIdError(error)) {
+        return {
+          status: "skippedInvalidPlaceId" as const,
+          failure: {
+            id,
+            name,
+            google_place_id: originalGooglePlaceId,
+            status: 404,
+            error: "Invalid or stale Google Place ID",
+          } satisfies Failure,
+        };
+      }
+      throw error;
+    }
+
+    const rating = numberValue(detailsResult.details.rating) || numberValue(row.rating);
     if (minRating !== null && rating !== null && rating < minRating) {
       return { status: "skippedNoBookingLink" as const };
     }
 
-    const reservationUrl = extractReservationUrl(details);
+    const reservationUrl = extractReservationUrl(detailsResult.details);
     if (!reservationUrl) return { status: "skippedNoBookingLink" as const };
 
-    const updatePayload = buildUpdatePayload(row, details, reservationUrl);
+    const updatePayload = buildUpdatePayload(
+      row,
+      detailsResult.details,
+      reservationUrl,
+      detailsResult.refreshedPlaceId ? detailsResult.placeId : null,
+    );
     if (Object.keys(updatePayload).length === 0)
       return { status: "skippedNoBookingLink" as const };
 
@@ -336,7 +466,10 @@ async function processRow(
         .throwOnError();
     }
 
-    return { status: "updated" as const };
+    return {
+      status: "updated" as const,
+      refreshedPlaceId: detailsResult.refreshedPlaceId,
+    };
   } catch (error) {
     logBackfillError("row", table, id, error);
     return {
@@ -346,6 +479,8 @@ async function processRow(
       step: "row",
       id,
       name,
+      google_place_id: originalGooglePlaceId,
+      status: error instanceof GooglePlaceApiError ? error.status : undefined,
     };
   }
 }
@@ -357,12 +492,14 @@ async function runTable(
   dryRun: boolean,
   onlyMissing: boolean,
   minRating: number | null,
+  rowId: string | null,
 ) {
   const summary = createTableSummary(table, dryRun);
-  const { data, error } = await supabaseAdmin
-    .from(table)
-    .select("*")
-    .limit(limit);
+  let query = supabaseAdmin.from(table).select("*").limit(limit);
+
+  if (rowId) query = query.eq("id", rowId);
+
+  const { data, error } = await query;
 
   if (error) throw new Error(error.message);
 
@@ -377,11 +514,18 @@ async function runTable(
       minRating,
     );
 
-    if (result.status === "updated") summary.updated += 1;
+    if (result.status === "updated") {
+      summary.updated += 1;
+      if (result.refreshedPlaceId) summary.refreshedPlaceIds += 1;
+    }
     if (result.status === "skippedAlreadyHasLink")
       summary.skippedAlreadyHasLink += 1;
     if (result.status === "skippedNoGooglePlaceId")
       summary.skippedNoGooglePlaceId += 1;
+    if (result.status === "skippedInvalidPlaceId") {
+      summary.skippedInvalidPlaceId += 1;
+      summary.failures.push(result.failure);
+    }
     if (result.status === "skippedNoBookingLink")
       summary.skippedNoBookingLink += 1;
     if ("success" in result && result.success === false) {
@@ -389,6 +533,8 @@ async function runTable(
       summary.failures.push({
         id: result.id,
         name: result.name,
+        google_place_id: result.google_place_id,
+        status: result.status,
         error: result.details,
       });
     }
@@ -405,8 +551,8 @@ export async function GET(request: NextRequest) {
     const authError = await requireAuthorization(request);
     if (authError) {
       return jsonError(
-        authError.status === 403 ? "Forbidden" : "Unauthorized",
-        authError.statusText || "Admin authorization failed",
+        "Reservation link backfill failed",
+        `${authError.status === 403 ? "Forbidden" : "Unauthorized"}: ${authError.statusText || "Admin authorization failed"}`,
         step,
         authError.status || 401,
       );
@@ -415,7 +561,7 @@ export async function GET(request: NextRequest) {
     step = "google-api-key";
     if (!getGoogleKey())
       return jsonError(
-        "Missing Google Places API key",
+        "Reservation link backfill failed",
         "Missing Google Places API key",
         step,
         500,
@@ -433,7 +579,12 @@ export async function GET(request: NextRequest) {
     const dryRun = searchParams.get("dryRun") === "true";
     const onlyMissing = searchParams.get("onlyMissing") !== "false";
     const minRatingParam = searchParams.get("minRating");
-    const minRating = minRatingParam ? Number(minRatingParam) : null;
+    const parsedMinRating = minRatingParam ? Number(minRatingParam) : null;
+    const minRating =
+      parsedMinRating !== null && Number.isFinite(parsedMinRating)
+        ? parsedMinRating
+        : null;
+    const rowId = stringValue(searchParams.get("id"));
     requestedTable = parseRequestedTable(searchParams.get("table"));
     const tables = tablesForRequest(requestedTable);
 
@@ -444,7 +595,9 @@ export async function GET(request: NextRequest) {
       updated: 0,
       skippedAlreadyHasLink: 0,
       skippedNoGooglePlaceId: 0,
+      skippedInvalidPlaceId: 0,
       skippedNoBookingLink: 0,
+      refreshedPlaceIds: 0,
       failed: 0,
       failures: [] as Failure[],
       dryRun,
@@ -460,13 +613,16 @@ export async function GET(request: NextRequest) {
         dryRun,
         onlyMissing,
         minRating,
+        rowId,
       );
       result.tables[table] = tableResult;
       result.checked += tableResult.checked;
       result.updated += tableResult.updated;
       result.skippedAlreadyHasLink += tableResult.skippedAlreadyHasLink;
       result.skippedNoGooglePlaceId += tableResult.skippedNoGooglePlaceId;
+      result.skippedInvalidPlaceId += tableResult.skippedInvalidPlaceId;
       result.skippedNoBookingLink += tableResult.skippedNoBookingLink;
+      result.refreshedPlaceIds += tableResult.refreshedPlaceIds;
       result.failed += tableResult.failed;
       result.failures.push(...tableResult.failures);
     }

@@ -4,6 +4,52 @@ export type ReservationProvider = {
   pathIncludes?: string[];
 };
 
+
+export const GOOGLE_PLACE_DETAILS_FIELD_MASK = [
+  "id",
+  "name",
+  "displayName",
+  "formattedAddress",
+  "websiteUri",
+  "googleMapsUri",
+  "nationalPhoneNumber",
+  "internationalPhoneNumber",
+  "rating",
+  "userRatingCount",
+  "priceLevel",
+  "businessStatus",
+].join(",");
+
+export const GOOGLE_TEXT_SEARCH_FIELD_MASK = [
+  "places.id",
+  "places.name",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.websiteUri",
+  "places.googleMapsUri",
+  "places.nationalPhoneNumber",
+  "places.internationalPhoneNumber",
+  "places.rating",
+  "places.userRatingCount",
+  "places.priceLevel",
+  "places.businessStatus",
+].join(",");
+
+export type GooglePlaceDetails = Record<string, unknown> & {
+  id?: string;
+  name?: string;
+  displayName?: { text?: string; languageCode?: string };
+  formattedAddress?: string;
+  websiteUri?: string;
+  googleMapsUri?: string;
+  nationalPhoneNumber?: string;
+  internationalPhoneNumber?: string;
+  rating?: number;
+  userRatingCount?: number;
+  priceLevel?: string;
+  businessStatus?: string;
+};
+
 export const RESERVATION_PROVIDERS: ReservationProvider[] = [
   { host: "resy.com", name: "Resy" },
   { host: "opentable.com", name: "OpenTable" },
@@ -114,3 +160,17 @@ export function getBestExternalReservationUrl(
     external_reservation_url: location.external_reservation_url,
   });
 }
+
+export function getGooglePlaceIdFromRow(
+  row: Record<string, unknown> | null | undefined,
+) {
+  if (!row) return null;
+
+  for (const column of ["google_place_id", "place_id", "google_id"]) {
+    const value = row[column];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  return null;
+}
+
