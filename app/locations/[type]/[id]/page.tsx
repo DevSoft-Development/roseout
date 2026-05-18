@@ -23,6 +23,7 @@ import {
   getGoogleMapsUrl,
 } from "@/lib/googleDirections";
 import {
+  getExternalReservationProvider,
   getExternalReservationUrl,
   getInternalReservationHref,
   getReservationSourceLabel,
@@ -188,6 +189,7 @@ export default function LocationDetailPage() {
     .join(", ");
 
   const externalReservationUrl = getExternalReservationUrl(location || {});
+  const externalReservationProvider = getExternalReservationProvider(location || {});
   const internalReservationHref = getInternalReservationHref(
     location || {},
     isActivity ? "activity" : "restaurant",
@@ -199,13 +201,12 @@ export default function LocationDetailPage() {
       location?.reservation_enabled === true,
   );
   const showInternalReservation =
-    reservationSource !== "external" &&
-    reservationSource !== "none" &&
+    (reservationSource === "internal" || reservationSource === "both") &&
     hasInternalReservations &&
     Boolean(internalReservationHref);
   const showExternalReservation =
     Boolean(externalReservationUrl) &&
-    (reservationSource === "external" || reservationSource === "both" || (!showInternalReservation && reservationSource !== "none"));
+    (reservationSource === "external" || reservationSource === "both");
   const primaryReservationUrl = showInternalReservation
     ? internalReservationHref || ""
     : showExternalReservation
@@ -217,8 +218,10 @@ export default function LocationDetailPage() {
   const isExternalReservation = Boolean(reservationUrl) && !showInternalReservation;
   const reservationLabel = showInternalReservation
     ? "Reserve on TheOutHaven"
-    : reservationUrl
-    ? "Reserve"
+    : showExternalReservation && externalReservationProvider
+    ? `Reserve via ${externalReservationProvider}`
+    : showExternalReservation
+    ? "Reserve Externally"
     : location?.booking_url
     ? "Book"
     : "";
@@ -454,7 +457,7 @@ export default function LocationDetailPage() {
                       rel="noopener noreferrer"
                       className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
                     >
-                      Get Directions
+                      {location.website || reservationUrl ? "Get Directions" : "View on Google Maps"}
                     </a>
                   ) : null}
                 </div>
@@ -674,7 +677,7 @@ export default function LocationDetailPage() {
                       rel="noopener noreferrer"
                       className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
                     >
-                      Get Directions
+                      {location.website || reservationUrl ? "Get Directions" : "View on Google Maps"}
                     </a>
                   ) : null}
 
