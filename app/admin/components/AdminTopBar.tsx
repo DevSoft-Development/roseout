@@ -185,61 +185,147 @@ export default function AdminTopBar() {
     "viewer",
   ].includes(role || "");
   const canViewClaims = ["superuser", "admin", "reviewer"].includes(role || "");
-  const canViewAnalytics = ["superuser", "admin", "viewer"].includes(
-    role || "",
-  );
   const canViewImport = ["superuser", "admin", "viewer"].includes(role || "");
   const canViewUsers = ["superuser", "admin"].includes(role || "");
-  const canViewSupport = ["superuser", "admin", "editor", "reviewer", "viewer"].includes(role || "");
-  const canViewMarketing = ["superuser", "admin", "editor", "viewer"].includes(role || "");
+  const canViewSupport = [
+    "superuser",
+    "admin",
+    "editor",
+    "reviewer",
+    "viewer",
+  ].includes(role || "");
+  const canViewMarketing = ["superuser", "admin", "editor", "viewer"].includes(
+    role || "",
+  );
 
   const mainLinks: AdminLink[] = [
     { label: "Dashboard", href: "/admin/dashboard", visible: canViewDashboard },
-    { label: "Locations", href: "/admin/dashboard/locations", visible: canViewLocations },
-    { label: "Reservations", href: "/admin/dashboard/reservations", visible: canViewDashboard },
-    { label: "Marketing", href: "/admin/dashboard/marketing", visible: canViewMarketing },
-    { label: "Import", href: "/admin/dashboard/import", visible: canViewImport },
-    { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canViewClaims },
-    { label: "Support", href: "/admin/dashboard/support", visible: canViewSupport },
+    {
+      label: "Locations",
+      href: "/admin/dashboard/locations",
+      visible: canViewLocations,
+    },
+    {
+      label: "Reservations",
+      href: "/admin/dashboard/reservations",
+      visible: canViewDashboard,
+    },
+    {
+      label: "Marketing",
+      href: "/admin/dashboard/marketing",
+      visible: canViewMarketing,
+    },
+    {
+      label: "Import",
+      href: "/admin/dashboard/import",
+      visible: canViewImport,
+    },
+    {
+      label: "Claim Tools",
+      href: "/admin/dashboard/claim-tools",
+      visible: canViewClaims,
+    },
+    {
+      label: "Support",
+      href: "/admin/dashboard/support",
+      visible: canViewSupport,
+    },
   ];
 
   const groups: AdminLinkGroup[] = [
     {
       title: "Location Management",
       links: [
-        { label: "Locations", href: "/admin/dashboard/locations", visible: canViewLocations },
-        { label: "Data Quality", href: "/admin/dashboard/data-quality", visible: canViewDataQuality },
-        { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canViewClaims },
-        { label: "Claim QRs", href: "/admin/dashboard/claim-qrs", visible: canViewClaims || canViewLocations },
+        {
+          label: "Locations",
+          href: "/admin/dashboard/locations",
+          visible: canViewLocations,
+        },
+        {
+          label: "Data Quality",
+          href: "/admin/dashboard/data-quality",
+          visible: canViewDataQuality,
+        },
+        {
+          label: "Claim Tools",
+          href: "/admin/dashboard/claim-tools",
+          visible: canViewClaims,
+        },
+        {
+          label: "Claim QRs",
+          href: "/admin/dashboard/claim-qrs",
+          visible: canViewClaims || canViewLocations,
+        },
       ],
     },
     {
       title: "Operations",
       links: [
-        { label: "Reservations", href: "/admin/dashboard/reservations", visible: canViewDashboard },
-        { label: "Reserve Dashboard", href: "/reserve/dashboard", visible: canViewDashboard },
-        { label: "Layouts", href: "/admin/dashboard/reservations/location-layout", visible: canViewDashboard },
-        { label: "Waitlist", href: "/admin/dashboard/reservation", visible: canViewDashboard },
+        {
+          label: "Reservations",
+          href: "/admin/dashboard/reservations",
+          visible: canViewDashboard,
+        },
+        {
+          label: "Opportunities",
+          href: "/admin/dashboard/reservation-opportunities",
+          visible: canViewDashboard,
+        },
+        {
+          label: "Reserve Dashboard",
+          href: "/reserve/dashboard",
+          visible: canViewDashboard,
+        },
+        {
+          label: "Layouts",
+          href: "/admin/dashboard/reservations/location-layout",
+          visible: canViewDashboard,
+        },
+        {
+          label: "Waitlist",
+          href: "/admin/dashboard/reservation",
+          visible: canViewDashboard,
+        },
       ],
     },
     {
       title: "Imports",
       links: [
-        { label: "Google Import", href: "/admin/dashboard/import", visible: canViewImport },
-        { label: "Import Logs", href: "/admin/dashboard/logs", visible: canViewImport },
+        {
+          label: "Google Import",
+          href: "/admin/dashboard/import",
+          visible: canViewImport,
+        },
+        {
+          label: "Import Logs",
+          href: "/admin/dashboard/logs",
+          visible: canViewImport,
+        },
       ],
     },
     {
       title: "Marketing",
       links: [
-        { label: "Marketing Center", href: "/admin/dashboard/marketing", visible: canViewMarketing },
+        {
+          label: "Marketing Center",
+          href: "/admin/dashboard/marketing",
+          visible: canViewMarketing,
+        },
       ],
     },
     {
       title: "Support",
       links: [
-        { label: "Support System", href: "/admin/dashboard/support", visible: canViewSupport },
-        { label: "Logs", href: "/admin/dashboard/logs", visible: canViewImport || canViewUsers },
+        {
+          label: "Support System",
+          href: "/admin/dashboard/support",
+          visible: canViewSupport,
+        },
+        {
+          label: "Logs",
+          href: "/admin/dashboard/logs",
+          visible: canViewImport || canViewUsers,
+        },
       ],
     },
   ];
@@ -309,7 +395,9 @@ export default function AdminTopBar() {
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-base font-black">{name}</p>
-                    <p className="mt-1 truncate text-xs text-white/55">{email}</p>
+                    <p className="mt-1 truncate text-xs text-white/55">
+                      {email}
+                    </p>
                     {role && (
                       <span className="mt-3 inline-flex rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-rose-100 ring-1 ring-white/10">
                         {role}
@@ -324,7 +412,11 @@ export default function AdminTopBar() {
                   {mainLinks
                     .filter((link) => link.visible)
                     .map((link) => (
-                      <MenuLink key={link.href} href={link.href} onClick={() => setOpen(false)}>
+                      <MenuLink
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setOpen(false)}
+                      >
                         {link.label}
                       </MenuLink>
                     ))}
@@ -333,7 +425,9 @@ export default function AdminTopBar() {
                 <div className="my-3 border-t border-white/10" />
 
                 {groups.map((group) => {
-                  const visibleLinks = group.links.filter((link) => link.visible);
+                  const visibleLinks = group.links.filter(
+                    (link) => link.visible,
+                  );
                   if (!visibleLinks.length) return null;
 
                   return (
@@ -343,7 +437,11 @@ export default function AdminTopBar() {
                       </p>
                       <div className="grid gap-1">
                         {visibleLinks.map((link) => (
-                          <MenuLink key={`${group.title}-${link.href}`} href={link.href} onClick={() => setOpen(false)}>
+                          <MenuLink
+                            key={`${group.title}-${link.href}`}
+                            href={link.href}
+                            onClick={() => setOpen(false)}
+                          >
                             {link.label}
                           </MenuLink>
                         ))}
@@ -385,11 +483,13 @@ export default function AdminTopBar() {
                             </p>
                           )}
 
-                          {!searching && query.trim().length >= 2 && results.length === 0 && (
-                            <p className="px-1 text-xs text-white/40">
-                              No users or locations found.
-                            </p>
-                          )}
+                          {!searching &&
+                            query.trim().length >= 2 &&
+                            results.length === 0 && (
+                              <p className="px-1 text-xs text-white/40">
+                                No users or locations found.
+                              </p>
+                            )}
 
                           {results.map((item) => (
                             <button
@@ -420,7 +520,9 @@ export default function AdminTopBar() {
                                   )}
                                 </div>
                                 <span className="rounded-full bg-rose-500 px-3 py-1 text-[10px] font-black uppercase text-white">
-                                  {impersonatingId === item.id ? "Opening" : "View"}
+                                  {impersonatingId === item.id
+                                    ? "Opening"
+                                    : "View"}
                                 </span>
                               </div>
 
