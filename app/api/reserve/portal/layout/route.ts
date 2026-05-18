@@ -29,7 +29,22 @@ function isMissingTable(error: any) {
 
 function normalizeStatus(value: unknown) {
   const status = cleanString(value).toLowerCase();
-  return LAYOUT_ITEM_STATUSES.includes(status as any) ? status : "available";
+  if (["available", "unavailable", "hidden"].includes(status)) return status;
+  if (LAYOUT_ITEM_STATUSES.includes(status as any)) return status;
+  return "available";
+}
+
+function isMissingColumn(error: any) {
+  return error?.code === "42703" || String(error?.message || "").toLowerCase().includes("column");
+}
+
+function withoutOptionalFields<T extends Record<string, any>>(payload: T) {
+  const copy = { ...payload };
+  delete copy.duration_minutes;
+  delete copy.default_duration_minutes;
+  delete copy.reservation_duration_minutes;
+  delete copy.notes;
+  return copy;
 }
 
 function toLegacyItem(item: any) {
@@ -54,6 +69,10 @@ function toLegacyItem(item: any) {
     source_table: item.source_table || item.location_type || "restaurant",
     source_id: item.source_id || null,
     sort_order: Number(item.sort_order || 0),
+    duration_minutes: Number(item.duration_minutes || item.default_duration_minutes || item.reservation_duration_minutes || item.turn_time_minutes || 90),
+    default_duration_minutes: Number(item.default_duration_minutes || item.duration_minutes || item.reservation_duration_minutes || 90),
+    reservation_duration_minutes: Number(item.reservation_duration_minutes || item.duration_minutes || item.default_duration_minutes || 90),
+    notes: item.notes || item.description || item.internal_notes || null,
   };
 }
 
@@ -95,26 +114,41 @@ async function selectLayoutItems(locationId: string, locationType: string) {
 }
 
 async function updateLayoutItem(id: string, payload: any) {
-  const neutral = await supabaseAdmin
+  const neutralPayload = {
+    item_type: payload.item_type,
+    item_name: payload.item_name,
+    item_number: payload.item_number,
+    capacity: payload.capacity,
+    x_position: payload.layout_x,
+    y_position: payload.layout_y,
+    width: payload.layout_width,
+    height: payload.layout_height,
+    rotation: payload.rotation,
+    status: payload.status,
+    is_active: payload.is_active,
+    sort_order: payload.sort_order,
+    duration_minutes: payload.duration_minutes,
+    default_duration_minutes: payload.default_duration_minutes,
+    reservation_duration_minutes: payload.reservation_duration_minutes,
+    notes: payload.notes,
+    updated_at: new Date().toISOString(),
+  };
+
+  let neutral = await supabaseAdmin
     .from(NEUTRAL_TABLE)
-    .update({
-      item_type: payload.item_type,
-      item_name: payload.item_name,
-      item_number: payload.item_number,
-      capacity: payload.capacity,
-      x_position: payload.layout_x,
-      y_position: payload.layout_y,
-      width: payload.layout_width,
-      height: payload.layout_height,
-      rotation: payload.rotation,
-      status: payload.status,
-      is_active: payload.is_active,
-      sort_order: payload.sort_order,
-      updated_at: new Date().toISOString(),
-    })
+    .update(neutralPayload)
     .eq("id", id)
     .select("*")
     .single();
+
+  if (neutral.error && isMissingColumn(neutral.error)) {
+    neutral = await supabaseAdmin
+      .from(NEUTRAL_TABLE)
+      .update(withoutOptionalFields(neutralPayload))
+      .eq("id", id)
+      .select("*")
+      .single();
+  }
 
   if (!neutral.error) return toLegacyItem(neutral.data);
   if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
@@ -159,9 +193,16 @@ async function createLayoutItem(body: any) {
     status: normalizeStatus(body.status),
     is_active: body.is_active !== false,
     sort_order: Number(body.sort_order || 0),
+    duration_minutes: Number(body.duration_minutes || body.default_duration_minutes || body.reservation_duration_minutes || 90),
+    default_duration_minutes: Number(body.default_duration_minutes || body.duration_minutes || body.reservation_duration_minutes || 90),
+    reservation_duration_minutes: Number(body.reservation_duration_minutes || body.duration_minutes || body.default_duration_minutes || 90),
+    notes: cleanString(body.notes) || null,
   };
 
-  const neutral = await supabaseAdmin.from(NEUTRAL_TABLE).insert(payload).select("*").single();
+  let neutral = await supabaseAdmin.from(NEUTRAL_TABLE).insert(payload).select("*").single();
+  if (neutral.error && isMissingColumn(neutral.error)) {
+    neutral = await supabaseAdmin.from(NEUTRAL_TABLE).insert(withoutOptionalFields(payload)).select("*").single();
+  }
   if (!neutral.error) return toLegacyItem(neutral.data);
   if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
 
@@ -360,6 +401,10 @@ export async function PATCH(request: NextRequest) {
         status: normalizeStatus(body.status),
         is_active: body.is_active !== false,
         sort_order: Number(body.sort_order || 0),
+        duration_minutes: Number(body.duration_minutes || body.default_duration_minutes || body.reservation_duration_minutes || 90),
+        default_duration_minutes: Number(body.default_duration_minutes || body.duration_minutes || body.reservation_duration_minutes || 90),
+        reservation_duration_minutes: Number(body.reservation_duration_minutes || body.duration_minutes || body.default_duration_minutes || 90),
+        notes: cleanString(body.notes) || null,
       });
       await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
       return NextResponse.json({ success: true, item });

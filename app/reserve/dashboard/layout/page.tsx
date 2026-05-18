@@ -1,8 +1,5 @@
-import { requireAdminRole } from "@/lib/admin-auth";
-import LocationLayoutClient from "@/components/LocationLayoutClient";
+import { redirect } from "next/navigation";
 
-export default async function ReserveLocationLayoutPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
-
-  return <LocationLayoutClient backHref="/reserve/dashboard" />;
+export default function ReserveLocationLayoutRedirectPage() {
+  redirect("/reserve/dashboard/location-layout");
 }

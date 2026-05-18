@@ -30,8 +30,8 @@ type Reservation = {
   id: string;
   location_id: string;
   location_type: string;
-  bookable_item_name: string | null;
-  bookable_item_type: string | null;
+  reservable_item_name: string | null;
+  reservable_item_type: string | null;
   customer_name: string;
   customer_email: string | null;
   customer_phone: string | null;
@@ -43,6 +43,10 @@ type Reservation = {
   created_at: string;
   arrived_at?: string | null;
   completed_at?: string | null;
+  duration_minutes?: number | null;
+  default_duration_minutes?: number | null;
+  reservation_duration_minutes?: number | null;
+  turn_time_minutes?: number | null;
 };
 
 const statuses: ReservationStatus[] = [
@@ -68,7 +72,33 @@ function getInitialStatus(value: string | null): ReservationStatus | "all" {
 }
 
 function statusLabel(status: string) {
-  return status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
+  const labels: Record<string, string> = {
+    pending: "Needs Action",
+    confirmed: "Ready",
+    arrived: "Guest Here",
+    completed: "Finished",
+    declined: "Closed",
+    cancelled: "Closed",
+    no_show: "Missed",
+  };
+
+  return labels[status] || status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function suggestedNextAction(status: ReservationStatus) {
+  if (status === "pending") return "Suggested next action: confirm or decline this request.";
+  if (status === "confirmed") return "Suggested next action: mark guests as arrived when they check in.";
+  if (status === "arrived") return "Suggested next action: complete the visit or mark no-show if needed.";
+  return "This reservation is closed and no action is needed.";
+}
+
+function formatDuration(minutes: number | null | undefined) {
+  const value = Number(minutes || 90);
+  if (value < 60) return `${value} minutes`;
+  const hours = Math.floor(value / 60);
+  const remainder = value % 60;
+  const hourText = hours === 1 ? "1 hour" : `${hours} hours`;
+  return remainder ? `${hourText} ${remainder} minutes` : hourText;
 }
 
 function normalizeType(value: string | null) {
@@ -191,6 +221,14 @@ function ReservePortalReservationsContent() {
     reservation: Reservation,
     status: ReservationStatus
   ) {
+    const confirmMessages: Partial<Record<ReservationStatus, string>> = {
+      declined: "Decline this reservation request?",
+      cancelled: "Cancel this reservation?",
+      no_show: "Mark this reservation as no-show?",
+    };
+
+    if (confirmMessages[status] && !window.confirm(confirmMessages[status])) return;
+
     try {
       setUpdatingId(reservation.id);
       setError("");
@@ -294,7 +332,7 @@ function ReservePortalReservationsContent() {
               </p>
 
               <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">
-                Reservation Command Center
+                Reservation Dashboard
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">
@@ -302,6 +340,26 @@ function ReservePortalReservationsContent() {
                 cancellations, and no-shows in realtime.
               </p>
             </div>
+
+            <section className="mt-8 grid gap-4 md:grid-cols-4">
+              {[
+                { label: "Review new reservations", done: stats.total > 0 },
+                { label: "Confirm or decline requests", done: stats.pending === 0 && stats.total > 0 },
+                { label: "Mark guests as arrived", done: stats.arrived + stats.completed > 0 },
+                { label: "Complete or mark no-show", done: stats.completed + stats.noShow > 0 },
+              ].map((step, index) => (
+                <div key={step.label} className={`rounded-2xl border p-4 ${step.done ? "border-red-400 bg-red-600/25" : "border-white/10 bg-white/10"}`}>
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-black ${step.done ? "bg-red-600 text-white" : "bg-white/15 text-white/55"}`}>{index + 1}</span>
+                    <p className="text-sm font-black">{step.label}</p>
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            <p className="mt-4 max-w-3xl text-sm text-white/55">
+              Use this simple flow during service: handle new requests first, welcome confirmed guests when they arrive, then close each visit when service is finished.
+            </p>
 
             {error && (
               <div className="mt-6 rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm font-bold text-red-100">
@@ -367,7 +425,7 @@ function ReservePortalReservationsContent() {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-                      Reservation Pipeline
+                      Reservation Status
                     </p>
                     <h2 className="mt-2 text-2xl font-extrabold">
                       Booking status breakdown
@@ -473,10 +531,10 @@ function ReservePortalReservationsContent() {
                   <div>
                     <CalendarDays className="mx-auto text-neutral-300" size={44} />
                     <h2 className="mt-4 text-2xl font-black">
-                      No reservations found.
+                      You’re all caught up.
                     </h2>
                     <p className="mt-2 text-sm text-neutral-500">
-                      New TheOutHaven Reserve requests will appear here in realtime.
+                      No reservations yet. Once customers book from your TheOutHaven listing, they’ll appear here.
                     </p>
                   </div>
                 </div>
@@ -593,107 +651,96 @@ function ReservationRow({
   updating: boolean;
   onUpdate: (reservation: Reservation, status: ReservationStatus) => void;
 }) {
+  const duration = formatDuration(
+    reservation.duration_minutes ||
+      reservation.default_duration_minutes ||
+      reservation.reservation_duration_minutes ||
+      reservation.turn_time_minutes,
+  );
+  const closedStatuses: ReservationStatus[] = ["completed", "declined", "cancelled", "no_show"];
+  const isClosed = closedStatuses.includes(reservation.status);
+
   return (
     <div className="p-5">
-      <div className="flex flex-col justify-between gap-5 lg:flex-row">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">
-              {statusLabel(reservation.status)}
-            </span>
-
-            {reservation.bookable_item_name && (
-              <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-neutral-600">
-                {reservation.bookable_item_name}
+      <div className="rounded-[1.75rem] border border-neutral-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col justify-between gap-5 lg:flex-row">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-red-600 px-3 py-1 text-xs font-black uppercase tracking-wide text-white">
+                {statusLabel(reservation.status)}
               </span>
-            )}
+              {reservation.reservable_item_name ? (
+                <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-neutral-600">
+                  Reserved area: {reservation.reservable_item_name}
+                </span>
+              ) : null}
+            </div>
+
+            <h3 className="mt-4 text-2xl font-extrabold">
+              {reservation.customer_name || "Guest"}
+            </h3>
+
+            <div className="mt-3 grid gap-3 text-sm font-bold text-neutral-600 sm:grid-cols-2 xl:grid-cols-4">
+              <span className="inline-flex items-center gap-2">
+                <CalendarDays size={16} className="text-red-600" />
+                Date: {reservation.reservation_date}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Clock size={16} className="text-red-600" />
+                Time: {formatTime(reservation.reservation_time)}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Users size={16} className="text-red-600" />
+                Guest count: {reservation.party_size}
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <Clock size={16} className="text-red-600" />
+                Duration: {duration}
+              </span>
+            </div>
+
+            <p className="mt-4 rounded-2xl bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-700">
+              {suggestedNextAction(reservation.status)}
+            </p>
+
+            <div className="mt-4 text-sm leading-7 text-neutral-600">
+              {reservation.customer_phone && <p>Phone: {reservation.customer_phone}</p>}
+              {reservation.customer_email && <p>Email: {reservation.customer_email}</p>}
+              {reservation.reservable_item_type && <p>Area type: {reservation.reservable_item_type.replaceAll("_", " ")}</p>}
+              {reservation.special_request && (
+                <p className="mt-1 font-medium text-neutral-800">Request: {reservation.special_request}</p>
+              )}
+            </div>
           </div>
 
-          <h3 className="mt-4 text-2xl font-extrabold">
-            {reservation.customer_name}
-          </h3>
+          <div className="flex flex-wrap items-center gap-2 lg:max-w-[430px] lg:justify-end">
+            {reservation.status === "pending" ? (
+              <>
+                <ActionButton label="Confirm" icon={<Check size={15} />} disabled={updating} onClick={() => onUpdate(reservation, "confirmed")} />
+                <ActionButton label="Decline" icon={<X size={15} />} disabled={updating} onClick={() => onUpdate(reservation, "declined")} />
+              </>
+            ) : null}
 
-          <div className="mt-3 grid gap-3 text-sm font-bold text-neutral-600 sm:grid-cols-3">
-            <span className="inline-flex items-center gap-2">
-              <CalendarDays size={16} className="text-red-600" />
-              {reservation.reservation_date}
-            </span>
+            {reservation.status === "confirmed" ? (
+              <>
+                <ActionButton label="Mark Arrived" disabled={updating} onClick={() => onUpdate(reservation, "arrived")} />
+                <ActionButton label="Cancel" disabled={updating} onClick={() => onUpdate(reservation, "cancelled")} />
+              </>
+            ) : null}
 
-            <span className="inline-flex items-center gap-2">
-              <Clock size={16} className="text-red-600" />
-              {formatTime(reservation.reservation_time)}
-            </span>
+            {reservation.status === "arrived" ? (
+              <>
+                <ActionButton label="Complete" disabled={updating} onClick={() => onUpdate(reservation, "completed")} />
+                <ActionButton label="No Show" disabled={updating} onClick={() => onUpdate(reservation, "no_show")} />
+              </>
+            ) : null}
 
-            <span className="inline-flex items-center gap-2">
-              <Users size={16} className="text-red-600" />
-              {reservation.party_size} guests
-            </span>
+            {isClosed ? (
+              <span className="rounded-full bg-neutral-100 px-4 py-2 text-xs font-black uppercase tracking-wide text-neutral-500">
+                Closed — read only
+              </span>
+            ) : null}
           </div>
-
-          <div className="mt-4 text-sm leading-7 text-neutral-600">
-            {reservation.customer_phone && (
-              <p>Phone: {reservation.customer_phone}</p>
-            )}
-            {reservation.customer_email && (
-              <p>Email: {reservation.customer_email}</p>
-            )}
-            {reservation.arrived_at && (
-              <p>
-                Arrived: {new Date(reservation.arrived_at).toLocaleString()}
-              </p>
-            )}
-            {reservation.completed_at && (
-              <p>
-                Completed:{" "}
-                {new Date(reservation.completed_at).toLocaleString()}
-              </p>
-            )}
-            {reservation.special_request && (
-              <p className="mt-1 font-medium text-neutral-800">
-                Request: {reservation.special_request}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 lg:max-w-[430px] lg:justify-end">
-          <ActionButton
-            label="Confirm"
-            icon={<Check size={15} />}
-            disabled={updating}
-            onClick={() => onUpdate(reservation, "confirmed")}
-          />
-
-          <ActionButton
-            label="Arrived"
-            disabled={updating}
-            onClick={() => onUpdate(reservation, "arrived")}
-          />
-
-          <ActionButton
-            label="Completed"
-            disabled={updating}
-            onClick={() => onUpdate(reservation, "completed")}
-          />
-
-          <ActionButton
-            label="Decline"
-            icon={<X size={15} />}
-            disabled={updating}
-            onClick={() => onUpdate(reservation, "declined")}
-          />
-
-          <ActionButton
-            label="No Show"
-            disabled={updating}
-            onClick={() => onUpdate(reservation, "no_show")}
-          />
-
-          <ActionButton
-            label="Cancel"
-            disabled={updating}
-            onClick={() => onUpdate(reservation, "cancelled")}
-          />
         </div>
       </div>
     </div>
