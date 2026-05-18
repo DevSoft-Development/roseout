@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,18 @@ function sanitizePayloadForType(type: LocationType, payload: Record<string, unkn
   );
 }
 
+function sourceTableForType(type: LocationType) {
+  return type;
+}
+
+function sanitizeLocationPayload(payload: Record<string, unknown>) {
+  const copy = { ...payload };
+  if (typeof copy.reservation_source === "string" && !["internal", "external", "both", "none"].includes(copy.reservation_source)) {
+    copy.reservation_source = "external";
+  }
+  return copy;
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -69,11 +82,25 @@ export async function GET(req: Request) {
 
     const supabase = adminSupabase();
 
-    const { data, error } = await supabase
-      .from(requestedType)
+    const sourceTable = sourceTableForType(requestedType);
+    let { data, error } = await supabase
+      .from("locations")
       .select("*")
-      .eq("id", finalId)
+      .or(`id.eq.${finalId},and(source_table.eq.${sourceTable},source_id.eq.${finalId})`)
       .maybeSingle();
+
+    if (!data) {
+      const legacyResult = await supabase
+        .from(requestedType)
+        .select("*")
+        .eq("id", finalId)
+        .maybeSingle();
+
+      if (legacyResult.data) {
+        data = legacyResult.data;
+        error = legacyResult.error;
+      }
+    }
 
     if (error || !data) {
       return NextResponse.json(
@@ -84,7 +111,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       location: data,
-      effectiveId: finalId,
+      effectiveId: String((data as Record<string, unknown>).source_id || finalId),
+      canonicalId: (data as Record<string, unknown>).id || null,
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {
@@ -131,18 +159,54 @@ export async function PATCH(req: Request) {
 
     const supabase = adminSupabase();
 
-    const { error } = await supabase
+    const sourceTable = sourceTableForType(requestedType);
+    const locationPayload = sanitizeLocationPayload(payload);
+    const legacyPayload = sanitizePayloadForType(requestedType, payload);
+
+    const existingLocation = await supabase
+      .from("locations")
+      .select("id, source_id")
+      .or(`id.eq.${finalId},and(source_table.eq.${sourceTable},source_id.eq.${finalId})`)
+      .maybeSingle();
+
+    if (existingLocation.data?.id) {
+      const { error } = await supabase
+        .from("locations")
+        .update(locationPayload)
+        .eq("id", existingLocation.data.id);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+    }
+
+    const legacyId = String(existingLocation.data?.source_id || finalId);
+    const { data: legacyRow, error } = await supabase
       .from(requestedType)
-      .update(sanitizePayloadForType(requestedType, payload))
-      .eq("id", finalId);
+      .update(legacyPayload)
+      .eq("id", legacyId)
+      .select("*")
+      .maybeSingle();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    if (legacyRow) {
+      try {
+        if (requestedType === "restaurants") {
+          await syncRestaurantToLocation(legacyRow as Record<string, unknown> & { id: string | number });
+        } else {
+          await syncActivityToLocation(legacyRow as Record<string, unknown> & { id: string | number });
+        }
+      } catch (syncError) {
+        console.error("Location canonical sync failed:", syncError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      effectiveId: finalId,
+      effectiveId: legacyId,
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {

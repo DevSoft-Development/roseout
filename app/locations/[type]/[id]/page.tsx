@@ -25,6 +25,7 @@ import {
 import {
   getExternalReservationUrl,
   getInternalReservationHref,
+  getReservationSourceLabel,
 } from "@/lib/reservation";
 
 
@@ -191,16 +192,37 @@ export default function LocationDetailPage() {
     location || {},
     isActivity ? "activity" : "restaurant",
   );
-  const reservationUrl =
-    location?.reservation_enabled === true
-      ? internalReservationHref || ""
-      : externalReservationUrl || "";
-  const isExternalReservation =
-    Boolean(reservationUrl) && location?.reservation_enabled !== true;
-  const reservationLabel =
-    location?.reservation_enabled === true
-      ? "Reserve on TheOutHaven"
-      : "Reserve on Partner Site";
+  const reservationSource = String(location?.reservation_source || "external").toLowerCase();
+  const hasInternalReservations = Boolean(
+    location?.internal_reservations_enabled ||
+      location?.uses_internal_reservations ||
+      location?.reservation_enabled === true,
+  );
+  const showInternalReservation =
+    reservationSource !== "external" &&
+    reservationSource !== "none" &&
+    hasInternalReservations &&
+    Boolean(internalReservationHref);
+  const showExternalReservation =
+    Boolean(externalReservationUrl) &&
+    (reservationSource === "external" || reservationSource === "both" || (!showInternalReservation && reservationSource !== "none"));
+  const primaryReservationUrl = showInternalReservation
+    ? internalReservationHref || ""
+    : showExternalReservation
+    ? externalReservationUrl || ""
+    : "";
+  const secondaryReservationUrl =
+    showInternalReservation && reservationSource === "both" ? externalReservationUrl || "" : "";
+  const reservationUrl = primaryReservationUrl;
+  const isExternalReservation = Boolean(reservationUrl) && !showInternalReservation;
+  const reservationLabel = showInternalReservation
+    ? "Reserve on TheOutHaven"
+    : reservationUrl
+    ? "Reserve"
+    : location?.booking_url
+    ? "Book"
+    : "";
+  const reservationSourceLabel = getReservationSourceLabel(location || {});
 
   const mapsUrl = useMemo(() => {
     return getGoogleMapsUrl(location) || buildGoogleMapsSearchUrl(location);
@@ -408,7 +430,13 @@ export default function LocationDetailPage() {
                     </a>
                   )}
 
-                  {location.website && (
+                  {secondaryReservationUrl && (
+                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-red-300/30 px-7 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/10">
+                      Reserve Externally
+                    </a>
+                  )}
+
+                  {!reservationUrl && location.website && (
                     <a
                       href={location.website}
                       target="_blank"
@@ -600,6 +628,12 @@ export default function LocationDetailPage() {
                   </div>
                 )}
 
+                {reservationSourceLabel && (
+                  <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">
+                    {reservationSourceLabel}
+                  </p>
+                )}
+
                 <div className="mt-6 grid gap-3">
                   {reservationUrl && (
                     <a
@@ -616,7 +650,13 @@ export default function LocationDetailPage() {
                     </a>
                   )}
 
-                  {location.website && (
+                  {secondaryReservationUrl && (
+                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-red-300/30 px-5 py-3 text-center text-sm font-black text-red-100 transition hover:bg-red-500/10">
+                      Reserve Externally
+                    </a>
+                  )}
+
+                  {!reservationUrl && location.website && (
                     <a
                       href={location.website}
                       target="_blank"

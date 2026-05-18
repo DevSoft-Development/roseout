@@ -33,6 +33,11 @@ type FormState = {
   reservation_url: string;
   reservation_link?: string | null;
   reservation_enabled?: boolean | null;
+  booking_url: string;
+  uses_internal_reservations: boolean;
+  internal_reservations_enabled: boolean;
+  allow_external_reservations: boolean;
+  reservation_source: string;
   phone: string;
   price_range: string;
   cuisine: string;
@@ -150,6 +155,11 @@ export default function EditLocationPage() {
     images: [],
     website: "",
     reservation_url: "",
+    booking_url: "",
+    uses_internal_reservations: false,
+    internal_reservations_enabled: false,
+    allow_external_reservations: true,
+    reservation_source: "external",
     phone: "",
     price_range: "",
     cuisine: "",
@@ -209,7 +219,7 @@ export default function EditLocationPage() {
         setEffectiveId(result.effectiveId || id);
 
         setForm({
-          name: data[nameField] || "",
+          name: data[nameField] || data.name || "",
           description: data.description || "",
           address: data.address || "",
           city: data.city || "",
@@ -221,6 +231,11 @@ export default function EditLocationPage() {
           images: Array.isArray(data.images) ? data.images.filter(Boolean) : [],
           website: data.website || "",
           reservation_url: data.reservation_url || data.reservation_link || "",
+          booking_url: data.booking_url || "",
+          uses_internal_reservations: Boolean(data.uses_internal_reservations),
+          internal_reservations_enabled: Boolean(data.internal_reservations_enabled),
+          allow_external_reservations: data.reservation_source !== "internal" && data.reservation_source !== "none",
+          reservation_source: data.reservation_source || (data.reservation_enabled ? "internal" : "external"),
           phone: data.phone || "",
           price_range: data.price_range || "",
           cuisine: data.cuisine || "",
@@ -359,6 +374,7 @@ export default function EditLocationPage() {
 
     const payload: Record<string, unknown> = {
       [nameField]: form.name,
+      name: form.name,
       description: form.description,
       address: form.address,
       city: form.city,
@@ -370,6 +386,10 @@ export default function EditLocationPage() {
       images: form.images || [],
       website: form.website,
       reservation_url: form.reservation_url,
+      booking_url: form.booking_url || form.reservation_url || null,
+      uses_internal_reservations: form.uses_internal_reservations,
+      internal_reservations_enabled: form.internal_reservations_enabled,
+      reservation_source: form.reservation_source,
       phone: form.phone,
       price_range: form.price_range,
       atmosphere: form.atmosphere,
@@ -512,6 +532,35 @@ export default function EditLocationPage() {
       setMessage("✅ Image uploaded. Save changes to keep it on this listing.");
     }
     setUploadingImage(false);
+  };
+
+  const setInternalReservations = (enabled: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      uses_internal_reservations: enabled,
+      internal_reservations_enabled: enabled,
+      reservation_source: enabled
+        ? prev.allow_external_reservations
+          ? "both"
+          : "internal"
+        : prev.allow_external_reservations
+        ? "external"
+        : "none",
+    }));
+  };
+
+  const setAllowExternalReservations = (enabled: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      allow_external_reservations: enabled,
+      reservation_source: prev.internal_reservations_enabled || prev.uses_internal_reservations
+        ? enabled
+          ? "both"
+          : "internal"
+        : enabled
+        ? "external"
+        : "none",
+    }));
   };
 
   const publicPreviewHref = `/locations/${type}/${effectiveId || id}`;
@@ -791,16 +840,46 @@ export default function EditLocationPage() {
 
             <Panel id="reservations" title="Reservations">
               <div className="grid gap-4 md:grid-cols-2">
+                <ToggleCard
+                  title="Use TheOutHaven Reservation System"
+                  text="Show the native TheOutHaven reservation flow for this location."
+                  checked={form.uses_internal_reservations || form.internal_reservations_enabled}
+                  onChange={setInternalReservations}
+                />
+                <ToggleCard
+                  title="Allow External Reservations"
+                  text="Keep external provider links available when a valid provider URL exists."
+                  checked={form.allow_external_reservations}
+                  onChange={setAllowExternalReservations}
+                />
+              </div>
+
+              <label className="block">
+                <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">Reservation Source</span>
+                <select
+                  value={form.reservation_source}
+                  onChange={(event) => update("reservation_source", event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-rose-400"
+                >
+                  <option value="internal">Internal only</option>
+                  <option value="external">External only</option>
+                  <option value="both">Internal + external</option>
+                  <option value="none">No reservation CTA</option>
+                </select>
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Website" value={form.website} onChange={(v) => update("website", v)} />
-                <Field label="Reservation / Booking URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} />
+                <Field label="Reservation URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} helper="Must be a supported booking provider to render as Reserve." />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Booking URL" value={form.booking_url} onChange={(v) => update("booking_url", v)} />
                 <Field label="Public Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-                <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
               </div>
 
-              </Panel>
+              <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
+            </Panel>
 
             <Panel id="claim-and-qr" title="Claim & QR">
               <div className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
@@ -920,6 +999,33 @@ function Panel({ id, title, children }: { id?: string; title: string; children: 
       </p>
       <div className="grid gap-5">{children}</div>
     </section>
+  );
+}
+
+function ToggleCard({
+  title,
+  text,
+  checked,
+  onChange,
+}: {
+  title: string;
+  text: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-4 rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 accent-rose-600"
+      />
+      <span>
+        <span className="block text-sm font-black text-white">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-white/45">{text}</span>
+      </span>
+    </label>
   );
 }
 

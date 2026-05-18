@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQr";
 import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";
+import { extractReservationUrl } from "@/lib/reservation-links";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -190,6 +191,8 @@ type GooglePlace = {
   international_phone_number?: string;
   website?: string;
   url?: string;
+  websiteUri?: string;
+  googleMapsUri?: string;
   rating?: number | string;
   user_ratings_total?: number | string;
   review_count?: number | string;
@@ -496,6 +499,13 @@ async function saveLocationRow(
   removedColumns: string[];
 }> {
   const rowForSave = { ...row };
+  if (existing?.id) {
+    for (const field of ["reservation_url", "reservation_link", "booking_url"] as const) {
+      if (rowForSave[field] === null || rowForSave[field] === undefined || rowForSave[field] === "") {
+        delete rowForSave[field];
+      }
+    }
+  }
   const removedColumns: string[] = [];
 
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -604,6 +614,9 @@ async function upsertRestaurant(
   const cuisine = inferCuisine(`${merged.name} ${query} ${(merged.types || []).join(" ")}`);
   if (options.requireCuisineType !== false && !cuisine.primary) return { status: "skipped" as const };
   const score = getTheOutHavenScore(merged);
+  const reservationUrl = extractReservationUrl(merged);
+  const website = merged.website || merged.websiteUri || null;
+  const googleMapsUrl = merged.url || merged.googleMapsUri || null;
   const existing = await findExistingLocation("restaurants", place.place_id);
 
   const row = await addClaimFields({
@@ -629,8 +642,10 @@ async function upsertRestaurant(
     primary_tag: cuisine.primary,
     search_keywords: buildKeywords(merged, query, cuisine.tags),
     phone: merged.formatted_phone_number || merged.international_phone_number || null,
-    website: merged.website || null,
-    google_maps_url: merged.url || null,
+    website,
+    google_maps_url: googleMapsUrl,
+    reservation_url: reservationUrl,
+    booking_url: reservationUrl,
     image_url: getPhotoUrl(photoReference),
     status: "approved",
   }, existing, "restaurant");
@@ -679,6 +694,9 @@ async function upsertActivity(
   const text = `${merged.name} ${query} ${(merged.types || []).join(" ")}`;
   const activityType = inferActivityType(text);
   const score = getTheOutHavenScore(merged);
+  const reservationUrl = extractReservationUrl(merged);
+  const website = merged.website || merged.websiteUri || null;
+  const googleMapsUrl = merged.url || merged.googleMapsUri || null;
   const existing = await findExistingLocation("activities", place.place_id);
 
   const row = await addClaimFields({
@@ -703,8 +721,10 @@ async function upsertActivity(
     date_style_tags: uniqueArray([activityType, "date night", "group-friendly", "fun"]),
     atmosphere: "TheOutHaven-friendly outing, date-night, social, and group-friendly",
     phone: merged.formatted_phone_number || merged.international_phone_number || null,
-    website: merged.website || null,
-    google_maps_url: merged.url || null,
+    website,
+    google_maps_url: googleMapsUrl,
+    reservation_url: reservationUrl,
+    booking_url: reservationUrl,
     image_url: getPhotoUrl(photoReference),
     status: "approved",
   }, existing, "activity");

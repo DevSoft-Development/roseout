@@ -118,6 +118,13 @@ const ratingOptions = [
   { label: "3.8+ stars", value: "3.8" },
 ];
 
+const reservationBackfillTableOptions = [
+  { label: "Locations", value: "locations" },
+  { label: "Restaurants", value: "restaurants" },
+  { label: "Activities", value: "activities" },
+  { label: "All", value: "all" },
+];
+
 const queryCountOptions = [
   { label: "1 query", value: "1" },
   { label: "2 queries", value: "2" },
@@ -137,6 +144,11 @@ export default function ImportPage() {
   const [backfillingPhones, setBackfillingPhones] = useState(false);
   const [backfillingCuisines, setBackfillingCuisines] = useState(false);
   const [cleaningLocations, setCleaningLocations] = useState(false);
+  const [backfillingReservations, setBackfillingReservations] = useState(false);
+  const [reservationBackfillTable, setReservationBackfillTable] = useState("locations");
+  const [reservationBackfillLimit, setReservationBackfillLimit] = useState("50");
+  const [reservationBackfillDryRun, setReservationBackfillDryRun] = useState(true);
+  const [reservationBackfillResult, setReservationBackfillResult] = useState<unknown>(null);
   const [progress, setProgress] = useState(0);
   const [importType, setImportType] = useState("both");
   const [area, setArea] = useState("nyc");
@@ -407,6 +419,38 @@ export default function ImportPage() {
     }
   };
 
+  const handleReservationBackfill = async () => {
+    try {
+      setBackfillingReservations(true);
+      setReservationBackfillResult(null);
+
+      const params = new URLSearchParams({
+        table: reservationBackfillTable,
+        limit: reservationBackfillLimit || "50",
+        dryRun: String(reservationBackfillDryRun),
+      });
+
+      const res = await fetch(`/api/admin/backfill-reservation-links?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      setReservationBackfillResult(data);
+
+      if (!res.ok) {
+        alert(data.error || "Reservation link backfill failed");
+        return;
+      }
+
+      await fetchLogs();
+    } catch (err) {
+      console.error("Reservation backfill failed:", err);
+      alert("Reservation link backfill failed");
+    } finally {
+      setBackfillingReservations(false);
+    }
+  };
+
   const handlePhoneBackfill = async () => {
     try {
       setBackfillingPhones(true);
@@ -479,7 +523,7 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handlePhoneBackfill}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
                   className="rounded-full border border-rose-400/40 px-7 py-4 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {backfillingPhones
@@ -490,7 +534,7 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handleCuisineBackfill}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
                   className="rounded-full border border-amber-300/40 px-7 py-4 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {backfillingCuisines
@@ -501,7 +545,7 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handleLocationCleanup}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
                   className="rounded-full border border-sky-300/40 px-7 py-4 text-sm font-black text-sky-100 transition hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {cleaningLocations
@@ -512,7 +556,7 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handleRunImport}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations}
+                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
                   className="rounded-full bg-rose-600 px-7 py-4 text-sm font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
                 >
                   {running ? "Import Running..." : "Run Google Import"}
@@ -590,6 +634,37 @@ export default function ImportPage() {
             )}
           </div>
         </div>
+
+        <section className="mb-6 rounded-[2rem] border border-rose-300/15 bg-white/[0.035] p-6 shadow-2xl shadow-black/30">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Backfill Reservation Links</p>
+              <h2 className="mt-2 text-2xl font-black">External booking providers</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+                Fetch Google Place Details, keep websites separate, and save reservation URLs only when a supported booking provider is detected.
+              </p>
+            </div>
+            <button type="button" onClick={handleReservationBackfill} disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations} className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-xl transition hover:-translate-y-0.5 hover:bg-rose-100 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
+              {backfillingReservations ? "Backfilling..." : "Run Reservation Backfill"}
+            </button>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-[1fr_1fr_auto]">
+            <SelectField label="Table" value={reservationBackfillTable} onChange={setReservationBackfillTable} options={reservationBackfillTableOptions} />
+            <label className="block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">Limit</span>
+              <input type="number" min="1" max="250" value={reservationBackfillLimit} onChange={(event) => setReservationBackfillLimit(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400" />
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-black text-white">
+              <input type="checkbox" checked={reservationBackfillDryRun} onChange={(event) => setReservationBackfillDryRun(event.target.checked)} className="h-4 w-4 accent-rose-600" />
+              Dry run
+            </label>
+          </div>
+          {reservationBackfillResult ? (
+            <pre className="mt-5 max-h-96 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-5 text-emerald-100">
+              {JSON.stringify(reservationBackfillResult, null, 2)}
+            </pre>
+          ) : null}
+        </section>
 
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           <StatCard label="Total Imported" value={totals.imported} />

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQr";
 import { syncActivityToLocation } from "@/lib/sync-location";
+import { extractReservationUrl } from "@/lib/reservation-links";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -626,6 +627,9 @@ async function upsertSpecialtyActivity(place: any, query: string) {
   const primaryTag = inferPrimaryTag(text);
   const activityType = inferActivityType(text);
   const score = getTheOutHavenScore(merged);
+  const reservationUrl = extractReservationUrl(merged);
+  const website = merged.website || merged.websiteUri || null;
+  const googleMapsUrl = merged.url || merged.googleMapsUri || null;
   const qr = await createClaimQr("activity");
 
   const row = {
@@ -674,8 +678,10 @@ async function upsertSpecialtyActivity(place: any, query: string) {
       merged.formatted_phone_number ||
       merged.international_phone_number ||
       null,
-    website: merged.website || null,
-    google_maps_url: merged.url || null,
+    website,
+    google_maps_url: googleMapsUrl,
+    reservation_url: reservationUrl,
+    booking_url: reservationUrl,
     image_url: imageUrl,
 
     status: "approved",
