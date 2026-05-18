@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createClient } from "@/lib/supabase-server";
 import { getLocationName as getDisplayLocationName } from "@/lib/locationName";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import {
@@ -12,6 +13,7 @@ import {
   getOperatingHoursForDate,
   timeWindowToSlots,
 } from "@/lib/locationHours";
+import { checkReservationAvailability } from "@/lib/reservations/availability";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -428,6 +430,7 @@ export async function POST(request: NextRequest) {
 
     const partySize = Number(body.party_size || 2);
     const bookableItemId = cleanString(body.bookable_item_id);
+    const slotLockId = cleanString(body.slot_lock_id);
 
     if (!locationId) {
       return NextResponse.json({ error: "Missing location." }, { status: 400 });
@@ -461,6 +464,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
     const { data: location, error: locationError } = await supabaseAdmin
       .from(getTableName(locationType))
       .select("*")
@@ -473,6 +479,28 @@ export async function POST(request: NextRequest) {
 
     if (!location) {
       return NextResponse.json({ error: "Location not found." }, { status: 404 });
+    }
+
+    const availability = await checkReservationAvailability({
+      location_id: locationId,
+      location_type: locationType,
+      reservation_date: reservationDate,
+      reservation_time: reservationTime,
+      party_size: partySize,
+      user_id: user?.id || null,
+      customer_email: customerEmail || user?.email || null,
+      exclude_lock_id: slotLockId || null,
+    });
+
+    if (!availability.available) {
+      return NextResponse.json(
+        {
+          error: availability.reason || "Slot no longer available",
+          waitlist_available: true,
+          availability,
+        },
+        { status: 409 },
+      );
     }
 
     const structuredHours = getOperatingHoursForDate(location, reservationDate);
@@ -565,6 +593,7 @@ export async function POST(request: NextRequest) {
 
     const status = selectedItem?.auto_confirm === false ? "pending" : "confirmed";
     const customerToken = crypto.randomUUID();
+    const confirmationCode = crypto.randomBytes(3).toString("hex").toUpperCase();
 
     const customerTokenExpiresAt = new Date(
   Date.now() + 72 * 60 * 60 * 1000
@@ -589,10 +618,15 @@ export async function POST(request: NextRequest) {
         party_size: partySize,
 
         special_request: specialRequest || null,
+        special_requests: specialRequest || null,
         status,
         source: "theouthaven",
+        user_id: user?.id || null,
+        confirmation_code: confirmationCode,
+        locked_until: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
 
         customer_token: customerToken,
+        customer_token_expires_at: customerTokenExpiresAt,
       })
       .select("*")
       .single();
@@ -617,6 +651,17 @@ export async function POST(request: NextRequest) {
 
     if (reminderRows.length) {
       await supabaseAdmin.from("reservation_reminders").insert(reminderRows);
+    }
+
+    await supabaseAdmin
+      .from("reservation_slot_locks")
+      .delete()
+      .eq("location_id", locationId)
+      .eq("reservation_date", reservationDate)
+      .eq("reservation_time", reservationTime.slice(0, 5));
+
+    if (slotLockId) {
+      await supabaseAdmin.from("reservation_slot_locks").delete().eq("id", slotLockId);
     }
 
     await notifyReservation({

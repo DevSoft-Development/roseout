@@ -4,7 +4,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 const allowedStatuses = [
   "pending",
   "confirmed",
+  "checked_in",
   "arrived",
+  "waitlisted",
   "declined",
   "cancelled",
   "completed",
@@ -15,8 +17,10 @@ type ReservationUpdatePayload = {
   status: string;
   updated_at: string;
   arrived_at?: string;
+  checked_in_at?: string;
   completed_at?: string;
   customer_cancelled_at?: string;
+  cancelled_at?: string;
 };
 
 function cleanString(value: unknown) {
@@ -128,8 +132,9 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    if (status === "arrived") {
+    if (status === "checked_in" || status === "arrived") {
       updatePayload.arrived_at = new Date().toISOString();
+      updatePayload.checked_in_at = new Date().toISOString();
     }
 
     if (status === "completed") {
@@ -138,6 +143,7 @@ export async function POST(request: NextRequest) {
 
     if (status === "cancelled") {
       updatePayload.customer_cancelled_at = new Date().toISOString();
+      updatePayload.cancelled_at = new Date().toISOString();
     }
 
     const { data, error } = await supabaseAdmin

@@ -20,7 +20,9 @@ import { supabase } from "@/lib/supabase";
 type ReservationStatus =
   | "pending"
   | "confirmed"
+  | "checked_in"
   | "arrived"
+  | "waitlisted"
   | "declined"
   | "cancelled"
   | "completed"
@@ -52,8 +54,10 @@ type Reservation = {
 const statuses: ReservationStatus[] = [
   "pending",
   "confirmed",
+  "checked_in",
   "arrived",
   "completed",
+  "waitlisted",
   "declined",
   "cancelled",
   "no_show",
@@ -75,6 +79,7 @@ function statusLabel(status: string) {
   const labels: Record<string, string> = {
     pending: "Needs Action",
     confirmed: "Ready",
+    checked_in: "Guest Here",
     arrived: "Guest Here",
     completed: "Finished",
     declined: "Closed",
@@ -87,8 +92,8 @@ function statusLabel(status: string) {
 
 function suggestedNextAction(status: ReservationStatus) {
   if (status === "pending") return "Suggested next action: confirm or decline this request.";
-  if (status === "confirmed") return "Suggested next action: mark guests as arrived when they check in.";
-  if (status === "arrived") return "Suggested next action: complete the visit or mark no-show if needed.";
+  if (status === "confirmed") return "Suggested next action: check guests in when they arrive.";
+  if (status === "checked_in" || status === "arrived") return "Suggested next action: complete the visit or mark no-show if needed.";
   return "This reservation is closed and no action is needed.";
 }
 
@@ -156,7 +161,7 @@ function ReservePortalReservationsContent() {
   const stats = useMemo(() => {
     const total = reservations.length;
     const confirmed = reservations.filter((r) => r.status === "confirmed").length;
-    const arrived = reservations.filter((r) => r.status === "arrived").length;
+    const arrived = reservations.filter((r) => r.status === "checked_in" || r.status === "arrived").length;
     const completed = reservations.filter((r) => r.status === "completed").length;
     const cancelled = reservations.filter((r) => r.status === "cancelled").length;
     const noShow = reservations.filter((r) => r.status === "no_show").length;
@@ -723,12 +728,12 @@ function ReservationRow({
 
             {reservation.status === "confirmed" ? (
               <>
-                <ActionButton label="Mark Arrived" disabled={updating} onClick={() => onUpdate(reservation, "arrived")} />
+                <ActionButton label="Mark Arrived" disabled={updating} onClick={() => onUpdate(reservation, "checked_in")} />
                 <ActionButton label="Cancel" disabled={updating} onClick={() => onUpdate(reservation, "cancelled")} />
               </>
             ) : null}
 
-            {reservation.status === "arrived" ? (
+            {(reservation.status === "checked_in" || reservation.status === "arrived") ? (
               <>
                 <ActionButton label="Complete" disabled={updating} onClick={() => onUpdate(reservation, "completed")} />
                 <ActionButton label="No Show" disabled={updating} onClick={() => onUpdate(reservation, "no_show")} />

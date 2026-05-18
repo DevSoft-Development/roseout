@@ -5,6 +5,7 @@ import {
   getOperatingHoursForDate,
   timeWindowToSlots,
 } from "@/lib/locationHours";
+import { checkReservationAvailability } from "@/lib/reservations/availability";
 
 function normalizeType(value: string) {
   const type = value.toLowerCase().trim();
@@ -114,7 +115,7 @@ export async function GET(req: NextRequest) {
 
   const usableLayoutItems = layoutItems || [];
 
-  const availableSlots = slots.filter((slot) => {
+  const layoutAvailableSlots = slots.filter((slot) => {
     if (usableLayoutItems.length) {
       return usableLayoutItems.some((item) => {
         return !(reservations || []).some((reservation) => {
@@ -138,6 +139,23 @@ export async function GET(req: NextRequest) {
       )
     );
   });
+
+  const availabilityResults = await Promise.all(
+    layoutAvailableSlots.map(async (slot) => ({
+      slot,
+      availability: await checkReservationAvailability({
+        location_id: locationId,
+        location_type: locationType,
+        reservation_date: date,
+        reservation_time: slot,
+        party_size: 2,
+      }),
+    })),
+  );
+
+  const availableSlots = availabilityResults
+    .filter((result) => result.availability.available)
+    .map((result) => result.slot);
 
   return NextResponse.json({
     durationMinutes,
