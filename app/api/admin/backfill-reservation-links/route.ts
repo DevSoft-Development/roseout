@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import {
   detectReservationProvider,
   getGooglePlaceIdFromRow,
@@ -117,26 +116,45 @@ function getGoogleKey() {
   return process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || null;
 }
 
-function getBearerToken(request: NextRequest) {
-  const auth = request.headers.get("authorization") || "";
-  return auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null;
-}
+function requireAuthorization(request: NextRequest) {
+  const authHeader = request.headers.get("authorization") || "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+  const xAdminSecret = request.headers.get("x-admin-secret")?.trim() || "";
+  const adminSecret = process.env.ADMIN_API_SECRET?.trim();
 
-function hasSecretAuthorization(request: NextRequest) {
-  if (process.env.NODE_ENV === "development") return true;
-  const bearer = getBearerToken(request);
-  const importSecret = request.headers.get("x-internal-import-secret");
-  return Boolean(
-    (process.env.ADMIN_SECRET && bearer === process.env.ADMIN_SECRET) ||
-      (process.env.CRON_SECRET && bearer === process.env.CRON_SECRET) ||
-      (process.env.IMPORT_SECRET && importSecret === process.env.IMPORT_SECRET),
-  );
-}
+  const authorized = !!adminSecret && (bearerToken === adminSecret || xAdminSecret === adminSecret);
 
-async function requireAuthorization(request: NextRequest) {
-  if (hasSecretAuthorization(request)) return null;
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
-  return error;
+  if (!adminSecret) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Reservation link backfill failed",
+        details: "Missing ADMIN_API_SECRET environment variable",
+        step: "authorization",
+      },
+      { status: 500 },
+    );
+  }
+
+  if (!authorized) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Reservation link backfill failed",
+        details: "Unauthorized: Admin authorization failed",
+        step: "authorization",
+        authDebug: {
+          hasAuthorizationHeader: !!authHeader,
+          hasBearerToken: !!bearerToken,
+          hasXAdminSecret: !!xAdminSecret,
+          hasAdminSecretEnv: !!adminSecret,
+        },
+      },
+      { status: 401 },
+    );
+  }
+
+  return null;
 }
 
 function parseGooglePayload(text: string) {
@@ -492,15 +510,8 @@ export async function GET(request: NextRequest) {
   let requestedTable: RequestedTable = "locations";
 
   try {
-    const authError = await requireAuthorization(request);
-    if (authError) {
-      return jsonError(
-        "Reservation link backfill failed",
-        `${authError.status === 403 ? "Forbidden" : "Unauthorized"}: ${authError.statusText || "Admin authorization failed"}`,
-        step,
-        authError.status || 401,
-      );
-    }
+    const authError = requireAuthorization(request);
+    if (authError) return authError;
 
     step = "supabase-client";
     const supabaseAdmin = getSupabaseAdmin();
