@@ -4,7 +4,7 @@ import type React from "react";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 
 type SearchResult = {
@@ -16,7 +16,8 @@ type SearchResult = {
   meta: string;
 };
 
-type NavGroup = { label: string; links: { label: string; href: string; visible: boolean }[]; visible: boolean };
+type NavLink = { label: string; href: string; visible: boolean };
+type NavGroup = { label: string; links: NavLink[]; visible: boolean };
 
 export default function AdminTopBar() {
   const supabase = createClient();
@@ -29,13 +30,69 @@ export default function AdminTopBar() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+  const [activeDesktopMenu, setActiveDesktopMenu] = useState<string | null>(null);
+  const desktopNavRef = useRef<HTMLElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { (async () => { const { data } = await supabase.auth.getUser(); const currentUser = data.user; setUser(currentUser); if (currentUser?.email) { const { data: adminUser } = await supabase.from("admin_users").select("role").eq("email", currentUser.email.toLowerCase()).maybeSingle(); setRole(adminUser?.role || currentUser.user_metadata?.role || null);} })(); }, [supabase]);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const currentUser = data.user;
+      setUser(currentUser);
+      if (currentUser?.email) {
+        const { data: adminUser } = await supabase
+          .from("admin_users")
+          .select("role")
+          .eq("email", currentUser.email.toLowerCase())
+          .maybeSingle();
+        setRole(adminUser?.role || currentUser.user_metadata?.role || null);
+      }
+    })();
+  }, [supabase]);
 
-  useEffect(() => { const cleanQuery = query.trim(); if (!showUserSearch || cleanQuery.length < 2) { setResults([]); return; } const timer = setTimeout(async () => { setSearching(true); try { const res = await fetch(`/api/admin/search?q=${encodeURIComponent(cleanQuery)}`); const data = await res.json(); setResults(data.results || []);} catch { setResults([]);} finally { setSearching(false);} }, 300); return () => clearTimeout(timer); }, [query, showUserSearch]);
+  useEffect(() => {
+    const cleanQuery = query.trim();
+    if (!showUserSearch || cleanQuery.length < 2) {
+      setResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/admin/search?q=${encodeURIComponent(cleanQuery)}`);
+        const data = await res.json();
+        setResults(data.results || []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, showUserSearch]);
 
-  useEffect(() => { const fn = (e: MouseEvent) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) { setOpen(false); setShowUserSearch(false);} }; document.addEventListener("mousedown", fn); return () => document.removeEventListener("mousedown", fn); }, []);
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setShowUserSearch(false);
+      }
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActiveDesktopMenu(null);
+        setOpen(false);
+        setShowUserSearch(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const canView = ["superuser", "admin", "editor", "viewer"].includes(role || "");
   const canViewUsers = ["superuser", "admin"].includes(role || "");
@@ -43,46 +100,247 @@ export default function AdminTopBar() {
   const canEdit = ["superuser", "admin", "editor"].includes(role || "");
 
   const groups: NavGroup[] = [
-    { label: "Overview", visible: canView, links: [
-      { label: "Dashboard Home", href: "/admin/dashboard", visible: canView },
-      { label: "Analytics", href: "/admin/dashboard/analytics", visible: canView },
-      { label: "Reports (Logs)", href: "/admin/dashboard/logs", visible: canView },
-    ]},
-    { label: "Locations", visible: canView, links: [
-      { label: "All Locations", href: "/admin/dashboard/locations", visible: canView },
-      { label: "Import Locations", href: "/admin/dashboard/import", visible: canView },
-      { label: "Claim Requests", href: "/admin/claims", visible: canClaims },
-      { label: "Location Layout", href: "/admin/dashboard/location-layout", visible: canView },
-      { label: "Create/Edit Layout", href: "/admin/dashboard/location-layout/create", visible: canEdit },
-    ]},
-    { label: "Reservations", visible: canView, links: [
-      { label: "Reservations", href: "/admin/dashboard/reservations", visible: canView },
-      { label: "Live Hostess View", href: "/admin/dashboard/reserve", visible: canView },
-      { label: "Reservation Settings", href: "/admin/dashboard/reservations/location-layout", visible: canView },
-    ]},
-    { label: "Operations", visible: canView, links: [
-      { label: "Semantic Cleanup", href: "/admin/dashboard/data-quality", visible: canView },
-      { label: "Test + Tune", href: "/admin/dashboard/operations/test-tune", visible: canView },
-      { label: "Missing Reservation Links", href: "/admin/dashboard/reservation", visible: canView },
-      { label: "Data Quality", href: "/admin/dashboard/data-quality", visible: canView },
-      { label: "Background Jobs", href: "/admin/dashboard/logs", visible: canView },
-    ]},
-    { label: "Marketing", visible: canView, links: [
-      { label: "Campaigns", href: "/admin/dashboard/marketing", visible: canView },
-      { label: "Social Promotions", href: "/admin/dashboard/marketing/settings", visible: canView },
-      { label: "Featured Outings", href: "/create", visible: canView },
-    ]},
-    { label: "Settings", visible: canView, links: [
-      { label: "Admin Users", href: "/admin/dashboard/users", visible: canViewUsers },
-      { label: "Support", href: "/admin/dashboard/support", visible: canView },
-      { label: "API Tools", href: "/admin/search-qa", visible: canView },
-    ]},
+    {
+      label: "Overview",
+      visible: canView,
+      links: [
+        { label: "Dashboard Home", href: "/admin/dashboard", visible: canView },
+        { label: "Analytics", href: "/admin/dashboard/analytics", visible: canView },
+        { label: "Reports (Logs)", href: "/admin/dashboard/logs", visible: canView },
+      ],
+    },
+    {
+      label: "Locations",
+      visible: canView,
+      links: [
+        { label: "All Locations", href: "/admin/dashboard/locations", visible: canView },
+        { label: "Import Locations", href: "/admin/dashboard/import", visible: canView },
+        { label: "Claim Requests", href: "/admin/claims", visible: canClaims },
+        { label: "Location Layout", href: "/admin/dashboard/location-layout", visible: canView },
+        { label: "Create/Edit Layout", href: "/admin/dashboard/location-layout/create", visible: canEdit },
+      ],
+    },
+    {
+      label: "Reservations",
+      visible: canView,
+      links: [
+        { label: "Reservations", href: "/admin/dashboard/reservations", visible: canView },
+        { label: "Live Hostess View", href: "/admin/dashboard/reserve", visible: canView },
+        {
+          label: "Reservation Settings",
+          href: "/admin/dashboard/reservations/location-layout",
+          visible: canView,
+        },
+      ],
+    },
+    {
+      label: "Businesses",
+      visible: canView,
+      links: [
+        { label: "Admin Locations", href: "/admin/locations", visible: canView },
+        { label: "Restaurants", href: "/admin/restaurants", visible: canView },
+        { label: "Activities", href: "/admin/activities", visible: canView },
+      ],
+    },
+    {
+      label: "Operations",
+      visible: canView,
+      links: [
+        { label: "Semantic Cleanup", href: "/admin/dashboard/data-quality", visible: canView },
+        { label: "Test + Tune", href: "/admin/dashboard/operations/test-tune", visible: canView },
+        { label: "Missing Reservation Links", href: "/admin/dashboard/reservation", visible: canView },
+        { label: "Data Quality", href: "/admin/dashboard/data-quality", visible: canView },
+        { label: "Background Jobs", href: "/admin/dashboard/logs", visible: canView },
+      ],
+    },
+    {
+      label: "Marketing",
+      visible: canView,
+      links: [
+        { label: "Campaigns", href: "/admin/dashboard/marketing", visible: canView },
+        { label: "Social Promotions", href: "/admin/dashboard/marketing/settings", visible: canView },
+        { label: "Featured Outings", href: "/create", visible: canView },
+      ],
+    },
+    {
+      label: "Settings",
+      visible: canView,
+      links: [
+        { label: "Admin Users", href: "/admin/dashboard/users", visible: canViewUsers },
+        { label: "Support", href: "/admin/dashboard/support", visible: canView },
+        { label: "API Tools", href: "/admin/search-qa", visible: canView },
+      ],
+    },
   ];
 
-  const goTo = (p:string)=>{ setOpen(false); setShowUserSearch(false); window.location.href=p; };
+  const visibleGroups = useMemo(() => groups.filter((g) => g.visible), [groups]);
+
+  const goTo = (p: string) => {
+    setOpen(false);
+    setShowUserSearch(false);
+    window.location.href = p;
+  };
+
   const name = user?.user_metadata?.full_name || user?.user_metadata?.name || "Admin";
 
-  return <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white backdrop-blur-2xl"><div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8"><button type="button" onClick={()=>goTo('/admin/dashboard')} className="group flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/30 bg-[#f8f3ef] text-lg font-black text-[#8b0f2f]">R</div><div className="hidden text-left sm:block"><p className="text-lg font-black tracking-tight text-white">TheOutHaven</p><p className="text-[11px] font-black uppercase tracking-[0.28em] text-rose-200/70">Admin</p></div></button>
-  <nav className="hidden items-center gap-2 lg:flex">{groups.filter(g=>g.visible).map((group)=><details key={group.label} className="group relative"><summary className={`list-none cursor-pointer rounded-full px-4 py-2 text-sm font-bold ${pathname?.startsWith('/admin/dashboard/'+group.label.toLowerCase())||group.links.some(l=>pathname===l.href)?'bg-white text-black':'text-white/75 hover:bg-white/10'}`}>{group.label}</summary><div className="absolute left-0 top-11 z-50 min-w-64 rounded-2xl border border-white/10 bg-[#12090d] p-2 shadow-2xl">{group.links.filter(l=>l.visible).map(link=><Link key={link.href} href={link.href} className="block rounded-xl px-3 py-2 text-sm text-white/80 hover:bg-white/10 hover:text-white">{link.label}</Link>)}</div></details>)}</nav>
-  <div className="relative" ref={dropdownRef}><button type="button" onClick={()=>setOpen(v=>!v)} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-sm">{name}</button>{open && <div className="absolute right-0 z-[9999] mt-3 w-[calc(100vw-2rem)] max-w-[24rem] rounded-2xl border border-white/10 bg-[#12090d] p-3"><div className="grid gap-2">{groups.filter(g=>g.visible).map(g=><details key={g.label} className="rounded-xl border border-white/10 px-3 py-2"><summary className="cursor-pointer text-sm font-black">{g.label}</summary><div className="mt-2 grid gap-1">{g.links.filter(l=>l.visible).map(l=><Link onClick={()=>setOpen(false)} key={l.href} href={l.href} className="rounded-lg px-2 py-2 text-sm text-white/80 hover:bg-white/10">{l.label}</Link>)}</div></details>)}</div>{canViewUsers && <div className="mt-3 border-t border-white/10 pt-3"><button type="button" onClick={()=>setShowUserSearch(p=>!p)} className="w-full rounded-xl bg-rose-500/20 px-3 py-2 text-left text-sm font-bold">View as User or Location</button>{showUserSearch && <div className="mt-2"><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"/>{searching && <p className="mt-2 text-xs text-white/50">Searching...</p>}{results.map(item=><button key={item.id} disabled={Boolean(impersonatingId)} className="mt-2 w-full rounded-lg border border-white/10 px-3 py-2 text-left text-xs">{item.title}</button>)}</div>}</div>}<button onClick={async()=>{await supabase.auth.signOut();window.location.href='/login';}} className="mt-3 w-full rounded-xl border border-white/10 px-3 py-2 text-sm">Sign out</button></div>}</div></div></header>;
+  return (
+    <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white backdrop-blur-2xl">
+      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        <button
+          type="button"
+          onClick={() => goTo("/admin/dashboard")}
+          className="group flex min-w-0 items-center gap-3"
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/30 bg-[#f8f3ef] text-lg font-black text-[#8b0f2f]">
+            R
+          </div>
+          <div className="hidden text-left sm:block">
+            <p className="text-lg font-black tracking-tight text-white">TheOutHaven</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.28em] text-rose-200/70">Admin</p>
+          </div>
+        </button>
+
+        <nav
+          ref={desktopNavRef}
+          className="relative hidden items-center gap-1 lg:flex"
+          onMouseLeave={() => setActiveDesktopMenu(null)}
+          aria-label="Admin sections"
+        >
+          {visibleGroups.map((group) => {
+            const isOpen = activeDesktopMenu === group.label;
+            const hasActiveChild = group.links.some((l) => pathname === l.href || pathname?.startsWith(`${l.href}/`));
+            const isActive = hasActiveChild || (group.label === "Overview" && pathname === "/admin/dashboard");
+
+            return (
+              <div key={group.label} className="relative">
+                <button
+                  type="button"
+                  onMouseEnter={() => setActiveDesktopMenu(group.label)}
+                  onFocus={() => setActiveDesktopMenu(group.label)}
+                  onClick={() => setActiveDesktopMenu((current) => (current === group.label ? null : group.label))}
+                  className={`rounded-full px-4 py-2 text-sm font-bold transition-colors duration-150 ${
+                    isActive
+                      ? "bg-white text-black shadow-[0_10px_30px_rgba(255,255,255,0.16)]"
+                      : "text-white/75 hover:bg-white/10 hover:text-white"
+                  }`}
+                  aria-haspopup="menu"
+                  aria-expanded={isOpen}
+                  aria-controls={`admin-menu-${group.label.toLowerCase()}`}
+                >
+                  {group.label}
+                </button>
+
+                <div
+                  id={`admin-menu-${group.label.toLowerCase()}`}
+                  role="menu"
+                  aria-label={`${group.label} menu`}
+                  className={`absolute left-0 top-[calc(100%+0.55rem)] min-w-64 rounded-2xl border border-white/10 bg-[#12090d] p-2 shadow-2xl transition-all duration-180 ${
+                    isOpen
+                      ? "pointer-events-auto z-[120] translate-y-0 opacity-100"
+                      : "pointer-events-none -z-10 -translate-y-1 opacity-0"
+                  }`}
+                >
+                  {group.links
+                    .filter((l) => l.visible)
+                    .map((link) => {
+                      const linkActive = pathname === link.href || pathname?.startsWith(`${link.href}/`);
+                      return (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          role="menuitem"
+                          className={`block rounded-xl px-3 py-2 text-sm transition-colors duration-150 ${
+                            linkActive
+                              ? "bg-white text-black"
+                              : "text-white/80 hover:bg-white/10 hover:text-white focus:bg-white/10"
+                          }`}
+                          onClick={() => setActiveDesktopMenu(null)}
+                        >
+                          {link.label}
+                        </Link>
+                      );
+                    })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="relative" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-sm"
+          >
+            {name}
+          </button>
+          {open && (
+            <div className="absolute right-0 z-[9999] mt-3 w-[calc(100vw-2rem)] max-w-[24rem] rounded-2xl border border-white/10 bg-[#12090d] p-3">
+              <div className="grid gap-2">
+                {visibleGroups.map((g) => (
+                  <details key={g.label} className="rounded-xl border border-white/10 px-3 py-2">
+                    <summary className="cursor-pointer text-sm font-black">{g.label}</summary>
+                    <div className="mt-2 grid gap-1">
+                      {g.links
+                        .filter((l) => l.visible)
+                        .map((l) => (
+                          <Link
+                            onClick={() => setOpen(false)}
+                            key={l.href}
+                            href={l.href}
+                            className="rounded-lg px-2 py-2 text-sm text-white/80 hover:bg-white/10"
+                          >
+                            {l.label}
+                          </Link>
+                        ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+              {canViewUsers && (
+                <div className="mt-3 border-t border-white/10 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowUserSearch((p) => !p)}
+                    className="w-full rounded-xl bg-rose-500/20 px-3 py-2 text-left text-sm font-bold"
+                  >
+                    View as User or Location
+                  </button>
+                  {showUserSearch && (
+                    <div className="mt-2">
+                      <input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search..."
+                        className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+                      />
+                      {searching && <p className="mt-2 text-xs text-white/50">Searching...</p>}
+                      {results.map((item) => (
+                        <button
+                          key={item.id}
+                          disabled={Boolean(impersonatingId)}
+                          className="mt-2 w-full rounded-lg border border-white/10 px-3 py-2 text-left text-xs"
+                        >
+                          {item.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  window.location.href = "/login";
+                }}
+                className="mt-3 w-full rounded-xl border border-white/10 px-3 py-2 text-sm"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
 }
