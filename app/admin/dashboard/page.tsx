@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { listSupportTickets } from "@/lib/support";
+import SemanticCleanupButton from "./SemanticCleanupButton";
 
 export const metadata: Metadata = {
   title: "Admin Dashboard",
@@ -249,6 +250,10 @@ export default async function CentralDashboardPage() {
                 >
                   Import
                 </Link>
+              </div>
+
+              <div className="mt-5 max-w-2xl">
+                <SemanticCleanupButton />
               </div>
             </div>
 

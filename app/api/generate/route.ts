@@ -28,7 +28,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `dessert-addon-strict-v18-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `semantic-rules-analytics-v19-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -682,6 +682,9 @@ function itemText(item: any) {
     ...toArray(item.google_types),
     ...toArray(item.vibe_tags),
     ...toArray(item.best_for_tags),
+    ...toArray(item.semantic_tags),
+    ...toArray(item.intent_tags),
+    item.semantic_search_text,
     ...toArray(item.review_keywords),
     ...toArray(item.date_style_tags),
     ...toArray(item.search_keywords),
@@ -3158,6 +3161,150 @@ function applyMarketplaceBoosts(
   return clampScore(baseScore + promotionBoost(item, baseScore, intent) + personalizationBoost(item, prefs, intent));
 }
 
+function hasReservationAvailability(item: any) {
+  return Boolean(
+    item.reservation_enabled ||
+      item.reservation_link ||
+      item.reservation_url ||
+      item.external_reservation_url ||
+      item.booking_url,
+  );
+}
+
+function isPromotedOrProLocation(item: any) {
+  const planText = normalizeQuery(
+    [item.subscription_plan, item.plan, item.business_plan, item.pricing_plan, item.promotion_tier]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  return Boolean(item.is_promoted) || /\b(pro|premium|growth|launch)\b/.test(planText);
+}
+
+function strictIntentMatchScore(item: any, intent: ReturnType<typeof detectIntent>, role: "restaurant" | "activity") {
+  let score = 0;
+  const text = itemText(item);
+  const tags = toArray(item.intent_tags).map(normalizeQuery);
+
+  if (role === "restaurant" && (intent.wantsRestaurant || intent.wantsPrimaryMeal)) {
+    score += isMealRestaurant(item, intent) || tags.includes("restaurant") ? 260 : -900;
+  }
+
+  if (role === "activity" && intent.wantsActivity) {
+    score += isActivityLocation(item) || tags.includes("activity") ? 220 : -500;
+  }
+
+  if (userAskedForDessert(intent)) {
+    score += isDessertLocation(item) || tags.includes("dessert") ? 380 : -1200;
+  }
+
+  if (intent.wantsLounge || intent.wantsHookah || intent.wantsCigar) {
+    score += isLoungeStyleLocation(item) || tags.includes("nightlife") ? 320 : -650;
+  }
+
+  if (intent.requestedTags.includes("romantic") || intent.vibes.includes("romantic")) {
+    score += text.includes("romantic") || tags.includes("romantic") ? 80 : 0;
+  }
+
+  if (intent.requestedTags.includes("birthday") || intent.wantsBirthdayDinner || intent.wantsBirthdayBrunch) {
+    score += text.includes("birthday") || tags.includes("birthday") ? 90 : 0;
+  }
+
+  return score;
+}
+
+function enhancedRankingScore(
+  item: any,
+  currentScore: number,
+  intent: ReturnType<typeof detectIntent>,
+  role: "restaurant" | "activity",
+) {
+  let score = Number(currentScore || 0);
+  const rating = Number(item.rating || 0);
+  const semanticSimilarity = Number(item.semantic_similarity || 0);
+
+  score += strictIntentMatchScore(item, intent, role);
+  score += semanticSimilarity > 0 ? semanticSimilarity * 140 : 0;
+  score += Number(item.recommendation_score || 0) * 1.2;
+  score += Number(item.quality_score || 0) * 0.45;
+  score += rating > 0 ? rating * 18 : 0;
+  score += Number(item.analytics_score || 0) * 0.35;
+
+  if (intent.locations.length > 0 && matchesLocation(item, intent.locations)) score += 90;
+  if (hasReservationAvailability(item)) score += 45;
+  if (isPromotedOrProLocation(item)) score += 35;
+
+  return clampScore(score);
+}
+
+function searchNeedsDessertGuardrail(intent: ReturnType<typeof detectIntent>) {
+  return userAskedForDessert(intent);
+}
+
+function searchNeedsRestaurantGuardrail(intent: ReturnType<typeof detectIntent>) {
+  return intent.wantsRestaurant || intent.wantsPrimaryMeal;
+}
+
+function searchNeedsNightlifeGuardrail(intent: ReturnType<typeof detectIntent>) {
+  return intent.wantsLounge || intent.wantsHookah || intent.wantsCigar;
+}
+
+function searchNeedsActivityGuardrail(intent: ReturnType<typeof detectIntent>) {
+  return intent.wantsActivity && !searchNeedsDessertGuardrail(intent) && !searchNeedsNightlifeGuardrail(intent);
+}
+
+function passesStrictIntentGuardrail(item: any, intent: ReturnType<typeof detectIntent>, role: "restaurant" | "activity") {
+  const intentTags = toArray(item.intent_tags).map(normalizeQuery);
+
+  if (searchNeedsDessertGuardrail(intent)) {
+    return isDessertLocation(item) || intentTags.includes("dessert");
+  }
+
+  if (searchNeedsNightlifeGuardrail(intent)) {
+    return isLoungeStyleLocation(item) || intentTags.includes("nightlife");
+  }
+
+  if (role === "restaurant" && searchNeedsRestaurantGuardrail(intent)) {
+    return isMealRestaurant(item, intent) || intentTags.includes("restaurant");
+  }
+
+  if (role === "activity" && searchNeedsActivityGuardrail(intent)) {
+    return isActivityLocation(item) || intentTags.includes("activity");
+  }
+
+  return true;
+}
+
+function applyStrictSearchGuardrails(
+  restaurants: any[],
+  activities: any[],
+  intent: ReturnType<typeof detectIntent>,
+) {
+  let guardedRestaurants = restaurants;
+  let guardedActivities = activities;
+
+  if (searchNeedsRestaurantGuardrail(intent) && !searchNeedsDessertGuardrail(intent) && !isLoungeActivityOnlyRequest(intent)) {
+    guardedRestaurants = guardedRestaurants.filter((item) => passesStrictIntentGuardrail(item, intent, "restaurant"));
+  }
+
+  if (searchNeedsDessertGuardrail(intent) || searchNeedsNightlifeGuardrail(intent) || searchNeedsActivityGuardrail(intent)) {
+    guardedActivities = guardedActivities.filter((item) => passesStrictIntentGuardrail(item, intent, "activity"));
+  }
+
+  if (searchNeedsDessertGuardrail(intent) && !intent.wantsPrimaryMeal) {
+    guardedRestaurants = guardedRestaurants.filter((item) => passesStrictIntentGuardrail(item, intent, "restaurant"));
+  }
+
+  if (searchNeedsNightlifeGuardrail(intent) && isLoungeActivityOnlyRequest(intent)) {
+    guardedRestaurants = [];
+  }
+
+  return {
+    restaurants: guardedRestaurants,
+    activities: guardedActivities,
+  };
+}
+
 function filterRestaurantsByFoodIntent(
   restaurants: Record<string, unknown>[],
   intent: ReturnType<typeof detectIntent>,
@@ -3490,6 +3637,11 @@ const LOCATION_SELECT = `
   conversion_score,
   review_score,
   popularity_score,
+  analytics_score,
+  recommendation_score,
+  semantic_tags,
+  intent_tags,
+  semantic_search_text,
   ranking_badge,
   subscription_plan,
   is_promoted,
@@ -4031,6 +4183,14 @@ export async function POST(req: Request) {
         )
       : dedupedLocationResults.activities;
 
+    const strictGuardedResults = applyStrictSearchGuardrails(
+      restaurants,
+      activities,
+      intent,
+    );
+    restaurants = strictGuardedResults.restaurants;
+    activities = strictGuardedResults.activities;
+
     let rankedRestaurants = restaurants
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
@@ -4038,7 +4198,8 @@ export async function POST(req: Request) {
           scoreRestaurant(restaurant, input, intent) +
             semantic.semantic_score_boost,
         );
-        const score = applyMarketplaceBoosts(restaurant, baseScore, intent, userPreferenceSignals);
+        const marketplaceScore = applyMarketplaceBoosts(restaurant, baseScore, intent, userPreferenceSignals);
+        const score = enhancedRankingScore(restaurant, marketplaceScore, intent, "restaurant");
         const confidence = confidenceFromScores({
           ...restaurant,
           smart_match_score: score,
@@ -4066,7 +4227,8 @@ export async function POST(req: Request) {
           scoreActivity(activity, input, intent) +
             semantic.semantic_score_boost,
         );
-        const score = applyMarketplaceBoosts(activity, baseScore, intent, userPreferenceSignals);
+        const marketplaceScore = applyMarketplaceBoosts(activity, baseScore, intent, userPreferenceSignals);
+        const score = enhancedRankingScore(activity, marketplaceScore, intent, "activity");
         const confidence = confidenceFromScores({
           ...activity,
           smart_match_score: score,
