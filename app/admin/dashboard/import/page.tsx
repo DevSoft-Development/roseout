@@ -34,6 +34,37 @@ type ImportLog = {
   error: string | null;
 };
 
+type ReservationBackfillFailure = {
+  id?: string | number | null;
+  name?: string | null;
+  google_place_id?: string | null;
+  status?: number;
+  error?: string;
+};
+
+type ReservationBackfillResult = {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  step?: string;
+  checked?: number;
+  updated?: number;
+  skippedAlreadyHasLink?: number;
+  skippedNoGooglePlaceId?: number;
+  skippedInvalidPlaceId?: number;
+  skippedNoBookingLink?: number;
+  refreshedPlaceIds?: number;
+  failed?: number;
+  failures?: ReservationBackfillFailure[];
+  dryRun?: boolean;
+};
+
+function isReservationBackfillResult(
+  value: unknown,
+): value is ReservationBackfillResult {
+  return typeof value === "object" && value !== null;
+}
+
 function getNumber(value: unknown) {
   const num = Number(value ?? 0);
   return Number.isFinite(num) ? num : 0;
@@ -148,7 +179,7 @@ export default function ImportPage() {
   const [reservationBackfillTable, setReservationBackfillTable] = useState("locations");
   const [reservationBackfillLimit, setReservationBackfillLimit] = useState("50");
   const [reservationBackfillDryRun, setReservationBackfillDryRun] = useState(true);
-  const [reservationBackfillResult, setReservationBackfillResult] = useState<unknown>(null);
+  const [reservationBackfillResult, setReservationBackfillResult] = useState<ReservationBackfillResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [importType, setImportType] = useState("both");
   const [area, setArea] = useState("nyc");
@@ -437,8 +468,16 @@ export default function ImportPage() {
 
       setReservationBackfillResult(data);
 
-      if (!res.ok) {
-        alert(data.error || "Reservation link backfill failed");
+      if (!res.ok || data.success === false) {
+        alert(
+          [
+            data.error || "Reservation link backfill failed",
+            data.details ? `Details: ${data.details}` : null,
+            data.step ? `Step: ${data.step}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
         return;
       }
 
@@ -659,10 +698,52 @@ export default function ImportPage() {
               Dry run
             </label>
           </div>
-          {reservationBackfillResult ? (
-            <pre className="mt-5 max-h-96 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs leading-5 text-emerald-100">
-              {JSON.stringify(reservationBackfillResult, null, 2)}
-            </pre>
+          {reservationBackfillResult && isReservationBackfillResult(reservationBackfillResult) ? (
+            <div className="mt-5 space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-zinc-200">
+              {reservationBackfillResult.success === false ? (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-100">
+                  <p className="font-black">{reservationBackfillResult.error || "Reservation link backfill failed"}</p>
+                  {reservationBackfillResult.details ? (
+                    <p className="mt-2 text-xs text-red-100/80">Details: {reservationBackfillResult.details}</p>
+                  ) : null}
+                  {reservationBackfillResult.step ? (
+                    <p className="mt-1 text-xs text-red-100/80">Step: {reservationBackfillResult.step}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                <MiniStat label="Checked" value={getNumber(reservationBackfillResult.checked)} />
+                <MiniStat label="Updated" value={getNumber(reservationBackfillResult.updated)} />
+                <MiniStat label="Already linked" value={getNumber(reservationBackfillResult.skippedAlreadyHasLink)} />
+                <MiniStat label="No Place ID" value={getNumber(reservationBackfillResult.skippedNoGooglePlaceId)} />
+                <MiniStat label="Invalid Place ID" value={getNumber(reservationBackfillResult.skippedInvalidPlaceId)} />
+                <MiniStat label="Refreshed IDs" value={getNumber(reservationBackfillResult.refreshedPlaceIds)} />
+              </div>
+
+              {reservationBackfillResult.failures?.length ? (
+                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-200">
+                    First 10 failures
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {reservationBackfillResult.failures.slice(0, 10).map((failure, index) => (
+                      <div key={`${failure.id || "failure"}-${index}`} className="rounded-lg bg-black/25 p-3 text-xs text-amber-50/90">
+                        <p className="font-bold">{failure.name || "Unnamed row"}</p>
+                        <p>ID: {failure.id ?? "unknown"}</p>
+                        {failure.google_place_id ? <p>Google Place ID: {failure.google_place_id}</p> : null}
+                        {failure.status ? <p>Status: {failure.status}</p> : null}
+                        <p>Error: {failure.error || "Unknown error"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <pre className="max-h-96 overflow-auto rounded-xl border border-white/10 bg-black/40 p-4 text-xs leading-5 text-emerald-100">
+                {JSON.stringify(reservationBackfillResult, null, 2)}
+              </pre>
+            </div>
           ) : null}
         </section>
 
