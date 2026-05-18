@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type ImportSectionMeta = {
   imported?: unknown;
@@ -49,6 +49,13 @@ type ReservationBackfillResult = {
   step?: string;
   checked?: number;
   updated?: number;
+  foundFromGoogle?: number;
+  foundFromProviderSearch?: number;
+  foundFromWebsite?: number;
+  notFound?: number;
+  skippedNoWebsite?: number;
+  blocked?: number;
+  nextOffset?: number;
   skippedAlreadyHasLink?: number;
   skippedNoGooglePlaceId?: number;
   skippedInvalidPlaceId?: number;
@@ -75,7 +82,9 @@ function getImported(meta: ImportMeta) {
     return getNumber(meta.imported);
   }
 
-  return getNumber(meta?.restaurant?.imported) + getNumber(meta?.activity?.imported);
+  return (
+    getNumber(meta?.restaurant?.imported) + getNumber(meta?.activity?.imported)
+  );
 }
 
 function getSkipped(meta: ImportMeta) {
@@ -83,7 +92,9 @@ function getSkipped(meta: ImportMeta) {
     return getNumber(meta.skipped);
   }
 
-  return getNumber(meta?.restaurant?.skipped) + getNumber(meta?.activity?.skipped);
+  return (
+    getNumber(meta?.restaurant?.skipped) + getNumber(meta?.activity?.skipped)
+  );
 }
 
 function getFailed(meta: ImportMeta) {
@@ -91,14 +102,16 @@ function getFailed(meta: ImportMeta) {
     return getNumber(meta.failed);
   }
 
-  return getNumber(meta?.restaurant?.failed) + getNumber(meta?.activity?.failed);
+  return (
+    getNumber(meta?.restaurant?.failed) + getNumber(meta?.activity?.failed)
+  );
 }
 
 function getFound(meta: ImportMeta) {
   return getNumber(
     meta?.total_found_from_google ??
       getNumber(meta?.restaurant?.total_found_from_google) +
-        getNumber(meta?.activity?.total_found_from_google)
+        getNumber(meta?.activity?.total_found_from_google),
   );
 }
 
@@ -176,16 +189,45 @@ export default function ImportPage() {
   const [backfillingCuisines, setBackfillingCuisines] = useState(false);
   const [cleaningLocations, setCleaningLocations] = useState(false);
   const [backfillingReservations, setBackfillingReservations] = useState(false);
-  const [reservationBackfillTable, setReservationBackfillTable] = useState("locations");
-  const [reservationBackfillLimit, setReservationBackfillLimit] = useState("50");
-  const [reservationBackfillDryRun, setReservationBackfillDryRun] = useState(true);
-  const [reservationBackfillResult, setReservationBackfillResult] = useState<ReservationBackfillResult | null>(null);
+  const [reservationBackfillTable, setReservationBackfillTable] =
+    useState("locations");
+  const [reservationBackfillLimit, setReservationBackfillLimit] =
+    useState("25");
+  const [reservationBackfillOffset, setReservationBackfillOffset] =
+    useState("0");
+  const [reservationBackfillDryRun, setReservationBackfillDryRun] =
+    useState(true);
+  const [
+    reservationIncludeProviderSearch,
+    setReservationIncludeProviderSearch,
+  ] = useState(true);
+  const [
+    reservationIncludeWebsiteDiscovery,
+    setReservationIncludeWebsiteDiscovery,
+  ] = useState(false);
+  const [reservationOnlyMissing, setReservationOnlyMissing] = useState(true);
+  const [reservationBackfillResult, setReservationBackfillResult] =
+    useState<ReservationBackfillResult | null>(null);
+  const [reservationContinuousRunning, setReservationContinuousRunning] =
+    useState(false);
+  const reservationStopRef = useRef(false);
   const [progress, setProgress] = useState(0);
   const [importType, setImportType] = useState("both");
   const [area, setArea] = useState("nyc");
   const [primaryTag, setPrimaryTag] = useState("all");
   const [minRating, setMinRating] = useState("4");
   const [queryCount, setQueryCount] = useState("2");
+
+  useEffect(() => {
+    const savedOffset = window.localStorage.getItem(
+      "reservationDiscoveryOffset",
+    );
+    if (savedOffset) {
+      // The offset is a local operator preference and should hydrate only in the browser.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setReservationBackfillOffset(savedOffset);
+    }
+  }, []);
 
   const fetchLogs = async () => {
     try {
@@ -256,7 +298,7 @@ export default function ImportPage() {
         restaurants: 0,
         activities: 0,
         errors: 0,
-      }
+      },
     );
   }, [logs]);
 
@@ -362,7 +404,7 @@ export default function ImportPage() {
           data.skipped || 0
         }\nFailed: ${data.failed || 0}${
           errors ? `\n\nFirst errors:\n${errors}` : ""
-        }`
+        }`,
       );
 
       await fetchLogs();
@@ -376,7 +418,6 @@ export default function ImportPage() {
       }, 600);
     }
   };
-
 
   const handleCuisineBackfill = async () => {
     try {
@@ -401,7 +442,7 @@ export default function ImportPage() {
       }
 
       alert(
-        `Cuisine backfill complete\nChecked: ${data.checked || 0}\nUpdated: ${data.updated || 0}\nSkipped: ${data.skipped || 0}`
+        `Cuisine backfill complete\nChecked: ${data.checked || 0}\nUpdated: ${data.updated || 0}\nSkipped: ${data.skipped || 0}`,
       );
 
       await fetchLogs();
@@ -438,7 +479,7 @@ export default function ImportPage() {
       const activities = data.activities || {};
 
       alert(
-        `Location cleanup complete\nRestaurants updated: ${restaurants.updated || 0}\nActivities updated: ${activities.updated || 0}\nFailed: ${(restaurants.failed || 0) + (activities.failed || 0)}`
+        `Location cleanup complete\nRestaurants updated: ${restaurants.updated || 0}\nActivities updated: ${activities.updated || 0}\nFailed: ${(restaurants.failed || 0) + (activities.failed || 0)}`,
       );
 
       await fetchLogs();
@@ -450,44 +491,127 @@ export default function ImportPage() {
     }
   };
 
+  const runReservationDiscoveryBatch = async (offsetOverride?: number) => {
+    const safeLimit = Math.max(
+      1,
+      Math.min(Number(reservationBackfillLimit || 25), 50),
+    );
+    const currentOffset = Math.max(
+      0,
+      Number(offsetOverride ?? reservationBackfillOffset) || 0,
+    );
+
+    const params = new URLSearchParams({
+      table: reservationBackfillTable,
+      limit: String(safeLimit),
+      offset: String(currentOffset),
+      dryRun: String(reservationBackfillDryRun),
+      includeProviderSearch: String(reservationIncludeProviderSearch),
+      includeWebsiteDiscovery: String(reservationIncludeWebsiteDiscovery),
+      onlyMissing: String(reservationOnlyMissing),
+    });
+
+    const res = await fetch(
+      `/api/admin/backfill-reservation-links?${params.toString()}`,
+      {
+        cache: "no-store",
+      },
+    );
+    const data = (await res.json()) as ReservationBackfillResult;
+
+    setReservationBackfillResult(data);
+
+    if (!res.ok || data.success === false) {
+      alert(
+        [
+          data.error || "Reservation link discovery failed",
+          data.details ? `Details: ${data.details}` : null,
+          data.step ? `Step: ${data.step}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      throw new Error(
+        data.details || data.error || "Reservation link discovery failed",
+      );
+    }
+
+    const nextOffset = getNumber(data.nextOffset ?? currentOffset + safeLimit);
+    setReservationBackfillOffset(String(nextOffset));
+    window.localStorage.setItem(
+      "reservationDiscoveryOffset",
+      String(nextOffset),
+    );
+
+    return data;
+  };
+
   const handleReservationBackfill = async () => {
     try {
       setBackfillingReservations(true);
       setReservationBackfillResult(null);
+      await runReservationDiscoveryBatch();
+      await fetchLogs();
+    } catch (err) {
+      console.error("Reservation discovery failed:", err);
+    } finally {
+      setBackfillingReservations(false);
+    }
+  };
 
-      const params = new URLSearchParams({
-        table: reservationBackfillTable,
-        limit: reservationBackfillLimit || "50",
-        dryRun: String(reservationBackfillDryRun),
-      });
+  const handleReservationNextBatch = async () => {
+    try {
+      setBackfillingReservations(true);
+      await runReservationDiscoveryBatch(
+        getNumber(
+          reservationBackfillResult?.nextOffset ?? reservationBackfillOffset,
+        ),
+      );
+      await fetchLogs();
+    } catch (err) {
+      console.error("Reservation discovery next batch failed:", err);
+    } finally {
+      setBackfillingReservations(false);
+    }
+  };
 
-      const res = await fetch(`/api/admin/backfill-reservation-links?${params.toString()}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
+  const handleReservationContinuous = async () => {
+    reservationStopRef.current = false;
+    setReservationContinuousRunning(true);
+    setBackfillingReservations(true);
 
-      setReservationBackfillResult(data);
+    try {
+      let currentOffset = Math.max(0, Number(reservationBackfillOffset) || 0);
 
-      if (!res.ok || data.success === false) {
-        alert(
-          [
-            data.error || "Reservation link backfill failed",
-            data.details ? `Details: ${data.details}` : null,
-            data.step ? `Step: ${data.step}` : null,
-          ]
-            .filter(Boolean)
-            .join("\n"),
+      while (!reservationStopRef.current) {
+        const data = await runReservationDiscoveryBatch(currentOffset);
+        if (
+          getNumber(data.checked) === 0 ||
+          getNumber(data.blocked) > 10 ||
+          getNumber(data.failed) > 10
+        )
+          break;
+
+        currentOffset = getNumber(
+          data.nextOffset ??
+            currentOffset + Number(reservationBackfillLimit || 25),
         );
-        return;
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
       }
 
       await fetchLogs();
     } catch (err) {
-      console.error("Reservation backfill failed:", err);
-      alert("Reservation link backfill failed");
+      console.error("Reservation discovery continuous run failed:", err);
     } finally {
+      reservationStopRef.current = false;
+      setReservationContinuousRunning(false);
       setBackfillingReservations(false);
     }
+  };
+
+  const handleReservationStop = () => {
+    reservationStopRef.current = true;
+    setReservationContinuousRunning(false);
   };
 
   const handlePhoneBackfill = async () => {
@@ -520,10 +644,11 @@ export default function ImportPage() {
         getNumber(restaurants.enriched) + getNumber(activities.enriched);
       const checked =
         getNumber(restaurants.checked) + getNumber(activities.checked);
-      const failed = getNumber(restaurants.failed) + getNumber(activities.failed);
+      const failed =
+        getNumber(restaurants.failed) + getNumber(activities.failed);
 
       alert(
-        `Phone backfill complete\nUpdated: ${enriched}\nChecked: ${checked}\nFailed: ${failed}`
+        `Phone backfill complete\nUpdated: ${enriched}\nChecked: ${checked}\nFailed: ${failed}`,
       );
 
       await fetchLogs();
@@ -562,7 +687,13 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handlePhoneBackfill}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
+                  disabled={
+                    running ||
+                    backfillingPhones ||
+                    backfillingCuisines ||
+                    cleaningLocations ||
+                    backfillingReservations
+                  }
                   className="rounded-full border border-rose-400/40 px-7 py-4 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {backfillingPhones
@@ -573,7 +704,13 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handleCuisineBackfill}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
+                  disabled={
+                    running ||
+                    backfillingPhones ||
+                    backfillingCuisines ||
+                    cleaningLocations ||
+                    backfillingReservations
+                  }
                   className="rounded-full border border-amber-300/40 px-7 py-4 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {backfillingCuisines
@@ -584,7 +721,13 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handleLocationCleanup}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
+                  disabled={
+                    running ||
+                    backfillingPhones ||
+                    backfillingCuisines ||
+                    cleaningLocations ||
+                    backfillingReservations
+                  }
                   className="rounded-full border border-sky-300/40 px-7 py-4 text-sm font-black text-sky-100 transition hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {cleaningLocations
@@ -595,14 +738,19 @@ export default function ImportPage() {
                 <button
                   type="button"
                   onClick={handleRunImport}
-                  disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations}
+                  disabled={
+                    running ||
+                    backfillingPhones ||
+                    backfillingCuisines ||
+                    cleaningLocations ||
+                    backfillingReservations
+                  }
                   className="rounded-full bg-rose-600 px-7 py-4 text-sm font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
                 >
                   {running ? "Import Running..." : "Run Google Import"}
                 </button>
               </div>
             </div>
-
 
             <div className="relative mt-8 grid gap-4 rounded-[1.5rem] border border-white/10 bg-black/30 p-4 md:grid-cols-2 xl:grid-cols-5">
               <SelectField
@@ -677,48 +825,221 @@ export default function ImportPage() {
         <section className="mb-6 rounded-[2rem] border border-rose-300/15 bg-white/[0.035] p-6 shadow-2xl shadow-black/30">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Backfill Reservation Links</p>
-              <h2 className="mt-2 text-2xl font-black">External booking providers</h2>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
+                Reservation Link Discovery
+              </p>
+              <h2 className="mt-2 text-2xl font-black">
+                Reservation Link Discovery
+              </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-                Fetch Google Place Details, keep websites separate, and save reservation URLs only when a supported booking provider is detected.
+                Find external reservation links for imported locations using
+                Google Places, provider search, and lightweight website
+                discovery. Use batches of 25–50 only—do not run all locations at
+                once.
               </p>
             </div>
-            <button type="button" onClick={handleReservationBackfill} disabled={running || backfillingPhones || backfillingCuisines || cleaningLocations || backfillingReservations} className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-xl transition hover:-translate-y-0.5 hover:bg-rose-100 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
-              {backfillingReservations ? "Backfilling..." : "Run Reservation Backfill"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleReservationBackfill}
+                disabled={
+                  running ||
+                  backfillingPhones ||
+                  backfillingCuisines ||
+                  cleaningLocations ||
+                  backfillingReservations
+                }
+                className="rounded-full bg-white px-6 py-3 text-sm font-black text-black shadow-xl transition hover:-translate-y-0.5 hover:bg-rose-100 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
+              >
+                {backfillingReservations && !reservationContinuousRunning
+                  ? "Running..."
+                  : "Run Batch"}
+              </button>
+              <button
+                type="button"
+                onClick={handleReservationNextBatch}
+                disabled={
+                  running ||
+                  backfillingPhones ||
+                  backfillingCuisines ||
+                  cleaningLocations ||
+                  backfillingReservations
+                }
+                className="rounded-full border border-white/15 px-6 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+              >
+                Run Next Batch
+              </button>
+              <button
+                type="button"
+                onClick={handleReservationContinuous}
+                disabled={
+                  running ||
+                  backfillingPhones ||
+                  backfillingCuisines ||
+                  cleaningLocations ||
+                  backfillingReservations
+                }
+                className="rounded-full border border-emerald-300/40 px-6 py-3 text-sm font-black text-emerald-100 transition hover:-translate-y-0.5 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+              >
+                Run Continuous
+              </button>
+              <button
+                type="button"
+                onClick={handleReservationStop}
+                disabled={!reservationContinuousRunning}
+                className="rounded-full border border-red-300/40 px-6 py-3 text-sm font-black text-red-100 transition hover:-translate-y-0.5 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+              >
+                Stop
+              </button>
+            </div>
           </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-            <SelectField label="Table" value={reservationBackfillTable} onChange={setReservationBackfillTable} options={reservationBackfillTableOptions} />
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SelectField
+              label="Table"
+              value={reservationBackfillTable}
+              onChange={setReservationBackfillTable}
+              options={reservationBackfillTableOptions}
+            />
             <label className="block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">Limit</span>
-              <input type="number" min="1" max="250" value={reservationBackfillLimit} onChange={(event) => setReservationBackfillLimit(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400" />
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+                Limit
+              </span>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={reservationBackfillLimit}
+                onChange={(event) =>
+                  setReservationBackfillLimit(event.target.value)
+                }
+                className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400"
+              />
             </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-black text-white">
-              <input type="checkbox" checked={reservationBackfillDryRun} onChange={(event) => setReservationBackfillDryRun(event.target.checked)} className="h-4 w-4 accent-rose-600" />
-              Dry run
+            <label className="block">
+              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+                Offset
+              </span>
+              <input
+                type="number"
+                min="0"
+                value={reservationBackfillOffset}
+                onChange={(event) =>
+                  setReservationBackfillOffset(event.target.value)
+                }
+                className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400"
+              />
             </label>
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm font-bold text-zinc-300">
+              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+                Current offset
+              </p>
+              <p className="mt-2 text-2xl font-black text-white">
+                {getNumber(reservationBackfillOffset).toLocaleString()}
+              </p>
+            </div>
           </div>
-          {reservationBackfillResult && isReservationBackfillResult(reservationBackfillResult) ? (
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <ToggleField
+              label="Dry run"
+              checked={reservationBackfillDryRun}
+              onChange={setReservationBackfillDryRun}
+            />
+            <ToggleField
+              label="Provider search"
+              checked={reservationIncludeProviderSearch}
+              onChange={setReservationIncludeProviderSearch}
+            />
+            <ToggleField
+              label="Website discovery"
+              checked={reservationIncludeWebsiteDiscovery}
+              onChange={setReservationIncludeWebsiteDiscovery}
+            />
+            <ToggleField
+              label="Only missing"
+              checked={reservationOnlyMissing}
+              onChange={setReservationOnlyMissing}
+            />
+          </div>
+
+          {reservationContinuousRunning ? (
+            <div className="mt-5 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">
+              Continuous mode is running one batch every 1.5 seconds. It will
+              stop on checked = 0, blocked &gt; 10, failed &gt; 10, or when Stop
+              is clicked.
+            </div>
+          ) : null}
+
+          {reservationBackfillResult &&
+          isReservationBackfillResult(reservationBackfillResult) ? (
             <div className="mt-5 space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-zinc-200">
               {reservationBackfillResult.success === false ? (
                 <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-100">
-                  <p className="font-black">{reservationBackfillResult.error || "Reservation link backfill failed"}</p>
+                  <p className="font-black">
+                    {reservationBackfillResult.error ||
+                      "Reservation link discovery failed"}
+                  </p>
                   {reservationBackfillResult.details ? (
-                    <p className="mt-2 text-xs text-red-100/80">Details: {reservationBackfillResult.details}</p>
+                    <p className="mt-2 text-xs text-red-100/80">
+                      Details: {reservationBackfillResult.details}
+                    </p>
                   ) : null}
                   {reservationBackfillResult.step ? (
-                    <p className="mt-1 text-xs text-red-100/80">Step: {reservationBackfillResult.step}</p>
+                    <p className="mt-1 text-xs text-red-100/80">
+                      Step: {reservationBackfillResult.step}
+                    </p>
                   ) : null}
                 </div>
               ) : null}
 
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                <MiniStat label="Checked" value={getNumber(reservationBackfillResult.checked)} />
-                <MiniStat label="Updated" value={getNumber(reservationBackfillResult.updated)} />
-                <MiniStat label="Already linked" value={getNumber(reservationBackfillResult.skippedAlreadyHasLink)} />
-                <MiniStat label="No Place ID" value={getNumber(reservationBackfillResult.skippedNoGooglePlaceId)} />
-                <MiniStat label="Invalid Place ID" value={getNumber(reservationBackfillResult.skippedInvalidPlaceId)} />
-                <MiniStat label="Refreshed IDs" value={getNumber(reservationBackfillResult.refreshedPlaceIds)} />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <MiniStat
+                  label="Current offset"
+                  value={getNumber(reservationBackfillOffset)}
+                />
+                <MiniStat
+                  label="Checked"
+                  value={getNumber(reservationBackfillResult.checked)}
+                />
+                <MiniStat
+                  label="Updated"
+                  value={getNumber(reservationBackfillResult.updated)}
+                />
+                <MiniStat
+                  label="Found from Google"
+                  value={getNumber(reservationBackfillResult.foundFromGoogle)}
+                />
+                <MiniStat
+                  label="Found from provider search"
+                  value={getNumber(
+                    reservationBackfillResult.foundFromProviderSearch,
+                  )}
+                />
+                <MiniStat
+                  label="Found from website"
+                  value={getNumber(reservationBackfillResult.foundFromWebsite)}
+                />
+                <MiniStat
+                  label="No link found"
+                  value={getNumber(reservationBackfillResult.notFound)}
+                />
+                <MiniStat
+                  label="Skipped no website"
+                  value={getNumber(reservationBackfillResult.skippedNoWebsite)}
+                />
+                <MiniStat
+                  label="Blocked"
+                  value={getNumber(reservationBackfillResult.blocked)}
+                />
+                <MiniStat
+                  label="Failed"
+                  value={getNumber(reservationBackfillResult.failed)}
+                />
+                <MiniStat
+                  label="Next offset"
+                  value={getNumber(reservationBackfillResult.nextOffset)}
+                />
               </div>
 
               {reservationBackfillResult.failures?.length ? (
@@ -727,15 +1048,26 @@ export default function ImportPage() {
                     First 10 failures
                   </p>
                   <div className="mt-3 space-y-2">
-                    {reservationBackfillResult.failures.slice(0, 10).map((failure, index) => (
-                      <div key={`${failure.id || "failure"}-${index}`} className="rounded-lg bg-black/25 p-3 text-xs text-amber-50/90">
-                        <p className="font-bold">{failure.name || "Unnamed row"}</p>
-                        <p>ID: {failure.id ?? "unknown"}</p>
-                        {failure.google_place_id ? <p>Google Place ID: {failure.google_place_id}</p> : null}
-                        {failure.status ? <p>Status: {failure.status}</p> : null}
-                        <p>Error: {failure.error || "Unknown error"}</p>
-                      </div>
-                    ))}
+                    {reservationBackfillResult.failures
+                      .slice(0, 10)
+                      .map((failure, index) => (
+                        <div
+                          key={`${failure.id || "failure"}-${index}`}
+                          className="rounded-lg bg-black/25 p-3 text-xs text-amber-50/90"
+                        >
+                          <p className="font-bold">
+                            {failure.name || "Unnamed row"}
+                          </p>
+                          <p>ID: {failure.id ?? "unknown"}</p>
+                          {failure.google_place_id ? (
+                            <p>Google Place ID: {failure.google_place_id}</p>
+                          ) : null}
+                          {failure.status ? (
+                            <p>Status: {failure.status}</p>
+                          ) : null}
+                          <p>Error: {failure.error || "Unknown error"}</p>
+                        </div>
+                      ))}
                   </div>
                 </div>
               ) : null}
@@ -803,9 +1135,7 @@ export default function ImportPage() {
                   >
                     <div>
                       <p className="font-bold">{item.area}</p>
-                      <p className="text-xs text-zinc-500">
-                        Rank {index + 1}
-                      </p>
+                      <p className="text-xs text-zinc-500">Rank {index + 1}</p>
                     </div>
                     <span className="rounded-full bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-300">
                       {item.count}
@@ -881,13 +1211,19 @@ export default function ImportPage() {
                     {meta?.settings && (
                       <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-zinc-400">
                         <span className="rounded-full bg-white/10 px-3 py-1">
-                          Type: {meta.settings.type === "both" ? "all" : meta.settings.type}
+                          Type:{" "}
+                          {meta.settings.type === "both"
+                            ? "all"
+                            : meta.settings.type}
                         </span>
                         <span className="rounded-full bg-white/10 px-3 py-1">
                           Rating: {meta.settings.minRating || 4}+
                         </span>
                         <span className="rounded-full bg-white/10 px-3 py-1">
-                          Tag: {meta.settings.primaryTag || meta.settings.batch || "all"}
+                          Tag:{" "}
+                          {meta.settings.primaryTag ||
+                            meta.settings.batch ||
+                            "all"}
                         </span>
                         <span className="rounded-full bg-white/10 px-3 py-1">
                           Queries: {meta.settings.maxQueries || 2}
@@ -905,8 +1241,8 @@ export default function ImportPage() {
                           </p>
                           <p className="mt-2 text-sm text-zinc-300">
                             Imported: {getNumber(meta.restaurant?.imported)} ·
-                            Skipped: {getNumber(meta.restaurant?.skipped)} · Failed:{" "}
-                            {getNumber(meta.restaurant?.failed)}
+                            Skipped: {getNumber(meta.restaurant?.skipped)} ·
+                            Failed: {getNumber(meta.restaurant?.failed)}
                           </p>
                         </div>
 
@@ -915,9 +1251,9 @@ export default function ImportPage() {
                             Activities
                           </p>
                           <p className="mt-2 text-sm text-zinc-300">
-                            Imported: {getNumber(meta.activity?.imported)} · Skipped:{" "}
-                            {getNumber(meta.activity?.skipped)} · Failed:{" "}
-                            {getNumber(meta.activity?.failed)}
+                            Imported: {getNumber(meta.activity?.imported)} ·
+                            Skipped: {getNumber(meta.activity?.skipped)} ·
+                            Failed: {getNumber(meta.activity?.failed)}
                           </p>
                         </div>
                       </div>
@@ -970,6 +1306,28 @@ function SelectField({
   );
 }
 
+function ToggleField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-black text-white">
+      <span>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 accent-rose-600"
+      />
+    </label>
+  );
+}
+
 function QualityPill({ text }: { text: string }) {
   return (
     <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
@@ -978,13 +1336,7 @@ function QualityPill({ text }: { text: string }) {
   );
 }
 
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
+function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-black/30 p-5">
       <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
