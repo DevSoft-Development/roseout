@@ -9,6 +9,7 @@ export const maxDuration = 300;
 
 const DEFAULT_BATCH_SIZE = 50;
 const EMBEDDING_MODEL = "text-embedding-3-small";
+const LOCATION_SAFE_ORDER_COLUMN = "id";
 const OPTIONAL_UPDATE_COLUMNS = new Set([
   "semantic_search_text",
   "semantic_tags",
@@ -191,7 +192,7 @@ async function runSemanticNightly(request: NextRequest) {
   const all = parseBoolean(body.all ?? query.get("all"));
   const missing = parseBoolean(body.missing ?? query.get("missing"));
 
-  let selector = supabaseAdmin.from("locations").select("*", { count: "exact" }).order("updated_at", { ascending: true }).range(offset, offset + limit - 1);
+  let selector = supabaseAdmin.from("locations").select("*", { count: "exact" }).order(LOCATION_SAFE_ORDER_COLUMN, { ascending: true }).range(offset, offset + limit - 1);
 
   if (missing) {
     selector = selector.or("semantic_search_text.is.null,semantic_search_text.eq.,intent_tags.is.null,recommendation_score.is.null,analytics_score.is.null,intent_tags.eq.{}");

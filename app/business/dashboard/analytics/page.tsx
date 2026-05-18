@@ -8,6 +8,8 @@ import BusinessAnalyticsDashboard from "@/components/analytics/BusinessAnalytics
 
 export const dynamic = "force-dynamic";
 
+const LOCATION_SAFE_ORDER_COLUMN = "id";
+
 export default async function BusinessAnalyticsPage() {
   const cookieStore = await cookies();
   const impersonatedLocationId = cookieStore.get("theouthaven_impersonate_location_id")?.value;
@@ -21,7 +23,7 @@ export default async function BusinessAnalyticsPage() {
     redirect("/login");
   }
 
-  let query = supabaseAdmin.from("locations").select("*").order("created_at", { ascending: false });
+  let query = supabaseAdmin.from("locations").select("*").order(LOCATION_SAFE_ORDER_COLUMN, { ascending: false });
 
   if (impersonatedLocationId) {
     query = query.eq("id", impersonatedLocationId);
