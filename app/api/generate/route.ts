@@ -10,6 +10,7 @@ import {
   getPrimaryCategory,
 } from "@/lib/locationFields";
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
+import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -717,6 +718,37 @@ const NON_MEAL_FOOD_TYPES = [
 function isNonMealFoodPlace(item: any) {
   const text = itemText(item);
   return NON_MEAL_FOOD_TYPES.some((term) => phraseIncludesNormalized(text, term));
+}
+
+
+async function trackSearchAppearancesForResponse(responsePayload: any, input: string, outingType?: string) {
+  const locationIds = Array.from(
+    new Set(
+      [
+        ...(responsePayload?.restaurants || []).map((item: any) => item?.id),
+        ...(responsePayload?.activities || []).map((item: any) => item?.id),
+        ...(responsePayload?.matched_locations || []).map((item: any) => item?.id),
+      ]
+        .filter(Boolean)
+        .map(String),
+    ),
+  ).slice(0, 24);
+
+  await Promise.allSettled(
+    locationIds.map((locationId) =>
+      trackLocationAnalyticsEvent({
+        locationId,
+        eventType: "search_appearance",
+        eventSource: "search",
+        searchQuery: input,
+        outingType,
+        metadata: {
+          result_count: locationIds.length,
+          source: "app/api/generate",
+        },
+      }),
+    ),
+  );
 }
 
 function userAskedForNonMealFood(intent: ReturnType<typeof detectIntent>) {
@@ -3521,6 +3553,7 @@ export async function POST(req: Request) {
       const cacheAge = Date.now() - new Date(cached.created_at).getTime();
 
       if (cacheAge < 1000 * 60 * 60 * CACHE_HOURS) {
+        await trackSearchAppearancesForResponse(cached.response, input, cached.response?.smart_match?.mode);
         return Response.json(cached.response);
       }
     }
@@ -4209,6 +4242,8 @@ STRICT RULES:
         distance_miles: a.distance_miles || null,
       })),
     };
+
+    await trackSearchAppearancesForResponse(responsePayload, input, smartBalanced.mode);
 
     await supabase.from("ai_response_cache").upsert({
       cache_key: cacheKey,

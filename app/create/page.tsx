@@ -107,6 +107,8 @@ type Message = {
   activities?: ActivityCard[];
   distancePreference?: DistancePreference;
   resultOrder?: ResultSectionKind[];
+  searchQuery?: string;
+  outingType?: string;
 };
 
 type ApiResponse = {
@@ -284,6 +286,9 @@ export default function CreatePage() {
 
   const latestResultOrder =
     latestAssistant?.resultOrder || DEFAULT_RESULT_ORDER;
+
+  const latestSearchQuery = latestAssistant?.searchQuery || "";
+  const latestOutingType = latestAssistant?.outingType || latestResultOrder.join("+");
 
   const selectedPlanText = buildSelectedPlanText(
     selectedRestaurant,
@@ -716,6 +721,8 @@ export default function CreatePage() {
           ? "walking"
           : "miles",
         resultOrder: inferResultOrder(cleanInput),
+        searchQuery: cleanInput,
+        outingType: addOnTarget || inferResultOrder(cleanInput).join("+"),
         content:
           data.reply ||
           (addOnTarget
@@ -774,12 +781,39 @@ export default function CreatePage() {
     await submitSearch(cleanInput, { addOnTarget, preservePlan: true });
   }
 
+  function trackBusinessEvent(
+    locationId: string,
+    eventType:
+      | "search_click"
+      | "reservation_started"
+      | "website_click"
+      | "directions_click",
+    metadata: Record<string, unknown> = {},
+  ) {
+    if (!locationId) return;
+
+    fetch("/api/analytics/location-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        location_id: locationId,
+        event_type: eventType,
+        event_source: "search",
+        search_query: latestSearchQuery,
+        outing_type: latestOutingType,
+        metadata,
+      }),
+    }).catch(() => undefined);
+  }
+
   function trackRestaurantClick(id: string) {
     trackAnalytics({
       itemId: id,
       itemType: "restaurant",
       eventType: "click",
     });
+    trackBusinessEvent(id, "search_click", { item_type: "restaurant" });
   }
 
   function trackActivityClick(id: string) {
@@ -788,6 +822,7 @@ export default function CreatePage() {
       itemType: "activity",
       eventType: "click",
     });
+    trackBusinessEvent(id, "search_click", { item_type: "activity" });
   }
 
   function savePlan() {
@@ -1031,17 +1066,19 @@ export default function CreatePage() {
                                 selected={isSelected}
                                 priority={restaurantIndex === 0}
                                 selectLabel={isSelected ? "Selected" : "Select"}
-                                onSelect={() =>
-                                  selectRestaurantAndMaybeScroll(restaurant)
-                                }
+                                onSelect={() => {
+                                  trackRestaurantClick(restaurantId);
+                                  selectRestaurantAndMaybeScroll(restaurant);
+                                }}
                                 detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
                                 onDetails={() =>
                                   trackRestaurantClick(restaurantId)
                                 }
                                 websiteUrl={restaurant.website || undefined}
-                                onWebsite={() =>
-                                  trackRestaurantClick(restaurantId)
-                                }
+                                onWebsite={() => {
+                                  trackRestaurantClick(restaurantId);
+                                  trackBusinessEvent(restaurantId, "website_click", { item_type: "restaurant" });
+                                }}
                                 reservationUrl={reservationUrl}
                                 internalReservationHref={
                                   internalReservationHref
@@ -1050,9 +1087,13 @@ export default function CreatePage() {
                                   restaurant.reservation_enabled === true
                                 }
                                 reservationLabel="Reserve"
-                                onReservation={() =>
-                                  trackRestaurantClick(restaurantId)
-                                }
+                                onReservation={() => {
+                                  trackRestaurantClick(restaurantId);
+                                  trackBusinessEvent(restaurantId, "reservation_started", {
+                                    item_type: "restaurant",
+                                    party_size: selectedRestaurant?.id === restaurant.id ? undefined : null,
+                                  });
+                                }}
                               />
                             );
                           })}
@@ -1132,11 +1173,17 @@ export default function CreatePage() {
                                 selected={isSelected}
                                 priority={activityIndex === 0}
                                 selectLabel={isSelected ? "Selected" : "Select"}
-                                onSelect={() => selectActivity(activity)}
+                                onSelect={() => {
+                                  trackActivityClick(activityId);
+                                  selectActivity(activity);
+                                }}
                                 detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
                                 onDetails={() => trackActivityClick(activityId)}
                                 websiteUrl={activity.website || undefined}
-                                onWebsite={() => trackActivityClick(activityId)}
+                                onWebsite={() => {
+                                  trackActivityClick(activityId);
+                                  trackBusinessEvent(activityId, "website_click", { item_type: "activity" });
+                                }}
                                 reservationUrl={reservationUrl}
                                 internalReservationHref={
                                   internalReservationHref
@@ -1145,9 +1192,10 @@ export default function CreatePage() {
                                   activity.reservation_enabled === true
                                 }
                                 reservationLabel="Book"
-                                onReservation={() =>
-                                  trackActivityClick(activityId)
-                                }
+                                onReservation={() => {
+                                  trackActivityClick(activityId);
+                                  trackBusinessEvent(activityId, "reservation_started", { item_type: "activity" });
+                                }}
                               />
                             );
                           })}

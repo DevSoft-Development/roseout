@@ -160,6 +160,13 @@ export default function LocationsDashboardClient({
               </Link>
 
               <Link
+                href="/business/dashboard/analytics"
+                className="inline-flex items-center gap-2 rounded-full border border-[#f5b700]/30 bg-[#f5b700]/10 px-4 py-2 text-sm font-bold text-[#f5b700] hover:bg-[#f5b700]/15"
+              >
+                Analytics
+              </Link>
+
+              <Link
                 href="/support"
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white/80 hover:bg-white/10"
               >
