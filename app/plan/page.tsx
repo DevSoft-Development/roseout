@@ -3,6 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
+import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { useSearchParams } from "next/navigation";
 import {
   buildGoogleDirectionsUrl,
@@ -91,6 +93,10 @@ type CampaignLocationResponse = {
 
 const PLAN_KEY = "theouthaven_plan";
 const WALKING_MINUTES_PER_MILE = 20;
+const PLAN_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
+  source_page: "/plan",
+  source_section: "outing_card",
+};
 
 export default function PlanPage() {
   return (
@@ -581,9 +587,13 @@ function PlanActionCard({
 
   const reservationUrl = getExternalReservationUrl(location);
   const internalReservationHref = getInternalReservationHref(location, type);
+  const locationId = location.id ? String(location.id) : null;
+  const viewRef = useTrackLocationView<HTMLElement>(locationId, PLAN_ANALYTICS_METADATA);
+  const trackClick = () => trackLocationEvent(locationId, "click", PLAN_ANALYTICS_METADATA);
+  const trackBooking = () => trackLocationEvent(locationId, "booking", PLAN_ANALYTICS_METADATA);
 
   return (
-    <article className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
+    <article ref={viewRef} onClick={(event) => { if ((event.target as HTMLElement).closest("a,button")) return; trackClick(); }} className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
       <div className="relative h-[170px] bg-neutral-950">
         {getLocationImage(location) ? (
           <Image
@@ -635,6 +645,7 @@ function PlanActionCard({
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Link
             href={detailHref}
+            onClick={trackClick}
             className="rounded-full bg-white px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-black transition hover:bg-red-100"
           >
             Details
@@ -645,6 +656,7 @@ function PlanActionCard({
               href={directionsUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={trackClick}
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
               Get Directions
@@ -654,6 +666,7 @@ function PlanActionCard({
           {location.reservation_enabled === true && internalReservationHref ? (
             <Link
               href={internalReservationHref}
+              onClick={() => { trackClick(); trackBooking(); }}
               className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
             >
               Reserve on TheOutHaven
@@ -663,6 +676,7 @@ function PlanActionCard({
               href={reservationUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => { trackClick(); trackBooking(); }}
               className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
             >
               Reserve on Partner Site
@@ -672,6 +686,7 @@ function PlanActionCard({
               href={location.website}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={trackClick}
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
               Website

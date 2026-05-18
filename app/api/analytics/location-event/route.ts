@@ -8,6 +8,7 @@ import {
 
 const MAX_METADATA_BYTES = 8_000;
 const MAX_TEXT_LENGTH = 500;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LOCATION_EVENT_TYPES = ["view", "click", "save", "booking", "skip"] as const;
 
 type LocationEventType = (typeof LOCATION_EVENT_TYPES)[number];
@@ -51,6 +52,20 @@ function cleanMetadata(value: unknown) {
 function safeNumber(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function isValidLocationId(value: string | undefined) {
+  return Boolean(value && UUID_PATTERN.test(value));
+}
+
+function buildLocationMetadata(body: Record<string, unknown>, eventType: LocationEventType) {
+  return {
+    ...cleanMetadata(body.metadata),
+    source_page: cleanString(body.source_page, 160),
+    source_section: cleanString(body.source_section, 160),
+    campaign_id: cleanString(body.campaign_id, 160),
+    location_event_type: eventType,
+  };
 }
 
 async function incrementLocationAnalytics(locationId: string, eventType: LocationEventType) {
@@ -106,12 +121,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Missing location_id." }, { status: 400 });
     }
 
+    if (!isValidLocationId(locationId)) {
+      return NextResponse.json({ success: false, error: "Invalid location_id." }, { status: 400 });
+    }
+
     if (!eventType || !LOCATION_EVENT_TYPES.includes(eventType)) {
       return NextResponse.json({ success: false, error: "Invalid event_type." }, { status: 400 });
     }
 
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    const metadata = buildLocationMetadata(body, eventType);
     const analytics = await incrementLocationAnalytics(locationId, eventType);
 
     await trackLocationAnalyticsEvent({
@@ -123,13 +143,10 @@ export async function POST(request: NextRequest) {
       searchQuery: cleanString(body.search_query, 500),
       outingType: cleanString(body.outing_type, 160),
       referrer: cleanString(body.referrer, 500) || request.headers.get("referer"),
-      metadata: {
-        ...cleanMetadata(body.metadata),
-        location_event_type: eventType,
-      },
+      metadata,
     });
 
-    return NextResponse.json({ success: true, analytics });
+    return NextResponse.json({ success: true, event_type: eventType, analytics });
   } catch (error) {
     console.error("Location analytics event API failed", error);
     return NextResponse.json(
