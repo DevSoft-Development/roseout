@@ -38,6 +38,7 @@ type FormState = {
   internal_reservations_enabled: boolean;
   allow_external_reservations: boolean;
   reservation_source: string;
+  reservation_provider: string;
   phone: string;
   price_range: string;
   cuisine: string;
@@ -160,6 +161,7 @@ export default function EditLocationPage() {
     internal_reservations_enabled: false,
     allow_external_reservations: true,
     reservation_source: "external",
+    reservation_provider: "",
     phone: "",
     price_range: "",
     cuisine: "",
@@ -236,6 +238,7 @@ export default function EditLocationPage() {
           internal_reservations_enabled: Boolean(data.internal_reservations_enabled),
           allow_external_reservations: data.reservation_source !== "internal" && data.reservation_source !== "none",
           reservation_source: data.reservation_source || (data.reservation_enabled ? "internal" : "external"),
+          reservation_provider: data.reservation_provider || "",
           phone: data.phone || "",
           price_range: data.price_range || "",
           cuisine: data.cuisine || "",
@@ -390,6 +393,9 @@ export default function EditLocationPage() {
       uses_internal_reservations: form.uses_internal_reservations,
       internal_reservations_enabled: form.internal_reservations_enabled,
       reservation_source: form.reservation_source,
+      reservation_provider: form.reservation_provider || null,
+      reservation_manual_override: true,
+      reservation_discovery_status: "manual",
       phone: form.phone,
       price_range: form.price_range,
       atmosphere: form.atmosphere,
@@ -871,6 +877,7 @@ export default function EditLocationPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Website" value={form.website} onChange={(v) => update("website", v)} />
                 <Field label="Reservation URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} helper="Must be a supported booking provider to render as Reserve." />
+                <Field label="Reservation Provider" value={form.reservation_provider} onChange={(v) => update("reservation_provider", v)} placeholder="Resy, OpenTable, Tock" />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">

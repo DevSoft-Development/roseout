@@ -124,6 +124,13 @@ export default async function CentralDashboardPage() {
       cta: "Open reserve",
     },
     {
+      eyebrow: "Reserve",
+      title: "Link Discovery",
+      text: "Safely backfill external reservation links with dry runs and small batches.",
+      href: "/admin/dashboard/reservation",
+      cta: "Discover links",
+    },
+    {
       eyebrow: "Tickets",
       title: "Support Inbox",
       text: "Review customer issues, reply to conversations, and create internal tickets.",
