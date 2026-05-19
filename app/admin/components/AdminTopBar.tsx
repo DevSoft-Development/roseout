@@ -147,7 +147,7 @@ export default function AdminTopBar() {
         { label: "CRM Pipeline", href: "/admin/dashboard/business-crm", visible: canView },
         { label: "Upgrade Opportunities", href: "/admin/dashboard/businesses/upgrade-opportunities", visible: canView },
         { label: "Outreach", href: "/admin/dashboard/businesses/outreach", visible: canView },
-        { label: "Follow Ups", href: "/admin/dashboard/businesses/followups", visible: canView },
+        { label: "Followups", href: "/admin/dashboard/businesses/followups", visible: canView },
         { label: "Churn Risk", href: "/admin/dashboard/businesses/churn-risk", visible: canView },
         { label: "Communication Center", href: "/admin/dashboard/businesses/communication-center", visible: canView },
         { label: "Admin Locations", href: "/admin/locations", visible: canView },
@@ -172,7 +172,7 @@ export default function AdminTopBar() {
       links: [
         { label: "Campaigns", href: "/admin/dashboard/marketing", visible: canView },
         { label: "Social Promotions", href: "/admin/dashboard/marketing/settings", visible: canView },
-        { label: "Featured Outings", href: "/create", visible: canView },
+        { label: "Featured Outings", href: "/admin/dashboard/marketing/featured-outings", visible: canView },
       ],
     },
     {

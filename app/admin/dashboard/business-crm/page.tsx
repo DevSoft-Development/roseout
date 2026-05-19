@@ -62,7 +62,7 @@ export default async function BusinessCRMPage() {
                   return (
                     <tr key={business.id} className="border-t border-white/10 align-top">
                       <td className="px-3 py-4">
-                        <Link href={`/admin/dashboard/business-crm/${business.id}`} className="font-bold text-rose-200 hover:text-rose-100">
+                        <Link href={`/admin/dashboard/businesses/${business.id}`} className="font-bold text-rose-200 hover:text-rose-100">
                           {business.name}
                         </Link>
                         <p className="mt-1 text-xs text-white/55">{[business.city, business.state].filter(Boolean).join(", ")}</p>
