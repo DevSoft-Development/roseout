@@ -150,7 +150,7 @@ export default function AdminTopBar() {
         { label: "Outreach", href: "/admin/dashboard/businesses/outreach", visible: canView },
         { label: "Followups", href: "/admin/dashboard/businesses/followups", visible: canView },
         { label: "Churn Risk", href: "/admin/dashboard/businesses/churn-risk", visible: canView },
-        { label: "Communication Center", href: "/admin/dashboard/businesses/communication-center", visible: canView },
+        { label: "Communication Center", href: "/admin/dashboard/communication", visible: canView },
         { label: "Admin Locations", href: "/admin/locations", visible: canView },
         { label: "Restaurants", href: "/admin/restaurants", visible: canView },
         { label: "Activities", href: "/admin/activities", visible: canView },
@@ -265,7 +265,7 @@ export default function AdminTopBar() {
                   id={`admin-menu-${group.label.toLowerCase()}`}
                   role="menu"
                   aria-label={`${group.label} menu`}
-                  className={`absolute left-0 top-full min-w-64 rounded-2xl border border-white/10 bg-[#12090d] p-2 shadow-2xl transition-all duration-180 ${
+                  className={`absolute left-0 top-full min-w-64 rounded-2xl border border-white/10 bg-[#120d0b] p-2 shadow-2xl transition-all duration-180 ${
                     isOpen
                       ? "pointer-events-auto z-[120] translate-y-0 opacity-100"
                       : "pointer-events-none z-[-1] -translate-y-1 opacity-0"
@@ -282,7 +282,7 @@ export default function AdminTopBar() {
                           role="menuitem"
                           className={`block rounded-xl px-3 py-2 text-sm transition-colors duration-150 ${
                             linkActive
-                              ? "bg-white text-white"
+                              ? "border border-rose-300/20 bg-gradient-to-r from-rose-900/45 to-amber-900/35 text-rose-100 shadow-[0_0_25px_rgba(244,63,94,0.12)]"
                               : "text-white/80 hover:bg-white/10 hover:text-white focus:bg-white/10"
                           }`}
                           onClick={() => setActiveDesktopMenu(null)}
@@ -306,7 +306,7 @@ export default function AdminTopBar() {
             {name}
           </button>
           {open && (
-            <div className="absolute right-0 z-[9999] mt-3 w-[calc(100vw-2rem)] max-w-[24rem] rounded-2xl border border-white/10 bg-[#12090d] p-3">
+            <div className="absolute right-0 z-[9999] mt-3 w-[calc(100vw-2rem)] max-w-[24rem] rounded-2xl border border-white/10 bg-[#120d0b] p-3">
               <div className="grid gap-2">
                 {visibleGroups.map((g) => (
                   <details key={g.label} className="rounded-xl border border-white/10 px-3 py-2">
