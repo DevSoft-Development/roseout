@@ -216,14 +216,14 @@ export default function AdminTopBar() {
   const name = user?.user_metadata?.full_name || user?.user_metadata?.name || "Admin";
 
   return (
-    <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white backdrop-blur-2xl">
+    <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#090706]/95 text-white shadow-2xl backdrop-blur-2xl">
       <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <button
           type="button"
           onClick={() => goTo("/admin/dashboard")}
           className="group flex min-w-0 items-center gap-3"
         >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/30 bg-[#f8f3ef] text-lg font-black text-[#8b0f2f]">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/30 bg-gradient-to-br from-rose-200 to-amber-200 text-lg font-black text-[#6f102a] shadow-xl">
             R
           </div>
           <div className="hidden text-left sm:block">
@@ -249,10 +249,10 @@ export default function AdminTopBar() {
                   onMouseEnter={() => openDesktopMenu(group.label)}
                   onFocus={() => openDesktopMenu(group.label)}
                   onClick={() => setActiveDesktopMenu((current) => (current === group.label ? null : group.label))}
-                  className={`rounded-full px-4 py-2 text-sm font-bold transition-colors duration-150 ${
+                  className={`rounded-full border px-4 py-2 text-sm font-bold transition-all duration-150 ${
                     isActive
-                      ? "bg-white text-black shadow-[0_10px_30px_rgba(255,255,255,0.16)]"
-                      : "text-white/75 hover:bg-white/10 hover:text-white"
+                      ? "border-rose-300/40 bg-gradient-to-r from-rose-900/45 to-amber-900/35 text-rose-100 shadow-[0_10px_30px_rgba(120,35,60,0.35)]"
+                      : "border-white/10 bg-[#120d0b] text-white/70 hover:border-rose-300/30 hover:text-white"
                   }`}
                   aria-haspopup="menu"
                   aria-expanded={isOpen}
@@ -282,7 +282,7 @@ export default function AdminTopBar() {
                           role="menuitem"
                           className={`block rounded-xl px-3 py-2 text-sm transition-colors duration-150 ${
                             linkActive
-                              ? "bg-white text-black"
+                              ? "bg-white text-white"
                               : "text-white/80 hover:bg-white/10 hover:text-white focus:bg-white/10"
                           }`}
                           onClick={() => setActiveDesktopMenu(null)}

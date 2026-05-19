@@ -636,7 +636,7 @@ export default async function AdminLocationsPage({
                 >
                   <div className="grid gap-4 xl:grid-cols-[1fr_420px_140px] xl:items-center">
                     <Link
-                      href={`/admin/dashboard/locations/${location.id}?from=/admin/dashboard/locations`}
+                      href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}
                       className="flex min-w-0 items-center gap-4"
                     >
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
@@ -764,7 +764,7 @@ export default async function AdminLocationsPage({
 
                     <div className="flex gap-2 xl:flex-col">
                       <Link
-                        href={`/admin/dashboard/locations/${location.id}?from=/admin/dashboard/locations`}
+                        href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         View
