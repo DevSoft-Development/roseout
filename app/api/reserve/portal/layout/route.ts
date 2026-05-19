@@ -302,6 +302,9 @@ export async function GET(request: NextRequest) {
     const locationId = cleanString(searchParams.get("locationId"));
     const locationType = normalizeReservationType(searchParams.get("type"));
     const selectedDate = cleanString(searchParams.get("date")) || dateKey(new Date());
+    const page = Math.max(1, Number(searchParams.get("page") || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100)));
+    const q = cleanString(searchParams.get("q")).toLowerCase();
 
     let reservationQuery = supabaseAdmin
       .from("location_reservations")
@@ -326,8 +329,9 @@ export async function GET(request: NextRequest) {
       reservationQuery,
       supabaseAdmin
         .from("locations")
-        .select("id, location_type, name, restaurant_name, activity_name, city, state")
-        .order("name", { ascending: true }),
+        .select("id, location_type, name, restaurant_name, activity_name, city, state, address, cuisine, source_table, rating", { count: "exact" })
+        .order("name", { ascending: true })
+        .range(Math.max(0, Number(searchParams.get("page") || 1) - 1) * Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100))), Math.max(0, Number(searchParams.get("page") || 1) - 1) * Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100))) + Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100))) - 1),
       waitlistQuery,
     ]);
 
@@ -341,7 +345,14 @@ export async function GET(request: NextRequest) {
       itemSource: itemsResult.source,
       reservations: reservationsResult.data || [],
       waitlist: waitlistResult.error && !isMissingTable(waitlistResult.error) ? [] : waitlistResult.data || [],
-      locations: (locationsResult.data || []).map((item) => {
+      locationsTotal: locationsResult.count || (locationsResult.data || []).length,
+      locationsPage: page,
+      locationsPageSize: pageSize,
+      locations: (locationsResult.data || []).filter((item:any)=>{
+        if(!q) return true;
+        const hay=[item.name,item.restaurant_name,item.activity_name,item.address,item.city,item.state,item.source_table,item.id,item.cuisine,item.category,item.primary_category,item.phone,item.google_place_id].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      }).map((item) => {
         const type = item.location_type === "restaurant" ? "restaurant" : "activity";
         return {
           id: item.id,
