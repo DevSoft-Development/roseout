@@ -20,6 +20,20 @@ type AppUser = {
   role: string | null;
   is_superadmin?: boolean | null;
   created_at: string | null;
+  zip_code?: string | null;
+  derived_city?: string | null;
+  derived_state?: string | null;
+  derived_market_area?: string | null;
+  outing_preferences?: string[] | null;
+  budget_range?: string | null;
+  preferred_areas?: string[] | null;
+  nightlife_frequency?: string | null;
+  interested_in_member_perks?: boolean | null;
+  sms_opt_in?: boolean | null;
+  plan?: string | null;
+  plan_status?: string | null;
+  premium_until?: string | null;
+  weekly_search_limit?: number | null;
 };
 
 type AdminUserRow = {
@@ -232,7 +246,7 @@ export default async function AdminUsersPage({
   const safeUsers = fullUsers.filter((user) => {
     const displayRole = user.is_superadmin ? "superuser" : user.role || "user";
     const matchesQuery = q
-      ? [user.email, user.full_name, displayRole]
+      ? [user.email, user.full_name, displayRole, user.id, user.zip_code, user.derived_market_area]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(q.toLowerCase()))
       : true;
@@ -295,7 +309,7 @@ export default async function AdminUsersPage({
             <input
               name="q"
               defaultValue={q}
-              placeholder="Search by email or role..."
+              placeholder="Search email, name, id, zip, or market area..."
               className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300"
             />
 
@@ -413,9 +427,7 @@ export default async function AdminUsersPage({
                         <p className="truncate font-black">
                           {user.email || "No email"}
                           {user.full_name && (
-                            <span className="ml-2 text-sm font-bold text-black/40">
-                              {user.full_name}
-                            </span>
+                            <span className="ml-2 text-sm font-bold text-black/40">{user.full_name}</span>
                           )}
                         </p>
 
@@ -423,6 +435,20 @@ export default async function AdminUsersPage({
                           Created {formatDate(user.created_at)}
                         </p>
 
+
+
+                        <p className="mt-2 text-xs text-black/55">
+                          {user.derived_city || "—"}, {user.derived_state || "—"} · {user.derived_market_area || "No market"} · ZIP {user.zip_code || "—"}
+                        </p>
+                        <p className="mt-1 text-xs text-black/55">
+                          Preferences: {(user.outing_preferences || []).join(", ") || "—"} | Budget: {user.budget_range || "—"} | Areas: {(user.preferred_areas || []).join(", ") || "—"}
+                        </p>
+                        <p className="mt-1 text-xs text-black/55">
+                          Frequency: {user.nightlife_frequency || "—"} | Member perks: {user.interested_in_member_perks ? "Yes" : "No"} | SMS: {user.sms_opt_in ? "Opted in" : "Not opted in"}
+                        </p>
+                        <p className="mt-1 text-xs text-black/55">
+                          Plan: {user.plan || "free"} ({user.plan_status || "active"}) · Premium until: {formatDate(user.premium_until || null)} · Weekly search limit: {user.weekly_search_limit ?? "—"}
+                        </p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <span
                             className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${roleBadge(
