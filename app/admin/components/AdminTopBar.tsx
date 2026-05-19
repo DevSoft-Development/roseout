@@ -121,9 +121,11 @@ export default function AdminTopBar() {
       visible: canView,
       links: [
         { label: "All Locations", href: "/admin/dashboard/locations", visible: canView },
+        { label: "Restaurants", href: "/admin/dashboard/locations?type=restaurants", visible: canView },
+        { label: "Activities", href: "/admin/dashboard/locations?type=activities", visible: canView },
+                { label: "Claim Codes", href: "/admin/dashboard/claim-qrs", visible: canView },
         { label: "Import Locations", href: "/admin/dashboard/import", visible: canView },
-        { label: "Claim Requests", href: "/admin/claims", visible: canClaims },
-        { label: "Location Layout", href: "/admin/dashboard/location-layout", visible: canView },
+                { label: "Location Layout", href: "/admin/dashboard/location-layout", visible: canView },
         { label: "Create/Edit Layout", href: "/admin/dashboard/location-layout/create", visible: canEdit },
       ],
     },
