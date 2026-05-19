@@ -84,8 +84,22 @@ function VerifyPageContent() {
         return;
       }
 
+      let pendingProfile: any = null;
+      try {
+        const saved = sessionStorage.getItem("theouthaven_pending_signup");
+        if (saved) pendingProfile = JSON.parse(saved)?.profile || null;
+      } catch {}
+
       if (password) {
         await supabase.auth.updateUser({ password });
+      }
+
+      if (pendingProfile) {
+        await fetch("/api/user/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pendingProfile),
+        });
       }
 
       sessionStorage.removeItem("theouthaven_pending_signup");
