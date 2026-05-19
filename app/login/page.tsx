@@ -1,68 +1,59 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 
-const LOGIN_PAGE_VERSION = "login-refresh-2026-05-11";
+type Tab = "signin" | "signup";
 
 export default function LoginPage() {
-  const router = useRouter();
   const supabase = createClient();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("signin");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [signin, setSignin] = useState({ email: "", password: "" });
+  const [signup, setSignup] = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    confirm_password: "",
+    account_type: "user",
+  });
 
+  const continueWithGoogle = async () => {
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (authError) setError(authError.message);
+  };
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError("");
     setMessage("");
-
-    if (!email.trim() || !password.trim()) {
-      setError("Please enter your email and password.");
-      return;
-    }
-
     setLoading(true);
-
     try {
-      const { data, error: loginError } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim().toLowerCase(),
-          password,
-        });
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email: signin.email.trim().toLowerCase(),
+        password: signin.password,
+      });
+      if (loginError) return setError(loginError.message);
+      const userEmail = data.user?.email?.toLowerCase();
+      if (!userEmail) return setError("Login failed. Please try again.");
 
-      if (loginError) {
-        setError(loginError.message);
-        return;
-      }
-
-      if (!data.user?.email) {
-        setError("Login failed. Please try again.");
-        return;
-      }
-
-      const userEmail = data.user.email.toLowerCase();
-
-      const { data: adminUser, error: adminError } = await supabase
+      const { data: adminUser } = await supabase
         .from("admin_users")
-        .select("id, role")
+        .select("role")
         .eq("email", userEmail)
         .maybeSingle();
 
       const metadataRole = data.user.user_metadata?.role;
-
-      if (adminError && metadataRole !== "superuser") {
-        setError(adminError.message);
-        return;
-      }
-
+      const role = adminUser?.role || metadataRole;
       const roleRedirects: Record<string, string> = {
         superuser: "/admin/dashboard",
         admin: "/admin/dashboard",
@@ -70,17 +61,8 @@ export default function LoginPage() {
         reviewer: "/admin/claims",
         viewer: "/admin/dashboard/import",
       };
-
-      const effectiveRole = adminUser?.role || metadataRole;
-      const redirectPath = effectiveRole
-        ? roleRedirects[effectiveRole] || "/admin/dashboard"
-        : "/create";
-
       setMessage("Login successful. Redirecting...");
-
-      setTimeout(() => {
-        router.replace(redirectPath);
-      }, 500);
+      router.replace(role ? roleRedirects[role] || "/admin/dashboard" : "/create");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -88,108 +70,77 @@ export default function LoginPage() {
     }
   };
 
+  const handleCreateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    if (signup.password !== signup.confirm_password) return setError("Passwords do not match.");
+    setLoading(true);
+    const userEmail = signup.email.trim().toLowerCase();
+    const { error: signupError } = await supabase.auth.signInWithOtp({
+      email: userEmail,
+      options: {
+        shouldCreateUser: true,
+        data: {
+          role: signup.account_type === "business_owner" ? "location_owner" : "user",
+          full_name: signup.full_name,
+          account_type: signup.account_type,
+        },
+      },
+    });
+    if (signupError) {
+      setError(signupError.message);
+      setLoading(false);
+      return;
+    }
+    sessionStorage.setItem("theouthaven_pending_signup", JSON.stringify({ email: userEmail, password: signup.password }));
+    window.location.href = `/verify?email=${encodeURIComponent(userEmail)}`;
+  };
+
   return (
-    <main
-      data-page-version={LOGIN_PAGE_VERSION}
-      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black px-5 py-10 text-white"
-    >
-      {/* Background Glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,0.32),transparent_32%),radial-gradient(circle_at_85%_5%,rgba(127,29,29,0.32),transparent_30%),linear-gradient(180deg,#050505,#000)]" />
-      <div className="absolute left-1/2 top-10 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-red-600/10 blur-3xl" />
-
-      <section className="relative z-10 grid w-full max-w-5xl overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/[0.04] shadow-2xl backdrop-blur-xl lg:grid-cols-[1fr_440px]">
-        
-        {/* LEFT SIDE (BRAND) */}
-        <div className="hidden min-h-[620px] flex-col justify-center border-r border-white/10 bg-[radial-gradient(circle_at_20%_20%,rgba(225,6,42,0.22),transparent_35%),#080808] p-10 lg:flex">
-          
-          <div className="inline-flex w-fit rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.28em] text-red-200">
-            TheOutHaven
+    <main className="min-h-screen bg-[#090706] text-white">
+      <section className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="hidden border-r border-white/10 bg-[radial-gradient(circle_at_20%_20%,rgba(190,24,93,.2),transparent_35%),linear-gradient(160deg,#120d0b,#090706)] p-10 lg:flex lg:flex-col lg:justify-between">
+          <div>
+            <p className="inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs tracking-[0.22em] text-white/60">THEOUTHAVEN</p>
+            <h1 className="mt-8 text-6xl font-black leading-[0.95]">Luxury nights.<br />Concierge vibes.</h1>
+            <p className="mt-4 max-w-lg text-white/60">Discover elevated date nights, social scenes, and curated reservations tailored to your taste.</p>
           </div>
-
-          <h1 className="mt-10 text-6xl font-black leading-[0.95] tracking-tight">
-            Welcome
-            <br />
-            <span className="text-red-500">back.</span>
-          </h1>
-
-          <p className="mt-6 max-w-md text-sm leading-7 text-white/55">
-            Sign in to continue planning your next experience with TheOutHaven.
-          </p>
+          <p className="text-sm text-white/60">Private by design • Premium by default</p>
         </div>
 
-        {/* RIGHT SIDE (FORM) */}
-        <form onSubmit={handleLogin} className="p-6 sm:p-8">
-          
-          <Link
-            href="/"
-            className="mb-8 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-white/55 transition hover:bg-white hover:text-black"
-          >
-            ← Home
-          </Link>
-
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-red-400">
-            TheOutHaven
-          </p>
-
-          <h2 className="mt-3 text-4xl font-black tracking-tight">
-            Welcome Back
-          </h2>
-
-          <p className="mt-3 text-sm leading-6 text-white/55">
-            Sign in to continue to your account.
-          </p>
-
-          {error && (
-            <div className="mt-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-bold text-red-100">
-              {error}
+        <div className="flex items-center justify-center px-5 py-8">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
+            <div className="mb-6 flex rounded-full border border-white/10 bg-black/40 p-1">
+              <button onClick={() => setTab("signin")} className={`flex-1 rounded-full px-4 py-2 text-sm ${tab === "signin" ? "bg-gradient-to-r from-rose-700 to-amber-400 text-white" : "text-white/60"}`}>Sign In</button>
+              <button onClick={() => setTab("signup")} className={`flex-1 rounded-full px-4 py-2 text-sm ${tab === "signup" ? "bg-gradient-to-r from-rose-700 to-amber-400 text-white" : "text-white/60"}`}>Create Account</button>
             </div>
-          )}
+            {error && <p className="mb-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm">{error}</p>}
+            {message && <p className="mb-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">{message}</p>}
 
-          {message && (
-            <div className="mt-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">
-              {message}
-            </div>
-          )}
+            {tab === "signin" ? (
+              <form onSubmit={handleSignIn} className="space-y-3">
+                <input type="email" placeholder="Email" value={signin.email} onChange={(e) => setSignin((s) => ({ ...s, email: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3" />
+                <input type="password" placeholder="Password" value={signin.password} onChange={(e) => setSignin((s) => ({ ...s, password: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3" />
+                <button disabled={loading} className="w-full rounded-xl bg-gradient-to-r from-rose-700 to-amber-500 px-4 py-3 font-bold">{loading ? "Signing In..." : "Sign In"}</button>
+              </form>
+            ) : (
+              <form onSubmit={handleCreateAccount} className="space-y-3">
+                <input placeholder="Full Name" value={signup.full_name} onChange={(e)=>setSignup((s)=>({...s,full_name:e.target.value}))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3" />
+                <input type="email" placeholder="Email" value={signup.email} onChange={(e)=>setSignup((s)=>({...s,email:e.target.value}))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3" />
+                <input type="password" placeholder="Password" value={signup.password} onChange={(e)=>setSignup((s)=>({...s,password:e.target.value}))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3" />
+                <input type="password" placeholder="Confirm Password" value={signup.confirm_password} onChange={(e)=>setSignup((s)=>({...s,confirm_password:e.target.value}))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3" />
+                <select value={signup.account_type} onChange={(e)=>setSignup((s)=>({...s,account_type:e.target.value}))} className="w-full rounded-xl border border-white/10 bg-[#120d0b] px-4 py-3">
+                  <option value="user">User</option><option value="business_owner">Business Owner</option>
+                </select>
+                <button disabled={loading} className="w-full rounded-xl bg-gradient-to-r from-rose-700 to-amber-500 px-4 py-3 font-bold">{loading ? "Creating..." : "Create Account"}</button>
+              </form>
+            )}
 
-          <label className="mt-6 block text-sm font-black text-white/80">
-            Email
-          </label>
-
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="mt-2 w-full rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-white outline-none transition placeholder:text-white/30 focus:border-red-500"
-          />
-
-          <label className="mt-5 block text-sm font-black text-white/80">
-            Password
-          </label>
-
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter password"
-            className="mt-2 w-full rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-white outline-none transition placeholder:text-white/30 focus:border-red-500"
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="mt-6 w-full rounded-full bg-red-600 px-6 py-4 font-black text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loading ? "Signing in..." : "Login"}
-          </button>
-
-          <Link
-            href="/forgot-password"
-            className="mt-5 block text-center text-sm font-bold text-white/45 transition hover:text-white"
-          >
-            Forgot password?
-          </Link>
-        </form>
+            <button onClick={continueWithGoogle} className="mt-4 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white">Continue with Google</button>
+            <div className="mt-4 flex justify-between text-xs text-white/60"><Link href="/forgot-password">Forgot password?</Link><span><Link href="/terms">Terms</Link> · <Link href="/privacy">Privacy</Link></span></div>
+          </div>
+        </div>
       </section>
     </main>
   );

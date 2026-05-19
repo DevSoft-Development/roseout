@@ -39,6 +39,20 @@ export async function GET(request: NextRequest) {
   const customers = customerResult.data || [];
   const location: any = locationResult.data || {};
 
+
+  const [topCities, topStates, topAgeRanges, topOutingStyles, topBudgetRanges, searchesOverTime, viewsOverTime, reservationByDemographic] = await Promise.all([
+    supabaseAdmin.from("search_events").select("city").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("search_events").select("state").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("search_events").select("age_range").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("search_events").select("outing_style").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("search_events").select("budget_range").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("search_events").select("created_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("profile_view_events").select("created_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("reservation_interest_events").select("age_range,budget_range,outing_style").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+  ]);
+
+  const topN=(rows:any[]=[], key:string)=>Object.entries(rows.reduce((a:any,r:any)=>{const k=String(r?.[key]||"Unknown");a[k]=(a[k]||0)+1;return a;},{})).sort((a:any,b:any)=>b[1]-a[1]).slice(0,5).map(([label,count])=>({label,count}));
+  const byDay=(rows:any[]=[])=>Object.entries(rows.reduce((a:any,r:any)=>{const d=String(r.created_at||"").slice(0,10);if(d)a[d]=(a[d]||0)+1;return a;},{})).sort((a:any,b:any)=>a[0].localeCompare(b[0])).map(([date,count])=>({date,count}));
   const profileViews = sum(daily, "profile_views");
   const searchAppearances = sum(daily, "search_appearances");
   const searchClicks = sum(daily, "search_clicks");
@@ -111,5 +125,15 @@ export async function GET(request: NextRequest) {
       { title: "Homepage feature", detail: "Premium placement for high-intent discovery.", cta: "Boost Your Visibility" },
     ],
     heatmap: hourly,
+    demographic_insights: {
+      top_cities_searching: topN(topCities.data || [], "city"),
+      top_states_searching: topN(topStates.data || [], "state"),
+      top_age_ranges: topN(topAgeRanges.data || [], "age_range"),
+      top_outing_styles: topN(topOutingStyles.data || [], "outing_style"),
+      top_budget_ranges: topN(topBudgetRanges.data || [], "budget_range"),
+      searches_over_time: byDay(searchesOverTime.data || []),
+      profile_views_over_time: byDay(viewsOverTime.data || []),
+      reservation_interest_by_demographic: reservationByDemographic.data || [],
+    },
   });
 }
