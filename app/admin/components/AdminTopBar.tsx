@@ -144,6 +144,7 @@ export default function AdminTopBar() {
       label: "Businesses",
       visible: canView,
       links: [
+        { label: "Business View", href: "/admin/dashboard/businesses/view", visible: canView },
         { label: "CRM Pipeline", href: "/admin/dashboard/business-crm", visible: canView },
         { label: "Upgrade Opportunities", href: "/admin/dashboard/businesses/upgrade-opportunities", visible: canView },
         { label: "Outreach", href: "/admin/dashboard/businesses/outreach", visible: canView },
@@ -161,6 +162,7 @@ export default function AdminTopBar() {
       links: [
         { label: "Semantic Cleanup", href: "/admin/dashboard/data-quality", visible: canView },
         { label: "Test + Tune", href: "/admin/dashboard/operations/test-tune", visible: canView },
+        { label: "User Edit", href: "/admin/dashboard/operations/users", visible: canViewUsers },
         { label: "Missing Reservation Links", href: "/admin/dashboard/reservation", visible: canView },
         { label: "Data Quality", href: "/admin/dashboard/data-quality", visible: canView },
         { label: "Background Jobs", href: "/admin/dashboard/logs", visible: canView },

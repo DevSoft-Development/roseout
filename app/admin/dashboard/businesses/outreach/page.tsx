@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { listBusinessCRM } from "@/lib/admin-crm";
+import BusinessCommunicationSection from "@/components/admin/business/BusinessCommunicationSection";
 
 export default async function Page() {
   await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
@@ -13,12 +14,13 @@ export default async function Page() {
         <h1 className="mt-2 text-3xl font-black">Business Work Queue</h1>
         <p className="mt-3 text-white/70">Click any business to open the full CRM detail page.</p>
         <div className="mt-6 space-y-2">
-          {businesses.map((business) => (
-            <Link key={business.id} href={`/admin/dashboard/businesses/${business.id}`} className="block rounded-xl border border-white/10 px-4 py-3 hover:bg-white/5">
+          {businesses.map((business) => (<>
+            <Link key={business.id} href={`/admin/dashboard/businesses/view?locationId=${business.id}`} className="block rounded-xl border border-white/10 px-4 py-3 hover:bg-white/5">
               <p className="font-semibold">{business.name}</p>
               <p className="text-xs text-white/55">{business.crm_status} · Opp {Math.round(business.opportunity_score)} · Churn {Math.round(business.churn_risk_score)}</p>
             </Link>
-          ))}
+            <div className="mt-2"><BusinessCommunicationSection business={business} compact /></div>
+          </>))}
         </div>
       </div>
     </main>
