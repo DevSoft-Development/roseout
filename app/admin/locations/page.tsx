@@ -767,7 +767,7 @@ export default async function AdminLocationsPage({
                         href={`/admin/dashboard/locations/${location.id}?from=/admin/dashboard/locations`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
-                        View CRM
+                        View
                       </Link>
 
                       <Link
