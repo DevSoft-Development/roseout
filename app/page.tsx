@@ -234,6 +234,41 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className="bg-[#090706] px-5 py-16 text-white sm:px-6 lg:py-20">
+        <div className="mx-auto max-w-7xl">
+          <div className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_15%_20%,rgba(190,24,93,.22),transparent_34%),radial-gradient(circle_at_82%_0%,rgba(250,204,21,.1),transparent_28%),linear-gradient(160deg,#120d0b_0%,#090706_100%)] p-7 shadow-2xl sm:p-10">
+            <h2 className="text-3xl font-black tracking-[-0.03em] sm:text-4xl">
+              Create your free TheOutHaven account
+            </h2>
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/70 sm:text-base">
+              Save your favorite places, plan better outings, get personalized recommendations, and unlock a smoother way to discover restaurants, activities, and date-night ideas.
+            </p>
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <Link href="/signup" className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-6 py-3 text-sm font-bold shadow-lg shadow-rose-950/30 sm:w-auto">
+                Create Free Account
+              </Link>
+              <Link href="/business" className="inline-flex w-full items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/90 sm:w-auto">
+                Claim Your Business
+              </Link>
+            </div>
+            <div className="mt-8 grid gap-3 md:grid-cols-3">
+              {[
+                "Save favorite places",
+                "Get personalized outing ideas",
+                "Claim or manage a business",
+              ].map((benefit) => (
+                <article
+                  key={benefit}
+                  className="rounded-3xl border border-white/10 bg-black/20 p-5"
+                >
+                  <p className="text-sm font-semibold text-white/85">{benefit}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-[#17110f] px-5 py-20 text-white sm:px-6">
         <div className="mx-auto max-w-7xl">
           <SectionIntro
