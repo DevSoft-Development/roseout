@@ -144,6 +144,12 @@ export default function AdminTopBar() {
       label: "Businesses",
       visible: canView,
       links: [
+        { label: "CRM Pipeline", href: "/admin/dashboard/business-crm", visible: canView },
+        { label: "Upgrade Opportunities", href: "/admin/dashboard/business-crm", visible: canView },
+        { label: "Outreach", href: "/admin/dashboard/business-crm", visible: canView },
+        { label: "Follow Ups", href: "/admin/dashboard/business-crm", visible: canView },
+        { label: "Churn Risk", href: "/admin/dashboard/business-crm", visible: canView },
+        { label: "Communication Center", href: "/admin/dashboard/business-crm", visible: canView },
         { label: "Admin Locations", href: "/admin/locations", visible: canView },
         { label: "Restaurants", href: "/admin/restaurants", visible: canView },
         { label: "Activities", href: "/admin/activities", visible: canView },
