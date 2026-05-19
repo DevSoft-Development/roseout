@@ -929,7 +929,7 @@ export default async function AdminDataQualityPage({
                           href={`/admin/dashboard/locations/${location.detailId}?from=/admin/dashboard/data-quality`}
                           className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1.5 text-center text-[11px] font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                         >
-                          View CRM
+                          View
                         </Link>
                         <Link
                           href={`/admin/dashboard/locations/edit/${location.detailType}/${location.detailId}?from=/admin/dashboard/data-quality`}

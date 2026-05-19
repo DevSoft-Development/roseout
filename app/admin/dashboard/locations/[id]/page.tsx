@@ -22,18 +22,33 @@ type LocationRecord = Record<string, unknown> & {
 };
 
 async function findLocation(id: string): Promise<LocationRecord | null> {
-  const { data } = await supabase.from("locations").select("*").eq("id", id).maybeSingle();
-  if (data) {
-    const sourceTable = String(data.source_table || "").toLowerCase();
-    const locationType = String(data.location_type || "").toLowerCase();
+  const normalizedId = id.trim();
+  if (!normalizedId) return null;
+
+  const { data: locationData } = await supabase
+    .from("locations")
+    .select("*")
+    .eq("id", normalizedId)
+    .maybeSingle();
+  if (locationData) {
+    const sourceTable = String(locationData.source_table || "").toLowerCase();
+    const locationType = String(locationData.location_type || "").toLowerCase();
     const normalizedType: LocationType =
-      sourceTable === "activities" ||
-      locationType === "activity" ||
-      locationType === "activities"
+      sourceTable === "activities" || locationType === "activity" || locationType === "activities"
         ? "activities"
         : "restaurants";
 
-    return { ...data, locationType: normalizedType, id };
+    return { ...locationData, locationType: normalizedType, id: normalizedId };
+  }
+
+  const restaurantResult = await supabase.from("restaurants").select("*").eq("id", normalizedId).maybeSingle();
+  if (restaurantResult.data) {
+    return { ...restaurantResult.data, locationType: "restaurants", id: normalizedId };
+  }
+
+  const activityResult = await supabase.from("activities").select("*").eq("id", normalizedId).maybeSingle();
+  if (activityResult.data) {
+    return { ...activityResult.data, locationType: "activities", id: normalizedId };
   }
 
   return null;
@@ -80,7 +95,7 @@ export default async function AdminLocationDetailPage({ params }: { params: Prom
         </Section>
 
         {[
-          "Overview","CRM Metrics","Analytics","Upsell Opportunities","Reservation Links","Claim Access","Owner / Business Account","Communication","Support Tickets","Notes / History","Data Quality","Semantic Tags","Layout / Reservations","Promotions",
+          "Overview","CRM Metrics","Analytics","Upsell Opportunities","Reservation Links","Claim Access","Owner Info","Communication","Support Tickets","Notes / History","Data Quality","Semantic Tags","Layout / Reservations","Promotions",
         ].map((title) => (
           <Section key={title} title={title}>
             {title === "Claim Access" ? (
