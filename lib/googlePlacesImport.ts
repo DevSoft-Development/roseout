@@ -432,15 +432,30 @@ function buildKeywords(place: GooglePlace, query: string, extras: string[] = [])
 }
 
 async function findExistingLocation(table: ImportTable, placeId: string) {
-  const { data, error } = await supabaseAdmin
-    .from(table)
-    .select("id, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url")
-    .eq("google_place_id", placeId)
-    .limit(1);
+  const baseColumns = "id, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, claim_code, claim_token, claim_url, claim_qr_url, qr_code_data_url";
+  const withQrLink = `${baseColumns}, qr_link`;
 
-  if (error) throw new Error(error.message);
+  const query = async (columns: string) => (
+    supabaseAdmin
+      .from(table)
+      .select(columns)
+      .eq("google_place_id", placeId)
+      .limit(1)
+  );
 
-  return (data?.[0] || null) as ExistingLocationClaim | null;
+  const { data, error } = await query(withQrLink);
+
+  if (error) {
+    const missingColumn = getMissingColumn(error.message);
+    if (missingColumn === "qr_link") {
+      const fallback = await query(baseColumns);
+      if (fallback.error) throw new Error(fallback.error.message);
+      return (fallback.data?.[0] || null) as unknown as ExistingLocationClaim | null;
+    }
+    throw new Error(error.message);
+  }
+
+  return (data?.[0] || null) as unknown as ExistingLocationClaim | null;
 }
 
 async function addClaimFields(
