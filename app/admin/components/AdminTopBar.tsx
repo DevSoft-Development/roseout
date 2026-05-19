@@ -185,6 +185,8 @@ export default function AdminTopBar() {
         { label: "Reviews", href: "/admin/dashboard/reviews", visible: canView },
         { label: "Support", href: "/admin/dashboard/support", visible: canView },
         { label: "API Tools", href: "/admin/search-qa", visible: canView },
+        { label: "Settings Home", href: "/admin/dashboard/settings", visible: canView },
+        { label: "Promo Codes", href: "/admin/dashboard/settings/promo-codes", visible: canView },
       ],
     },
   ];
