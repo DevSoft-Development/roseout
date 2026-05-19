@@ -182,6 +182,7 @@ export default function AdminTopBar() {
       visible: canView,
       links: [
         { label: "Admin Users", href: "/admin/dashboard/users", visible: canViewUsers },
+        { label: "Reviews", href: "/admin/dashboard/reviews", visible: canView },
         { label: "Support", href: "/admin/dashboard/support", visible: canView },
         { label: "API Tools", href: "/admin/search-qa", visible: canView },
       ],
