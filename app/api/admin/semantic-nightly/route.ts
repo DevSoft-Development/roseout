@@ -191,10 +191,11 @@ async function runSemanticNightly(request: NextRequest) {
   const offset = Math.max(Number(body.offset || query.get("offset") || 0), 0);
   const all = parseBoolean(body.all ?? query.get("all"));
   const missing = parseBoolean(body.missing ?? query.get("missing"));
+  const repair = parseBoolean(body.repair ?? query.get("repair"));
 
   let selector = supabaseAdmin.from("locations").select("*", { count: "exact" }).order(LOCATION_SAFE_ORDER_COLUMN, { ascending: true }).range(offset, offset + limit - 1);
 
-  if (missing) {
+  if (repair || missing) {
     selector = selector.or("semantic_search_text.is.null,semantic_search_text.eq.,intent_tags.is.null,recommendation_score.is.null,analytics_score.is.null,intent_tags.eq.{}");
   } else if (!all) {
     selector = selector.eq("needs_semantic_refresh", true);
@@ -221,11 +222,14 @@ async function runSemanticNightly(request: NextRequest) {
     try {
       const semanticSearchText = buildSemanticSearchText(location);
       const intentTags = buildIntentTags(location, semanticSearchText);
-      if (!semanticSearchText || intentTags.length === 0) {
-        skipped += 1;
-        continue;
+      let embeddingVector: number[] | null = null;
+      let embeddingFailed = false;
+      try {
+        const embedding = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: semanticSearchText });
+        embeddingVector = embedding.data[0]?.embedding || null;
+      } catch {
+        embeddingFailed = true;
       }
-      const embedding = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: semanticSearchText });
       const qualityScore = calculateQualityScore(location);
       const analyticsScore = calculateAnalyticsScore(analyticsByLocation.get(id));
       const recommendationScore = calculateRecommendationScore(location, qualityScore, analyticsScore);
@@ -236,9 +240,9 @@ async function runSemanticNightly(request: NextRequest) {
         quality_score: qualityScore,
         analytics_score: analyticsScore,
         recommendation_score: recommendationScore,
-        semantic_embedding: embedding.data[0]?.embedding || null,
+        semantic_embedding: embeddingVector,
         embedding_updated_at: new Date().toISOString(),
-        needs_semantic_refresh: false,
+        needs_semantic_refresh: embeddingFailed,
       };
       const updateResult = await safeUpdateLocation(id, payload);
       if (!updateResult.success) {
@@ -246,6 +250,9 @@ async function runSemanticNightly(request: NextRequest) {
         continue;
       }
       updated += 1;
+      if (embeddingFailed) {
+        failures.push({ id, error: "embedding_failed" });
+      }
     } catch (locationError) {
       failures.push({ id, error: locationError instanceof Error ? locationError.message : String(locationError) });
     }
@@ -269,7 +276,7 @@ async function runSemanticNightly(request: NextRequest) {
 
   return NextResponse.json({
     success: failures.length === 0,
-    mode: missing ? "missing" : all ? "all" : "refresh_only",
+    mode: repair ? "repair" : missing ? "missing" : all ? "all" : "refresh_only",
     processed: (locations || []).length,
     updated,
     skipped,
