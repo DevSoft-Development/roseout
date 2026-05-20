@@ -112,7 +112,7 @@ export default function AdminTopBar() {
       visible: canView,
       links: [
         { label: "Dashboard Home", href: "/admin/dashboard", visible: canView },
-        { label: "Admin Platform", href: "/admin/dashboard", visible: canView },
+        { label: "Admin Platform", href: "/", visible: canView },
         { label: "Analytics", href: "/admin/dashboard/analytics", visible: canView },
         { label: "Reports (Logs)", href: "/admin/dashboard/logs", visible: canView },
       ],
