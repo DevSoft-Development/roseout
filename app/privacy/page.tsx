@@ -253,7 +253,13 @@ export default function PrivacyPage() {
                 <br />
                 Website: https://theouthaven.com
               </p>
+            
+
+            <section>
+              <h2 className="text-xl font-black text-white">17. Review and Listing Integrity</h2>
+              <p className="mt-2">We process review, moderation, and listing signals to protect trust and reduce spam, fraud, and misleading business information.</p>
             </section>
+</section>
           </div>
         </div>
       </section>

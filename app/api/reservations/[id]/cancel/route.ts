@@ -6,6 +6,7 @@ import { sendReservationCancelledEmail, sendWaitlistAvailableEmail } from "@/lib
 import { sendReservationCancelledSMS, sendWaitlistSMS } from "@/lib/sms/reservation-sms";
 import { getLocationName } from "@/lib/locationName";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
+import { logEvent } from "@/lib/monitoring";
 
 type ReservationForWaitlist = {
   location_id: string;
@@ -133,8 +134,10 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       }),
     ]);
 
+    await logEvent("reservation_audit", { action: "customer_cancelled", reservationId: id, userId: user?.id || null, locationId: existing.location_id });
     return NextResponse.json({ success: true, reservation: data, notified_waitlist: notifiedWaitlist });
   } catch (error) {
+    await logEvent("failed_api", { route: "reservations_cancel", error: error instanceof Error ? error.message : "unknown" });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Something went wrong." }, { status: 500 });
   }
 }

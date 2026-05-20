@@ -227,7 +227,18 @@ export default function TermsPage() {
                 <br />
                 Website: https://theouthaven.com
               </p>
+            
+
+            <section>
+              <h2 className="text-xl font-black text-white">16. Refunds, Cancellations, and Review Policy</h2>
+              <p className="mt-2">Reservation deposits and premium purchases are generally non-refundable once consumed or after a booked time has passed, unless required by law or a stated promotion. Users should cancel as early as possible from their reservation portal. TheOutHaven may remove reviews that are fake, abusive, incentivized without disclosure, or violate our content standards.</p>
             </section>
+
+            <section>
+              <h2 className="text-xl font-black text-white">17. Business Listing Terms</h2>
+              <p className="mt-2">Business representatives must provide accurate listing details and maintain current contact, hours, reservation links, and policy information. We may moderate, suspend, or remove listings that are misleading, unauthorized, or repeatedly out of date.</p>
+            </section>
+</section>
           </div>
         </div>
       </section>

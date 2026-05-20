@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkReservationAvailability, clearExpiredSlotLocks } from "@/lib/reservations/availability";
+import { logEvent } from "@/lib/monitoring";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -46,10 +47,15 @@ export async function POST(request: NextRequest) {
       expires_at: expiresAt,
     }).select("id, expires_at").single();
 
-    if (error) return NextResponse.json({ success: false, reason: error.message }, { status: 500 });
+    if (error) {
+      await logEvent("failed_api", { route: "reservations_lock_slot", error: error.message });
+      return NextResponse.json({ success: false, reason: error.message }, { status: 500 });
+    }
 
+    await logEvent("reservation_audit", { action: "slot_locked", lockId: lock?.id || null, locationId, reservationDate, reservationTime, partySize });
     return NextResponse.json({ success: true, lock_id: lock?.id, expires_at: expiresAt });
   } catch (error) {
+    await logEvent("failed_api", { route: "reservations_lock_slot", error: error instanceof Error ? error.message : "unknown" });
     return NextResponse.json({ success: false, reason: error instanceof Error ? error.message : "Something went wrong." }, { status: 500 });
   }
 }
