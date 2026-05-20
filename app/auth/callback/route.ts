@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
+import { getUserMetadataRole, resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 export async function GET(request: NextRequest) {
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
 
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const intendedPath = sanitizeIntendedPath(requestUrl.searchParams.get("next"));
 
   if (!code) {
-    return NextResponse.redirect(`${siteUrl}/restaurants/apply`);
+    return NextResponse.redirect(`${siteUrl}/create`);
   }
 
-  let response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
+  let response = NextResponse.redirect(`${siteUrl}/create`);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,54 +35,34 @@ export async function GET(request: NextRequest) {
           });
         },
       },
-    }
+    },
   );
 
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.user) {
-    return NextResponse.redirect(`${siteUrl}/restaurants/apply`);
+    return NextResponse.redirect(`${siteUrl}/create`);
   }
 
   const user = data.user;
-
-  if (user.user_metadata?.role === "superuser") {
-    response = NextResponse.redirect(`${siteUrl}/admin/dashboard`);
-  }
-
   const email = user.email?.toLowerCase();
 
-  if (!email) {
-    return NextResponse.redirect(`${siteUrl}/restaurants/apply`);
-  }
+  const [adminUserResult, profileResult, locationsResult, restaurantsResult] = await Promise.all([
+    supabaseAdmin.from("admin_users").select("id").eq("email", email || "").maybeSingle(),
+    supabaseAdmin.from("user_profiles").select("role, account_type").eq("id", user.id).maybeSingle(),
+    supabaseAdmin.from("locations").select("id").eq("owner_user_id", user.id).limit(1),
+    supabaseAdmin.from("restaurants").select("id").eq("owner_user_id", user.id).limit(1),
+  ]);
 
-  const { data: restaurant } = await supabaseAdmin
-    .from("restaurants")
-    .select("id")
-    .ilike("email", email)
-    .maybeSingle();
+  const redirectTarget = resolvePostLoginRedirect({
+    role: getUserMetadataRole(user),
+    profileRole: profileResult.data?.role || null,
+    profileAccountType: profileResult.data?.account_type || null,
+    isAdminUser: Boolean(adminUserResult.data),
+    isLocationOwner: Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length),
+    intendedPath,
+  });
 
-  if (!restaurant && user.user_metadata?.role !== "superuser") {
-    return NextResponse.redirect(`${siteUrl}/restaurants/apply`);
-  }
-
-  if (restaurant) {
-    await supabaseAdmin
-      .from("restaurants")
-      .update({
-        owner_user_id: user.id,
-        owner_email: email,
-      })
-      .eq("id", restaurant.id);
-
-    await supabaseAdmin.auth.admin.updateUserById(user.id, {
-      user_metadata: {
-        role: "restaurants",
-      },
-    });
-
-    response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
-  }
-
+  response = NextResponse.redirect(`${siteUrl}${redirectTarget}`);
   return response;
 }
