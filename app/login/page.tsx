@@ -186,8 +186,8 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-28 text-white">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-2">
         <div className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-8">
-          <p className="inline-flex rounded-full border border-amber-400/30 bg-amber-300/10 px-4 py-2 text-xs font-semibold tracking-[0.2em] text-amber-200">THEOUTHAVEN</p>
-          <h1 className="mt-6 text-4xl font-semibold leading-tight">Plan better nights out.<br />Discover better places.</h1>
+          <p className="inline-flex rounded-full border border-[#e1062a]/45 bg-[#e1062a]/15 px-4 py-2 text-xs font-semibold tracking-[0.2em] text-red-100 shadow-[0_0_24px_rgba(225,6,42,0.25)]">THEOUTHAVEN</p>
+          <h1 className="mt-6 text-4xl font-semibold leading-tight">Plan better OUTings.<br />Discover better places.</h1>
           <p className="mt-4 max-w-xl text-white/75">Create your free account to save favorites, unlock smarter outing recommendations, and discover restaurants, activities, and experiences matched to your vibe.</p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -240,7 +240,27 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             <button onClick={() => setShowUserSignup(true)} className="w-full rounded-2xl border border-rose-300/30 py-4">Create User Account</button>
           ) : (
             <form onSubmit={handleCreate} className="space-y-4">
-              <div className="text-xs text-white/60">Step {signupStep} of 2</div>
+              <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                <div
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-xs font-semibold tracking-wide transition ${
+                    signupStep === 1
+                      ? "border-[#e1062a]/50 bg-[#e1062a] text-white shadow-[0_0_18px_rgba(225,6,42,0.45)]"
+                      : "border-white/10 bg-white/[0.04] text-white/50"
+                  }`}
+                >
+                  Step 1: Account Basics
+                </div>
+                <div className="hidden h-px bg-white/10 sm:block" />
+                <div
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-xs font-semibold tracking-wide transition ${
+                    signupStep === 2
+                      ? "border-[#e1062a]/50 bg-[#e1062a] text-white shadow-[0_0_18px_rgba(225,6,42,0.45)]"
+                      : "border-white/10 bg-white/[0.04] text-white/50"
+                  }`}
+                >
+                  Step 2: Preferences
+                </div>
+              </div>
               {signupStep === 1 ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -248,23 +268,25 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
                     <input placeholder="Mobile number" value={signup.mobile_number} onChange={(e) => setSignup((s) => ({ ...s, mobile_number: e.target.value }))} className={inputClass} />
                     <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
-                    <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
+                    <div className="space-y-2">
+                      <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(pass).map(([key, isValid]) => (
+                          <p
+                            key={key}
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                              isValid
+                                ? "border-[#e1062a]/65 bg-[#e1062a]/25 text-red-100"
+                                : "border-white/15 bg-black/25 text-white/55"
+                            }`}
+                          >
+                            {passwordLabels[key as keyof typeof passwordLabels]}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
                     <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
                     <input placeholder="Promo code" value={signup.promo_code} onChange={(e) => setSignup((s) => ({ ...s, promo_code: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
-                  </div>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {Object.entries(pass).map(([key, isValid]) => (
-                      <p
-                        key={key}
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                          isValid
-                            ? "border-[#e1062a]/65 bg-[#e1062a]/25 text-red-100"
-                            : "border-white/15 bg-black/25 text-white/55"
-                        }`}
-                      >
-                        {passwordLabels[key as keyof typeof passwordLabels]}
-                      </p>
-                    ))}
                   </div>
                 </>
               ) : (
