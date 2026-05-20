@@ -61,11 +61,11 @@ const passwordChecks = (p: string) => ({
 });
 
 const passwordLabels: Record<keyof ReturnType<typeof passwordChecks>, string> = {
-  minLength: "8+ characters",
-  uppercase: "Uppercase",
-  lowercase: "Lowercase",
-  number: "Number",
-  special: "Special",
+  minLength: "8+ CHARACTERS",
+  uppercase: "UPPERCASE",
+  lowercase: "LOWERCASE",
+  number: "NUMBER",
+  special: "SPECIAL",
 };
 
 export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab }) {
@@ -268,24 +268,28 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
                     <input placeholder="Mobile number" value={signup.mobile_number} onChange={(e) => setSignup((s) => ({ ...s, mobile_number: e.target.value }))} className={inputClass} />
                     <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
-                    <div className="space-y-2">
-                      <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
-                      <div className="flex flex-wrap gap-2">
-                        {Object.entries(pass).map(([key, isValid]) => (
-                          <p
-                            key={key}
-                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                              isValid
-                                ? "border-[#e1062a]/65 bg-[#e1062a]/25 text-red-100"
-                                : "border-white/15 bg-black/25 text-white/55"
-                            }`}
-                          >
-                            {passwordLabels[key as keyof typeof passwordLabels]}
-                          </p>
-                        ))}
+                    <div className="space-y-3 sm:col-span-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
+                        <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
+                      </div>
+                      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(pass).map(([key, isValid]) => (
+                            <p
+                              key={key}
+                              className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-wide ${
+                                isValid
+                                  ? "border-[#e1062a]/70 bg-[#e1062a]/30 text-white shadow-[0_0_14px_rgba(225,6,42,0.28)]"
+                                  : "border-white/10 bg-white/5 text-white/50"
+                              }`}
+                            >
+                              {passwordLabels[key as keyof typeof passwordLabels]}
+                            </p>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
                     <input placeholder="Promo code" value={signup.promo_code} onChange={(e) => setSignup((s) => ({ ...s, promo_code: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
                   </div>
                 </>
