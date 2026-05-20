@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import { getZipMarketMapping } from "@/lib/zip-market-mapping";
+import { getUserMetadataRole, resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 
 type Tab = "signin" | "signup";
 type SignupStep = 1 | 2;
@@ -90,13 +91,38 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: signin.email,
       password: signin.password,
     });
     setLoading(false);
     if (error) return setError(error.message);
-    window.location.href = "/create";
+
+    const user = data.user;
+    if (!user) {
+      window.location.href = "/create";
+      return;
+    }
+
+    const [adminUserResult, profileResult, locationsResult, restaurantsResult] = await Promise.all([
+      supabase.from("admin_users").select("id").eq("email", user.email?.toLowerCase() || "").maybeSingle(),
+      supabase.from("user_profiles").select("role, account_type").eq("id", user.id).maybeSingle(),
+      supabase.from("locations").select("id").eq("owner_user_id", user.id).limit(1),
+      supabase.from("restaurants").select("id").eq("owner_user_id", user.id).limit(1),
+    ]);
+
+    const intendedRoute = sanitizeIntendedPath(new URL(window.location.href).searchParams.get("next"));
+
+    const redirectTarget = resolvePostLoginRedirect({
+      role: getUserMetadataRole(user),
+      profileRole: profileResult.data?.role || null,
+      profileAccountType: profileResult.data?.account_type || null,
+      isAdminUser: Boolean(adminUserResult.data),
+      isLocationOwner: Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length),
+      intendedPath: intendedRoute,
+    });
+
+    window.location.href = redirectTarget;
   };
 
   const handleCreate = async (e: React.FormEvent) => {
