@@ -90,13 +90,26 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: signin.email,
       password: signin.password,
     });
+    if (!error && data.user && !data.user.email_confirmed_at) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      return setError("Please verify your email before signing in.");
+    }
     setLoading(false);
     if (error) return setError(error.message);
-    window.location.href = "/create";
+    const nextPath =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("next")
+        : null;
+    const safeNext =
+      nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+        ? nextPath
+        : "/create";
+    window.location.href = safeNext;
   };
 
   const handleCreate = async (e: React.FormEvent) => {

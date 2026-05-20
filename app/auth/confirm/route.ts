@@ -14,8 +14,13 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const tokenHash = url.searchParams.get("token_hash");
   const type = (url.searchParams.get("type") || "magiclink") as EmailOtpType;
+  const nextPath = url.searchParams.get("next");
+  const safeNext =
+    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+      ? nextPath
+      : "/restaurants/dashboard";
 
-  const response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
+  const response = NextResponse.redirect(`${siteUrl}${safeNext}`);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -74,16 +79,6 @@ export async function GET(request: NextRequest) {
     return response;
   }
 
-  
-await supabaseAdmin.from("restaurant_events").insert({
-  restaurant_id: restaurant.id,
-  email,
-  event_type: "login_link_clicked",
-  metadata: {
-    source: "magic_link",
-  },
-});
-
   await supabaseAdmin.from("restaurant_events").insert({
   restaurant_id: restaurant.id,
   email,
@@ -107,6 +102,6 @@ await supabaseAdmin.from("restaurant_events").insert({
     },
   });
 
-  response.headers.set("Location", `${siteUrl}/restaurants/dashboard`);
+  response.headers.set("Location", `${siteUrl}${safeNext}`);
   return response;
 }
