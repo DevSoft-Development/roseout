@@ -32,7 +32,7 @@ export default function ReserveLandingPage() {
               </Link>
 
               <Link
-                href="/locations"
+                href="/explore"
                 className="rounded-full border border-white/10 bg-white/[0.06] px-6 py-3 text-sm font-black text-white/70 hover:bg-white/[0.1] hover:text-white transition"
               >
                 Browse locations
@@ -99,7 +99,7 @@ export default function ReserveLandingPage() {
             </Link>
 
             <Link
-              href="/locations"
+              href="/explore"
               className="rounded-full border border-white/10 bg-white/[0.06] px-6 py-3 text-sm font-black text-white/70 hover:bg-white/[0.1] hover:text-white transition"
             >
               Browse Locations

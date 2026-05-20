@@ -437,7 +437,7 @@ function PlanPageInner() {
             <Link href="/create" className="hover:text-white">
               Create
             </Link>
-            <Link href="/business" className="hover:text-white">
+            <Link href="/location/apply" className="hover:text-white">
               For Businesses
             </Link>
             <Link href="/pricing" className="hover:text-white">
@@ -582,8 +582,8 @@ function PlanActionCard({
 
   const detailHref =
     type === "restaurant"
-      ? `/locations/restaurants/${location.id}?from=/plan`
-      : `/locations/${location.detail_location_type || "activities"}/${location.id}?from=/plan`;
+      ? `/explore/restaurants/${location.id}?from=/plan`
+      : `/explore/${location.detail_location_type || "activities"}/${location.id}?from=/plan`;
 
   const reservationUrl = getExternalReservationUrl(location);
   const internalReservationHref = getInternalReservationHref(location, type);
