@@ -30,6 +30,10 @@ const inputClass =
   "min-h-[56px] w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white placeholder:text-white/45";
 const selectClass =
   "min-h-[56px] w-full appearance-none rounded-2xl border border-white/10 bg-[#1a1411] px-4 text-white";
+const primaryButtonClass =
+  "inline-flex items-center justify-center rounded-full bg-[#e1062a] px-6 py-3 text-sm font-bold text-white shadow-2xl shadow-red-950/40 transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-70";
+const secondaryButtonClass =
+  "inline-flex items-center justify-center rounded-full border border-white/15 bg-white/[0.03] px-6 py-3 text-sm font-bold text-white transition hover:border-[#e1062a]/55 hover:bg-[#e1062a]/15";
 
 const initialSignupState: SignupState = {
   full_name: "",
@@ -58,10 +62,10 @@ const passwordChecks = (p: string) => ({
 
 const passwordLabels: Record<keyof ReturnType<typeof passwordChecks>, string> = {
   minLength: "8+ characters",
-  uppercase: "Uppercase letter",
-  lowercase: "Lowercase letter",
+  uppercase: "Uppercase",
+  lowercase: "Lowercase",
   number: "Number",
-  special: "Special character",
+  special: "Special",
 };
 
 export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab }) {
@@ -190,12 +194,12 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <h3 className="text-lg font-medium">Create User Account</h3>
               <p className="mt-2 text-sm text-white/70">Save favorites, get recommendations, and plan better outings.</p>
-              <button onClick={() => { setTab("signup"); setShowUserSignup(true); }} className="mt-4 w-full rounded-2xl bg-gradient-to-r from-rose-700 to-amber-500 px-4 py-3 text-sm font-semibold">Continue as User</button>
+              <button onClick={() => { setTab("signup"); setShowUserSignup(true); }} className={`mt-4 w-full ${primaryButtonClass}`}>Continue as User</button>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <h3 className="text-lg font-medium">Sign Up for Business</h3>
               <p className="mt-2 text-sm text-white/70">Claim your location, manage reservations, and reach more customers.</p>
-              <button onClick={() => router.push("/location/apply")} className="mt-4 w-full rounded-2xl border border-amber-200/30 bg-amber-200/10 px-4 py-3 text-sm font-semibold text-amber-100">Apply for Business</button>
+              <button onClick={() => router.push("/location/apply")} className={`mt-4 w-full ${primaryButtonClass}`}>Apply for Business</button>
             </div>
           </div>
 
@@ -230,7 +234,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             <form onSubmit={handleSignIn} className="space-y-3">
               <input required type="email" placeholder="Email" value={signin.email} onChange={(e) => setSignin((s) => ({ ...s, email: e.target.value }))} className={inputClass} />
               <input required type="password" placeholder="Password" value={signin.password} onChange={(e) => setSignin((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
-              <button className="w-full rounded-2xl bg-gradient-to-r from-rose-700 to-amber-500 px-4 py-4">{loading ? "Signing In..." : "Sign In"}</button>
+              <button className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
             </form>
           ) : !showUserSignup ? (
             <button onClick={() => setShowUserSignup(true)} className="w-full rounded-2xl border border-rose-300/30 py-4">Create User Account</button>
@@ -238,20 +242,31 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="text-xs text-white/60">Step {signupStep} of 2</div>
               {signupStep === 1 ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <input required placeholder="Full name" value={signup.full_name} onChange={(e) => setSignup((s) => ({ ...s, full_name: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
-                  <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
-                  <input placeholder="Mobile number" value={signup.mobile_number} onChange={(e) => setSignup((s) => ({ ...s, mobile_number: e.target.value }))} className={inputClass} />
-                  <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
-                  <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
-                  <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
-                  <input placeholder="Promo code" value={signup.promo_code} onChange={(e) => setSignup((s) => ({ ...s, promo_code: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
-                  {Object.entries(pass).map(([key, isValid]) => (
-                    <p key={key} className={isValid ? "text-emerald-300 text-xs sm:col-span-2" : "text-white/50 text-xs sm:col-span-2"}>
-                      {passwordLabels[key as keyof typeof passwordLabels]}
-                    </p>
-                  ))}
-                </div>
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input required placeholder="Full name" value={signup.full_name} onChange={(e) => setSignup((s) => ({ ...s, full_name: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                    <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                    <input placeholder="Mobile number" value={signup.mobile_number} onChange={(e) => setSignup((s) => ({ ...s, mobile_number: e.target.value }))} className={inputClass} />
+                    <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
+                    <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
+                    <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
+                    <input placeholder="Promo code" value={signup.promo_code} onChange={(e) => setSignup((s) => ({ ...s, promo_code: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {Object.entries(pass).map(([key, isValid]) => (
+                      <p
+                        key={key}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                          isValid
+                            ? "border-[#e1062a]/65 bg-[#e1062a]/25 text-red-100"
+                            : "border-white/15 bg-black/25 text-white/55"
+                        }`}
+                      >
+                        {passwordLabels[key as keyof typeof passwordLabels]}
+                      </p>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <div className="space-y-4">
                   <select className={selectClass}><option>Typical outing budget</option></select>
@@ -271,11 +286,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
               </label>
 
               <div className="flex gap-2">
-                {signupStep === 2 && <button type="button" onClick={() => setSignupStep(1)} className="flex-1 rounded-2xl border border-white/20 py-3">Back</button>}
+                {signupStep === 2 && <button type="button" onClick={() => setSignupStep(1)} className={`flex-1 ${secondaryButtonClass}`}>Back</button>}
                 {signupStep === 1 ? (
-                  <button type="button" onClick={() => setSignupStep(2)} className="flex-1 rounded-2xl bg-gradient-to-r from-rose-700 to-amber-500 py-3">Continue</button>
+                  <button type="button" onClick={() => setSignupStep(2)} className={`flex-1 ${primaryButtonClass}`}>Continue</button>
                 ) : (
-                  <button disabled={loading} className="flex-1 rounded-2xl bg-gradient-to-r from-rose-700 to-amber-500 py-3">{loading ? "Creating..." : "Create Account"}</button>
+                  <button disabled={loading} className={`flex-1 ${primaryButtonClass}`}>{loading ? "Creating..." : "Create Account"}</button>
                 )}
               </div>
             </form>
