@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import RecoveryRedirect from "@/components/RecoveryRedirect";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { buildPersonalizedRecommendations, type UserOutingSignal, type VenueCandidate } from "@/lib/recommendation-engine";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -117,6 +118,25 @@ const createPreviewResults = [
   },
 ];
 
+const sampleSignals: UserOutingSignal = {
+  searchHistory: ["rooftop drinks", "date night dinner"],
+  clicks: ["v2", "v5"],
+  favorites: ["v2", "v4"],
+  reservations: ["v4"],
+  outingPreferences: ["rooftop", "restaurant", "dessert"],
+  budgetRange: "$$$",
+  preferredAreas: ["manhattan", "brooklyn"],
+  nightlifeFrequency: "high",
+};
+
+const sampleVenues: VenueCandidate[] = [
+  { id: "v1", name: "Skyline Social", area: "Manhattan", category: "Restaurant", tags: ["rooftop", "nightlife"], budget: "$$$", trendingScore: 8, dateNightScore: 7, nightlifeScore: 8, groupFriendly: true },
+  { id: "v2", name: "Candlelight Supper Club", area: "Brooklyn", category: "Restaurant", tags: ["romantic", "food"], budget: "$$$", trendingScore: 6, dateNightScore: 10, hiddenGemScore: 7 },
+  { id: "v3", name: "Neon Bowl Lounge", area: "Queens", category: "Activity", tags: ["groups", "nightlife"], budget: "$$", trendingScore: 7, nightlifeScore: 6, groupFriendly: true },
+  { id: "v4", name: "Riverside Dessert Bar", area: "Manhattan", category: "Dessert", tags: ["dessert", "date"], budget: "$$", trendingScore: 5, dateNightScore: 8, hiddenGemScore: 8 },
+  { id: "v5", name: "Hidden Vinyl Room", area: "Brooklyn", category: "Lounge", tags: ["hidden gem", "live music", "nightlife"], budget: "$$$", trendingScore: 6, hiddenGemScore: 10, nightlifeScore: 8 },
+];
+
 function createPromptHref(prompt?: string) {
   if (!prompt) return "/create";
 
@@ -124,6 +144,8 @@ function createPromptHref(prompt?: string) {
 }
 
 export default function HomePage() {
+  const recommendations = buildPersonalizedRecommendations(sampleSignals, sampleVenues);
+
   return (
     <main
       data-homepage-version={HOMEPAGE_VERSION}
@@ -230,6 +252,17 @@ export default function HomePage() {
                 </span>
               </Link>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-black px-5 py-16 sm:px-6 lg:py-20">
+        <div className="mx-auto max-w-7xl">
+          <SectionIntro eyebrow="AI personalization" title="Recommendations tuned to your behavior." text="Powered by search history, clicks, favorites, reservations, budget range, and outing preferences." dark />
+          <div className="mt-8 grid gap-8 lg:grid-cols-3">
+            <RecommendationColumn title="Recommended for You" items={recommendations.recommendedForYou.map((venue) => venue.name)} />
+            <RecommendationColumn title="Trending Near You" items={recommendations.trendingNearYou.map((venue) => venue.name)} />
+            <RecommendationColumn title="Similar Places" items={recommendations.similarPlaces.map((venue) => venue.name)} />
           </div>
         </div>
       </section>
@@ -500,6 +533,21 @@ function CreatePreview() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function RecommendationColumn({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+      <h3 className="text-lg font-bold">{title}</h3>
+      <ul className="mt-4 space-y-2 text-sm text-white/75">
+        {items.slice(0, 5).map((item) => (
+          <li key={item} className="rounded-xl border border-white/10 px-3 py-2">
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
