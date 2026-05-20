@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { logEvent } from "@/lib/monitoring";
 
 export async function POST(request: NextRequest) {
+  const secret = request.headers.get("stripe-signature") || "";
+  if (!secret) {
+    await logEvent("failed_stripe", { reason: "missing_signature" });
+    return NextResponse.json({ error: "Missing Stripe signature." }, { status: 401 });
+  }
+
   const event = await request.json().catch(() => null);
 
   if (!event?.type) {
+    await logEvent("failed_stripe", { reason: "invalid_payload" });
     return NextResponse.json({ error: "Invalid Stripe payload." }, { status: 400 });
   }
 
@@ -42,6 +50,7 @@ export async function POST(request: NextRequest) {
       await updateLocation({ subscription_status: "active" });
       break;
     case "invoice.payment_failed":
+      await logEvent("failed_stripe", { type: event.type, eventId: event.id || null, locationId });
       await updateLocation({ subscription_status: "past_due" });
       break;
     case "customer.subscription.updated":
@@ -81,3 +90,4 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true });
 }
+

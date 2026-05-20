@@ -2,6 +2,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 import { sendSms } from "@/lib/sms/sendSms";
 import { SUPPORT_EMAIL_FROM } from "@/lib/support/ticketing";
+import { logEvent } from "@/lib/monitoring";
 
 export async function POST(request: Request) {
   const { error, supabase, adminUser } = await requireAdminApiRole(["superuser", "admin", "editor"]);
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
       providerId = result.id;
     }
   } catch (sendError) {
+    await logEvent("failed_email_sms", { channel, to: body.to, error: sendError instanceof Error ? sendError.message : "send failed" });
     return Response.json({ error: sendError instanceof Error ? sendError.message : "Failed to send message" }, { status: 400 });
   }
 
@@ -36,6 +38,8 @@ export async function POST(request: Request) {
     metadata: {},
     created_by: adminUser?.id || null,
   });
+
+  await logEvent("admin_activity", { adminId: adminUser?.id || null, action: "send_communication", channel, to: body.to });
 
   return Response.json({ ok: true, providerMessageId: providerId });
 }
