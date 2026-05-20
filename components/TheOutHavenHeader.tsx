@@ -50,33 +50,22 @@ export default function TheOutHavenHeader() {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav className="hidden items-center gap-6 md:flex">
           <NavLink href="/" label="Home" active={isActive("/")} />
-          <NavLink href="/about" label="About" active={isActive("/about")} />
-          <NavLink
-            href="/business"
-            label="For Businesses"
-            active={isActive("/business")}
-          />
+          <NavLink href="/create" label="Create Outing" active={isActive("/create")} />
+          <NavLink href="/explore" label="Explore" active={isActive("/explore")} />
+          <NavLink href="/restaurants" label="Restaurants" active={isActive("/restaurants")} />
+          <NavLink href="/activities" label="Activities" active={isActive("/activities")} />
+          <NavLink href="/location/apply" label="Business" active={isActive("/location/apply")} />
         </nav>
 
         <div className="hidden items-center gap-4 md:flex">
-          <Link
-            href="/login"
-            className={`text-sm font-bold transition ${
-              isActive("/login")
-                ? "text-white"
-                : "text-white/45 hover:text-white"
-            }`}
-          >
+          <Link href="/login" className={`text-sm font-bold transition ${isActive("/login") ? "text-white" : "text-white/45 hover:text-white"}`}>
             Sign In
           </Link>
 
-          <Link
-            href="/create"
-            className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
-          >
-            Plan My Outing
+          <Link href="/signup" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500">
+            Create Account
           </Link>
         </div>
 
@@ -115,27 +104,13 @@ export default function TheOutHavenHeader() {
         <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden">
           <div className="mx-auto max-w-7xl space-y-2">
             <MobileMenuLink href="/" label="Home" active={isActive("/")} />
-            <MobileMenuLink
-              href="/about"
-              label="About"
-              active={isActive("/about")}
-            />
-            <MobileMenuLink
-              href="/business"
-              label="For Businesses"
-              active={isActive("/business")}
-            />
-            <MobileMenuLink
-              href="/create"
-              label="Plan My Outing"
-              active={isActive("/create")}
-              featured
-            />
-            <MobileMenuLink
-              href="/login"
-              label="Sign In"
-              active={isActive("/login")}
-            />
+            <MobileMenuLink href="/create" label="Create Outing" active={isActive("/create")} />
+            <MobileMenuLink href="/explore" label="Explore" active={isActive("/explore")} />
+            <MobileMenuLink href="/restaurants" label="Restaurants" active={isActive("/restaurants")} />
+            <MobileMenuLink href="/activities" label="Activities" active={isActive("/activities")} />
+            <MobileMenuLink href="/location/apply" label="Business" active={isActive("/location/apply")} />
+            <MobileMenuLink href="/login" label="Sign In" active={isActive("/login")} />
+            <MobileMenuLink href="/signup" label="Create Account" active={isActive("/signup")} featured />
           </div>
         </div>
       )}

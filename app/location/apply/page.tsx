@@ -68,7 +68,7 @@ export default function LocationApplyLandingPage() {
 
           <div className="mt-8 text-center">
             <Link
-              href="/business"
+              href="/location/apply"
               className="text-sm font-black text-white/45 transition hover:text-white"
             >
               Back to TheOutHaven for Business

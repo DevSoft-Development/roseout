@@ -280,7 +280,7 @@ export default function HomePage() {
               <Link href="/signup" className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-rose-700 to-amber-500 px-6 py-3 text-sm font-bold shadow-lg shadow-rose-950/30 sm:w-auto">
                 Create Free Account
               </Link>
-              <Link href="/business" className="inline-flex w-full items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/90 sm:w-auto">
+              <Link href="/location/apply" className="inline-flex w-full items-center justify-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/90 sm:w-auto">
                 Claim Your Business
               </Link>
             </div>

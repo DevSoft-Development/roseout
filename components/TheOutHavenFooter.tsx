@@ -32,7 +32,7 @@ export default function TheOutHavenFooter() {
             </Link>
 
             <Link
-              href="/business"
+              href="/location/apply"
               className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
             >
               For Businesses
@@ -54,7 +54,7 @@ export default function TheOutHavenFooter() {
         <FooterColumn
           title="Business"
           links={[
-            { label: "For Businesses", href: "/business" },
+            { label: "For Businesses", href: "/location/apply" },
             { label: "Claim Listing", href: "/location/apply/claim" },
             { label: "Add Location", href: "/location/apply/new" },
           ]}
