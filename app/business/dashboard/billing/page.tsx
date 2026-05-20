@@ -43,7 +43,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-[#f5b700]">Billing</p>
               <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] sm:text-6xl">Business Billing</h1>
-              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/55">Manage Business Pro, Stripe billing, subscription dates, and future paid capabilities from one place.</p>
+              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/55">Manage the $99/month Business Pro plan, Stripe billing, and subscription lifecycle from one place.</p>
             </div>
             <Link href="/business/dashboard/promotions" className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Promotions</Link>
           </div>
@@ -87,7 +87,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                     <button className="w-full rounded-full bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Upgrade to Pro</button>
                   </form>
                 ) : (
-                  <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Pro active</div>
+                  <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Business Pro active</div>
                 )}
 
                 <form action="/api/business/billing/portal" method="POST">
@@ -95,14 +95,15 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                   <button className="w-full rounded-full border border-white/10 px-5 py-4 text-sm font-black text-white hover:bg-white/10">Manage Billing</button>
                 </form>
 
-                <form action="/api/business/billing/portal" method="POST">
+                <form action="/api/business/billing/change-plan" method="POST">
                   <input type="hidden" name="location_id" value={selected.id} />
-                  <button className="w-full rounded-full border border-rose-400/30 px-5 py-4 text-sm font-black text-rose-100 hover:bg-rose-500/10">Cancel Subscription</button>
+                  <input type="hidden" name="plan" value="free" />
+                  <button className="w-full rounded-full border border-rose-400/30 px-5 py-4 text-sm font-black text-rose-100 hover:bg-rose-500/10">Downgrade to Free</button>
                 </form>
               </div>
 
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/30 p-5">
-                <h2 className="text-xl font-black">Business Pro unlocks</h2>
+                <h2 className="text-xl font-black">Business Pro ($99/month) unlocks</h2>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {["Native reservations", "Business analytics", "Promoted listing readiness", "Deposit-ready bookings", "Concierge visibility", "Marketplace billing foundation"].map((item) => (
                     <div key={item} className="rounded-2xl bg-white/[0.04] px-4 py-3 text-sm font-bold text-white/65">{item}</div>
