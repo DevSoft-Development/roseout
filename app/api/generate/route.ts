@@ -32,7 +32,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v18-restaurant-hookah-steak-priority-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = "food-cuisine-location-distance-v17-strict-intent-no-dessert-fallback";
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -3525,34 +3525,17 @@ function filterRestaurantsByFoodIntent(
 ) {
   if (intent.foodIntents.length === 0) return restaurants;
 
-  const restaurantFirstMixedIntent = shouldRestaurantFirstMixedIntent(intent);
-
-  const foodIntentsToMatch = restaurantFirstMixedIntent
-    ? getPrimaryMealFoodIntents(intent)
-    : intent.foodIntents;
-
-  if (foodIntentsToMatch.length === 0) return restaurants;
-
   const exactMatches = restaurants.filter((restaurant: any) =>
-    foodIntentsToMatch.every((food) => matchesFoodIntent(restaurant, food))
+    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food))
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = restaurants.filter((restaurant: any) =>
-    foodIntentsToMatch.some((food) => matchesFoodIntent(restaurant, food))
+    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food))
   );
 
-  if (partialMatches.length > 0) return partialMatches;
-
-  if (intent.wantsPrimaryMeal) {
-    const nonDessertFallback = restaurants.filter(
-      (restaurant: any) => !isDessertOnlyRestaurant(restaurant),
-    );
-    if (nonDessertFallback.length > 0) return nonDessertFallback;
-  }
-
-  return restaurants;
+  return partialMatches;
 }
 
 function filterActivitiesByActivityIntent(
@@ -4304,13 +4287,16 @@ export async function POST(req: Request) {
       activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
-    if (restaurants.length === 0 && intent.wantsRestaurant) {
+    if (
+      restaurants.length === 0 &&
+      intent.wantsRestaurant &&
+      intent.foodIntents.length === 0
+    ) {
       restaurants = sourceLocations.filter((item: any) => {
         const searchable = itemText(item);
 
         return (
           isOutingEligibleLocation(item) &&
-          isMealRestaurant(item, intent) &&
           (searchable.includes("restaurant") ||
             searchable.includes("dining") ||
             searchable.includes("food") ||
@@ -4565,9 +4551,27 @@ export async function POST(req: Request) {
     }
 
 
+    const strictRankedRestaurants =
+      intent.foodIntents.length > 0
+        ? rankedRestaurants.filter((restaurant: any) =>
+            intent.foodIntents.some((foodIntent) =>
+              matchesFoodIntent(restaurant, foodIntent)
+            )
+          )
+        : rankedRestaurants;
+
+    const strictRankedActivities =
+      intent.activityIntents.length > 0
+        ? rankedActivities.filter((activity: any) =>
+            intent.activityIntents.some((activityIntent) =>
+              matchesActivityIntent(activity, activityIntent)
+            )
+          )
+        : rankedActivities;
+
     const smartBalanced = balanceSmartMatches(
-      rankedRestaurants,
-      rankedActivities,
+      strictRankedRestaurants,
+      strictRankedActivities,
       smartIntent,
     );
 
@@ -4576,7 +4580,7 @@ export async function POST(req: Request) {
       rankedActivities.length > 0 &&
       smartBalanced.activities.length === 0
     ) {
-      smartBalanced.activities = rankedActivities.slice(0, 2);
+      smartBalanced.activities = strictRankedActivities.slice(0, 2);
     }
 
     if (
@@ -4584,7 +4588,7 @@ export async function POST(req: Request) {
       rankedRestaurants.length > 0 &&
       smartBalanced.restaurants.length === 0
     ) {
-      smartBalanced.restaurants = rankedRestaurants.slice(0, 2);
+      smartBalanced.restaurants = strictRankedRestaurants.slice(0, 2);
     }
 
     if (
@@ -4592,7 +4596,7 @@ export async function POST(req: Request) {
       rankedActivities.length > 0 &&
       smartBalanced.activities.length === 0
     ) {
-      smartBalanced.activities = rankedActivities.slice(0, 2);
+      smartBalanced.activities = strictRankedActivities.slice(0, 2);
     }
 
     const wantsWalkingPair =
@@ -4604,10 +4608,10 @@ export async function POST(req: Request) {
       input.toLowerCase().includes("close by");
 
     const walkingPairRestaurants = wantsWalkingPair
-      ? rankedRestaurants.slice(0, WALKING_PAIR_CANDIDATE_LIMIT)
+      ? strictRankedRestaurants.slice(0, WALKING_PAIR_CANDIDATE_LIMIT)
       : [];
     const walkingPairActivities = wantsWalkingPair
-      ? rankedActivities.slice(0, WALKING_PAIR_CANDIDATE_LIMIT)
+      ? strictRankedActivities.slice(0, WALKING_PAIR_CANDIDATE_LIMIT)
       : [];
 
     const walkingPairs =

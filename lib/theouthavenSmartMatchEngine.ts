@@ -880,10 +880,18 @@ export function balanceSmartMatches(
   const smartActivities = filterSmartActivities(activities, intent);
 
   const finalRestaurants =
-    smartRestaurants.length > 0 ? smartRestaurants : restaurants;
+    smartRestaurants.length > 0
+      ? smartRestaurants
+      : intent.strictFoodMode
+        ? []
+        : restaurants;
 
   const finalActivities =
-    smartActivities.length > 0 ? smartActivities : activities;
+    smartActivities.length > 0
+      ? smartActivities
+      : intent.strictActivityMode
+        ? []
+        : activities;
 
   if (intent.wantsFood && !intent.wantsActivity && !intent.wantsFullOuting) {
     return {
@@ -909,5 +917,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v6";
+  return "theouthaven-smart-match-engine-v7-strict-no-loose-fallback";
 }
