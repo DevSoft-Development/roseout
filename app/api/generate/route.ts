@@ -21,6 +21,10 @@ import {
   confidenceFromScores,
   semanticScoreBoost,
 } from "@/lib/aiSemanticSearch";
+import { parseSearchIntent } from "@/lib/search/intent";
+import { localFirstFilter } from "@/lib/search/local-search";
+import { pairLocations } from "@/lib/search/pairing";
+import { rankPairs } from "@/lib/search/ranking";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -3929,6 +3933,15 @@ export async function POST(req: Request) {
       .filter(isPublicSearchVisible);
 
     const intent = detectIntent(input, body, locations);
+    const parsedIntent = await parseSearchIntent(openai, input).catch(() => ({
+      city: null,
+      borough: null,
+      restaurantType: null,
+      activityType: null,
+      vibe: null,
+      wantsWalkingDistance: false,
+      keywords: [],
+    }));
     const dessertAddonSearch = userAskedForDessert(intent, input);
     const isStrictFoodAddonSearch =
       dessertAddonSearch || userAskedForNonMealFood(intent);
@@ -4268,6 +4281,14 @@ export async function POST(req: Request) {
       ranked_restaurant_count: rankedRestaurants.length,
       ranked_activity_count: rankedActivities.length,
     });
+    const localFirst = localFirstFilter(sourceLocations as any, parsedIntent as any);
+    if (localFirst.restaurants.length > 0) {
+      rankedRestaurants = rankedRestaurants.filter((r:any)=>localFirst.restaurants.some((lr:any)=>String(lr.id)===String(r.id)));
+    }
+    if (localFirst.activities.length > 0) {
+      rankedActivities = rankedActivities.filter((a:any)=>localFirst.activities.some((la:any)=>String(la.id)===String(a.id)));
+    }
+
 
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
@@ -4316,11 +4337,14 @@ export async function POST(req: Request) {
 
     const walkingPairs =
       walkingPairRestaurants.length > 0 && walkingPairActivities.length > 0
-        ? pairWalkingDistanceMatches(
-            walkingPairRestaurants,
-            walkingPairActivities,
-            strictWalkingRequest,
-          )
+        ? rankPairs(pairLocations(walkingPairRestaurants as any, walkingPairActivities as any, 1.25)).map((pair:any)=>({
+            restaurant: pair.restaurant,
+            activity: pair.activity,
+            distance_miles: Number(pair.distanceMiles.toFixed(2)),
+            walking_minutes: pair.walkingMinutes,
+            walking_label: `${pair.walkingMinutes} min walk`,
+            pair_score: pair.score,
+          }))
         : [];
 
     console.log("GENERATE WALKING DEBUG", {
