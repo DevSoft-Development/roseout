@@ -32,7 +32,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = "food-cuisine-location-distance-v17-strict-intent-no-dessert-fallback";
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-split-lounge-activity-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -540,19 +540,37 @@ const PRIORITY_WEIGHTS = {
   distance: 140,
 };
 
-const FOOD_ADD_ON_INTENTS = new Set([
-  "dessert",
-  "cafe",
-  "drinks",
-  "hookah",
-  "cigar",
-  "lounge",
-  "rooftop",
-]);
+const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
+const LOUNGE_ACTIVITY_INTENTS = new Set(["hookah", "cigar"]);
 const WALKING_MINUTES_PER_MILE = 20;
 
 function isFoodAddOnIntent(foodIntent: string) {
   return FOOD_ADD_ON_INTENTS.has(foodIntent);
+}
+
+function isLoungeActivityIntent(foodIntent: string) {
+  return LOUNGE_ACTIVITY_INTENTS.has(foodIntent);
+}
+
+function splitMealAndActivityFoodIntents(intent: ReturnType<typeof detectIntent>) {
+  const hasMealIntent = intent.foodIntents.some(
+    (foodIntent) =>
+      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent),
+  );
+
+  const mealFoodIntents = intent.foodIntents.filter((foodIntent) => {
+    if (isFoodAddOnIntent(foodIntent)) return false;
+    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
+    return true;
+  });
+
+  const foodAddOnIntents = intent.foodIntents.filter((foodIntent) => {
+    if (isFoodAddOnIntent(foodIntent)) return true;
+    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return true;
+    return false;
+  });
+
+  return { mealFoodIntents, foodAddOnIntents };
 }
 
 function restaurantScoringIntent(intent: ReturnType<typeof detectIntent>) {
@@ -3525,17 +3543,27 @@ function filterRestaurantsByFoodIntent(
 ) {
   if (intent.foodIntents.length === 0) return restaurants;
 
+  const mealIntents = intent.foodIntents.filter(
+    (foodIntent) =>
+      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent),
+  );
+
+  const activeFoodIntents =
+    mealIntents.length > 0 ? mealIntents : intent.foodIntents;
+
+  if (activeFoodIntents.length === 0) return restaurants;
+
   const exactMatches = restaurants.filter((restaurant: any) =>
-    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food))
+    activeFoodIntents.every((food) => matchesFoodIntent(restaurant, food))
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = restaurants.filter((restaurant: any) =>
-    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food))
+    activeFoodIntents.some((food) => matchesFoodIntent(restaurant, food))
   );
 
-  return partialMatches;
+  return partialMatches.length > 0 ? partialMatches : restaurants;
 }
 
 function filterActivitiesByActivityIntent(
@@ -4223,10 +4251,8 @@ export async function POST(req: Request) {
       activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
-    const foodAddOnIntents = intent.foodIntents.filter(isFoodAddOnIntent);
-    const mealFoodIntents = intent.foodIntents.filter(
-      (foodIntent) => !isFoodAddOnIntent(foodIntent),
-    );
+    const { mealFoodIntents, foodAddOnIntents } =
+      splitMealAndActivityFoodIntents(intent);
     const shouldSplitFoodAddOnStops =
       intent.wantsFullOuting &&
       foodAddOnIntents.length > 0 &&
@@ -4250,9 +4276,16 @@ export async function POST(req: Request) {
       let foodAddOnActivities = sourceLocations
         .filter(isOutingEligibleLocation)
         .filter((item: any) =>
-          foodAddOnIntents.some((foodIntent) =>
-            matchesFoodIntent(item, foodIntent),
-          ),
+          foodAddOnIntents.some((foodIntent) => {
+            if (isLoungeActivityIntent(foodIntent)) {
+              return (
+                matchesActivityIntent(item, foodIntent) ||
+                matchesFoodIntent(item, foodIntent)
+              );
+            }
+
+            return matchesFoodIntent(item, foodIntent);
+          }),
         );
 
       if (dessertAddonSearch) {
