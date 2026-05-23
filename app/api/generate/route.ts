@@ -32,7 +32,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v17-split-lounge-activity-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v18-hard-split-meal-addon-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -552,25 +552,31 @@ function isLoungeActivityIntent(foodIntent: string) {
   return LOUNGE_ACTIVITY_INTENTS.has(foodIntent);
 }
 
-function splitMealAndActivityFoodIntents(intent: ReturnType<typeof detectIntent>) {
-  const hasMealIntent = intent.foodIntents.some(
+function hasRealMealFoodIntent(foodIntents: string[]) {
+  return foodIntents.some(
     (foodIntent) =>
-      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent),
+      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent)
   );
+}
 
-  const mealFoodIntents = intent.foodIntents.filter((foodIntent) => {
+function getMealFoodIntents(foodIntents: string[]) {
+  const hasMealIntent = hasRealMealFoodIntent(foodIntents);
+
+  return foodIntents.filter((foodIntent) => {
     if (isFoodAddOnIntent(foodIntent)) return false;
     if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
     return true;
   });
+}
 
-  const foodAddOnIntents = intent.foodIntents.filter((foodIntent) => {
+function getAddOnFoodIntents(foodIntents: string[]) {
+  const hasMealIntent = hasRealMealFoodIntent(foodIntents);
+
+  return foodIntents.filter((foodIntent) => {
     if (isFoodAddOnIntent(foodIntent)) return true;
     if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return true;
     return false;
   });
-
-  return { mealFoodIntents, foodAddOnIntents };
 }
 
 function restaurantScoringIntent(intent: ReturnType<typeof detectIntent>) {
@@ -2730,8 +2736,24 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const text = normalizeQuery(input);
 
   const requestedTags = detectFromMap(input, TAG_KEYWORDS);
-  const foodIntents = detectFromMap(input, FOOD_INTENTS);
-  const activityIntents = detectFromMap(input, ACTIVITY_INTENTS);
+  const rawFoodIntents = detectFromMap(input, FOOD_INTENTS);
+  const rawActivityIntents = detectFromMap(input, ACTIVITY_INTENTS);
+
+  const hasMealIntent = hasRealMealFoodIntent(rawFoodIntents);
+
+  const foodIntents = rawFoodIntents.filter((foodIntent) => {
+    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
+    return true;
+  });
+
+  const activityIntents = Array.from(
+    new Set([
+      ...rawActivityIntents,
+      ...rawFoodIntents.filter(
+        (foodIntent) => hasMealIntent && isLoungeActivityIntent(foodIntent)
+      ),
+    ])
+  );
   const detectedLocations = detectLocation(input, locations);
 
   const wantsFoodMap = buildWantsMap(Object.keys(FOOD_INTENTS), foodIntents);
@@ -3541,26 +3563,18 @@ function filterRestaurantsByFoodIntent(
   restaurants: any[],
   intent: ReturnType<typeof detectIntent>
 ) {
-  if (intent.foodIntents.length === 0) return restaurants;
+  const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
 
-  const mealIntents = intent.foodIntents.filter(
-    (foodIntent) =>
-      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent),
-  );
-
-  const activeFoodIntents =
-    mealIntents.length > 0 ? mealIntents : intent.foodIntents;
-
-  if (activeFoodIntents.length === 0) return restaurants;
+  if (mealFoodIntents.length === 0) return restaurants;
 
   const exactMatches = restaurants.filter((restaurant: any) =>
-    activeFoodIntents.every((food) => matchesFoodIntent(restaurant, food))
+    mealFoodIntents.every((food) => matchesFoodIntent(restaurant, food))
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = restaurants.filter((restaurant: any) =>
-    activeFoodIntents.some((food) => matchesFoodIntent(restaurant, food))
+    mealFoodIntents.some((food) => matchesFoodIntent(restaurant, food))
   );
 
   return partialMatches.length > 0 ? partialMatches : restaurants;
@@ -4251,21 +4265,12 @@ export async function POST(req: Request) {
       activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
-    const { mealFoodIntents, foodAddOnIntents } =
-      splitMealAndActivityFoodIntents(intent);
+    const foodAddOnIntents = getAddOnFoodIntents(intent.foodIntents);
+    const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
     const shouldSplitFoodAddOnStops =
       intent.wantsFullOuting &&
       foodAddOnIntents.length > 0 &&
-      (intent.text.includes("restaurant") ||
-        intent.text.includes("restuarant") ||
-        intent.text.includes("restaraunt") ||
-        intent.text.includes("dinner") ||
-        intent.text.includes("lunch") ||
-        intent.text.includes("brunch") ||
-        intent.text.includes("food") ||
-        intent.text.includes("eat") ||
-        intent.text.includes("steak") ||
-        intent.text.includes("seafood"));
+      mealFoodIntents.length > 0;
 
     if (shouldSplitFoodAddOnStops) {
       restaurants = filterRestaurantsByFoodIntent(restaurants, {
@@ -4304,16 +4309,23 @@ export async function POST(req: Request) {
         intent,
       );
     } else {
-      const restaurantFoodIntents = intent.foodIntents.filter(
-        (foodIntent) => !isFoodAddOnIntent(foodIntent),
-      );
-
-      restaurants = filterRestaurantsByFoodIntent(restaurants, {
-        ...intent,
-        foodIntents: restaurantFoodIntents,
-      });
+      restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
 
       activities = filterActivitiesByActivityIntent(activities, intent);
+    }
+
+    if (mealFoodIntents.length > 0) {
+      restaurants = restaurants.filter((restaurant: any) => {
+        const isOnlyLoungeAddOn =
+          foodAddOnIntents.some((foodIntent) =>
+            matchesFoodIntent(restaurant, foodIntent)
+          ) &&
+          !mealFoodIntents.some((foodIntent) =>
+            matchesFoodIntent(restaurant, foodIntent)
+          );
+
+        return !isOnlyLoungeAddOn;
+      });
     }
 
     if (dessertAddonSearch) {
