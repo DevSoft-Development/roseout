@@ -32,7 +32,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v18-hard-split-meal-addon-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v19-separated-restaurant-activity-embeddings-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -579,10 +579,40 @@ function getAddOnFoodIntents(foodIntents: string[]) {
   });
 }
 
+function buildRestaurantSearchInput(
+  originalInput: string,
+  intent: ReturnType<typeof detectIntent>
+) {
+  const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
+  const cityText = intent.locations.join(" ");
+
+  if (mealFoodIntents.length === 0) {
+    return originalInput;
+  }
+
+  return [mealFoodIntents.join(" "), "restaurant dinner", cityText]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildActivitySearchInput(
+  originalInput: string,
+  intent: ReturnType<typeof detectIntent>
+) {
+  const addOnFoodIntents = getAddOnFoodIntents(intent.foodIntents);
+  const cityText = intent.locations.join(" ");
+
+  if (addOnFoodIntents.length === 0 && intent.activityIntents.length === 0) {
+    return originalInput;
+  }
+
+  return [...intent.activityIntents, ...addOnFoodIntents, cityText]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function restaurantScoringIntent(intent: ReturnType<typeof detectIntent>) {
-  const foodIntents = intent.foodIntents.filter(
-    (foodIntent) => !isFoodAddOnIntent(foodIntent),
-  );
+  const foodIntents = getMealFoodIntents(intent.foodIntents);
 
   return {
     ...intent,
@@ -4314,17 +4344,17 @@ export async function POST(req: Request) {
       activities = filterActivitiesByActivityIntent(activities, intent);
     }
 
-    if (mealFoodIntents.length > 0) {
+    if (mealFoodIntents.length > 0 && foodAddOnIntents.length > 0) {
       restaurants = restaurants.filter((restaurant: any) => {
-        const isOnlyLoungeAddOn =
-          foodAddOnIntents.some((foodIntent) =>
-            matchesFoodIntent(restaurant, foodIntent)
-          ) &&
-          !mealFoodIntents.some((foodIntent) =>
-            matchesFoodIntent(restaurant, foodIntent)
-          );
+        const matchesMeal = mealFoodIntents.some((foodIntent) =>
+          matchesFoodIntent(restaurant, foodIntent)
+        );
 
-        return !isOnlyLoungeAddOn;
+        const onlyMatchesAddOn = foodAddOnIntents.some((foodIntent) =>
+          matchesFoodIntent(restaurant, foodIntent)
+        );
+
+        return matchesMeal || !onlyMatchesAddOn;
       });
     }
 
