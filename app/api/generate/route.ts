@@ -3396,14 +3396,20 @@ function filterRestaurantsByFoodIntent(
 
   if (intent.foodIntents.length === 0) return primaryMealRestaurants;
 
+  const restaurantFoodIntents = intent.foodIntents.filter(
+    (foodIntent) => !["hookah", "cigar", "lounge", "nightclub"].includes(foodIntent),
+  );
+
+  if (restaurantFoodIntents.length === 0) return primaryMealRestaurants;
+
   const exactMatches = primaryMealRestaurants.filter((restaurant: any) =>
-    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food)),
+    restaurantFoodIntents.every((food) => matchesFoodIntent(restaurant, food)),
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = primaryMealRestaurants.filter((restaurant: any) =>
-    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food)),
+    restaurantFoodIntents.some((food) => matchesFoodIntent(restaurant, food)),
   );
 
   return partialMatches.length > 0 ? partialMatches : primaryMealRestaurants;
