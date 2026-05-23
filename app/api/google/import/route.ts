@@ -198,6 +198,38 @@ const PRIORITY_WEIGHTS = {
   distance: 140,
 };
 
+const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
+const LOUNGE_ACTIVITY_INTENTS = new Set(["hookah", "cigar"]);
+
+function isFoodAddOnIntent(foodIntent: string) {
+  return FOOD_ADD_ON_INTENTS.has(foodIntent);
+}
+
+function isLoungeActivityIntent(foodIntent: string) {
+  return LOUNGE_ACTIVITY_INTENTS.has(foodIntent);
+}
+
+function splitMealAndActivityFoodIntents(intent: ReturnType<typeof detectIntent>) {
+  const hasMealIntent = intent.foodIntents.some(
+    (foodIntent) =>
+      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent),
+  );
+
+  const mealFoodIntents = intent.foodIntents.filter((foodIntent) => {
+    if (isFoodAddOnIntent(foodIntent)) return false;
+    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
+    return true;
+  });
+
+  const foodAddOnIntents = intent.foodIntents.filter((foodIntent) => {
+    if (isFoodAddOnIntent(foodIntent)) return true;
+    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return true;
+    return false;
+  });
+
+  return { mealFoodIntents, foodAddOnIntents };
+}
+
 function normalizeQuery(input: string) {
   return input
     .toLowerCase()
@@ -1329,14 +1361,24 @@ function filterRestaurantsByFoodIntent(
 ) {
   if (intent.foodIntents.length === 0) return restaurants;
 
+  const mealIntents = intent.foodIntents.filter(
+    (foodIntent) =>
+      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent),
+  );
+
+  const activeFoodIntents =
+    mealIntents.length > 0 ? mealIntents : intent.foodIntents;
+
+  if (activeFoodIntents.length === 0) return restaurants;
+
   const exactMatches = restaurants.filter((restaurant: any) =>
-    intent.foodIntents.every((food) => matchesFoodIntent(restaurant, food))
+    activeFoodIntents.every((food) => matchesFoodIntent(restaurant, food))
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
   const partialMatches = restaurants.filter((restaurant: any) =>
-    intent.foodIntents.some((food) => matchesFoodIntent(restaurant, food))
+    activeFoodIntents.some((food) => matchesFoodIntent(restaurant, food))
   );
 
   return partialMatches.length > 0 ? partialMatches : restaurants;
