@@ -555,6 +555,20 @@ function isFoodAddOnIntent(foodIntent: string) {
   return FOOD_ADD_ON_INTENTS.has(foodIntent);
 }
 
+function restaurantScoringIntent(intent: ReturnType<typeof detectIntent>) {
+  const foodIntents = intent.foodIntents.filter(
+    (foodIntent) => !isFoodAddOnIntent(foodIntent),
+  );
+
+  return {
+    ...intent,
+    foodIntents,
+    wantsHookah: false,
+    wantsCigar: false,
+    wantsLounge: false,
+  };
+}
+
 function normalizeQuery(input: string) {
   return input
     .toLowerCase()
@@ -3018,13 +3032,14 @@ function scoreRestaurant(
   intent: ReturnType<typeof detectIntent>,
 ) {
   let score = 0;
+  const restaurantIntent = restaurantScoringIntent(intent);
 
   score += locationNameMatchScore(item, input);
   score += calculateSearchQualityScore(item, input, intent);
   score += keywordBoost(item, input);
   score += weightedVibeBoost(item, intent.vibes);
   score += weightedTagBoost(item, intent.requestedTags);
-  score += weightedFoodBoost(item, intent.foodIntents);
+  score += weightedFoodBoost(item, restaurantIntent.foodIntents);
 
   if (intent.wantsPrimaryMeal && isDessertOnlyRestaurant(item)) {
     score -= 260;
@@ -3051,18 +3066,6 @@ function scoreRestaurant(
 
   if (intent.wantsRooftop && matchesFoodIntent(item, "rooftop")) {
     score += PRIORITY_WEIGHTS.rooftop;
-  }
-
-  if (intent.wantsHookah) {
-    score += isHookahPlace(item)
-      ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
-      : PRIORITY_WEIGHTS.mismatchPenalty;
-  }
-
-  if (intent.wantsCigar) {
-    score += isCigarPlace(item)
-      ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
-      : PRIORITY_WEIGHTS.mismatchPenalty;
   }
 
   score += clampScore(getSearchRankingScore(item)) * 0.4;
@@ -4305,7 +4308,7 @@ export async function POST(req: Request) {
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
         const baseScore = clampScore(
-          scoreRestaurant(restaurant, input, intent) +
+          scoreRestaurant(restaurant, input, restaurantScoringIntent(intent)) +
             semantic.semantic_score_boost,
         );
         const marketplaceScore = applyMarketplaceBoosts(restaurant, baseScore, intent, userPreferenceSignals);
