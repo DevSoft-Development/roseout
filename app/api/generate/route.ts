@@ -544,10 +544,10 @@ const FOOD_ADD_ON_INTENTS = new Set([
   "dessert",
   "cafe",
   "drinks",
-  "juice",
-  "smoothie",
-  "coffee",
-  "quick_bites",
+  "hookah",
+  "cigar",
+  "lounge",
+  "rooftop",
 ]);
 const WALKING_MINUTES_PER_MILE = 20;
 
@@ -4115,7 +4115,8 @@ export async function POST(req: Request) {
         intent.text.includes("brunch") ||
         intent.text.includes("food") ||
         intent.text.includes("eat") ||
-        intent.activityIntents.length > 0);
+        intent.text.includes("steak") ||
+        intent.text.includes("seafood"));
 
     if (shouldSplitFoodAddOnStops) {
       restaurants = filterRestaurantsByFoodIntent(restaurants, {
@@ -4147,7 +4148,15 @@ export async function POST(req: Request) {
         intent,
       );
     } else {
-      restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
+      const restaurantFoodIntents = intent.foodIntents.filter(
+        (foodIntent) => !isFoodAddOnIntent(foodIntent),
+      );
+
+      restaurants = filterRestaurantsByFoodIntent(restaurants, {
+        ...intent,
+        foodIntents: restaurantFoodIntents,
+      });
+
       activities = filterActivitiesByActivityIntent(activities, intent);
     }
 
