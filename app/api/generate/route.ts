@@ -3543,7 +3543,16 @@ function filterRestaurantsByFoodIntent(
     foodIntentsToMatch.some((food) => matchesFoodIntent(restaurant, food))
   );
 
-  return partialMatches.length > 0 ? partialMatches : restaurants;
+  if (partialMatches.length > 0) return partialMatches;
+
+  if (intent.wantsPrimaryMeal) {
+    const nonDessertFallback = restaurants.filter(
+      (restaurant: any) => !isDessertOnlyRestaurant(restaurant),
+    );
+    if (nonDessertFallback.length > 0) return nonDessertFallback;
+  }
+
+  return restaurants;
 }
 
 function filterActivitiesByActivityIntent(
