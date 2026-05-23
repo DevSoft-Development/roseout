@@ -32,7 +32,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `semantic-rules-analytics-v19-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v18-restaurant-hookah-steak-priority-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -3035,6 +3035,14 @@ function scoreRestaurant(
   const restaurantIntent = restaurantScoringIntent(intent);
 
   score += locationNameMatchScore(item, input);
+
+  if (shouldRestaurantFirstMixedIntent(intent)) {
+    if (isRestaurantWithHookahAndMeal(item, intent)) {
+      score += 450;
+    } else if (isHookahPlace(item)) {
+      score += 75;
+    }
+  }
   score += calculateSearchQualityScore(item, input, intent);
   score += keywordBoost(item, input);
   score += weightedVibeBoost(item, intent.vibes);
@@ -3068,6 +3076,16 @@ function scoreRestaurant(
     score += PRIORITY_WEIGHTS.rooftop;
   }
 
+  if (intent.wantsHookah) {
+    if (shouldRestaurantFirstMixedIntent(intent)) {
+      score += isHookahPlace(item) ? 180 : 25;
+    } else {
+      score += isHookahPlace(item)
+        ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
+        : PRIORITY_WEIGHTS.mismatchPenalty;
+    }
+  }
+
   score += clampScore(getSearchRankingScore(item)) * 0.4;
   score += clampScore(item.popularity_score || 0) * 0.1;
 
@@ -3082,6 +3100,15 @@ function scoreActivity(
   let score = 0;
 
   score += locationNameMatchScore(item, input);
+
+  if (shouldRestaurantFirstMixedIntent(intent)) {
+    if (isRestaurantWithHookahAndMeal(item, intent)) {
+      score += 250;
+    } else if (isHookahPlace(item)) {
+      score -= 120;
+    }
+  }
+
   score += calculateSearchQualityScore(item, input, intent);
 
   if (intent.locations.length > 0) {
@@ -3136,6 +3163,10 @@ function scoreActivity(
     score += isHookahPlace(item)
       ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.activityExact
       : PRIORITY_WEIGHTS.mismatchPenalty;
+
+    if (shouldRestaurantFirstMixedIntent(intent)) {
+      score -= 120;
+    }
   }
 
   if (intent.wantsCigar) {
@@ -3388,34 +3419,131 @@ function applyStrictSearchGuardrails(
   };
 }
 
-function filterRestaurantsByFoodIntent(
-  restaurants: Record<string, unknown>[],
-  intent: ReturnType<typeof detectIntent>,
+
+const SECONDARY_EXPERIENCE_FOOD_INTENTS = new Set([
+  "hookah",
+  "cigar",
+  "lounge",
+  "rooftop",
+  "drinks",
+  "wine_bar",
+]);
+
+const MEAL_SIGNAL_WORDS = [
+  "dinner",
+  "lunch",
+  "brunch",
+  "breakfast",
+  "restaurant",
+  "restaurants",
+  "dining",
+  "food",
+  "eat",
+  "steak",
+  "steakhouse",
+  "seafood",
+  "sushi",
+  "italian",
+  "mexican",
+  "chinese",
+  "thai",
+  "indian",
+  "caribbean",
+  "soul food",
+  "bbq",
+  "burger",
+  "pizza",
+  "halal",
+];
+
+function hasMealRestaurantIntent(intent: ReturnType<typeof detectIntent>) {
+  return (
+    intent.wantsFood &&
+    (
+      MEAL_SIGNAL_WORDS.some((word) => intent.text.includes(word)) ||
+      intent.foodIntents.some(
+        (foodIntent) => !SECONDARY_EXPERIENCE_FOOD_INTENTS.has(foodIntent)
+      )
+    )
+  );
+}
+
+function getPrimaryMealFoodIntents(intent: ReturnType<typeof detectIntent>) {
+  return intent.foodIntents.filter(
+    (foodIntent) => !SECONDARY_EXPERIENCE_FOOD_INTENTS.has(foodIntent)
+  );
+}
+
+function getSecondaryExperienceFoodIntents(intent: ReturnType<typeof detectIntent>) {
+  return intent.foodIntents.filter((foodIntent) =>
+    SECONDARY_EXPERIENCE_FOOD_INTENTS.has(foodIntent)
+  );
+}
+
+function shouldRestaurantFirstMixedIntent(intent: ReturnType<typeof detectIntent>) {
+  return (
+    hasMealRestaurantIntent(intent) &&
+    getSecondaryExperienceFoodIntents(intent).length > 0
+  );
+}
+
+function isRestaurantWithHookahAndMeal(
+  item: any,
+  intent: ReturnType<typeof detectIntent>
 ) {
-  const primaryMealRestaurants = filterPrimaryMealRestaurants(
-    restaurants,
-    intent,
-  );
+  const text = itemText(item);
 
-  if (intent.foodIntents.length === 0) return primaryMealRestaurants;
+  const hasHookah =
+    isHookahPlace(item) ||
+    text.includes("hookah") ||
+    text.includes("shisha");
 
-  const restaurantFoodIntents = intent.foodIntents.filter(
-    (foodIntent) => !["hookah", "cigar", "lounge", "nightclub"].includes(foodIntent),
-  );
+  const primaryMealIntents = getPrimaryMealFoodIntents(intent);
 
-  if (restaurantFoodIntents.length === 0) return primaryMealRestaurants;
+  const hasRequestedMeal =
+    primaryMealIntents.length === 0
+      ? hasMealRestaurantIntent(intent)
+      : primaryMealIntents.some((food) => matchesFoodIntent(item, food));
 
-  const exactMatches = primaryMealRestaurants.filter((restaurant: any) =>
-    restaurantFoodIntents.every((food) => matchesFoodIntent(restaurant, food)),
+  const looksLikeFoodPlace =
+    Boolean(item.restaurant_name) ||
+    Boolean(item.cuisine) ||
+    Boolean(item.cuisine_type) ||
+    text.includes("restaurant") ||
+    text.includes("dining") ||
+    text.includes("steak") ||
+    text.includes("steakhouse") ||
+    text.includes("dinner") ||
+    text.includes("food");
+
+  return hasHookah && hasRequestedMeal && looksLikeFoodPlace;
+}
+
+function filterRestaurantsByFoodIntent(
+  restaurants: any[],
+  intent: ReturnType<typeof detectIntent>
+) {
+  if (intent.foodIntents.length === 0) return restaurants;
+
+  const restaurantFirstMixedIntent = shouldRestaurantFirstMixedIntent(intent);
+
+  const foodIntentsToMatch = restaurantFirstMixedIntent
+    ? getPrimaryMealFoodIntents(intent)
+    : intent.foodIntents;
+
+  if (foodIntentsToMatch.length === 0) return restaurants;
+
+  const exactMatches = restaurants.filter((restaurant: any) =>
+    foodIntentsToMatch.every((food) => matchesFoodIntent(restaurant, food))
   );
 
   if (exactMatches.length > 0) return exactMatches;
 
-  const partialMatches = primaryMealRestaurants.filter((restaurant: any) =>
-    restaurantFoodIntents.some((food) => matchesFoodIntent(restaurant, food)),
+  const partialMatches = restaurants.filter((restaurant: any) =>
+    foodIntentsToMatch.some((food) => matchesFoodIntent(restaurant, food))
   );
 
-  return partialMatches.length > 0 ? partialMatches : primaryMealRestaurants;
+  return partialMatches.length > 0 ? partialMatches : restaurants;
 }
 
 function filterActivitiesByActivityIntent(
@@ -4211,7 +4339,10 @@ export async function POST(req: Request) {
       activities = locationActivities.length > 0 ? locationActivities : activities;
     }
 
-    if (intent.activityIntents.length > 0) {
+    if (
+      intent.activityIntents.length > 0 &&
+      !shouldRestaurantFirstMixedIntent(intent)
+    ) {
       let forcedActivityMatches = sourceLocations.filter(
         (item: any) =>
           isOutingEligibleLocation(item) &&
@@ -4304,6 +4435,29 @@ export async function POST(req: Request) {
     restaurants = strictGuardedResults.restaurants;
     activities = strictGuardedResults.activities;
 
+    if (shouldRestaurantFirstMixedIntent(intent) && restaurants.length === 0) {
+      restaurants = sourceLocations.filter((item: any) => {
+        const type = String(item.location_type || "").toLowerCase();
+        const text = itemText(item);
+
+        return (
+          isOutingEligibleLocation(item) &&
+          matchesLocation(item, intent.locations) &&
+          (
+            type === "restaurant" ||
+            Boolean(item.restaurant_name) ||
+            Boolean(item.cuisine) ||
+            Boolean(item.cuisine_type) ||
+            text.includes("restaurant") ||
+            text.includes("dining") ||
+            text.includes("steak") ||
+            text.includes("steakhouse") ||
+            text.includes("food")
+          )
+        );
+      });
+    }
+
     let rankedRestaurants = restaurants
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
@@ -4361,6 +4515,18 @@ export async function POST(req: Request) {
         };
       })
       .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
+
+    rankedRestaurants.sort((a: any, b: any) => {
+      if (shouldRestaurantFirstMixedIntent(intent)) {
+        const aBest = isRestaurantWithHookahAndMeal(a, intent);
+        const bBest = isRestaurantWithHookahAndMeal(b, intent);
+
+        if (aBest && !bBest) return -1;
+        if (!aBest && bBest) return 1;
+      }
+
+      return (b._score || 0) - (a._score || 0);
+    });
 
     rankedRestaurants = diversifyResults(
       rankedRestaurants.map((item: any) => ({
@@ -4617,6 +4783,11 @@ STRICT RULES:
 - If there is a matched business/location name, mention that match first.
 - If the user asks for food plus any activity, include both a restaurant and a matching activity when available.
 - Never ignore the requested activity intent.
+- If the user asks for food/dinner/restaurant plus hookah, food is the primary request and hookah is the secondary add-on.
+- If a location has both the requested food and hookah, rank it highest.
+- For searches like “steak dinner and hookah in Queens,” recommend steak/restaurant results first.
+- Hookah-only lounges should not replace restaurants when the user asked for dinner, steak, seafood, restaurant, lunch, brunch, or food.
+- Standalone hookah lounges are acceptable only as activity/add-on results unless the user only searched for hookah.
 - If a location is detected, prioritize restaurants and activities from that location.
 - If matching activities only exist in another borough, still include the matching activity.
 - Never say “I don’t have any.”
