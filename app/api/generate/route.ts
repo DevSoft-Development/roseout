@@ -1874,6 +1874,82 @@ const MANHATTAN_BOUNDS = {
 const QUEENS_BOUNDS = { minLat: 40.48, maxLat: 40.82, minLng: -73.96, maxLng: -73.68 };
 const BROOKLYN_BOUNDS = { minLat: 40.56, maxLat: 40.74, minLng: -74.05, maxLng: -73.83 };
 const BRONX_BOUNDS = { minLat: 40.78, maxLat: 40.92, minLng: -73.93, maxLng: -73.75 };
+const NYC_BOROUGHS = ["Queens", "Brooklyn", "Manhattan", "Bronx", "Staten Island"] as const;
+type NycBorough = (typeof NYC_BOROUGHS)[number];
+
+const BOROUGH_ALIASES: Record<NycBorough, string[]> = {
+  Queens: [
+    "queens", "astoria", "long island city", "lic", "flushing", "jamaica", "forest hills", "rego park", "bayside",
+    "jackson heights", "elmhurst", "corona", "sunnyside", "woodside", "ridgewood", "ozone park", "howard beach",
+    "rockaway", "queens village", "springfield gardens", "laurelton", "rosedale",
+  ],
+  Brooklyn: [
+    "brooklyn", "williamsburg", "bushwick", "bed stuy", "bed-stuy", "crown heights", "park slope", "downtown brooklyn",
+    "dumbo", "flatbush", "canarsie", "bay ridge", "coney island", "red hook", "greenpoint",
+  ],
+  Manhattan: [
+    "manhattan", "harlem", "midtown", "chelsea", "soho", "tribeca", "les", "lower east side", "east village",
+    "west village", "financial district", "fidi", "upper east side", "upper west side", "washington heights",
+  ],
+  Bronx: ["bronx", "the bronx", "fordham", "riverdale", "mott haven", "hunts point", "pelham bay", "throgs neck", "soundview", "morris park", "kingsbridge"],
+  "Staten Island": ["staten island", "st george", "st. george", "stapleton", "tottenville", "new dorp", "great kills", "port richmond"],
+};
+
+type RequestedGeo = {
+  borough: NycBorough | null;
+  city: string | null;
+  neighborhood: string | null;
+  hasHardGeo: boolean;
+};
+
+function normalizeGeoText(value: unknown) {
+  return normalizeQuery(String(value || "")).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function detectRequestedGeo(input: string): RequestedGeo {
+  const text = normalizeGeoText(input);
+  let borough: NycBorough | null = null;
+  let neighborhood: string | null = null;
+
+  for (const boroughName of NYC_BOROUGHS) {
+    const aliases = BOROUGH_ALIASES[boroughName];
+    const match = aliases.find((alias) => text.includes(normalizeGeoText(alias)));
+    if (match) {
+      borough = boroughName;
+      if (normalizeGeoText(match) !== normalizeGeoText(boroughName)) neighborhood = match;
+      break;
+    }
+  }
+
+  const city = borough ? "New York" : null;
+  return { borough, city, neighborhood, hasHardGeo: Boolean(borough || city || neighborhood) };
+}
+
+function normalizeItemBorough(item: any): NycBorough | null {
+  const fields = [item?.borough, item?.neighborhood, item?.city, item?.address];
+  const joined = fields.map(normalizeGeoText).join(" ");
+  for (const boroughName of NYC_BOROUGHS) {
+    if (BOROUGH_ALIASES[boroughName].some((alias) => joined.includes(normalizeGeoText(alias)))) return boroughName;
+  }
+  if (normalizeGeoText(item?.city) === "new york" && BOROUGH_ALIASES.Manhattan.some((alias) => joined.includes(normalizeGeoText(alias)))) {
+    return "Manhattan";
+  }
+  return null;
+}
+
+function itemMatchesRequestedGeo(item: any, requestedGeo: RequestedGeo) {
+  if (!requestedGeo.hasHardGeo) return true;
+  if (requestedGeo.borough) return normalizeItemBorough(item) === requestedGeo.borough;
+  const searchable = [item?.city, item?.neighborhood, item?.address, item?.borough].map(normalizeGeoText).join(" ");
+  return [requestedGeo.city, requestedGeo.neighborhood]
+    .filter(Boolean)
+    .some((value) => searchable.includes(normalizeGeoText(value)));
+}
+
+function applyHardGeoFilter<T>(items: T[], requestedGeo: RequestedGeo) {
+  if (!requestedGeo.hasHardGeo) return items;
+  return items.filter((item: any) => itemMatchesRequestedGeo(item, requestedGeo));
+}
 
 function requestedStrongGeoAreas(intent: ReturnType<typeof detectIntent>) {
   const requested = expandDetectedLocations(intent.locations || []);
@@ -3607,6 +3683,7 @@ const LOCATION_SELECT = `
   name,
   address,
   city,
+  borough,
   state,
   zip_code,
   neighborhood,
@@ -3933,6 +4010,7 @@ export async function POST(req: Request) {
       .filter(isPublicSearchVisible);
 
     const intent = detectIntent(input, body, locations);
+    const requestedGeo = detectRequestedGeo(input);
     const parsedIntent = await parseSearchIntent(openai, input).catch(() => ({
       city: null,
       borough: null,
@@ -3977,6 +4055,10 @@ export async function POST(req: Request) {
     const broaderSourceLocations =
       usableLocations.length > 0 ? usableLocations : locations;
     let sourceLocations = applyStrongGeoFilter(broaderSourceLocations, intent);
+    const geoFilteredSourceLocations = requestedGeo.hasHardGeo
+      ? applyHardGeoFilter(sourceLocations, requestedGeo)
+      : sourceLocations;
+    sourceLocations = geoFilteredSourceLocations;
 
     console.log("GENERATE SEARCH DEBUG", {
       locations: intent.locations,
@@ -4149,7 +4231,7 @@ export async function POST(req: Request) {
 
     if (restaurants.length === 0 && intent.wantsRestaurant && !isLoungeActivityOnlyRequest(intent)) {
       restaurants = fallbackByGeoStages(
-        broaderSourceLocations,
+        geoFilteredSourceLocations,
         (item: any) => isOutingEligibleLocation(item) && isMealRestaurant(item, intent),
         intent,
         strictWalkingRequest,
@@ -4158,21 +4240,21 @@ export async function POST(req: Request) {
 
     if (activities.length === 0 && dessertAddonSearch) {
       activities = fallbackByGeoStages(
-        broaderSourceLocations,
+        geoFilteredSourceLocations,
         (item: any) => isOutingEligibleLocation(item) && isDessertLocation(item),
         intent,
         strictWalkingRequest,
       ).map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
     } else if (activities.length === 0 && isStrictFoodAddonSearch) {
       activities = fallbackByGeoStages(
-        broaderSourceLocations,
+        geoFilteredSourceLocations,
         (item: any) => isOutingEligibleLocation(item) && isNonMealFoodPlace(item),
         intent,
         strictWalkingRequest,
       ).map((item: any) => mapNonMealFoodPlaceToActivity(item, intent));
     } else if (activities.length === 0 && intent.wantsActivity) {
       activities = fallbackByGeoStages(
-        broaderSourceLocations,
+        geoFilteredSourceLocations,
         (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
         intent,
         strictWalkingRequest,
@@ -4281,7 +4363,7 @@ export async function POST(req: Request) {
       ranked_restaurant_count: rankedRestaurants.length,
       ranked_activity_count: rankedActivities.length,
     });
-    const localFirst = localFirstFilter(sourceLocations as any, parsedIntent as any);
+    const localFirst = localFirstFilter(geoFilteredSourceLocations as any, parsedIntent as any);
     if (localFirst.restaurants.length > 0) {
       rankedRestaurants = rankedRestaurants.filter((r:any)=>localFirst.restaurants.some((lr:any)=>String(lr.id)===String(r.id)));
     }
@@ -4400,14 +4482,16 @@ export async function POST(req: Request) {
       isExplicitFoodAtLoungeRequest(intent) ? "restaurants" : "activities",
     );
 
-    const topRestaurants = sortLocationsNearFirst(
+    let topRestaurants = sortLocationsNearFirst(
       finalDedupedResults.restaurants,
       intent,
     );
-    const topActivities = sortLocationsNearFirst(
+    let topActivities = sortLocationsNearFirst(
       finalDedupedResults.activities,
       intent,
     );
+    topRestaurants = applyHardGeoFilter(topRestaurants, requestedGeo);
+    topActivities = applyHardGeoFilter(topActivities, requestedGeo);
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
