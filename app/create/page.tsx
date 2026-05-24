@@ -1030,7 +1030,9 @@ export default function CreatePage() {
                   key={index}
                   className="rounded-2xl border border-white/10 bg-[#101010] p-4 text-sm font-semibold leading-7 text-white/70"
                 >
-                  {message.content}
+                  We couldn&apos;t build card results for that search yet. Try adding
+                  a neighborhood or city (example: “steak dinner in Manhattan and
+                  hookah lounge after dinner”).
                 </div>
               );
             }

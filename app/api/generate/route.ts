@@ -4782,7 +4782,7 @@ export async function POST(req: Request) {
     }
 
 
-    const strictRankedRestaurants =
+    let strictRankedRestaurants =
       intent.foodIntents.length > 0
         ? rankedRestaurants.filter((restaurant: any) =>
             intent.foodIntents.some((foodIntent) =>
@@ -4790,6 +4790,22 @@ export async function POST(req: Request) {
             )
           )
         : rankedRestaurants;
+
+    if (
+      strictRankedRestaurants.length === 0 &&
+      intent.foodIntents.includes("steak")
+    ) {
+      strictRankedRestaurants = rankedRestaurants.filter((restaurant: any) => {
+        const searchable = buildSearchableText(restaurant);
+        return (
+          searchable.includes("steak") ||
+          searchable.includes("steakhouse") ||
+          searchable.includes("chophouse") ||
+          searchable.includes("ribeye") ||
+          searchable.includes("filet")
+        );
+      });
+    }
 
     const strictRankedActivities =
       intent.activityIntents.length > 0
