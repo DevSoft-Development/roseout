@@ -9,7 +9,7 @@ const rateRules: Array<{ prefix: string; limit: number; windowMs: number }> = [
   { prefix: "/api/reserve", limit: 60, windowMs: 60_000 },
 ];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 

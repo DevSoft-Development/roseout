@@ -3894,6 +3894,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
         };
       }),
     )
+    .filter((pair): pair is NonNullable<typeof pair> => pair !== null)
     .sort((a, b) => b.pair_score - a.pair_score);
 
   const usedRestaurantIds = new Set<string>();
