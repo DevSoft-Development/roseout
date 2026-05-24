@@ -2086,6 +2086,9 @@ function normalizeItemBorough(item: any): NycBorough | null {
   for (const boroughName of NYC_BOROUGHS) {
     if (BOROUGH_ALIASES[boroughName].some((alias) => joined.includes(normalizeGeoText(alias)))) return boroughName;
   }
+  if (hasCoordinateInBounds(item, QUEENS_BOUNDS)) return "Queens";
+  if (hasCoordinateInBounds(item, BROOKLYN_BOUNDS)) return "Brooklyn";
+  if (hasCoordinateInBounds(item, BRONX_BOUNDS)) return "Bronx";
   if (normalizeGeoText(item?.city) === "new york" && BOROUGH_ALIASES.Manhattan.some((alias) => joined.includes(normalizeGeoText(alias)))) {
     return "Manhattan";
   }
