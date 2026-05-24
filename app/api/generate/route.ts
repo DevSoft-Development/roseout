@@ -3923,8 +3923,21 @@ function pairWalkingDistanceMatches(
         };
       }),
     )
-    .filter(Boolean)
-    .sort((a: any, b: any) => {
+    .filter(
+      (
+        pair,
+      ): pair is {
+        restaurant: any;
+        activity: any;
+        distance_miles: number;
+        walking_minutes: number;
+        walking_label: string;
+        same_city: boolean;
+        same_neighborhood: boolean;
+        pair_score: number;
+      } => pair !== null,
+    )
+    .sort((a, b) => {
       if (b.pair_score !== a.pair_score) return b.pair_score - a.pair_score;
       return a.distance_miles - b.distance_miles;
     });
