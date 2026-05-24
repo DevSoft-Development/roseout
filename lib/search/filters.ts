@@ -7,12 +7,17 @@ export function hasValidCoordinates(item:SearchLocation){
 }
 
 export function matchesGeo(item:SearchLocation, intent:ParsedSearchIntent){
-  if (intent.city && !intent.borough) {
-    const city = n(item.city);
-    const requestedCity = n(intent.city);
-    if (city !== requestedCity && !city.includes(requestedCity)) return false;
+  const city = n(item.city);
+  const borough = n(item.borough);
+  const requestedCity = n(intent.city);
+  const requestedBorough = n(intent.borough);
+
+  if (requestedCity && !requestedBorough) {
+    const cityMatches = city===requestedCity || city.includes(requestedCity) || requestedCity.includes(city);
+    if (!cityMatches) return false;
   }
-  if (intent.borough && n(item.borough)!==n(intent.borough) && !n(item.city).includes(n(intent.borough))) return false;
+
+  if (requestedBorough && borough!==requestedBorough && !city.includes(requestedBorough)) return false;
   return true;
 }
 
