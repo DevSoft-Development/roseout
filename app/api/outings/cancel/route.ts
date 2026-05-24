@@ -1,17 +1,40 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase-server";
 
-export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}));
-  const outingId = body?.outing_id ? String(body.outing_id) : "";
-  if (!outingId) return NextResponse.json({ success: false, error: "outing_id is required" }, { status: 400 });
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
 
-  const { error } = await supabaseAdmin
-    .from("outings")
-    .update({ status: "cancelled", cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", outingId)
-    .neq("status", "completed");
+    const supabase = await createClient();
 
-  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true });
+    const { error } = await supabase
+      .from("outings")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+      })
+      .eq("id", body.outing_id);
+
+    if (error) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message,
+      },
+      { status: 500 }
+    );
+  }
 }
