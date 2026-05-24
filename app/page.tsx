@@ -62,6 +62,16 @@ type HomeLocation = {
   price_level: number | null;
 };
 
+type HomeExperience = {
+  key: string;
+  title: string;
+  subtitle: string;
+  tags: string[];
+  cta: string;
+  planPrompt?: string;
+  locations: HomeLocation[];
+};
+
 type HomeSections = Awaited<ReturnType<typeof loadHomepageSections>>;
 
 export default async function HomePage() {
@@ -131,15 +141,29 @@ async function loadHomepageSections() {
     locations = [...restaurants, ...activities];
   }
 
-  const recent = locations.slice(0, 12);
-  const dateNight = byKeywords(locations, ["date night", "date", "romantic", "intimate", "lounge", "cocktail"]).slice(0, 8);
-  const dinner = byKeywords(locations, ["dinner", "steak", "sushi", "italian", "restaurant", "fine dining"]).slice(0, 8);
-  const dessert = byKeywords(locations, ["dessert", "ice cream", "bakery", "sweet", "patisserie"]).slice(0, 8);
-  const lounge = byKeywords(locations, ["lounge", "bar", "cocktail", "rooftop", "nightlife"]).slice(0, 8);
+  const uniqueLocations = dedupeLocations(locations);
+  const usedLocationIds = new Set<string>();
+
+  const takeUnique = (items: HomeLocation[], limit = 5) => {
+    const selected: HomeLocation[] = [];
+    for (const item of items) {
+      if (!item.id || usedLocationIds.has(item.id)) continue;
+      usedLocationIds.add(item.id);
+      selected.push(item);
+      if (selected.length >= limit) break;
+    }
+    return selected;
+  };
+
+  const recent = takeUnique(uniqueLocations, 5);
+  const dateNight = takeUnique(byKeywords(uniqueLocations, ["date night", "date", "romantic", "intimate", "lounge", "cocktail"]), 5);
+  const dinner = takeUnique(byKeywords(uniqueLocations, ["dinner", "steak", "sushi", "italian", "restaurant", "fine dining"]), 5);
+  const dessert = takeUnique(byKeywords(uniqueLocations, ["dessert", "ice cream", "bakery", "sweet", "patisserie"]), 5);
+  const lounge = takeUnique(byKeywords(uniqueLocations, ["lounge", "bar", "cocktail", "rooftop", "nightlife"]), 5);
 
   return {
-    trendingRestaurants: rankByTrending(locations.filter((location) => isRestaurant(location))).slice(0, 12),
-    trendingActivities: rankByTrending(locations.filter((location) => !isRestaurant(location))).slice(0, 12),
+    trendingRestaurants: takeUnique(rankByTrending(uniqueLocations.filter((location) => isRestaurant(location))), 5),
+    trendingActivities: takeUnique(rankByTrending(uniqueLocations.filter((location) => !isRestaurant(location))), 5),
     recent,
     categorySections: [
       { key: "date-night", title: "Date Night", subtitle: "Romantic and intimate picks", locations: dateNight },
@@ -148,17 +172,17 @@ async function loadHomepageSections() {
       { key: "lounge", title: "Lounge", subtitle: "Cocktails and late-night vibes", locations: lounge },
     ],
     experiences: [
-      { key: "date-night", title: "Date Night", subtitle: "Romantic Manhattan Spots", tags: ["Intimate", "Cocktails", "Late Night"], cta: "Plan This Outing", locations: byKeywords(locations, ["date", "romantic", "lounge", "cocktail", "intimate", "upscale"]).slice(0, 4) },
-      { key: "rooftops", title: "Rooftops", subtitle: "Best Rooftops in Brooklyn", tags: ["Skyline", "Golden Hour", "DJ Sets"], cta: "View Experience", locations: byKeywords(locations, ["rooftop", "skyline", "terrace"]).slice(0, 4) },
-      { key: "brunch", title: "Brunch", subtitle: "Weekend Brunch Socials", tags: ["Day Party", "Bottomless", "Friends"], cta: "View Experience", locations: byKeywords(locations, ["brunch", "day party", "daytime", "breakfast"]).slice(0, 4) },
-      { key: "luxury", title: "Luxury", subtitle: "Luxury Dinner Experiences", tags: ["Chef-led", "Fine Dining", "Premium"], cta: "Plan This Outing", locations: byKeywords(locations, ["luxury", "premium", "fine dining", "upscale", "chef"]).sort((a, b) => (b.price_level || 0) - (a.price_level || 0)).slice(0, 4) },
-      { key: "group-outings", title: "Group Outings", subtitle: "Group-Friendly Lounges", tags: ["Large Parties", "Birthdays", "Celebrations"], cta: "Plan This Outing", locations: byKeywords(locations, ["group", "party", "birthday", "celebration", "private"]).slice(0, 4) },
+      { key: "date-night", title: "Date Night", subtitle: "Romantic Manhattan Spots", tags: ["Intimate", "Cocktails", "Late Night"], cta: "Plan OUTing", planPrompt: "Romantic Manhattan date night with intimate cocktails and late-night vibes", locations: takeUnique(byKeywords(uniqueLocations, ["date", "romantic", "lounge", "cocktail", "intimate", "upscale", "manhattan"]).filter(isLikelyManhattanLocation), 4) },
+      { key: "rooftops", title: "Rooftops", subtitle: "Best Rooftops in Brooklyn", tags: ["Skyline", "Golden Hour", "DJ Sets"], cta: "Plan OUTing", planPrompt: "Brooklyn rooftop outing with skyline views and DJ vibes", locations: takeUnique(byKeywords(uniqueLocations, ["rooftop", "skyline", "terrace"]), 4) },
+      { key: "brunch", title: "Brunch", subtitle: "Weekend Brunch Socials", tags: ["Day Party", "Bottomless", "Friends"], cta: "Plan OUTing", planPrompt: "Weekend brunch social outing with friends and lively energy", locations: takeUnique(byKeywords(uniqueLocations, ["brunch", "day party", "daytime", "breakfast"]), 4) },
+      { key: "luxury", title: "Luxury", subtitle: "Luxury Dinner Experiences", tags: ["Chef-led", "Fine Dining", "Premium"], cta: "Plan OUTing", planPrompt: "Luxury dinner outing with fine dining and chef-led experiences", locations: takeUnique(byKeywords(uniqueLocations, ["luxury", "premium", "fine dining", "upscale", "chef"]).sort((a, b) => (b.price_level || 0) - (a.price_level || 0)), 4) },
+      { key: "group-outings", title: "Group Outings", subtitle: "Group-Friendly Lounges", tags: ["Large Parties", "Birthdays", "Celebrations"], cta: "Plan OUTing", planPrompt: "Group-friendly outing for birthdays and celebrations", locations: takeUnique(byKeywords(uniqueLocations, ["group", "party", "birthday", "celebration", "private"]), 4) },
     ],
   };
 }
 
 function FeaturedExperienceGrid({ sections }: { sections: HomeSections }) {
-  const filled = sections.experiences.filter((experience) => experience.locations[0]);
+  const filled = sections.experiences.filter((experience: HomeExperience) => experience.locations[0]);
   if (!filled.length) return <PolishedEmptyState />;
   return (
     <div className="grid gap-4 lg:grid-cols-12">
@@ -181,7 +205,7 @@ function FeaturedExperienceGrid({ sections }: { sections: HomeSections }) {
               <div className="mt-4 flex flex-wrap gap-2">{experience.tags.map((tag) => <span key={tag} className="rounded-full border border-white/20 bg-black/35 px-3 py-1 text-[11px] font-black">{tag}</span>)}</div>
               <div className="mt-5 flex items-center justify-between gap-3">
                 <p className="line-clamp-1 text-xs text-white/70">{experience.locations.slice(1, 4).map((l) => getLocationName(l)).join(" · ") || "Curated by TheOutHaven"}</p>
-                <Link href="/create" className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">{experience.cta}</Link>
+                <Link href={`/create?prompt=${encodeURIComponent(experience.planPrompt || `${experience.title} outing`)}`} className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black whitespace-nowrap">{experience.cta}</Link>
               </div>
             </div>
           </article>
@@ -242,6 +266,21 @@ function score(location: HomeLocation) {
 function isRestaurant(location: HomeLocation) {
   const hay = searchableText(location);
   return hay.includes("restaurant") || Boolean(location.restaurant_name) || String(location.source_table || "").toLowerCase() === "restaurants";
+}
+
+
+function dedupeLocations(locations: HomeLocation[]) {
+  const seen = new Set<string>();
+  return locations.filter((location) => {
+    if (!location.id || seen.has(location.id)) return false;
+    seen.add(location.id);
+    return true;
+  });
+}
+
+function isLikelyManhattanLocation(location: HomeLocation) {
+  const hay = `${location.city || ""} ${location.neighborhood || ""}`.toLowerCase();
+  return hay.includes("manhattan") || hay.includes("new york");
 }
 
 function PolishedEmptyState() {
