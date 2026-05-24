@@ -7,7 +7,11 @@ export function hasValidCoordinates(item:SearchLocation){
 }
 
 export function matchesGeo(item:SearchLocation, intent:ParsedSearchIntent){
-  if (intent.city && n(item.city)!==n(intent.city)) return false;
+  if (intent.city && !intent.borough) {
+    const city = n(item.city);
+    const requestedCity = n(intent.city);
+    if (city !== requestedCity && !city.includes(requestedCity)) return false;
+  }
   if (intent.borough && n(item.borough)!==n(intent.borough) && !n(item.city).includes(n(intent.borough))) return false;
   return true;
 }
