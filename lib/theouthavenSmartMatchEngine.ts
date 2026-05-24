@@ -879,17 +879,22 @@ export function balanceSmartMatches(
   const smartRestaurants = filterSmartRestaurants(restaurants, intent);
   const smartActivities = filterSmartActivities(activities, intent);
 
+  const allowFoodFallbackInFullOuting =
+    intent.wantsFullOuting || (intent.wantsFood && intent.wantsActivity);
+  const allowActivityFallbackInFullOuting =
+    intent.wantsFullOuting || (intent.wantsFood && intent.wantsActivity);
+
   const finalRestaurants =
     smartRestaurants.length > 0
       ? smartRestaurants
-      : intent.strictFoodMode
+      : intent.strictFoodMode && !allowFoodFallbackInFullOuting
         ? []
         : restaurants;
 
   const finalActivities =
     smartActivities.length > 0
       ? smartActivities
-      : intent.strictActivityMode
+      : intent.strictActivityMode && !allowActivityFallbackInFullOuting
         ? []
         : activities;
 
