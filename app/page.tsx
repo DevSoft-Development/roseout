@@ -144,11 +144,11 @@ async function loadHomepageSections() {
   const uniqueLocations = dedupeLocations(locations);
   const usedLocationIds = new Set<string>();
 
-  const takeUnique = (items: HomeLocation[], limit = 5) => {
+  const takeUnique = (items: HomeLocation[], limit = 5, registry: Set<string> = usedLocationIds) => {
     const selected: HomeLocation[] = [];
     for (const item of items) {
-      if (!item.id || usedLocationIds.has(item.id)) continue;
-      usedLocationIds.add(item.id);
+      if (!item.id || registry.has(item.id)) continue;
+      registry.add(item.id);
       selected.push(item);
       if (selected.length >= limit) break;
     }
@@ -173,7 +173,7 @@ async function loadHomepageSections() {
     ],
     experiences: [
       { key: "date-night", title: "Date Night", subtitle: "Romantic Manhattan Spots", tags: ["Intimate", "Cocktails", "Late Night"], cta: "Plan OUTing", planPrompt: "Romantic Manhattan date night with intimate cocktails and late-night vibes", locations: takeUnique(byKeywords(uniqueLocations, ["date", "romantic", "lounge", "cocktail", "intimate", "upscale", "manhattan"]).filter(isLikelyManhattanLocation), 4) },
-      { key: "rooftops", title: "Rooftops", subtitle: "Best Rooftops in Brooklyn", tags: ["Skyline", "Golden Hour", "DJ Sets"], cta: "Plan OUTing", planPrompt: "Brooklyn rooftop outing with skyline views and DJ vibes", locations: takeUnique(byKeywords(uniqueLocations, ["rooftop", "skyline", "terrace"]), 4) },
+      { key: "rooftops", title: "Rooftops", subtitle: "Best Rooftops in Brooklyn", tags: ["Skyline", "Golden Hour", "DJ Sets"], cta: "Plan OUTing", planPrompt: "Brooklyn rooftop outing with skyline views and DJ vibes", locations: takeUnique(byKeywords(uniqueLocations, ["rooftop", "skyline", "terrace", "dj", "lounge", "bar", "view", "views", "deck", "penthouse"]), 4, new Set<string>()) },
       { key: "brunch", title: "Brunch", subtitle: "Weekend Brunch Socials", tags: ["Day Party", "Bottomless", "Friends"], cta: "Plan OUTing", planPrompt: "Weekend brunch social outing with friends and lively energy", locations: takeUnique(byKeywords(uniqueLocations, ["brunch", "day party", "daytime", "breakfast"]), 4) },
       { key: "luxury", title: "Luxury", subtitle: "Luxury Dinner Experiences", tags: ["Chef-led", "Fine Dining", "Premium"], cta: "Plan OUTing", planPrompt: "Luxury dinner outing with fine dining and chef-led experiences", locations: takeUnique(byKeywords(uniqueLocations, ["luxury", "premium", "fine dining", "upscale", "chef"]).sort((a, b) => (b.price_level || 0) - (a.price_level || 0)), 4) },
       { key: "group-outings", title: "Group Outings", subtitle: "Group-Friendly Lounges", tags: ["Large Parties", "Birthdays", "Celebrations"], cta: "Plan OUTing", planPrompt: "Group-friendly outing for birthdays and celebrations", locations: takeUnique(byKeywords(uniqueLocations, ["group", "party", "birthday", "celebration", "private"]), 4) },
@@ -245,7 +245,7 @@ function PlaceCard({ location }: { location: HomeLocation }) {
   return (
     <article className="group flex min-h-[380px] min-w-[285px] flex-col rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]">
       <div className="relative overflow-hidden rounded-2xl">
-        <img src={getLocationImage(location)} alt={name} loading="lazy" className="h-44 w-full object-cover transition duration-500 group-hover:scale-105" />
+        <img src={getLocationImage(location)} alt={name} loading="lazy" className="aspect-[16/10] w-full object-cover transition duration-500 group-hover:scale-105" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 to-transparent" />
       </div>
       <div className="mt-3 space-y-1">
