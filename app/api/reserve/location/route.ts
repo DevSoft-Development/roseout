@@ -642,6 +642,20 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      if (
+        error.code === "23505" &&
+        error.message.includes("location_reservations_no_duplicate_item_start_idx")
+      ) {
+        return NextResponse.json(
+          {
+            error: selectedItem
+              ? "This table, room, lane, or section was just booked. Please choose another time."
+              : "This time slot was just booked. Please choose another time.",
+          },
+          { status: 409 },
+        );
+      }
+
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 

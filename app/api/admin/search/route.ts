@@ -1,20 +1,8 @@
 import { NextResponse } from "next/server";
 import { getLocationName } from "@/lib/locationName";
-import { createClient } from "@supabase/supabase-js";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 export const dynamic = "force-dynamic";
-
-function adminSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        persistSession: false,
-      },
-    }
-  );
-}
 
 function escapeSearch(value: string) {
   return value.replace(/[%_,]/g, "");
@@ -22,6 +10,14 @@ function escapeSearch(value: string) {
 
 export async function GET(req: Request) {
   try {
+    const { error: authError, supabase } = await requireAdminApiRole([
+      "superuser",
+      "admin",
+      "editor",
+      "viewer",
+    ]);
+    if (authError) return authError;
+
     const { searchParams } = new URL(req.url);
     const rawQuery = searchParams.get("q") || "";
     const q = escapeSearch(rawQuery.trim());
@@ -29,8 +25,6 @@ export async function GET(req: Request) {
     if (!q || q.length < 2) {
       return NextResponse.json({ results: [] });
     }
-
-    const supabase = adminSupabase();
 
     const { data: users } = await supabase
       .from("users")
