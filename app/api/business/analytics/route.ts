@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
   const location: any = locationResult.data || {};
 
 
-  const [topCities, topStates, topAgeRanges, topOutingStyles, topBudgetRanges, searchesOverTime, viewsOverTime, reservationByDemographic] = await Promise.all([
+  const [topCities, topStates, topAgeRanges, topOutingStyles, topBudgetRanges, searchesOverTime, viewsOverTime, reservationByDemographic, outingsResult] = await Promise.all([
     supabaseAdmin.from("search_events").select("city").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
     supabaseAdmin.from("search_events").select("state").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
     supabaseAdmin.from("search_events").select("age_range").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
     supabaseAdmin.from("search_events").select("created_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
     supabaseAdmin.from("profile_view_events").select("created_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
     supabaseAdmin.from("reservation_interest_events").select("age_range,budget_range,outing_style").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
+    supabaseAdmin.from("outings").select("status,rating,would_go_again,reservation_clicked_at,call_clicked_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
   ]);
 
   const topN=(rows:any[]=[], key:string)=>Object.entries(rows.reduce((a:any,r:any)=>{const k=String(r?.[key]||"Unknown");a[k]=(a[k]||0)+1;return a;},{})).sort((a:any,b:any)=>b[1]-a[1]).slice(0,5).map(([label,count])=>({label,count}));
@@ -63,6 +64,12 @@ export async function GET(request: NextRequest) {
   const mediaCount = (Array.isArray(location?.photos) ? location.photos.length : 0) + (Array.isArray(location?.gallery_images) ? location.gallery_images.length : 0);
   const profileCompleteness = [location?.description, location?.website, location?.phone].filter(Boolean).length / 3;
   const visibilityScore = Math.min(100, Math.round(profileCompleteness * 25 + (hasReservationLink ? 15 : 0) + Math.min(15, mediaCount * 2) + Math.min(20, profileViews / 100) + Math.min(15, reservationStarts / 20) + (location?.is_promoted ? 10 : 0)));
+  const outingRows = outingsResult.data || [];
+  const externalReservationClicks = outingRows.filter((row: any) => row.status === "reservation_clicked" || row.reservation_clicked_at).length;
+  const phoneCallClicks = outingRows.filter((row: any) => row.status === "call_clicked" || row.call_clicked_at).length;
+  const completedOutings = outingRows.filter((row: any) => row.status === "completed").length;
+  const outingRatings = outingRows.map((row: any) => Number(row.rating)).filter((value: number) => Number.isFinite(value) && value > 0);
+  const wouldGoAgainYes = outingRows.filter((row: any) => row.would_go_again === true).length;
 
   return NextResponse.json({
     success: true,
@@ -76,6 +83,13 @@ export async function GET(request: NextRequest) {
       reservation_completions: reservationCompletions,
       reservation_conversion_rate: ratio(reservationCompletions, reservationStarts),
       cancellation_rate: ratio(reservationCancellations, reservationCompletions),
+      external_reservation_clicks: externalReservationClicks,
+      phone_call_clicks: phoneCallClicks,
+      completed_outings: completedOutings,
+      external_conversion_rate: ratio(completedOutings, externalReservationClicks),
+      call_to_completion_rate: ratio(completedOutings, phoneCallClicks),
+      average_outing_rating: outingRatings.length ? outingRatings.reduce((total: number, value: number) => total + value, 0) / outingRatings.length : 0,
+      would_go_again_percentage: ratio(wouldGoAgainYes, completedOutings),
     },
     daily,
     hourly,
@@ -99,6 +113,7 @@ export async function GET(request: NextRequest) {
       !hasReservationLink ? { title: "Add reservation link", detail: "Add a reservation link to capture more booking intent.", cta: "Get More Reservations" } : null,
       profileViews > 100 && reservationStarts < profileViews * 0.08 ? { title: "Views but low clicks", detail: "Your profile is getting views but low clicks. Improve photos or description.", cta: "Boost Your Visibility" } : null,
       !location?.is_promoted && profileViews > 200 ? { title: "Promoted listing candidate", detail: "You are a strong candidate for promoted listings.", cta: "Feature This Location" } : null,
+      (externalReservationClicks + phoneCallClicks) >= 10 && completedOutings <= 2 ? { title: "Upgrade opportunity", detail: "Add internal reservations to improve conversions and tracking.", cta: "Get More Reservations" } : null,
     ].filter(Boolean),
     reservation_intelligence: {
       busiest_day: hourly[0]?.day_of_week ?? null,
