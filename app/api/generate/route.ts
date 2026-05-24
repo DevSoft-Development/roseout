@@ -32,7 +32,8 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v20-split-meal-lounge-card-results-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION =
+  `food-cuisine-location-distance-v20-card-only-steak-hookah-split-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -748,8 +749,39 @@ function filterPrimaryMealRestaurants(
   return primaryMealMatches.length > 0 ? primaryMealMatches : restaurants;
 }
 
+function buildSearchableText(item: any): string {
+  return [
+    item?.name,
+    item?.restaurant_name,
+    item?.activity_name,
+    item?.location_type,
+    item?.detail_location_type,
+    item?.primary_category,
+    item?.category,
+    item?.subcategory,
+    item?.cuisine,
+    item?.cuisine_type,
+    item?.activity_type,
+    item?.primary_tag,
+    item?.atmosphere,
+    item?.description,
+    item?.address,
+    item?.city,
+    item?.borough,
+    ...(Array.isArray(item?.tags) ? item.tags : []),
+    ...(Array.isArray(item?.vibe_tags) ? item.vibe_tags : []),
+    ...(Array.isArray(item?.best_for_tags) ? item.best_for_tags : []),
+    ...(Array.isArray(item?.google_types) ? item.google_types : []),
+    ...(Array.isArray(item?.review_keywords) ? item.review_keywords : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 function itemText(item: any) {
   return [
+    buildSearchableText(item),
     item.location_type,
     item.restaurant_name,
     item.activity_name,
@@ -4782,7 +4814,7 @@ export async function POST(req: Request) {
     }
 
 
-    const strictRankedRestaurants =
+    let strictRankedRestaurants =
       intent.foodIntents.length > 0
         ? rankedRestaurants.filter((restaurant: any) =>
             intent.foodIntents.some((foodIntent) =>
@@ -4790,6 +4822,26 @@ export async function POST(req: Request) {
             )
           )
         : rankedRestaurants;
+
+    const wantsSteakRestaurant =
+      intent.foodIntents.some((x: string) =>
+        ["steak", "steakhouse", "ribeye", "filet mignon", "porterhouse"].includes(x)
+      ) || /\bsteak\b|\bsteakhouse\b/i.test(input);
+    if (wantsSteakRestaurant && rankedRestaurants.length > 0) {
+      strictRankedRestaurants = rankedRestaurants.filter((restaurant: any) => {
+        const searchable = buildSearchableText(restaurant);
+        return (
+          searchable.includes("steak") ||
+          searchable.includes("steakhouse") ||
+          searchable.includes("ribeye") ||
+          searchable.includes("filet") ||
+          searchable.includes("porterhouse")
+        );
+      });
+      if (strictRankedRestaurants.length > 0) {
+        rankedRestaurants = strictRankedRestaurants;
+      }
+    }
 
     const strictRankedActivities =
       intent.activityIntents.length > 0
@@ -5073,6 +5125,8 @@ STRICT RULES:
 
     const responsePayload = {
       success: true,
+      display_mode: "cards_only",
+      hide_text_results: hasResults,
       version: getSmartMatchVersion(),
       smart_match: {
         mode: smartBalanced.mode,
@@ -5089,8 +5143,9 @@ STRICT RULES:
         strictFoodMode: smartIntent.strictFoodMode,
         strictActivityMode: smartIntent.strictActivityMode,
       },
-      reply:
-        dessertSearchWithoutDessertResults
+      reply: hasResults
+        ? ""
+        : dessertSearchWithoutDessertResults
           ? "I couldn’t find a true dessert spot nearby. Try a broader area or search for bakery, ice cream, or cafe."
           : pairedResults.pairs.length > 0
             ? response?.output_text ||

@@ -107,6 +107,8 @@ type Message = {
   content: string;
   restaurants?: RestaurantCard[];
   activities?: ActivityCard[];
+  pairs?: unknown[];
+  matched_locations?: unknown[];
   distancePreference?: DistancePreference;
   resultOrder?: ResultSectionKind[];
   searchQuery?: string;
@@ -117,6 +119,10 @@ type ApiResponse = {
   reply?: string;
   restaurants?: RestaurantCard[];
   activities?: ActivityCard[];
+  pairs?: unknown[];
+  matched_locations?: unknown[];
+  display_mode?: string;
+  hide_text_results?: boolean;
 };
 
 type ExactCampaignLocation = {
@@ -709,6 +715,8 @@ export default function CreatePage() {
       const previousActivities = previousAssistant?.activities || [];
       const responseRestaurants = data.restaurants || [];
       const responseActivities = data.activities || [];
+      const responsePairs = data.pairs || [];
+      const responseMatchedLocations = data.matched_locations || [];
 
       const dedupedResults = dedupeSearchResults({
         restaurants:
@@ -736,6 +744,8 @@ export default function CreatePage() {
             : "Here are strong TheOutHaven matches based on your outing request."),
         restaurants: dedupedResults.restaurants,
         activities: dedupedResults.activities,
+        pairs: responsePairs,
+        matched_locations: responseMatchedLocations,
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -1008,7 +1018,13 @@ export default function CreatePage() {
             const isUser = message.role === "user";
             const restaurants = message.restaurants || [];
             const activities = message.activities || [];
-            const hasCards = restaurants.length > 0 || activities.length > 0;
+            const pairs = message.pairs || [];
+            const matchedLocations = message.matched_locations || [];
+            const hasCards =
+              restaurants.length > 0 ||
+              activities.length > 0 ||
+              pairs.length > 0 ||
+              matchedLocations.length > 0;
             const resultOrder = getOrderedResultSections(message.resultOrder);
             const isAddOnResults =
               messages[index - 1]?.role === "user" &&
