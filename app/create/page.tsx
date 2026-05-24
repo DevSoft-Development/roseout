@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
 import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
+import { CompleteOutingModal } from "@/components/outings/CompleteOutingModal";
+import { OutingCompletionBanner } from "@/components/outings/OutingCompletionBanner";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
@@ -1966,7 +1968,6 @@ function ResultCard({
   const [showCompletionPrompt, setShowCompletionPrompt] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completeMessage, setCompleteMessage] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState({ rating: 5, matched_vibe: true, would_go_again: true, feedback: "" });
   useEffect(() => {
     const existing = typeof window !== "undefined" ? localStorage.getItem(outingStorageKey) : null;
     if (existing) { setActiveOutingId(existing); setShowCompletionPrompt(true); }
@@ -2146,120 +2147,38 @@ function ResultCard({
             <a href={distanceHref || detailsHref} target={distanceHref ? "_blank" : undefined} rel={distanceHref ? "noopener noreferrer" : undefined} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">{distanceHref ? "Get Directions" : "View Details"}</a>
           )}
         </div>
-        {showCompletionPrompt ? (
-          <div className="mt-3 rounded-xl border border-[#e1062a]/35 bg-[#1a0c10] p-3">
-            <p className="text-sm font-black text-white">Did you complete this outing?</p>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <button
-                className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black text-white"
-                onClick={() => setShowCompleteModal(true)}
-              >
-                Mark Outing Complete
-              </button>
-              <button
-                className="rounded-full border border-white/20 px-4 py-2 text-xs font-black text-white/85"
-                onClick={() => setShowCompletionPrompt(false)}
-              >
-                Not Yet
-              </button>
-              <button
-                className="rounded-full border border-white/20 px-4 py-2 text-xs font-black text-white/85"
-                onClick={async () => {
-                  if (!activeOutingId) return;
-                  await fetch("/api/outings/cancel", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ outing_id: activeOutingId }),
-                  });
-                  localStorage.removeItem(outingStorageKey);
-                  setShowCompletionPrompt(false);
-                }}
-              >
-                Cancel Outing
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {showCompleteModal ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
-            <div className="w-full max-w-md rounded-2xl bg-[#121212] p-4">
-              <h4 className="text-lg font-black text-white">Complete Your Outing</h4>
-              <div className="mt-3 space-y-2 text-sm font-bold text-white/85">
-                <label className="block">
-                  Rating (1-5)
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={feedback.rating}
-                    onChange={(e) => setFeedback((prev) => ({ ...prev, rating: Number(e.target.value) }))}
-                    className="mt-1 w-full rounded-lg bg-black/40 px-3 py-2"
-                  />
-                </label>
-                <label className="block">
-                  Did this match your vibe?
-                  <select
-                    value={feedback.matched_vibe ? "yes" : "no"}
-                    onChange={(e) =>
-                      setFeedback((prev) => ({ ...prev, matched_vibe: e.target.value === "yes" }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-black/40 px-3 py-2"
-                  >
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                </label>
-                <label className="block">
-                  Would you go again?
-                  <select
-                    value={feedback.would_go_again ? "yes" : "no"}
-                    onChange={(e) =>
-                      setFeedback((prev) => ({ ...prev, would_go_again: e.target.value === "yes" }))
-                    }
-                    className="mt-1 w-full rounded-lg bg-black/40 px-3 py-2"
-                  >
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                </label>
-                <textarea
-                  placeholder="Optional feedback"
-                  value={feedback.feedback}
-                  onChange={(e) => setFeedback((prev) => ({ ...prev, feedback: e.target.value }))}
-                  className="min-h-20 w-full rounded-lg bg-black/40 px-3 py-2"
-                />
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button
-                  className="flex-1 rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black text-white"
-                  onClick={async () => {
-                    if (!activeOutingId) return;
-                    const response = await fetch("/api/outings/complete", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ outing_id: activeOutingId, ...feedback }),
-                    });
-
-                    if (response.ok) {
-                      setCompleteMessage("Outing completed 🎉");
-                      setShowCompleteModal(false);
-                      localStorage.removeItem(outingStorageKey);
-                      setShowCompletionPrompt(false);
-                    }
-                  }}
-                >
-                  Submit
-                </button>
-                <button
-                  className="flex-1 rounded-full border border-white/20 px-4 py-2 text-xs font-black text-white"
-                  onClick={() => setShowCompleteModal(false)}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <OutingCompletionBanner
+          visible={showCompletionPrompt}
+          onComplete={() => setShowCompleteModal(true)}
+          onNotYet={() => setShowCompletionPrompt(false)}
+          onCancel={async () => {
+            if (!activeOutingId) return;
+            await fetch("/api/outings/cancel", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ outing_id: activeOutingId }),
+            });
+            localStorage.removeItem(outingStorageKey);
+            setShowCompletionPrompt(false);
+          }}
+        />
+        <CompleteOutingModal
+          open={showCompleteModal}
+          onClose={() => setShowCompleteModal(false)}
+          onSubmit={async (payload) => {
+            if (!activeOutingId) return;
+            const response = await fetch("/api/outings/complete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ outing_id: activeOutingId, ...payload }),
+            });
+            if (response.ok) {
+              setCompleteMessage("Outing completed 🎉");
+              localStorage.removeItem(outingStorageKey);
+              setShowCompletionPrompt(false);
+            }
+          }}
+        />
         {completeMessage ? <p className="mt-2 text-xs font-bold text-emerald-300">{completeMessage}</p> : null}
       </div>
     </article>
