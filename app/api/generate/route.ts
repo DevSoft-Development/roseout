@@ -473,14 +473,6 @@ const FOOD_INTENTS: Record<string, string[]> = {
 
   wine_bar: ["wine bar", "wine lounge"],
 
-  rooftop: ["rooftop", "roof top", "skyline", "view"],
-
-  lounge: ["lounge", "cocktail lounge"],
-
-  hookah: ["hookah", "shisha", "hookah lounge", "hookah restaurant"],
-
-  cigar: ["cigar", "cigar lounge", "cigar bar", "cigar friendly"],
-
   fine_dining: [
     "fine dining",
     "upscale dining",
@@ -542,13 +534,33 @@ const PRIORITY_WEIGHTS = {
 };
 
 const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
-const LOUNGE_ACTIVITY_INTENTS = new Set([
-  "hookah",
-  "shisha",
-  "cigar",
-  "lounge",
-  "nightclub",
-  "rooftop",
+const LOUNGE_ACTIVITY_INTENTS = new Set(["hookah", "cigar", "lounge", "nightclub"]);
+const REAL_MEAL_FOOD_INTENTS = new Set([
+  "steak",
+  "seafood",
+  "sushi",
+  "italian",
+  "mexican",
+  "caribbean",
+  "american",
+  "chinese",
+  "japanese",
+  "thai",
+  "indian",
+  "pizza",
+  "burgers",
+  "wings",
+  "brunch",
+  "breakfast",
+  "lunch",
+  "dinner",
+  "fine_dining",
+  "hibachi",
+  "hot_pot",
+  "tacos",
+  "sandwiches",
+  "vegan",
+  "bbq"
 ]);
 const WALKING_MINUTES_PER_MILE = 20;
 
@@ -558,6 +570,21 @@ function isFoodAddOnIntent(foodIntent: string) {
 
 function isLoungeActivityIntent(intent: string) {
   return LOUNGE_ACTIVITY_INTENTS.has(intent);
+}
+
+function hasMealSignal(text: string, foodIntents: string[]) {
+  return (
+    foodIntents.some((intent) => REAL_MEAL_FOOD_INTENTS.has(intent)) ||
+    text.includes("dinner") ||
+    text.includes("lunch") ||
+    text.includes("brunch") ||
+    text.includes("breakfast") ||
+    text.includes("restaurant") ||
+    text.includes("steak") ||
+    text.includes("seafood") ||
+    text.includes("eat") ||
+    text.includes("food")
+  );
 }
 
 function getMealFoodIntents(intent: ReturnType<typeof detectIntent>) {
@@ -2834,16 +2861,18 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const requestedTags = detectFromMap(input, TAG_KEYWORDS);
   const rawFoodIntents = detectFromMap(input, FOOD_INTENTS);
   const rawActivityIntents = detectFromMap(input, ACTIVITY_INTENTS);
-
-  const loungeFromFood = rawFoodIntents.filter(isLoungeActivityIntent);
-  const realMealFoodIntents = rawFoodIntents.filter(
-    (intent) => !isLoungeActivityIntent(intent)
-  );
-  const foodIntents =
-    realMealFoodIntents.length > 0 ? realMealFoodIntents : rawFoodIntents;
-
+  const loungeFoodIntents = rawFoodIntents.filter(isLoungeActivityIntent);
+  const mealFoodIntents = rawFoodIntents.filter((intent) => !isLoungeActivityIntent(intent));
+  const shouldTreatLoungeAsActivity =
+    loungeFoodIntents.length > 0 && hasMealSignal(text, mealFoodIntents);
+  const foodIntents = shouldTreatLoungeAsActivity
+    ? mealFoodIntents
+    : rawFoodIntents;
   const activityIntents = Array.from(
-    new Set([...rawActivityIntents, ...loungeFromFood])
+    new Set([
+      ...rawActivityIntents,
+      ...(shouldTreatLoungeAsActivity ? loungeFoodIntents : []),
+    ])
   );
   const detectedLocations = detectLocation(input, locations);
 
@@ -3208,14 +3237,16 @@ function scoreRestaurant(
     score += PRIORITY_WEIGHTS.rooftop;
   }
 
-  if (intent.wantsHookah) {
-    if (shouldRestaurantFirstMixedIntent(intent)) {
-      score += isHookahPlace(item) ? 180 : 25;
-    } else {
-      score += isHookahPlace(item)
-        ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
-        : PRIORITY_WEIGHTS.mismatchPenalty;
-    }
+  if (intent.wantsHookah && intent.foodIntents.length === 0) {
+    score += isHookahPlace(item)
+      ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
+      : PRIORITY_WEIGHTS.mismatchPenalty;
+  }
+
+  if (intent.wantsCigar && intent.foodIntents.length === 0) {
+    score += isCigarPlace(item)
+      ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
+      : PRIORITY_WEIGHTS.mismatchPenalty;
   }
 
   score += clampScore(getSearchRankingScore(item)) * 0.4;
@@ -3699,8 +3730,9 @@ function filterRestaurantsByFoodIntent(
   restaurants: any[],
   intent: ReturnType<typeof detectIntent>
 ) {
-  const mealFoodIntents = getMealFoodIntents(intent);
-
+  const mealFoodIntents = intent.foodIntents.filter(
+    (food) => !isFoodAddOnIntent(food) && !isLoungeActivityIntent(food)
+  );
   if (mealFoodIntents.length === 0) return restaurants;
 
   const exactMatches = restaurants.filter((restaurant: any) =>
