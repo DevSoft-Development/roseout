@@ -32,7 +32,7 @@ const openai = new OpenAI({
 
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
-const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v19-separated-restaurant-activity-embeddings-${SEMANTIC_SEARCH_VERSION}`;
+const RESPONSE_CACHE_VERSION = `food-cuisine-location-distance-v20-split-meal-lounge-card-results-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -543,48 +543,11 @@ const PRIORITY_WEIGHTS = {
 const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
 const LOUNGE_ACTIVITY_INTENTS = new Set([
   "hookah",
+  "shisha",
   "cigar",
   "lounge",
   "nightclub",
   "rooftop",
-]);
-const REAL_MEAL_FOOD_INTENTS = new Set([
-  "steak",
-  "seafood",
-  "sushi",
-  "ramen",
-  "italian",
-  "mexican",
-  "chinese",
-  "thai",
-  "indian",
-  "japanese",
-  "korean",
-  "vietnamese",
-  "filipino",
-  "african",
-  "caribbean",
-  "soul_food",
-  "mediterranean",
-  "spanish",
-  "french",
-  "american",
-  "bbq",
-  "halal",
-  "vegan",
-  "vegetarian",
-  "healthy",
-  "brunch",
-  "breakfast",
-  "burgers",
-  "pizza",
-  "wings",
-  "sandwiches",
-  "tacos",
-  "fine_dining",
-  "buffet",
-  "hibachi",
-  "hot_pot",
 ]);
 const WALKING_MINUTES_PER_MILE = 20;
 
@@ -596,14 +559,9 @@ function isLoungeActivityIntent(intent: string) {
   return LOUNGE_ACTIVITY_INTENTS.has(intent);
 }
 
-function hasRealMealFoodIntent(foodIntents: string[]) {
-  return foodIntents.some((intent) => REAL_MEAL_FOOD_INTENTS.has(intent));
-}
-
 function getMealFoodIntents(intent: ReturnType<typeof detectIntent>) {
   return intent.foodIntents.filter(
     (foodIntent) =>
-      REAL_MEAL_FOOD_INTENTS.has(foodIntent) &&
       !isFoodAddOnIntent(foodIntent) &&
       !isLoungeActivityIntent(foodIntent)
   );
@@ -614,6 +572,47 @@ function getAddOnFoodIntents(intent: ReturnType<typeof detectIntent>) {
     (foodIntent) =>
       isFoodAddOnIntent(foodIntent) || isLoungeActivityIntent(foodIntent)
   );
+}
+
+function isRealMealRequest(intent: ReturnType<typeof detectIntent>) {
+  return getMealFoodIntents(intent).length > 0;
+}
+
+function isActualRestaurant(item: any) {
+  const searchable = itemText(item);
+  const restaurantSignals = [
+    "restaurant",
+    "steakhouse",
+    "steak house",
+    "dining",
+    "kitchen",
+    "grill",
+    "seafood",
+    "sushi",
+    "italian",
+    "mexican",
+    "caribbean",
+    "jamaican",
+    "thai",
+    "chinese",
+    "american",
+    "cuisine",
+    "food",
+  ];
+  const loungeOnlySignals = [
+    "hookah lounge",
+    "shisha lounge",
+    "cigar lounge",
+    "nightclub",
+    "night club",
+  ];
+  const hasRestaurantSignal = restaurantSignals.some((signal) =>
+    searchable.includes(signal)
+  );
+  const isLoungeOnly =
+    loungeOnlySignals.some((signal) => searchable.includes(signal)) &&
+    !hasRestaurantSignal;
+  return hasRestaurantSignal && !isLoungeOnly;
 }
 
 function buildRestaurantSearchInput(
@@ -2798,22 +2797,15 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const rawFoodIntents = detectFromMap(input, FOOD_INTENTS);
   const rawActivityIntents = detectFromMap(input, ACTIVITY_INTENTS);
 
-  const loungeFoodIntents = rawFoodIntents.filter(isLoungeActivityIntent);
-  const mealOrAddOnFoodIntents = rawFoodIntents.filter(
-    (foodIntent) => !isLoungeActivityIntent(foodIntent)
+  const loungeFromFood = rawFoodIntents.filter(isLoungeActivityIntent);
+  const realMealFoodIntents = rawFoodIntents.filter(
+    (intent) => !isLoungeActivityIntent(intent)
   );
-
-  const hasRealMealIntent = hasRealMealFoodIntent(mealOrAddOnFoodIntents);
-
-  const foodIntents = hasRealMealIntent
-    ? mealOrAddOnFoodIntents
-    : rawFoodIntents;
+  const foodIntents =
+    realMealFoodIntents.length > 0 ? realMealFoodIntents : rawFoodIntents;
 
   const activityIntents = Array.from(
-    new Set([
-      ...rawActivityIntents,
-      ...(hasRealMealIntent ? loungeFoodIntents : []),
-    ])
+    new Set([...rawActivityIntents, ...loungeFromFood])
   );
   const detectedLocations = detectLocation(input, locations);
 
@@ -4377,6 +4369,7 @@ export async function POST(req: Request) {
       intent.wantsFullOuting &&
       foodAddOnIntents.length > 0 &&
       mealFoodIntents.length > 0;
+    const preFilteredRestaurantCandidates = restaurants.filter(isActualRestaurant);
 
     if (shouldSplitFoodAddOnStops) {
       restaurants = filterRestaurantsByFoodIntent(restaurants, {
@@ -4384,46 +4377,64 @@ export async function POST(req: Request) {
         foodIntents: mealFoodIntents,
       });
 
-      let foodAddOnActivities = sourceLocations
+      restaurants = filterRestaurantsByFoodIntent(
+        preFilteredRestaurantCandidates.length > 0
+          ? preFilteredRestaurantCandidates
+          : restaurants,
+        {
+          ...intent,
+          foodIntents: mealFoodIntents,
+        }
+      );
+
+      const foodAddOnActivities = sourceLocations
         .filter(isOutingEligibleLocation)
         .filter((item: any) =>
           foodAddOnIntents.some((foodIntent) =>
             matchesFoodIntent(item, foodIntent) ||
             matchesActivityIntent(item, foodIntent)
           )
-        );
-
-      if (dessertAddonSearch) {
-        foodAddOnActivities = foodAddOnActivities.filter((item: any) =>
-          isDessertLocation(item),
-        );
-      }
-
-      const splitActivityIntent = {
-        ...intent,
-        activityIntents: Array.from(
-          new Set([...intent.activityIntents, ...foodAddOnIntents])
-        ),
-      };
+        )
+        .map((item: any) => {
+          const originalType = String(item.location_type || "").toLowerCase();
+          return {
+            ...item,
+            location_type: "activity",
+            detail_location_type:
+              originalType === "restaurant" ? "restaurants" : "activities",
+            activity_name:
+              item.activity_name ||
+              item.restaurant_name ||
+              item.name ||
+              "Activity stop",
+            activity_type:
+              item.activity_type ||
+              item.category ||
+              item.subcategory ||
+              foodAddOnIntents
+                .map((foodIntent) => foodIntent.replace(/_/g, " "))
+                .join(" / "),
+          };
+        });
 
       activities = filterActivitiesByActivityIntent(
-        [
-          ...activities,
-          ...foodAddOnActivities.map((item: any) =>
-            mapNonMealFoodPlaceToActivity(item, intent),
+        [...activities, ...foodAddOnActivities],
+        {
+          ...intent,
+          activityIntents: Array.from(
+            new Set([...intent.activityIntents, ...foodAddOnIntents])
           ),
-        ],
-        splitActivityIntent,
+        },
       );
     } else {
-      const restaurantFilterIntent =
-        mealFoodIntents.length > 0
-          ? { ...intent, foodIntents: mealFoodIntents }
-          : intent;
-
-      restaurants = filterRestaurantsByFoodIntent(restaurants, restaurantFilterIntent);
-
+      restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
       activities = filterActivitiesByActivityIntent(activities, intent);
+    }
+    if (isRealMealRequest(intent)) {
+      const actualRestaurantMatches = restaurants.filter(isActualRestaurant);
+      if (actualRestaurantMatches.length > 0) {
+        restaurants = actualRestaurantMatches;
+      }
     }
 
     if (mealFoodIntents.length > 0) {
@@ -4506,7 +4517,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (isExplicitFoodAtLoungeRequest(intent)) {
+    if (isExplicitFoodAtLoungeRequest(intent) && !isRealMealRequest(intent)) {
       restaurants = restaurants.filter(isLoungeStyleLocation);
     }
 
@@ -4522,6 +4533,32 @@ export async function POST(req: Request) {
       restaurants = locationRestaurants.length > 0 ? locationRestaurants : restaurants;
       activities = locationActivities.length > 0 ? locationActivities : activities;
     }
+    if (
+      restaurants.length === 0 &&
+      intent.wantsRestaurant &&
+      mealFoodIntents.length > 0
+    ) {
+      restaurants = sourceLocations
+        .filter(isOutingEligibleLocation)
+        .filter(isActualRestaurant)
+        .filter((item: any) =>
+          intent.locations.length > 0 ? matchesLocation(item, intent.locations) : true
+        );
+      const mealMatches = filterRestaurantsByFoodIntent(restaurants, {
+        ...intent,
+        foodIntents: mealFoodIntents,
+      });
+      restaurants = mealMatches.length > 0 ? mealMatches : restaurants;
+    }
+
+    console.log("SPLIT INTENTS:", {
+      foodIntents: intent.foodIntents,
+      activityIntents: intent.activityIntents,
+      mealFoodIntents,
+      foodAddOnIntents,
+      restaurantCount: restaurants.length,
+      activityCount: activities.length,
+    });
 
     if (
       intent.activityIntents.length > 0 &&
