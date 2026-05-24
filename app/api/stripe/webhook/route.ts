@@ -1,19 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logEvent } from "@/lib/monitoring";
 
+function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
+  const entries = signatureHeader.split(",").map((part) => part.trim());
+  const timestamp = entries.find((part) => part.startsWith("t="))?.slice(2);
+  const signatures = entries
+    .filter((part) => part.startsWith("v1="))
+    .map((part) => part.slice(3))
+    .filter(Boolean);
+
+  if (!timestamp || signatures.length === 0) return false;
+
+  const expected = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(`${timestamp}.${payload}`, "utf8")
+    .digest("hex");
+
+  const expectedBuffer = Buffer.from(expected, "hex");
+  return signatures.some((value) => {
+    try {
+      const received = Buffer.from(value, "hex");
+      return received.length === expectedBuffer.length
+        && crypto.timingSafeEqual(received, expectedBuffer);
+    } catch {
+      return false;
+    }
+  });
+}
+
 export async function POST(request: NextRequest) {
-  const secret = request.headers.get("stripe-signature") || "";
-  if (!secret) {
+  const signature = request.headers.get("stripe-signature") || "";
+  if (!signature) {
     await logEvent("failed_stripe", { reason: "missing_signature" });
     return NextResponse.json({ error: "Missing Stripe signature." }, { status: 401 });
   }
 
-  const event = await request.json().catch(() => null);
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    await logEvent("failed_stripe", { reason: "missing_webhook_secret" });
+    return NextResponse.json({ error: "Webhook not configured." }, { status: 500 });
+  }
 
-  if (!event?.type) {
-    await logEvent("failed_stripe", { reason: "invalid_payload" });
-    return NextResponse.json({ error: "Invalid Stripe payload." }, { status: 400 });
+  const rawBody = await request.text();
+
+  let event;
+  try {
+    if (!verifyStripeSignature(rawBody, signature, webhookSecret)) {
+      throw new Error("Signature verification failed.");
+    }
+    event = JSON.parse(rawBody);
+  } catch (error) {
+    await logEvent("failed_stripe", {
+      reason: "invalid_signature",
+      message: error instanceof Error ? error.message : "Unknown signature verification error",
+    });
+    return NextResponse.json({ error: "Invalid Stripe signature." }, { status: 401 });
   }
 
   const object = event.data?.object || {};
@@ -90,4 +133,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true });
 }
-
