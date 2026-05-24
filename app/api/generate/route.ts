@@ -627,7 +627,7 @@ function buildRestaurantSearchInput(
     return normalizeQuery(
       `${mealFoodIntents
         .map((foodIntent) => foodIntent.replace(/_/g, " "))
-        .join(" ")} restaurant dining ${locationText}`
+        .join(" ")} steakhouse restaurant dinner dining ${locationText}`
     );
   }
 
@@ -3623,6 +3623,50 @@ function isRestaurantWithHookahAndMeal(
   return hasHookah && hasRequestedMeal && looksLikeFoodPlace;
 }
 
+function isRestaurantLikeLocation(item: any) {
+  const text = itemText(item);
+  const type = String(item.location_type || "").toLowerCase();
+  return (
+    isOutingEligibleLocation(item) &&
+    (
+      type === "restaurant" ||
+      Boolean(item.restaurant_name) ||
+      Boolean(item.cuisine) ||
+      Boolean(item.cuisine_type) ||
+      text.includes("restaurant") ||
+      text.includes("steakhouse") ||
+      text.includes("dining") ||
+      text.includes("food") ||
+      text.includes("cuisine")
+    )
+  );
+}
+
+function fallbackMealRestaurants(
+  sourceLocations: any[],
+  intent: ReturnType<typeof detectIntent>,
+  mealFoodIntents: string[]
+) {
+  let candidates = sourceLocations.filter(isRestaurantLikeLocation);
+  if (intent.locations.length > 0) {
+    const locationMatches = candidates.filter((item: any) =>
+      matchesLocation(item, intent.locations)
+    );
+    if (locationMatches.length > 0) {
+      candidates = locationMatches;
+    }
+  }
+  if (mealFoodIntents.length > 0) {
+    const exactMealMatches = candidates.filter((item: any) =>
+      mealFoodIntents.some((foodIntent) => matchesFoodIntent(item, foodIntent))
+    );
+    if (exactMealMatches.length > 0) {
+      return exactMealMatches;
+    }
+  }
+  return candidates;
+}
+
 function filterRestaurantsByFoodIntent(
   restaurants: any[],
   intent: ReturnType<typeof detectIntent>
@@ -4306,9 +4350,7 @@ export async function POST(req: Request) {
       input,
     );
 
-    let restaurants = sourceLocations.filter((item: any) => {
-      return isOutingEligibleLocation(item) && isMealRestaurant(item, intent);
-    });
+    let restaurants = sourceLocations.filter(isRestaurantLikeLocation);
 
     let activities = sourceLocations.filter(
       (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
@@ -4385,11 +4427,10 @@ export async function POST(req: Request) {
     }
 
     if (mealFoodIntents.length > 0) {
-      restaurants = restaurants.filter((restaurant: any) => {
+      const guardedRestaurants = restaurants.filter((restaurant: any) => {
         const matchesMeal = mealFoodIntents.some((foodIntent) =>
           matchesFoodIntent(restaurant, foodIntent)
         );
-
         const onlyMatchesAddOn =
           !matchesMeal &&
           foodAddOnIntents.some(
@@ -4397,9 +4438,20 @@ export async function POST(req: Request) {
               matchesFoodIntent(restaurant, foodIntent) ||
               matchesActivityIntent(restaurant, foodIntent)
           );
-
         return !onlyMatchesAddOn;
       });
+      if (guardedRestaurants.length > 0) {
+        restaurants = guardedRestaurants;
+      } else {
+        const fallbackRestaurants = fallbackMealRestaurants(
+          sourceLocations,
+          intent,
+          mealFoodIntents
+        );
+        if (fallbackRestaurants.length > 0) {
+          restaurants = fallbackRestaurants;
+        }
+      }
     }
 
     if (dessertAddonSearch) {
@@ -4423,6 +4475,24 @@ export async function POST(req: Request) {
         );
       });
     }
+    if (intent.wantsRestaurant && mealFoodIntents.length > 0) {
+      const hasMealRestaurant = restaurants.some((restaurant: any) =>
+        mealFoodIntents.some((foodIntent) =>
+          matchesFoodIntent(restaurant, foodIntent)
+        )
+      );
+      if (!hasMealRestaurant) {
+        const fallbackRestaurants = fallbackMealRestaurants(
+          sourceLocations,
+          intent,
+          mealFoodIntents
+        );
+        if (fallbackRestaurants.length > 0) {
+          restaurants = fallbackRestaurants;
+        }
+      }
+    }
+
 
     if (isLoungeActivityOnlyRequest(intent)) {
       restaurants = [];
