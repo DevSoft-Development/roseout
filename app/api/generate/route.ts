@@ -494,6 +494,18 @@ const FOOD_INTENTS: Record<string, string[]> = {
   hot_pot: ["hot pot", "shabu shabu"],
 };
 
+const RESTAURANT_ACTIVITY_STOP_WORDS = [
+  "hookah",
+  "lounge",
+  "after dinner",
+  "nightlife",
+  "bar",
+  "club",
+];
+
+const MAX_RESTAURANT_ACTIVITY_PAIR_MILES = 10;
+const PREFERRED_RESTAURANT_ACTIVITY_PAIR_MILES = 5;
+
 const ACTIVITY_INTENTS: Record<string, string[]> = {
   bowling: ["bowling", "bowl", "bowling alley"],
   arcade: ["arcade", "games", "game room", "amusement"],
@@ -795,6 +807,41 @@ function itemText(item: any) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function splitRestaurantAndActivityQuery(input: string) {
+  const normalized = normalizeQuery(input);
+  const activityFragments = RESTAURANT_ACTIVITY_STOP_WORDS.filter((term) =>
+    normalized.includes(term),
+  );
+
+  const activityQuery = activityFragments.length > 0 ? normalized : "";
+
+  let restaurantQuery = normalized;
+  for (const term of RESTAURANT_ACTIVITY_STOP_WORDS) {
+    restaurantQuery = restaurantQuery.replaceAll(term, " ");
+  }
+  restaurantQuery = restaurantQuery
+    .replaceAll(" and ", " ")
+    .replaceAll(" after ", " ")
+    .replaceAll("  ", " ")
+    .trim();
+
+  return {
+    restaurantQuery: restaurantQuery || normalized,
+    activityQuery: activityQuery || normalized,
+  };
+}
+
+function isWeakMealMatch(restaurant: any, mealFoodIntents: string[]) {
+  const searchable = itemText(restaurant);
+  const hasMealMatch = mealFoodIntents.some((foodIntent) =>
+    matchesFoodIntent(restaurant, foodIntent),
+  );
+  if (hasMealMatch) return false;
+  return ["hookah", "lounge", "bar", "nightlife"].some((term) =>
+    searchable.includes(term),
+  );
 }
 
 const NON_MEAL_FOOD_TYPES = [
@@ -3876,11 +3923,13 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
         if (sameCity) pairScore += 50;
 
         if (distance !== null) {
+          if (distance > MAX_RESTAURANT_ACTIVITY_PAIR_MILES) {
+            return null;
+          }
           if (distance <= 1) pairScore += 120;
           else if (distance <= 3) pairScore += 90;
-          else if (distance <= 5) pairScore += 50;
-          else if (distance <= 10) pairScore += 15;
-          else pairScore -= 80;
+          else if (distance <= PREFERRED_RESTAURANT_ACTIVITY_PAIR_MILES) pairScore += 50;
+          else pairScore += 15;
         }
 
         return {
@@ -3894,6 +3943,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
         };
       }),
     )
+    .filter(Boolean)
     .sort((a, b) => b.pair_score - a.pair_score);
 
   const usedRestaurantIds = new Set<string>();
@@ -4220,7 +4270,15 @@ export async function POST(req: Request) {
     }
 
     const smartIntent = detectSmartMatchIntent(input);
+    const splitQueries = splitRestaurantAndActivityQuery(input);
     console.log("SMART MATCH INTENT:", smartIntent);
+    console.log("SEARCH PIPELINE DEBUG", {
+      raw_query: input,
+      cleaned_restaurant_query: splitQueries.restaurantQuery,
+      cleaned_activity_query: splitQueries.activityQuery,
+      detected_food_intents: smartIntent.foodIntents,
+      detected_activity_intents: smartIntent.activityIntents,
+    });
 
     if (isUnsafeOrOffTopic(input) || !isTheOutHavenRelated(input)) {
       return Response.json({
@@ -4253,7 +4311,7 @@ export async function POST(req: Request) {
     };
 
     try {
-      matchedRecords = await fetchFallbackRecords(input);
+      matchedRecords = await fetchFallbackRecords(splitQueries.restaurantQuery);
     } catch (searchError) {
       console.error("PUBLIC LOCATION SEARCH ERROR:", searchError);
       const supportingRecords = await fetchSupportingRecords();
@@ -4353,6 +4411,13 @@ export async function POST(req: Request) {
     let activities = sourceLocations.filter(
       (item: any) => isOutingEligibleLocation(item) && isActivityLocation(item),
     );
+    if (splitQueries.activityQuery !== splitQueries.restaurantQuery) {
+      activities = activities.filter((item: any) =>
+        splitQueries.activityQuery
+          .split(" ")
+          .some((token) => token.length > 2 && itemText(item).includes(token)),
+      );
+    }
 
     if (userAskedForNonMealFood(intent)) {
       const nonMealFoodActivities = sourceLocations
@@ -4444,6 +4509,10 @@ export async function POST(req: Request) {
     }
 
     if (mealFoodIntents.length > 0) {
+      console.log("RESTAURANT RPC BEFORE FILTER", {
+        count: restaurants.length,
+        sample: restaurants.slice(0, 5).map((r: any) => getLocationName(r, "")),
+      });
       const guardedRestaurants = restaurants.filter((restaurant: any) => {
         const matchesMeal = mealFoodIntents.some((foodIntent) =>
           matchesFoodIntent(restaurant, foodIntent)
@@ -4458,7 +4527,9 @@ export async function POST(req: Request) {
         return !onlyMatchesAddOn;
       });
       if (guardedRestaurants.length > 0) {
-        restaurants = guardedRestaurants;
+        restaurants = guardedRestaurants.filter(
+          (restaurant: any) => !isWeakMealMatch(restaurant, mealFoodIntents),
+        );
       } else {
         const fallbackRestaurants = fallbackMealRestaurants(
           sourceLocations,
@@ -4470,6 +4541,14 @@ export async function POST(req: Request) {
         }
       }
     }
+    console.log("RESTAURANT RESULTS AFTER FILTER", {
+      count: restaurants.length,
+      sample: restaurants.slice(0, 5).map((r: any) => getLocationName(r, "")),
+    });
+    console.log("ACTIVITY RESULTS", {
+      count: activities.length,
+      sample: activities.slice(0, 5).map((a: any) => getLocationName(a, "")),
+    });
 
     if (dessertAddonSearch) {
       activities = activities.filter((item: any) => isDessertLocation(item));
@@ -4693,7 +4772,13 @@ export async function POST(req: Request) {
             semantic.semantic_score_boost,
         );
         const marketplaceScore = applyMarketplaceBoosts(restaurant, baseScore, intent, userPreferenceSignals);
-        const score = enhancedRankingScore(restaurant, marketplaceScore, intent, "restaurant");
+        let score = enhancedRankingScore(restaurant, marketplaceScore, intent, "restaurant");
+        if (mealFoodIntents.includes("steak")) {
+          const text = itemText(restaurant);
+          if (/(steak|steakhouse|chophouse|brazilian steakhouse|korean bbq|american steakhouse)/.test(text)) {
+            score += 20;
+          }
+        }
         const confidence = confidenceFromScores({
           ...restaurant,
           smart_match_score: score,
@@ -4925,6 +5010,10 @@ export async function POST(req: Request) {
       geoStrictActivities.length > 0 || intent.activityIntents.length === 0
         ? geoStrictActivities
         : topActivities;
+
+    const geographicallyTightPairs = pairSmartMatches(topRestaurants, topActivities);
+    topRestaurants = geographicallyTightPairs.restaurants;
+    topActivities = geographicallyTightPairs.activities;
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
@@ -5251,6 +5340,16 @@ STRICT RULES:
         distance_miles: a.distance_miles || null,
       })),
     };
+    console.log("FINAL RESPONSE DEBUG", {
+      restaurant_count: responsePayload.restaurants.length,
+      activity_count: responsePayload.activities.length,
+      using_cards:
+        responsePayload.restaurants.length > 0 ||
+        responsePayload.activities.length > 0,
+      using_fallback_text_only:
+        responsePayload.restaurants.length === 0 &&
+        responsePayload.activities.length === 0,
+    });
 
     await trackSearchAppearancesForResponse(responsePayload, input, smartBalanced.mode);
 
