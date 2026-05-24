@@ -1735,8 +1735,29 @@ export async function POST(req: Request) {
             pairs: [],
           };
 
-    const topRestaurants = pairedResults.restaurants;
-    const topActivities = pairedResults.activities;
+    let topRestaurants = pairedResults.restaurants;
+    let topActivities = pairedResults.activities;
+
+    if (
+      topRestaurants.length === 0 &&
+      topActivities.length === 0 &&
+      matchedLocationResults.length > 0
+    ) {
+      const matchedRestaurants = matchedLocationResults.filter((item: any) =>
+        isRestaurantLocation(item)
+      );
+      const matchedActivities = matchedLocationResults.filter((item: any) =>
+        isActivityLocation(item)
+      );
+
+      if (matchedRestaurants.length > 0) {
+        topRestaurants = matchedRestaurants.slice(0, 4);
+      }
+
+      if (matchedActivities.length > 0) {
+        topActivities = matchedActivities.slice(0, 4);
+      }
+    }
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
