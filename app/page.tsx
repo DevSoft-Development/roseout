@@ -110,23 +110,20 @@ export default async function HomePage() {
 async function loadHomepageSections() {
   const { data } = await supabaseAdmin
     .from("locations")
-    .select("id,type,source_table,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level,created_at")
-    .order("created_at", { ascending: false })
-    .limit(180);
+    .select("*")
+    .limit(500);
 
   let locations = ((data || []) as HomeLocation[]).filter((location) => Boolean(getLocationName(location, "")));
   if (!locations.length) {
     const [restaurantsRes, activitiesRes] = await Promise.all([
       supabaseAdmin
         .from("restaurants")
-        .select("id,name,restaurant_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,cuisine,cuisine_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level,created_at")
-        .order("created_at", { ascending: false })
-        .limit(60),
+        .select("*")
+        .limit(250),
       supabaseAdmin
         .from("activities")
-        .select("id,name,activity_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level,created_at")
-        .order("created_at", { ascending: false })
-        .limit(60),
+        .select("*")
+        .limit(250),
     ]);
 
     const restaurants = ((restaurantsRes.data || []) as Array<Partial<HomeLocation>>).map((location) => ({ ...location, activity_name: location.activity_name || null, activity_type: location.activity_type || null, type: location.type || "restaurants", source_table: "restaurants" })) as HomeLocation[];
