@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
+import { getPrimaryCategory, getCuisine, getLocationTags } from "@/lib/locationFields";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,6 +32,7 @@ export const metadata: Metadata = {
 type HomeLocation = {
   id: string;
   type: string | null;
+  source_table: string | null;
   name: string | null;
   restaurant_name: string | null;
   activity_name: string | null;
@@ -41,10 +43,15 @@ type HomeLocation = {
   city: string | null;
   neighborhood: string | null;
   category: string | null;
+  primary_category: string | null;
   cuisine: string | null;
   cuisine_type: string | null;
+  activity_type: string | null;
   tags: string[] | null;
   vibes: string[] | null;
+  website: string | null;
+  reservation_url: string | null;
+  external_reservation_url: string | null;
   rating: number | null;
   score: number | null;
   total_reviews: number | null;
@@ -83,6 +90,10 @@ export default async function HomePage() {
           <div className="space-y-6">
             <CarouselSection title="Trending Restaurants" subtitle="Most saved, highly rated, and trending tonight." locations={sections.trendingRestaurants} />
             <CarouselSection title="Trending Activities" subtitle="Popular this weekend with social groups and date-night planners." locations={sections.trendingActivities} />
+            <CarouselSection title="Popular & Recently Added" subtitle="Fresh spots and rising favorites from the unified locations feed." locations={sections.recent} />
+            {sections.categorySections.map((section) => (
+              <CarouselSection key={section.key} title={section.title} subtitle={section.subtitle} locations={section.locations} />
+            ))}
           </div>
         </div>
       </section>
@@ -99,14 +110,46 @@ export default async function HomePage() {
 async function loadHomepageSections() {
   const { data } = await supabaseAdmin
     .from("locations")
-    .select("id,type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,neighborhood,category,cuisine,cuisine_type,tags,vibes,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level")
+    .select("id,type,source_table,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level,created_at")
+    .order("created_at", { ascending: false })
     .limit(180);
 
-  const locations = ((data || []) as HomeLocation[]).filter((location) => Boolean(getLocationName(location, "")));
+  let locations = ((data || []) as HomeLocation[]).filter((location) => Boolean(getLocationName(location, "")));
+  if (!locations.length) {
+    const [restaurantsRes, activitiesRes] = await Promise.all([
+      supabaseAdmin
+        .from("restaurants")
+        .select("id,name,restaurant_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,cuisine,cuisine_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level,created_at")
+        .order("created_at", { ascending: false })
+        .limit(60),
+      supabaseAdmin
+        .from("activities")
+        .select("id,name,activity_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,price_level,created_at")
+        .order("created_at", { ascending: false })
+        .limit(60),
+    ]);
+
+    const restaurants = ((restaurantsRes.data || []) as Array<Partial<HomeLocation>>).map((location) => ({ ...location, activity_name: location.activity_name || null, activity_type: location.activity_type || null, type: location.type || "restaurants", source_table: "restaurants" })) as HomeLocation[];
+    const activities = ((activitiesRes.data || []) as Array<Partial<HomeLocation>>).map((location) => ({ ...location, restaurant_name: location.restaurant_name || null, cuisine: location.cuisine || null, cuisine_type: location.cuisine_type || null, type: location.type || "activities", source_table: "activities" })) as HomeLocation[];
+    locations = [...restaurants, ...activities];
+  }
+
+  const recent = locations.slice(0, 12);
+  const dateNight = byKeywords(locations, ["date night", "date", "romantic", "intimate", "lounge", "cocktail"]).slice(0, 8);
+  const dinner = byKeywords(locations, ["dinner", "steak", "sushi", "italian", "restaurant", "fine dining"]).slice(0, 8);
+  const dessert = byKeywords(locations, ["dessert", "ice cream", "bakery", "sweet", "patisserie"]).slice(0, 8);
+  const lounge = byKeywords(locations, ["lounge", "bar", "cocktail", "rooftop", "nightlife"]).slice(0, 8);
 
   return {
     trendingRestaurants: rankByTrending(locations.filter((location) => isRestaurant(location))).slice(0, 12),
     trendingActivities: rankByTrending(locations.filter((location) => !isRestaurant(location))).slice(0, 12),
+    recent,
+    categorySections: [
+      { key: "date-night", title: "Date Night", subtitle: "Romantic and intimate picks", locations: dateNight },
+      { key: "dinner", title: "Dinner", subtitle: "Great dinner options tonight", locations: dinner },
+      { key: "dessert", title: "Dessert", subtitle: "Sweet endings nearby", locations: dessert },
+      { key: "lounge", title: "Lounge", subtitle: "Cocktails and late-night vibes", locations: lounge },
+    ],
     experiences: [
       { key: "date-night", title: "Date Night", subtitle: "Romantic Manhattan Spots", tags: ["Intimate", "Cocktails", "Late Night"], cta: "Plan This Outing", locations: byKeywords(locations, ["date", "romantic", "lounge", "cocktail", "intimate", "upscale"]).slice(0, 4) },
       { key: "rooftops", title: "Rooftops", subtitle: "Best Rooftops in Brooklyn", tags: ["Skyline", "Golden Hour", "DJ Sets"], cta: "View Experience", locations: byKeywords(locations, ["rooftop", "skyline", "terrace"]).slice(0, 4) },
@@ -118,9 +161,11 @@ async function loadHomepageSections() {
 }
 
 function FeaturedExperienceGrid({ sections }: { sections: HomeSections }) {
+  const filled = sections.experiences.filter((experience) => experience.locations[0]);
+  if (!filled.length) return <PolishedEmptyState />;
   return (
     <div className="grid gap-4 lg:grid-cols-12">
-      {sections.experiences.map((experience, index) => {
+      {filled.map((experience, index) => {
         const primary = experience.locations[0];
         if (!primary) return null;
         const name = getLocationName(primary);
@@ -162,16 +207,21 @@ function SocialProofStrip({ sections }: { sections: HomeSections }) {
 }
 
 function CarouselSection({ title, subtitle, locations }: { title: string; subtitle: string; locations: HomeLocation[] }) {
+  if (!locations.length) return null;
   return <section><div className="mb-4"><h2 className="text-3xl font-black">{title}</h2><p className="mt-1 text-sm text-white/65">{subtitle}</p></div><div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{locations.map((location) => <PlaceCard key={`${title}-${location.id}`} location={location} />)}</div></section>;
 }
 
 function PlaceCard({ location }: { location: HomeLocation }) {
   const name = getLocationName(location);
   const neighborhood = location.neighborhood || location.city || "New York";
-  const rating = (location.rating || location.score || 0).toFixed(1);
-  const tags = [...(location.vibes || []), ...(location.tags || [])].filter(Boolean).slice(0, 3);
+  const numericRating = location.rating || location.score || null;
+  const rating = numericRating ? numericRating.toFixed(1) : null;
+  const tags = getLocationTags(location).slice(0, 3);
+  const category = getPrimaryCategory(location);
+  const cuisineOrActivity = getCuisine(location) || location.activity_type || null;
+  const reserveHref = location.external_reservation_url || location.reservation_url || location.website || null;
 
-  return <article className="group min-w-[285px] rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]"><div className="relative overflow-hidden rounded-2xl"><img src={getLocationImage(location)} alt={name} loading="lazy" className="h-44 w-full object-cover transition duration-500 group-hover:scale-105" /><div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 to-transparent" /></div><h4 className="mt-3 text-lg font-black">{name}</h4><p className="text-sm text-white/65">{neighborhood} · {rating} ★</p>{tags.length ? <div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-black text-white/80">{tag}</span>)}</div> : null}<Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="mt-4 inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link></article>;
+  return <article className="group min-w-[285px] rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]"><div className="relative overflow-hidden rounded-2xl"><img src={getLocationImage(location)} alt={name} loading="lazy" className="h-44 w-full object-cover transition duration-500 group-hover:scale-105" /><div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 to-transparent" /></div><h4 className="mt-3 text-lg font-black">{name}</h4><p className="text-sm text-white/65">{category} · {neighborhood}</p><p className="text-xs text-white/60">{[cuisineOrActivity, rating ? `${rating} ★` : null].filter(Boolean).join(" · ") || "Freshly added on TheOutHaven"}</p>{tags.length ? <div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-black text-white/80">{tag}</span>)}</div> : null}<div className="mt-4 flex items-center gap-2"><Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="inline-block rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve / Visit</a> : null}</div></article>;
 }
 
 function rankByTrending(locations: HomeLocation[]) {
@@ -185,7 +235,7 @@ function byKeywords(locations: HomeLocation[], keywords: string[]) {
 }
 
 function searchableText(location: HomeLocation) {
-  return [location.category, location.cuisine, location.cuisine_type, ...(location.tags || []), ...(location.vibes || [])].join(" ").toLowerCase();
+  return [location.source_table, location.type, location.category, location.primary_category, location.cuisine, location.cuisine_type, location.activity_type, ...(location.tags || []), ...(location.vibes || [])].join(" ").toLowerCase();
 }
 
 function score(location: HomeLocation) {
@@ -193,8 +243,21 @@ function score(location: HomeLocation) {
 }
 
 function isRestaurant(location: HomeLocation) {
-  const kind = String(location.type || "").toLowerCase();
-  return kind.includes("restaurant") || Boolean(location.restaurant_name) || searchableText(location).includes("restaurant");
+  const hay = searchableText(location);
+  return hay.includes("restaurant") || Boolean(location.restaurant_name) || String(location.source_table || "").toLowerCase() === "restaurants";
+}
+
+function PolishedEmptyState() {
+  return (
+    <div className="rounded-[1.8rem] border border-dashed border-white/20 bg-white/[0.03] p-8 text-center">
+      <h3 className="text-2xl font-black">Your city feed is warming up.</h3>
+      <p className="mt-3 text-sm text-white/70">We don&apos;t have location records to feature yet. Import places or sync from Google Places, then return here for live trending restaurants and activities.</p>
+      <div className="mt-5 flex justify-center gap-3">
+        <Link href="/create" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black">Plan My Outing</Link>
+        <Link href="/explore" className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-black">Explore</Link>
+      </div>
+    </div>
+  );
 }
 
 function PublicFooter() { const links = [["Home","/"],["Explore","/explore"],["Create Outing","/create"],["Business","/business"],["Sign In","/signup"],["Terms","/terms"],["Privacy","/privacy"],["SMS Terms","/sms-terms"],["Contact","/contact"]] as const; return <footer className="mt-12 border-t border-white/10 bg-black/50 px-5 py-10 sm:px-6"><div className="mx-auto max-w-7xl"><div className="flex flex-wrap gap-4 text-sm text-white/70">{links.map(([label,href])=><Link key={label} href={href} className="hover:text-white">{label}</Link>)}</div><div className="mt-5 flex gap-3 text-white/55"><span>◎</span><span>◉</span><span>◌</span></div><p className="mt-4 text-xs text-white/45">© {new Date().getFullYear()} TheOutHaven. All rights reserved.</p></div></footer>; }
