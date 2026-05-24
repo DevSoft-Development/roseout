@@ -541,86 +541,115 @@ const PRIORITY_WEIGHTS = {
 };
 
 const FOOD_ADD_ON_INTENTS = new Set(["dessert", "cafe", "drinks"]);
-const LOUNGE_ACTIVITY_INTENTS = new Set(["hookah", "cigar"]);
+const LOUNGE_ACTIVITY_INTENTS = new Set([
+  "hookah",
+  "cigar",
+  "lounge",
+  "nightclub",
+  "rooftop",
+]);
+const REAL_MEAL_FOOD_INTENTS = new Set([
+  "steak",
+  "seafood",
+  "sushi",
+  "ramen",
+  "italian",
+  "mexican",
+  "chinese",
+  "thai",
+  "indian",
+  "japanese",
+  "korean",
+  "vietnamese",
+  "filipino",
+  "african",
+  "caribbean",
+  "soul_food",
+  "mediterranean",
+  "spanish",
+  "french",
+  "american",
+  "bbq",
+  "halal",
+  "vegan",
+  "vegetarian",
+  "healthy",
+  "brunch",
+  "breakfast",
+  "burgers",
+  "pizza",
+  "wings",
+  "sandwiches",
+  "tacos",
+  "fine_dining",
+  "buffet",
+  "hibachi",
+  "hot_pot",
+]);
 const WALKING_MINUTES_PER_MILE = 20;
 
 function isFoodAddOnIntent(foodIntent: string) {
   return FOOD_ADD_ON_INTENTS.has(foodIntent);
 }
 
-function isLoungeActivityIntent(foodIntent: string) {
-  return LOUNGE_ACTIVITY_INTENTS.has(foodIntent);
+function isLoungeActivityIntent(intent: string) {
+  return LOUNGE_ACTIVITY_INTENTS.has(intent);
 }
 
 function hasRealMealFoodIntent(foodIntents: string[]) {
-  return foodIntents.some(
+  return foodIntents.some((intent) => REAL_MEAL_FOOD_INTENTS.has(intent));
+}
+
+function getMealFoodIntents(intent: ReturnType<typeof detectIntent>) {
+  return intent.foodIntents.filter(
     (foodIntent) =>
-      !isFoodAddOnIntent(foodIntent) && !isLoungeActivityIntent(foodIntent)
+      REAL_MEAL_FOOD_INTENTS.has(foodIntent) &&
+      !isFoodAddOnIntent(foodIntent) &&
+      !isLoungeActivityIntent(foodIntent)
   );
 }
 
-function getMealFoodIntents(foodIntents: string[]) {
-  const hasMealIntent = hasRealMealFoodIntent(foodIntents);
-
-  return foodIntents.filter((foodIntent) => {
-    if (isFoodAddOnIntent(foodIntent)) return false;
-    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
-    return true;
-  });
-}
-
-function getAddOnFoodIntents(foodIntents: string[]) {
-  const hasMealIntent = hasRealMealFoodIntent(foodIntents);
-
-  return foodIntents.filter((foodIntent) => {
-    if (isFoodAddOnIntent(foodIntent)) return true;
-    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return true;
-    return false;
-  });
+function getAddOnFoodIntents(intent: ReturnType<typeof detectIntent>) {
+  return intent.foodIntents.filter(
+    (foodIntent) =>
+      isFoodAddOnIntent(foodIntent) || isLoungeActivityIntent(foodIntent)
+  );
 }
 
 function buildRestaurantSearchInput(
   originalInput: string,
   intent: ReturnType<typeof detectIntent>
 ) {
-  const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
-  const cityText = intent.locations.join(" ");
+  const mealFoodIntents = getMealFoodIntents(intent);
+  const locationText = intent.locations.join(" ");
 
-  if (mealFoodIntents.length === 0) {
-    return originalInput;
+  if (mealFoodIntents.length > 0) {
+    return normalizeQuery(
+      `${mealFoodIntents
+        .map((foodIntent) => foodIntent.replace(/_/g, " "))
+        .join(" ")} restaurant dining ${locationText}`
+    );
   }
 
-  return [mealFoodIntents.join(" "), "restaurant dinner", cityText]
-    .filter(Boolean)
-    .join(" ");
+  return normalizeQuery(originalInput);
 }
 
 function buildActivitySearchInput(
   originalInput: string,
   intent: ReturnType<typeof detectIntent>
 ) {
-  const addOnFoodIntents = getAddOnFoodIntents(intent.foodIntents);
-  const cityText = intent.locations.join(" ");
+  const activityTerms = [...intent.activityIntents, ...getAddOnFoodIntents(intent)];
+  const locationText = intent.locations.join(" ");
 
-  if (addOnFoodIntents.length === 0 && intent.activityIntents.length === 0) {
-    return originalInput;
+  if (activityTerms.length > 0) {
+    return normalizeQuery(
+      `${activityTerms
+        .map((activityIntent) => activityIntent.replace(/_/g, " "))
+        .join(" ")} activity nightlife lounge ${locationText}`
+    );
   }
 
-  return [...intent.activityIntents, ...addOnFoodIntents, cityText]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function restaurantScoringIntent(intent: ReturnType<typeof detectIntent>) {
-  const foodIntents = getMealFoodIntents(intent.foodIntents);
-
-  return {
-    ...intent,
-    foodIntents,
-    wantsHookah: false,
-    wantsCigar: false,
-    wantsLounge: false,
-  };
+  return normalizeQuery(originalInput);
 }
 
 function normalizeQuery(input: string) {
@@ -2769,19 +2798,21 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const rawFoodIntents = detectFromMap(input, FOOD_INTENTS);
   const rawActivityIntents = detectFromMap(input, ACTIVITY_INTENTS);
 
-  const hasMealIntent = hasRealMealFoodIntent(rawFoodIntents);
+  const loungeFoodIntents = rawFoodIntents.filter(isLoungeActivityIntent);
+  const mealOrAddOnFoodIntents = rawFoodIntents.filter(
+    (foodIntent) => !isLoungeActivityIntent(foodIntent)
+  );
 
-  const foodIntents = rawFoodIntents.filter((foodIntent) => {
-    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
-    return true;
-  });
+  const hasRealMealIntent = hasRealMealFoodIntent(mealOrAddOnFoodIntents);
+
+  const foodIntents = hasRealMealIntent
+    ? mealOrAddOnFoodIntents
+    : rawFoodIntents;
 
   const activityIntents = Array.from(
     new Set([
       ...rawActivityIntents,
-      ...rawFoodIntents.filter(
-        (foodIntent) => hasMealIntent && isLoungeActivityIntent(foodIntent)
-      ),
+      ...(hasRealMealIntent ? loungeFoodIntents : []),
     ])
   );
   const detectedLocations = detectLocation(input, locations);
@@ -3102,7 +3133,10 @@ function scoreRestaurant(
   intent: ReturnType<typeof detectIntent>,
 ) {
   let score = 0;
-  const restaurantIntent = restaurantScoringIntent(intent);
+  const restaurantScoringIntent = {
+    ...intent,
+    foodIntents: getMealFoodIntents(intent),
+  };
 
   score += locationNameMatchScore(item, input);
 
@@ -3117,7 +3151,7 @@ function scoreRestaurant(
   score += keywordBoost(item, input);
   score += weightedVibeBoost(item, intent.vibes);
   score += weightedTagBoost(item, intent.requestedTags);
-  score += weightedFoodBoost(item, restaurantIntent.foodIntents);
+  score += weightedFoodBoost(item, restaurantScoringIntent.foodIntents);
 
   if (intent.wantsPrimaryMeal && isDessertOnlyRestaurant(item)) {
     score -= 260;
@@ -3593,7 +3627,7 @@ function filterRestaurantsByFoodIntent(
   restaurants: any[],
   intent: ReturnType<typeof detectIntent>
 ) {
-  const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
+  const mealFoodIntents = getMealFoodIntents(intent);
 
   if (mealFoodIntents.length === 0) return restaurants;
 
@@ -4295,8 +4329,8 @@ export async function POST(req: Request) {
       activities = activities.filter((item: any) => isDessertLocation(item));
     }
 
-    const foodAddOnIntents = getAddOnFoodIntents(intent.foodIntents);
-    const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
+    const foodAddOnIntents = getAddOnFoodIntents(intent);
+    const mealFoodIntents = getMealFoodIntents(intent);
     const shouldSplitFoodAddOnStops =
       intent.wantsFullOuting &&
       foodAddOnIntents.length > 0 &&
@@ -4311,16 +4345,10 @@ export async function POST(req: Request) {
       let foodAddOnActivities = sourceLocations
         .filter(isOutingEligibleLocation)
         .filter((item: any) =>
-          foodAddOnIntents.some((foodIntent) => {
-            if (isLoungeActivityIntent(foodIntent)) {
-              return (
-                matchesActivityIntent(item, foodIntent) ||
-                matchesFoodIntent(item, foodIntent)
-              );
-            }
-
-            return matchesFoodIntent(item, foodIntent);
-          }),
+          foodAddOnIntents.some((foodIntent) =>
+            matchesFoodIntent(item, foodIntent) ||
+            matchesActivityIntent(item, foodIntent)
+          )
         );
 
       if (dessertAddonSearch) {
@@ -4329,6 +4357,13 @@ export async function POST(req: Request) {
         );
       }
 
+      const splitActivityIntent = {
+        ...intent,
+        activityIntents: Array.from(
+          new Set([...intent.activityIntents, ...foodAddOnIntents])
+        ),
+      };
+
       activities = filterActivitiesByActivityIntent(
         [
           ...activities,
@@ -4336,25 +4371,34 @@ export async function POST(req: Request) {
             mapNonMealFoodPlaceToActivity(item, intent),
           ),
         ],
-        intent,
+        splitActivityIntent,
       );
     } else {
-      restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
+      const restaurantFilterIntent =
+        mealFoodIntents.length > 0
+          ? { ...intent, foodIntents: mealFoodIntents }
+          : intent;
+
+      restaurants = filterRestaurantsByFoodIntent(restaurants, restaurantFilterIntent);
 
       activities = filterActivitiesByActivityIntent(activities, intent);
     }
 
-    if (mealFoodIntents.length > 0 && foodAddOnIntents.length > 0) {
+    if (mealFoodIntents.length > 0) {
       restaurants = restaurants.filter((restaurant: any) => {
         const matchesMeal = mealFoodIntents.some((foodIntent) =>
           matchesFoodIntent(restaurant, foodIntent)
         );
 
-        const onlyMatchesAddOn = foodAddOnIntents.some((foodIntent) =>
-          matchesFoodIntent(restaurant, foodIntent)
-        );
+        const onlyMatchesAddOn =
+          !matchesMeal &&
+          foodAddOnIntents.some(
+            (foodIntent) =>
+              matchesFoodIntent(restaurant, foodIntent) ||
+              matchesActivityIntent(restaurant, foodIntent)
+          );
 
-        return matchesMeal || !onlyMatchesAddOn;
+        return !onlyMatchesAddOn;
       });
     }
 
@@ -4532,7 +4576,7 @@ export async function POST(req: Request) {
       .map((restaurant: any) => {
         const semantic = semanticScoreBoost(restaurant, semanticResults);
         const baseScore = clampScore(
-          scoreRestaurant(restaurant, input, restaurantScoringIntent(intent)) +
+          scoreRestaurant(restaurant, input, intent) +
             semantic.semantic_score_boost,
         );
         const marketplaceScore = applyMarketplaceBoosts(restaurant, baseScore, intent, userPreferenceSignals);
