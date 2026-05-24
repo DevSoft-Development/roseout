@@ -242,7 +242,32 @@ function PlaceCard({ location }: { location: HomeLocation }) {
   const cuisineOrActivity = getCuisine(location) || location.activity_type || null;
   const reserveHref = location.external_reservation_url || location.reservation_url || location.website || null;
 
-  return <article className="group min-w-[285px] rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]"><div className="relative overflow-hidden rounded-2xl"><img src={getLocationImage(location)} alt={name} loading="lazy" className="h-44 w-full object-cover transition duration-500 group-hover:scale-105" /><div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 to-transparent" /></div><h4 className="mt-3 text-lg font-black">{name}</h4><p className="text-sm text-white/65">{category} · {neighborhood}</p><p className="text-xs text-white/60">{[cuisineOrActivity, rating ? `${rating} ★` : null].filter(Boolean).join(" · ") || "Freshly added on TheOutHaven"}</p>{tags.length ? <div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-black text-white/80">{tag}</span>)}</div> : null}<div className="mt-4 flex items-center gap-2"><Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="inline-block rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve / Visit</a> : null}</div></article>;
+  return (
+    <article className="group flex min-h-[380px] min-w-[285px] flex-col rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]">
+      <div className="relative overflow-hidden rounded-2xl">
+        <img src={getLocationImage(location)} alt={name} loading="lazy" className="h-44 w-full object-cover transition duration-500 group-hover:scale-105" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 to-transparent" />
+      </div>
+      <div className="mt-3 space-y-1">
+        <h4 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{name}</h4>
+        <p className="line-clamp-1 text-sm text-white/65">{category} · {neighborhood}</p>
+        <p className="line-clamp-1 text-xs text-white/60">{[cuisineOrActivity, rating ? `${rating} ★` : null].filter(Boolean).join(" · ") || "Freshly added on TheOutHaven"}</p>
+      </div>
+      <div className="mt-2 min-h-[3rem]">
+        {tags.length ? (
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <span key={tag} className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-black text-white/80">{tag}</span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-auto flex items-center gap-2 pt-4">
+        <Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link>
+        {reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="inline-block rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve / Visit</a> : null}
+      </div>
+    </article>
+  );
 }
 
 function rankByTrending(locations: HomeLocation[]) {
