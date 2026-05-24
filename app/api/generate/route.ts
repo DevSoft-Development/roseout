@@ -4914,7 +4914,11 @@ export async function POST(req: Request) {
       intent,
     );
     topRestaurants = applyHardGeoFilter(topRestaurants, requestedGeo);
-    topActivities = applyHardGeoFilter(topActivities, requestedGeo);
+    const geoStrictActivities = applyHardGeoFilter(topActivities, requestedGeo);
+    topActivities =
+      geoStrictActivities.length > 0 || intent.activityIntents.length === 0
+        ? geoStrictActivities
+        : topActivities;
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
