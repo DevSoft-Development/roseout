@@ -2237,7 +2237,13 @@ function isExplicitFoodAtLoungeRequest(
 }
 
 function isLoungeActivityOnlyRequest(intent: ReturnType<typeof detectIntent>) {
-  return intent.wantsLounge && !isExplicitFoodAtLoungeRequest(intent);
+  const mealFoodIntents = getMealFoodIntents(intent);
+
+  return (
+    intent.wantsLounge &&
+    mealFoodIntents.length === 0 &&
+    !isExplicitFoodAtLoungeRequest(intent)
+  );
 }
 
 function removeDuplicateLocationsWithinType<T>(items: T[]) {
