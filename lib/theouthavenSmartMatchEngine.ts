@@ -576,14 +576,21 @@ export function detectSmartMatchIntent(input: string): SmartMatchIntent {
     )
   );
 
-  const wantsFood =
-    foodIntents.length > 0 || MEAL_WORDS.some((word) => phraseIncludes(text, word));
+  const explicitRestaurantSignal = MEAL_WORDS.some((word) =>
+    phraseIncludes(text, word)
+  );
+  const explicitActivitySignal = [
+    "activity",
+    "activities",
+    "things to do",
+    "date idea",
+    "date ideas",
+    "outing",
+  ].some((word) => phraseIncludes(text, word));
 
-  const wantsActivity =
-    activityIntents.length > 0 ||
-    ["activity", "activities", "things to do", "date idea", "date ideas", "outing"].some(
-      (word) => phraseIncludes(text, word)
-    );
+  const wantsFood = foodIntents.length > 0 || explicitRestaurantSignal;
+
+  const wantsActivity = activityIntents.length > 0 || explicitActivitySignal;
 
   const hasPrimaryMealWord = PRIMARY_MEAL_WORDS.some((word) =>
     phraseIncludes(text, word)
@@ -871,6 +878,19 @@ export function filterSmartActivities(
     );
 }
 
+
+function hasExplicitRestaurantRequest(query: string) {
+  return MEAL_WORDS.some((word) => phraseIncludes(query, word));
+}
+
+function hasExplicitActivityRequest(query: string) {
+  return (
+    ["activity", "activities", "things to do", "date idea", "date ideas", "outing"].some(
+      (word) => phraseIncludes(query, word)
+    ) || Object.values(ACTIVITY_INTENTS).some((keywords) => keywords.some((word) => phraseIncludes(query, word)))
+  );
+}
+
 export function balanceSmartMatches(
   restaurants: SmartMatchItem[],
   activities: SmartMatchItem[],
@@ -907,6 +927,14 @@ export function balanceSmartMatches(
   }
 
   if (!intent.wantsFood && intent.wantsActivity && !intent.wantsFullOuting) {
+    if (hasExplicitRestaurantRequest(intent.query) && hasExplicitActivityRequest(intent.query)) {
+      return {
+        restaurants: finalRestaurants.slice(0, FULL_OUTING_RESULT_LIMIT),
+        activities: finalActivities.slice(0, FULL_OUTING_RESULT_LIMIT),
+        mode: "full_outing",
+      };
+    }
+
     return {
       restaurants: [],
       activities: finalActivities.slice(0, SINGLE_STOP_RESULT_LIMIT),
