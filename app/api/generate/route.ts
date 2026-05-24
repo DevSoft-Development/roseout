@@ -563,6 +563,26 @@ const REAL_MEAL_FOOD_INTENTS = new Set([
   "bbq"
 ]);
 const WALKING_MINUTES_PER_MILE = 20;
+const SPLIT_MEAL_TERMS = [
+  "steak",
+  "dinner",
+  "restaurant",
+  "food",
+  "seafood",
+  "sushi",
+  "brunch",
+  "lunch",
+  "steakhouse",
+  "grill",
+  "chophouse",
+] as const;
+const SPLIT_ACTIVITY_TERMS = [
+  "hookah lounge",
+  "after dinner",
+  "hookah",
+  "lounge",
+  "nightlife",
+] as const;
 
 function isFoodAddOnIntent(foodIntent: string) {
   return FOOD_ADD_ON_INTENTS.has(foodIntent);
@@ -685,6 +705,10 @@ function normalizeQuery(input: string) {
     .trim()
     .replace(/[^\w\s$.-]/g, " ")
     .replace(/\s+/g, " ");
+}
+
+function extractSplitTerms(text: string, terms: readonly string[]) {
+  return terms.filter((term) => phraseIncludesNormalized(text, term));
 }
 
 async function logSearchQuery(input: string) {
@@ -2860,6 +2884,10 @@ function popularityBoost(item: any) {
 
 function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const text = normalizeQuery(input);
+  const splitMealTerms = extractSplitTerms(text, SPLIT_MEAL_TERMS);
+  const splitActivityTerms = extractSplitTerms(text, SPLIT_ACTIVITY_TERMS);
+  const shouldForceSplitMealAndActivity =
+    splitMealTerms.length > 0 && splitActivityTerms.length > 0;
 
   const requestedTags = detectFromMap(input, TAG_KEYWORDS);
   const rawFoodIntents = detectFromMap(input, FOOD_INTENTS);
@@ -2868,15 +2896,24 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const mealFoodIntents = rawFoodIntents.filter((intent) => !isLoungeActivityIntent(intent));
   const shouldTreatLoungeAsActivity =
     loungeFoodIntents.length > 0 && hasMealSignal(text, mealFoodIntents);
-  const foodIntents = shouldTreatLoungeAsActivity
+  let foodIntents = shouldTreatLoungeAsActivity
     ? mealFoodIntents
     : rawFoodIntents;
-  const activityIntents = Array.from(
+  let activityIntents = Array.from(
     new Set([
       ...rawActivityIntents,
       ...(shouldTreatLoungeAsActivity ? loungeFoodIntents : []),
     ])
   );
+  if (shouldForceSplitMealAndActivity) {
+    foodIntents = Array.from(
+      new Set([
+        ...foodIntents.filter((intent) => !isLoungeActivityIntent(intent)),
+        ...splitMealTerms,
+      ])
+    );
+    activityIntents = Array.from(new Set([...activityIntents, ...splitActivityTerms]));
+  }
   const detectedLocations = detectLocation(input, locations);
 
   const wantsFoodMap = buildWantsMap(Object.keys(FOOD_INTENTS), foodIntents);
@@ -2978,6 +3015,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     vibes,
     multiIntentMode,
     locations: detectedLocations,
+    shouldForceSplitMealAndActivity,
 
     wantsBirthday: text.includes("birthday"),
     wantsBirthdayDinner: text.includes("birthday dinner"),
@@ -4353,6 +4391,8 @@ export async function POST(req: Request) {
       .filter(isPublicSearchVisible);
 
     const intent = detectIntent(input, body, locations);
+    const restaurantSearchInput = buildRestaurantSearchInput(input, intent);
+    const activitySearchInput = buildActivitySearchInput(input, intent);
     const requestedGeo = detectRequestedGeo(input);
     const parsedIntent = await parseSearchIntent(openai, input).catch(() => ({
       city: null,
@@ -4727,6 +4767,17 @@ export async function POST(req: Request) {
     );
     restaurants = strictGuardedResults.restaurants;
     activities = strictGuardedResults.activities;
+
+    console.log({
+      originalQuery: input,
+      location: intent.locations,
+      restaurantSearchInput,
+      activitySearchInput,
+      restaurantIntents: getMealFoodIntents(intent),
+      activityIntents: intent.activityIntents,
+      restaurantResultNames: restaurants.map((r: any) => getLocationName(r, "")),
+      activityResultNames: activities.map((a: any) => getLocationName(a, "")),
+    });
 
     if (shouldRestaurantFirstMixedIntent(intent) && restaurants.length === 0) {
       restaurants = sourceLocations.filter((item: any) => {
