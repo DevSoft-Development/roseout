@@ -2850,8 +2850,6 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     text.includes("date ideas") ||
     text.includes("places to go") ||
     text.includes("things to do") ||
-    text.includes("with") ||
-    text.includes("and") ||
     (wantsFood && wantsActivity) ||
     (foodIntents.length > 0 && activityIntents.length > 0) ||
     (mentionsAnyTheOutHavenOption && text.includes("date"));
