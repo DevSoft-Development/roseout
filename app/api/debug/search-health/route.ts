@@ -1,37 +1,73 @@
-import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
+import { NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
 
-export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({}));
-  const query =
-    typeof body?.message === "string"
-      ? body.message
-      : typeof body?.input === "string"
-        ? body.input
-        : typeof body?.query === "string"
-          ? body.query
-          : "";
+export const dynamic = "force-dynamic";
 
-  const startedAt = Date.now();
-  const result = await runTheOutHavenSearch(query, { ...body, debug: true });
-  const durationMs = Date.now() - startedAt;
+export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Not available in production" },
+      { status: 404 }
+    );
+  }
 
-  return Response.json({
-    success: true,
-    input: query,
-    durationMs,
-    diagnostics: {
-      stage: "final_response",
-      counts: {
-        restaurants: result.restaurants?.length ?? 0,
-        activities: result.activities?.length ?? 0,
-        pairs: result.pairs?.length ?? 0,
-      },
-      fallback: {
-        restaurant: Boolean(result?.debug?.fallbackRestaurantUsed),
-        activity: Boolean(result?.debug?.fallbackActivityUsed),
-      },
-      debug: result.debug ?? {},
-    },
-    result,
+  const checks = await Promise.allSettled([
+    supabase.from("locations").select("id", { count: "exact", head: true }),
+    supabase.from("restaurants").select("id", { count: "exact", head: true }),
+    supabase.from("activities").select("id", { count: "exact", head: true }),
+    supabase
+      .from("restaurants")
+      .select(
+        "id, restaurant_name, city, state, borough, cuisine_type, cuisine, latitude, longitude"
+      )
+      .ilike("restaurant_name", "%steak%")
+      .limit(10),
+    supabase
+      .from("restaurants")
+      .select(
+        "id, restaurant_name, city, state, borough, cuisine_type, cuisine, search_document, latitude, longitude"
+      )
+      .or("cuisine.ilike.%steak%,search_document.ilike.%steak%")
+      .limit(10),
+    supabase
+      .from("activities")
+      .select(
+        "id, activity_name, city, state, borough, activity_type, category, subcategory, search_document, latitude, longitude"
+      )
+      .or("activity_name.ilike.%hookah%,category.ilike.%hookah%,subcategory.ilike.%hookah%,search_document.ilike.%hookah%")
+      .limit(10),
+  ]);
+
+  const labels = [
+    "locations_count",
+    "restaurants_count",
+    "activities_count",
+    "steak_restaurant_samples",
+    "steak_cuisine_or_search_samples",
+    "hookah_activity_samples",
+  ] as const;
+
+  const normalizedChecks = checks.map((result, index) => {
+    const name = labels[index];
+    if (result.status === "fulfilled") {
+      const { data, error, count } = result.value;
+      return {
+        name,
+        ok: !error,
+        count: count ?? null,
+        error: error?.message ?? null,
+        sample: data ?? null,
+      };
+    }
+
+    return {
+      name,
+      ok: false,
+      count: null,
+      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      sample: null,
+    };
   });
+
+  return NextResponse.json({ ok: true, checks: normalizedChecks });
 }
