@@ -36,7 +36,7 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
   let activities = activitySearch.records;
   let fallback_used = { restaurants: false, activities: false };
 
-  if (intent.wantsFood && restaurants.length === 0) {
+  if (intent.wantsRestaurant && restaurants.length === 0) {
     const fallbackRestaurants = await searchFallbackRestaurants(intent);
     restaurants = fallbackRestaurants.records;
     fallback_used.restaurants = true;
