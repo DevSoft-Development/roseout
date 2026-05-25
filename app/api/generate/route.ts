@@ -238,8 +238,10 @@ export async function POST(request: Request) {
     matchedLocationResults.length > 0 ||
     (result?.pairs?.length ?? 0) > 0;
 
+  const hasSourceErrors = (result?.debug?.sourceErrors?.length ?? 0) > 0;
+
   const finalReply =
-    (result?.debug?.sourceErrors?.length ?? 0) > 0
+    hasSourceErrors && !finalHasCards
       ? "We hit a temporary data-source issue while searching. Please retry shortly."
       : topRestaurants.length && topActivities.length
       ? "Found food and activity options for your outing."
