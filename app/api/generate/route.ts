@@ -232,11 +232,28 @@ export async function POST(request: Request) {
   }
   logSearchDiagnostics(diagnostics);
 
+  const finalHasCards =
+    topRestaurants.length > 0 ||
+    topActivities.length > 0 ||
+    matchedLocationResults.length > 0 ||
+    (result?.pairs?.length ?? 0) > 0;
+
+  const finalReply =
+    topRestaurants.length && topActivities.length
+      ? "Found food and activity options for your outing."
+      : topRestaurants.length
+        ? "Found restaurant matches. Activity inventory is limited for this request."
+        : topActivities.length
+          ? "Found activity matches. Restaurant inventory is limited for this request."
+          : result?.reply ?? "No matching records found yet.";
+
   return Response.json({
     ...result,
+    reply: finalReply,
     restaurants: topRestaurants,
     activities: topActivities,
     matched_locations: matchedLocationResults,
+    render_mode: finalHasCards ? "cards" : result?.render_mode ?? "empty",
     card_counts: {
       ...result?.card_counts,
       restaurants: topRestaurants.length,
