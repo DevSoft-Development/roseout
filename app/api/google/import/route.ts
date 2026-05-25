@@ -254,6 +254,32 @@ function normalizeQuery(input: string) {
     .replace(/\s+/g, " ");
 }
 
+type SearchDiagnostics = {
+  stage: string;
+  notes: string[];
+  errors: string[];
+};
+
+function createSearchDiagnostics(): SearchDiagnostics {
+  return { stage: "started", notes: [], errors: [] };
+}
+
+function logSearchDiagnostics(diagnostics: SearchDiagnostics) {
+  const safeDiagnostics =
+    process.env.NODE_ENV === "production"
+      ? {
+          stage: diagnostics.stage,
+          notes: diagnostics.notes,
+          errors: diagnostics.errors,
+        }
+      : diagnostics;
+
+  console.log(
+    "THEOUTHAVEN_IMPORT_DIAGNOSTICS",
+    JSON.stringify(safeDiagnostics, null, 2)
+  );
+}
+
 async function logSearchQuery(input: string) {
   const query = normalizeQuery(input);
 
@@ -1453,6 +1479,7 @@ function pairSmartMatches(restaurants: any[], activities: any[]) {
 
 export async function POST(req: Request) {
   try {
+    const diagnostics: SearchDiagnostics = createSearchDiagnostics();
     const body = await req.json();
     const messages = body.messages || [];
     const input = body.input || messages[messages.length - 1]?.content || "";
@@ -1525,6 +1552,8 @@ export async function POST(req: Request) {
       const cacheAge = Date.now() - new Date(cached.created_at).getTime();
 
       if (cacheAge < 1000 * 60 * 60 * CACHE_HOURS) {
+        diagnostics.notes.push("Serving response from ai_response_cache.");
+        logSearchDiagnostics(diagnostics);
         return Response.json(cached.response);
       }
     }
@@ -1810,7 +1839,7 @@ STRICT RULES:
         })
       : null;
 
-    const responsePayload = {
+    const responsePayload: any = {
       success: true,
       version: getSmartMatchVersion(),
       smart_match: {
@@ -1944,14 +1973,25 @@ STRICT RULES:
         date_style_tags: toArray(a.date_style_tags),
         distance_miles: a.distance_miles || null,
       })),
+      debug: process.env.NODE_ENV !== "production" ? diagnostics : undefined,
     };
 
-    await supabase.from("ai_response_cache").upsert({
-      cache_key: cacheKey,
-      user_query: input,
-      response: responsePayload,
-    });
+    const shouldCacheResponse =
+      responsePayload.restaurants.length > 0 ||
+      responsePayload.activities.length > 0 ||
+      responsePayload.matched_locations.length > 0;
 
+    if (shouldCacheResponse) {
+      await supabase.from("ai_response_cache").upsert({
+        cache_key: cacheKey,
+        user_query: input,
+        response: responsePayload,
+      });
+    } else {
+      diagnostics.notes.push("Skipped cache because response had no card records.");
+    }
+
+    logSearchDiagnostics(diagnostics);
     return Response.json(responsePayload);
   } catch (error: any) {
     console.error("GENERATE ERROR:", error);
