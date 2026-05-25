@@ -1173,15 +1173,27 @@ function scoreRestaurant(
   }
 
   if (intent.wantsHookah) {
-    score += isHookahPlace(item)
-      ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
-      : PRIORITY_WEIGHTS.mismatchPenalty;
+    if (intent.isMealPrimary) {
+      if (isHookahPlace(item)) {
+        score += PRIORITY_WEIGHTS.nightlife;
+      }
+    } else {
+      score += isHookahPlace(item)
+        ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
+        : PRIORITY_WEIGHTS.mismatchPenalty;
+    }
   }
 
   if (intent.wantsCigar) {
-    score += isCigarPlace(item)
-      ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
-      : PRIORITY_WEIGHTS.mismatchPenalty;
+    if (intent.isMealPrimary) {
+      if (isCigarPlace(item)) {
+        score += PRIORITY_WEIGHTS.nightlife;
+      }
+    } else {
+      score += isCigarPlace(item)
+        ? PRIORITY_WEIGHTS.nightlife + PRIORITY_WEIGHTS.foodExact
+        : PRIORITY_WEIGHTS.mismatchPenalty;
+    }
   }
 
   score += clampScore(getSearchRankingScore(item)) * 0.4;
