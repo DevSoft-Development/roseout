@@ -35,7 +35,8 @@ const openai = new OpenAI({
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION =
-  `unified-intent-v2-${SEMANTIC_SEARCH_VERSION}`;
+  `canonical-multistop-meal-addon-v1-${SEMANTIC_SEARCH_VERSION}`;
+const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "true";
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -2905,6 +2906,9 @@ function popularityBoost(item: any) {
 
 function detectIntent(input: string, body: any = {}, locations: any[] = []) {
   const canonical = parseCanonicalSearchIntent(input, body, locations);
+  if (SEARCH_DEBUG) {
+    console.log("[SEARCH_DEBUG] canonical_intent", canonical);
+  }
   return {
     ...canonical,
     text: canonical.normalizedInput,
@@ -4293,6 +4297,10 @@ export async function POST(req: Request) {
     const intent = detectIntent(input, body, locations);
     const restaurantSearchInput = buildRestaurantSearchInput(input, intent);
     const activitySearchInput = buildActivitySearchInput(input, intent);
+    if (SEARCH_DEBUG) {
+      console.log("[SEARCH_DEBUG] restaurant_search_input", restaurantSearchInput);
+      console.log("[SEARCH_DEBUG] activity_search_input", activitySearchInput);
+    }
     const requestedGeo = detectRequestedGeo(input);
     const parsedIntent = {
       city: intent.cities?.[0] ?? null,
@@ -4963,12 +4971,22 @@ export async function POST(req: Request) {
       finalDedupedResults.activities,
       intent,
     );
+    const preFilterRestaurantCount = topRestaurants.length;
+    const preFilterActivityCount = topActivities.length;
     topRestaurants = applyHardGeoFilter(topRestaurants, requestedGeo);
     const geoStrictActivities = applyHardGeoFilter(topActivities, requestedGeo);
     topActivities =
       geoStrictActivities.length > 0 || intent.activityIntents.length === 0
         ? geoStrictActivities
         : topActivities;
+    if (SEARCH_DEBUG) {
+      console.log("[SEARCH_DEBUG] pre_filter_restaurant_count", preFilterRestaurantCount);
+      console.log("[SEARCH_DEBUG] post_filter_restaurant_count", topRestaurants.length);
+      console.log("[SEARCH_DEBUG] pre_filter_activity_count", preFilterActivityCount);
+      console.log("[SEARCH_DEBUG] post_filter_activity_count", topActivities.length);
+      console.log("[SEARCH_DEBUG] selected_restaurants", topRestaurants.slice(0, 5).map((r:any)=>({ id: r.id, name: getLocationName(r, "") })));
+      console.log("[SEARCH_DEBUG] selected_activities", topActivities.slice(0, 5).map((a:any)=>({ id: a.id, name: getLocationName(a, "") })));
+    }
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
@@ -5311,6 +5329,17 @@ STRICT RULES:
         distance_miles: a.distance_miles || null,
       })),
     };
+    if (hasCards && !responsePayload.message) {
+      responsePayload.message = "Here are your best available card matches.";
+    }
+    if (SEARCH_DEBUG) {
+      console.log("[SEARCH_DEBUG] cards_returned", {
+        hasCards,
+        restaurantCount: responsePayload.restaurants?.length || 0,
+        activityCount: responsePayload.activities?.length || 0,
+        pairCount: responsePayload.pairs?.length || 0,
+      });
+    }
 
     await trackSearchAppearancesForResponse(responsePayload, input, smartBalanced.mode);
 

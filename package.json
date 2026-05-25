@@ -10,7 +10,8 @@
     "lint": "eslint",
     "verify:homepage": "node scripts/verify-homepage-lock.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node -e \"console.log('No automated tests are configured for this repository yet.')\""
+    "test": "tsc --module commonjs --target es2020 --outDir .tmp-test scripts/search-intent-regression.ts lib/searchIntent.ts && node .tmp-test/scripts/search-intent-regression.js",
+    "verify:search-pipeline": "tsc --module commonjs --target es2020 --outDir .tmp-test scripts/verify-search-pipeline.ts lib/searchIntent.ts && node .tmp-test/scripts/verify-search-pipeline.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
