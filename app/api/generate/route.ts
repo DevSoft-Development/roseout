@@ -64,17 +64,10 @@ function hasAnySearchRecords(records: {
 function getSourceErrorReply(args: {
   sourceErrorCount: number;
   finalHasCards: boolean;
-  fallbackAttempted: boolean;
 }) {
-  const { sourceErrorCount, finalHasCards, fallbackAttempted } = args;
-  if (finalHasCards || sourceErrorCount === 0) return null;
-  if (sourceErrorCount >= 2) {
-    return "Search providers are temporarily unavailable. Please retry in a moment.";
-  }
-  if (fallbackAttempted) {
-    return "Search is currently limited. Try a broader request or retry shortly.";
-  }
-  return "Search is currently limited. Please retry shortly.";
+  const { sourceErrorCount, finalHasCards } = args;
+  if (finalHasCards || sourceErrorCount < 2) return null;
+  return "Search providers are temporarily unavailable. Please retry in a moment.";
 }
 
 function normalizeLocation(item: any) {
@@ -260,7 +253,6 @@ export async function POST(request: Request) {
   const sourceErrorReply = getSourceErrorReply({
     sourceErrorCount,
     finalHasCards,
-    fallbackAttempted,
   });
 
   const finalReply =
