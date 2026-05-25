@@ -8,7 +8,9 @@
     "embeddings:backfill": "node scripts/backfill-embeddings.js",
     "start": "next start",
     "lint": "eslint",
-    "verify:homepage": "node scripts/verify-homepage-lock.mjs"
+    "verify:homepage": "node scripts/verify-homepage-lock.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node -e \"console.log('No automated tests are configured for this repository yet.')\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
