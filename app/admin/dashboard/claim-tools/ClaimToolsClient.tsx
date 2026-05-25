@@ -164,7 +164,7 @@ export default function ClaimToolsClient() {
           const profileHref = result.location_id
             ? `/locations/${result.type}/${result.location_id}`
             : result.source_table === "restaurants"
-              ? `/restaurants/${result.source_id}`
+              ? `/restaurants/id/${result.source_id}`
               : `/activities/${result.source_id}`;
           const editHref = result.source_table === "restaurants"
             ? `/admin/dashboard/locations/edit/restaurants/${result.source_id}`
