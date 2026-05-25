@@ -1,4 +1,5 @@
 import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
+import { supabase } from "@/lib/supabase";
 
 type SearchDiagnostics = {
   input: string;
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
           : "";
 
   if (!input || !input.trim()) {
-    return Response.json({
+    const responsePayload = {
       success: false,
       reply: "Please provide a search request.",
       restaurants: [],
@@ -80,6 +81,9 @@ export async function POST(request: Request) {
       pairs: [],
       render_mode: "text",
       card_counts: { restaurants: 0, activities: 0, matched_locations: 0, pairs: 0 },
+    };
+    return Response.json({
+      ...responsePayload,
     });
   }
 
@@ -100,7 +104,35 @@ export async function POST(request: Request) {
   if (!hasAnySearchRecords({ restaurants: result?.restaurants, activities: result?.activities })) {
     diagnostics.notes.push(result?.debug?.empty_reason || "no_final_cards");
   }
+
+  const responsePayload: any = {
+    ...result,
+    render_mode:
+      (result?.restaurants?.length || 0) > 0 ||
+      (result?.activities?.length || 0) > 0 ||
+      (result?.matched_locations?.length || 0) > 0
+        ? "cards"
+        : result?.render_mode,
+    debug: process.env.NODE_ENV !== "production" ? diagnostics : undefined,
+  };
+
+  const cacheKey = input.trim().toLowerCase();
+  const shouldCacheResponse =
+    responsePayload.restaurants.length > 0 ||
+    responsePayload.activities.length > 0 ||
+    responsePayload.matched_locations.length > 0;
+
+  if (shouldCacheResponse) {
+    await supabase.from("ai_response_cache").upsert({
+      cache_key: cacheKey,
+      user_query: input,
+      response: responsePayload,
+    });
+  } else {
+    diagnostics.notes.push("Skipped cache because response had no card records.");
+  }
+
   logSearchDiagnostics(diagnostics);
 
-  return Response.json(result);
+  return Response.json(responsePayload);
 }
