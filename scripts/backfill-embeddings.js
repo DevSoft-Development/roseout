@@ -1,7 +1,8 @@
-require('dotenv').config({ path: '.env.local' })
+import dotenv from 'dotenv'
+import { createClient } from '@supabase/supabase-js'
+import OpenAI from 'openai'
 
-const { createClient } = require('@supabase/supabase-js')
-const OpenAI = require('openai')
+dotenv.config({ path: '.env.local' })
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,7 +12,6 @@ const supabase = createClient(
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
-
 
 function getPrimaryCategory(location) {
   return (
@@ -25,11 +25,7 @@ function getPrimaryCategory(location) {
 }
 
 function getCuisine(location) {
-  return (
-    location?.cuisine ||
-    location?.cuisine_type ||
-    null
-  )
+  return location?.cuisine || location?.cuisine_type || null
 }
 
 function getLocationTags(location) {
@@ -121,7 +117,7 @@ async function embedTable(tableName) {
         console.error(`Update failed for ${tableName} ${item.id}:`, updateError.message)
       } else {
         console.log(`Updated ${tableName}: ${item.name || item.title || item.id}`)
-await new Promise(resolve => setTimeout(resolve, 300))
+        await new Promise((resolve) => setTimeout(resolve, 300))
       }
     } catch (err) {
       console.error(`Embedding failed for ${tableName} ${item.id}:`, err.message)
