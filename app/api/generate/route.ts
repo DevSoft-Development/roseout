@@ -1,5 +1,64 @@
 import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
 
+type SearchDiagnostics = {
+  input: string;
+  stage: string;
+  preliminaryIntent?: any;
+  finalIntent?: any;
+  counts: Record<string, number>;
+  notes: string[];
+  errors: string[];
+};
+
+function createSearchDiagnostics(input: string): SearchDiagnostics {
+  return {
+    input,
+    stage: "started",
+    counts: {},
+    notes: [],
+    errors: [],
+  };
+}
+
+function setDiagCount(
+  diagnostics: SearchDiagnostics,
+  key: string,
+  value: unknown
+) {
+  diagnostics.counts[key] =
+    Array.isArray(value) ? value.length : typeof value === "number" ? value : 0;
+}
+
+function logSearchDiagnostics(diagnostics: SearchDiagnostics) {
+  const safeDiagnostics =
+    process.env.NODE_ENV === "production"
+      ? {
+          input: diagnostics.input,
+          stage: diagnostics.stage,
+          counts: diagnostics.counts,
+          notes: diagnostics.notes,
+          errors: diagnostics.errors,
+        }
+      : diagnostics;
+
+  console.log(
+    "THEOUTHAVEN_SEARCH_DIAGNOSTICS",
+    JSON.stringify(safeDiagnostics, null, 2)
+  );
+}
+
+function hasAnySearchRecords(records: {
+  locations?: any[];
+  restaurants?: any[];
+  activities?: any[];
+}) {
+  return (
+    (records.locations?.length || 0) > 0 ||
+    (records.restaurants?.length || 0) > 0 ||
+    (records.activities?.length || 0) > 0
+  );
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const query =
@@ -11,6 +70,24 @@ export async function POST(request: Request) {
           ? body.query
           : "";
 
+  const diagnostics = createSearchDiagnostics(query);
+  diagnostics.stage = "intent_parse_start";
+
   const result = await runTheOutHavenSearch(query, body);
+  diagnostics.stage = "response_ready";
+  diagnostics.preliminaryIntent = body?.intent ?? null;
+  diagnostics.finalIntent = result?.intent ?? null;
+  setDiagCount(diagnostics, "rpc_restaurants", result?.debug?.rawRestaurantCount);
+  setDiagCount(diagnostics, "rpc_activities", result?.debug?.rawActivityCount);
+  setDiagCount(diagnostics, "eligibility_restaurants", result?.debug?.afterCategoryFilterRestaurantCount);
+  setDiagCount(diagnostics, "eligibility_activities", result?.debug?.afterCategoryFilterActivityCount);
+  setDiagCount(diagnostics, "ranked_restaurants", result?.restaurants ?? []);
+  setDiagCount(diagnostics, "ranked_activities", result?.activities ?? []);
+  setDiagCount(diagnostics, "final_pairs", result?.pairs ?? []);
+  if (!hasAnySearchRecords({ restaurants: result?.restaurants, activities: result?.activities })) {
+    diagnostics.notes.push(result?.debug?.empty_reason || "no_final_cards");
+  }
+  logSearchDiagnostics(diagnostics);
+
   return Response.json(result);
 }
