@@ -24,7 +24,7 @@ const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
 };
 
 const SEARCH_TEXT_FIELDS = [
-  "name", "title", "category", "categories", "type", "location_type", "cuisine", "cuisines", "tags", "description", "address", "neighborhood", "borough", "city", "formatted_address", "searchable_text",
+  "name", "title", "category", "categories", "type", "location_type", "cuisine", "cuisines", "tags", "description", "address", "neighborhood", "borough", "city", "formatted_address", "search_document", "searchable_text",
 ];
 
 const n = (v: unknown) => String(v ?? "").toLowerCase().trim();
@@ -69,6 +69,7 @@ async function queryLocations(searchText: string, limit = 80) {
       `category.ilike.%${p}%`,
       `cuisine.ilike.%${p}%`,
       `tags.ilike.%${p}%`,
+      `search_document.ilike.%${p}%`,
       `searchable_text.ilike.%${p}%`,
       `address.ilike.%${p}%`,
       `borough.ilike.%${p}%`,
@@ -79,7 +80,11 @@ async function queryLocations(searchText: string, limit = 80) {
     query = query.or(ors.join(","));
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) {
+    console.error("search query failed", error);
+    return [];
+  }
   return data ?? [];
 }
 
