@@ -207,7 +207,7 @@ export default function ClaimLocationPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const selectLocation = (location: LocationSearchResult) => {
+  function selectLocation(location: LocationSearchResult) {
     setSelectedLocation(location);
     setForm((prev) => ({
       ...prev,
@@ -220,7 +220,7 @@ export default function ClaimLocationPage() {
     }));
     setSuccess("");
     setError("");
-  };
+  }
 
   const resetCaptcha = () => {
     setCaptchaToken("");
