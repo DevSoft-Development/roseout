@@ -12,13 +12,11 @@ export type SearchDebug = {
   afterGeoFilterActivityCount?: number;
   afterCategoryFilterRestaurantCount?: number;
   afterCategoryFilterActivityCount?: number;
-  rankedRestaurantCount?: number;
-  rankedActivityCount?: number;
   fallbackRestaurantUsed?: boolean;
   fallbackActivityUsed?: boolean;
-  finalCardCounts?: { restaurants: number; activities: number; pairs: number; matched_locations: number };
-  empty_reason?: string;
 };
+
+const SEARCHED_TABLE = "locations";
 
 const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
   queens: ["astoria", "flushing", "long island city", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "rockaway"],
@@ -29,70 +27,39 @@ const SEARCH_TEXT_FIELDS = [
   "name", "title", "category", "categories", "type", "location_type", "cuisine", "cuisines", "tags", "description", "address", "neighborhood", "borough", "city", "formatted_address", "searchable_text",
 ];
 
-function normalize(v: unknown) {
-  return String(v ?? "").toLowerCase().trim();
-}
-
-function includesAny(hay: string, needles: string[]) {
-  return needles.some((n) => n && hay.includes(n));
-}
-
-function recordText(record: Record<string, unknown>) {
-  return SEARCH_TEXT_FIELDS.map((f) => normalize(record[f])).join(" ");
-}
+const n = (v: unknown) => String(v ?? "").toLowerCase().trim();
+const text = (record: Record<string, unknown>) => SEARCH_TEXT_FIELDS.map((f) => n(record[f])).join(" ");
 
 function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
   if (!boroughs.length) return true;
-  const text = recordText(record);
-  return boroughs.some((raw) => {
-    const b = normalize(raw);
+  const hay = text(record);
+  return boroughs.some((requested) => {
+    const b = n(requested);
     if (!b) return false;
-    const neighbors = BOROUGH_NEIGHBORHOODS[b] ?? [];
-    return text.includes(` ${b} `) || text.includes(b) || neighbors.some((n) => text.includes(n));
+    return hay.includes(b) || (BOROUGH_NEIGHBORHOODS[b] ?? []).some((q) => hay.includes(q));
   });
 }
 
-function getTableDomains(table: string) {
-  const lower = table.toLowerCase();
-  if (lower.includes("restaurant")) return ["restaurant"] as SearchDomain[];
-  if (lower.includes("activity")) return ["activity"] as SearchDomain[];
-  return ["restaurant", "activity"] as SearchDomain[];
-}
-
-async function discoverSearchTables() {
-  const preferred = ["restaurants", "activities", "locations"];
-  const available: string[] = [];
-  for (const table of preferred) {
-    const { error } = await supabase.from(table).select("id", { count: "exact", head: true }).limit(1);
-    if (!error) available.push(table);
+function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
+  const hay = text(record);
+  const marker = n(record.location_type ?? record.type ?? record.category);
+  if (domain === "restaurant") {
+    return marker.includes("restaurant") || marker.includes("food") || marker.includes("dining") || hay.includes("steak") || hay.includes("seafood") || hay.includes("brunch");
   }
-  return available.length ? available : ["locations"];
-}
-
-function applyDomainFilter(records: any[], domain: SearchDomain) {
-  return records.filter((r) => {
-    const t = recordText(r);
-    const locationType = normalize(r.location_type ?? r.type ?? r.category);
-    if (domain === "restaurant") {
-      return locationType.includes("restaurant") || locationType.includes("food") || locationType.includes("dining") || t.includes("cuisine") || t.includes("steak") || t.includes("seafood") || t.includes("brunch");
-    }
-    return locationType.includes("activity") || locationType.includes("lounge") || locationType.includes("nightlife") || locationType.includes("hookah") || locationType.includes("bowling") || locationType.includes("paint");
-  });
-}
-
-function categoryTerms(intent: CanonicalSearchIntent, domain: SearchDomain) {
-  return domain === "restaurant" ? intent.mealFoodIntents : intent.activityIntents;
+  return marker.includes("activity") || marker.includes("lounge") || marker.includes("nightlife") || hay.includes("hookah") || hay.includes("bowling") || hay.includes("paint");
 }
 
 function softCategoryFilter(records: any[], terms: string[]) {
   if (!terms.length) return records;
-  const exact = records.filter((r) => includesAny(recordText(r), terms.map((t) => normalize(t).replaceAll("_", " "))));
+  const normalized = terms.map((t) => n(t).replaceAll("_", " "));
+  const exact = records.filter((record) => normalized.some((term) => text(record).includes(term)));
   return exact.length > 0 ? exact : records;
 }
 
-async function queryTable(table: string, searchText: string, limit = 80) {
+async function queryLocations(searchText: string, limit = 80) {
   const term = searchText.trim();
-  let query = supabase.from(table).select("*").limit(limit);
+  let query = supabase.from(SEARCHED_TABLE).select("*").limit(limit);
+
   if (term.length > 0) {
     const parts = term.split(/\s+/).filter(Boolean).slice(0, 4);
     const ors = parts.flatMap((p) => [
@@ -103,30 +70,27 @@ async function queryTable(table: string, searchText: string, limit = 80) {
       `cuisine.ilike.%${p}%`,
       `tags.ilike.%${p}%`,
       `searchable_text.ilike.%${p}%`,
+      `address.ilike.%${p}%`,
+      `borough.ilike.%${p}%`,
+      `city.ilike.%${p}%`,
+      `neighborhood.ilike.%${p}%`,
+      `formatted_address.ilike.%${p}%`,
     ]);
     query = query.or(ors.join(","));
   }
+
   const { data } = await query;
   return data ?? [];
 }
 
-export async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain, searchText: string, fallback = false) {
-  const tables = await discoverSearchTables();
-  const debug: SearchDebug = { searchedTables: tables, rpcCalls: [] };
-  const merged: any[] = [];
-
-  for (const table of tables) {
-    const raw = await queryTable(table, searchText);
-    const domains = getTableDomains(table);
-    const scoped = domains.includes(domain) ? raw : [];
-    merged.push(...scoped);
-  }
-
-  const domainRecords = applyDomainFilter(merged, domain);
-  const geoFiltered = domainRecords.filter((r) => boroughMatches(r, intent.boroughs));
-  const terms = categoryTerms(intent, domain);
+async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain, searchText: string, fallback = false) {
+  const records = await queryLocations(searchText);
+  const domainRecords = records.filter((record) => isDomainMatch(record, domain));
+  const geoFiltered = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
+  const terms = domain === "restaurant" ? intent.mealFoodIntents : intent.activityIntents;
   const categorized = softCategoryFilter(geoFiltered, terms);
 
+  const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [] };
   if (domain === "restaurant") {
     debug.rawRestaurantCount = domainRecords.length;
     debug.afterGeoFilterRestaurantCount = geoFiltered.length;
