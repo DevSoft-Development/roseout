@@ -1,5 +1,10 @@
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
+import {
+  getSearchIntentVersion,
+  parseSearchIntent,
+  type CanonicalSearchIntent,
+} from "@/lib/searchIntent";
 export type SmartMatchIntent = {
   query: string;
   wantsFood: boolean;
@@ -562,6 +567,7 @@ function isLongIslandCityItem(item: SmartMatchItem) {
 }
 
 export function detectSmartMatchIntent(input: string): SmartMatchIntent {
+  const parsed = parseSearchIntent(input);
   const text = normalize(input);
 
   const foodIntents = detectFromMap(text, FOOD_INTENTS);
@@ -614,13 +620,13 @@ export function detectSmartMatchIntent(input: string): SmartMatchIntent {
 
   return {
     query: text,
-    wantsFood,
-    wantsActivity,
-    wantsFullOuting,
-    foodIntents,
-    activityIntents,
-    vibes,
-    locations,
+    wantsFood: parsed.wantsFood || wantsFood,
+    wantsActivity: parsed.wantsActivity || wantsActivity,
+    wantsFullOuting: parsed.wantsFullOuting || wantsFullOuting,
+    foodIntents: parsed.foodIntents.length ? parsed.foodIntents : foodIntents,
+    activityIntents: parsed.activityIntents.length ? parsed.activityIntents : activityIntents,
+    vibes: parsed.vibes.length ? parsed.vibes : vibes,
+    locations: parsed.locations.length ? parsed.locations : locations,
     strictFoodMode: foodIntents.length > 0,
     strictActivityMode: activityIntents.length > 0,
     wantsPrimaryMeal,
@@ -894,31 +900,49 @@ function hasExplicitActivityRequest(query: string) {
 export function balanceSmartMatches(
   restaurants: SmartMatchItem[],
   activities: SmartMatchItem[],
-  intent: SmartMatchIntent
+  intent: SmartMatchIntent | CanonicalSearchIntent
 ) {
-  const smartRestaurants = filterSmartRestaurants(restaurants, intent);
-  const smartActivities = filterSmartActivities(activities, intent);
+  const normalizedIntent: SmartMatchIntent =
+    "normalizedInput" in intent
+      ? {
+          query: intent.normalizedInput,
+          wantsFood: intent.wantsFood,
+          wantsActivity: intent.wantsActivity,
+          wantsFullOuting: intent.wantsFullOuting,
+          foodIntents: intent.primaryMealIntents.length ? intent.primaryMealIntents : intent.foodIntents,
+          activityIntents: intent.primaryActivityIntents.length
+            ? intent.primaryActivityIntents.concat(intent.secondaryActivityIntents)
+            : intent.activityIntents,
+          vibes: intent.vibes,
+          locations: intent.locations,
+          strictFoodMode: intent.foodIntents.length > 0,
+          strictActivityMode: intent.activityIntents.length > 0,
+          wantsPrimaryMeal: intent.primaryMealIntents.length > 0,
+        }
+      : intent;
+  const smartRestaurants = filterSmartRestaurants(restaurants, normalizedIntent);
+  const smartActivities = filterSmartActivities(activities, normalizedIntent);
 
   const allowFoodFallbackInFullOuting =
-    intent.wantsFullOuting || (intent.wantsFood && intent.wantsActivity);
+    normalizedIntent.wantsFullOuting || (normalizedIntent.wantsFood && normalizedIntent.wantsActivity);
   const allowActivityFallbackInFullOuting =
-    intent.wantsFullOuting || (intent.wantsFood && intent.wantsActivity);
+    normalizedIntent.wantsFullOuting || (normalizedIntent.wantsFood && normalizedIntent.wantsActivity);
 
   const finalRestaurants =
     smartRestaurants.length > 0
       ? smartRestaurants
-      : intent.strictFoodMode && !allowFoodFallbackInFullOuting
+      : normalizedIntent.strictFoodMode && !allowFoodFallbackInFullOuting
         ? []
         : restaurants;
 
   const finalActivities =
     smartActivities.length > 0
       ? smartActivities
-      : intent.strictActivityMode && !allowActivityFallbackInFullOuting
+      : normalizedIntent.strictActivityMode && !allowActivityFallbackInFullOuting
         ? []
         : activities;
 
-  if (intent.wantsFood && !intent.wantsActivity && !intent.wantsFullOuting) {
+  if (normalizedIntent.wantsFood && !normalizedIntent.wantsActivity && !normalizedIntent.wantsFullOuting) {
     return {
       restaurants: finalRestaurants.slice(0, SINGLE_STOP_RESULT_LIMIT),
       activities: [],
@@ -926,8 +950,8 @@ export function balanceSmartMatches(
     };
   }
 
-  if (!intent.wantsFood && intent.wantsActivity && !intent.wantsFullOuting) {
-    if (hasExplicitRestaurantRequest(intent.query) && hasExplicitActivityRequest(intent.query)) {
+  if (!normalizedIntent.wantsFood && normalizedIntent.wantsActivity && !normalizedIntent.wantsFullOuting) {
+    if (hasExplicitRestaurantRequest(normalizedIntent.query) && hasExplicitActivityRequest(normalizedIntent.query)) {
       return {
         restaurants: finalRestaurants.slice(0, FULL_OUTING_RESULT_LIMIT),
         activities: finalActivities.slice(0, FULL_OUTING_RESULT_LIMIT),
@@ -950,5 +974,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v7-strict-no-loose-fallback";
+  return `theouthaven-smart-match-engine-v8-${getSearchIntentVersion()}`;
 }

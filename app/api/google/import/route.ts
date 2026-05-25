@@ -5,10 +5,10 @@ import { getLocationScore, getSearchRankingScore } from "@/lib/locationScore";
 import { getLocationName } from "@/lib/locationName";
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
-  detectSmartMatchIntent,
   balanceSmartMatches,
   getSmartMatchVersion,
 } from "@/lib/theouthavenSmartMatchEngine";
+import { parseSearchIntent as parseCanonicalSearchIntent } from "@/lib/searchIntent";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -924,7 +924,12 @@ function priceLevel(item: any) {
   return null;
 }
 
-function budgetBoost(item: any, budget: ReturnType<typeof detectBudget>) {
+function budgetBoost(
+  item: any,
+  budget:
+    | ReturnType<typeof detectBudget>
+    | { level: string | null; maxPrice: number | null; raw?: string | null }
+) {
   if (!budget.level) return 0;
 
   const level = priceLevel(item);
@@ -979,8 +984,8 @@ function isWithinTheOutHavenServiceArea(item: any) {
 
 function distanceBoost(
   item: any,
-  userLat?: number,
-  userLng?: number,
+  userLat?: number | null,
+  userLng?: number | null,
   maxMiles?: number | null
 ) {
   if (!userLat || !userLng || !item.latitude || !item.longitude) return 0;
@@ -1103,139 +1108,26 @@ function popularityBoost(item: any) {
 }
 
 function detectIntent(input: string, body: any = {}, locations: any[] = []) {
-  const text = normalizeQuery(input);
-
-  const requestedTags = detectFromMap(input, TAG_KEYWORDS);
-  const rawFoodIntents = detectFromMap(input, FOOD_INTENTS);
-  const rawActivityIntents = detectFromMap(input, ACTIVITY_INTENTS);
-
-  const hasMealIntent = hasRealMealFoodIntent(rawFoodIntents);
-
-  const foodIntents = rawFoodIntents.filter((foodIntent) => {
-    if (hasMealIntent && isLoungeActivityIntent(foodIntent)) return false;
-    return true;
-  });
-
-  const activityIntents = Array.from(
-    new Set([
-      ...rawActivityIntents,
-      ...rawFoodIntents.filter(
-        (foodIntent) => hasMealIntent && isLoungeActivityIntent(foodIntent)
-      ),
-    ])
-  );
-  const detectedLocations = detectLocation(input, locations);
-
-  const wantsFoodMap = buildWantsMap(Object.keys(FOOD_INTENTS), foodIntents);
-  const wantsActivityMap = buildWantsMap(
-    Object.keys(ACTIVITY_INTENTS),
-    activityIntents
-  );
-
-  const wantsFood =
-    FOOD_KEYWORDS.some((word) => text.includes(word)) || foodIntents.length > 0;
-
-  const wantsActivity =
-    ACTIVITY_KEYWORDS.some((word) => text.includes(word)) ||
-    activityIntents.length > 0;
-
-  const allOptions = [
-    ...Object.values(FOOD_INTENTS).flat(),
-    ...Object.values(ACTIVITY_INTENTS).flat(),
-    ...Object.values(TAG_KEYWORDS).flat(),
-  ];
-
-  const mentionsAnyTheOutHavenOption = allOptions.some((option) =>
-    text.includes(option)
-  );
-
-  const wantsFullOuting =
-    text.includes("date night") ||
-    text.includes("outing") ||
-    text.includes("night out") ||
-    text.includes("full plan") ||
-    text.includes("plan a date") ||
-    text.includes("birthday plan") ||
-    text.includes("birthday outing") ||
-    text.includes("date idea") ||
-    text.includes("date ideas") ||
-    text.includes("places to go") ||
-    text.includes("things to do") ||
-    text.includes("with") ||
-    text.includes("and") ||
-    (wantsFood && wantsActivity) ||
-    (foodIntents.length > 0 && activityIntents.length > 0) ||
-    (mentionsAnyTheOutHavenOption && text.includes("date"));
-
-  const wantsRestaurant =
-    wantsFood || wantsFullOuting || (!wantsFood && !wantsActivity);
-
-  const vibes = Array.from(
-    new Set([
-      ...requestedTags.filter((tag) =>
-        [
-          "romantic",
-          "fun",
-          "luxury",
-          "chill",
-          "nightlife",
-          "scenic",
-          "birthday",
-        ].includes(tag)
-      ),
-      ...(text.includes("romantic") ? ["romantic"] : []),
-      ...(text.includes("fun") ? ["fun"] : []),
-      ...(text.includes("luxury") || text.includes("upscale")
-        ? ["luxury"]
-        : []),
-      ...(text.includes("chill") ? ["chill"] : []),
-    ])
-  );
-
-  const budget = detectBudget(input);
-  const maxMiles = body.maxMiles || body.max_miles || detectDistance(input);
-  const userLat = body.lat || body.latitude || null;
-  const userLng = body.lng || body.longitude || null;
-
-  const multiIntentMode =
-    wantsFullOuting ||
-    (foodIntents.length > 0 && activityIntents.length > 0) ||
-    (wantsFood && wantsActivity);
-
+  const canonical = parseCanonicalSearchIntent(input, body, locations);
   return {
-    text,
-    wantsFood,
-    wantsActivity,
-    wantsFullOuting,
-    wantsRestaurant,
-    requestedTags,
-    foodIntents,
-    activityIntents,
-    wantsFoodMap,
-    wantsActivityMap,
-    wantsBudget: Boolean(budget.level),
-    budget,
-    userLat,
-    userLng,
-    maxMiles,
-    vibes,
-    multiIntentMode,
-    locations: detectedLocations,
-
-    wantsBirthday: text.includes("birthday"),
-    wantsBirthdayDinner: text.includes("birthday dinner"),
-    wantsBirthdayBrunch: text.includes("birthday brunch"),
-    wantsRooftop:
-      foodIntents.includes("rooftop") ||
-      activityIntents.includes("rooftop") ||
-      requestedTags.includes("rooftop"),
-    wantsHookah:
-      foodIntents.includes("hookah") || activityIntents.includes("hookah"),
-    wantsCigar:
-      foodIntents.includes("cigar") || activityIntents.includes("cigar"),
-    wantsLounge:
-      foodIntents.includes("lounge") || activityIntents.includes("lounge"),
-    wantsNightclub: activityIntents.includes("nightclub"),
+    ...canonical,
+    text: canonical.normalizedInput,
+    wantsFoodMap: buildWantsMap(Object.keys(FOOD_INTENTS), canonical.foodIntents),
+    wantsActivityMap: buildWantsMap(Object.keys(ACTIVITY_INTENTS), canonical.activityIntents),
+    wantsBudget: Boolean(canonical.budget.level),
+    budget: canonical.budget,
+    userLat: canonical.distance.userLat,
+    userLng: canonical.distance.userLng,
+    maxMiles: canonical.distance.maxMiles,
+    vibes: canonical.vibes,
+    wantsBirthday: canonical.normalizedInput.includes("birthday"),
+    wantsBirthdayDinner: canonical.normalizedInput.includes("birthday dinner"),
+    wantsBirthdayBrunch: canonical.normalizedInput.includes("birthday brunch"),
+    wantsRooftop: canonical.normalizedInput.includes("rooftop"),
+    wantsHookah: canonical.activityIntents.includes("hookah"),
+    wantsCigar: canonical.activityIntents.includes("cigar"),
+    wantsLounge: canonical.activityIntents.includes("lounge"),
+    wantsNightclub: canonical.activityIntents.includes("nightclub"),
   };
 }
 
@@ -1547,7 +1439,13 @@ export async function POST(req: Request) {
       return Response.json({ error: "Missing input" }, { status: 400 });
     }
 
-    const smartIntent = detectSmartMatchIntent(input);
+    const canonicalIntent = parseCanonicalSearchIntent(input, body, []);
+    const smartIntent = {
+      ...canonicalIntent,
+      query: canonicalIntent.normalizedInput,
+      strictFoodMode: canonicalIntent.foodIntents.length > 0,
+      strictActivityMode: canonicalIntent.activityIntents.length > 0,
+    };
     console.log("SMART MATCH INTENT:", smartIntent);
 
     if (isUnsafeOrOffTopic(input) || !isTheOutHavenRelated(input)) {
