@@ -3,6 +3,13 @@ import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+const STEAK_RESTAURANT_FIELDS =
+  "id, restaurant_name, city, state, borough, cuisine_type, cuisine, latitude, longitude";
+const STEAK_SEARCH_FIELDS =
+  "id, restaurant_name, city, state, borough, cuisine_type, cuisine, search_document, latitude, longitude";
+const HOOKAH_ACTIVITY_FIELDS =
+  "id, activity_name, city, state, borough, activity_type, category, subcategory, search_document, latitude, longitude";
+
 export async function GET() {
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json(
@@ -17,24 +24,18 @@ export async function GET() {
     supabase.from("activities").select("id", { count: "exact", head: true }),
     supabase
       .from("restaurants")
-      .select(
-        "id, restaurant_name, city, state, borough, cuisine_type, cuisine, latitude, longitude"
-      )
-      .ilike("restaurant_name", "%steak%")
+      .select(STEAK_RESTAURANT_FIELDS)
+      .or("cuisine_type.ilike.%steak%,cuisine.ilike.%steak%")
       .limit(10),
     supabase
       .from("restaurants")
-      .select(
-        "id, restaurant_name, city, state, borough, cuisine_type, cuisine, search_document, latitude, longitude"
-      )
+      .select(STEAK_SEARCH_FIELDS)
       .or("cuisine.ilike.%steak%,search_document.ilike.%steak%")
       .limit(10),
     supabase
       .from("activities")
-      .select(
-        "id, activity_name, city, state, borough, activity_type, category, subcategory, search_document, latitude, longitude"
-      )
-      .or("activity_name.ilike.%hookah%,category.ilike.%hookah%,subcategory.ilike.%hookah%,search_document.ilike.%hookah%")
+      .select(HOOKAH_ACTIVITY_FIELDS)
+      .or("activity_name.ilike.%hookah%,activity_type.ilike.%hookah%,category.ilike.%hookah%,subcategory.ilike.%hookah%,search_document.ilike.%hookah%")
       .limit(10),
   ]);
 
@@ -43,29 +44,44 @@ export async function GET() {
     "restaurants_count",
     "activities_count",
     "steak_restaurant_samples",
-    "steak_cuisine_or_search_samples",
+    "steak_cuisine_or_search_document_samples",
     "hookah_activity_samples",
   ] as const;
 
   const normalizedChecks = checks.map((result, index) => {
-    const name = labels[index];
-    if (result.status === "fulfilled") {
-      const { data, error, count } = result.value;
+    const label = labels[index];
+
+    if (result.status === "rejected") {
       return {
-        name,
-        ok: !error,
-        count: count ?? null,
-        error: error?.message ?? null,
-        sample: data ?? null,
+        check: label,
+        ok: false,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      };
+    }
+
+    const { data, error, count } = result.value;
+
+    if (error) {
+      return {
+        check: label,
+        ok: false,
+        error: error.message,
+      };
+    }
+
+    if (label.endsWith("_count")) {
+      return {
+        check: label,
+        ok: true,
+        count: count ?? 0,
       };
     }
 
     return {
-      name,
-      ok: false,
-      count: null,
-      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-      sample: null,
+      check: label,
+      ok: true,
+      count: Array.isArray(data) ? data.length : 0,
+      sample: data ?? [],
     };
   });
 
