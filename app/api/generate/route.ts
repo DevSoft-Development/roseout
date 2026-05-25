@@ -24,7 +24,6 @@ import {
   confidenceFromScores,
   semanticScoreBoost,
 } from "@/lib/aiSemanticSearch";
-import { parseSearchIntent as parseSearchIntentWithLLM } from "@/lib/search/intent";
 import { localFirstFilter } from "@/lib/search/local-search";
 import { pairLocations } from "@/lib/search/pairing";
 import { rankPairs } from "@/lib/search/ranking";
@@ -36,7 +35,7 @@ const openai = new OpenAI({
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION =
-  `unified-intent-v1-${SEMANTIC_SEARCH_VERSION}`;
+  `unified-intent-v2-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -59,6 +58,11 @@ function buildResponseCacheKey(input: string, intent: DetectedIntent) {
     intent.foodIntents.join("-"),
     intent.activityIntents.join("-"),
     intent.primaryMealIntents.join("-"),
+    intent.boroughs.join("-"),
+    intent.neighborhoods.join("-"),
+    intent.foodAddOnIntents.join("-"),
+    intent.explicitTerms.join("-"),
+    intent.primaryDomain,
     intent.multiIntentMode ? "multi" : "single",
   ];
 
@@ -4286,15 +4290,15 @@ export async function POST(req: Request) {
     const restaurantSearchInput = buildRestaurantSearchInput(input, intent);
     const activitySearchInput = buildActivitySearchInput(input, intent);
     const requestedGeo = detectRequestedGeo(input);
-    const parsedIntent = await parseSearchIntentWithLLM(openai, input).catch(() => ({
-      city: null,
-      borough: null,
-      restaurantType: null,
-      activityType: null,
-      vibe: null,
-      wantsWalkingDistance: false,
-      keywords: [],
-    }));
+    const parsedIntent = {
+      city: intent.cities?.[0] ?? null,
+      borough: intent.boroughs?.[0] ?? null,
+      restaurantType: intent.primaryMealIntents?.[0] ?? null,
+      activityType: intent.primaryActivityIntents?.[0] ?? null,
+      vibe: intent.vibes?.[0] ?? null,
+      wantsWalkingDistance: intent.normalizedInput.includes("walking"),
+      keywords: intent.explicitTerms ?? [],
+    };
     const dessertAddonSearch = userAskedForDessert(intent, input);
     const isStrictFoodAddonSearch =
       dessertAddonSearch || userAskedForNonMealFood(intent);
@@ -4789,11 +4793,13 @@ export async function POST(req: Request) {
       ranked_activity_count: rankedActivities.length,
     });
     const localFirst = localFirstFilter(geoFilteredSourceLocations as any, parsedIntent as any);
-    if (localFirst.restaurants.length > 0) {
-      rankedRestaurants = rankedRestaurants.filter((r:any)=>localFirst.restaurants.some((lr:any)=>String(lr.id)===String(r.id)));
-    }
-    if (localFirst.activities.length > 0) {
-      rankedActivities = rankedActivities.filter((a:any)=>localFirst.activities.some((la:any)=>String(la.id)===String(a.id)));
+    if (intent.boroughs.length > 0) {
+      if (localFirst.restaurants.length > 0) {
+        rankedRestaurants = rankedRestaurants.filter((r:any)=>localFirst.restaurants.some((lr:any)=>String(lr.id)===String(r.id)));
+      }
+      if (localFirst.activities.length > 0) {
+        rankedActivities = rankedActivities.filter((a:any)=>localFirst.activities.some((la:any)=>String(la.id)===String(a.id)));
+      }
     }
 
 
@@ -5112,6 +5118,7 @@ STRICT RULES:
 
     const responsePayload = {
       success: true,
+      mode: "cards",
       display_mode: "cards_only",
       hide_text_results: hasResults,
       version: getSmartMatchVersion(),
@@ -5130,7 +5137,7 @@ STRICT RULES:
         strictFoodMode: smartIntent.strictFoodMode,
         strictActivityMode: smartIntent.strictActivityMode,
       },
-      reply: hasResults
+      message: hasResults
         ? ""
         : dessertSearchWithoutDessertResults
           ? "I couldn’t find a true dessert spot nearby. Try a broader area or search for bakery, ice cream, or cafe."
@@ -5141,16 +5148,9 @@ STRICT RULES:
               ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
               : response?.output_text ||
                 "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
-      intent: {
-        requestedTags: intent.requestedTags,
-        foodIntents: intent.foodIntents,
-        activityIntents: intent.activityIntents,
-        vibes: intent.vibes,
-        budget: intent.budget,
-        maxMiles: intent.maxMiles,
-        multiIntentMode: intent.multiIntentMode,
-        locations: intent.locations,
-      },
+      fallbackReason: hasResults ? null : "no-card-results-after-fallback",
+      reply: "",
+      intent,
       matched_locations: matchedLocationResults.map((item: any) => ({
         id: String(item.id),
         name: getLocationName(item, ""),
@@ -5195,6 +5195,10 @@ STRICT RULES:
       })),
       restaurants: topRestaurants.map((r: any) => ({
         id: String(r.id),
+        name: r.restaurant_name || r.name || "Unknown restaurant",
+        type: "restaurant",
+        category: getPrimaryCategory(r) || "restaurant",
+        borough: r.borough || null,
         restaurant_name: r.restaurant_name || r.name,
         address: r.address,
         city: r.city,
@@ -5244,6 +5248,10 @@ STRICT RULES:
       })),
       activities: topActivities.map((a: any) => ({
         id: String(a.id),
+        name: a.activity_name || a.name || "Unknown activity",
+        type: "activity",
+        category: getPrimaryCategory(a) || a.activity_type || "activity",
+        borough: a.borough || null,
         activity_name: a.activity_name || a.name,
         primary_category: getPrimaryCategory(a),
         activity_type: a.activity_type || a.category || a.subcategory,
