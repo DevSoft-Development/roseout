@@ -294,7 +294,9 @@ export default function CreatePage() {
   const hasSelection = Boolean(selectedRestaurant || selectedActivity);
   const hasResults = Boolean(
     (latestAssistant?.restaurants?.length || 0) +
-    (latestAssistant?.activities?.length || 0),
+    (latestAssistant?.activities?.length || 0) +
+    (latestAssistant?.matched_locations?.length || 0) +
+    (latestAssistant?.pairs?.length || 0),
   );
 
   const latestDistancePreference =

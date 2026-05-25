@@ -30,6 +30,10 @@ const SEARCH_TEXT_FIELDS = [
 const n = (v: unknown) => String(v ?? "").toLowerCase().trim();
 const text = (record: Record<string, unknown>) => SEARCH_TEXT_FIELDS.map((f) => n(record[f])).join(" ");
 
+function hasAnyToken(hay: string, tokens: string[]) {
+  return tokens.some((token) => hay.includes(token));
+}
+
 function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
   if (!boroughs.length) return true;
   const hay = text(record);
@@ -40,13 +44,63 @@ function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
   });
 }
 
-function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
+export function inferRecordDomain(record: Record<string, unknown>): SearchDomain | null {
   const hay = text(record);
-  const marker = n(record.location_type ?? record.type ?? record.category);
-  if (domain === "restaurant") {
-    return marker.includes("restaurant") || marker.includes("food") || marker.includes("dining") || hay.includes("steak") || hay.includes("seafood") || hay.includes("brunch");
+  const marker = n(
+    record.location_type ??
+      record.type ??
+      record.category ??
+      record.categories ??
+      record.source_table
+  );
+
+  const restaurantTokens = [
+    "restaurant",
+    "restaurants",
+    "food",
+    "dining",
+    "cuisine",
+    "brunch",
+    "lunch",
+    "dinner",
+    "breakfast",
+    "cafe",
+  ];
+  const activityTokens = [
+    "activity",
+    "activities",
+    "nightlife",
+    "experience",
+    "lounge",
+    "bar",
+    "club",
+    "event",
+    "things to do",
+  ];
+
+  const restaurantHit =
+    hasAnyToken(marker, restaurantTokens) ||
+    hasAnyToken(hay, ["steak", "seafood", "brunch", "restaurant", "cuisine"]);
+  const activityHit =
+    hasAnyToken(marker, activityTokens) ||
+    hasAnyToken(hay, ["hookah", "bowling", "paint", "karaoke", "nightlife"]);
+
+  if (restaurantHit && !activityHit) return "restaurant";
+  if (activityHit && !restaurantHit) return "activity";
+  if (restaurantHit) return "restaurant";
+  if (activityHit) return "activity";
+  return null;
+}
+
+function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
+  const inferred = inferRecordDomain(record);
+  if (inferred) {
+    return inferred === domain;
   }
-  return marker.includes("activity") || marker.includes("lounge") || marker.includes("nightlife") || hay.includes("hookah") || hay.includes("bowling") || hay.includes("paint");
+  const hay = text(record);
+  return domain === "restaurant"
+    ? hasAnyToken(hay, ["food", "eat", "dining"])
+    : hasAnyToken(hay, ["activity", "nightlife", "experience"]);
 }
 
 function softCategoryFilter(records: any[], terms: string[]) {
