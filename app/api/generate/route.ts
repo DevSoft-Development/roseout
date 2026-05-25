@@ -448,6 +448,10 @@ const FOOD_INTENTS: Record<string, string[]> = {
 
   breakfast: ["breakfast", "pancakes", "waffles", "breakfast spot"],
 
+  lunch: ["lunch", "lunch spot", "lunch special", "midday meal"],
+
+  dinner: ["dinner", "dining", "restaurant", "supper", "date night dinner"],
+
   cafe: ["cafe", "coffee", "espresso", "latte", "coffee shop"],
 
   coffee: ["coffee", "espresso", "latte", "coffee shop"],
