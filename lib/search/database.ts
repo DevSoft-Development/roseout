@@ -24,7 +24,7 @@ const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
 };
 
 const SEARCH_TEXT_FIELDS = [
-  "name", "title", "category", "categories", "type", "location_type", "cuisine", "cuisines", "tags", "description", "address", "neighborhood", "borough", "city", "formatted_address", "search_document", "searchable_text",
+  "name", "restaurant_name", "activity_name", "title", "category", "primary_category", "categories", "type", "location_type", "cuisine", "cuisines", "primary_tag", "tags", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "formatted_address", "search_document", "searchable_text",
 ];
 
 const n = (v: unknown) => String(v ?? "").toLowerCase().trim();
@@ -50,6 +50,10 @@ export function inferRecordDomain(record: Record<string, unknown>): SearchDomain
     record.location_type ??
       record.type ??
       record.category ??
+      record.primary_category ??
+      record.primary_tag ??
+      record.restaurant_name ??
+      record.activity_name ??
       record.categories ??
       record.source_table
   );
@@ -118,9 +122,13 @@ async function queryLocations(searchText: string, limit = 80) {
     const parts = term.split(/\s+/).filter(Boolean).slice(0, 4);
     const ors = parts.flatMap((p) => [
       `name.ilike.%${p}%`,
+      `restaurant_name.ilike.%${p}%`,
+      `activity_name.ilike.%${p}%`,
       `title.ilike.%${p}%`,
       `description.ilike.%${p}%`,
       `category.ilike.%${p}%`,
+      `primary_category.ilike.%${p}%`,
+      `primary_tag.ilike.%${p}%`,
       `cuisine.ilike.%${p}%`,
       `tags.ilike.%${p}%`,
       `search_document.ilike.%${p}%`,
@@ -128,6 +136,7 @@ async function queryLocations(searchText: string, limit = 80) {
       `address.ilike.%${p}%`,
       `borough.ilike.%${p}%`,
       `city.ilike.%${p}%`,
+      `state.ilike.%${p}%`,
       `neighborhood.ilike.%${p}%`,
       `formatted_address.ilike.%${p}%`,
     ]);
