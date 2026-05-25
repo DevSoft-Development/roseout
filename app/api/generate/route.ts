@@ -55,6 +55,11 @@ function buildResponseCacheKey(input: string, intent: DetectedIntent) {
     intent.userLng || "",
     intent.maxMiles || "",
     intent.locations.join("-"),
+    intent.mode || "",
+    intent.foodIntents.join("-"),
+    intent.activityIntents.join("-"),
+    intent.primaryMealIntents.join("-"),
+    intent.multiIntentMode ? "multi" : "single",
   ];
 
   return normalizeQuery(keyParts.join("-"));
@@ -4585,7 +4590,12 @@ export async function POST(req: Request) {
         );
       }
 
-      if (forcedActivityMatches.length > 0) {
+      const shouldForceActivities =
+        !intent.wantsRestaurant ||
+        mealFoodIntents.length === 0 ||
+        restaurants.length > 0;
+
+      if (forcedActivityMatches.length > 0 && shouldForceActivities) {
         activities = forcedActivityMatches;
       }
     }
@@ -5082,11 +5092,15 @@ STRICT RULES:
     const dessertSearchWithoutDessertResults =
       dessertAddonSearch && topActivities.length === 0;
 
+    const hasCards =
+      topRestaurants.length > 0 ||
+      topActivities.length > 0 ||
+      pairedResults.pairs.length > 0 ||
+      matchedLocationResults.length > 0;
+
     const hasResults =
       !dessertSearchWithoutDessertResults &&
-      (topRestaurants.length > 0 ||
-        topActivities.length > 0 ||
-        matchedLocationResults.length > 0);
+      hasCards;
 
     const response = hasResults
       ? await openai.responses.create({
