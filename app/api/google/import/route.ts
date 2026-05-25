@@ -1103,6 +1103,10 @@ function popularityBoost(item: any) {
 }
 
 function detectIntent(input: string, body: any = {}, locations: any[] = []) {
+  return parseSearchIntent(input, body, locations);
+}
+
+function detectIntent_legacy_unused(input: string, body: any = {}, locations: any[] = []) {
   const text = normalizeQuery(input);
 
   const requestedTags = detectFromMap(input, TAG_KEYWORDS);
@@ -1242,7 +1246,7 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
 function scoreRestaurant(
   item: any,
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: CanonicalSearchIntent
 ) {
   let score = 0;
 
@@ -1301,7 +1305,7 @@ function scoreRestaurant(
 function scoreActivity(
   item: any,
   input: string,
-  intent: ReturnType<typeof detectIntent>
+  intent: CanonicalSearchIntent
 ) {
   let score = 0;
 
@@ -1379,7 +1383,7 @@ function scoreActivity(
 
 function filterRestaurantsByFoodIntent(
   restaurants: any[],
-  intent: ReturnType<typeof detectIntent>
+  intent: CanonicalSearchIntent
 ) {
   const mealFoodIntents = getMealFoodIntents(intent.foodIntents);
 
@@ -1400,7 +1404,7 @@ function filterRestaurantsByFoodIntent(
 
 function filterActivitiesByActivityIntent(
   activities: any[],
-  intent: ReturnType<typeof detectIntent>
+  intent: CanonicalSearchIntent
 ) {
   if (intent.activityIntents.length === 0) return activities;
 
@@ -1547,7 +1551,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Missing input" }, { status: 400 });
     }
 
-    const smartIntent = detectSmartMatchIntent(input);
+    const preliminaryIntent = parseSearchIntent(input, body, []);
     console.log("SMART MATCH INTENT:", smartIntent);
 
     if (isUnsafeOrOffTopic(input) || !isTheOutHavenRelated(input)) {
@@ -1555,7 +1559,7 @@ export async function POST(req: Request) {
         success: false,
         version: getSmartMatchVersion(),
         reply: OFF_TOPIC_REPLY,
-        smart_match: smartIntent,
+        smart_match: preliminaryIntent,
         intent: {
           requestedTags: [],
           foodIntents: [],
@@ -1587,7 +1591,7 @@ export async function POST(req: Request) {
     const locations = (locationsData || [])
       .map(normalizeLocation)
       .filter(isPublicSearchVisible);
-    const intent = detectIntent(input, body, locations);
+    const intent = parseSearchIntent(input, body, locations);
 
     const cacheKey = normalizeQuery(
       `theouthaven-${getSmartMatchVersion()}-${input}-${intent.userLat || ""}-${
@@ -1824,8 +1828,8 @@ ${JSON.stringify({
   activityIntents: smartIntent.activityIntents,
   vibes: smartIntent.vibes,
   locations: smartIntent.locations,
-  strictFoodMode: smartIntent.strictFoodMode,
-  strictActivityMode: smartIntent.strictActivityMode,
+  strictFoodMode: intent.primaryMealIntents.length > 0,
+  strictActivityMode: intent.primaryActivityIntents.length > 0 || intent.secondaryActivityIntents.length > 0,
 })}
 
 Detected intent:
@@ -1905,8 +1909,8 @@ STRICT RULES:
         activityIntents: smartIntent.activityIntents,
         vibes: smartIntent.vibes,
         locations: smartIntent.locations,
-        strictFoodMode: smartIntent.strictFoodMode,
-        strictActivityMode: smartIntent.strictActivityMode,
+        strictFoodMode: intent.primaryMealIntents.length > 0,
+        strictActivityMode: intent.primaryActivityIntents.length > 0 || intent.secondaryActivityIntents.length > 0,
       },
       reply:
         response?.output_text ||

@@ -12,7 +12,6 @@ import {
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
 import {
-  detectSmartMatchIntent,
   balanceSmartMatches,
   getSmartMatchVersion,
 } from "@/lib/theouthavenSmartMatchEngine";
@@ -21,7 +20,8 @@ import {
   confidenceFromScores,
   semanticScoreBoost,
 } from "@/lib/aiSemanticSearch";
-import { parseSearchIntent } from "@/lib/search/intent";
+import { parseSearchIntent as parseLLMSearchIntent } from "@/lib/search/intent";
+import { parseSearchIntent, type CanonicalSearchIntent, getSearchIntentVersion } from "@/lib/searchIntent";
 import { localFirstFilter } from "@/lib/search/local-search";
 import { pairLocations } from "@/lib/search/pairing";
 import { rankPairs } from "@/lib/search/ranking";
@@ -33,14 +33,14 @@ const openai = new OpenAI({
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION =
-  `food-cuisine-location-distance-v20-card-only-steak-hookah-split-${SEMANTIC_SEARCH_VERSION}`;
+  `unified-intent-v1-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
   fallbackRegionalRecords: 500,
 } as const;
 
-type DetectedIntent = ReturnType<typeof detectIntent>;
+type DetectedIntent = CanonicalSearchIntent;
 
 function buildResponseCacheKey(input: string, intent: DetectedIntent) {
   const keyParts = [
@@ -48,9 +48,13 @@ function buildResponseCacheKey(input: string, intent: DetectedIntent) {
     getSmartMatchVersion(),
     RESPONSE_CACHE_VERSION,
     input,
-    intent.userLat || "",
-    intent.userLng || "",
-    intent.maxMiles || "",
+    getSearchIntentVersion(),
+    intent.mode,
+    intent.distance.userLat || "",
+    intent.distance.userLng || "",
+    intent.distance.maxMiles || "",
+    intent.routing.restaurantQuery,
+    intent.routing.activityQuery,
     intent.locations.join("-"),
   ];
 
@@ -791,7 +795,7 @@ function filterPrimaryMealRestaurants(
   restaurants: Record<string, unknown>[],
   intent: ReturnType<typeof detectIntent>,
 ) {
-  if (!intent.wantsPrimaryMeal) return restaurants;
+  if (intent.primaryMealIntents.length === 0) return restaurants;
 
   const primaryMealMatches = restaurants.filter(
     (restaurant) => !isDessertOnlyRestaurant(restaurant),
@@ -2883,6 +2887,10 @@ function popularityBoost(item: any) {
 }
 
 function detectIntent(input: string, body: any = {}, locations: any[] = []) {
+  return parseSearchIntent(input, body, locations);
+}
+
+function detectIntent_legacy_unused(input: string, body: any = {}, locations: any[] = []) {
   const text = normalizeQuery(input);
   const splitMealTerms = extractSplitTerms(text, SPLIT_MEAL_TERMS);
   const splitActivityTerms = extractSplitTerms(text, SPLIT_ACTIVITY_TERMS);
@@ -3251,7 +3259,7 @@ function scoreRestaurant(
   score += weightedTagBoost(item, intent.requestedTags);
   score += weightedFoodBoost(item, restaurantScoringIntent.foodIntents);
 
-  if (intent.wantsPrimaryMeal && isDessertOnlyRestaurant(item)) {
+  if (intent.primaryMealIntents.length > 0 && isDessertOnlyRestaurant(item)) {
     score -= 260;
   }
 
@@ -3504,7 +3512,7 @@ function strictIntentMatchScore(item: any, intent: ReturnType<typeof detectInten
   const text = itemText(item);
   const tags = toArray(item.intent_tags).map(normalizeQuery);
 
-  if (role === "restaurant" && (intent.wantsRestaurant || intent.wantsPrimaryMeal)) {
+  if (role === "restaurant" && (intent.wantsRestaurant || intent.primaryMealIntents.length > 0)) {
     score += isMealRestaurant(item, intent) || tags.includes("restaurant") ? 260 : -900;
   }
 
@@ -3560,7 +3568,7 @@ function searchNeedsDessertGuardrail(intent: ReturnType<typeof detectIntent>) {
 }
 
 function searchNeedsRestaurantGuardrail(intent: ReturnType<typeof detectIntent>) {
-  return intent.wantsRestaurant || intent.wantsPrimaryMeal;
+  return intent.wantsRestaurant || intent.primaryMealIntents.length > 0;
 }
 
 function searchNeedsNightlifeGuardrail(intent: ReturnType<typeof detectIntent>) {
@@ -3609,7 +3617,7 @@ function applyStrictSearchGuardrails(
     guardedActivities = guardedActivities.filter((item) => passesStrictIntentGuardrail(item, intent, "activity"));
   }
 
-  if (searchNeedsDessertGuardrail(intent) && !intent.wantsPrimaryMeal) {
+  if (searchNeedsDessertGuardrail(intent) && intent.primaryMealIntents.length === 0) {
     guardedRestaurants = guardedRestaurants.filter((item) => passesStrictIntentGuardrail(item, intent, "restaurant"));
   }
 
@@ -4323,7 +4331,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Missing input" }, { status: 400 });
     }
 
-    const smartIntent = detectSmartMatchIntent(input);
+    const preliminaryIntent = parseSearchIntent(input, body, []);
     console.log("SMART MATCH INTENT:", smartIntent);
 
     if (isUnsafeOrOffTopic(input) || !isTheOutHavenRelated(input)) {
@@ -4331,7 +4339,7 @@ export async function POST(req: Request) {
         success: false,
         version: getSmartMatchVersion(),
         reply: OFF_TOPIC_REPLY,
-        smart_match: smartIntent,
+        smart_match: preliminaryIntent,
         intent: {
           requestedTags: [],
           foodIntents: [],
@@ -4390,11 +4398,11 @@ export async function POST(req: Request) {
       .map(normalizeLocation)
       .filter(isPublicSearchVisible);
 
-    const intent = detectIntent(input, body, locations);
+    const intent = parseSearchIntent(input, body, locations);
     const restaurantSearchInput = buildRestaurantSearchInput(input, intent);
     const activitySearchInput = buildActivitySearchInput(input, intent);
     const requestedGeo = detectRequestedGeo(input);
-    const parsedIntent = await parseSearchIntent(openai, input).catch(() => ({
+    const parsedIntent = await parseLLMSearchIntent(openai, input).catch(() => ({
       city: null,
       borough: null,
       restaurantType: null,
@@ -4941,7 +4949,7 @@ export async function POST(req: Request) {
     const smartBalanced = balanceSmartMatches(
       strictRankedRestaurants,
       strictRankedActivities,
-      smartIntent,
+      preliminaryIntent,
     );
 
     if (
@@ -5130,8 +5138,8 @@ ${JSON.stringify({
   activityIntents: smartIntent.activityIntents,
   vibes: smartIntent.vibes,
   locations: smartIntent.locations,
-  strictFoodMode: smartIntent.strictFoodMode,
-  strictActivityMode: smartIntent.strictActivityMode,
+  strictFoodMode: intent.primaryMealIntents.length > 0,
+  strictActivityMode: intent.primaryActivityIntents.length > 0 || intent.secondaryActivityIntents.length > 0,
 })}
 
 Detected intent:
@@ -5226,8 +5234,8 @@ STRICT RULES:
         activityIntents: smartIntent.activityIntents,
         vibes: smartIntent.vibes,
         locations: smartIntent.locations,
-        strictFoodMode: smartIntent.strictFoodMode,
-        strictActivityMode: smartIntent.strictActivityMode,
+        strictFoodMode: intent.primaryMealIntents.length > 0,
+        strictActivityMode: intent.primaryActivityIntents.length > 0 || intent.secondaryActivityIntents.length > 0,
       },
       reply: hasResults
         ? ""
