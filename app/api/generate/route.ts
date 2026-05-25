@@ -1,3 +1,5 @@
+import { searchFallbackActivities, searchFallbackRestaurants } from "@/lib/search/database";
+import { parseCanonicalIntent } from "@/lib/search/intent";
 import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
 
 type SearchDiagnostics = {
@@ -59,6 +61,42 @@ function hasAnySearchRecords(records: {
   );
 }
 
+function normalizeLocation(item: any) {
+  return {
+    ...item,
+    location: typeof item?.location === "string" ? item.location.trim() : "",
+    borough: typeof item?.borough === "string" ? item.borough.trim() : "",
+    city: typeof item?.city === "string" ? item.city.trim() : "",
+  };
+}
+
+function isOutingEligibleLocation(item: any) {
+  return Boolean(item && (item.name || item.title));
+}
+
+function isWithinTheOutHavenServiceArea(item: any) {
+  const area = `${item?.borough ?? ""} ${item?.city ?? ""} ${item?.location ?? ""}`.toLowerCase();
+  if (!area.trim()) return true;
+  return ["new york", "nyc", "brooklyn", "queens", "manhattan", "bronx", "staten island"].some((token) =>
+    area.includes(token)
+  );
+}
+
+async function fetchFallbackRecords(input: string = "") {
+  const fallbackIntent = parseCanonicalIntent(input, {});
+  const [restaurantsResult, activitiesResult] = await Promise.all([
+    searchFallbackRestaurants(fallbackIntent),
+    searchFallbackActivities(fallbackIntent),
+  ]);
+  const restaurants = restaurantsResult.records ?? [];
+  const activities = activitiesResult.records ?? [];
+  return {
+    locations: [...restaurants, ...activities],
+    restaurants,
+    activities,
+  };
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const input =
@@ -87,9 +125,101 @@ export async function POST(request: Request) {
   diagnostics.stage = "intent_parse_start";
 
   const result = await runTheOutHavenSearch(input, body);
+  const intent = result?.intent ?? body?.intent ?? parseCanonicalIntent(input, body);
+
+  const mergedLocations = [
+    ...(result?.matched_locations ?? []),
+    ...(result?.restaurants ?? []),
+    ...(result?.activities ?? []),
+  ];
+  const locations = mergedLocations.map(normalizeLocation);
+  setDiagCount(diagnostics, "merged_locations", mergedLocations);
+  setDiagCount(diagnostics, "normalized_locations", locations);
+
   diagnostics.stage = "response_ready";
   diagnostics.preliminaryIntent = body?.intent ?? null;
-  diagnostics.finalIntent = result?.intent ?? null;
+  diagnostics.finalIntent = {
+    wantsRestaurant: intent.wantsRestaurant,
+    wantsActivity: intent.wantsActivity,
+    wantsFullOuting: intent.wantsFullOuting,
+    foodIntents: intent.foodIntents,
+    activityIntents: intent.activityIntents,
+    locations: intent.locations,
+    multiIntentMode: (intent as any).multiIntentMode,
+  };
+
+  const usableLocations = locations.filter(
+    (item: any) => isOutingEligibleLocation(item) && isWithinTheOutHavenServiceArea(item)
+  );
+  const sourceLocations = usableLocations.length > 0 ? usableLocations : locations;
+  setDiagCount(diagnostics, "usable_locations", usableLocations);
+  setDiagCount(diagnostics, "source_locations", sourceLocations);
+  if (usableLocations.length === 0 && locations.length > 0) {
+    diagnostics.notes.push(
+      "All normalized locations were removed by approval/service-area filtering."
+    );
+  }
+
+  const restaurants = result?.restaurants ?? [];
+  const activities = result?.activities ?? [];
+  setDiagCount(diagnostics, "initial_restaurants", restaurants);
+  setDiagCount(diagnostics, "initial_activities", activities);
+
+  const rankedRestaurants = [...restaurants];
+  const rankedActivities = [...activities];
+  let topRestaurants = [...rankedRestaurants];
+  let topActivities = [...rankedActivities];
+  let matchedLocationResults = result?.matched_locations ?? [];
+
+  setDiagCount(diagnostics, "filtered_restaurants", restaurants);
+  setDiagCount(diagnostics, "filtered_activities", activities);
+  setDiagCount(diagnostics, "ranked_restaurants", rankedRestaurants);
+  setDiagCount(diagnostics, "ranked_activities", rankedActivities);
+  setDiagCount(diagnostics, "top_restaurants", topRestaurants);
+  setDiagCount(diagnostics, "top_activities", topActivities);
+  setDiagCount(diagnostics, "matched_location_results", matchedLocationResults);
+
+  if (
+    topRestaurants.length === 0 &&
+    topActivities.length === 0 &&
+    matchedLocationResults.length === 0
+  ) {
+    const fallbackRecords = await fetchFallbackRecords(input);
+    const normalizedFallbackLocations = (fallbackRecords.locations ?? [])
+      .map(normalizeLocation)
+      .filter(
+        (item: any) =>
+          isOutingEligibleLocation(item) && isWithinTheOutHavenServiceArea(item)
+      );
+
+    const requestedLocations: string[] = Array.isArray(intent?.locations)
+      ? intent.locations
+      : [];
+    const locationFilteredFallback =
+      requestedLocations.length > 0
+        ? normalizedFallbackLocations.filter((item: any) => {
+            const haystack = `${item?.location ?? ""} ${item?.borough ?? ""} ${item?.city ?? ""}`.toLowerCase();
+            return requestedLocations.some((loc) => haystack.includes(String(loc).toLowerCase()));
+          })
+        : normalizedFallbackLocations;
+
+    const emergencyRestaurants = locationFilteredFallback.filter(
+      (item: any) => item?.type === "restaurant" || item?.category === "restaurant"
+    );
+    const emergencyActivities = locationFilteredFallback.filter(
+      (item: any) => item?.type === "activity" || item?.category === "activity"
+    );
+
+    topRestaurants = emergencyRestaurants;
+    topActivities = emergencyActivities;
+    matchedLocationResults = locationFilteredFallback;
+
+    diagnostics.notes.push("Emergency fallback records used for empty-card recovery.");
+    setDiagCount(diagnostics, "emergency_restaurants", emergencyRestaurants);
+    setDiagCount(diagnostics, "emergency_activities", emergencyActivities);
+    setDiagCount(diagnostics, "emergency_matched_locations", locationFilteredFallback);
+  }
+
   setDiagCount(diagnostics, "rpc_restaurants", result?.debug?.rawRestaurantCount);
   setDiagCount(diagnostics, "rpc_activities", result?.debug?.rawActivityCount);
   setDiagCount(diagnostics, "eligibility_restaurants", result?.debug?.afterCategoryFilterRestaurantCount);
@@ -97,10 +227,21 @@ export async function POST(request: Request) {
   setDiagCount(diagnostics, "ranked_restaurants", result?.restaurants ?? []);
   setDiagCount(diagnostics, "ranked_activities", result?.activities ?? []);
   setDiagCount(diagnostics, "final_pairs", result?.pairs ?? []);
-  if (!hasAnySearchRecords({ restaurants: result?.restaurants, activities: result?.activities })) {
+  if (!hasAnySearchRecords({ restaurants: topRestaurants, activities: topActivities, locations: matchedLocationResults })) {
     diagnostics.notes.push(result?.debug?.empty_reason || "no_final_cards");
   }
   logSearchDiagnostics(diagnostics);
 
-  return Response.json(result);
+  return Response.json({
+    ...result,
+    restaurants: topRestaurants,
+    activities: topActivities,
+    matched_locations: matchedLocationResults,
+    card_counts: {
+      ...result?.card_counts,
+      restaurants: topRestaurants.length,
+      activities: topActivities.length,
+      matched_locations: matchedLocationResults.length,
+    },
+  });
 }
