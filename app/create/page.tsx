@@ -717,10 +717,47 @@ export default function CreatePage() {
 
       const previousRestaurants = previousAssistant?.restaurants || [];
       const previousActivities = previousAssistant?.activities || [];
-      const responseRestaurants = data.restaurants || [];
-      const responseActivities = data.activities || [];
+      let responseRestaurants = data.restaurants || [];
+      let responseActivities = data.activities || [];
       const responsePairs = data.pairs || [];
       const responseMatchedLocations = data.matched_locations || [];
+
+      if (
+        !addOnTarget &&
+        isCombinedOutingQuery(cleanInput) &&
+        (responseRestaurants.length === 0 || responseActivities.length === 0)
+      ) {
+        const missingTarget: AddOnTarget =
+          responseRestaurants.length === 0 ? "restaurant" : "activity";
+        const retryResponse = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            input: `${cleanInput} ${missingTarget}`,
+            messages: [...messages, userMessage],
+            ...(savedLocation
+              ? {
+                  latitude: savedLocation.latitude,
+                  longitude: savedLocation.longitude,
+                  lat: savedLocation.latitude,
+                  lng: savedLocation.longitude,
+                }
+              : {}),
+          }),
+        });
+
+        if (retryResponse.ok) {
+          const retryData: ApiResponse & { error?: string } =
+            await retryResponse.json();
+          if (missingTarget === "restaurant") {
+            responseRestaurants = retryData.restaurants || responseRestaurants;
+          } else {
+            responseActivities = retryData.activities || responseActivities;
+          }
+        }
+      }
 
       const dedupedResults = dedupeSearchResults({
         restaurants:
@@ -2388,6 +2425,39 @@ function inferAddOnTarget(
   return activityWords.some((word) => normalized.includes(word))
     ? "activity"
     : "restaurant";
+}
+
+function isCombinedOutingQuery(input: string) {
+  const normalized = input.toLowerCase();
+  const mealWords = [
+    "dinner",
+    "lunch",
+    "brunch",
+    "restaurant",
+    "steak",
+    "sushi",
+    "pizza",
+    "food",
+    "eat",
+  ];
+  const activityWords = [
+    "activity",
+    "activities",
+    "arcade",
+    "bowling",
+    "comedy",
+    "hookah",
+    "karaoke",
+    "museum",
+    "nightlife",
+    "show",
+  ];
+
+  const hasMealWord = mealWords.some((word) => normalized.includes(word));
+  const hasActivityWord = activityWords.some((word) =>
+    normalized.includes(word),
+  );
+  return hasMealWord && hasActivityWord;
 }
 
 function getPlanSummaryDescription(
