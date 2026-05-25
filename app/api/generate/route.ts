@@ -239,7 +239,9 @@ export async function POST(request: Request) {
     (result?.pairs?.length ?? 0) > 0;
 
   const finalReply =
-    topRestaurants.length && topActivities.length
+    (result?.debug?.sourceErrors?.length ?? 0) > 0
+      ? "We hit a temporary data-source issue while searching. Please retry shortly."
+      : topRestaurants.length && topActivities.length
       ? "Found food and activity options for your outing."
       : topRestaurants.length
         ? "Found restaurant matches. Activity inventory is limited for this request."
