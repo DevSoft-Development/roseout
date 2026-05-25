@@ -5108,13 +5108,22 @@ STRICT RULES:
       !dessertSearchWithoutDessertResults &&
       hasCards;
 
-    const response = hasResults
-      ? await openai.responses.create({
+    let llmMessage = "";
+    let llmFailure = false;
+
+    if (hasResults) {
+      try {
+        const response = await openai.responses.create({
           model: AI_MODEL,
           input: prompt,
           max_output_tokens: 180,
-        })
-      : null;
+        });
+        llmMessage = typeof response?.output_text === "string" ? response.output_text.trim() : "";
+      } catch (llmError) {
+        llmFailure = true;
+        console.error("GENERATE LLM MESSAGE ERROR:", llmError);
+      }
+    }
 
     const responsePayload = {
       success: true,
@@ -5138,17 +5147,15 @@ STRICT RULES:
         strictActivityMode: smartIntent.strictActivityMode,
       },
       message: hasResults
-        ? ""
+        ? llmMessage || "Here are your best available card matches."
         : dessertSearchWithoutDessertResults
           ? "I couldn’t find a true dessert spot nearby. Try a broader area or search for bakery, ice cream, or cafe."
           : pairedResults.pairs.length > 0
-            ? response?.output_text ||
-              "Here are walkable restaurant and activity matches."
+            ? "Here are walkable restaurant and activity matches."
             : strictWalkingRequest
               ? "I couldn’t find a restaurant and activity that are truly walking distance from each other. Try a nearby neighborhood or expand to a short drive."
-              : response?.output_text ||
-                "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
-      fallbackReason: hasResults ? null : "no-card-results-after-fallback",
+              : "I found your request, but no matching restaurants or activities are available yet. Try a broader search like seafood dinner, romantic dinner, or restaurants in Queens.",
+      fallbackReason: hasResults ? (llmFailure ? "llm-message-failed" : null) : "no-card-results-after-fallback",
       reply: "",
       intent,
       matched_locations: matchedLocationResults.map((item: any) => ({
@@ -5313,9 +5320,14 @@ STRICT RULES:
   } catch (error: any) {
     console.error("GENERATE ERROR:", error);
 
-    return Response.json(
-      { error: error.message || "Server error" },
-      { status: 500 },
-    );
+    return Response.json({
+      success: true,
+      mode: "cards",
+      restaurants: [],
+      activities: [],
+      pairs: [],
+      message: "We hit a temporary issue generating your outing cards. Please retry.",
+      fallbackReason: null,
+    });
   }
 }
