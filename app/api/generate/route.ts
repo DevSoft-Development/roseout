@@ -35,7 +35,7 @@ const openai = new OpenAI({
 const AI_MODEL = "gpt-4o-mini";
 const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION =
-  `canonical-multistop-meal-addon-v1-${SEMANTIC_SEARCH_VERSION}`;
+  `canonical-multistop-meal-addon-v2-safety-boundary-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "true";
 const DEBUG_OUTING_SEARCH = process.env.DEBUG_OUTING_SEARCH === "true";
 const SEARCH_LIMITS = {
@@ -2542,7 +2542,7 @@ function isUnsafeOrOffTopic(input: string) {
     "legal advice",
   ];
 
-  return blockedWords.some((word) => text.includes(word));
+  return blockedWords.some((word) => phraseIncludesNormalized(text, word));
 }
 
 function detectFromMap(input: string, map: Record<string, string[]>) {
