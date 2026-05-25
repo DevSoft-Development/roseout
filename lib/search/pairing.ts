@@ -1,15 +1,12 @@
-import { haversineMiles, walkingMinutesFromMiles } from './distance';
-import type { ScoredPair, SearchLocation } from './types';
+import type { CanonicalSearchIntent } from "@/lib/search/types";
 
-export function pairLocations(restaurants:SearchLocation[], activities:SearchLocation[], maxWalkingMiles=1.25){
-  const pairs:ScoredPair[]=[];
-  for (const r of restaurants){
-    for (const a of activities){
-      if (!Number.isFinite(r.latitude)||!Number.isFinite(r.longitude)||!Number.isFinite(a.latitude)||!Number.isFinite(a.longitude)) continue;
-      const distanceMiles=haversineMiles(r.latitude as number,r.longitude as number,a.latitude as number,a.longitude as number);
-      if (distanceMiles>maxWalkingMiles) continue;
-      pairs.push({restaurant:r,activity:a,distanceMiles,walkingMinutes:walkingMinutesFromMiles(distanceMiles),score:0});
-    }
+export function buildOutingPairs(restaurants: any[], activities: any[], intent: CanonicalSearchIntent) {
+  if (!(intent.wantsFood && intent.wantsActivity)) return [];
+  if (!restaurants.length || !activities.length) return [];
+  const pairs = [];
+  const max = Math.min(restaurants.length, activities.length, 10);
+  for (let i = 0; i < max; i += 1) {
+    pairs.push({ restaurant: restaurants[i], activity: activities[i] });
   }
   return pairs;
 }

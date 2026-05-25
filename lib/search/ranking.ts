@@ -1,19 +1,23 @@
-import type { ScoredPair, SearchLocation } from './types';
+import type { CanonicalSearchIntent } from "@/lib/search/types";
 
-function n(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+function scoreRecord(record: any, terms: string[]) {
+  const text = `${record.name ?? ""} ${record.description ?? ""} ${record.cuisine ?? ""} ${record.category ?? ""}`.toLowerCase();
+  return terms.reduce((acc, term) => acc + (text.includes(term) ? 5 : 0), 0);
 }
 
-export function scorePair(pair:ScoredPair){
-  const r = pair.restaurant as SearchLocation;
-  const a = pair.activity as SearchLocation;
-  const proBoost=(r.is_pro?20:0)+(a.is_pro?20:0);
-  const ratingBoost=(n(r.rating)+n(a.rating))*4;
-  const popBoost=n(r.popularity_score)+n(a.popularity_score);
-  const score=200-(pair.distanceMiles*80)+proBoost+ratingBoost+popBoost;
-  return {...pair, score};
+export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
+  return [...records].sort((a, b) => {
+    const mealTerms = intent.mealFoodIntents;
+    let as = scoreRecord(a, mealTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs);
+    let bs = scoreRecord(b, mealTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs);
+    if (mealTerms.length > 0) {
+      if (`${a.category ?? ""}`.toLowerCase().includes("hookah")) as -= 10;
+      if (`${b.category ?? ""}`.toLowerCase().includes("hookah")) bs -= 10;
+    }
+    return bs - as;
+  });
 }
 
-export function rankPairs(pairs:ScoredPair[]){
-  return pairs.map(scorePair).sort((a,b)=>b.score-a.score || a.distanceMiles-b.distanceMiles);
+export function rankActivities(records: any[], intent: CanonicalSearchIntent) {
+  return [...records].sort((a, b) => scoreRecord(b, intent.activityIntents) - scoreRecord(a, intent.activityIntents));
 }
