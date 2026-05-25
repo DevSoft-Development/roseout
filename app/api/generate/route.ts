@@ -61,7 +61,7 @@ function hasAnySearchRecords(records: {
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
-  const query =
+  const input =
     typeof body?.message === "string"
       ? body.message
       : typeof body?.input === "string"
@@ -70,10 +70,23 @@ export async function POST(request: Request) {
           ? body.query
           : "";
 
-  const diagnostics = createSearchDiagnostics(query);
+  if (!input || !input.trim()) {
+    return Response.json({
+      success: false,
+      reply: "Please provide a search request.",
+      restaurants: [],
+      activities: [],
+      matched_locations: [],
+      pairs: [],
+      render_mode: "text",
+      card_counts: { restaurants: 0, activities: 0, matched_locations: 0, pairs: 0 },
+    });
+  }
+
+  const diagnostics = createSearchDiagnostics(input);
   diagnostics.stage = "intent_parse_start";
 
-  const result = await runTheOutHavenSearch(query, body);
+  const result = await runTheOutHavenSearch(input, body);
   diagnostics.stage = "response_ready";
   diagnostics.preliminaryIntent = body?.intent ?? null;
   diagnostics.finalIntent = result?.intent ?? null;
