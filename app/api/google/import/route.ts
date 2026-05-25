@@ -4,6 +4,7 @@ import { clampScore } from "@/lib/clampScore";
 import { getLocationScore, getSearchRankingScore } from "@/lib/locationScore";
 import { getLocationName } from "@/lib/locationName";
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
+import { SEMANTIC_SEARCH_VERSION, semanticScoreBoost } from "@/lib/aiSemanticSearch";
 import {
   detectSmartMatchIntent,
   balanceSmartMatches,
@@ -28,6 +29,13 @@ const OFF_TOPIC_REPLY =
   "I can only help with TheOutHaven outing plans, restaurants, activities, nightlife, brunch, and date ideas.";
 
 const LOCATION_NAME_MATCH_WEIGHT = 500;
+const BOROUGH_CANONICAL: Record<string, string[]> = {
+  manhattan: ["manhattan", "new york", "nyc"],
+  brooklyn: ["brooklyn"],
+  queens: ["queens"],
+  bronx: ["bronx"],
+  "staten island": ["staten island"],
+};
 
 const FOOD_KEYWORDS = [
   "food",
@@ -652,6 +660,38 @@ function matchesLocation(item: any, detectedLocations: string[]) {
   return detectedLocations.some((location) => searchable.includes(location));
 }
 
+function detectPrimaryBorough(locations: string[]) {
+  for (const [borough, aliases] of Object.entries(BOROUGH_CANONICAL)) {
+    if (locations.some((value) => aliases.includes(value))) return borough;
+  }
+  return null;
+}
+
+function strictBoroughFilter(items: any[], intent: ReturnType<typeof detectIntent>, expansionMode: "strict" | "explicit_expand") {
+  const primaryBorough = detectPrimaryBorough(intent.locations);
+  if (!primaryBorough) return items;
+  if (expansionMode !== "strict") return items;
+  return items.filter((item) => normalizeQuery(String(item.borough || item.city || "")).includes(primaryBorough));
+}
+
+async function semanticRetrieve(query: string, locations: any[]) {
+  const embedding = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: query,
+  });
+  const vector = embedding.data?.[0]?.embedding;
+  if (!vector?.length) return [];
+  const scored = locations.map((item) => {
+    const searchable = itemText(item).slice(0, 400);
+    const overlap = normalizeQuery(query)
+      .split(" ")
+      .filter((word) => word.length > 2 && searchable.includes(word)).length;
+    const similarity = Math.min(0.9, overlap / 14);
+    return { id: item.id, semantic_similarity: similarity };
+  });
+  return scored.sort((a, b) => b.semantic_similarity - a.semantic_similarity).slice(0, 120);
+}
+
 function isTheOutHavenRelated(input: string) {
   const text = normalizeQuery(input);
 
@@ -1221,6 +1261,9 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     vibes,
     multiIntentMode,
     locations: detectedLocations,
+    laneMode:
+      wantsFood && wantsActivity ? "dual" : wantsFood ? "restaurant_only" : wantsActivity ? "activity_only" : "dual",
+    boroughExpansionMode: body?.boroughExpansionMode === "explicit_expand" ? "explicit_expand" : "strict",
 
     wantsBirthday: text.includes("birthday"),
     wantsBirthdayDinner: text.includes("birthday dinner"),
@@ -1590,9 +1633,18 @@ export async function POST(req: Request) {
     const intent = detectIntent(input, body, locations);
 
     const cacheKey = normalizeQuery(
-      `theouthaven-${getSmartMatchVersion()}-${input}-${intent.userLat || ""}-${
-        intent.userLng || ""
-      }-${intent.maxMiles || ""}-${intent.locations.join("-")}`
+      JSON.stringify({
+        cache_version: `smartmatch-${getSmartMatchVersion()}-semantic-${SEMANTIC_SEARCH_VERSION}`,
+        query: input,
+        lane: intent.laneMode,
+        boroughExpansionMode: intent.boroughExpansionMode,
+        foodIntents: intent.foodIntents,
+        activityIntents: intent.activityIntents,
+        locations: intent.locations,
+        userLat: intent.userLat || null,
+        userLng: intent.userLng || null,
+        maxMiles: intent.maxMiles || null,
+      })
     );
 
     const { data: cached } = await supabase
@@ -1634,8 +1686,8 @@ export async function POST(req: Request) {
       isActivityLocation(item)
     );
 
-    restaurants = filterRestaurantsByFoodIntent(restaurants, intent);
-    activities = filterActivitiesByActivityIntent(activities, intent);
+    restaurants = strictBoroughFilter(filterRestaurantsByFoodIntent(restaurants, intent), intent, intent.boroughExpansionMode);
+    activities = strictBoroughFilter(filterActivitiesByActivityIntent(activities, intent), intent, intent.boroughExpansionMode);
 
     if (intent.locations.length > 0) {
       const locationRestaurants = restaurants.filter((item: any) =>
@@ -1655,27 +1707,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (intent.activityIntents.length > 0) {
-      let forcedActivityMatches = locations.filter((item: any) =>
-        intent.activityIntents.some((activityIntent) =>
-          matchesActivityIntent(item, activityIntent)
-        )
-      );
-
-      if (intent.locations.length > 0) {
-        const locationFiltered = forcedActivityMatches.filter((item: any) =>
-          matchesLocation(item, intent.locations)
-        );
-
-        if (locationFiltered.length > 0) {
-          forcedActivityMatches = locationFiltered;
-        }
-      }
-
-      if (forcedActivityMatches.length > 0) {
-        activities = forcedActivityMatches;
-      }
-    }
+    const semanticResults = await semanticRetrieve(input, sourceLocations);
 
     const rankedRestaurants = restaurants
       .map((restaurant: any) => {
@@ -1683,6 +1715,7 @@ export async function POST(req: Request) {
 
         return {
           ...restaurant,
+          ...semanticScoreBoost(restaurant, semanticResults),
           theouthaven_score: score,
           smart_match_score: score,
           location_name_match_score: locationNameMatchScore(restaurant, input),
@@ -1696,12 +1729,19 @@ export async function POST(req: Request) {
 
         return {
           ...activity,
+          ...semanticScoreBoost(activity, semanticResults),
           theouthaven_score: score,
           smart_match_score: score,
           location_name_match_score: locationNameMatchScore(activity, input),
         };
       })
       .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
+
+    if (intent.laneMode === "restaurant_only") {
+      rankedActivities.length = 0;
+    } else if (intent.laneMode === "activity_only") {
+      rankedRestaurants.length = 0;
+    }
 
     const smartBalanced = balanceSmartMatches(
       rankedRestaurants,
@@ -1738,11 +1778,7 @@ export async function POST(req: Request) {
     let topRestaurants = pairedResults.restaurants;
     let topActivities = pairedResults.activities;
 
-    if (
-      topRestaurants.length === 0 &&
-      topActivities.length === 0 &&
-      matchedLocationResults.length > 0
-    ) {
+    if (topRestaurants.length === 0 && topActivities.length === 0 && matchedLocationResults.length > 0) {
       const matchedRestaurants = matchedLocationResults.filter((item: any) =>
         isRestaurantLocation(item)
       );
@@ -1758,6 +1794,9 @@ export async function POST(req: Request) {
         topActivities = matchedActivities.slice(0, 4);
       }
     }
+
+    if (!Array.isArray(topRestaurants)) topRestaurants = [];
+    if (!Array.isArray(topActivities)) topActivities = [];
 
     const slimMatchedLocations = matchedLocationResults.map((item: any) => ({
       id: String(item.id),
