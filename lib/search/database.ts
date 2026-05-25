@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 
 type SearchDomain = "restaurant" | "activity";
@@ -116,7 +116,12 @@ function softCategoryFilter(records: any[], terms: string[]) {
 
 async function queryLocations(searchText: string, limit = 80) {
   const term = searchText.trim();
-  let query = supabase.from(SEARCHED_TABLE).select("*").limit(limit);
+  let query = supabaseAdmin
+    .from(SEARCHED_TABLE)
+    .select("*")
+    .eq("is_searchable", true)
+    .neq("data_status", "hidden")
+    .limit(limit);
 
   if (term.length > 0) {
     const parts = term.split(/\s+/).filter(Boolean).slice(0, 4);
