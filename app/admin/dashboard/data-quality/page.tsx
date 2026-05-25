@@ -926,7 +926,7 @@ export default async function AdminDataQualityPage({
 
                       <div className="flex gap-1.5 xl:flex-col">
                         <Link
-                          href={`/admin/dashboard/locations/${location.detailId}?from=/admin/dashboard/data-quality`}
+                          href={`/admin/dashboard/locations/id/${location.detailId}?from=/admin/dashboard/data-quality`}
                           className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1.5 text-center text-[11px] font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                         >
                           View
