@@ -1,3 +1,7 @@
+export type LaneMode = "balanced" | "restaurant_only" | "activity_only";
+
+export type BoroughExpansionMode = "strict" | "explicit_expand";
+
 export type ParsedSearchIntent = {
   city: string | null;
   borough: string | null;
@@ -6,6 +10,8 @@ export type ParsedSearchIntent = {
   vibe: string | null;
   wantsWalkingDistance: boolean;
   keywords: string[];
+  laneMode: LaneMode;
+  boroughExpansionMode: BoroughExpansionMode;
 };
 
 export type SearchLocation = {
