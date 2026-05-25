@@ -37,6 +37,7 @@ const CACHE_HOURS = 6;
 const RESPONSE_CACHE_VERSION =
   `canonical-multistop-meal-addon-v1-${SEMANTIC_SEARCH_VERSION}`;
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "true";
+const DEBUG_OUTING_SEARCH = process.env.DEBUG_OUTING_SEARCH === "true";
 const SEARCH_LIMITS = {
   supportingLocations: 500,
   fallbackGeneralRecords: 1000,
@@ -4853,11 +4854,16 @@ export async function POST(req: Request) {
           )
         : rankedActivities;
 
-    const smartBalanced = balanceSmartMatches(
-      strictRankedRestaurants,
-      strictRankedActivities,
-      smartIntent,
-    );
+    const smartBalanced = {
+      ...balanceSmartMatches(
+        strictRankedRestaurants,
+        strictRankedActivities,
+        smartIntent,
+      ),
+      restaurants: strictRankedRestaurants,
+      activities: strictRankedActivities,
+      mode: (intent.wantsRestaurant && intent.wantsActivity) ? "complete_outing" : (intent.wantsRestaurant ? "restaurant_only" : "activity_only"),
+    };
 
     if (
       intent.activityIntents.length > 0 &&
@@ -5147,9 +5153,10 @@ STRICT RULES:
       }
     }
 
+    const isCompleteOuting = intent.wantsRestaurant && intent.wantsActivity;
     const responsePayload = {
       success: true,
-      mode: "cards",
+      mode: isCompleteOuting ? "complete_outing" : "cards",
       display_mode: "cards_only",
       hide_text_results: hasResults,
       version: getSmartMatchVersion(),
@@ -5222,6 +5229,15 @@ STRICT RULES:
         same_neighborhood: pair.same_neighborhood,
         pair_score: clampScore(pair.pair_score),
       })),
+      cards: [
+        ...topRestaurants.map((r: any) => ({ ...r, type: "restaurant" })),
+        ...topActivities.map((a: any) => ({ ...a, type: "activity" })),
+      ],
+      displaySections: {
+        restaurantsTitle: "Restaurant picks",
+        activitiesTitle: "Activity picks",
+        pairsTitle: "Suggested pairings",
+      },
       restaurants: topRestaurants.map((r: any) => ({
         id: String(r.id),
         name: r.restaurant_name || r.name || "Unknown restaurant",
@@ -5338,6 +5354,26 @@ STRICT RULES:
         restaurantCount: responsePayload.restaurants?.length || 0,
         activityCount: responsePayload.activities?.length || 0,
         pairCount: responsePayload.pairs?.length || 0,
+      });
+    }
+    if (DEBUG_OUTING_SEARCH) {
+      console.log("[DEBUG_OUTING_SEARCH] canonical_intent", {
+        rawQuery: input,
+        locationText: intent.locationText || null,
+        borough: intent.borough || null,
+        neighborhoods: intent.neighborhoods || [],
+        wantsRestaurant: intent.wantsRestaurant,
+        wantsActivity: intent.wantsActivity,
+        wantsCompleteOuting: isCompleteOuting,
+      });
+      console.log("[DEBUG_OUTING_SEARCH] search_inputs", { restaurantSearchInput, activitySearchInput });
+      console.log("[DEBUG_OUTING_SEARCH] counts", {
+        restaurantCountBefore: preFilterRestaurantCount,
+        restaurantCountAfter: topRestaurants.length,
+        activityCountBefore: preFilterActivityCount,
+        activityCountAfter: topActivities.length,
+        finalCards: (responsePayload.restaurants?.length || 0) + (responsePayload.activities?.length || 0),
+        finalMode: responsePayload.mode,
       });
     }
 
