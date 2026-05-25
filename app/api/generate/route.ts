@@ -1,4 +1,4 @@
-import { searchFallbackActivities, searchFallbackRestaurants } from "@/lib/search/database";
+import { inferRecordDomain, searchFallbackActivities, searchFallbackRestaurants } from "@/lib/search/database";
 import { parseCanonicalIntent } from "@/lib/search/intent";
 import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
 
@@ -204,10 +204,10 @@ export async function POST(request: Request) {
         : normalizedFallbackLocations;
 
     const emergencyRestaurants = locationFilteredFallback.filter(
-      (item: any) => item?.type === "restaurant" || item?.category === "restaurant"
+      (item: any) => inferRecordDomain(item) === "restaurant"
     );
     const emergencyActivities = locationFilteredFallback.filter(
-      (item: any) => item?.type === "activity" || item?.category === "activity"
+      (item: any) => inferRecordDomain(item) === "activity"
     );
 
     topRestaurants = emergencyRestaurants;

@@ -52,12 +52,15 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
   restaurants = rankRestaurants(restaurants, intent);
   activities = rankActivities(activities, intent);
   const pairs = buildOutingPairs(restaurants, activities, intent);
+  const matchedLocations = Array.from(new Map(
+    [...restaurants, ...activities].map((item: any) => [String(item?.id ?? `${item?.name ?? ""}-${item?.title ?? ""}`), item])
+  ).values());
 
   const empty_reason = restaurants.length === 0 && activities.length === 0
     ? (fallback_used.restaurants || fallback_used.activities ? "fallback_not_triggered" : "strict_category_filter_removed_all")
     : undefined;
 
-  return buildSearchResponse(intent, restaurants, activities, pairs, [], {
+  return buildSearchResponse(intent, restaurants, activities, pairs, matchedLocations, {
     search_system: "clean-search-v1",
     query: input,
     restaurantSearchInput: intent.restaurantSearchInput,
@@ -74,7 +77,7 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     rankedActivityCount: activities.length,
     fallbackRestaurantUsed: fallback_used.restaurants,
     fallbackActivityUsed: fallback_used.activities,
-    finalCardCounts: { restaurants: restaurants.length, activities: activities.length, matched_locations: 0, pairs: pairs.length },
+    finalCardCounts: { restaurants: restaurants.length, activities: activities.length, matched_locations: matchedLocations.length, pairs: pairs.length },
     cache_status: cache,
     off_topic_result: false,
     ranking_notes: "canonical ranking",
