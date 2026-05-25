@@ -65,13 +65,34 @@ export type CanonicalSearchIntent = {
   isDessertOnly: boolean;
   isMealPrimary: boolean;
 };
+export type CanonicalOutingIntent = {
+  rawQuery: string;
+  locationText: string | null;
+  borough: string | null;
+  neighborhoods: string[];
+  wantsRestaurant: boolean;
+  wantsActivity: boolean;
+  wantsCompleteOuting: boolean;
+  restaurantIntent: {
+    mealTerms: string[];
+    cuisineTerms: string[];
+    foodTerms: string[];
+    excludeAddOnTerms: string[];
+  };
+  activityIntent: {
+    activityTerms: string[];
+    nightlifeTerms: string[];
+    addOnTerms: string[];
+  };
+  sequencing: "restaurant_first" | "activity_first" | "same_place_ok" | "unknown";
+};
 
 const VERSION = "canonical-multistop-meal-addon-v1";
 const BOROUGHS = ["queens", "brooklyn", "manhattan", "bronx", "staten island", "astoria"];
-const MEAL_TERMS = ["steak", "seafood", "dinner", "lunch", "brunch", "breakfast", "restaurant", "cuisine", "date night dinner"];
-const DISH_TERMS = ["steak", "seafood", "sushi"];
-const ACTIVITY_TERMS = ["hookah", "lounge", "nightlife", "bar", "club"];
-const ADDON_TERMS = ["hookah", "lounge", "after dinner", "nightlife", "bar", "club"];
+const MEAL_TERMS = ["steak", "seafood", "dinner", "lunch", "brunch", "breakfast", "restaurant", "food", "eat", "meal", "sushi", "tacos", "pasta"];
+const DISH_TERMS = ["steak", "seafood", "sushi", "tacos", "pasta"];
+const ACTIVITY_TERMS = ["hookah", "lounge", "nightlife", "bar", "club", "bowling", "arcade", "comedy", "movie", "rooftop", "dessert", "drinks", "activity", "things to do"];
+const ADDON_TERMS = ["hookah", "lounge", "dessert", "drinks", "rooftop", "after dinner", "nightlife", "bar", "club"];
 
 const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, " ");
 const has = (t: string, w: string) => t.includes(w);
@@ -83,17 +104,18 @@ export function parseSearchIntent(input: string, body: any = {}, _candidates: an
   const hasMealTerm = MEAL_TERMS.some((term) => has(text, term));
   const hasHookah = has(text, "hookah");
   const hasLounge = has(text, "lounge");
+  const hasDessert = has(text, "dessert");
   const hasActivity = ACTIVITY_TERMS.some((t) => has(text, t));
   const dishTerms = DISH_TERMS.filter((d) => has(text, d));
   const foodIntents = [...new Set([...(hasMealTerm ? ["dinner"] : []), ...dishTerms])];
-  const activityIntents = [...new Set([...(hasHookah ? ["hookah"] : []), ...(hasLounge ? ["lounge"] : []), ...(has(text, "nightlife") ? ["nightlife"] : [])])];
+  const activityIntents = [...new Set([...(hasHookah ? ["hookah"] : []), ...(hasLounge ? ["lounge"] : []), ...(hasDessert ? ["dessert"] : []), ...(has(text, "bowling") ? ["bowling"] : []), ...(has(text, "comedy") ? ["comedy"] : []), ...(has(text, "rooftop") ? ["rooftop"] : []), ...(has(text, "nightlife") ? ["nightlife"] : [])])];
   const isHookahOnly = hasHookah && !hasMealTerm;
   const wantsRestaurant = hasMealTerm || (!hasActivity && !isHookahOnly);
   const wantsActivity = hasActivity;
   const multi = wantsRestaurant && wantsActivity;
   const restaurantKeywords = [...new Set([...dishTerms, ...(has(text, "dinner") ? ["dinner"] : []), "restaurant", ...(dishTerms.includes("steak") ? ["steakhouse"] : [])])];
-  const restaurantQuery = `${restaurantKeywords.join(" ")} ${locations.join(" ")}`.trim() || text;
-  const activityQuery = `${activityIntents.join(" ")} ${locations.join(" ")}`.trim() || text;
+  const restaurantQuery = `${restaurantKeywords.join(" ")} restaurant ${locations.join(" ")}`.trim() || text;
+  const activityQuery = `${activityIntents.join(" ")} activity ${locations.join(" ")}`.trim() || text;
 
   return {
     version: VERSION,
@@ -153,7 +175,7 @@ export function parseSearchIntent(input: string, body: any = {}, _candidates: an
     requiresActivity: wantsActivity,
     isHookahOnly,
     isLoungeOnly: hasLounge && !hasMealTerm,
-    isDessertOnly: has(text, "dessert") && !hasMealTerm,
+    isDessertOnly: hasDessert && !hasMealTerm,
     isMealPrimary: hasMealTerm,
   };
 }
