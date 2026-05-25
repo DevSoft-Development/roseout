@@ -1,18 +1,7 @@
 import { getCuisine, getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
-export type SmartMatchIntent = {
-  query: string;
-  wantsFood: boolean;
-  wantsActivity: boolean;
-  wantsFullOuting: boolean;
-  foodIntents: string[];
-  activityIntents: string[];
-  vibes: string[];
-  locations: string[];
-  strictFoodMode: boolean;
-  strictActivityMode: boolean;
-  wantsPrimaryMeal: boolean;
-};
+import { type CanonicalSearchIntent, parseSearchIntent, getSearchIntentVersion, FOOD_INTENTS as CANONICAL_FOOD_INTENTS, ACTIVITY_INTENTS as CANONICAL_ACTIVITY_INTENTS } from "@/lib/searchIntent";
+export type SmartMatchIntent = CanonicalSearchIntent;
 
 type ScoredSmartMatchItem = SmartMatchItem & { smart_match_score: number };
 
@@ -48,7 +37,7 @@ export type SmartMatchItem = LocationScoreFields & {
   primary_tag?: string | null;
 };
 
-export const FOOD_INTENTS: Record<string, string[]> = {
+const LEGACY_UNUSED_FOOD_INTENTS: Record<string, string[]> = {
   steak: ["steak", "steakhouse", "ribeye", "filet mignon", "porterhouse"],
   seafood: ["seafood", "lobster", "crab", "shrimp", "oyster", "oysters", "fish"],
   sushi: ["sushi", "omakase", "japanese sushi"],
@@ -107,7 +96,7 @@ export const FOOD_INTENTS: Record<string, string[]> = {
   hot_pot: ["hot pot"],
 };
 
-export const ACTIVITY_INTENTS: Record<string, string[]> = {
+const LEGACY_UNUSED_ACTIVITY_INTENTS: Record<string, string[]> = {
   bowling: ["bowling", "bowl", "bowling alley"],
   karaoke: ["karaoke", "karoke", "karoake", "singing"],
   arcade: ["arcade", "games", "game room"],
@@ -562,6 +551,10 @@ function isLongIslandCityItem(item: SmartMatchItem) {
 }
 
 export function detectSmartMatchIntent(input: string): SmartMatchIntent {
+  return parseSearchIntent(input);
+}
+
+function detectSmartMatchIntent_legacy_unused(input: string): SmartMatchIntent {
   const text = normalize(input);
 
   const foodIntents = detectFromMap(text, FOOD_INTENTS);
@@ -691,23 +684,24 @@ export function isDessertOnlyRestaurant(item: SmartMatchItem) {
 }
 
 function matchesPrimaryMealIntent(item: SmartMatchItem, intent: SmartMatchIntent) {
-  return !intent.wantsPrimaryMeal || !isDessertOnlyRestaurant(item);
+  return !intent.primaryMealIntents.length || !isDessertOnlyRestaurant(item);
 }
 
 export function matchesFoodIntent(
   item: SmartMatchItem,
   intent: SmartMatchIntent
 ) {
-  if (!intent.strictFoodMode) return true;
-  return matchesIntent(item, intent.foodIntents, FOOD_INTENTS);
+  if (!intent.primaryMealIntents.length) return true;
+  return matchesIntent(item, intent.primaryMealIntents, CANONICAL_FOOD_INTENTS);
 }
 
 export function matchesActivityIntent(
   item: SmartMatchItem,
   intent: SmartMatchIntent
 ) {
-  if (!intent.strictActivityMode) return true;
-  return matchesIntent(item, intent.activityIntents, ACTIVITY_INTENTS);
+  const intents = [...intent.primaryActivityIntents, ...intent.secondaryActivityIntents];
+  if (!intents.length) return true;
+  return matchesIntent(item, intents, CANONICAL_ACTIVITY_INTENTS);
 }
 
 export function matchesLocationIntent(
@@ -738,7 +732,7 @@ export function scoreRestaurant(
 
   if (matchesFoodIntent(restaurant, intent)) score += 30;
   if (matchesLocationIntent(restaurant, intent)) score += 15;
-  if (intent.wantsPrimaryMeal && isDessertOnlyRestaurant(restaurant)) score -= 35;
+  if (intent.primaryMealIntents.length && isDessertOnlyRestaurant(restaurant)) score -= 35;
 
   for (const vibe of intent.vibes) {
     const vibeWords = VIBE_INTENTS[vibe] || [];
@@ -907,14 +901,14 @@ export function balanceSmartMatches(
   const finalRestaurants =
     smartRestaurants.length > 0
       ? smartRestaurants
-      : intent.strictFoodMode && !allowFoodFallbackInFullOuting
+      : intent.primaryMealIntents.length > 0 && !allowFoodFallbackInFullOuting
         ? []
         : restaurants;
 
   const finalActivities =
     smartActivities.length > 0
       ? smartActivities
-      : intent.strictActivityMode && !allowActivityFallbackInFullOuting
+      : intent.primaryActivityIntents.length > 0 || intent.secondaryActivityIntents.length > 0 && !allowActivityFallbackInFullOuting
         ? []
         : activities;
 
@@ -927,7 +921,7 @@ export function balanceSmartMatches(
   }
 
   if (!intent.wantsFood && intent.wantsActivity && !intent.wantsFullOuting) {
-    if (hasExplicitRestaurantRequest(intent.query) && hasExplicitActivityRequest(intent.query)) {
+    if (hasExplicitRestaurantRequest(intent.normalizedInput) && hasExplicitActivityRequest(intent.normalizedInput)) {
       return {
         restaurants: finalRestaurants.slice(0, FULL_OUTING_RESULT_LIMIT),
         activities: finalActivities.slice(0, FULL_OUTING_RESULT_LIMIT),
@@ -950,5 +944,5 @@ export function balanceSmartMatches(
 }
 
 export function getSmartMatchVersion() {
-  return "theouthaven-smart-match-engine-v7-strict-no-loose-fallback";
+  return `theouthaven-smart-match-engine-v6-${getSearchIntentVersion()}`;
 }
