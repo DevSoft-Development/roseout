@@ -745,7 +745,7 @@ export default function CreatePage() {
           data.reply ||
           (addOnTarget
             ? "Here are add-on matches while keeping your previous outing options visible."
-            : "Here are strong TheOutHaven matches based on your outing request."),
+            : "Here are TheOutHaven results based on your outing request."),
         restaurants: dedupedResults.restaurants,
         activities: dedupedResults.activities,
         pairs: responsePairs,
