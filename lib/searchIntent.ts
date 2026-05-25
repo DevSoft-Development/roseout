@@ -39,6 +39,14 @@ export type CanonicalSearchIntent = {
     allowTextOnlyFallback: boolean;
   };
   confidence: { score: number; reasons: string[] };
+  explicitTerms: string[];
+  primaryDomain: "restaurant" | "activity" | "mixed";
+  requiresRestaurant: boolean;
+  requiresActivity: boolean;
+  isHookahOnly: boolean;
+  isLoungeOnly: boolean;
+  isDessertOnly: boolean;
+  isMealPrimary: boolean;
 };
 
 const VERSION = "canonical-search-intent-v1";
@@ -48,6 +56,7 @@ const ADD_ON = new Set(["dessert"]);
 const PRIMARY_MEAL = new Set(["steak","seafood","sushi","brunch","dinner"]);
 const PRIMARY_ACTIVITY = new Set(["hookah","lounge","nightlife","activity"]);
 const BOROUGHS = ["queens","brooklyn","manhattan","bronx","staten island","astoria"];
+const MEAL_TERMS = ["steak","seafood","dinner","lunch","brunch","breakfast","restaurant","food","cuisine","eat"];
 
 const norm = (s:string)=>s.toLowerCase().trim().replace(/\s+/g," ");
 const has = (t:string,w:string)=>t.includes(w);
@@ -80,6 +89,7 @@ export function parseSearchIntent(input:string, body:any = {}, candidates:any[] 
   const secondaryActivityIntents = activityIntents.filter((k)=>!PRIMARY_ACTIVITY.has(k));
   const wantsFood = foodIntents.length>0;
   const wantsActivity = activityIntents.length>0;
+  const hasMealTerm = MEAL_TERMS.some((term)=>has(text, term));
   const wantsFullOuting = wantsFood && wantsActivity;
   const locations = BOROUGHS.filter((b)=>has(text,b));
   const mode:CanonicalIntentMode = wantsFullOuting?"full_outing":wantsFood?"restaurant_only":wantsActivity?"activity_only":locations.length?"location_lookup":"off_topic";
@@ -87,11 +97,24 @@ export function parseSearchIntent(input:string, body:any = {}, candidates:any[] 
   const distance = { maxMiles: body.maxMiles ?? body.max_miles ?? null, userLat: body.lat ?? body.latitude ?? null, userLng: body.lng ?? body.longitude ?? null };
   const restaurantQuery = [primaryMealIntents.join(" "), locations.join(" ")].join(" ").trim();
   const activityQuery = [primaryActivityIntents.join(" "), locations.join(" ")].join(" ").trim();
+  const isHookahOnly = activityIntents.includes("hookah") && !wantsFood && !hasMealTerm;
+  const isLoungeOnly = activityIntents.includes("lounge") && !wantsFood && !hasMealTerm;
+  const isDessertOnly = foodIntents.length > 0 && foodIntents.every((i)=>i === "dessert");
+  const requiresRestaurant = wantsFood || hasMealTerm;
+  const requiresActivity = wantsActivity;
   const base: CanonicalSearchIntent = {
     version: VERSION, rawInput: input, normalizedInput:text, mode, wantsFood, wantsActivity, wantsRestaurant:wantsFood||wantsFullOuting||!wantsActivity, wantsFullOuting,
     foodIntents, primaryMealIntents, foodAddOnIntents, activityIntents, primaryActivityIntents, secondaryActivityIntents, vibes:[], requestedTags:[], locations, neighborhoods:[], boroughs:locations, cities:[], budget, distance, multiIntentMode:wantsFullOuting,
     routing:{ restaurantQuery, activityQuery, shouldSearchRestaurants: wantsFood||wantsFullOuting||(!wantsFood&&!wantsActivity), shouldSearchActivities:wantsActivity||wantsFullOuting, shouldForceRestaurantCards:wantsFood, shouldForceActivityCards:wantsActivity, allowTextOnlyFallback:false },
-    confidence:{ score:0.8, reasons:["deterministic-parser"] }
+    confidence:{ score:0.8, reasons:["deterministic-parser"] },
+    explicitTerms: [...new Set([...foodIntents, ...activityIntents, ...locations])],
+    primaryDomain: requiresRestaurant && requiresActivity ? "mixed" : requiresRestaurant ? "restaurant" : "activity",
+    requiresRestaurant,
+    requiresActivity,
+    isHookahOnly,
+    isLoungeOnly,
+    isDessertOnly,
+    isMealPrimary: (primaryMealIntents.length > 0 || hasMealTerm) && !isHookahOnly && !isLoungeOnly
   };
   return enrichIntentWithCandidateLocations(base, candidates);
 }
