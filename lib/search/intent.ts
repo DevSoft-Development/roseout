@@ -1,22 +1,55 @@
-import OpenAI from 'openai';
-import type { BoroughExpansionMode, LaneMode, ParsedSearchIntent } from './types';
+import { buildActivitySearchInput, buildRestaurantSearchInput } from "./queryBuilders";
+import { ADD_ON_FOOD_INTENTS, BOROUGHS, INTENT_ALIASES, MEAL_FOOD_INTENTS, OUTING_PHRASES } from "./taxonomy";
+import type { CanonicalSearchIntent } from "./types";
 
-type IntentPayload = {
-  city?: string | null;
-  borough?: string | null;
-  restaurantType?: string | null;
-  activityType?: string | null;
-  vibe?: string | null;
-  wantsWalkingDistance?: boolean;
-  keywords?: string[];
-  laneMode?: LaneMode;
-  boroughExpansionMode?: BoroughExpansionMode;
-};
+const includesAny = (q: string, terms: string[]) => terms.some((t) => q.includes(t));
 
-export async function parseSearchIntent(client:OpenAI, query:string):Promise<ParsedSearchIntent>{
-  const schema = { type:'object', additionalProperties:false, properties:{ city:{type:['string','null']}, borough:{type:['string','null']}, restaurantType:{type:['string','null']}, activityType:{type:['string','null']}, vibe:{type:['string','null']}, wantsWalkingDistance:{type:'boolean'}, keywords:{type:'array', items:{type:'string'}}, laneMode:{type:'string', enum:['balanced','restaurant_only','activity_only']}, boroughExpansionMode:{type:'string', enum:['strict','explicit_expand']}}, required:['city','borough','restaurantType','activityType','vibe','wantsWalkingDistance','keywords','laneMode','boroughExpansionMode']} as const;
-  const response = await client.responses.create({ model:'gpt-4o-mini', input:`Parse this search into strict JSON intent fields only: ${query}`, text:{format:{type:'json_schema',name:'intent',schema}}});
-  const raw = response.output_text || '{}';
-  const parsed = JSON.parse(raw) as IntentPayload;
-  return { city:parsed.city??null, borough:parsed.borough??null, restaurantType:parsed.restaurantType??null, activityType:parsed.activityType??null, vibe:parsed.vibe??null, wantsWalkingDistance:Boolean(parsed.wantsWalkingDistance), keywords:Array.isArray(parsed.keywords)?parsed.keywords:[], laneMode:parsed.laneMode ?? 'balanced', boroughExpansionMode:parsed.boroughExpansionMode ?? 'strict'};
+export function parseCanonicalIntent(input: string, body: any = {}): CanonicalSearchIntent {
+  const rawQuery = String(input || body?.input || "").trim();
+  const normalizedQuery = rawQuery.toLowerCase().replace(/\s+/g, " ");
+  const mealFoodIntents = [...new Set(MEAL_FOOD_INTENTS.filter((i) => normalizedQuery.includes(i) || includesAny(normalizedQuery, INTENT_ALIASES[i] || [])))];
+  const addOnFoodIntents = [...new Set(ADD_ON_FOOD_INTENTS.filter((i) => normalizedQuery.includes(i)))];
+  const activityIntents = new Set<string>();
+  if (includesAny(normalizedQuery, INTENT_ALIASES.hookah)) activityIntents.add("hookah");
+  if (includesAny(normalizedQuery, INTENT_ALIASES.paint_and_sip)) activityIntents.add("paint_and_sip");
+  ["bowling","karaoke","arcade","comedy","escape_room","spa","rooftop","lounge","nightclub","live_music","jazz","cigar","mini_golf","axe_throwing","museum","movies","pool","billiards"].forEach((k) => normalizedQuery.includes(k) && activityIntents.add(k));
+
+  const hookahRestaurantHint = /(hookah restaurant|restaurant with hookah|hookah with food|hookah spot that serves food|eat at hookah)/.test(normalizedQuery);
+  const hasRealMeal = mealFoodIntents.length > 0 || /(dinner|lunch|brunch|breakfast|restaurant|food)/.test(normalizedQuery);
+  const wantsFood = hasRealMeal || addOnFoodIntents.length > 0 || hookahRestaurantHint;
+  const wantsActivity = activityIntents.size > 0;
+  const wantsFullOuting = (wantsFood && wantsActivity) || includesAny(normalizedQuery, OUTING_PHRASES);
+  const wantsRestaurant = wantsFood || wantsFullOuting;
+
+  const boroughs = BOROUGHS.filter((b) => normalizedQuery.includes(b));
+  const intent: CanonicalSearchIntent = {
+    rawQuery,
+    normalizedQuery,
+    wantsFood,
+    wantsRestaurant,
+    wantsActivity: wantsActivity || wantsFullOuting,
+    wantsFullOuting,
+    foodIntents: [...new Set([...mealFoodIntents, ...addOnFoodIntents])],
+    mealFoodIntents,
+    addOnFoodIntents,
+    activityIntents: [...activityIntents],
+    cuisines: [],
+    locations: boroughs,
+    neighborhoods: [],
+    boroughs,
+    vibes: [],
+    strictFoodMode: hasRealMeal,
+    strictActivityMode: wantsActivity,
+    isOffTopic: false,
+    restaurantSearchInput: "",
+    activitySearchInput: "",
+    cacheBypassReasons: [],
+  };
+
+  const validSignal = intent.foodIntents.length || intent.activityIntents.length || intent.locations.length || /(restaurant|date|dinner|brunch|nightlife|outing|lounge)/.test(normalizedQuery);
+  intent.isOffTopic = !validSignal;
+  intent.offTopicReason = intent.isOffTopic ? "No food/activity/location intent detected" : undefined;
+  intent.restaurantSearchInput = buildRestaurantSearchInput(intent);
+  intent.activitySearchInput = buildActivitySearchInput(intent);
+  return intent;
 }
