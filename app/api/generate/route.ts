@@ -17,7 +17,6 @@ import {
 } from "@/lib/theouthavenSmartMatchEngine";
 import {
   parseSearchIntent as parseCanonicalSearchIntent,
-  getSearchIntentVersion,
 } from "@/lib/searchIntent";
 import {
   SEMANTIC_SEARCH_VERSION,
@@ -638,7 +637,7 @@ function isRealMealRequest(intent: ReturnType<typeof detectIntent>) {
   return getMealFoodIntents(intent).length > 0;
 }
 
-function isActualRestaurant(item: any) {
+function isActualRestaurant(item: Record<string, unknown>) {
   const searchable = itemText(item);
   const restaurantSignals = [
     "restaurant",
@@ -737,7 +736,7 @@ async function logSearchQuery(input: string) {
   }
 }
 
-function toArray(value: any): string[] {
+function toArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
@@ -812,7 +811,7 @@ function filterPrimaryMealRestaurants(
   return primaryMealMatches.length > 0 ? primaryMealMatches : restaurants;
 }
 
-function buildSearchableText(item: any): string {
+function buildSearchableText(item: Record<string, unknown>): string {
   return [
     item?.name,
     item?.restaurant_name,
@@ -842,7 +841,7 @@ function buildSearchableText(item: any): string {
     .toLowerCase();
 }
 
-function itemText(item: any) {
+function itemText(item: Record<string, unknown>) {
   return [
     buildSearchableText(item),
     item.location_type,
@@ -913,7 +912,7 @@ const NON_MEAL_FOOD_TYPES = [
   "pastry",
 ];
 
-function isNonMealFoodPlace(item: any) {
+function isNonMealFoodPlace(item: Record<string, unknown>) {
   const text = itemText(item);
   return NON_MEAL_FOOD_TYPES.some((term) => phraseIncludesNormalized(text, term));
 }

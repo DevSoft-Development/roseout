@@ -69,7 +69,23 @@ export function getSearchIntentVersion(){ return VERSION; }
 
 function detectFromMap(text:string, map:Record<string,string[]>) { return Object.entries(map).filter(([,v])=>v.some(k=>has(text,k))).map(([k])=>k); }
 
-export function enrichIntentWithCandidateLocations(intent:CanonicalSearchIntent, candidates:any[]=[]){
+type CandidateLocation = {
+  city?: string | null;
+  borough?: string | null;
+  neighborhood?: string | null;
+  address?: string | null;
+};
+
+type SearchIntentBody = {
+  maxMiles?: number | null;
+  max_miles?: number | null;
+  lat?: number | null;
+  latitude?: number | null;
+  lng?: number | null;
+  longitude?: number | null;
+};
+
+export function enrichIntentWithCandidateLocations(intent:CanonicalSearchIntent, candidates:CandidateLocation[]=[]){
   const extra = new Set(intent.locations);
   for (const c of candidates) {
     const blob = norm([c?.city,c?.borough,c?.neighborhood,c?.address].filter(Boolean).join(" "));
@@ -78,7 +94,7 @@ export function enrichIntentWithCandidateLocations(intent:CanonicalSearchIntent,
   return { ...intent, locations:[...extra] };
 }
 
-export function parseSearchIntent(input:string, body:any = {}, candidates:any[] = []): CanonicalSearchIntent {
+export function parseSearchIntent(input:string, body:SearchIntentBody = {}, candidates:CandidateLocation[] = []): CanonicalSearchIntent {
   // Canonical intent is the only routing authority. Smart ranking, route filtering, semantic search, cache keys, and LLM enrichment must consume this object and must not independently re-parse the user query.
   const text = norm(input || "");
   const foodIntents = Array.from(new Set(detectFromMap(text, FOOD)));
