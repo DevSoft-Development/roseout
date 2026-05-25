@@ -6,6 +6,7 @@ type SearchDomain = "restaurant" | "activity";
 export type SearchDebug = {
   searchedTables: string[];
   rpcCalls: string[];
+  sourceErrors?: string[];
   rawRestaurantCount?: number;
   rawActivityCount?: number;
   afterGeoFilterRestaurantCount?: number;
@@ -151,19 +152,25 @@ async function queryLocations(searchText: string, limit = 80) {
   const { data, error } = await query;
   if (error) {
     console.error("search query failed", error);
-    return [];
+    const message = typeof error.message === "string" ? error.message : "unknown_search_error";
+    return { records: [], error: message };
   }
-  return data ?? [];
+  return { records: data ?? [], error: null };
 }
 
 async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain, searchText: string, fallback = false) {
-  const records = await queryLocations(searchText);
+  const queryResult = await queryLocations(searchText);
+  const records = queryResult.records;
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
   const geoFiltered = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
   const terms = domain === "restaurant" ? intent.mealFoodIntents : intent.activityIntents;
   const categorized = softCategoryFilter(geoFiltered, terms);
 
-  const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [] };
+  const debug: SearchDebug = {
+    searchedTables: [SEARCHED_TABLE],
+    rpcCalls: [],
+    sourceErrors: queryResult.error ? [queryResult.error] : [],
+  };
   if (domain === "restaurant") {
     debug.rawRestaurantCount = domainRecords.length;
     debug.afterGeoFilterRestaurantCount = geoFiltered.length;

@@ -67,6 +67,9 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     activitySearchInput: intent.activitySearchInput,
     searchedTables: Array.from(new Set([...(restaurantSearch.debug.searchedTables ?? []), ...(activitySearch.debug.searchedTables ?? [])])),
     rpcCalls: Array.from(new Set([...(restaurantSearch.debug.rpcCalls ?? []), ...(activitySearch.debug.rpcCalls ?? [])])),
+    sourceErrors: Array.from(
+      new Set([...(restaurantSearch.debug.sourceErrors ?? []), ...(activitySearch.debug.sourceErrors ?? [])]),
+    ),
     rawRestaurantCount: restaurantSearch.debug.rawRestaurantCount ?? 0,
     rawActivityCount: activitySearch.debug.rawActivityCount ?? 0,
     afterGeoFilterRestaurantCount: restaurantSearch.debug.afterGeoFilterRestaurantCount ?? 0,
