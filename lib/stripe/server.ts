@@ -49,6 +49,4 @@ export function getBusinessProPriceId() {
   return priceId;
 }
 
-export function getSiteUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
-}
+export { getSiteUrl } from "@/lib/site-url";

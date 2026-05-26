@@ -1,3 +1,4 @@
+import { buildSiteUrl } from "@/lib/site-url";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { generatePasswordInviteToken } from "@/lib/security/password-invite";
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
 
   const invited = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: { role, first_name: firstName, last_name: lastName },
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/auth/create-password`,
+    redirectTo: buildSiteUrl("/auth/create-password"),
   });
   if (invited.error || !invited.data.user) {
     return Response.json({ error: invited.error?.message || "Failed to create invite." }, { status: 400 });
