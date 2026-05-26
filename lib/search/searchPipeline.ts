@@ -1,5 +1,9 @@
 import { shouldBypassSearchCache } from "@/lib/search/cache";
 import { searchActivities, searchFallbackActivities, searchFallbackRestaurants, searchRestaurants, type SearchDebug } from "@/lib/search/database";
+
+function mergeSourceErrors(...groups: Array<string[] | undefined>) {
+  return Array.from(new Set(groups.flatMap((group) => group ?? [])));
+}
 import { parseCanonicalIntent } from "@/lib/search/intent";
 import { buildOutingPairs } from "@/lib/search/pairing";
 import { buildActivitySearchInput, buildRestaurantSearchInput } from "@/lib/search/queryBuilders";
@@ -40,13 +44,13 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     const fallbackRestaurants = await searchFallbackRestaurants(intent);
     restaurants = fallbackRestaurants.records;
     fallback_used.restaurants = true;
-    Object.assign(restaurantSearch.debug, fallbackRestaurants.debug);
+    restaurantSearch.debug.sourceErrors = mergeSourceErrors(restaurantSearch.debug.sourceErrors, fallbackRestaurants.debug.sourceErrors);
   }
   if (intent.wantsActivity && activities.length === 0) {
     const fallbackActivities = await searchFallbackActivities(intent);
     activities = fallbackActivities.records;
     fallback_used.activities = true;
-    Object.assign(activitySearch.debug, fallbackActivities.debug);
+    activitySearch.debug.sourceErrors = mergeSourceErrors(activitySearch.debug.sourceErrors, fallbackActivities.debug.sourceErrors);
   }
 
   restaurants = rankRestaurants(restaurants, intent);
@@ -67,9 +71,7 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     activitySearchInput: intent.activitySearchInput,
     searchedTables: Array.from(new Set([...(restaurantSearch.debug.searchedTables ?? []), ...(activitySearch.debug.searchedTables ?? [])])),
     rpcCalls: Array.from(new Set([...(restaurantSearch.debug.rpcCalls ?? []), ...(activitySearch.debug.rpcCalls ?? [])])),
-    sourceErrors: Array.from(
-      new Set([...(restaurantSearch.debug.sourceErrors ?? []), ...(activitySearch.debug.sourceErrors ?? [])]),
-    ),
+    sourceErrors: mergeSourceErrors(restaurantSearch.debug.sourceErrors, activitySearch.debug.sourceErrors),
     rawRestaurantCount: restaurantSearch.debug.rawRestaurantCount ?? 0,
     rawActivityCount: activitySearch.debug.rawActivityCount ?? 0,
     afterGeoFilterRestaurantCount: restaurantSearch.debug.afterGeoFilterRestaurantCount ?? 0,

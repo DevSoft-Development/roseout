@@ -2,6 +2,32 @@ import { inferRecordDomain, searchFallbackActivities, searchFallbackRestaurants 
 import { parseCanonicalIntent } from "@/lib/search/intent";
 import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
 
+
+const NYC_SERVICE_TERMS = [
+  "new york",
+  "nyc",
+  "brooklyn",
+  "queens",
+  "manhattan",
+  "bronx",
+  "staten island",
+  "astoria",
+  "elmhurst",
+  "jackson heights",
+  "ridgewood",
+  "long island city",
+  "lic",
+  "jamaica",
+  "flushing",
+  "forest hills",
+  "fresh meadows",
+  "sunnyside",
+  "woodside",
+  "bayside",
+  "rego park",
+  "corona",
+];
+
 type SearchDiagnostics = {
   input: string;
   stage: string;
@@ -84,11 +110,18 @@ function isOutingEligibleLocation(item: any) {
 }
 
 function isWithinTheOutHavenServiceArea(item: any) {
-  const area = `${item?.borough ?? ""} ${item?.city ?? ""} ${item?.location ?? ""}`.toLowerCase();
+  const area = [
+    item?.borough,
+    item?.city,
+    item?.neighborhood,
+    item?.address,
+    item?.search_document,
+    item?.location,
+  ].join(" ").toLowerCase();
+
   if (!area.trim()) return true;
-  return ["new york", "nyc", "brooklyn", "queens", "manhattan", "bronx", "staten island"].some((token) =>
-    area.includes(token)
-  );
+
+  return NYC_SERVICE_TERMS.some((token) => area.includes(token));
 }
 
 async function fetchFallbackRecords(input: string = "") {
@@ -249,7 +282,8 @@ export async function POST(request: Request) {
     matchedLocationResults.length > 0 ||
     (result?.pairs?.length ?? 0) > 0;
 
-  const sourceErrorCount = result?.debug?.sourceErrors?.length ?? 0;
+  const sourceErrors = result?.debug?.sourceErrors ?? [];
+  const sourceErrorCount = sourceErrors.length;
   const sourceErrorReply = getSourceErrorReply({
     sourceErrorCount,
     finalHasCards,
@@ -258,6 +292,10 @@ export async function POST(request: Request) {
   const finalReply =
     sourceErrorReply
       ? sourceErrorReply
+      : !finalHasCards && sourceErrorCount > 0
+        ? (process.env.NODE_ENV === "production"
+          ? "Search providers are temporarily unavailable. Please retry in a moment."
+          : "Search database error. Check debug.sourceErrors.")
       : topRestaurants.length && topActivities.length
       ? "Found food and activity options for your outing."
       : topRestaurants.length
