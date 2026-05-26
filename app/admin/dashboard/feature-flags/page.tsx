@@ -1,18 +1,3 @@
-import { requireAdminRole } from "@/lib/admin-auth";
-
-export const metadata = {
-  title: "feature flags – Admin",
-};
-
-export default async function Page() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
-
-  return (
-    <main className="min-h-screen bg-[#090706] p-6 text-white">
-      <div className="mx-auto max-w-5xl rounded-2xl border border-white/10 bg-[#120d0b] p-6">
-        <h1 className="text-2xl font-black capitalize">feature flags</h1>
-        <p className="mt-2 text-sm text-white/70">This admin section is ready for implementation.</p>
-      </div>
-    </main>
-  );
-}
+import Link from 'next/link'; import { requireAdminRole } from '@/lib/admin-auth'; import { supabaseAdmin } from '@/lib/supabase-admin'; import { formatDate, formatNumber, formatPercent } from '@/lib/admin/formatters';
+export const metadata={title:'Feature Flags – Admin'};
+export default async function Page(){await requireAdminRole(['superuser','admin','editor','viewer']); const {data,error}=await supabaseAdmin.from('feature_flags').select('*').order('updated_at',{ascending:false}); const rows=data||[]; return <main className='min-h-screen bg-[#090706] p-6 text-white'><div className='mx-auto max-w-7xl space-y-5'><div className='rounded-3xl border border-white/10 bg-[#120d0b] p-6'><h1 className='text-3xl font-black'>Feature Flags</h1><p className='text-white/70 text-sm'>Database + environment flags.</p></div><div className='grid grid-cols-2 md:grid-cols-5 gap-3'>{[['Total',rows.length],['Enabled',rows.filter(r=>r.enabled).length],['Disabled',rows.filter(r=>!r.enabled).length],['Production',rows.filter(r=>r.environment==='production').length],['Experimental',rows.filter(r=>r.category==='experimental').length]].map(([k,v])=><div key={String(k)} className='rounded-2xl border border-white/10 bg-white/5 p-4'><p className='text-xs text-white/60'>{k}</p><p className='text-2xl font-black'>{formatNumber(Number(v))}</p></div>)}</div><div className='rounded-3xl border border-white/10 bg-[#120d0b] overflow-hidden'>{error?<p className='p-6 text-rose-300'>{error.message}</p>:rows.length===0?<p className='p-6 text-white/70'>No feature flags yet.</p>:<table className='w-full text-sm'><thead className='bg-white/5'><tr>{['Key','Name','Category','Env','Enabled','Rollout','Updated','Action'].map(h=><th key={h} className='p-3 text-left'>{h}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.id} className='border-t border-white/10'><td className='p-3'>{r.key}</td><td className='p-3'>{r.name}</td><td className='p-3'>{r.category||'Not set'}</td><td className='p-3'>{r.environment||'production'}</td><td className='p-3'>{r.enabled?'Enabled':'Disabled'}</td><td className='p-3'>{formatPercent(r.rollout_percentage)}</td><td className='p-3'>{formatDate(r.updated_at)}</td><td className='p-3'><Link href='/admin/dashboard/settings' className='text-amber-300'>Manage</Link></td></tr>)}</tbody></table>}</div></div></main>}
