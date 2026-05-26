@@ -80,7 +80,7 @@ function statusClass(status: string | null | undefined) {
   if (status === "sent") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "scheduled") return "border-sky-200 bg-sky-50 text-sky-700";
   if (status === "failed") return "border-red-200 bg-red-50 text-red-700";
-  return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-rose-200 bg-rose-50 text-rose-700";
 }
 
 function typeLabel(type: string | null | undefined) {
@@ -158,13 +158,13 @@ export default async function MarketingCenterPage({
 
   const analytics = [
     { label: "Total campaigns", value: totalCampaigns, tone: "text-white" },
-    { label: "Drafts", value: drafts, tone: "text-amber-200" },
+    { label: "Drafts", value: drafts, tone: "text-rose-200" },
     { label: "Scheduled", value: scheduled, tone: "text-sky-200" },
     { label: "Sent", value: sent, tone: "text-emerald-300" },
     { label: "Failed", value: failed, tone: "text-red-300" },
     { label: "Emails sent", value: emailsSent, tone: "text-rose-200" },
     { label: "Texts sent", value: textsSent, tone: "text-purple-200" },
-    { label: "Clicks", value: clicks, tone: "text-amber-200" },
+    { label: "Clicks", value: clicks, tone: "text-rose-200" },
     { label: "Opens", value: opens, tone: "text-emerald-200" },
   ];
 
@@ -173,7 +173,7 @@ export default async function MarketingCenterPage({
       <div className="mx-auto max-w-[1500px]">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.28),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-5 shadow-2xl sm:p-7">
           <div className="absolute right-[-70px] top-[-70px] h-72 w-72 rounded-full bg-rose-500/20 blur-3xl" />
-          <div className="absolute bottom-[-80px] left-16 h-56 w-56 rounded-full bg-amber-300/10 blur-3xl" />
+          <div className="absolute bottom-[-80px] left-16 h-56 w-56 rounded-full bg-rose-300/10 blur-3xl" />
           <div className="relative z-10 grid gap-6 xl:grid-cols-[1.15fr_470px] xl:items-end">
             <div>
               <p className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-rose-300">Marketing Center</p>
@@ -196,7 +196,7 @@ export default async function MarketingCenterPage({
                   <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">Campaign Pulse</p>
                   <p className="mt-1 text-sm text-white/45">Draft-first sending with confirmation gates.</p>
                 </div>
-                <span className="rounded-full bg-amber-300 px-3 py-2 text-xs font-black text-black">Consent safe</span>
+                <span className="rounded-full bg-rose-300 px-3 py-2 text-xs font-black text-black">Consent safe</span>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3">
                 {analytics.slice(0, 4).map((stat) => (
@@ -362,7 +362,7 @@ export default async function MarketingCenterPage({
                   <span className="text-xs font-black uppercase tracking-wide text-black/45">Schedule at</span>
                   <input name="scheduled_at" type="datetime-local" className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-rose-400" />
                 </label>
-                <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+                <div className="rounded-[1.25rem] border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-800">
                   Confirmation step: use Save Draft first. Send Now requires confirming audience count, channel, and consent checks in the API.
                 </div>
               </div>

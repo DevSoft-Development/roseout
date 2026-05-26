@@ -100,7 +100,7 @@ export default function ReservationDiscoveryClient() {
             <Toggle label="Website discovery" checked={includeWebsiteDiscovery} onChange={setIncludeWebsiteDiscovery} helper="Disabled by default." />
           </div>
 
-          <div className="mt-5 rounded-[1.25rem] border border-amber-300/20 bg-amber-300/10 p-4 text-sm font-bold text-amber-100">
+          <div className="mt-5 rounded-[1.25rem] border border-rose-300/20 bg-rose-300/10 p-4 text-sm font-bold text-rose-100">
             Website discovery makes requests to public business websites. Use small batches.
           </div>
 

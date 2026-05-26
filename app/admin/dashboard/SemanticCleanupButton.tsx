@@ -57,7 +57,7 @@ export default function SemanticCleanupButton() {
           type="button"
           onClick={runCleanup}
           disabled={state.loading}
-          className="rounded-full bg-gradient-to-r from-rose-500 to-amber-400 px-5 py-3 text-xs font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+          className="rounded-full bg-gradient-to-r from-rose-500 to-rose-400 px-5 py-3 text-xs font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
         >
           {state.loading ? "Running..." : "Run Semantic Cleanup"}
         </button>

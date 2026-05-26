@@ -36,7 +36,7 @@ function statusClass(status: string | null | undefined) {
   }
 
   if (value === "pending" || value === "waiting") {
-    return "bg-amber-50 text-amber-700";
+    return "bg-rose-50 text-rose-700";
   }
 
   return "bg-emerald-50 text-emerald-700";
@@ -113,7 +113,7 @@ export default async function AdminSupportPage() {
                   <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
                     Urgent
                   </p>
-                  <p className="mt-1 text-3xl font-black text-amber-200">
+                  <p className="mt-1 text-3xl font-black text-rose-200">
                     {formatNumber(urgentTickets.length)}
                   </p>
                 </div>

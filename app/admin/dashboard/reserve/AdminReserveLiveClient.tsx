@@ -89,7 +89,7 @@ function statusTone(status?: string | null) {
   if (["arrived", "seated", "occupied"].includes(value)) return "border-sky-300/30 bg-sky-400/10 text-sky-100";
   if (value === "completed") return "border-emerald-300/30 bg-emerald-400/10 text-emerald-100";
   if (["cancelled", "declined", "no_show"].includes(value)) return "border-red-300/30 bg-red-400/10 text-red-100";
-  if (value === "confirmed") return "border-amber-200/30 bg-amber-300/10 text-amber-100";
+  if (value === "confirmed") return "border-rose-200/30 bg-rose-300/10 text-rose-100";
   return "border-white/10 bg-white/10 text-white/70";
 }
 

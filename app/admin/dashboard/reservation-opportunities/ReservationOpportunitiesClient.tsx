@@ -174,7 +174,7 @@ export default function ReservationOpportunitiesClient() {
             be good candidates to sell TheOutHaven’s internal reservation
             system.
           </p>
-          <p className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm font-bold text-amber-100">
+          <p className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-300/10 p-4 text-sm font-bold text-rose-100">
             No reservation link found. This location may be a good fit for
             TheOutHaven Reservations.
           </p>

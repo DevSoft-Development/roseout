@@ -214,7 +214,7 @@ function getQualityScoreClass(score: number | null | undefined) {
   }
 
   if (value >= 75) {
-    return "border-[#e7c987]/60 bg-gradient-to-br from-[#fff2ce] via-[#e7c987] to-[#b9873e] text-[#2a170e] shadow-amber-950/10";
+    return "border-[#e7a0ad]/60 bg-gradient-to-br from-[#fde7ef] via-[#e7a0ad] to-[#8f2d4f] text-[#2a170e] shadow-rose-950/10";
   }
 
   if (value >= 50) {
@@ -832,7 +832,7 @@ export default async function AdminDataQualityPage({
                             {missingFields.slice(0, 4).map((field) => (
                               <span
                                 key={field}
-                                className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase text-amber-800"
+                                className="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-black uppercase text-rose-800"
                               >
                                 {normalizeMissingField(field)}
                               </span>

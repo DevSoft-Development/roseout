@@ -711,7 +711,7 @@ export default function ImportPage() {
                     cleaningLocations ||
                     backfillingReservations
                   }
-                  className="rounded-full border border-amber-300/40 px-7 py-4 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+                  className="rounded-full border border-rose-300/40 px-7 py-4 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
                 >
                   {backfillingCuisines
                     ? "Backfilling Cuisines..."
@@ -1043,8 +1043,8 @@ export default function ImportPage() {
               </div>
 
               {reservationBackfillResult.failures?.length ? (
-                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-200">
+                <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">
                     First 10 failures
                   </p>
                   <div className="mt-3 space-y-2">
@@ -1053,7 +1053,7 @@ export default function ImportPage() {
                       .map((failure, index) => (
                         <div
                           key={`${failure.id || "failure"}-${index}`}
-                          className="rounded-lg bg-black/25 p-3 text-xs text-amber-50/90"
+                          className="rounded-lg bg-black/25 p-3 text-xs text-rose-50/90"
                         >
                           <p className="font-bold">
                             {failure.name || "Unnamed row"}
