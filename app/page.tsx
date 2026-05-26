@@ -95,7 +95,6 @@ export default async function HomePage() {
           </div>
 
           <FeaturedExperienceGrid sections={sections} />
-          <SocialProofStrip sections={sections} />
 
           <div className="space-y-6">
             <CarouselSection title="Trending Restaurants" subtitle="Most saved, highly rated, and trending tonight." locations={sections.trendingRestaurants} />
@@ -144,7 +143,7 @@ async function loadHomepageSections() {
   const uniqueLocations = dedupeLocations(locations);
   const usedLocationIds = new Set<string>();
 
-  const takeUnique = (items: HomeLocation[], limit = 5, registry: Set<string> = usedLocationIds) => {
+  const takeUnique = (items: HomeLocation[], limit = 4, registry: Set<string> = usedLocationIds) => {
     const selected: HomeLocation[] = [];
     for (const item of items) {
       if (!item.id || registry.has(item.id)) continue;
@@ -155,15 +154,85 @@ async function loadHomepageSections() {
     return selected;
   };
 
-  const recent = takeUnique(uniqueLocations, 5);
-  const dateNight = takeUnique(byKeywords(uniqueLocations, ["date night", "date", "romantic", "intimate", "lounge", "cocktail"]), 5);
-  const dinner = takeUnique(byKeywords(uniqueLocations, ["dinner", "steak", "sushi", "italian", "restaurant", "fine dining"]), 5);
-  const dessert = takeUnique(byKeywords(uniqueLocations, ["dessert", "ice cream", "bakery", "sweet", "patisserie"]), 5);
-  const lounge = takeUnique(byKeywords(uniqueLocations, ["lounge", "bar", "cocktail", "rooftop", "nightlife"]), 5);
+  const recent = takeUnique(uniqueLocations, 4);
+  const dateNight = takeUnique(byKeywords(uniqueLocations, ["date night", "date", "romantic", "intimate", "lounge", "cocktail"]), 4);
+  const dinner = takeUnique(byKeywords(uniqueLocations, ["dinner", "steak", "sushi", "italian", "restaurant", "fine dining"]), 4);
+  const dessert = takeUnique(byKeywords(uniqueLocations, ["dessert", "ice cream", "bakery", "sweet", "patisserie"]), 4);
+  const lounge = takeUnique(byKeywords(uniqueLocations, ["lounge", "bar", "cocktail", "rooftop", "nightlife"]), 4);
+
+  const featuredExperiences: HomeExperience[] = [
+    {
+      key: "date-night",
+      title: "Date Night",
+      subtitle: "Romantic Manhattan Spots",
+      tags: ["Intimate", "Cocktails", "Late Night"],
+      cta: "Plan OUTing",
+      planPrompt: "Romantic Manhattan date night with intimate cocktails and late-night vibes",
+      locations: takeUnique(
+        matchingLocations(
+          uniqueLocations,
+          ["romantic", "date night", "date", "intimate", "cocktail", "lounge", "fine dining", "upscale"],
+          { geo: ["manhattan", "new york"] }
+        ),
+        4,
+        new Set<string>()
+      ),
+    },
+    {
+      key: "rooftops",
+      title: "Rooftops",
+      subtitle: "Best Rooftops in Brooklyn",
+      tags: ["Skyline", "Golden Hour", "DJ Sets"],
+      cta: "Plan OUTing",
+      planPrompt: "Brooklyn rooftop outing with skyline views and DJ vibes",
+      locations: takeUnique(
+        matchingLocations(
+          uniqueLocations,
+          ["rooftop", "roof top", "skyline", "terrace", "views", "view", "dj", "lounge", "bar"],
+          { geo: ["brooklyn"] }
+        ),
+        4,
+        new Set<string>()
+      ),
+    },
+    {
+      key: "brunch",
+      title: "Brunch",
+      subtitle: "Weekend Brunch Spots",
+      tags: ["Day Party", "Bottomless", "Friends"],
+      cta: "Plan OUTing",
+      planPrompt: "Weekend brunch social outing with friends and lively energy",
+      locations: takeUnique(
+        matchingLocations(
+          uniqueLocations,
+          ["brunch", "bottomless", "breakfast", "day party", "daytime", "weekend brunch"],
+          { restaurantOnly: true }
+        ),
+        4,
+        new Set<string>()
+      ),
+    },
+    {
+      key: "group-outings",
+      title: "Group Outings",
+      subtitle: "Group-Friendly Lounges",
+      tags: ["Large Parties", "Birthdays", "Celebrations"],
+      cta: "Plan OUTing",
+      planPrompt: "Group-friendly outing for birthdays and celebrations",
+      locations: takeUnique(
+        matchingLocations(
+          uniqueLocations,
+          ["group", "party", "birthday", "celebration", "private", "lounge", "vr", "arcade", "bowling", "karaoke"]
+        ),
+        4,
+        new Set<string>()
+      ),
+    },
+  ];
 
   return {
-    trendingRestaurants: takeUnique(rankByTrending(uniqueLocations.filter((location) => isRestaurant(location))), 5),
-    trendingActivities: takeUnique(rankByTrending(uniqueLocations.filter((location) => !isRestaurant(location))), 5),
+    trendingRestaurants: takeUnique(rankByTrending(uniqueLocations.filter((location) => isRestaurant(location))), 4),
+    trendingActivities: takeUnique(rankByTrending(uniqueLocations.filter((location) => !isRestaurant(location))), 4),
     recent,
     categorySections: [
       { key: "date-night", title: "Date Night", subtitle: "Romantic and intimate picks", locations: dateNight },
@@ -171,13 +240,7 @@ async function loadHomepageSections() {
       { key: "dessert", title: "Dessert", subtitle: "Sweet endings nearby", locations: dessert },
       { key: "lounge", title: "Lounge", subtitle: "Cocktails and late-night vibes", locations: lounge },
     ],
-    experiences: [
-      { key: "date-night", title: "Date Night", subtitle: "Romantic Manhattan Spots", tags: ["Intimate", "Cocktails", "Late Night"], cta: "Plan OUTing", planPrompt: "Romantic Manhattan date night with intimate cocktails and late-night vibes", locations: takeUnique(byKeywords(uniqueLocations, ["date", "romantic", "lounge", "cocktail", "intimate", "upscale", "manhattan"]).filter(isLikelyManhattanLocation), 4) },
-      { key: "rooftops", title: "Rooftops", subtitle: "Best Rooftops in Brooklyn", tags: ["Skyline", "Golden Hour", "DJ Sets"], cta: "Plan OUTing", planPrompt: "Brooklyn rooftop outing with skyline views and DJ vibes", locations: takeUnique(byKeywords(uniqueLocations, ["rooftop", "skyline", "terrace", "dj", "lounge", "bar", "view", "views", "deck", "penthouse"]), 4, new Set<string>()) },
-      { key: "brunch", title: "Brunch", subtitle: "Weekend Brunch Socials", tags: ["Day Party", "Bottomless", "Friends"], cta: "Plan OUTing", planPrompt: "Weekend brunch social outing with friends and lively energy", locations: takeUnique(byKeywords(uniqueLocations, ["brunch", "day party", "daytime", "breakfast"]), 4) },
-      { key: "luxury", title: "Luxury", subtitle: "Luxury Dinner Experiences", tags: ["Chef-led", "Fine Dining", "Premium"], cta: "Plan OUTing", planPrompt: "Luxury dinner outing with fine dining and chef-led experiences", locations: takeUnique(byKeywords(uniqueLocations, ["luxury", "premium", "fine dining", "upscale", "chef"]).sort((a, b) => (b.price_level || 0) - (a.price_level || 0)), 4) },
-      { key: "group-outings", title: "Group Outings", subtitle: "Group-Friendly Lounges", tags: ["Large Parties", "Birthdays", "Celebrations"], cta: "Plan OUTing", planPrompt: "Group-friendly outing for birthdays and celebrations", locations: takeUnique(byKeywords(uniqueLocations, ["group", "party", "birthday", "celebration", "private"]), 4) },
-    ],
+    experiences: featuredExperiences,
   };
 }
 
@@ -185,16 +248,17 @@ function FeaturedExperienceGrid({ sections }: { sections: HomeSections }) {
   const filled = sections.experiences.filter((experience: HomeExperience) => experience.locations[0]);
   if (!filled.length) return <PolishedEmptyState />;
   return (
-    <div className="grid gap-4 lg:grid-cols-12">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {filled.map((experience, index) => {
         const primary = experience.locations[0];
         if (!primary) return null;
         const name = getLocationName(primary);
         const neighborhood = primary.neighborhood || primary.city || "NYC";
-        const featuredClass = index === 0 ? "lg:col-span-7 lg:row-span-2" : index === 1 ? "lg:col-span-5" : "lg:col-span-4";
-
         return (
-          <article key={experience.key} className={`group relative min-h-[260px] overflow-hidden rounded-[1.8rem] border border-white/10 ${featuredClass}`}>
+          <article
+            key={experience.key}
+            className="group relative min-h-[360px] overflow-hidden rounded-[1.8rem] border border-white/10"
+          >
             <img src={getLocationImage(primary)} alt={name} loading="lazy" className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.15)_0%,rgba(7,3,3,0.75)_58%,rgba(7,3,3,0.96)_100%)]" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.35),transparent_45%)]" />
@@ -215,21 +279,10 @@ function FeaturedExperienceGrid({ sections }: { sections: HomeSections }) {
   );
 }
 
-function SocialProofStrip({ sections }: { sections: HomeSections }) {
-  const bestRated = rankByTrending([...sections.trendingRestaurants, ...sections.trendingActivities]).slice(0, 4);
-  const stats = [
-    { label: "Trending Tonight", value: sections.trendingRestaurants.length },
-    { label: "Most Saved", value: bestRated.reduce((sum, item) => sum + (item.saves_count || 0), 0) },
-    { label: "Popular This Weekend", value: sections.trendingActivities.length },
-    { label: "Highly Rated Nearby", value: bestRated.filter((item) => (item.rating || item.score || 0) >= 4.5).length },
-  ];
-
-  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{stats.map((item) => <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/25"><p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/55">{item.label}</p><p className="mt-2 text-2xl font-black text-white">{item.value.toLocaleString()}</p></div>)}</div>;
-}
-
 function CarouselSection({ title, subtitle, locations }: { title: string; subtitle: string; locations: HomeLocation[] }) {
   if (!locations.length) return null;
-  return <section><div className="mb-4"><h2 className="text-3xl font-black">{title}</h2><p className="mt-1 text-sm text-white/65">{subtitle}</p></div><div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{locations.map((location) => <PlaceCard key={`${title}-${location.id}`} location={location} />)}</div></section>;
+  const visibleLocations = locations.slice(0, 4);
+  return <section><div className="mb-4"><h2 className="text-3xl font-black">{title}</h2><p className="mt-1 text-sm text-white/65">{subtitle}</p></div><div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{visibleLocations.map((location) => <PlaceCard key={`${title}-${location.id}`} location={location} />)}</div></section>;
 }
 
 function PlaceCard({ location }: { location: HomeLocation }) {
@@ -281,7 +334,55 @@ function byKeywords(locations: HomeLocation[], keywords: string[]) {
 }
 
 function searchableText(location: HomeLocation) {
-  return [location.source_table, location.type, location.category, location.primary_category, location.cuisine, location.cuisine_type, location.activity_type, ...(location.tags || []), ...(location.vibes || [])].join(" ").toLowerCase();
+  return [
+    location.source_table,
+    location.type,
+    location.name,
+    location.restaurant_name,
+    location.activity_name,
+    location.business_name,
+    location.city,
+    location.neighborhood,
+    location.category,
+    location.primary_category,
+    location.cuisine,
+    location.cuisine_type,
+    location.activity_type,
+    ...(location.tags || []),
+    ...(location.vibes || []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function hasAny(location: HomeLocation, keywords: string[]) {
+  const hay = searchableText(location);
+  return keywords.some((keyword) => hay.includes(keyword.toLowerCase()));
+}
+
+function inGeo(location: HomeLocation, keywords: string[]) {
+  const hay = `${location.city || ""} ${location.neighborhood || ""}`.toLowerCase();
+  return keywords.some((keyword) => hay.includes(keyword.toLowerCase()));
+}
+
+function matchingLocations(
+  locations: HomeLocation[],
+  keywords: string[],
+  options?: {
+    geo?: string[];
+    restaurantOnly?: boolean;
+    activityOnly?: boolean;
+  }
+) {
+  return locations
+    .filter((location) => {
+      if (options?.restaurantOnly && !isRestaurant(location)) return false;
+      if (options?.activityOnly && isRestaurant(location)) return false;
+      if (options?.geo?.length && !inGeo(location, options.geo)) return false;
+      return hasAny(location, keywords);
+    })
+    .sort((a, b) => score(b) - score(a));
 }
 
 function score(location: HomeLocation) {
@@ -301,11 +402,6 @@ function dedupeLocations(locations: HomeLocation[]) {
     seen.add(location.id);
     return true;
   });
-}
-
-function isLikelyManhattanLocation(location: HomeLocation) {
-  const hay = `${location.city || ""} ${location.neighborhood || ""}`.toLowerCase();
-  return hay.includes("manhattan") || hay.includes("new york");
 }
 
 function PolishedEmptyState() {
