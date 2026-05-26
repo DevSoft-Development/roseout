@@ -213,22 +213,32 @@ export async function POST(request: Request) {
             return requestedLocations.some((loc) => haystack.includes(String(loc).toLowerCase()));
           })
         : normalizedFallbackLocations;
+    const emergencyFallbackPool =
+      locationFilteredFallback.length > 0
+        ? locationFilteredFallback
+        : normalizedFallbackLocations;
 
-    const emergencyRestaurants = locationFilteredFallback.filter(
+    if (requestedLocations.length > 0 && locationFilteredFallback.length === 0) {
+      diagnostics.notes.push(
+        "Requested location fallback filter returned 0 records; using service-area fallback pool."
+      );
+    }
+
+    const emergencyRestaurants = emergencyFallbackPool.filter(
       (item: any) => inferRecordDomain(item) === "restaurant"
     );
-    const emergencyActivities = locationFilteredFallback.filter(
+    const emergencyActivities = emergencyFallbackPool.filter(
       (item: any) => inferRecordDomain(item) === "activity"
     );
 
     topRestaurants = emergencyRestaurants;
     topActivities = emergencyActivities;
-    matchedLocationResults = locationFilteredFallback;
+    matchedLocationResults = emergencyFallbackPool;
 
     diagnostics.notes.push("Emergency fallback records used for empty-card recovery.");
     setDiagCount(diagnostics, "emergency_restaurants", emergencyRestaurants);
     setDiagCount(diagnostics, "emergency_activities", emergencyActivities);
-    setDiagCount(diagnostics, "emergency_matched_locations", locationFilteredFallback);
+    setDiagCount(diagnostics, "emergency_matched_locations", emergencyFallbackPool);
   }
 
   setDiagCount(diagnostics, "rpc_restaurants", result?.debug?.rawRestaurantCount);
