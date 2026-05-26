@@ -89,7 +89,7 @@ export default async function AdminLocationDetailPage({ params }: { params: Prom
             ].map((b) => <span key={b} className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold">{b}</span>)}</div>
             <div className="mt-5 flex flex-wrap gap-3 text-sm font-black">
               <Link href={publicUrl} className="rounded-full bg-white px-5 py-2 text-black">View Public Page</Link>
-              <Link href={`/admin/dashboard/locations/${location.id}/edit`} className="rounded-full border border-white/15 bg-white/10 px-5 py-2">Edit Location</Link>
+              <Link href={`/admin/dashboard/locations/edit/${location.locationType}/${location.id}`} className="rounded-full border border-white/15 bg-white/10 px-5 py-2">Edit Location</Link>
               <button type="button" className="rounded-full border border-white/15 bg-white/10 px-5 py-2">Copy Claim Link</button>
               <button type="button" className="rounded-full border border-white/15 bg-white/10 px-5 py-2">Add Note</button>
             </div>
