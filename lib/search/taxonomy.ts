@@ -1,5 +1,22 @@
+export const GENERIC_MEAL_TERMS = [
+  "dinner",
+  "lunch",
+  "breakfast",
+  "brunch",
+  "restaurant",
+  "restaurants",
+  "food",
+  "eat",
+  "dining",
+] as const;
+
+export const SPECIFIC_MEAL_FOOD_INTENTS = [
+  "steak","steakhouse","seafood","sushi","pasta","soul_food","caribbean","italian","mexican","thai","chinese","japanese","american","african","vegan","vegetarian","halal","burgers","pizza","tacos","fine_dining",
+] as const;
+
 export const MEAL_FOOD_INTENTS = [
-  "steak","steakhouse","seafood","sushi","pasta","brunch","breakfast","lunch","dinner","soul_food","caribbean","italian","mexican","thai","chinese","japanese","american","african","vegan","vegetarian","halal","burgers","pizza","tacos","fine_dining",
+  ...SPECIFIC_MEAL_FOOD_INTENTS,
+  "brunch","breakfast","lunch","dinner",
 ] as const;
 
 export const ADD_ON_FOOD_INTENTS = [

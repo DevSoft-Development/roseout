@@ -9,6 +9,7 @@ export type CanonicalSearchIntent = {
   wantsFullOuting: boolean;
   foodIntents: string[];
   mealFoodIntents: string[];
+  specificMealFoodIntents: string[];
   addOnFoodIntents: string[];
   activityIntents: string[];
   cuisines: string[];
