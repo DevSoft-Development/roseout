@@ -159,7 +159,7 @@ export default function CleanupActions() {
                         Checked {formatNumber(tableResult.checked)} · Search ready {formatNumber(tableResult.clean)} · Needs review {formatNumber(tableResult.needsReview)}
                       </p>
                       {tableResult.errors && tableResult.errors.length > 0 && (
-                        <p className="mt-2 text-xs font-bold text-amber-100">
+                        <p className="mt-2 text-xs font-bold text-rose-100">
                           {tableResult.errors.length} row update error(s). First:
                           {" "}
                           {tableResult.errors[0]?.message}

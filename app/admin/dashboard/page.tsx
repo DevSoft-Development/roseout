@@ -92,7 +92,7 @@ export default async function CentralDashboardPage() {
       label: "Today",
       value: todayReservations,
       href: "/admin/dashboard/reservations/list?filter=today",
-      tone: "text-amber-200",
+      tone: "text-rose-200",
     },
     {
       label: "Open Tickets",
@@ -190,7 +190,7 @@ export default async function CentralDashboardPage() {
       <div className="mx-auto max-w-[1500px]">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.24),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-5 shadow-2xl sm:p-7">
           <div className="absolute right-[-60px] top-[-60px] h-64 w-64 rounded-full bg-rose-500/20 blur-3xl" />
-          <div className="absolute bottom-[-70px] left-24 h-48 w-48 rounded-full bg-amber-300/10 blur-3xl" />
+          <div className="absolute bottom-[-70px] left-24 h-48 w-48 rounded-full bg-rose-300/10 blur-3xl" />
 
           <div className="relative z-10 grid gap-6 lg:grid-cols-[1.15fr_460px] lg:items-end">
             <div>
@@ -270,7 +270,7 @@ export default async function CentralDashboardPage() {
                 {Number(pendingReservations || 0) > 0 && (
                   <Link
                     href="/admin/dashboard/reservations/list?status=pending"
-                    className="rounded-full bg-amber-300 px-3 py-2 text-xs font-black text-black"
+                    className="rounded-full bg-rose-300 px-3 py-2 text-xs font-black text-black"
                   >
                     {formatNumber(pendingReservations)} pending
                   </Link>

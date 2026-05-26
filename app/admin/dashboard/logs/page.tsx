@@ -200,7 +200,7 @@ export default async function AdminLogsPage({ searchParams }: { searchParams: Se
             <h2 className="mt-1 text-2xl font-black">{active.description}</h2>
           </div>
 
-          {active.error && <div className="m-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">This log source is not installed yet. The logging foundation is documented in <code>supabase/reservation-operations-foundation.sql</code>; available sources still render so the page is never empty.</div>}
+          {active.error && <div className="m-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-800">This log source is not installed yet. The logging foundation is documented in <code>supabase/reservation-operations-foundation.sql</code>; available sources still render so the page is never empty.</div>}
 
           {rows.length === 0 ? (
             <div className="p-8 text-center">
