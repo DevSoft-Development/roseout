@@ -73,7 +73,6 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const supabase = createClient();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [showUserSignup, setShowUserSignup] = useState(initialTab === "signup");
   const [signupStep, setSignupStep] = useState<SignupStep>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -211,7 +210,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-28 text-white">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-2">
-        <div className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-8">
+        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#17100d,#0f0a08)] p-8 shadow-2xl shadow-black/40">
           <p className="inline-flex rounded-full border border-[#e1062a]/45 bg-[#e1062a]/15 px-4 py-2 text-xs font-semibold tracking-[0.2em] text-red-100 shadow-[0_0_24px_rgba(225,6,42,0.25)]">THEOUTHAVEN</p>
           <h1 className="mt-6 text-4xl font-semibold leading-tight">Plan better OUTings.<br />Discover better places.</h1>
           <p className="mt-4 max-w-xl text-white/75">Create your free account to save favorites, unlock smarter outing recommendations, and discover restaurants, activities, and experiences matched to your vibe.</p>
@@ -220,7 +219,18 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <h3 className="text-lg font-medium">Create User Account</h3>
               <p className="mt-2 text-sm text-white/70">Save favorites, get recommendations, and plan better outings.</p>
-              <button onClick={() => { setTab("signup"); setShowUserSignup(true); }} className={`mt-4 w-full ${primaryButtonClass}`}>Continue as User</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTab("signup");
+                  setSignupStep(1);
+                  setError("");
+                  setMessage("");
+                }}
+                className={`mt-4 w-full ${primaryButtonClass}`}
+              >
+                Create Free Account
+              </button>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <h3 className="text-lg font-medium">Sign Up for Business</h3>
@@ -229,14 +239,16 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             </div>
           </div>
 
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
-              "Save favorite places",
-              "Get personalized recommendations",
-              "Unlock more weekly searches",
-              "Discover restaurants + activities",
-            ].map((benefit) => (
-              <div key={benefit} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/85">{benefit}</div>
+              ["Curated", "Restaurants + experiences"],
+              ["Personalized", "Outings by vibe"],
+              ["Premium", "Member-ready planning"],
+            ].map(([title, body]) => (
+              <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-sm font-bold text-white">{title}</p>
+                <p className="mt-1 text-xs leading-5 text-white/55">{body}</p>
+              </div>
             ))}
           </div>
 
@@ -247,23 +259,117 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
           </div>
         </div>
 
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
-          <div className="mb-6 flex rounded-full border border-white/10 bg-black/40 p-1">
-            <button onClick={() => setTab("signin")} className="flex-1 rounded-full px-4 py-2 text-sm">Sign In</button>
-            <button onClick={() => { setTab("signup"); setShowUserSignup(false); }} className="flex-1 rounded-full px-4 py-2 text-sm">Create Account</button>
+        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.16),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-5 shadow-2xl shadow-black/40">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+          <div className="mb-6 grid grid-cols-2 rounded-full border border-white/10 bg-black/50 p-1 shadow-inner shadow-black/40">
+            <button
+              type="button"
+              onClick={() => {
+                setTab("signin");
+                setError("");
+                setMessage("");
+              }}
+              className={`rounded-full px-4 py-3 text-sm font-bold transition ${
+                tab === "signin"
+                  ? "bg-[#e1062a] text-white shadow-[0_0_24px_rgba(225,6,42,0.35)]"
+                  : "text-white/55 hover:bg-white/[0.06] hover:text-white"
+              }`}
+            >
+              Sign In
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTab("signup");
+                setSignupStep(1);
+                setError("");
+                setMessage("");
+              }}
+              className={`rounded-full px-4 py-3 text-sm font-bold transition ${
+                tab === "signup"
+                  ? "bg-[#e1062a] text-white shadow-[0_0_24px_rgba(225,6,42,0.35)]"
+                  : "text-white/55 hover:bg-white/[0.06] hover:text-white"
+              }`}
+            >
+              Sign Up
+            </button>
           </div>
 
-          {error && <p className="mb-3 text-red-300">{error}</p>}
-          {message && <p className="mb-3 text-emerald-300">{message}</p>}
+          <div className="mb-6">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#e1062a]">
+              {tab === "signin" ? "Welcome Back" : "Join TheOutHaven"}
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">
+              {tab === "signin" ? "Sign in to plan your next OUTing." : "Create your member account."}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              {tab === "signin"
+                ? "Access saved places, outing plans, member perks, and smarter recommendations."
+                : "Save favorites, personalize recommendations, and unlock a better way to discover restaurants and experiences."}
+            </p>
+          </div>
+
+          {error && (
+            <p className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {error}
+            </p>
+          )}
+          {message && (
+            <p className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              {message}
+            </p>
+          )}
 
           {tab === "signin" ? (
-            <form onSubmit={handleSignIn} className="space-y-3">
-              <input required type="email" placeholder="Email" value={signin.email} onChange={(e) => setSignin((s) => ({ ...s, email: e.target.value }))} className={inputClass} />
-              <input required type="password" placeholder="Password" value={signin.password} onChange={(e) => setSignin((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
-              <button className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
+            <form onSubmit={handleSignIn} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Email</label>
+                <input
+                  required
+                  type="email"
+                  placeholder="you@example.com"
+                  value={signin.email}
+                  onChange={(e) => setSignin((s) => ({ ...s, email: e.target.value }))}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Password</label>
+                  <Link href="/forgot-password" className="text-xs font-bold text-[#e1062a] transition hover:text-red-300">
+                    Forgot password?
+                  </Link>
+                </div>
+                <input
+                  required
+                  type="password"
+                  placeholder="Enter your password"
+                  value={signin.password}
+                  onChange={(e) => setSignin((s) => ({ ...s, password: e.target.value }))}
+                  className={inputClass}
+                />
+              </div>
+
+              <button disabled={loading} className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
+
+              <p className="text-center text-sm text-white/55">
+                New to TheOutHaven?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab("signup");
+                    setSignupStep(1);
+                    setError("");
+                    setMessage("");
+                  }}
+                  className="font-bold text-[#e1062a] hover:text-red-300"
+                >
+                  Create an account
+                </button>
+              </p>
             </form>
-          ) : !showUserSignup ? (
-            <button onClick={() => setShowUserSignup(true)} className="w-full rounded-2xl border border-rose-300/30 py-4">Create User Account</button>
           ) : (
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
@@ -289,15 +395,40 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
               </div>
               {signupStep === 1 ? (
                 <>
+                  <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/45">Step 1</p>
+                    <h3 className="mt-1 text-lg font-semibold text-white">Account details</h3>
+                    <p className="mt-1 text-sm text-white/55">
+                      Tell us who you are so we can personalize your outing recommendations.
+                    </p>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <input required placeholder="Full name" value={signup.full_name} onChange={(e) => setSignup((s) => ({ ...s, full_name: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
-                    <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
-                    <input placeholder="Mobile number" value={signup.mobile_number} onChange={(e) => setSignup((s) => ({ ...s, mobile_number: e.target.value }))} className={inputClass} />
-                    <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Full Name</label>
+                      <input required placeholder="Full name" value={signup.full_name} onChange={(e) => setSignup((s) => ({ ...s, full_name: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Email</label>
+                      <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Mobile Number (Optional)</label>
+                      <input placeholder="Mobile number" value={signup.mobile_number} onChange={(e) => setSignup((s) => ({ ...s, mobile_number: e.target.value }))} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">ZIP Code</label>
+                      <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
+                    </div>
                     <div className="space-y-3 sm:col-span-2">
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
-                        <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
+                        <div>
+                          <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Password</label>
+                          <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Confirm Password</label>
+                          <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
+                        </div>
                       </div>
                       <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                         <div className="flex flex-wrap gap-2">
@@ -316,7 +447,10 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                         </div>
                       </div>
                     </div>
-                    <input placeholder="Promo code" value={signup.promo_code} onChange={(e) => setSignup((s) => ({ ...s, promo_code: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Promo Code (Optional)</label>
+                      <input placeholder="Promo code" value={signup.promo_code} onChange={(e) => setSignup((s) => ({ ...s, promo_code: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                    </div>
                   </div>
                 </>
               ) : (
