@@ -1934,7 +1934,7 @@ function ResultSection({
         </div>
       </div>
 
-      <div className="grid w-full min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid items-stretch w-full min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {children}
       </div>
     </section>
@@ -2018,6 +2018,7 @@ function ResultCard({
     type,
   });
   const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
+  const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
   const handleStartOuting = async (method: "external_reservation" | "phone") => {
     try {
       const response = await fetch("/api/outings/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location_id: locationId, location_type: type, external_reservation_url: reservationUrl, phone_number: phoneNumber, contact_method: method === "phone" ? "phone" : "external", source: "create_result_card" }) });
@@ -2043,7 +2044,7 @@ function ResultCard({
         if ((event.target as HTMLElement).closest("a,button")) return;
         onCardClick?.();
       }}
-      className={`group relative flex h-full min-h-[420px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.05rem] border bg-[#101010] shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[445px] sm:rounded-[1.1rem] ${
+      className={`group relative flex h-full min-h-[360px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/80 shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[445px] sm:rounded-[1.1rem] ${
         selected
           ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
           : "border-white/10"
@@ -2052,7 +2053,7 @@ function ResultCard({
         animation: `cardReveal 360ms ease-out ${index * 70}ms both`,
       }}
     >
-      <div className="relative h-[138px] w-full overflow-hidden bg-neutral-950 sm:h-[165px]">
+      <div className="relative h-44 w-full overflow-hidden bg-neutral-950">
         {imageUrl ? (
           <Image
             src={imageUrl}
@@ -2086,8 +2087,8 @@ function ResultCard({
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-3.5">
-        <div className="min-h-[112px] min-w-0 sm:min-h-[122px]">
+      <div className="flex min-w-0 flex-1 flex-col p-4">
+        <div className="space-y-2 min-w-0">
           <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
             <p className="line-clamp-1 min-w-0 text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
               {titleCase(eyebrow || type)}
@@ -2095,14 +2096,23 @@ function ResultCard({
           </div>
 
           <Link href={detailsHref} onClick={onDetails}>
-            <h3 className="line-clamp-1 break-words text-base font-black leading-tight tracking-[-0.03em] text-white transition group-hover:text-red-100 sm:text-lg">
+            <h3 className="line-clamp-2 break-words text-base font-black leading-tight tracking-[-0.03em] text-white transition group-hover:text-red-100 sm:text-lg">
               {title}
             </h3>
           </Link>
 
-          <p className="mt-1.5 line-clamp-2 break-words text-xs font-semibold leading-5 text-white/42">
+          <p className="line-clamp-1 break-words text-xs font-semibold leading-5 text-white/42">
             {address || "Location details available on the listing."}
           </p>
+          {chips.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {chips.map((chip) => (
+                <span key={chip} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
+                  {chip}
+                </span>
+              ))}
+            </div>
+          )}
 
           {distanceLabel ? (
             distanceHref ? (
@@ -2131,7 +2141,8 @@ function ResultCard({
           </p>
         </div>
 
-        <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+        <div className="mt-auto pt-4">
+        <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
           <button
             type="button"
             onClick={onSelect}
@@ -2185,6 +2196,7 @@ function ResultCard({
           ) : (
             <a href={distanceHref || detailsHref} target={distanceHref ? "_blank" : undefined} rel={distanceHref ? "noopener noreferrer" : undefined} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">{distanceHref ? "Get Directions" : "View Details"}</a>
           )}
+        </div>
         </div>
         <OutingCompletionBanner
           visible={showCompletionPrompt}
@@ -2256,6 +2268,36 @@ function LoadingResults({ label }: { label: string }) {
       </div>
     </div>
   );
+}
+
+function normalizeLabel(value: unknown): string {
+  if (!value) return "";
+  if (Array.isArray(value)) return value.map((item) => normalizeLabel(item)).filter(Boolean).join(", ");
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed)) return "";
+    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try { return normalizeLabel(JSON.parse(trimmed)); } catch {}
+    }
+    const cleaned = trimmed.replace(/^"|"$/g, "");
+    const labelMap: Record<string, string> = { "theouthaven-friendly outing": "TheOutHaven Pick", "date-night": "Date Night", "group-outing": "Group Outing", "group-outings": "Group Outing" };
+    const lower = cleaned.toLowerCase();
+    if (labelMap[lower]) return labelMap[lower];
+    return cleaned.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  return String(value).trim();
+}
+
+function normalizeLabels(values: unknown, limit = 3): string[] {
+  const rawValues = Array.isArray(values) ? values : [values];
+  return rawValues.flatMap((value) => normalizeLabel(value).split(",").map((part) => part.trim()).filter(Boolean))
+    .filter((label) => !["[]", "{}", "null", "undefined"].includes(label.toLowerCase()))
+    .filter((label, index, arr) => arr.findIndex((item) => item.toLowerCase() === label.toLowerCase()) === index)
+    .slice(0, limit);
+}
+
+function getCardChips(location: { eyebrow?: string | null; primaryTag?: string | null; reviewKeywords?: string[] | null }): string[] {
+  return normalizeLabels([location.eyebrow, location.primaryTag, ...(Array.isArray(location.reviewKeywords) ? location.reviewKeywords : normalizeLabels(location.reviewKeywords, 3))], 3);
 }
 
 function formatAddress(item: {

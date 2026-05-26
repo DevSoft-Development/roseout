@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
-import { getPrimaryCategory, getCuisine, getLocationTags } from "@/lib/locationFields";
+import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -290,22 +290,23 @@ function PlaceCard({ location }: { location: HomeLocation }) {
   const neighborhood = location.neighborhood || location.city || "New York";
   const numericRating = location.rating || location.score || null;
   const rating = numericRating ? numericRating.toFixed(1) : null;
-  const tags = getLocationTags(location).slice(0, 3);
+  const tags = getCardChips(location);
   const category = getPrimaryCategory(location);
   const cuisineOrActivity = getCuisine(location) || location.activity_type || null;
   const reserveHref = location.external_reservation_url || location.reservation_url || location.website || null;
 
   return (
-    <article className="group flex min-h-[380px] min-w-[285px] flex-col rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]">
-      <div className="relative overflow-hidden rounded-2xl">
-        <img src={getLocationImage(location)} alt={name} loading="lazy" className="aspect-[16/10] w-full object-cover transition duration-500 group-hover:scale-105" />
+    <article className="group flex h-full min-h-[340px] min-w-[285px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/80 p-3 shadow-2xl shadow-black/30 sm:min-w-[320px]">
+      <div className="relative h-44 w-full overflow-hidden rounded-2xl">
+        <img src={getLocationImage(location)} alt={name} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/80 to-transparent" />
       </div>
-      <div className="mt-3 space-y-1">
+      <div className="mt-3 flex flex-1 flex-col">
+        <div className="space-y-1">
         <h4 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{name}</h4>
         <p className="line-clamp-1 text-sm text-white/65">{category} · {neighborhood}</p>
         <p className="line-clamp-1 text-xs text-white/60">{[cuisineOrActivity, rating ? `${rating} ★` : null].filter(Boolean).join(" · ") || "Freshly added on TheOutHaven"}</p>
-      </div>
+        </div>
       <div className="mt-2 min-h-[3rem]">
         {tags.length ? (
           <div className="flex flex-wrap gap-2">
@@ -319,8 +320,47 @@ function PlaceCard({ location }: { location: HomeLocation }) {
         <Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link>
         {reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="inline-block rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve / Visit</a> : null}
       </div>
+      </div>
     </article>
   );
+}
+
+function normalizeLabel(value: unknown): string {
+  if (!value) return "";
+  if (Array.isArray(value)) return value.map((item) => normalizeLabel(item)).filter(Boolean).join(", ");
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed)) return "";
+    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try { return normalizeLabel(JSON.parse(trimmed)); } catch {}
+    }
+    const cleaned = trimmed.replace(/^"|"$/g, "");
+    const labelMap: Record<string, string> = { "theouthaven-friendly outing": "TheOutHaven Pick", "date-night": "Date Night", "group-outing": "Group Outing", "group-outings": "Group Outing" };
+    const lower = cleaned.toLowerCase();
+    if (labelMap[lower]) return labelMap[lower];
+    return cleaned.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  return String(value).trim();
+}
+
+function normalizeLabels(values: unknown, limit = 3): string[] {
+  const rawValues = Array.isArray(values) ? values : [values];
+  return rawValues.flatMap((value) => normalizeLabel(value).split(",").map((part) => part.trim()).filter(Boolean))
+    .filter((label) => !["[]", "{}", "null", "undefined"].includes(label.toLowerCase()))
+    .filter((label, index, arr) => arr.findIndex((item) => item.toLowerCase() === label.toLowerCase()) === index)
+    .slice(0, limit);
+}
+
+function getCardChips(location: HomeLocation): string[] {
+  return normalizeLabels([
+    location.primary_category,
+    location.category,
+    location.cuisine,
+    location.cuisine_type,
+    location.activity_type,
+    ...(Array.isArray(location.vibes) ? location.vibes : normalizeLabels(location.vibes, 3)),
+    ...(Array.isArray(location.tags) ? location.tags : normalizeLabels(location.tags, 3)),
+  ], 3);
 }
 
 function rankByTrending(locations: HomeLocation[]) {
