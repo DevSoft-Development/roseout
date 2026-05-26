@@ -25,20 +25,33 @@ function scoreRecord(record: any, terms: string[]) {
     .join(" ");
 
   return terms.reduce((acc, term) => {
-    const t = String(term ?? "").toLowerCase();
-    return acc + (text.includes(t) ? 5 : 0);
+    const t = String(term ?? "").toLowerCase().replaceAll("_", " ");
+    return acc + (text.includes(t) ? 10 : 0);
   }, 0);
 }
 
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
   return [...records].sort((a, b) => {
-    const mealTerms = intent.mealFoodIntents;
-    let as = scoreRecord(a, mealTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs);
-    let bs = scoreRecord(b, mealTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs);
-    if (mealTerms.length > 0) {
+    const strictTerms = intent.specificMealFoodIntents?.length
+      ? intent.specificMealFoodIntents
+      : intent.mealFoodIntents.filter((term) => !["dinner", "lunch", "breakfast", "brunch", "restaurant", "food", "eat", "dining"].includes(term));
+    let as = scoreRecord(a, strictTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs);
+    let bs = scoreRecord(b, strictTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs);
+    if (strictTerms.length > 0) {
       if (`${a.category ?? ""}`.toLowerCase().includes("hookah")) as -= 10;
       if (`${b.category ?? ""}`.toLowerCase().includes("hookah")) bs -= 10;
     }
+
+    const steakStrict = strictTerms.includes("steak") || strictTerms.includes("steakhouse");
+    if (steakStrict) {
+      const ah = [a.name, a.restaurant_name, a.activity_name, a.description, a.primary_category, a.cuisine, a.cuisine_type, a.food_type, a.activity_type, a.primary_tag, a.search_document, a.semantic_search_text].map((v) => String(v ?? "").toLowerCase()).join(" ");
+      const bh = [b.name, b.restaurant_name, b.activity_name, b.description, b.primary_category, b.cuisine, b.cuisine_type, b.food_type, b.activity_type, b.primary_tag, b.search_document, b.semantic_search_text].map((v) => String(v ?? "").toLowerCase()).join(" ");
+      if (!ah.includes("steak") && !ah.includes("steakhouse")) as -= 100;
+      if (!bh.includes("steak") && !bh.includes("steakhouse")) bs -= 100;
+      if (["bakery", "cafe", "coffee", "dessert", "bar"].some((t) => ah.includes(t))) as -= 50;
+      if (["bakery", "cafe", "coffee", "dessert", "bar"].some((t) => bh.includes(t))) bs -= 50;
+    }
+
     return bs - as;
   });
 }

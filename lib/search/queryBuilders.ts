@@ -3,10 +3,12 @@ import type { CanonicalSearchIntent } from "@/lib/search/types";
 const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
 
 export function buildRestaurantSearchInput(intent: CanonicalSearchIntent): string {
+  const specificTerms = intent.specificMealFoodIntents ?? [];
+  const mealTerms = specificTerms.length > 0 ? specificTerms : intent.mealFoodIntents;
   const terms = uniq([
-    ...intent.mealFoodIntents,
+    ...mealTerms,
     ...intent.cuisines,
-    ...(intent.mealFoodIntents.includes("steak") ? ["steakhouse", "dinner"] : []),
+    ...(mealTerms.includes("steak") ? ["steakhouse"] : []),
     ...intent.boroughs,
     ...intent.neighborhoods,
     ...intent.vibes,

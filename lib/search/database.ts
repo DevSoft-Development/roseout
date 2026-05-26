@@ -19,6 +19,29 @@ export type SearchDebug = {
 
 const SEARCHED_TABLE = "locations";
 
+const GENERIC_RESTAURANT_TERMS = new Set([
+  "dinner", "lunch", "breakfast", "brunch", "restaurant", "restaurants", "food", "eat", "dining",
+]);
+
+const FOOD_SYNONYMS: Record<string, string[]> = {
+  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon"],
+  steakhouse: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon"],
+  seafood: ["seafood", "fish", "crab", "lobster", "shrimp", "oyster"],
+  sushi: ["sushi", "sashimi", "omakase", "japanese"],
+  pasta: ["pasta", "italian"],
+  italian: ["italian", "pasta"],
+  mexican: ["mexican", "taco", "tacos"],
+  caribbean: ["caribbean", "jamaican", "haitian"],
+  soul_food: ["soul food", "southern"],
+  burgers: ["burger", "burgers"],
+  pizza: ["pizza"],
+  tacos: ["taco", "tacos"],
+  vegan: ["vegan"],
+  vegetarian: ["vegetarian"],
+  halal: ["halal"],
+  fine_dining: ["fine dining", "upscale", "steakhouse"],
+};
+
 const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
   queens: ["astoria", "flushing", "long island city", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "rockaway"],
   brooklyn: ["williamsburg", "bushwick", "park slope", "dumbo", "bed stuy", "crown heights", "greenpoint", "flatbush"],
@@ -84,6 +107,29 @@ function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
   if (inferred) return inferred === domain;
   const hay = text(record);
   return domain === "restaurant" ? hasAnyToken(hay, ["food", "eat", "dining"]) : hasAnyToken(hay, ["activity", "nightlife", "experience"]);
+}
+
+function getSpecificFoodTerms(intent: CanonicalSearchIntent) {
+  const specific = intent.specificMealFoodIntents ?? [];
+  if (specific.length > 0) return specific;
+
+  return (intent.mealFoodIntents ?? []).filter((term) => !GENERIC_RESTAURANT_TERMS.has(String(term).toLowerCase()));
+}
+
+function recordSearchText(record: Record<string, unknown>) {
+  return text(record);
+}
+
+function matchesSpecificFoodIntent(record: Record<string, unknown>, terms: string[]) {
+  if (!terms.length) return true;
+
+  const hay = recordSearchText(record);
+
+  return terms.some((term) => {
+    const normalized = String(term ?? "").toLowerCase().replaceAll("_", " ").trim();
+    const synonyms = FOOD_SYNONYMS[normalized] ?? FOOD_SYNONYMS[normalized.replaceAll(" ", "_")] ?? [normalized];
+    return synonyms.some((synonym) => hay.includes(String(synonym).toLowerCase()));
+  });
 }
 
 function softCategoryFilter(records: any[], terms: string[]) {
@@ -174,8 +220,17 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
   const geoFiltered = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
-  const terms = domain === "restaurant" ? intent.mealFoodIntents : intent.activityIntents;
-  const categorized = softCategoryFilter(geoFiltered, terms);
+  const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : intent.activityIntents;
+  let categorized = softCategoryFilter(geoFiltered, terms);
+
+  if (domain === "restaurant") {
+    const strictFoodTerms = getSpecificFoodTerms(intent);
+
+    if (strictFoodTerms.length > 0) {
+      const strictMatches = geoFiltered.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
+      categorized = strictMatches.length > 0 ? strictMatches : [];
+    }
+  }
 
   const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors };
   if (domain === "restaurant") {
@@ -195,5 +250,9 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
 export const searchRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", intent.restaurantSearchInput || intent.mealFoodIntents.join(" "));
 export const searchActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", intent.activitySearchInput || intent.activityIntents.join(" "));
-export const searchFallbackRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", [...intent.boroughs, "restaurant", "dinner", ...intent.mealFoodIntents].join(" "), true);
+export const searchFallbackRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", [
+  ...intent.boroughs,
+  "restaurant",
+  ...((intent.specificMealFoodIntents?.length ?? 0) > 0 ? intent.specificMealFoodIntents : intent.mealFoodIntents),
+].join(" "), true);
 export const searchFallbackActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", [...intent.boroughs, "activity", "lounge", "nightlife", ...intent.activityIntents].join(" "), true);
