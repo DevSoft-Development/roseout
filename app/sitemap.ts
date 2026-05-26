@@ -1,15 +1,8 @@
 import type { MetadataRoute } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { getSiteUrl } from "@/lib/site-url";
 
 export const dynamic = "force-dynamic";
-
-function getSiteUrl() {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.SITE_URL ||
-    "https://theouthaven.com"
-  ).replace(/\/$/, "");
-}
 
 function adminSupabase() {
   return createClient(

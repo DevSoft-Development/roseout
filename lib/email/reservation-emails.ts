@@ -1,4 +1,6 @@
 import { Resend } from "resend";
+import { getEmailSignature } from "@/lib/email/emailDepartments";
+import { buildSiteUrl } from "@/lib/site-url";
 
 export type ReservationEmailInput = {
   to?: string | null;
@@ -40,10 +42,10 @@ function template(title: string, intro: string, input: ReservationEmailInput) {
             ${input.confirmationCode ? `<p><strong>Confirmation code:</strong> ${input.confirmationCode}</p>` : ""}
           </div>
           <p style="margin:24px 0 0;">
-            ${input.modifyUrl ? `<a href="${input.modifyUrl}" style="display:inline-block;background:#111827;color:white;text-decoration:none;border-radius:999px;padding:12px 18px;font-weight:800;margin-right:8px;">View / Modify</a>` : ""}
-            ${input.cancelUrl ? `<a href="${input.cancelUrl}" style="display:inline-block;background:#e11d48;color:white;text-decoration:none;border-radius:999px;padding:12px 18px;font-weight:800;">Cancel</a>` : ""}
+            ${input.modifyUrl ? `<a href="${buildSiteUrl(input.modifyUrl)}" style="display:inline-block;background:#111827;color:white;text-decoration:none;border-radius:999px;padding:12px 18px;font-weight:800;margin-right:8px;">View / Modify</a>` : ""}
+            ${input.cancelUrl ? `<a href="${buildSiteUrl(input.cancelUrl)}" style="display:inline-block;background:#e11d48;color:white;text-decoration:none;border-radius:999px;padding:12px 18px;font-weight:800;">Cancel</a>` : ""}
           </p>
-          <p style="color:#7c2d12;font-size:13px;margin-top:24px;">Thank you for planning your outing with TheOutHaven.</p>
+          <p style="color:#7c2d12;font-size:13px;margin-top:24px;">${getEmailSignature("reservations").replace("\n","<br/>")}</p>
         </div>
       </div>
     </div>`;
