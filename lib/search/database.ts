@@ -24,11 +24,21 @@ const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
   brooklyn: ["williamsburg", "bushwick", "park slope", "dumbo", "bed stuy", "crown heights", "greenpoint", "flatbush"],
 };
 
-const SEARCH_TEXT_FIELDS = [
-  "name", "restaurant_name", "activity_name", "title", "category", "primary_category", "categories", "type", "location_type", "cuisine", "cuisines", "primary_tag", "tags", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "formatted_address", "search_document", "searchable_text",
+const SAFE_REMOTE_TEXT_FIELDS = [
+  "name", "restaurant_name", "activity_name", "location_type", "source_table", "primary_category", "cuisine", "cuisine_type", "food_type", "activity_type", "primary_tag", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "search_document", "semantic_search_text",
 ];
 
-const n = (v: unknown) => String(v ?? "").toLowerCase().trim();
+const SEARCH_TEXT_FIELDS = [
+  "name", "restaurant_name", "activity_name", "location_type", "source_table", "primary_category", "cuisine", "cuisine_type", "food_type", "activity_type", "primary_tag", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "search_document", "semantic_search_text", "tags", "vibe_tags", "best_for_tags", "google_types", "search_keywords", "review_keywords", "semantic_tags", "intent_tags",
+];
+
+function stringifySearchValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((v) => String(v ?? "")).join(" ");
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return String(value ?? "");
+}
+
+const n = (v: unknown) => stringifySearchValue(v).toLowerCase().trim();
 const text = (record: Record<string, unknown>) => SEARCH_TEXT_FIELDS.map((f) => n(record[f])).join(" ");
 
 function hasAnyToken(hay: string, tokens: string[]) {
@@ -49,46 +59,18 @@ export function inferRecordDomain(record: Record<string, unknown>): SearchDomain
   const hay = text(record);
   const marker = n(
     record.location_type ??
-      record.type ??
-      record.category ??
       record.primary_category ??
       record.primary_tag ??
       record.restaurant_name ??
       record.activity_name ??
-      record.categories ??
-      record.source_table
+      record.source_table,
   );
 
-  const restaurantTokens = [
-    "restaurant",
-    "restaurants",
-    "food",
-    "dining",
-    "cuisine",
-    "brunch",
-    "lunch",
-    "dinner",
-    "breakfast",
-    "cafe",
-  ];
-  const activityTokens = [
-    "activity",
-    "activities",
-    "nightlife",
-    "experience",
-    "lounge",
-    "bar",
-    "club",
-    "event",
-    "things to do",
-  ];
+  const restaurantTokens = ["restaurant", "restaurants", "food", "dining", "cuisine", "brunch", "lunch", "dinner", "breakfast", "cafe"];
+  const activityTokens = ["activity", "activities", "nightlife", "experience", "lounge", "bar", "club", "event", "things to do"];
 
-  const restaurantHit =
-    hasAnyToken(marker, restaurantTokens) ||
-    hasAnyToken(hay, ["steak", "seafood", "brunch", "restaurant", "cuisine"]);
-  const activityHit =
-    hasAnyToken(marker, activityTokens) ||
-    hasAnyToken(hay, ["hookah", "bowling", "paint", "karaoke", "nightlife"]);
+  const restaurantHit = hasAnyToken(marker, restaurantTokens) || hasAnyToken(hay, ["steak", "seafood", "brunch", "restaurant", "cuisine"]);
+  const activityHit = hasAnyToken(marker, activityTokens) || hasAnyToken(hay, ["hookah", "bowling", "paint", "karaoke", "nightlife"]);
 
   if (restaurantHit && !activityHit) return "restaurant";
   if (activityHit && !restaurantHit) return "activity";
@@ -99,13 +81,9 @@ export function inferRecordDomain(record: Record<string, unknown>): SearchDomain
 
 function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
   const inferred = inferRecordDomain(record);
-  if (inferred) {
-    return inferred === domain;
-  }
+  if (inferred) return inferred === domain;
   const hay = text(record);
-  return domain === "restaurant"
-    ? hasAnyToken(hay, ["food", "eat", "dining"])
-    : hasAnyToken(hay, ["activity", "nightlife", "experience"]);
+  return domain === "restaurant" ? hasAnyToken(hay, ["food", "eat", "dining"]) : hasAnyToken(hay, ["activity", "nightlife", "experience"]);
 }
 
 function softCategoryFilter(records: any[], terms: string[]) {
@@ -115,62 +93,91 @@ function softCategoryFilter(records: any[], terms: string[]) {
   return exact.length > 0 ? exact : records;
 }
 
-async function queryLocations(searchText: string, limit = 80) {
+export async function queryLocations(searchText: string, limit = 120) {
   const term = searchText.trim();
+
   let query = supabaseAdmin
-    .from(SEARCHED_TABLE)
+    .from("locations")
     .select("*")
     .eq("is_searchable", true)
     .neq("data_status", "hidden")
+    .not("is_hidden", "is", true)
     .limit(limit);
 
   if (term.length > 0) {
-    const parts = term.split(/\s+/).filter(Boolean).slice(0, 4);
-    const ors = parts.flatMap((p) => [
-      `name.ilike.%${p}%`,
-      `restaurant_name.ilike.%${p}%`,
-      `activity_name.ilike.%${p}%`,
-      `title.ilike.%${p}%`,
-      `description.ilike.%${p}%`,
-      `category.ilike.%${p}%`,
-      `primary_category.ilike.%${p}%`,
-      `primary_tag.ilike.%${p}%`,
-      `cuisine.ilike.%${p}%`,
-      `tags.ilike.%${p}%`,
-      `search_document.ilike.%${p}%`,
-      `searchable_text.ilike.%${p}%`,
-      `address.ilike.%${p}%`,
-      `borough.ilike.%${p}%`,
-      `city.ilike.%${p}%`,
-      `state.ilike.%${p}%`,
-      `neighborhood.ilike.%${p}%`,
-      `formatted_address.ilike.%${p}%`,
-    ]);
+    const parts = term.split(/\s+/).map((p) => p.trim()).filter(Boolean).slice(0, 6);
+    const ors = parts.flatMap((p) => SAFE_REMOTE_TEXT_FIELDS.map((field) => `${field}.ilike.%${p}%`));
     query = query.or(ors.join(","));
   }
 
   const { data, error } = await query;
   if (error) {
-    console.error("search query failed", error);
-    const message = typeof error.message === "string" ? error.message : "unknown_search_error";
-    return { records: [], error: message };
+    console.error("THEOUTHAVEN_LOCATION_SEARCH_ERROR", {
+      searchText,
+      fields: SAFE_REMOTE_TEXT_FIELDS,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+
+    return {
+      records: [],
+      error: `${error.code ?? "SEARCH_ERROR"}: ${error.message ?? "unknown_search_error"}`,
+    };
   }
+
+  return { records: data ?? [], error: null };
+}
+
+export async function queryBroadLocations(limit = 500) {
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .eq("is_searchable", true)
+    .neq("data_status", "hidden")
+    .not("is_hidden", "is", true)
+    .limit(limit);
+
+  if (error) {
+    console.error("THEOUTHAVEN_BROAD_LOCATION_SEARCH_ERROR", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
+
+    return {
+      records: [],
+      error: `${error.code ?? "BROAD_SEARCH_ERROR"}: ${error.message ?? "unknown_broad_search_error"}`,
+    };
+  }
+
   return { records: data ?? [], error: null };
 }
 
 async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain, searchText: string, fallback = false) {
+  const sourceErrors: string[] = [];
   const queryResult = await queryLocations(searchText);
-  const records = queryResult.records;
+  if (queryResult.error) sourceErrors.push(queryResult.error);
+
+  let records = queryResult.records;
+  if (records.length === 0) {
+    const broadResult = await queryBroadLocations(500);
+    if (broadResult.error) sourceErrors.push(broadResult.error);
+    const terms = searchText.toLowerCase().split(/\s+/).filter(Boolean);
+    records = broadResult.records.filter((record) => {
+      const hay = text(record);
+      return terms.some((term) => hay.includes(term));
+    });
+  }
+
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
   const geoFiltered = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
   const terms = domain === "restaurant" ? intent.mealFoodIntents : intent.activityIntents;
   const categorized = softCategoryFilter(geoFiltered, terms);
 
-  const debug: SearchDebug = {
-    searchedTables: [SEARCHED_TABLE],
-    rpcCalls: [],
-    sourceErrors: queryResult.error ? [queryResult.error] : [],
-  };
+  const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors };
   if (domain === "restaurant") {
     debug.rawRestaurantCount = domainRecords.length;
     debug.afterGeoFilterRestaurantCount = geoFiltered.length;

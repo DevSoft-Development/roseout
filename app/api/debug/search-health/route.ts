@@ -1,89 +1,59 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { queryLocations } from "@/lib/search/database";
 
 export const dynamic = "force-dynamic";
 
-const STEAK_RESTAURANT_FIELDS =
-  "id, restaurant_name, city, state, borough, cuisine_type, cuisine, latitude, longitude";
-const STEAK_SEARCH_FIELDS =
-  "id, restaurant_name, city, state, borough, cuisine_type, cuisine, search_document, latitude, longitude";
-const HOOKAH_ACTIVITY_FIELDS =
-  "id, activity_name, city, state, borough, activity_type, category, subcategory, search_document, latitude, longitude";
-
 export async function GET() {
   if (process.env.NODE_ENV === "production") {
-    return NextResponse.json(
-      { error: "Not available in production" },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: "Not available in production" }, { status: 404 });
   }
 
-  const checks = await Promise.allSettled([
+  const [
+    totalLocations,
+    searchableLocations,
+    cleanLocations,
+    hiddenLocations,
+    hasSearchDocument,
+    sampleSteakQueens,
+    sampleHookahQueens,
+    steakQuery,
+    hookahQuery,
+    combinedQuery,
+  ] = await Promise.all([
     supabase.from("locations").select("id", { count: "exact", head: true }),
-    supabase.from("restaurants").select("id", { count: "exact", head: true }),
-    supabase.from("activities").select("id", { count: "exact", head: true }),
+    supabase.from("locations").select("id", { count: "exact", head: true }).eq("is_searchable", true),
+    supabase.from("locations").select("id", { count: "exact", head: true }).eq("data_status", "clean"),
+    supabase.from("locations").select("id", { count: "exact", head: true }).or("is_hidden.is.true,data_status.eq.hidden"),
+    supabase.from("locations").select("id", { count: "exact", head: true }).not("search_document", "is", null),
     supabase
-      .from("restaurants")
-      .select(STEAK_RESTAURANT_FIELDS)
-      .or("cuisine_type.ilike.%steak%,cuisine.ilike.%steak%")
+      .from("locations")
+      .select("id,name,restaurant_name,borough,city,neighborhood,search_document")
+      .or("search_document.ilike.%steak%,name.ilike.%steak%,restaurant_name.ilike.%steak%")
+      .or("borough.ilike.%queens%,city.ilike.%queens%,neighborhood.ilike.%queens%")
       .limit(10),
     supabase
-      .from("restaurants")
-      .select(STEAK_SEARCH_FIELDS)
-      .or("cuisine.ilike.%steak%,search_document.ilike.%steak%")
+      .from("locations")
+      .select("id,name,activity_name,borough,city,neighborhood,search_document")
+      .or("search_document.ilike.%hookah%,name.ilike.%hookah%,activity_name.ilike.%hookah%")
+      .or("borough.ilike.%queens%,city.ilike.%queens%,neighborhood.ilike.%queens%")
       .limit(10),
-    supabase
-      .from("activities")
-      .select(HOOKAH_ACTIVITY_FIELDS)
-      .or("activity_name.ilike.%hookah%,activity_type.ilike.%hookah%,category.ilike.%hookah%,subcategory.ilike.%hookah%,search_document.ilike.%hookah%")
-      .limit(10),
+    queryLocations("steak dinner in queens"),
+    queryLocations("hookah lounge in queens"),
+    queryLocations("steak dinner and hookah lounge in queens"),
   ]);
 
-  const labels = [
-    "locations_count",
-    "restaurants_count",
-    "activities_count",
-    "steak_restaurant_samples",
-    "steak_cuisine_or_search_document_samples",
-    "hookah_activity_samples",
-  ] as const;
-
-  const normalizedChecks = checks.map((result, index) => {
-    const label = labels[index];
-
-    if (result.status === "rejected") {
-      return {
-        check: label,
-        ok: false,
-        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-      };
-    }
-
-    const { data, error, count } = result.value;
-
-    if (error) {
-      return {
-        check: label,
-        ok: false,
-        error: error.message,
-      };
-    }
-
-    if (label.endsWith("_count")) {
-      return {
-        check: label,
-        ok: true,
-        count: count ?? 0,
-      };
-    }
-
-    return {
-      check: label,
-      ok: true,
-      count: Array.isArray(data) ? data.length : 0,
-      sample: data ?? [],
-    };
+  return NextResponse.json({
+    ok: true,
+    total_locations: totalLocations.count ?? 0,
+    searchable_locations: searchableLocations.count ?? 0,
+    clean_locations: cleanLocations.count ?? 0,
+    hidden_locations: hiddenLocations.count ?? 0,
+    has_search_document: hasSearchDocument.count ?? 0,
+    sample_steak_queens: sampleSteakQueens.data ?? [],
+    sample_hookah_queens: sampleHookahQueens.data ?? [],
+    query_locations_steak_dinner_in_queens: steakQuery,
+    query_locations_hookah_lounge_in_queens: hookahQuery,
+    query_locations_steak_and_hookah_in_queens: combinedQuery,
   });
-
-  return NextResponse.json({ ok: true, checks: normalizedChecks });
 }

@@ -1,8 +1,33 @@
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 
 function scoreRecord(record: any, terms: string[]) {
-  const text = `${record.name ?? ""} ${record.description ?? ""} ${record.cuisine ?? ""} ${record.category ?? ""}`.toLowerCase();
-  return terms.reduce((acc, term) => acc + (text.includes(term) ? 5 : 0), 0);
+  const text = [
+    record.name,
+    record.restaurant_name,
+    record.activity_name,
+    record.description,
+    record.primary_category,
+    record.cuisine,
+    record.cuisine_type,
+    record.food_type,
+    record.activity_type,
+    record.primary_tag,
+    record.borough,
+    record.city,
+    record.neighborhood,
+    record.search_document,
+    record.semantic_search_text,
+    ...(Array.isArray(record.tags) ? record.tags : []),
+    ...(Array.isArray(record.search_keywords) ? record.search_keywords : []),
+    ...(Array.isArray(record.intent_tags) ? record.intent_tags : []),
+  ]
+    .map((v) => String(v ?? "").toLowerCase())
+    .join(" ");
+
+  return terms.reduce((acc, term) => {
+    const t = String(term ?? "").toLowerCase();
+    return acc + (text.includes(t) ? 5 : 0);
+  }, 0);
 }
 
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
