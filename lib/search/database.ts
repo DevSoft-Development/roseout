@@ -55,6 +55,14 @@ const SEARCH_TEXT_FIELDS = [
   "name", "restaurant_name", "activity_name", "location_type", "source_table", "primary_category", "cuisine", "cuisine_type", "food_type", "activity_type", "primary_tag", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "search_document", "semantic_search_text", "tags", "vibe_tags", "best_for_tags", "google_types", "search_keywords", "review_keywords", "semantic_tags", "intent_tags",
 ];
 
+const MEAL_TERMS = [
+  "steak", "steakhouse", "seafood", "sushi", "italian", "mexican", "caribbean", "dinner", "brunch", "lunch", "restaurant", "food", "fine dining", "rooftop dinner", "date night dinner",
+];
+
+const ADD_ON_ACTIVITY_TERMS = [
+  "hookah", "hookah lounge", "lounge", "nightclub", "club", "karaoke", "bowling", "arcade", "vr", "paint", "sip and paint", "activity", "experience",
+];
+
 function stringifySearchValue(value: unknown): string {
   if (Array.isArray(value)) return value.map((v) => String(v ?? "")).join(" ");
   if (value && typeof value === "object") return JSON.stringify(value);
@@ -68,6 +76,47 @@ function hasAnyToken(hay: string, tokens: string[]) {
   return tokens.some((token) => hay.includes(token));
 }
 
+function locationText(location: Record<string, unknown>) {
+  return [
+    location.source_table, location.location_type, location.type, location.category, location.primary_category, location.name, location.restaurant_name, location.activity_name, location.business_name, location.cuisine, location.cuisine_type, location.activity_type, location.description, ...(Array.isArray(location.tags) ? location.tags : []), ...(Array.isArray(location.vibes) ? location.vibes : []),
+  ].map((value) => stringifySearchValue(value)).filter(Boolean).join(" ").toLowerCase();
+}
+
+function isRestaurantRecord(location: Record<string, unknown>) {
+  const hay = locationText(location);
+  if (n(location.source_table) === "restaurants") return true;
+  if (location.restaurant_name) return true;
+  if (location.cuisine || location.cuisine_type || location.food_type) return true;
+  return hasAnyToken(hay, [
+    "restaurant", "dining", "dinner", "brunch", "lunch", "food", "steakhouse", "seafood", "sushi", "italian", "mexican", "caribbean", "american", "cafe", "bakery", "dessert", "bar and grill", "grill", "bistro",
+  ]);
+}
+
+function isActivityOnlyRecord(location: Record<string, unknown>) {
+  const hay = locationText(location);
+  const hasActivitySignal = hasAnyToken(hay, [
+    "hookah", "lounge", "nightclub", "club", "karaoke", "bowling", "arcade", "vr", "paint", "sip and paint", "museum", "escape room", "activity", "experience",
+  ]);
+  return hasActivitySignal && !isRestaurantRecord(location);
+}
+
+function hasMealIntent(query: string) {
+  const q = query.toLowerCase();
+  return MEAL_TERMS.some((term) => q.includes(term));
+}
+function hasAddOnActivityIntent(query: string) {
+  const q = query.toLowerCase();
+  return ADD_ON_ACTIVITY_TERMS.some((term) => q.includes(term));
+}
+function getMealTermsFromQuery(query: string) {
+  const q = query.toLowerCase();
+  return MEAL_TERMS.filter((term) => q.includes(term));
+}
+function getActivityTermsFromQuery(query: string) {
+  const q = query.toLowerCase();
+  return ADD_ON_ACTIVITY_TERMS.filter((term) => q.includes(term));
+}
+
 function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
   if (!boroughs.length) return true;
   const hay = text(record);
@@ -75,6 +124,56 @@ function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
     const b = n(requested);
     if (!b) return false;
     return hay.includes(b) || (BOROUGH_NEIGHBORHOODS[b] ?? []).some((q) => hay.includes(q));
+  });
+}
+
+function matchesGeo(record: Record<string, unknown>, query: string) {
+  const q = query.toLowerCase();
+  const hay = [
+    record.borough, record.city, record.neighborhood, record.address, record.formatted_address,
+  ].map((value) => stringifySearchValue(value)).filter(Boolean).join(" ").toLowerCase();
+
+  const boroughList = ["queens", "brooklyn", "manhattan", "bronx", "staten island"];
+  const requestedBorough = boroughList.find((borough) => q.includes(borough));
+  if (requestedBorough) return hay.includes(requestedBorough);
+  if (q.includes("astoria")) return hay.includes("astoria") || hay.includes("queens");
+  return true;
+}
+
+function restaurantIntentScore(location: Record<string, unknown>, query: string) {
+  const hay = locationText(location);
+  const mealTerms = getMealTermsFromQuery(query);
+  let points = 0;
+  if (n(location.source_table) === "restaurants") points += 50;
+  if (location.restaurant_name) points += 30;
+  if (location.cuisine || location.cuisine_type || location.food_type) points += 25;
+  for (const term of mealTerms) if (hay.includes(term)) points += 40;
+  if (hay.includes("steakhouse")) points += 35;
+  if (hay.includes("steak")) points += 30;
+  if (hay.includes("dinner")) points += 20;
+  if (hay.includes("restaurant")) points += 20;
+  if (isActivityOnlyRecord(location)) points -= 100;
+  return points;
+}
+
+function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[], query: string) {
+  const mealIntent = hasMealIntent(query);
+  const mealTerms = getMealTermsFromQuery(query);
+  const restaurantCandidates = locations.filter((location) => isRestaurantRecord(location) && !isActivityOnlyRecord(location));
+  if (!mealIntent) return { filtered: restaurantCandidates, strictCount: restaurantCandidates.length, fallbackCount: restaurantCandidates.length };
+  const strictMealMatches = restaurantCandidates.filter((location) => mealTerms.some((term) => locationText(location).includes(term)));
+  if (strictMealMatches.length > 0) return { filtered: strictMealMatches, strictCount: strictMealMatches.length, fallbackCount: 0 };
+  return { filtered: restaurantCandidates, strictCount: 0, fallbackCount: restaurantCandidates.length };
+}
+
+function filterActivityCandidatesForQuery(locations: Record<string, unknown>[], query: string) {
+  const activityTerms = getActivityTermsFromQuery(query);
+  return locations.filter((location) => {
+    const hay = locationText(location);
+    const hasActivitySignal = activityTerms.length ? activityTerms.some((term) => hay.includes(term)) : true;
+    if (!hasActivitySignal) return false;
+    if (isRestaurantRecord(location) && activityTerms.length > 0 && !activityTerms.some((term) => hay.includes(term))) return false;
+    return true;
   });
 }
 
@@ -219,17 +318,32 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   }
 
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
-  const geoFiltered = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
+  const intentQuery = `${searchText} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
+  const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
+  const geoFilteredByQuery = domainRecords.filter((record) => matchesGeo(record, intentQuery));
+  const geoFiltered = geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent;
   const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : intent.activityIntents;
-  let categorized = softCategoryFilter(geoFiltered, terms);
+  let categorized: Record<string, unknown>[] = softCategoryFilter(geoFiltered, terms);
+  let strictRestaurantCount = 0;
+  let fallbackRestaurantCount = 0;
+  let restaurantCandidateCount = 0;
+  let activityCandidateCount = 0;
 
   if (domain === "restaurant") {
+    const filtered = filterRestaurantCandidatesForQuery(geoFiltered, intentQuery);
+    restaurantCandidateCount = geoFiltered.filter((record) => isRestaurantRecord(record) && !isActivityOnlyRecord(record)).length;
+    strictRestaurantCount = filtered.strictCount;
+    fallbackRestaurantCount = filtered.fallbackCount;
+    categorized = filtered.filtered.sort((a, b) => restaurantIntentScore(b, intentQuery) - restaurantIntentScore(a, intentQuery));
     const strictFoodTerms = getSpecificFoodTerms(intent);
-
-    if (strictFoodTerms.length > 0) {
-      const strictMatches = geoFiltered.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
-      categorized = strictMatches.length > 0 ? strictMatches : [];
+    if (strictFoodTerms.length > 0 && strictRestaurantCount > 0) {
+      const strictMatches = categorized.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
+      if (strictMatches.length > 0) categorized = strictMatches;
     }
+  } else {
+    activityCandidateCount = filterActivityCandidatesForQuery(geoFiltered, intentQuery).length;
+    categorized = filterActivityCandidatesForQuery(geoFiltered, intentQuery);
+    if (!hasAddOnActivityIntent(intentQuery)) categorized = softCategoryFilter(categorized, terms);
   }
 
   const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors };
@@ -243,6 +357,19 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     debug.afterGeoFilterActivityCount = geoFiltered.length;
     debug.afterCategoryFilterActivityCount = categorized.length;
     debug.fallbackActivityUsed = fallback;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[search-debug]", {
+      query: intentQuery,
+      mealTerms: getMealTermsFromQuery(intentQuery),
+      activityTerms: getActivityTermsFromQuery(intentQuery),
+      restaurantCandidateCount,
+      strictRestaurantCount,
+      fallbackRestaurantCount,
+      activityCandidateCount,
+      finalCardCount: categorized.length,
+    });
   }
 
   return { records: categorized, debug };
