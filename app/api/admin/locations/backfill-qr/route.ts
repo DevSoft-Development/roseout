@@ -1,35 +1,18 @@
 import { NextResponse } from "next/server";
+import { requireAdminRole } from "@/lib/admin-auth";
+import { syncClaimFieldsToLocations } from "@/lib/claimQr";
 
-export async function GET(req: Request) {
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
-
-  const res = await fetch(`${siteUrl}/api/admin/restaurants/backfill-qr`, {
-    method: "GET",
-    headers: {
-      "x-internal-import-secret": req.headers.get("x-internal-import-secret") || "",
-    },
-    cache: "no-store",
-  });
-
-  const data = await res.json();
-
-  return NextResponse.json(data, { status: res.status });
+async function isAllowed(req: Request) {
+  const secret = req.headers.get("x-internal-import-secret") || req.headers.get("authorization")?.replace("Bearer ", "");
+  if (secret && (secret === process.env.IMPORT_SECRET || secret === process.env.CRON_SECRET)) return true;
+  try { await requireAdminRole(["superuser", "admin"]); return true; } catch { return false; }
 }
 
-export async function POST(req: Request) {
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
-
-  const res = await fetch(`${siteUrl}/api/admin/restaurants/backfill-qr`, {
-    method: "POST",
-    headers: {
-      "x-internal-import-secret": req.headers.get("x-internal-import-secret") || "",
-    },
-    cache: "no-store",
-  });
-
-  const data = await res.json();
-
-  return NextResponse.json(data, { status: res.status });
+async function run(req: Request) {
+  if (!(await isAllowed(req))) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const result = await syncClaimFieldsToLocations();
+  return NextResponse.json({ ok: true, message: "Claim QR fields backfilled for restaurants, activities, and locations.", result });
 }
+
+export async function GET(req: Request) { return run(req); }
+export async function POST(req: Request) { return run(req); }
