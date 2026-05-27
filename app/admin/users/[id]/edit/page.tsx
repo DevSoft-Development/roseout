@@ -46,7 +46,6 @@ type EditableUser = {
   subscription_status: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
-  is_superadmin: boolean | null;
   created_at: string | null;
 };
 
@@ -155,7 +154,6 @@ async function updateUser(formData: FormData) {
       subscription_status: subscriptionStatus,
       stripe_customer_id: stripeCustomerId,
       stripe_subscription_id: stripeSubscriptionId,
-      is_superadmin: role === "superuser",
     },
     { onConflict: "id" },
   );
@@ -239,7 +237,7 @@ async function getEditableUser(id: string) {
     supabase
       .from("users")
       .select(
-        "id,email,full_name,phone,role,subscription_status,stripe_customer_id,stripe_subscription_id,is_superadmin,created_at",
+        "id,email,full_name,phone,role,subscription_status,stripe_customer_id,stripe_subscription_id,created_at",
       )
       .eq("id", id)
       .maybeSingle<EditableUser>(),
@@ -277,7 +275,6 @@ async function getEditableUser(id: string) {
     subscription_status: profileUser?.subscription_status || null,
     stripe_customer_id: profileUser?.stripe_customer_id || null,
     stripe_subscription_id: profileUser?.stripe_subscription_id || null,
-    is_superadmin: profileUser?.is_superadmin || role === "superuser",
     created_at: profileUser?.created_at || authUser?.created_at || null,
   } satisfies EditableUser;
 }
@@ -300,7 +297,7 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
 
   if (!user) notFound();
 
-  const displayRole = user.is_superadmin ? "superuser" : user.role || "user";
+  const displayRole = user.role || "user";
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">

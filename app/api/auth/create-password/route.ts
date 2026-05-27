@@ -5,8 +5,16 @@ import { verifyCaptcha } from "@/lib/security/verifyCaptcha";
 
 export async function POST(request: Request) {
   const { token, password, captchaToken } = await request.json();
-  const captcha = await verifyCaptcha(String(captchaToken || ""));
-  if (!captcha.ok) return Response.json({ error: captcha.error }, { status: 400 });
+  const forwardedFor = request.headers.get("x-forwarded-for") || "";
+  const remoteIp = forwardedFor.split(",")[0]?.trim() || undefined;
+
+  const captcha = await verifyCaptcha(captchaToken, remoteIp);
+  if (!captcha.success) {
+    return Response.json(
+      { error: "CAPTCHA verification failed. Please try again." },
+      { status: 400 },
+    );
+  }
 
   if (!isStrongEnoughPassword(String(password || ""))) {
     return Response.json({ error: "Password does not meet minimum requirements (8+ chars with mixed complexity)." }, { status: 400 });

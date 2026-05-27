@@ -25,12 +25,6 @@ import {
   User,
 } from "lucide-react";
 
-declare global {
-  interface Window {
-    turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void };
-  }
-}
-
 const proBenefits = [
   "Priority AI discovery in customer outing plans",
   "TheOutHaven Reserve booking tools",
@@ -104,11 +98,11 @@ export default function CheckoutInfoPage() {
 
     if (!turnstileReady) return;
     if (!siteKey) return;
-    if (!window.turnstile?.render) return;
+    if (!(window as Window & { turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void } }).turnstile?.render) return;
     if (!turnstileRef.current) return;
     if (hasRenderedTurnstile.current) return;
 
-    window.turnstile.render(turnstileRef.current, {
+    (window as Window & { turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void } }).turnstile?.render?.(turnstileRef.current, {
       sitekey: siteKey,
       theme: "dark",
     });
