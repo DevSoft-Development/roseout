@@ -1,6 +1,7 @@
 import { inferRecordDomain, searchFallbackActivities, searchFallbackRestaurants } from "@/lib/search/database";
 import { parseCanonicalIntent } from "@/lib/search/intent";
 import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
+import { trackAnalyticsEvent } from "@/lib/analytics/trackEvent";
 
 
 const NYC_SERVICE_TERMS = [
@@ -165,6 +166,7 @@ async function fetchFallbackRecords(input: string = "") {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const body = await request.json().catch(() => ({}));
   const input =
     typeof body?.message === "string"
@@ -187,12 +189,28 @@ export async function POST(request: Request) {
       card_counts: { restaurants: 0, activities: 0, matched_locations: 0, pairs: 0 },
     });
   }
+  const normalizedQuery = input.trim().toLowerCase();
+  void trackAnalyticsEvent({ event_name: "search_submitted", query: input, normalized_query: normalizedQuery, page_path: "/api/generate", source: "search_api" });
 
   const diagnostics = createSearchDiagnostics(input);
   diagnostics.stage = "intent_parse_start";
 
   const result = await runTheOutHavenSearch(input, body);
   const intent = result?.intent ?? body?.intent ?? parseCanonicalIntent(input, body);
+  void trackAnalyticsEvent({
+    event_name: "search_intent_parsed",
+    query: input,
+    normalized_query: normalizedQuery,
+    page_path: "/api/generate",
+    search_intent: {
+      borough: intent?.borough,
+      city: intent?.city,
+      neighborhood: intent?.neighborhood,
+      food_intent: intent?.foodIntent,
+      activity_intent: intent?.activityIntent,
+      wants_pairing: intent?.wantsPairing,
+    },
+  });
 
   const mergedLocations = [
     ...(result?.matched_locations ?? []),
@@ -267,6 +285,7 @@ export async function POST(request: Request) {
     matchedLocationResults.length === 0
   ) {
     fallbackAttempted = true;
+    void trackAnalyticsEvent({ event_name: "search_fallback_used", query: input, normalized_query: normalizedQuery, page_path: "/api/generate", metadata: { reason: "no_primary_results" } });
     const fallbackRecords = await fetchFallbackRecords(input);
     const normalizedFallbackLocations = (fallbackRecords.locations ?? [])
       .map(normalizeLocation)
@@ -302,6 +321,25 @@ export async function POST(request: Request) {
     setDiagCount(diagnostics, "emergency_activities", emergencyActivities);
     setDiagCount(diagnostics, "emergency_matched_locations", locationFilteredFallback);
   }
+  const responseTime = Date.now() - startedAt;
+  const totalResults = topRestaurants.length + topActivities.length + matchedLocationResults.length;
+  void trackAnalyticsEvent({
+    event_name: totalResults > 0 ? "search_results_returned" : "search_no_results",
+    query: input,
+    normalized_query: normalizedQuery,
+    page_path: "/api/generate",
+    result_count: totalResults,
+    response_time_ms: responseTime,
+    borough: intent?.borough ?? null,
+    city: intent?.city ?? null,
+    neighborhood: intent?.neighborhood ?? null,
+    metadata: {
+      restaurant_count: topRestaurants.length,
+      activity_count: topActivities.length,
+      fallback_used: fallbackAttempted,
+      top_result_ids: [...topRestaurants, ...topActivities, ...matchedLocationResults].slice(0, 5).map((x: any) => x?.id ?? x?.source_id).filter(Boolean),
+    },
+  });
 
   setDiagCount(diagnostics, "rpc_restaurants", result?.debug?.rawRestaurantCount);
   setDiagCount(diagnostics, "rpc_activities", result?.debug?.rawActivityCount);
