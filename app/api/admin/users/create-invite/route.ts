@@ -1,7 +1,8 @@
-import { buildSiteUrl } from "@/lib/site-url";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { generatePasswordInviteToken } from "@/lib/security/password-invite";
+import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
+import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 
 export async function POST(request: Request) {
   const { error, adminUser } = await requireAdminApiRole(["superuser", "admin"]);
@@ -13,7 +14,6 @@ export async function POST(request: Request) {
   const lastName = String(body.last_name || "").trim();
   const role = String(body.role || "user");
   const phone = body.phone ? String(body.phone).trim() : null;
-  const sendInvite = Boolean(body.send_invite ?? true);
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return Response.json({ error: "Valid email is required." }, { status: 400 });
@@ -24,16 +24,18 @@ export async function POST(request: Request) {
     return Response.json({ error: "User already exists." }, { status: 409 });
   }
 
-  const invited = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    data: { role, first_name: firstName, last_name: lastName },
-    redirectTo: buildSiteUrl("/auth/create-password"),
+  const created = await supabaseAdmin.auth.admin.createUser({
+    email,
+    user_metadata: { role, first_name: firstName, last_name: lastName },
+    email_confirm: true,
   });
-  if (invited.error || !invited.data.user) {
-    return Response.json({ error: invited.error?.message || "Failed to create invite." }, { status: 400 });
+
+  if (created.error || !created.data.user) {
+    return Response.json({ error: created.error?.message || "Failed to create user." }, { status: 400 });
   }
 
   await supabaseAdmin.from("users").upsert({
-    id: invited.data.user.id,
+    id: created.data.user.id,
     email,
     full_name: `${firstName} ${lastName}`.trim(),
     phone,
@@ -41,21 +43,46 @@ export async function POST(request: Request) {
     status: "invited",
   }, { onConflict: "id" });
 
-  // Optional custom token table support (hash only)
+  await supabaseAdmin
+    .from("password_setup_tokens")
+    .update({ used_at: new Date().toISOString() })
+    .eq("email", email)
+    .is("used_at", null)
+    .eq("purpose", "create_password");
+
   const { rawToken, tokenHash } = generatePasswordInviteToken();
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
   await supabaseAdmin.from("password_setup_tokens").insert({
-    user_id: invited.data.user.id,
+    user_id: created.data.user.id,
     email,
     token_hash: tokenHash,
     purpose: "create_password",
     role,
     assigned_location_id: body.assigned_location_id || null,
-    expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    expires_at: expiresAt,
     created_by: adminUser?.id || null,
   });
 
-  // never return raw token
-  void rawToken;
+  const emailTemplate = passwordSetupInviteTemplate({
+    first_name: firstName,
+    token: rawToken,
+    expires_at: expiresAt,
+    role,
+  });
 
-  return Response.json({ success: true, user: { id: invited.data.user.id, email }, invite_sent: sendInvite });
+  await sendSupportEmail({
+    to: email,
+    subject: emailTemplate.subject,
+    body: emailTemplate.text,
+    html: emailTemplate.html,
+    department: "security",
+  });
+
+  console.info("Password setup email sent");
+
+  return Response.json({
+    success: true,
+    message: "User created and password setup email sent.",
+    user: { id: created.data.user.id, email },
+  });
 }
