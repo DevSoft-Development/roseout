@@ -1,0 +1,13 @@
+-- DO NOT RUN UNTIL:
+-- 1. New analytics_events is working.
+-- 2. Admin dashboard works.
+-- 3. Owner dashboard works.
+-- 4. No code references old analytics tables.
+-- 5. Historical data has been backed up or backfilled.
+-- 6. User approves destructive deletion.
+
+-- drop table if exists public.location_analytics_events;
+-- drop table if exists public.location_daily_analytics;
+-- drop table if exists public.search_events;
+-- drop table if exists public.profile_view_events;
+-- drop table if exists public.reservation_interest_events;
