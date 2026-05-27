@@ -4,6 +4,9 @@ import { generatePasswordInviteToken } from "@/lib/security/password-invite";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 
+const SUPPORTED_ROLES = ["user", "owner", "admin", "superuser"];
+
+
 export async function POST(request: Request) {
   const { error, adminUser } = await requireAdminApiRole(["superuser", "admin"]);
   if (error) return error;
@@ -12,11 +15,15 @@ export async function POST(request: Request) {
   const email = String(body.email || "").trim().toLowerCase();
   const firstName = String(body.first_name || "").trim();
   const lastName = String(body.last_name || "").trim();
-  const role = String(body.role || "user");
+  const role = String(body.role || "user").trim().toLowerCase();
   const phone = body.phone ? String(body.phone).trim() : null;
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return Response.json({ error: "Valid email is required." }, { status: 400 });
+  }
+
+  if (!SUPPORTED_ROLES.includes(role)) {
+    return Response.json({ error: "Unsupported role for user creation." }, { status: 400 });
   }
 
   const existing = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
