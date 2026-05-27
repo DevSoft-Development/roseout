@@ -1,6 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { generatePasswordInviteToken } from "@/lib/security/password-invite";
+import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizeInviteRole } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 
@@ -30,17 +30,18 @@ export async function POST(request: Request) {
 
   if (!userEmail) return Response.json({ error: "Email required." }, { status: 400 });
 
-  await supabaseAdmin.from("password_setup_tokens").update({ used_at: new Date().toISOString() }).eq("email", userEmail).is("used_at", null).eq("purpose", "create_password");
+  await supabaseAdmin.from("password_setup_tokens").update({ used_at: new Date().toISOString(), invalidated_reason: "new_link_requested" }).eq("email", userEmail).is("used_at", null).eq("purpose", "create_password");
 
-  const { rawToken, tokenHash } = generatePasswordInviteToken();
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const rawToken = createPasswordSetupToken();
+  const tokenHash = hashPasswordSetupToken(rawToken);
+  const expiresAt = getPasswordSetupExpiry();
 
   await supabaseAdmin.from("password_setup_tokens").insert({
     user_id: authUserId || null,
     email: userEmail,
     token_hash: tokenHash,
     purpose: "create_password",
-    role,
+    role: normalizeInviteRole(role),
     expires_at: expiresAt,
   });
 
