@@ -1,0 +1,2 @@
+import { NextResponse } from "next/server"; import { requireAdminApiRole } from "@/lib/admin-api-auth"; import { supabaseAdmin } from "@/lib/supabase-admin";
+export async function GET(){ const auth=await requireAdminApiRole(["superuser","admin","editor","viewer"]); if(auth.error) return auth.error; const {data,error}=await supabaseAdmin.from("subscription_plans").select("*").limit(200); if(error) return NextResponse.json({plans:[],warning:error.message}); return NextResponse.json({plans:data||[]}); }
