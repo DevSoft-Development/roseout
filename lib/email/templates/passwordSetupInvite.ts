@@ -1,4 +1,5 @@
 import { getCreatePasswordUrl } from "@/lib/site-url";
+import { formatPasswordSetupExpiry, normalizeInviteRole } from "@/lib/auth/passwordSetupTokens";
 import { baseEmailLayout } from "./baseEmailLayout";
 
 export function passwordSetupInviteTemplate(input: {
@@ -8,18 +9,39 @@ export function passwordSetupInviteTemplate(input: {
   role: string;
 }) {
   const firstName = input.first_name?.trim() || "there";
-  const role = String(input.role || "").toLowerCase();
-  const isOwner = role.includes("owner") || role.includes("location_owner") || role.includes("location owner");
-  const intro = isOwner
-    ? "Your TheOutHaven owner account has been created so you can manage your location, claims, plans, and customer engagement."
-    : "Your TheOutHaven account has been created so you can access saved outings, recommendations, reservations, and account features.";
-
+  const role = normalizeInviteRole(input.role);
   const inviteUrl = getCreatePasswordUrl(input.token);
-  const bodyHtml = `<p style="margin:0 0 16px 0;">Hi ${firstName},</p><p style="margin:0 0 16px 0;">${intro}</p><p style="margin:0 0 16px 0;">To keep your account secure, please create your own password using the button below.</p><p style="margin:0 0 16px 0;">This password setup link expires on ${input.expires_at}. For your security, do not share this email or link with anyone.</p><p style="margin:0;">If you did not expect this email, you can ignore it or contact customer support.</p>`;
+  const formattedExpiry = formatPasswordSetupExpiry(input.expires_at);
+
+  const config = role === "admin"
+    ? {
+        subject: "Set up your TheOutHaven admin password",
+        heading: "Your admin access is ready",
+        intro: "Your TheOutHaven admin account has been created. Create your password to access admin tools, manage users, review locations, and support platform operations.",
+        cta: "Set Up Admin Access",
+        closing: "Use this access carefully. Admin accounts can manage sensitive platform data.",
+      }
+    : role === "location_owner"
+      ? {
+          subject: "Set up your TheOutHaven owner account",
+          heading: "Your location owner account is ready",
+          intro: "Your TheOutHaven owner account has been created. Create your password to manage your location profile, claims, reservations, promotions, and customer engagement.",
+          cta: "Set Up Owner Account",
+          closing: "Once your account is active, you’ll be able to manage your business presence on TheOutHaven.",
+        }
+      : {
+          subject: "Create your TheOutHaven password",
+          heading: "Welcome to TheOutHaven",
+          intro: "Your TheOutHaven account is ready. Create your password to save outings, manage reservations, and get personalized recommendations.",
+          cta: "Create My Password",
+          closing: "We’re excited to help you discover better outings.",
+        };
+
+  const bodyHtml = `<p style="margin:0 0 16px 0;">Hi ${firstName},</p><p style="margin:0 0 16px 0;">${config.intro}</p><p style="margin:0 0 16px 0;">This password setup link expires on ${formattedExpiry}.</p><p style="margin:0 0 16px 0;">Do not share this link.</p><p style="margin:0;">If you were not expecting this email, you can ignore it.</p><p style="margin:16px 0 0 0;">${config.closing}</p>`;
 
   return {
-    subject: "Create your password on TheOutHaven.com",
-    html: baseEmailLayout({ previewText: "Create your secure password for your TheOutHaven account.", heading: "Create your password on TheOutHaven.com", bodyHtml, ctaLabel: "Create My Password", ctaUrl: inviteUrl, department: "security" }),
-    text: [`Hi ${firstName},`, "", intro, "", "To keep your account secure, please create your own password using the link below.", "", inviteUrl, "", `This password setup link expires on ${input.expires_at}. For your security, do not share this email or link with anyone.`, "", "If you did not expect this email, you can ignore it or contact customer support.", "", "Thank you,", "TheOutHaven.com Security Team"].join("\n"),
+    subject: config.subject,
+    html: baseEmailLayout({ previewText: "Create your secure password for your TheOutHaven account.", heading: config.heading, bodyHtml, ctaLabel: config.cta, ctaUrl: inviteUrl, department: "security" }),
+    text: [`Hi ${firstName},`, "", config.intro, "", `This password setup link expires on ${formattedExpiry}.`, "", "Do not share this link.", "", "If you were not expecting this email, you can ignore it.", "", config.closing, "", inviteUrl].join("\n"),
   };
 }

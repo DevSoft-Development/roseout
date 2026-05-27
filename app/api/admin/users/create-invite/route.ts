@@ -1,6 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { generatePasswordInviteToken } from "@/lib/security/password-invite";
+import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizeInviteRole } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   const created = await supabaseAdmin.auth.admin.createUser({
     email,
-    user_metadata: { role, first_name: firstName, last_name: lastName },
+    user_metadata: { role: normalizeInviteRole(role), first_name: firstName, last_name: lastName },
     email_confirm: true,
   });
 
@@ -46,25 +46,26 @@ export async function POST(request: Request) {
     email,
     full_name: `${firstName} ${lastName}`.trim(),
     phone,
-    role,
+    role: normalizeInviteRole(role),
     status: "invited",
   }, { onConflict: "id" });
 
   await supabaseAdmin
     .from("password_setup_tokens")
-    .update({ used_at: new Date().toISOString() })
+    .update({ used_at: new Date().toISOString(), invalidated_reason: "new_link_requested" })
     .eq("email", email)
     .is("used_at", null)
     .eq("purpose", "create_password");
 
-  const { rawToken, tokenHash } = generatePasswordInviteToken();
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const rawToken = createPasswordSetupToken();
+  const tokenHash = hashPasswordSetupToken(rawToken);
+  const expiresAt = getPasswordSetupExpiry();
   await supabaseAdmin.from("password_setup_tokens").insert({
     user_id: created.data.user.id,
     email,
     token_hash: tokenHash,
     purpose: "create_password",
-    role,
+    role: normalizeInviteRole(role),
     assigned_location_id: body.assigned_location_id || null,
     expires_at: expiresAt,
     created_by: adminUser?.id || null,
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
       first_name: firstName,
       token: rawToken,
       expires_at: expiresAt,
-      role,
+      role: normalizeInviteRole(role),
     });
 
     await sendSupportEmail({
