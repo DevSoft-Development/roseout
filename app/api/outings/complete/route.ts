@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { trackAnalyticsEvent } from "@/lib/analytics/trackEvent";
+import { trackEvent } from "@/lib/analytics/trackEvent";
 
 function cleanString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -40,12 +40,17 @@ export async function POST(req: Request) {
     }
 
     const completedOutingId = data.id;
-    const completedLocationId = data.source_location_id ?? data.location_id ?? null;
+    const completedSourceLocationId = data.source_location_id ?? null;
+    const completedLocationId = data.location_id ?? null;
 
-    await trackAnalyticsEvent({ event_name: "outing_completed", user_id: data.user_id ?? null, location_id: completedLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating: payload?.rating ?? null, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
+    await trackEvent({ event_name: "outing_completed", user_id: data.user_id ?? null, location_id: completedLocationId, source_location_id: completedSourceLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating: payload?.rating ?? null, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
 
-    if (typeof payload?.rating === "number" || typeof payload?.matched_vibe === "boolean" || typeof payload?.would_go_again === "boolean") {
-      await trackAnalyticsEvent({ event_name: "outing_completion_rating_submitted", user_id: data.user_id ?? null, location_id: completedLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating: payload?.rating ?? null, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
+    if (typeof payload?.rating === "number") {
+      await trackEvent({ event_name: "outing_rating_submitted", user_id: data.user_id ?? null, location_id: completedLocationId, source_location_id: completedSourceLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating: payload?.rating ?? null } });
+    }
+
+    if (typeof payload?.matched_vibe === "boolean" || typeof payload?.would_go_again === "boolean") {
+      await trackEvent({ event_name: "outing_vibe_feedback_submitted", user_id: data.user_id ?? null, location_id: completedLocationId, source_location_id: completedSourceLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
     }
 
     console.info("THEOUTHAVEN_OUTING_COMPLETE_SUCCESS", { outing_id: completedOutingId });
