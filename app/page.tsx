@@ -97,19 +97,18 @@ export default async function HomePage() {
           <FeaturedExperienceGrid sections={sections} />
 
           <div className="space-y-6">
-            <CarouselSection title="Trending Restaurants" subtitle="Most saved, highly rated, and trending tonight." locations={sections.trendingRestaurants} />
-            <CarouselSection title="Trending Activities" subtitle="Popular this weekend with social groups and date-night planners." locations={sections.trendingActivities} />
-            <CarouselSection title="Popular & Recently Added" subtitle="Fresh spots and rising favorites from the unified locations feed." locations={sections.recent} />
-            {sections.categorySections.map((section) => (
-              <CarouselSection key={section.key} title={section.title} subtitle={section.subtitle} locations={section.locations} />
-            ))}
+            <CarouselSection
+              title="Recommended This Week"
+              subtitle="A curated mix of restaurants, lounges, and experiences worth planning around."
+              locations={sections.recommendedThisWeek}
+            />
           </div>
         </div>
       </section>
 
       <section className="px-5 py-10 sm:px-6"><div className="mx-auto max-w-7xl rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_20%_20%,rgba(225,6,42,.26),transparent_38%),#120907] p-8"><h2 className="text-3xl font-black">Let AI plan your next outing.</h2><p className="mt-3 max-w-3xl text-white/70">Tell TheOutHaven what kind of experience you want and get personalized restaurant and activity recommendations.</p><div className="mt-5 flex flex-wrap gap-3"><Link href="/create" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black">Start Planning</Link><Link href="/explore" className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-black">Explore Experiences</Link></div></div></section>
 
-      <section className="px-5 py-10 sm:px-6"><div className="mx-auto max-w-7xl rounded-[2rem] border border-white/10 bg-white/[0.03] p-8 shadow-2xl"><h2 className="text-3xl font-black">Own or manage a location?</h2><p className="mt-3 max-w-3xl text-white/70">Claim your business, manage reservations, grow visibility, and connect with more customers through TheOutHaven.</p><div className="mt-5 flex flex-wrap gap-3"><Link href="/location/apply" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black">Claim Your Business</Link><Link href="/business" className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-black">Learn More</Link></div></div></section>
+      <section className="px-5 py-10 sm:px-6"><div className="mx-auto max-w-7xl rounded-[2rem] border border-white/10 bg-white/[0.03] p-6 shadow-2xl"><h2 className="text-2xl font-black">Own or manage a location?</h2><p className="mt-3 max-w-3xl text-white/70">Claim your business, manage visibility, and connect with customers planning nights out.</p><div className="mt-5 flex flex-wrap gap-3"><Link href="/location/apply" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black">Claim Your Business</Link><Link href="/business" className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-black">Learn More</Link></div></div></section>
 
       <PublicFooter />
     </main>
@@ -154,11 +153,6 @@ async function loadHomepageSections() {
     return selected;
   };
 
-  const recent = takeUnique(uniqueLocations, 4);
-  const dateNight = takeUnique(byKeywords(uniqueLocations, ["date night", "date", "romantic", "intimate", "lounge", "cocktail"]), 4);
-  const dinner = takeUnique(byKeywords(uniqueLocations, ["dinner", "steak", "sushi", "italian", "restaurant", "fine dining"]), 4);
-  const dessert = takeUnique(byKeywords(uniqueLocations, ["dessert", "ice cream", "bakery", "sweet", "patisserie"]), 4);
-  const lounge = takeUnique(byKeywords(uniqueLocations, ["lounge", "bar", "cocktail", "rooftop", "nightlife"]), 4);
 
   const featuredExperiences: HomeExperience[] = [
     {
@@ -197,7 +191,7 @@ async function loadHomepageSections() {
     },
     {
       key: "brunch",
-      title: "Brunch",
+      title: "Brunch or Dinner",
       subtitle: "Weekend Brunch Spots",
       tags: ["Day Party", "Bottomless", "Friends"],
       cta: "Plan OUTing",
@@ -230,16 +224,14 @@ async function loadHomepageSections() {
     },
   ];
 
+  const featuredIds = new Set<string>(
+    featuredExperiences
+      .flatMap((experience) => experience.locations.map((location) => location.id))
+      .filter((id): id is string => Boolean(id))
+  );
+
   return {
-    trendingRestaurants: takeUnique(rankByTrending(uniqueLocations.filter((location) => isRestaurant(location))), 4),
-    trendingActivities: takeUnique(rankByTrending(uniqueLocations.filter((location) => !isRestaurant(location))), 4),
-    recent,
-    categorySections: [
-      { key: "date-night", title: "Date Night", subtitle: "Romantic and intimate picks", locations: dateNight },
-      { key: "dinner", title: "Dinner", subtitle: "Great dinner options tonight", locations: dinner },
-      { key: "dessert", title: "Dessert", subtitle: "Sweet endings nearby", locations: dessert },
-      { key: "lounge", title: "Lounge", subtitle: "Cocktails and late-night vibes", locations: lounge },
-    ],
+    recommendedThisWeek: takeUnique(rankByTrending(uniqueLocations), 4, featuredIds),
     experiences: featuredExperiences,
   };
 }
