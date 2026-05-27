@@ -57,5 +57,5 @@ export function buildSiteUrl(path: string): string {
 }
 
 export function getCreatePasswordUrl(token: string): string {
-  return buildSiteUrl(`/auth/create-password?token=${encodeURIComponent(token)}`);
+  return `${getSiteUrl()}/auth/create-password?token=${encodeURIComponent(token.trim())}`;
 }

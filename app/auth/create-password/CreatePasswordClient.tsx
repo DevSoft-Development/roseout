@@ -9,7 +9,7 @@ type ValidateResponse = { ok: boolean; status: "valid" | "missing" | "invalid" |
 
 export default function CreatePasswordPage() {
   const params = useSearchParams();
-  const token = params.get("token") || "";
+  const token = params.get("token")?.trim() || "";
   const [status, setStatus] = useState<ValidateResponse>({ ok: false, status: "missing", message: "This password setup link is missing a token." });
   const [loading, setLoading] = useState(Boolean(token));
   const [password, setPassword] = useState("");
@@ -20,7 +20,7 @@ export default function CreatePasswordPage() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`/api/auth/create-password/validate-token?token=${encodeURIComponent(token)}`)
+    fetch("/api/auth/create-password/validate-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) })
       .then((res) => res.json())
       .then((data) => setStatus(data))
       .finally(() => setLoading(false));

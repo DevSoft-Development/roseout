@@ -1,11 +1,9 @@
-import crypto from "crypto";
+import { createPasswordSetupToken, hashPasswordSetupToken } from "@/lib/auth/passwordSetupTokens";
 
 export function generatePasswordInviteToken() {
-  const rawToken = crypto.randomBytes(32).toString("hex");
-  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const rawToken = createPasswordSetupToken();
+  const tokenHash = hashPasswordSetupToken(rawToken);
   return { rawToken, tokenHash };
 }
 
-export function hashPasswordInviteToken(token: string) {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
+export const hashPasswordInviteToken = hashPasswordSetupToken;
