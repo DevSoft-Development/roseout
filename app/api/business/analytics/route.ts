@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-
-const RANGE_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90, "12m": 365 };
-const sum = (rows: any[], key: string) => rows.reduce((t, r) => t + Number(r?.[key] || 0), 0);
-const ratio = (n: number, d: number) => (d > 0 ? n / d : 0);
-const startDateFor = (range: string) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((RANGE_DAYS[range] || 30) - 1)); return d.toISOString().slice(0,10); };
+import { average, normalizeEventName, outingLocationId, rangeToStartIso, type AnalyticsEventRow, type AnalyticsRange, type OutingRow } from "@/lib/analytics/new-business-analytics";
 
 async function canViewLocation(user: any, locationId: string) {
   const { data } = await supabaseAdmin.from("locations").select("id, owner_user_id, owner_email, claimed_by_email").eq("id", locationId).maybeSingle();
@@ -21,134 +17,39 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get("location_id") || "";
-  const range = searchParams.get("range") || "30d";
+  const range = (searchParams.get("range") || "30d") as AnalyticsRange;
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location_id" }, { status: 400 });
   if (!(await canViewLocation(user, locationId))) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
 
-  const fromDate = startDateFor(range);
-  const [dailyResult, hourlyResult, customerResult, locationResult] = await Promise.all([
-    supabaseAdmin.from("location_daily_analytics").select("*").eq("location_id", locationId).gte("analytics_date", fromDate).order("analytics_date", { ascending: true }),
-    supabaseAdmin.from("location_hourly_analytics").select("*").eq("location_id", locationId).order("day_of_week", { ascending: true }).order("hour_of_day", { ascending: true }),
-    supabaseAdmin.from("location_customer_insights").select("*").eq("location_id", locationId),
-    supabaseAdmin.from("locations").select("subscription_plan,description,website,phone,reservation_url,cuisine,categories,tags,rating,photos,gallery_images,is_promoted").eq("id", locationId).maybeSingle(),
-  ]);
-  if (dailyResult.error) return NextResponse.json({ success: false, error: dailyResult.error.message }, { status: 500 });
+  const fromIso = rangeToStartIso(range);
+  let eventsQ = supabaseAdmin.from("analytics_events").select("id,event_name,event_type,location_id,outing_id,user_id,source,page_path,metadata,created_at").eq("location_id", locationId);
+  let outingsQ = supabaseAdmin.from("outings").select("id,location_id,source_location_id,status,reservation_clicked_at,call_clicked_at,completed_at,rating,matched_vibe,would_go_again,created_at").or(`location_id.eq.${locationId},source_location_id.eq.${locationId}`);
+  if (fromIso) {
+    eventsQ = eventsQ.gte("created_at", fromIso);
+    outingsQ = outingsQ.gte("created_at", fromIso);
+  }
 
-  const daily = dailyResult.data || [];
-  const hourly = hourlyResult.data || [];
-  const customers = customerResult.data || [];
-  const location: any = locationResult.data || {};
+  const [{ data: events }, { data: outings }] = await Promise.all([eventsQ, outingsQ]);
+  const ev = (events ?? []) as AnalyticsEventRow[];
+  const out = (outings ?? []).filter((o) => outingLocationId(o as OutingRow) === locationId) as OutingRow[];
 
-
-  const [topCities, topStates, topAgeRanges, topOutingStyles, topBudgetRanges, searchesOverTime, viewsOverTime, reservationByDemographic, outingsResult] = await Promise.all([
-    supabaseAdmin.from("search_events").select("city").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("search_events").select("state").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("search_events").select("age_range").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("search_events").select("outing_style").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("search_events").select("budget_range").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("search_events").select("created_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("profile_view_events").select("created_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("reservation_interest_events").select("age_range,budget_range,outing_style").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-    supabaseAdmin.from("outings").select("status,rating,would_go_again,reservation_clicked_at,call_clicked_at").eq("location_id", locationId).gte("created_at", `${fromDate}T00:00:00Z`),
-  ]);
-
-  const topN=(rows:any[]=[], key:string)=>Object.entries(rows.reduce((a:any,r:any)=>{const k=String(r?.[key]||"Unknown");a[k]=(a[k]||0)+1;return a;},{})).sort((a:any,b:any)=>b[1]-a[1]).slice(0,5).map(([label,count])=>({label,count}));
-  const byDay=(rows:any[]=[])=>Object.entries(rows.reduce((a:any,r:any)=>{const d=String(r.created_at||"").slice(0,10);if(d)a[d]=(a[d]||0)+1;return a;},{})).sort((a:any,b:any)=>a[0].localeCompare(b[0])).map(([date,count])=>({date,count}));
-  const profileViews = sum(daily, "profile_views");
-  const searchAppearances = sum(daily, "search_appearances");
-  const searchClicks = sum(daily, "search_clicks");
-  const reservationStarts = sum(daily, "reservation_starts");
-  const reservationCompletions = sum(daily, "reservation_completions");
-  const reservationCancellations = sum(daily, "reservation_cancellations");
-  const hasReservationLink = Boolean(location?.reservation_url);
-  const mediaCount = (Array.isArray(location?.photos) ? location.photos.length : 0) + (Array.isArray(location?.gallery_images) ? location.gallery_images.length : 0);
-  const profileCompleteness = [location?.description, location?.website, location?.phone].filter(Boolean).length / 3;
-  const visibilityScore = Math.min(100, Math.round(profileCompleteness * 25 + (hasReservationLink ? 15 : 0) + Math.min(15, mediaCount * 2) + Math.min(20, profileViews / 100) + Math.min(15, reservationStarts / 20) + (location?.is_promoted ? 10 : 0)));
-  const outingRows = outingsResult.data || [];
-  const externalReservationClicks = outingRows.filter((row: any) => row.status === "reservation_clicked" || row.reservation_clicked_at).length;
-  const phoneCallClicks = outingRows.filter((row: any) => row.status === "call_clicked" || row.call_clicked_at).length;
-  const completedOutings = outingRows.filter((row: any) => row.status === "completed").length;
-  const outingRatings = outingRows.map((row: any) => Number(row.rating)).filter((value: number) => Number.isFinite(value) && value > 0);
-  const wouldGoAgainYes = outingRows.filter((row: any) => row.would_go_again === true).length;
+  const summary = {
+    profile_views: ev.filter((e) => ["profile_view", "location_profile_view", "profile_viewed"].includes(normalizeEventName(e))).length,
+    search_appearances: ev.filter((e) => ["search_appearance", "location_impression", "search_match"].includes(normalizeEventName(e))).length,
+    search_clicks: ev.filter((e) => ["search_click", "location_click", "restaurant_click", "activity_click"].includes(normalizeEventName(e))).length,
+    reservation_starts: ev.filter((e) => ["reserve_clicked", "reservation_clicked", "external_reservation_clicked"].includes(normalizeEventName(e))).length,
+    reservation_completions: out.filter((o) => o.status === "completed" || !!o.completed_at).length,
+    phone_call_clicks: ev.filter((e) => ["call_clicked", "phone_click", "phone_clicked"].includes(normalizeEventName(e))).length,
+    average_outing_rating: average(out.filter((o) => o.status === "completed" || !!o.completed_at).map((o) => o.rating)),
+  };
 
   return NextResponse.json({
     success: true,
-    plan: String(location?.subscription_plan || "free").toLowerCase() === "pro" ? "pro" : "free",
-    summary: {
-      profile_views: profileViews,
-      search_appearances: searchAppearances,
-      search_clicks: searchClicks,
-      click_through_rate: ratio(searchClicks, searchAppearances),
-      reservation_starts: reservationStarts,
-      reservation_completions: reservationCompletions,
-      reservation_conversion_rate: ratio(reservationCompletions, reservationStarts),
-      cancellation_rate: ratio(reservationCancellations, reservationCompletions),
-      external_reservation_clicks: externalReservationClicks,
-      phone_call_clicks: phoneCallClicks,
-      completed_outings: completedOutings,
-      external_conversion_rate: ratio(completedOutings, externalReservationClicks),
-      call_to_completion_rate: ratio(completedOutings, phoneCallClicks),
-      average_outing_rating: outingRatings.length ? outingRatings.reduce((total: number, value: number) => total + value, 0) / outingRatings.length : 0,
-      would_go_again_percentage: ratio(wouldGoAgainYes, completedOutings),
-    },
-    daily,
-    hourly,
-    customer_insights: { average_party_size: customers.length ? customers.reduce((t: number, c: any) => t + Number(c.preferred_party_size || 0), 0) / customers.length : 0 },
-    visibility_score: visibilityScore,
-    visibility_breakdown: [
-      { label: "Profile completeness", score: Math.round(profileCompleteness * 25), max: 25 },
-      { label: "Photos and media", score: Math.min(15, mediaCount * 2), max: 15 },
-      { label: "Reservation readiness", score: hasReservationLink ? 15 : 0, max: 15 },
-      { label: "Engagement", score: Math.min(45, Math.round(profileViews / 100) + Math.round(reservationStarts / 20)), max: 45 },
-    ],
-    visibility_checklist: [
-      { label: "Add reservation link", done: hasReservationLink, cta: "Get More Reservations" },
-      { label: "Add photos", done: mediaCount > 3, cta: "Boost Your Visibility" },
-      { label: "Complete profile", done: profileCompleteness > 0.66, cta: "Complete Profile" },
-      { label: "Upgrade to Pro", done: false, cta: "Upgrade to Pro" },
-      { label: "Promote listing", done: Boolean(location?.is_promoted), cta: "Feature This Location" },
-    ],
-    locked_features: ["Top Search Terms", "Customer Intent Insights", "Advanced Reservation Analytics", "Competitor Visibility", "Conversion Funnels", "AI Growth Recommendations", "Benchmarking", "Predictive Revenue Insights", "Promotion Analytics"].map((name, index) => ({ key: `premium_${index}`, name, locked: true, cta: "Upgrade to Pro" })),
-    growth_recommendations: [
-      !hasReservationLink ? { title: "Add reservation link", detail: "Add a reservation link to capture more booking intent.", cta: "Get More Reservations" } : null,
-      profileViews > 100 && reservationStarts < profileViews * 0.08 ? { title: "Views but low clicks", detail: "Your profile is getting views but low clicks. Improve photos or description.", cta: "Boost Your Visibility" } : null,
-      !location?.is_promoted && profileViews > 200 ? { title: "Promoted listing candidate", detail: "You are a strong candidate for promoted listings.", cta: "Feature This Location" } : null,
-      (externalReservationClicks + phoneCallClicks) >= 10 && completedOutings <= 2 ? { title: "Upgrade opportunity", detail: "Add internal reservations to improve conversions and tracking.", cta: "Get More Reservations" } : null,
-    ].filter(Boolean),
-    reservation_intelligence: {
-      busiest_day: hourly[0]?.day_of_week ?? null,
-      busiest_time: hourly[0]?.hour_of_day ?? null,
-      reservation_starts: reservationStarts,
-      reservation_completions: reservationCompletions,
-      cancellation_rate: ratio(reservationCancellations, reservationCompletions),
-      average_party_size: customers.length ? customers.reduce((t: number, c: any) => t + Number(c.preferred_party_size || 0), 0) / customers.length : 0,
-      booking_conversion_rate: ratio(reservationCompletions, reservationStarts),
-    },
-    upgrade_triggers: [
-      profileViews > 250 ? { trigger_type: "high_profile_views", priority: "high", reason: "High profile views on Free plan", suggested_cta: "Unlock Pro Insights", created_at: new Date().toISOString() } : null,
-      reservationStarts > 80 ? { trigger_type: "high_reservation_clicks", priority: "medium", reason: "High reservation clicks but no Pro plan", suggested_cta: "Upgrade to Pro", created_at: new Date().toISOString() } : null,
-      !hasReservationLink ? { trigger_type: "missing_reservation_link", priority: "high", reason: "Missing reservation link", suggested_cta: "Get More Reservations", created_at: new Date().toISOString() } : null,
-    ].filter(Boolean),
-    benchmarking: { views_percentile: Math.min(99, Math.round(profileViews / 10)), clicks_percentile: Math.min(99, Math.round(searchClicks / 5)), saves_percentile: Math.min(99, Math.round(sum(daily, "saves") / 3)), reservation_clicks_percentile: Math.min(99, Math.round(reservationStarts / 4)) },
-    predictive_insights: [
-      { title: "Conversion lift estimate", detail: "If reservation clicks improve by 20%, estimated bookings may increase." },
-      { title: "Reservation link opportunity", detail: "Adding a reservation link could improve conversion." },
-      { title: "Promotion estimate", detail: "Promoted listings may increase visibility based on similar locations." },
-    ],
-    promotion_opportunities: [
-      { title: "Promoted listing", detail: "Increase search and discovery surface area.", cta: "Feature This Location" },
-      { title: "Homepage feature", detail: "Premium placement for high-intent discovery.", cta: "Boost Your Visibility" },
-    ],
-    heatmap: hourly,
-    demographic_insights: {
-      top_cities_searching: topN(topCities.data || [], "city"),
-      top_states_searching: topN(topStates.data || [], "state"),
-      top_age_ranges: topN(topAgeRanges.data || [], "age_range"),
-      top_outing_styles: topN(topOutingStyles.data || [], "outing_style"),
-      top_budget_ranges: topN(topBudgetRanges.data || [], "budget_range"),
-      searches_over_time: byDay(searchesOverTime.data || []),
-      profile_views_over_time: byDay(viewsOverTime.data || []),
-      reservation_interest_by_demographic: reservationByDemographic.data || [],
-    },
+    summary,
+    daily: [],
+    hourly: [],
+    heatmap: [],
+    customer_insights: {},
+    recent_activity: ev.slice(-30).reverse(),
   });
 }

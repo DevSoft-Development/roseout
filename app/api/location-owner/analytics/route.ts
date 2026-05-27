@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
+import { average, normalizeEventName, outingLocationId, rangeToStartIso, type AnalyticsEventRow, type AnalyticsLocationRow, type AnalyticsRange, type OutingRow } from "@/lib/analytics/new-business-analytics";
 
-const RANGE_TO_DAYS: Record<string, number | null> = { "7d": 7, "30d": 30, "90d": 90, all: null };
+type OwnerSummary = {
+  reserve_clicks: number;
+  call_clicks: number;
+  outing_starts: number;
+  completed_outings: number;
+  completion_rate: number;
+  average_rating: number;
+  matched_vibe_percentage: number;
+  would_go_again_percentage: number;
+};
 
 export async function GET(req: Request) {
   try {
@@ -11,59 +21,51 @@ export async function GET(req: Request) {
     const userId = auth?.user?.id;
     if (!userId) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
-    const { searchParams } = new URL(req.url);
-    const dateRange = searchParams.get("date_range") ?? "30d";
-    const days = RANGE_TO_DAYS[dateRange] ?? 30;
-    const fromIso = days ? new Date(Date.now() - days * 86400000).toISOString() : null;
+    const dateRange = (new URL(req.url).searchParams.get("date_range") ?? "30d") as AnalyticsRange;
+    const fromIso = rangeToStartIso(dateRange);
 
     const ownerAccess = await getLocationOwnerAccess(userId);
     const locationIds = ownerAccess.ownedLocationIds;
-    const sourceLocationIds = ownerAccess.ownedSourceLocationIds;
 
     const { data: locations } = locationIds.length
-      ? await supabase.from("locations").select("id,name").in("id", locationIds)
-      : { data: [] as Array<{ id: string; name: string | null }> };
-    if (locationIds.length === 0) {
-      return NextResponse.json({ ok: true, date_range: dateRange, summary: { reserve_clicks: 0, call_clicks: 0, outing_starts: 0, completed_outings: 0, completion_rate: 0, average_rating: 0, matched_vibe_percentage: 0, would_go_again_percentage: 0 }, locations: [], recent_activity: [] });
+      ? await supabase.from("locations").select("id,name,restaurant_name,activity_name,city,state").in("id", locationIds)
+      : { data: [] as AnalyticsLocationRow[] };
+
+    if (!locationIds.length) {
+      const empty: OwnerSummary = { reserve_clicks: 0, call_clicks: 0, outing_starts: 0, completed_outings: 0, completion_rate: 0, average_rating: 0, matched_vibe_percentage: 0, would_go_again_percentage: 0 };
+      return NextResponse.json({ ok: true, date_range: dateRange, summary: empty, locations: [], recent_activity: [] });
     }
 
-    const eventFilters: string[] = [];
-    if (locationIds.length > 0) eventFilters.push(`location_id.in.(${locationIds.join(",")})`);
-    if (sourceLocationIds.length > 0) eventFilters.push(`source_location_id.in.(${sourceLocationIds.join(",")})`);
+    let eventsQ = supabase.from("analytics_events").select("id,event_name,event_type,location_id,outing_id,user_id,source,page_path,metadata,created_at").in("location_id", locationIds);
+    let outingsQ = supabase.from("outings").select("id,location_id,source_location_id,status,reservation_clicked_at,call_clicked_at,completed_at,rating,matched_vibe,would_go_again,created_at").or(`location_id.in.(${locationIds.join(",")}),source_location_id.in.(${locationIds.join(",")})`);
+    if (fromIso) {
+      eventsQ = eventsQ.gte("created_at", fromIso);
+      outingsQ = outingsQ.gte("created_at", fromIso);
+    }
 
-    let eventQ = supabase.from("analytics_events").select("event_name");
-    if (eventFilters.length > 0) eventQ = eventQ.or(eventFilters.join(","));
+    const [{ data: events }, { data: outings }] = await Promise.all([eventsQ, outingsQ]);
+    const ev = (events ?? []) as AnalyticsEventRow[];
+    const out = (outings ?? []).filter((o) => locationIds.includes(outingLocationId(o as OutingRow) || "")) as OutingRow[];
 
-    let outingQ = supabase.from("outings").select("id,status,rating,matched_vibe,would_go_again");
-    if (eventFilters.length > 0) outingQ = outingQ.or(eventFilters.join(","));
-    if (fromIso) { eventQ = eventQ.gte("created_at", fromIso); outingQ = outingQ.gte("created_at", fromIso); }
-    const [{ data: events }, { data: outings }] = await Promise.all([eventQ, outingQ]);
+    const reserveClicks = ev.filter((e) => ["reserve_clicked", "reservation_clicked", "external_reservation_clicked"].includes(normalizeEventName(e))).length;
+    const callClicks = ev.filter((e) => ["call_clicked", "phone_click", "phone_clicked"].includes(normalizeEventName(e))).length;
+    const outingStarts = ev.filter((e) => normalizeEventName(e) === "outing_started").length;
+    const completed = out.filter((o) => o.status === "completed" || !!o.completed_at);
 
-    const reserveClicks = (events ?? []).filter((e) => e.event_name === "reserve_clicked").length;
-    const callClicks = (events ?? []).filter((e) => e.event_name === "call_clicked").length;
-    const outingStarts = (events ?? []).filter((e) => e.event_name === "outing_started").length;
-    const completed = (outings ?? []).filter((o) => o.status === "completed");
-    const ratings = completed.map((o) => Number(o.rating)).filter((v) => Number.isFinite(v) && v > 0);
+    const summary: OwnerSummary = {
+      reserve_clicks: reserveClicks,
+      call_clicks: callClicks,
+      outing_starts: outingStarts,
+      completed_outings: completed.length,
+      completion_rate: outingStarts > 0 ? completed.length / outingStarts : 0,
+      average_rating: average(completed.map((o) => o.rating)),
+      matched_vibe_percentage: completed.length ? completed.filter((o) => o.matched_vibe === true).length / completed.length : 0,
+      would_go_again_percentage: completed.length ? completed.filter((o) => o.would_go_again === true).length / completed.length : 0,
+    };
 
-    console.info("THEOUTHAVEN_OWNER_ANALYTICS_LOADED", { user_id: userId, location_count: locationIds.length, date_range: dateRange });
-    return NextResponse.json({
-      ok: true,
-      date_range: dateRange,
-      summary: {
-        reserve_clicks: reserveClicks,
-        call_clicks: callClicks,
-        outing_starts: outingStarts,
-        completed_outings: completed.length,
-        completion_rate: outingStarts > 0 ? completed.length / outingStarts : 0,
-        average_rating: ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0,
-        matched_vibe_percentage: completed.length > 0 ? completed.filter((o) => o.matched_vibe === true).length / completed.length : 0,
-        would_go_again_percentage: completed.length > 0 ? completed.filter((o) => o.would_go_again === true).length / completed.length : 0,
-      },
-      locations: (locations ?? []).map((loc) => ({ location_id: loc.id, name: loc.name })),
-      recent_activity: [],
-    });
-  } catch {
-    console.error("THEOUTHAVEN_OWNER_ANALYTICS_FAILED");
+    return NextResponse.json({ ok: true, date_range: dateRange, summary, locations: locations ?? [], recent_activity: ev.slice(-25).reverse() });
+  } catch (error) {
+    console.error("THEOUTHAVEN_OWNER_ANALYTICS_FAILED", error);
     return NextResponse.json({ ok: false, error: "owner_analytics_failed" }, { status: 500 });
   }
 }
