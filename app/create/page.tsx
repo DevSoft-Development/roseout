@@ -2081,6 +2081,28 @@ function ResultCard({
       setActiveOutingId(outingId);
       localStorage.setItem(outingStorageKey, outingId);
       setShowCompletionPrompt(true);
+<<<<<<< codex/fix-reservation-and-outing-tracking-flow
+      if (method === "phone" && telHref) {
+        console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, locationId });
+        window.location.href = telHref;
+      }
+      if (method === "external_reservation" && reservationUrl) {
+        console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, locationId });
+        window.open(reservationUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch {
+      if (method === "phone" && telHref) {
+        console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, locationId });
+        window.location.href = telHref;
+      }
+      if (method === "external_reservation" && reservationUrl) {
+        console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, locationId });
+        window.open(reservationUrl, "_blank", "noopener,noreferrer");
+      }
+      console.error("THEOUTHAVEN_TRACKING_FAILED", { method, locationId, phoneNumber, reservationUrl });
+      setCompleteMessage("Link opened. We'll keep improving outing tracking.");
+=======
+>>>>>>> main
     }
   };
 
