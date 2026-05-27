@@ -162,6 +162,18 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
             </button>
             <button
               type="button"
+              onClick={() => {
+                const printKeys = new Set(visibleKeys);
+                setSelectedKeys(printKeys);
+                setTimeout(() => window.print(), 50);
+              }}
+              disabled={visibleLocations.length === 0}
+              className="rounded-full border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Print all visible
+            </button>
+            <button
+              type="button"
               onClick={() => window.print()}
               disabled={selectedCount === 0}
               className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
@@ -215,7 +227,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                     className="h-28 w-28 object-contain print:h-28 print:w-28"
                   />
                 ) : (
-                  <div className="text-xs font-black text-black/35">No QR</div>
+                  <div className="text-xs font-black text-rose-700">Missing QR — run repair</div>
                 )}
                 <p className="mt-2 text-center text-[10px] font-black uppercase tracking-[0.12em] text-black/60">
                   Please scan here
@@ -236,7 +248,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                   Or enter claim code manually
                 </p>
                 <p className="font-mono text-lg font-black tracking-[0.14em] text-black">
-                  {location.claim_code || "Code pending"}
+                  {location.claim_code || "Missing code"}
                 </p>
                 {displayClaimUrl && (
                   <p className="mt-2 break-all text-[10px] font-bold text-black/35">

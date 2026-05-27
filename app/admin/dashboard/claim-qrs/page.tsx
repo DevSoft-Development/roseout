@@ -3,6 +3,9 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ClaimQrPrintClient from "./ClaimQrPrintClient";
+import RepairClaimQrButton from "./RepairClaimQrButton";
+import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQr";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 
 export const metadata: Metadata = {
@@ -15,6 +18,7 @@ type SearchParams = {
   filter?: string;
   page?: string;
   pageSize?: string;
+  repair?: string;
 };
 
 type ClaimQrLocation = {
@@ -82,6 +86,7 @@ export default async function AdminClaimQrPrintPage({
   const filter = params.filter || "all";
   const page = Math.max(1, Number(params.page || 1));
   const loadAll = params.pageSize === "all";
+  if (params.repair === "1") await syncClaimFieldsToLocations();
   const requestedPageSize = Number(params.pageSize || 400);
   const pageSize = loadAll
     ? 100000
@@ -120,6 +125,14 @@ export default async function AdminClaimQrPrintPage({
   const total = count || 0;
   const totalPages = loadAll ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const safePage = loadAll ? 1 : Math.min(page, totalPages);
+
+  for (const row of data || []) {
+    if (!row.claim_code || !(row.qr_code_data_url || row.claim_qr_url)) {
+      const fields = await ensureClaimFields(row, { table: "locations" });
+      await supabaseAdmin.from("locations").update(fields).eq("id", row.id);
+      Object.assign(row, fields);
+    }
+  }
 
   const locations: ClaimQrLocation[] = (data || []).map((row) => ({
     id: row.id,
@@ -196,6 +209,9 @@ export default async function AdminClaimQrPrintPage({
               Filter
             </button>
           </form>
+
+          <div className="mt-4"><RepairClaimQrButton /></div>
+          <div className="mt-3"><Link href="/admin/dashboard/claim-qrs?repair=1" className="rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.15em] text-rose-100">Run full repair pass</Link></div>
 
           <div className="mt-5 flex flex-wrap gap-3">
             <Link
