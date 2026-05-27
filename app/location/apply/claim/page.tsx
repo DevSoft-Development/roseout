@@ -7,7 +7,6 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 declare global {
   interface Window {
-    turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void };
     onTheOutHavenClaimTurnstileSuccess?: (token: string) => void;
     onTheOutHavenClaimTurnstileExpired?: () => void;
   }
@@ -224,7 +223,7 @@ export default function ClaimLocationPage() {
 
   const resetCaptcha = () => {
     setCaptchaToken("");
-    window.turnstile?.reset?.();
+    (window as Window & { turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void } }).turnstile?.reset?.();
   };
 
   const closeQrScanner = () => {

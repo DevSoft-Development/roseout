@@ -10,7 +10,6 @@ import GoogleAddressAutocomplete, {
 
 declare global {
   interface Window {
-    turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void };
     onTheOutHavenNewLocationTurnstileSuccess?: (token: string) => void;
     onTheOutHavenNewLocationTurnstileExpired?: () => void;
   }
@@ -117,7 +116,7 @@ export default function NewLocationPage() {
 
   const resetCaptcha = () => {
     setCaptchaToken("");
-    window.turnstile?.reset?.();
+    (window as Window & { turnstile?: { render?: (element: HTMLElement, options: { sitekey: string; theme?: string }) => void; reset?: () => void } }).turnstile?.reset?.();
   };
 
   const submitNewLocation = async (event: React.FormEvent<HTMLFormElement>) => {
