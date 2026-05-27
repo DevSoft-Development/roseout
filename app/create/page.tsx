@@ -123,10 +123,13 @@ type ApiResponse = {
   reply?: string;
   restaurants?: RestaurantCard[];
   activities?: ActivityCard[];
+  cards?: Array<RestaurantCard | ActivityCard>;
   pairs?: unknown[];
   matched_locations?: unknown[];
   display_mode?: string;
+  render_mode?: string;
   hide_text_results?: boolean;
+  diagnostics?: Record<string, unknown>;
 };
 
 type ExactCampaignLocation = {
@@ -723,6 +726,9 @@ export default function CreatePage() {
       let responseActivities = data.activities || [];
       const responsePairs = data.pairs || [];
       const responseMatchedLocations = data.matched_locations || [];
+      const normalizedCards = normalizeApiCards(data);
+      if (normalizedCards.restaurants.length) responseRestaurants = normalizedCards.restaurants;
+      if (normalizedCards.activities.length) responseActivities = normalizedCards.activities;
 
       if (
         !addOnTarget &&
@@ -754,9 +760,9 @@ export default function CreatePage() {
           const retryData: ApiResponse & { error?: string } =
             await retryResponse.json();
           if (missingTarget === "restaurant") {
-            responseRestaurants = retryData.restaurants || responseRestaurants;
+            responseRestaurants = normalizeApiCards(retryData).restaurants || retryData.restaurants || responseRestaurants;
           } else {
-            responseActivities = retryData.activities || responseActivities;
+            responseActivities = normalizeApiCards(retryData).activities || retryData.activities || responseActivities;
           }
         }
       }
@@ -790,6 +796,26 @@ export default function CreatePage() {
         pairs: responsePairs,
         matched_locations: responseMatchedLocations,
       };
+      const hasRenderableCards =
+        assistantMessage.restaurants?.length ||
+        assistantMessage.activities?.length ||
+        assistantMessage.pairs?.length ||
+        assistantMessage.matched_locations?.length;
+      if (!hasRenderableCards) {
+        console.error("THEOUTHAVEN_CARD_RENDER_FAILURE", {
+          searchQuery: cleanInput,
+          render_mode: data.render_mode,
+          counts: {
+            restaurants: responseRestaurants.length,
+            activities: responseActivities.length,
+            matched_locations: responseMatchedLocations.length,
+            api_cards: Array.isArray(data.cards) ? data.cards.length : 0,
+          },
+          diagnostics: data.diagnostics ?? null,
+        });
+        assistantMessage.content =
+          "We could not render location cards right now. Please retry your search in a moment.";
+      }
 
       setMessages((current) => [...current, assistantMessage]);
 
@@ -1156,7 +1182,7 @@ export default function CreatePage() {
                                 distance={restaurant.distance_miles}
                                 selected={isSelected}
                                 priority={restaurantIndex === 0}
-                                selectLabel={isSelected ? "Selected" : "Select"}
+                                selectLabel={isSelected ? "Saved" : "Save"}
                                 onSelect={() => {
                                   trackRestaurantClick(restaurantId);
                                   trackRestaurantSave(restaurantId);
@@ -1268,7 +1294,7 @@ export default function CreatePage() {
                                 }
                                 selected={isSelected}
                                 priority={activityIndex === 0}
-                                selectLabel={isSelected ? "Selected" : "Select"}
+                                selectLabel={isSelected ? "Saved" : "Save"}
                                 onSelect={() => {
                                   trackActivityClick(activityId);
                                   trackActivitySave(activityId);
@@ -2163,7 +2189,7 @@ function ResultCard({
             onClick={onDetails}
             className="rounded-full bg-white px-3 py-2.5 text-center text-xs font-black text-black transition hover:bg-red-100"
           >
-            Details
+            View details
           </Link>
 
           {websiteUrl ? (
@@ -2178,7 +2204,9 @@ function ResultCard({
             </a>
           ) : null}
 
-          {reservationEnabled && internalReservationHref ? (
+          {activeOutingId ? (
+            <button type="button" onClick={() => setShowCompleteModal(true)} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">Complete outing</button>
+          ) : reservationEnabled && internalReservationHref ? (
             <Link
               href={internalReservationHref}
               onClick={onReservation}
@@ -2199,6 +2227,9 @@ function ResultCard({
           ) : (
             <a href={distanceHref || detailsHref} target={distanceHref ? "_blank" : undefined} rel={distanceHref ? "noopener noreferrer" : undefined} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">{distanceHref ? "Get Directions" : "View Details"}</a>
           )}
+          {locationId ? (
+            <Link href={`/location/apply/claim?location_id=${encodeURIComponent(locationId)}`} className="rounded-full border border-white/12 px-3 py-2.5 text-center text-xs font-black text-white/80 transition hover:bg-white hover:text-black">Claim this business</Link>
+          ) : null}
         </div>
         </div>
         <OutingCompletionBanner
@@ -2358,6 +2389,28 @@ function getResultInstruction(resultOrder: ResultSectionKind[]) {
   return resultOrder[0] === "activities"
     ? "Select an activity, then choose the restaurant that completes the outing."
     : "Select a restaurant, then choose the experience that completes the outing.";
+}
+
+function normalizeApiCards(data: ApiResponse) {
+  const restaurants = Array.isArray(data.restaurants) ? data.restaurants : [];
+  const activities = Array.isArray(data.activities) ? data.activities : [];
+  const cards = Array.isArray(data.cards) ? data.cards : [];
+  const matched = Array.isArray(data.matched_locations) ? data.matched_locations : [];
+
+  const fallbackCards = cards.length ? cards : matched;
+  const mappedRestaurants = fallbackCards.filter((item: any) => getCardType(item) === "restaurant") as RestaurantCard[];
+  const mappedActivities = fallbackCards.filter((item: any) => getCardType(item) === "activity") as ActivityCard[];
+
+  return {
+    restaurants: restaurants.length ? restaurants : mappedRestaurants,
+    activities: activities.length ? activities : mappedActivities,
+  };
+}
+
+function getCardType(item: any): "restaurant" | "activity" {
+  const raw = `${item?.location_type || item?.type || item?.source_table || item?.detail_location_type || ""}`.toLowerCase();
+  if (raw.includes("activity")) return "activity";
+  return "restaurant";
 }
 
 function buildSelectedPlanText(
