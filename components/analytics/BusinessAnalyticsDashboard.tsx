@@ -3,49 +3,55 @@
 import { useEffect, useMemo, useState } from "react";
 
 type LocationOption = { id: string; display_name: string; city?: string | null; state?: string | null; is_pro?: boolean };
-
 type Props = { locations: LocationOption[]; admin?: boolean };
+
+const ranges = [
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
+  { value: "12m", label: "12 months" },
+  { value: "all", label: "All" },
+];
 
 export default function BusinessAnalyticsDashboard({ locations, admin = false }: Props) {
   const [selectedLocationId, setSelectedLocationId] = useState(locations[0]?.id || "");
   const [range, setRange] = useState("30d");
+  const [q, setQ] = useState("");
   const [data, setData] = useState<any>(null);
 
   const selectedLocation = useMemo(() => locations.find((location) => location.id === selectedLocationId) || locations[0], [locations, selectedLocationId]);
 
   useEffect(() => {
-    if (!selectedLocationId) return;
-    const endpoint = admin ? "/api/business/analytics" : "/api/business/analytics";
-    fetch(`${endpoint}?location_id=${encodeURIComponent(selectedLocationId)}&range=${range}`)
+    const endpoint = admin ? "/api/admin/business-analytics" : "/api/business/analytics";
+    const qs = new URLSearchParams({ range });
+    if (selectedLocationId) qs.set("location_id", selectedLocationId);
+    if (admin && q.trim()) qs.set("q", q.trim());
+    fetch(`${endpoint}?${qs.toString()}`)
       .then((response) => response.json())
       .then(setData)
       .catch(() => setData(null));
-  }, [selectedLocationId, range, admin]);
+  }, [selectedLocationId, range, admin, q]);
 
   const s = data?.summary || {};
-  const cards = [
-    [admin ? "Platform Views" : "Profile Views", s.profile_views ?? 0],
-    ["Search Clicks", s.search_clicks ?? 0],
-    ["Reserve Clicks", s.reservation_starts ?? 0],
-    ["Completed Outings", s.reservation_completions ?? 0],
-  ];
+  const cards = admin
+    ? [["Locations", s.total_locations ?? 0], ["Profile Views", s.profile_views ?? 0], ["Search Clicks", s.search_clicks ?? 0], ["Outing Completions", s.completed_outings ?? 0]]
+    : [["Profile Views", s.profile_views ?? 0], ["Search Clicks", s.search_clicks ?? 0], ["Reserve Clicks", s.reservation_starts ?? 0], ["Completed Outings", s.reservation_completions ?? 0]];
 
   return (
     <main className="rose-page">
       <section className="rose-container py-10">
         <div className="rose-card rounded-[2rem] p-6 sm:p-8">
-          <p className="rose-muted text-xs font-black uppercase tracking-[0.22em]">{admin ? "Admin Business Analytics" : "Location Analytics"}</p>
-          <h1 className="mt-2 text-3xl font-black sm:text-5xl">{admin ? "TheOutHaven Analytics" : "Your Location Performance"}</h1>
-          <p className="rose-muted mt-2 text-sm">{admin ? "Platform-wide and per-location intelligence." : "Actionable insights for your claimed locations."}</p>
+          <p className="rose-muted text-xs font-black uppercase tracking-[0.22em]">{admin ? "Admin Business Analytics" : "Owner Analytics"}</p>
+          <h1 className="mt-2 text-3xl font-black sm:text-5xl">{admin ? "TheOutHaven Bird’s Eye View" : "Your Claimed Location Performance"}</h1>
+          <p className="rose-muted mt-2 text-sm">{admin ? "Platform-wide intelligence with per-location drilldowns and search behavior insights." : "Conversion and outing performance for locations you can manage."}</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <select value={selectedLocationId} onChange={(e) => setSelectedLocationId(e.target.value)} className="rose-glass rounded-full px-4 py-2 text-sm font-semibold">
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.display_name}</option>)}
-            </select>
-            <select value={range} onChange={(e) => setRange(e.target.value)} className="rose-glass rounded-full px-4 py-2 text-sm font-semibold">
-              <option value="7d">7 days</option><option value="30d">30 days</option><option value="90d">90 days</option><option value="12m">12 months</option><option value="all">All</option>
-            </select>
+            {!!locations.length && <select value={selectedLocationId} onChange={(e) => setSelectedLocationId(e.target.value)} className="rose-glass rounded-full px-4 py-2 text-sm font-semibold">{locations.map((l) => <option key={l.id} value={l.id}>{l.display_name}</option>)}</select>}
+            <select value={range} onChange={(e) => setRange(e.target.value)} className="rose-glass rounded-full px-4 py-2 text-sm font-semibold">{ranges.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select>
+            {admin && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search all locations inline" className="rose-glass rounded-full px-4 py-2 text-sm font-semibold" />}
           </div>
         </div>
+
+        {!locations.length && <div className="mt-6 rose-glass rounded-3xl p-5"><p className="text-lg font-black">No locations available yet</p><p className="rose-muted mt-2 text-sm">When locations are claimed or created, analytics will populate here.</p></div>}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map(([label, value]) => (
@@ -59,24 +65,40 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
           <div className="rose-glass rounded-3xl p-5">
             <p className="text-lg font-black">Top locations</p>
-            <p className="rose-muted mt-1 text-sm">Coming from normalized event + outing signals.</p>
             <ul className="mt-4 space-y-2 text-sm">
-              {locations.slice(0, 5).map((l) => <li key={l.id} className="flex items-center justify-between"><span>{l.display_name}</span><span className="rose-muted">{l.city || "—"}</span></li>)}
+              {(data?.top_locations || locations.slice(0, 8)).map((l: any) => <li key={l.id} className="flex items-center justify-between"><span>{l.name || l.display_name}</span><span className="rose-muted">{l.city || "—"}</span></li>)}
             </ul>
           </div>
           <div className="rose-glass rounded-3xl p-5">
             <p className="text-lg font-black">Recent tracked activity</p>
             <div className="mt-4 space-y-2 text-sm">
-              {(data?.recent_activity || []).slice(0, 8).map((item: any, i: number) => { const ts = item?.created_at ? new Date(item.created_at).toLocaleString() : "—"; return <p key={`${item.id || i}`} className="rose-muted">{item.event_name || item.event_type || item?.metadata?.event_name || "event"} · {ts}</p>; })}
-              {!data?.recent_activity?.length && <p className="rose-muted">No activity yet for this range.</p>}
+              {(data?.recent_activity || []).slice(0, 10).map((item: any, i: number) => { const ts = item?.created_at ? new Date(item.created_at).toLocaleString() : "—"; return <p key={`${item.id || i}`} className="rose-muted">{item.event_name || item.event_type || item?.metadata?.event_name || "event"} · {ts}</p>; })}
+              {!data?.recent_activity?.length && <p className="rose-muted">No tracked activity in this range yet.</p>}
             </div>
           </div>
         </div>
 
+        {admin && <div className="mt-6 grid gap-6 xl:grid-cols-3">
+          <div className="rose-glass rounded-3xl p-5 xl:col-span-2">
+            <p className="text-lg font-black">Bird’s Eye View · All locations</p>
+            <div className="mt-3 space-y-2 text-sm">
+              {(data?.all_locations || []).slice(0, 20).map((l: any) => <div key={l.id} className="flex items-center justify-between border-b border-white/10 py-2"><span>{l.name}</span><span className="rose-muted">CTR {Math.round((l.completion_rate || 0) * 100)}%</span></div>)}
+              {!data?.all_locations?.length && <p className="rose-muted">No locations match this search.</p>}
+            </div>
+          </div>
+          <div className="rose-glass rounded-3xl p-5">
+            <p className="text-lg font-black">Most searched categories</p>
+            <div className="mt-3 space-y-2 text-sm">
+              {(data?.most_searched_categories || []).map((c: any, i: number) => <div key={`${c.category}-${i}`} className="flex justify-between"><span>{c.category}</span><span className="rose-muted">{c.count}</span></div>)}
+              {!data?.most_searched_categories?.length && <p className="rose-muted">Not enough search signal yet.</p>}
+            </div>
+          </div>
+        </div>}
+
         <div className="mt-6 rose-glass rounded-3xl p-5">
-          <p className="text-lg font-black">Locations needing attention</p>
-          <p className="rose-muted mt-2 text-sm">Low completion or low click-through should be reviewed first.</p>
-          <p className="mt-3 text-sm">Current location: <span className="font-bold">{selectedLocation?.display_name || "None"}</span></p>
+          <p className="text-lg font-black">{admin ? "Admin location drilldown" : "Location snapshot"}</p>
+          <p className="mt-3 text-sm">Current location: <span className="font-bold">{selectedLocation?.display_name || data?.admin_location_drilldown?.name || "None"}</span></p>
+          <p className="rose-muted mt-2 text-sm">{admin ? "Use inline search and location selector for deeper breakdowns and event-level timelines." : "Metrics are privacy-safe and scoped to your authorized locations only."}</p>
         </div>
       </section>
     </main>

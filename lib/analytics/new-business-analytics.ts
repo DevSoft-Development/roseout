@@ -36,12 +36,24 @@ export type AnalyticsLocationRow = {
   name?: string | null;
   restaurant_name?: string | null;
   activity_name?: string | null;
+  location_type?: string | null;
+  primary_category?: string | null;
+  category?: string | null;
+  cuisine?: string | null;
+  cuisine_type?: string | null;
+  activity_type?: string | null;
   city?: string | null;
+  borough?: string | null;
+  neighborhood?: string | null;
   state?: string | null;
   is_pro?: boolean | null;
+  plan?: string | null;
+  subscription_status?: string | null;
   owner_user_id?: string | null;
   owner_email?: string | null;
   claimed_by_email?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export function rangeToStartIso(range: AnalyticsRange) {
