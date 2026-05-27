@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createClient } from "@/lib/supabase-server";
 
 function isUuid(value: unknown): value is string {
   return (
@@ -11,14 +12,24 @@ function isUuid(value: unknown): value is string {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    const status =
-      body.contact_method === "phone"
-        ? "call_clicked"
-        : "reservation_clicked";
+    if (!body.location_id) {
+      console.error("THEOUTHAVEN_OUTING_START_MISSING_LOCATION_ID", { body });
+    }
+    if (body.contact_method === "phone" && !body.phone_number) {
+      console.error("THEOUTHAVEN_OUTING_START_MISSING_PHONE_NUMBER", { body });
+    }
+    if (body.contact_method !== "phone" && !body.external_reservation_url) {
+      console.error("THEOUTHAVEN_OUTING_START_MISSING_EXTERNAL_URL", { body });
+    }
 
+    const now = new Date().toISOString();
     const payload = {
-      user_id: null,
+      user_id: user?.id ?? null,
       location_id: isUuid(body.location_id) ? body.location_id : null,
       source_location_id: body.location_id ? String(body.location_id) : null,
       location_type: body.location_type ?? null,
@@ -27,15 +38,9 @@ export async function POST(req: Request) {
       phone_number: body.phone_number ?? null,
       contact_method: body.contact_method ?? null,
       source: body.source ?? "create_result_card",
-      status,
-      reservation_clicked_at:
-        status === "reservation_clicked"
-          ? new Date().toISOString()
-          : null,
-      call_clicked_at:
-        status === "call_clicked"
-          ? new Date().toISOString()
-          : null,
+      status: "planned",
+      reservation_clicked_at: body.contact_method === "phone" ? null : now,
+      call_clicked_at: body.contact_method === "phone" ? now : null,
       metadata: {
         title: body.title ?? null,
         name: body.name ?? null,
@@ -43,11 +48,34 @@ export async function POST(req: Request) {
       },
     };
 
-    const { data, error } = await supabaseAdmin
+    const query = supabaseAdmin
       .from("outings")
-      .insert(payload)
-      .select()
-      .single();
+      .select("id")
+      .eq("source_location_id", payload.source_location_id)
+      .eq("location_type", payload.location_type)
+      .neq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const { data: existingOutings } = payload.user_id
+      ? await query.eq("user_id", payload.user_id)
+      : await query.is("user_id", null);
+
+    let data: { id: string } | null = null;
+    let error: any = null;
+    if (existingOutings?.[0]?.id) {
+      ({ data, error } = await supabaseAdmin
+        .from("outings")
+        .update(payload)
+        .eq("id", existingOutings[0].id)
+        .select("id")
+        .single());
+    } else {
+      ({ data, error } = await supabaseAdmin
+        .from("outings")
+        .insert(payload)
+        .select("id")
+        .single());
+    }
 
     if (error) {
       console.error("THEOUTHAVEN_OUTING_START_ERROR", {
@@ -68,6 +96,12 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", {
+      outing_id: data.id,
+      location_id: payload.source_location_id,
+      contact_method: payload.contact_method,
+    });
 
     return NextResponse.json({
       success: true,

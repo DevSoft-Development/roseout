@@ -50,6 +50,7 @@ type LocationDetailRecord = Record<string, unknown> & {
   primary_tag?: string | null;
   description?: string | null;
   website?: string | null;
+  phone?: string | null;
   reservation_enabled?: boolean | null;
   review_count?: number | string | null;
   review_score?: number | string | null;
@@ -278,6 +279,35 @@ export default function LocationDetailPage() {
     }).catch(() => undefined);
   }
 
+
+
+  const startOutingTracking = async (method: "phone" | "external") => {
+    try {
+      const response = await fetch("/api/outings/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location_id: location?.id || id,
+          location_type: location?.location_type || type,
+          external_reservation_url: method === "external" ? reservationUrl : null,
+          phone_number: method === "phone" ? location?.phone : null,
+          contact_method: method,
+          source: "location_detail_page",
+          title: name,
+          address,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: data?.error || response.statusText, location_id: location?.id || id });
+        return;
+      }
+      console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, location_id: location?.id || id });
+    } catch (error) {
+      console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: error instanceof Error ? error.message : "unknown", location_id: location?.id || id });
+    }
+  };
+
   const recommendationBullets = buildRecommendationBullets({
     category,
     cuisine: location?.cuisine || location?.activity_type,
@@ -462,7 +492,7 @@ export default function LocationDetailPage() {
                           ? "noopener noreferrer"
                           : undefined
                       }
-                      onClick={() => trackBusinessEvent("reservation_started")}
+                      onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }}
                       className="rounded-full bg-red-600 px-7 py-3 text-sm font-black text-white shadow-lg shadow-red-950/50 transition hover:bg-red-500"
                     >
                       {reservationLabel}
@@ -470,7 +500,7 @@ export default function LocationDetailPage() {
                   )}
 
                   {secondaryReservationUrl && (
-                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackBusinessEvent("reservation_started")} className="rounded-full border border-red-300/30 px-7 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/10">
+                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }} className="rounded-full border border-red-300/30 px-7 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/10">
                       Reserve Externally
                     </a>
                   )}
@@ -486,6 +516,16 @@ export default function LocationDetailPage() {
                       Website
                     </a>
                   )}
+
+                  {location?.phone ? (
+                    <a
+                      href={`tel:${String(location.phone).replace(/[^\d+]/g, "")}`}
+                      onClick={() => { void startOutingTracking("phone"); }}
+                      className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
+                    >
+                      Call Location
+                    </a>
+                  ) : null}
 
                   {mapsUrl ? (
                     <a
@@ -685,7 +725,7 @@ export default function LocationDetailPage() {
                           ? "noopener noreferrer"
                           : undefined
                       }
-                      onClick={() => trackBusinessEvent("reservation_started")}
+                      onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }}
                       className="rounded-full bg-red-600 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-red-500"
                     >
                       {reservationLabel}
@@ -693,7 +733,7 @@ export default function LocationDetailPage() {
                   )}
 
                   {secondaryReservationUrl && (
-                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackBusinessEvent("reservation_started")} className="rounded-full border border-red-300/30 px-5 py-3 text-center text-sm font-black text-red-100 transition hover:bg-red-500/10">
+                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }} className="rounded-full border border-red-300/30 px-5 py-3 text-center text-sm font-black text-red-100 transition hover:bg-red-500/10">
                       Reserve Externally
                     </a>
                   )}
@@ -709,6 +749,16 @@ export default function LocationDetailPage() {
                       Visit Website
                     </a>
                   )}
+
+                  {location?.phone ? (
+                    <a
+                      href={`tel:${String(location.phone).replace(/[^\d+]/g, "")}`}
+                      onClick={() => { void startOutingTracking("phone"); }}
+                      className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+                    >
+                      Call Location
+                    </a>
+                  ) : null}
 
                   {mapsUrl ? (
                     <a
