@@ -54,13 +54,13 @@ export default function ForgotPasswordPage() {
         className="w-full max-w-md rounded-[2rem] bg-white p-8 text-black shadow-2xl"
       >
         <p className="mb-2 text-sm font-bold uppercase tracking-[0.25em] text-yellow-600">
-          TheOutHaven Admin
+          TheOutHaven Account Recovery
         </p>
 
         <h1 className="text-3xl font-extrabold">Forgot Password</h1>
 
         <p className="mt-2 text-sm text-neutral-500">
-          Enter your admin email and we’ll send you a password reset link.
+          Enter your account email and we’ll send you a secure password reset link.
         </p>
 
         {error && (

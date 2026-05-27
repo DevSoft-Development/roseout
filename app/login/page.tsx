@@ -99,7 +99,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
 
     const user = data.user;
     if (!user) {
-      window.location.href = "/create";
+      setError("We could not find an account for those credentials. Please sign up first.");
       return;
     }
 
@@ -298,10 +298,10 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
 
           <div className="mb-6">
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#e1062a]">
-              {tab === "signin" ? "Welcome Back" : "Join TheOutHaven"}
+              {tab === "signin" ? "Sign In" : "Sign Up"}
             </p>
             <h2 className="mt-2 text-2xl font-semibold text-white">
-              {tab === "signin" ? "Sign in to plan your next OUTing." : "Create your member account."}
+              {tab === "signin" ? "Sign in to your TheOutHaven account" : "Create your TheOutHaven account"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-white/60">
               {tab === "signin"
@@ -338,9 +338,14 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
               <div>
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <label className="block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Password</label>
-                  <Link href="/forgot-password" className="text-xs font-bold text-[#e1062a] transition hover:text-red-300">
-                    Forgot password?
-                  </Link>
+                  <div className="flex items-center gap-3">
+                    <Link href="/forgot-password" className="text-xs font-bold text-[#e1062a] transition hover:text-red-300">
+                      Forgot password?
+                    </Link>
+                    <Link href="/auth/create-password" className="text-xs font-bold text-white/70 transition hover:text-white">
+                      Resend setup link
+                    </Link>
+                  </div>
                 </div>
                 <input
                   required
@@ -355,7 +360,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
               <button disabled={loading} className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
 
               <p className="text-center text-sm text-white/55">
-                New to TheOutHaven?{" "}
+                Need an account?{" "}
                 <button
                   type="button"
                   onClick={() => {
@@ -366,7 +371,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                   }}
                   className="font-bold text-[#e1062a] hover:text-red-300"
                 >
-                  Create an account
+                  Sign up now
                 </button>
               </p>
             </form>
