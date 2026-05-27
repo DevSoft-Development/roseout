@@ -182,6 +182,22 @@ export default async function CentralDashboardPage() {
     },
   ];
 
+
+  const requiredSections = [
+    { title: "Overview", href: "/admin/dashboard" },
+    { title: "Locations", href: "/admin/dashboard/locations" },
+    { title: "Users", href: "/admin/dashboard/users" },
+    { title: "Location Owners", href: "/admin/dashboard/owner-accounts" },
+    { title: "Promo Codes", href: "/admin/dashboard/settings/promo-codes" },
+    { title: "Claims", href: "/admin/dashboard/claims" },
+    { title: "Search Diagnostics", href: "/admin/search-qa" },
+    { title: "Outing Tracking", href: "/admin/activities" },
+    { title: "Analytics", href: "/admin/dashboard/analytics" },
+    { title: "Emails / Invite Logs", href: "/admin/invites" },
+    { title: "Featured Collections", href: "/admin/dashboard/marketing/featured-outings" },
+    { title: "Reported Issues", href: "/admin/dashboard/support" },
+  ];
+
   return (
     <main
       data-page-version={ADMIN_DASHBOARD_VERSION}
@@ -207,6 +223,21 @@ export default async function CentralDashboardPage() {
                 reservations, support tickets, claims, and customer-flow testing
                 are all one click away.
               </p>
+
+              <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Admin Operating Sections</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {requiredSections.map((section) => (
+                    <Link
+                      key={section.title}
+                      href={section.href}
+                      className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-semibold text-white/85 transition hover:border-rose-400/50 hover:text-rose-200"
+                    >
+                      {section.title}
+                    </Link>
+                  ))}
+                </div>
+              </div>
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
