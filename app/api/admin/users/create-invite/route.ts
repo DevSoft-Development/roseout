@@ -1,6 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizeInviteRole } from "@/lib/auth/passwordSetupTokens";
+import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   const created = await supabaseAdmin.auth.admin.createUser({
     email,
-    user_metadata: { role: normalizeInviteRole(role), first_name: firstName, last_name: lastName },
+    user_metadata: { role: normalizePasswordSetupRole(role), first_name: firstName, last_name: lastName },
     email_confirm: true,
   });
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     email,
     full_name: `${firstName} ${lastName}`.trim(),
     phone,
-    role: normalizeInviteRole(role),
+    role: normalizePasswordSetupRole(role),
     status: "invited",
   }, { onConflict: "id" });
 
@@ -55,28 +55,35 @@ export async function POST(request: Request) {
     .update({ used_at: new Date().toISOString(), invalidated_reason: "new_link_requested" })
     .eq("email", email)
     .is("used_at", null)
-    .eq("purpose", "create_password");
+    .eq("purpose", PASSWORD_SETUP_PURPOSE);
 
   const rawToken = createPasswordSetupToken();
   const tokenHash = hashPasswordSetupToken(rawToken);
   const expiresAt = getPasswordSetupExpiry();
-  await supabaseAdmin.from("password_setup_tokens").insert({
+  const { error: insertError } = await supabaseAdmin.from("password_setup_tokens").insert({
     user_id: created.data.user.id,
     email,
     token_hash: tokenHash,
-    purpose: "create_password",
-    role: normalizeInviteRole(role),
+    purpose: PASSWORD_SETUP_PURPOSE,
+    role: normalizePasswordSetupRole(role),
     assigned_location_id: body.assigned_location_id || null,
     expires_at: expiresAt,
     created_by: adminUser?.id || null,
   });
+
+  if (insertError) {
+    console.error("[password-setup:create-token-failed]", { email, userId: created.data.user.id, tokenHashPrefix: tokenHash.slice(0, 12), error: insertError.message, details: insertError.details, hint: insertError.hint, code: insertError.code });
+    return Response.json({ error: "User was created, but the password setup link could not be created." }, { status: 500 });
+  }
+
+  console.info("[password-setup:create-token]", { email, userId: created.data.user.id, tokenHashPrefix: tokenHash.slice(0, 12), expiresAt, purpose: PASSWORD_SETUP_PURPOSE, requestPath: new URL(request.url).pathname, insertSuccess: true });
 
   if (sendInvite) {
     const emailTemplate = passwordSetupInviteTemplate({
       first_name: firstName,
       token: rawToken,
       expires_at: expiresAt,
-      role: normalizeInviteRole(role),
+      role: normalizePasswordSetupRole(role),
     });
 
     await sendSupportEmail({

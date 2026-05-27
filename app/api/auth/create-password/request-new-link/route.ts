@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizeInviteRole, PASSWORD_SETUP_RESEND_COOLDOWN_MS } from "@/lib/auth/passwordSetupTokens";
+import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE, PASSWORD_SETUP_RESEND_COOLDOWN_MS } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -31,19 +31,26 @@ export async function POST(request: Request) {
 
   if (recent?.length) return NextResponse.json(generic);
 
-  await supabaseAdmin.from("password_setup_tokens").update({ used_at: new Date().toISOString(), invalidated_reason: "new_link_requested" }).eq("user_id", user.id).is("used_at", null);
+  await supabaseAdmin.from("password_setup_tokens").update({ used_at: new Date().toISOString(), invalidated_reason: "new_link_requested" }).eq("user_id", user.id).is("used_at", null).eq("purpose", PASSWORD_SETUP_PURPOSE);
 
   const rawToken = createPasswordSetupToken();
   const tokenHash = hashPasswordSetupToken(rawToken);
   const expiresAt = getPasswordSetupExpiry();
-  await supabaseAdmin.from("password_setup_tokens").insert({
+  const { error: insertError } = await supabaseAdmin.from("password_setup_tokens").insert({
     user_id: user.id,
     email,
     token_hash: tokenHash,
-    purpose: "create_password",
-    role: normalizeInviteRole(String(user.user_metadata?.role || "user")),
+    purpose: PASSWORD_SETUP_PURPOSE,
+    role: normalizePasswordSetupRole(String(user.user_metadata?.role || "user")),
     expires_at: expiresAt,
   });
+
+  if (insertError) {
+    console.error("[password-setup:create-token-failed]", { email, userId: user.id, tokenHashPrefix: tokenHash.slice(0, 12), error: insertError.message, details: insertError.details, hint: insertError.hint, code: insertError.code });
+    return NextResponse.json(generic);
+  }
+
+  console.info("[password-setup:create-token]", { email, userId: user.id, tokenHashPrefix: tokenHash.slice(0, 12), expiresAt, purpose: PASSWORD_SETUP_PURPOSE, requestPath: new URL(request.url).pathname, insertSuccess: true });
 
   const tpl = passwordSetupInviteTemplate({ first_name: String(user.user_metadata?.first_name || "there"), token: rawToken, expires_at: expiresAt, role: String(user.user_metadata?.role || "user") });
   await sendSupportEmail({ to: email, subject: tpl.subject, body: tpl.text, html: tpl.html, department: "security" }).catch((error) => console.error("request-new-link email failure", error));

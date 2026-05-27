@@ -1,5 +1,4 @@
-import { getCreatePasswordUrl } from "@/lib/site-url";
-import { formatPasswordSetupExpiry, normalizeInviteRole } from "@/lib/auth/passwordSetupTokens";
+import { buildPasswordSetupUrl, formatPasswordSetupExpiry, normalizePasswordSetupRole } from "@/lib/auth/passwordSetupTokens";
 import { baseEmailLayout } from "./baseEmailLayout";
 
 export function passwordSetupInviteTemplate(input: {
@@ -9,8 +8,8 @@ export function passwordSetupInviteTemplate(input: {
   role: string;
 }) {
   const firstName = input.first_name?.trim() || "there";
-  const role = normalizeInviteRole(input.role);
-  const inviteUrl = getCreatePasswordUrl(input.token);
+  const role = normalizePasswordSetupRole(input.role);
+  const inviteUrl = buildPasswordSetupUrl(input.token);
   const formattedExpiry = formatPasswordSetupExpiry(input.expires_at);
 
   const config = role === "admin"
@@ -42,6 +41,6 @@ export function passwordSetupInviteTemplate(input: {
   return {
     subject: config.subject,
     html: baseEmailLayout({ previewText: "Create your secure password for your TheOutHaven account.", heading: config.heading, bodyHtml, ctaLabel: config.cta, ctaUrl: inviteUrl, department: "security" }),
-    text: [`Hi ${firstName},`, "", config.intro, "", `This password setup link expires on ${formattedExpiry}.`, "", "Do not share this link.", "", "If you were not expecting this email, you can ignore it.", "", config.closing, "", inviteUrl].join("\n"),
+    text: [`Hi ${firstName},`, "", config.intro, "", `This password setup link expires on ${formattedExpiry}.`, "", "Do not share this link.", "", "If you were not expecting this email, you can ignore it.", "", config.closing, "", "Create your password here:", inviteUrl].join("\n"),
   };
 }
