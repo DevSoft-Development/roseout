@@ -105,6 +105,31 @@ function normalizeLocation(item: any) {
   };
 }
 
+function toCardRecord(item: any) {
+  return {
+    id: item?.id ?? item?.source_id ?? item?.place_id ?? null,
+    name: item?.name ?? item?.restaurant_name ?? item?.activity_name ?? item?.business_name ?? "Unknown location",
+    location_type: item?.location_type ?? item?.type ?? inferRecordDomain(item),
+    primary_category: item?.primary_category ?? item?.category ?? null,
+    cuisine: item?.cuisine ?? item?.cuisine_type ?? null,
+    activity_type: item?.activity_type ?? null,
+    address: item?.address ?? null,
+    city: item?.city ?? null,
+    borough: item?.borough ?? null,
+    image_url: item?.image_url ?? item?.main_image ?? (Array.isArray(item?.images) ? item.images[0] : null),
+    rating: item?.rating ?? null,
+    price_level: item?.price_level ?? item?.price_range ?? null,
+    phone_number: item?.phone_number ?? item?.phone ?? null,
+    reservation_url: item?.reservation_url ?? item?.reservation_link ?? null,
+    external_reservation_url: item?.external_reservation_url ?? null,
+    tags: Array.isArray(item?.tags) ? item.tags : [],
+    distance: item?.pair_distance_miles ?? item?.distance_miles ?? null,
+    source_table: item?.source_table ?? null,
+    detail_location_type: item?.detail_location_type ?? null,
+    website: item?.website ?? null,
+  };
+}
+
 function isOutingEligibleLocation(item: any) {
   return Boolean(item && (item.name || item.title));
 }
@@ -324,6 +349,11 @@ export async function POST(request: Request) {
     restaurants: topRestaurants,
     activities: topActivities,
     matched_locations: matchedLocationResults,
+    cards: [
+      ...topRestaurants.map(toCardRecord),
+      ...topActivities.map(toCardRecord),
+      ...matchedLocationResults.map(toCardRecord),
+    ],
     render_mode: finalHasCards || locationOnlySearch ? "cards" : result?.render_mode ?? "empty",
     card_counts: {
       ...result?.card_counts,
