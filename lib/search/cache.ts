@@ -1,6 +1,6 @@
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 
-export const CLEAN_SEARCH_CACHE_VERSION = "clean-search-v1-no-legacy-intent";
+export const CLEAN_SEARCH_CACHE_VERSION = "clean-search-v2-canonical-intent";
 
 export function shouldBypassSearchCache(intent: CanonicalSearchIntent) {
   const q = intent.normalizedQuery;

@@ -181,13 +181,16 @@ export async function POST(request: Request) {
   diagnostics.stage = "response_ready";
   diagnostics.preliminaryIntent = body?.intent ?? null;
   diagnostics.finalIntent = {
-    wantsRestaurant: intent.wantsRestaurant,
-    wantsActivity: intent.wantsActivity,
-    wantsFullOuting: intent.wantsFullOuting,
-    foodIntents: intent.foodIntents,
-    activityIntents: intent.activityIntents,
-    locations: intent.locations,
-    boroughs: intent.boroughs,
+    foodIntent: intent.foodIntent,
+    activityIntent: intent.activityIntent,
+    locationIntent: intent.locationIntent,
+    borough: intent.borough,
+    city: intent.city,
+    neighborhood: intent.neighborhood,
+    needsRestaurant: intent.needsRestaurant,
+    needsActivity: intent.needsActivity,
+    wantsPairing: intent.wantsPairing,
+    addOnIntent: intent.addOnIntent,
     multiIntentMode: (intent as any).multiIntentMode,
   };
   const locationOnlySearch = Boolean(
@@ -337,6 +340,8 @@ export async function POST(request: Request) {
       after_geo_filter_activities: result?.debug?.afterGeoFilterActivityCount ?? 0,
       final_restaurants: topRestaurants.length,
       final_activities: topActivities.length,
+      fallback_used: fallbackAttempted || Boolean(result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed),
+      no_results_reason: result?.debug?.empty_reason ?? null,
     },
   });
 }

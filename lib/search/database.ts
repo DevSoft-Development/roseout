@@ -169,7 +169,10 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
   const mealTerms = getMealTermsFromQuery(query);
   const restaurantCandidates = locations.filter((location) => isRestaurantRecord(location) && !isActivityOnlyRecord(location));
   if (!mealIntent) return { filtered: restaurantCandidates, strictCount: restaurantCandidates.length, fallbackCount: restaurantCandidates.length };
-  const strictMealMatches = restaurantCandidates.filter((location) => mealTerms.some((term) => locationText(location).includes(term)));
+  const strictMealMatches = restaurantCandidates.filter((location) => {
+    const hay = locationText(location);
+    return mealTerms.some((term) => hay.includes(term));
+  });
   if (strictMealMatches.length > 0) return { filtered: strictMealMatches, strictCount: strictMealMatches.length, fallbackCount: 0 };
   return { filtered: restaurantCandidates, strictCount: 0, fallbackCount: restaurantCandidates.length };
 }
@@ -326,11 +329,11 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   }
 
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
-  const intentQuery = `${searchText} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
+  const intentQuery = `${searchText} ${(intent.locationIntent ?? []).join(" ")} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
   const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
   const geoFilteredByQuery = domainRecords.filter((record) => matchesGeo(record, intentQuery));
   const geoFiltered = geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent;
-  const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : intent.activityIntents;
+  const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : (intent.activityIntent ?? intent.activityIntents);
   let categorized: Record<string, unknown>[] = softCategoryFilter(geoFiltered, terms);
   let strictRestaurantCount = 0;
   let fallbackRestaurantCount = 0;
@@ -352,6 +355,11 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     activityCandidateCount = filterActivityCandidatesForQuery(geoFiltered, intentQuery).length;
     categorized = filterActivityCandidatesForQuery(geoFiltered, intentQuery);
     if (!hasAddOnActivityIntent(intentQuery)) categorized = softCategoryFilter(categorized, terms);
+    if (intent.needsRestaurant && intent.needsActivity && (intent.addOnIntent ?? []).length > 0) {
+      const addOn = (intent.addOnIntent ?? []).map((x) => x.replaceAll("_", " "));
+      const addOnMatches = categorized.filter((record) => addOn.some((term) => recordSearchText(record).includes(term)));
+      if (addOnMatches.length > 0) categorized = addOnMatches;
+    }
   }
 
   const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors };

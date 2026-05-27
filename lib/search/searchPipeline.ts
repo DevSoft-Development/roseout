@@ -33,20 +33,20 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
   const cache = shouldBypassSearchCache(intent);
   intent.cacheBypassReasons = cache.reasons;
 
-  const restaurantSearch: { records: any[]; debug: SearchDebug } = intent.wantsRestaurant ? await searchRestaurants(intent) : { records: [], debug: { searchedTables: [], rpcCalls: [] } };
-  const activitySearch: { records: any[]; debug: SearchDebug } = intent.wantsActivity ? await searchActivities(intent) : { records: [], debug: { searchedTables: [], rpcCalls: [] } };
+  const restaurantSearch: { records: any[]; debug: SearchDebug } = intent.needsRestaurant ? await searchRestaurants(intent) : { records: [], debug: { searchedTables: [], rpcCalls: [] } };
+  const activitySearch: { records: any[]; debug: SearchDebug } = intent.needsActivity ? await searchActivities(intent) : { records: [], debug: { searchedTables: [], rpcCalls: [] } };
 
   let restaurants = restaurantSearch.records;
   let activities = activitySearch.records;
   let fallback_used = { restaurants: false, activities: false };
 
-  if (intent.wantsRestaurant && restaurants.length === 0) {
+  if (intent.needsRestaurant && restaurants.length === 0) {
     const fallbackRestaurants = await searchFallbackRestaurants(intent);
     restaurants = fallbackRestaurants.records;
     fallback_used.restaurants = true;
     restaurantSearch.debug.sourceErrors = mergeSourceErrors(restaurantSearch.debug.sourceErrors, fallbackRestaurants.debug.sourceErrors);
   }
-  if (intent.wantsActivity && activities.length === 0) {
+  if (intent.needsActivity && activities.length === 0) {
     const fallbackActivities = await searchFallbackActivities(intent);
     activities = fallbackActivities.records;
     fallback_used.activities = true;
@@ -61,7 +61,7 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
   ).values());
 
   const empty_reason = restaurants.length === 0 && activities.length === 0
-    ? (fallback_used.restaurants || fallback_used.activities ? "fallback_not_triggered" : "strict_category_filter_removed_all")
+    ? (fallback_used.restaurants || fallback_used.activities ? "fallback_attempted_no_cards" : "strict_category_filter_removed_all")
     : undefined;
 
   return buildSearchResponse(intent, restaurants, activities, pairs, matchedLocations, {
