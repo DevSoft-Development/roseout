@@ -34,29 +34,38 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const hookahOnlyFood = explicitHookahRestaurant && !hasRealMeal;
   const foodIntents = [...new Set([...mealFoodIntents, ...addOnFoodIntents, ...(hookahOnlyFood ? ["hookah"] : [])])];
   const boroughs = BOROUGHS.filter((b) => hit(normalizedQuery, b));
+  const isLocationOnlySearch =
+    boroughs.length > 0 &&
+    !wantsFood &&
+    !wantsActivity &&
+    !["date", "outing", "nightlife"].some((p) => hit(normalizedQuery, p));
+  const finalWantsFood = wantsFood || isLocationOnlySearch;
+  const finalWantsRestaurant =
+    wantsFood || explicitHookahRestaurant || isLocationOnlySearch;
+  const finalWantsActivity = wantsActivity || isLocationOnlySearch;
 
-  const nonOffTopicSignals = wantsFood || wantsActivity || boroughs.length > 0 || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
+  const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
   const isOffTopic = !nonOffTopicSignals;
 
   return {
     rawQuery: input,
     normalizedQuery,
-    wantsFood,
-    wantsRestaurant: wantsFood || explicitHookahRestaurant,
-    wantsActivity,
-    wantsFullOuting,
-    foodIntents,
-    mealFoodIntents,
-    specificMealFoodIntents: [...new Set(specificMealFoodIntents)],
+    wantsFood: finalWantsFood,
+    wantsRestaurant: finalWantsRestaurant,
+    wantsActivity: finalWantsActivity,
+    wantsFullOuting: isLocationOnlySearch ? false : wantsFullOuting,
+    foodIntents: isLocationOnlySearch ? [] : foodIntents,
+    mealFoodIntents: isLocationOnlySearch ? [] : mealFoodIntents,
+    specificMealFoodIntents: isLocationOnlySearch ? [] : [...new Set(specificMealFoodIntents)],
     addOnFoodIntents,
-    activityIntents: [...new Set(activityIntents.map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v)))],
-    cuisines: mealFoodIntents.filter((v) => ["italian", "mexican", "thai", "chinese", "japanese", "american", "african", "caribbean"].includes(v)),
+    activityIntents: isLocationOnlySearch ? [] : [...new Set(activityIntents.map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v)))],
+    cuisines: (isLocationOnlySearch ? [] : mealFoodIntents).filter((v) => ["italian", "mexican", "thai", "chinese", "japanese", "american", "african", "caribbean"].includes(v)),
     locations: boroughs,
     neighborhoods: [],
     boroughs,
     vibes: detectIntents(normalizedQuery, ["romantic", "casual", "upscale", "nightlife", "cozy"]),
-    strictFoodMode: wantsFood && !wantsActivity,
-    strictActivityMode: wantsActivity && !wantsFood,
+    strictFoodMode: isLocationOnlySearch ? false : finalWantsFood && !finalWantsActivity,
+    strictActivityMode: isLocationOnlySearch ? false : finalWantsActivity && !finalWantsFood,
     isOffTopic,
     offTopicReason: isOffTopic ? "No food/activity/location/nightlife/date signal detected." : undefined,
     restaurantSearchInput: "",

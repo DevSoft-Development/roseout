@@ -187,8 +187,19 @@ export async function POST(request: Request) {
     foodIntents: intent.foodIntents,
     activityIntents: intent.activityIntents,
     locations: intent.locations,
+    boroughs: intent.boroughs,
     multiIntentMode: (intent as any).multiIntentMode,
   };
+  const locationOnlySearch = Boolean(
+    (intent?.boroughs?.length ?? 0) > 0 &&
+      (intent?.mealFoodIntents?.length ?? 0) === 0 &&
+      (intent?.activityIntents?.length ?? 0) === 0
+  );
+  diagnostics.notes.push(`location_only_search=${locationOnlySearch}`);
+  diagnostics.notes.push(`restaurant_search_input=${intent?.restaurantSearchInput ?? ""}`);
+  diagnostics.notes.push(`activity_search_input=${intent?.activitySearchInput ?? ""}`);
+  setDiagCount(diagnostics, "requested_locations", [...(intent?.locations ?? []), ...(intent?.boroughs ?? [])]);
+  setDiagCount(diagnostics, "location_only_search", locationOnlySearch ? 1 : 0);
 
   const usableLocations = locations.filter(
     (item: any) => isOutingEligibleLocation(item) && isWithinTheOutHavenServiceArea(item)
@@ -310,12 +321,22 @@ export async function POST(request: Request) {
     restaurants: topRestaurants,
     activities: topActivities,
     matched_locations: matchedLocationResults,
-    render_mode: finalHasCards ? "cards" : result?.render_mode ?? "empty",
+    render_mode: finalHasCards || locationOnlySearch ? "cards" : result?.render_mode ?? "empty",
     card_counts: {
       ...result?.card_counts,
       restaurants: topRestaurants.length,
       activities: topActivities.length,
       matched_locations: matchedLocationResults.length,
+    },
+    diagnostics: {
+      requested_locations: [...(intent?.locations ?? []), ...(intent?.boroughs ?? [])],
+      location_only_search: locationOnlySearch,
+      restaurant_search_input: intent?.restaurantSearchInput ?? "",
+      activity_search_input: intent?.activitySearchInput ?? "",
+      after_geo_filter_restaurants: result?.debug?.afterGeoFilterRestaurantCount ?? 0,
+      after_geo_filter_activities: result?.debug?.afterGeoFilterActivityCount ?? 0,
+      final_restaurants: topRestaurants.length,
+      final_activities: topActivities.length,
     },
   });
 }
