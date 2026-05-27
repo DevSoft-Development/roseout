@@ -43,8 +43,11 @@ const FOOD_SYNONYMS: Record<string, string[]> = {
 };
 
 const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
-  queens: ["astoria", "flushing", "long island city", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "rockaway"],
-  brooklyn: ["williamsburg", "bushwick", "park slope", "dumbo", "bed stuy", "crown heights", "greenpoint", "flatbush"],
+  queens: ["queens", "astoria", "flushing", "long island city", "lic", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "bayside", "corona", "fresh meadows", "rego park", "ozone park", "queens village", "springfield gardens", "rockaway"],
+  manhattan: ["manhattan", "harlem", "upper east side", "upper west side", "midtown", "chelsea", "soho", "lower east side", "east village", "west village", "tribeca", "financial district"],
+  bronx: ["bronx", "south bronx", "riverdale", "fordham", "pelham bay", "morris park"],
+  brooklyn: ["brooklyn", "williamsburg", "bushwick", "park slope", "dumbo", "bed stuy", "crown heights", "greenpoint", "flatbush", "downtown brooklyn"],
+  "staten island": ["staten island"],
 };
 
 const SAFE_REMOTE_TEXT_FIELDS = [
@@ -130,12 +133,17 @@ function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
 function matchesGeo(record: Record<string, unknown>, query: string) {
   const q = query.toLowerCase();
   const hay = [
-    record.borough, record.city, record.neighborhood, record.address, record.formatted_address,
+    record.borough, record.city, record.neighborhood, record.address, record.formatted_address, record.search_document, record.semantic_search_text, record.location,
   ].map((value) => stringifySearchValue(value)).filter(Boolean).join(" ").toLowerCase();
 
   const boroughList = ["queens", "brooklyn", "manhattan", "bronx", "staten island"];
   const requestedBorough = boroughList.find((borough) => q.includes(borough));
-  if (requestedBorough) return hay.includes(requestedBorough);
+  if (requestedBorough) {
+    return (
+      hay.includes(requestedBorough) ||
+      (BOROUGH_NEIGHBORHOODS[requestedBorough] ?? []).some((token) => hay.includes(token))
+    );
+  }
   if (q.includes("astoria")) return hay.includes("astoria") || hay.includes("queens");
   return true;
 }

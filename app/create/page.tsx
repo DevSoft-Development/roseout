@@ -2020,8 +2020,9 @@ function ResultCard({
   const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
   const handleStartOuting = async (method: "external_reservation" | "phone") => {
+    const telHref = phoneNumber ? `tel:${phoneNumber.replace(/[^\d+]/g, "")}` : null;
     try {
-      const response = await fetch("/api/outings/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location_id: locationId, location_type: type, external_reservation_url: reservationUrl, phone_number: phoneNumber, contact_method: method === "phone" ? "phone" : "external", source: "create_result_card" }) });
+      const response = await fetch("/api/outings/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location_id: locationId, location_type: type, external_reservation_url: reservationUrl, phone_number: phoneNumber, contact_method: method === "phone" ? "phone" : "external", source: "create_result_card", title, address }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Unable to start outing");
       if (data?.outing_id) {
@@ -2029,10 +2030,12 @@ function ResultCard({
         localStorage.setItem(outingStorageKey, data.outing_id);
       }
       setShowCompletionPrompt(true);
-      if (method === "phone" && phoneNumber) window.location.href = `tel:${phoneNumber}`;
+      if (method === "phone" && telHref) window.location.href = telHref;
       if (method === "external_reservation" && reservationUrl) window.open(reservationUrl, "_blank", "noopener,noreferrer");
     } catch {
-      setCompleteMessage("We couldn't start tracking this outing. Please try again.");
+      if (method === "phone" && telHref) window.location.href = telHref;
+      if (method === "external_reservation" && reservationUrl) window.open(reservationUrl, "_blank", "noopener,noreferrer");
+      setCompleteMessage("We opened the link, but tracking did not save.");
     }
   };
 
