@@ -3,6 +3,16 @@ export type RenderMode = "cards" | "empty" | "text";
 export type CanonicalSearchIntent = {
   rawQuery: string;
   normalizedQuery: string;
+  foodIntent: string[];
+  activityIntent: string[];
+  locationIntent: string[];
+  borough: string | null;
+  city: string | null;
+  neighborhood: string | null;
+  needsRestaurant: boolean;
+  needsActivity: boolean;
+  wantsPairing: boolean;
+  addOnIntent: string[];
   wantsFood: boolean;
   wantsRestaurant: boolean;
   wantsActivity: boolean;

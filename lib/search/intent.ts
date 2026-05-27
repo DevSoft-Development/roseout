@@ -2,6 +2,8 @@ import { ADD_ON_FOOD_INTENTS, ACTIVITY_INTENTS, GENERIC_MEAL_TERMS, INTENT_ALIAS
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 
 const BOROUGHS = ["brooklyn", "queens", "manhattan", "bronx", "staten island"];
+const NYC_NEIGHBORHOODS = ["astoria", "long island city", "lic", "flushing", "jackson heights", "williamsburg", "harlem", "soho", "chelsea"];
+const MEAL_PRIMARY_TERMS = ["steak", "seafood", "dinner", "brunch", "lunch", "breakfast", "restaurant", "food", "date night dinner"];
 const RESTAURANT_TERMS = [...GENERIC_MEAL_TERMS];
 
 const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -26,7 +28,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   }
 
   const explicitHookahRestaurant = ["hookah restaurant", "restaurant with hookah", "hookah with food", "hookah spot that serves food", "eat at hookah"].some((p) => hit(normalizedQuery, p));
-  const hasRealMeal = mealFoodIntents.length > 0 || RESTAURANT_TERMS.some((p) => hit(normalizedQuery, p));
+  const hasRealMeal = mealFoodIntents.length > 0 || MEAL_PRIMARY_TERMS.some((p) => hit(normalizedQuery, p)) || RESTAURANT_TERMS.some((p) => hit(normalizedQuery, p));
   const wantsFood = mealFoodIntents.length > 0 || addOnFoodIntents.length > 0 || RESTAURANT_TERMS.some((p) => hit(normalizedQuery, p));
   const wantsActivity = activityIntents.length > 0;
   const wantsFullOuting = (wantsFood && wantsActivity) || OUTING_PHRASES.some((p) => hit(normalizedQuery, p));
@@ -34,6 +36,10 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const hookahOnlyFood = explicitHookahRestaurant && !hasRealMeal;
   const foodIntents = [...new Set([...mealFoodIntents, ...addOnFoodIntents, ...(hookahOnlyFood ? ["hookah"] : [])])];
   const boroughs = BOROUGHS.filter((b) => hit(normalizedQuery, b));
+  const neighborhoods = NYC_NEIGHBORHOODS.filter((n) => hit(normalizedQuery, n));
+  const city = hit(normalizedQuery, "new york") || hit(normalizedQuery, "nyc") ? "new york" : null;
+  const borough = boroughs[0] ?? (neighborhoods.includes("astoria") || neighborhoods.includes("lic") || neighborhoods.includes("long island city") ? "queens" : null);
+  const neighborhood = neighborhoods[0] ?? null;
   const isLocationOnlySearch =
     boroughs.length > 0 &&
     !wantsFood &&
@@ -42,7 +48,8 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const finalWantsFood = wantsFood || isLocationOnlySearch;
   const finalWantsRestaurant =
     wantsFood || explicitHookahRestaurant || isLocationOnlySearch;
-  const finalWantsActivity = wantsActivity || isLocationOnlySearch;
+  const finalWantsActivity = (wantsActivity && !isLocationOnlySearch) || (isLocationOnlySearch && !finalWantsFood);
+  const hookahOnlyQuery = activityIntents.includes("hookah") && !hasRealMeal;
 
   const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
   const isOffTopic = !nonOffTopicSignals;
@@ -50,9 +57,19 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   return {
     rawQuery: input,
     normalizedQuery,
+    foodIntent: isLocationOnlySearch ? [] : [...new Set([...mealFoodIntents, ...addOnFoodIntents])],
+    activityIntent: isLocationOnlySearch ? [] : [...new Set(activityIntents)],
+    locationIntent: [...boroughs, ...neighborhoods, ...(city ? [city] : [])],
+    borough,
+    city,
+    neighborhood,
+    needsRestaurant: finalWantsRestaurant || hasRealMeal,
+    needsActivity: hookahOnlyQuery ? true : wantsActivity,
+    wantsPairing: Boolean((finalWantsRestaurant || hasRealMeal) && wantsActivity),
+    addOnIntent: [...new Set(activityIntents.filter((term) => ["hookah", "bowling", "paint_and_sip", "karaoke", "arcade", "lounge", "rooftop"].includes(term)))],
     wantsFood: finalWantsFood,
     wantsRestaurant: finalWantsRestaurant,
-    wantsActivity: finalWantsActivity,
+    wantsActivity: finalWantsActivity || hookahOnlyQuery,
     wantsFullOuting: isLocationOnlySearch ? false : wantsFullOuting,
     foodIntents: isLocationOnlySearch ? [] : foodIntents,
     mealFoodIntents: isLocationOnlySearch ? [] : mealFoodIntents,
@@ -61,7 +78,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     activityIntents: isLocationOnlySearch ? [] : [...new Set(activityIntents.map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v)))],
     cuisines: (isLocationOnlySearch ? [] : mealFoodIntents).filter((v) => ["italian", "mexican", "thai", "chinese", "japanese", "american", "african", "caribbean"].includes(v)),
     locations: boroughs,
-    neighborhoods: [],
+    neighborhoods,
     boroughs,
     vibes: detectIntents(normalizedQuery, ["romantic", "casual", "upscale", "nightlife", "cozy"]),
     strictFoodMode: isLocationOnlySearch ? false : finalWantsFood && !finalWantsActivity,
