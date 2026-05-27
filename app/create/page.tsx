@@ -6,6 +6,7 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
+import { trackOutingBeforeAction } from "@/lib/outings";
 import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { CompleteOutingModal } from "@/components/outings/CompleteOutingModal";
@@ -2047,15 +2048,40 @@ function ResultCard({
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
   const handleStartOuting = async (method: "external_reservation" | "phone") => {
     const telHref = phoneNumber ? `tel:${phoneNumber.replace(/[^\d+]/g, "")}` : null;
-    try {
-      const response = await fetch("/api/outings/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location_id: locationId, location_type: type, external_reservation_url: reservationUrl, phone_number: phoneNumber, contact_method: method === "phone" ? "phone" : "external", source: "create_result_card", title, address }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "Unable to start outing");
-      if (data?.outing_id) {
-        setActiveOutingId(data.outing_id);
-        localStorage.setItem(outingStorageKey, data.outing_id);
+
+    if (method === "external_reservation") {
+      if (!reservationUrl) {
+        setCompleteMessage("This location does not have a reservation link yet.");
+        return;
       }
+      window.open(reservationUrl, "_blank", "noopener,noreferrer");
+    }
+
+    if (method === "phone") {
+      if (!phoneNumber || !telHref) {
+        setCompleteMessage("This location does not have a phone number yet.");
+        return;
+      }
+      window.location.href = telHref;
+    }
+
+    const outingId = await trackOutingBeforeAction({
+      source_location_id: locationId,
+      location_id: locationId,
+      location_type: type,
+      contact_method: method,
+      reservation_type: "external",
+      external_reservation_url: reservationUrl,
+      phone_number: phoneNumber,
+      source: "create_result_card",
+      page_path: typeof window !== "undefined" ? window.location.pathname : null,
+    });
+
+    if (outingId) {
+      setActiveOutingId(outingId);
+      localStorage.setItem(outingStorageKey, outingId);
       setShowCompletionPrompt(true);
+<<<<<<< codex/fix-reservation-and-outing-tracking-flow
       if (method === "phone" && telHref) {
         console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, locationId });
         window.location.href = telHref;
@@ -2075,6 +2101,8 @@ function ResultCard({
       }
       console.error("THEOUTHAVEN_TRACKING_FAILED", { method, locationId, phoneNumber, reservationUrl });
       setCompleteMessage("Link opened. We'll keep improving outing tracking.");
+=======
+>>>>>>> main
     }
   };
 
