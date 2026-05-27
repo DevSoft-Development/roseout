@@ -14,47 +14,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "missing_outing_id", message: "An outing id is required." }, { status: 400 });
     }
 
-    console.info("THEOUTHAVEN_OUTING_COMPLETE_STARTED", { outing_id: outingId });
     const supabase = await createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth?.user?.id;
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "unauthorized", message: "You must be signed in to complete an outing." }, { status: 401 });
+    }
+
+    const rating = typeof payload?.rating === "number" && payload.rating >= 1 && payload.rating <= 5 ? payload.rating : null;
+    const feedback = cleanString(payload?.feedback);
+
     const { data, error } = await supabase
       .from("outings")
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
-        rating: typeof payload?.rating === "number" ? payload.rating : null,
+        rating,
         matched_vibe: typeof payload?.matched_vibe === "boolean" ? payload.matched_vibe : null,
         would_go_again: typeof payload?.would_go_again === "boolean" ? payload.would_go_again : null,
-        feedback: cleanString(payload?.feedback),
+        feedback,
       })
       .eq("id", outingId)
+      .eq("user_id", userId)
       .select("id, source_location_id, location_id, user_id")
       .single();
 
-    if (error) {
-      console.error("THEOUTHAVEN_OUTING_COMPLETE_FAILED", { error: error.message, outing_id: outingId });
-      return NextResponse.json({ ok: false, error: "outing_complete_failed", message: "We could not mark this outing as completed." }, { status: 500 });
-    }
-    if (!data?.id) {
-      console.error("THEOUTHAVEN_OUTING_COMPLETE_FAILED_NO_DATA", { outing_id: outingId });
-      return NextResponse.json({ ok: false, error: "outing_complete_missing_data", message: "No outing record was updated." }, { status: 404 });
+    if (error || !data?.id) {
+      return NextResponse.json({ ok: false, error: "outing_not_found_or_forbidden", message: "Outing not found or access denied." }, { status: 403 });
     }
 
-    const completedOutingId = data.id;
-    const completedSourceLocationId = data.source_location_id ?? null;
-    const completedLocationId = data.location_id ?? null;
+    await trackEvent({ event_name: "outing_completed", user_id: data.user_id ?? null, location_id: data.location_id ?? null, source_location_id: data.source_location_id ?? null, outing_id: data.id, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
 
-    await trackEvent({ event_name: "outing_completed", user_id: data.user_id ?? null, location_id: completedLocationId, source_location_id: completedSourceLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating: payload?.rating ?? null, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
-
-    if (typeof payload?.rating === "number") {
-      await trackEvent({ event_name: "outing_rating_submitted", user_id: data.user_id ?? null, location_id: completedLocationId, source_location_id: completedSourceLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating: payload?.rating ?? null } });
-    }
-
-    if (typeof payload?.matched_vibe === "boolean" || typeof payload?.would_go_again === "boolean") {
-      await trackEvent({ event_name: "outing_vibe_feedback_submitted", user_id: data.user_id ?? null, location_id: completedLocationId, source_location_id: completedSourceLocationId, outing_id: completedOutingId, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
-    }
-
-    console.info("THEOUTHAVEN_OUTING_COMPLETE_SUCCESS", { outing_id: completedOutingId });
-    return NextResponse.json({ ok: true, outing_id: completedOutingId });
+    return NextResponse.json({ ok: true, outing_id: data.id });
   } catch {
     return NextResponse.json({ ok: false, error: "invalid_request", message: "Invalid request payload." }, { status: 400 });
   }

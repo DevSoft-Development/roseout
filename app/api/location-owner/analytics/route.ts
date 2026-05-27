@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 
 const RANGE_TO_DAYS: Record<string, number | null> = { "7d": 7, "30d": 30, "90d": 90, all: null };
 
@@ -15,14 +16,26 @@ export async function GET(req: Request) {
     const days = RANGE_TO_DAYS[dateRange] ?? 30;
     const fromIso = days ? new Date(Date.now() - days * 86400000).toISOString() : null;
 
-    const { data: locations } = await supabase.from("locations").select("id,name").eq("owner_user_id", userId);
-    const locationIds = (locations ?? []).map((row) => row.id);
+    const ownerAccess = await getLocationOwnerAccess(userId);
+    const locationIds = ownerAccess.ownedLocationIds;
+    const sourceLocationIds = ownerAccess.ownedSourceLocationIds;
+
+    const { data: locations } = locationIds.length
+      ? await supabase.from("locations").select("id,name").in("id", locationIds)
+      : { data: [] as Array<{ id: string; name: string | null }> };
     if (locationIds.length === 0) {
       return NextResponse.json({ ok: true, date_range: dateRange, summary: { reserve_clicks: 0, call_clicks: 0, outing_starts: 0, completed_outings: 0, completion_rate: 0, average_rating: 0, matched_vibe_percentage: 0, would_go_again_percentage: 0 }, locations: [], recent_activity: [] });
     }
 
-    let eventQ = supabase.from("analytics_events").select("event_name,location_id,created_at").in("location_id", locationIds);
-    let outingQ = supabase.from("outings").select("id,status,rating,matched_vibe,would_go_again,source_location_id,location_id,created_at").or(`location_id.in.(${locationIds.join(",")}),source_location_id.in.(${locationIds.join(",")})`);
+    const eventFilters: string[] = [];
+    if (locationIds.length > 0) eventFilters.push(`location_id.in.(${locationIds.join(",")})`);
+    if (sourceLocationIds.length > 0) eventFilters.push(`source_location_id.in.(${sourceLocationIds.join(",")})`);
+
+    let eventQ = supabase.from("analytics_events").select("event_name");
+    if (eventFilters.length > 0) eventQ = eventQ.or(eventFilters.join(","));
+
+    let outingQ = supabase.from("outings").select("id,status,rating,matched_vibe,would_go_again");
+    if (eventFilters.length > 0) outingQ = outingQ.or(eventFilters.join(","));
     if (fromIso) { eventQ = eventQ.gte("created_at", fromIso); outingQ = outingQ.gte("created_at", fromIso); }
     const [{ data: events }, { data: outings }] = await Promise.all([eventQ, outingQ]);
 
@@ -47,7 +60,7 @@ export async function GET(req: Request) {
         would_go_again_percentage: completed.length > 0 ? completed.filter((o) => o.would_go_again === true).length / completed.length : 0,
       },
       locations: (locations ?? []).map((loc) => ({ location_id: loc.id, name: loc.name })),
-      recent_activity: (events ?? []).slice(0, 20),
+      recent_activity: [],
     });
   } catch {
     console.error("THEOUTHAVEN_OWNER_ANALYTICS_FAILED");
