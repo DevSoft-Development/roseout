@@ -18,7 +18,6 @@ type AppUser = {
   email: string | null;
   full_name?: string | null;
   role: string | null;
-  is_superadmin?: boolean | null;
   created_at: string | null;
   zip_code?: string | null;
   derived_city?: string | null;
@@ -67,8 +66,8 @@ function formatDate(value: string | null) {
   });
 }
 
-function roleBadge(role?: string | null, isSuperadmin?: boolean | null) {
-  if (isSuperadmin || role === "superuser") return "border-rose-200 bg-rose-50 text-rose-700";
+function roleBadge(role?: string | null) {
+  if (role === "superuser") return "border-rose-200 bg-rose-50 text-rose-700";
   if (role === "admin") return "border-rose-200 bg-rose-50 text-rose-700";
   if (role === "owner") return "border-black/10 bg-[#f5eee8] text-black/70";
   if (role === "disabled") return "border-red-200 bg-red-50 text-red-700";
@@ -91,7 +90,6 @@ async function updateUserRole(formData: FormData) {
     {
       id: userId,
       role,
-      is_superadmin: role === "superuser",
     },
     { onConflict: "id" }
   );
@@ -130,7 +128,6 @@ async function disableUser(formData: FormData) {
     .from("users")
     .update({
       role: "disabled",
-      is_superadmin: false,
     })
     .eq("id", userId);
 
@@ -233,7 +230,6 @@ export default async function AdminUsersPage({
       email,
       full_name: existingUser?.full_name || metadataName || adminUser?.full_name || null,
       role,
-      is_superadmin: existingUser?.is_superadmin || role === "superuser",
       created_at: existingUser?.created_at || authUser.created_at || null,
     });
   }
@@ -244,7 +240,7 @@ export default async function AdminUsersPage({
   );
 
   const safeUsers = fullUsers.filter((user) => {
-    const displayRole = user.is_superadmin ? "superuser" : user.role || "user";
+    const displayRole = user.role || "user";
     const matchesQuery = q
       ? [user.email, user.full_name, displayRole, user.id, user.zip_code, user.derived_market_area]
           .filter(Boolean)
@@ -259,9 +255,7 @@ export default async function AdminUsersPage({
   });
 
   const totalUsers = fullUsers.length;
-  const admins = fullUsers.filter(
-    (u) => u.role === "admin" || u.role === "superuser" || u.is_superadmin
-  ).length;
+  const admins = fullUsers.filter((u) => u.role === "admin" || u.role === "superuser").length;
   const owners = fullUsers.filter((u) => u.role === "owner").length;
   const regularUsers = fullUsers.filter((u) => u.role === "user").length;
 
@@ -413,9 +407,7 @@ export default async function AdminUsersPage({
           ) : (
             <div className="space-y-3 p-4">
               {safeUsers.map((user) => {
-                const displayRole = user.is_superadmin
-                  ? "superadmin"
-                  : user.role || "user";
+                const displayRole = user.role || "user";
 
                 return (
                   <div
@@ -451,10 +443,7 @@ export default async function AdminUsersPage({
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <span
-                            className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${roleBadge(
-                              user.role,
-                              user.is_superadmin
-                            )}`}
+                            className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${roleBadge(user.role)}`}
                           >
                             {displayRole}
                           </span>

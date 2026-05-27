@@ -57,8 +57,7 @@ export async function POST(request: Request) {
       {
         id: data.user.id,
         email,
-        role,
-        is_superadmin: role === "superuser",
+        role
       },
       { onConflict: "id" }
     );
