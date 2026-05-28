@@ -37,6 +37,7 @@ export type CanonicalSearchIntent = {
   restaurantIntent?: boolean;
   restaurantType?: string | null;
   requiredRestaurantCategory?: string | null;
+  geoIntent?: import("@/lib/search/geo-matching").GeoIntent | null;
 };
 
 export type SearchPipelineResult = {
