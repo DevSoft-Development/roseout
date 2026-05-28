@@ -230,6 +230,7 @@ export default function ClaimToolsClient() {
                 <p className="mt-2 text-sm font-bold text-black/60">{getAddress(result)}</p>
                 <p className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-black/45">Or enter claim code manually</p>
                 <p className="font-mono text-2xl font-black tracking-[0.18em]">{result.claim_code}</p>
+                <p className="mt-4 text-sm font-bold leading-5 text-black/70">Scan the QR code or enter this claim code at TheOutHaven to claim and manage your location.</p>
               </div>
             </div>
           </div>

@@ -67,6 +67,13 @@ type LocationItem = LocationScoreFields &
     owner_name?: string;
     owner_email?: string;
     owner_phone?: string;
+    phone?: string | null;
+    website?: string | null;
+    reservation_url?: string | null;
+    external_reservation_url?: string | null;
+    reservation_link?: string | null;
+    plan?: string | null;
+    is_pro?: boolean | null;
     primary_category?: string | null;
     cuisine?: string | null;
     cuisine_type?: string | null;
@@ -146,7 +153,7 @@ export default function LocationsDashboardClient({
     >
       <section className="relative overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(190,24,93,0.24),_transparent_36%),linear-gradient(135deg,#130b0a,#090706_58%,#000)]">
         <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-rose-700/20 blur-3xl" />
-        <div className="absolute bottom-[-160px] left-[-120px] h-96 w-96 rounded-full bg-[#f5b700]/10 blur-3xl" />
+        <div className="absolute bottom-[-160px] left-[-120px] h-96 w-96 rounded-full bg-[#e1062a]/10 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl px-5 py-8 sm:px-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -161,7 +168,7 @@ export default function LocationsDashboardClient({
 
               <Link
                 href="/business/dashboard/analytics"
-                className="inline-flex items-center gap-2 rounded-full border border-[#f5b700]/30 bg-[#f5b700]/10 px-4 py-2 text-sm font-bold text-[#f5b700] hover:bg-[#f5b700]/15"
+                className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-4 py-2 text-sm font-bold text-[#e1062a] hover:bg-[#e1062a]/15"
               >
                 Analytics
               </Link>
@@ -193,9 +200,9 @@ export default function LocationsDashboardClient({
 
           <div className="grid gap-8 lg:grid-cols-[1fr_390px] lg:items-end">
             <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-[#f5b700]">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
                 <Sparkles size={14} />
-                TheOutHaven Reserve
+                TheOutHaven Pro
               </div>
 
               <h1 className="max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
@@ -257,7 +264,7 @@ export default function LocationsDashboardClient({
                   onClick={() => setSelected(loc)}
                   className={`w-full rounded-3xl border p-3 text-left transition ${
                     active
-                      ? "border-[#f5b700]/50 bg-[#f5b700]/10"
+                      ? "border-[#e1062a]/50 bg-[#e1062a]/10"
                       : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
                   }`}
                 >
@@ -353,7 +360,7 @@ export default function LocationsDashboardClient({
                         : "Activity"}
                     </span>
 
-                    <span className="rounded-full bg-[#f5b700] px-3 py-1 text-xs font-black text-black">
+                    <span className="rounded-full bg-[#e1062a] px-3 py-1 text-xs font-black text-black">
                       {getClaimStatusText(selected)}
                     </span>
                   </div>
@@ -415,6 +422,10 @@ export default function LocationsDashboardClient({
                     />
                   </div>
 
+
+
+                  <BusinessSetupChecklist location={selected} />
+
                   <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
                       Owner Contact
@@ -439,7 +450,7 @@ export default function LocationsDashboardClient({
                 </div>
 
                 <div className="rounded-[1.75rem] bg-black p-5 text-white">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#e1062a]">
                     Quick Actions
                   </p>
 
@@ -464,7 +475,7 @@ export default function LocationsDashboardClient({
                   <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.06] p-4">
                     <div className="flex items-start gap-3">
                       <CheckCircle2
-                        className="mt-0.5 text-[#f5b700]"
+                        className="mt-0.5 text-[#e1062a]"
                         size={18}
                       />
                       <div>
@@ -493,6 +504,79 @@ export default function LocationsDashboardClient({
         </section>
       </section>
     </main>
+  );
+}
+
+
+function BusinessSetupChecklist({ location }: { location: LocationItem }) {
+  const hasReservationLink = Boolean(
+    location.reservation_link ||
+      location.reservation_url ||
+      location.external_reservation_url,
+  );
+  const hasPhotos = Boolean(
+    location.main_image || location.image_url || location.images?.length,
+  );
+  const profileComplete = getMissingFields(location).length === 0;
+  const isClaimed = getIsClaimed(location);
+  const claimStatus = String(location.claim_status || "").toLowerCase();
+  const pending = claimStatus === "pending" || (!isClaimed && Boolean(location.claim_status));
+  const isPro = Boolean(location.is_pro) || String(location.plan || "").toLowerCase().includes("pro");
+
+  const items = [
+    ["Claim code verified", Boolean(location.claim_status), "/business/claim"],
+    ["Claim request submitted", Boolean(location.claim_status), "/business/claim"],
+    ["Verify business ownership", isClaimed, "/business/claim"],
+    ["Complete profile details", profileComplete, `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
+    ["Add phone/reservation links", Boolean(location.phone || hasReservationLink), `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
+    ["Add photos", hasPhotos, `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
+    ["Review guest actions", Boolean(location.website || location.phone || hasReservationLink), `/locations/${locationTypePathSegment[location.location_type]}/${location.id}`],
+    ["View analytics", isPro, "/business/dashboard/analytics"],
+    ["Upgrade to Pro", isPro, "/business#plans"],
+  ] as const;
+
+  return (
+    <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
+            Business setup checklist
+          </p>
+          <h3 className="mt-2 text-2xl font-black">Keep your listing moving</h3>
+        </div>
+        <Link href="/business#plans" className="rounded-full bg-black px-4 py-2 text-xs font-black text-white">
+          Upgrade to Pro
+        </Link>
+      </div>
+      {pending && (
+        <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-950">
+          <p>Your claim request is under review.</p>
+          <p className="mt-1 text-xs font-semibold text-amber-900/70">
+            You can prepare your profile details now. Some changes may not go live until your claim is approved.
+          </p>
+        </div>
+      )}
+      <div className="mt-5 grid gap-3">
+        {items.map(([label, done, href]) => (
+          <div key={label} className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-neutral-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${done ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
+                {done ? "✓" : "!"}
+              </span>
+              <div>
+                <p className="text-sm font-black">{label}</p>
+                <p className="text-xs font-semibold text-black/45">{done ? "Completed" : "Action needed"}</p>
+              </div>
+            </div>
+            {!done && (
+              <Link href={href} className="rounded-full border border-black/10 bg-white px-4 py-2 text-center text-xs font-black text-black hover:bg-black hover:text-white">
+                {label === "View analytics" ? "View analytics" : label === "Upgrade to Pro" ? "Upgrade to Pro" : label.includes("reservation") ? "Add reservation link" : "Complete profile"}
+              </Link>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
