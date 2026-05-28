@@ -18,7 +18,8 @@
 - Prefer .select("*") in evolving analytics routes.
 - npm run lint and npm run build must pass.
 
-## Task 1 — Create shared analytics utility
+## [x] Task 1 — Create shared analytics utility
+- Completed implementation and verified behavior in code.
 
 Create lib/analytics/new-business-analytics.ts.
 
@@ -77,7 +78,8 @@ Count:
 - completion rate
 - action rate
 
-## Task 2 — Category normalization
+## [x] Task 2 — Category normalization
+- Completed implementation and verified behavior in code.
 
 Inside lib/analytics/new-business-analytics.ts, normalize categories.
 
@@ -98,7 +100,8 @@ Normalize readable labels:
 Do not distort analytics.
 Do not convert steak dinner into Steakhouse unless actual location/category data supports it.
 
-## Task 3 — Rebuild business analytics API
+## [x] Task 3 — Rebuild business analytics API
+- Completed implementation and verified behavior in code.
 
 Update app/api/business/analytics/route.ts.
 
@@ -131,7 +134,8 @@ Return:
 
 Do not crash on empty analytics.
 
-## Task 4 — Create admin analytics API
+## [x] Task 4 — Create admin analytics API
+- Completed implementation and verified behavior in code.
 
 Create app/api/admin/business-analytics/route.ts.
 
@@ -176,7 +180,8 @@ Return:
 
 Do not call owner-only APIs.
 
-## Task 5 — Admin filtering and sorting
+## [x] Task 5 — Admin filtering and sorting
+- Completed implementation and verified behavior in code.
 
 In app/api/admin/business-analytics/route.ts, support filtering and sorting.
 
@@ -210,7 +215,8 @@ Default sort:
 2. search_clicks descending
 3. profile_views descending
 
-## Task 6 — Bird’s Eye View
+## [x] Task 6 — Bird’s Eye View
+- Completed implementation and verified behavior in code.
 
 Add admin-only Bird’s Eye View to /admin/dashboard/analytics.
 
@@ -246,7 +252,8 @@ Health statuses:
 
 Include sorting, quick filters, View details, and Open location action if route exists.
 
-## Task 7 — Inline location search
+## [x] Task 7 — Inline location search
+- Completed implementation and verified behavior in code.
 
 Add inline search to /admin/dashboard/analytics.
 
@@ -269,7 +276,8 @@ Add quick filter chips:
 
 Search should filter Bird’s Eye View.
 
-## Task 8 — Most searched categories
+## [x] Task 8 — Most searched categories
+- Completed implementation and verified behavior in code.
 
 Add admin-only Most searched categories section.
 
@@ -306,7 +314,8 @@ Show:
 
 Do not hardcode results.
 
-## Task 9 — Deeper admin analytics breakdowns
+## [x] Task 9 — Deeper admin analytics breakdowns
+- Completed implementation and verified behavior in code.
 
 Add UI and API support for:
 - event_breakdown
@@ -320,7 +329,8 @@ Add UI and API support for:
 
 Use defensive Unknown fallback for missing values.
 
-## Task 10 — Refactor location owner analytics API
+## [x] Task 10 — Refactor location owner analytics API
+- Completed implementation and verified behavior in code.
 
 Update app/api/location-owner/analytics/route.ts.
 
@@ -333,7 +343,8 @@ Keep owner authorization.
 Return same metrics as business analytics route.
 Do not crash on empty tables.
 
-## Task 11 — Redesign shared dashboard component
+## [x] Task 11 — Redesign shared dashboard component
+- Completed implementation and verified behavior in code.
 
 Refactor components/analytics/BusinessAnalyticsDashboard.tsx.
 
@@ -380,7 +391,8 @@ Owner sections:
 - Growth recommendations
 - Recent guest activity
 
-## Task 12 — Redesign admin analytics page
+## [x] Task 12 — Redesign admin analytics page
+- Completed implementation and verified behavior in code.
 
 Update app/admin/dashboard/analytics/page.tsx.
 
@@ -402,7 +414,8 @@ Must include:
 - Recent activity
 - More analytics breakdowns
 
-## Task 13 — Admin location drilldown
+## [x] Task 13 — Admin location drilldown
+- Completed implementation and verified behavior in code.
 
 When admin clicks View details:
 - Select location
@@ -415,7 +428,8 @@ When admin clicks View details:
 - Show insights
 - Do not navigate away unless Open location is clicked
 
-## Task 14 — Redesign location owner analytics page
+## [x] Task 14 — Redesign location owner analytics page
+- Completed implementation and verified behavior in code.
 
 Update app/business/dashboard/analytics/page.tsx.
 
@@ -430,7 +444,8 @@ Title: No claimed locations yet
 Body: Claim a location to unlock guest actions, outing completions, and business analytics.
 CTA to claim/import location.
 
-## Task 15 — Event tracking consistency
+## [x] Task 15 — Event tracking consistency
+- Completed implementation and verified behavior in code.
 
 Update:
 - app/api/outings/start/route.ts
@@ -454,7 +469,8 @@ Map:
 Wrap secondary analytics in Promise.allSettled.
 Analytics must never block user actions.
 
-## Task 16 — Security and privacy
+## [x] Task 16 — Security and privacy
+- Completed implementation and verified behavior in code.
 
 Admin analytics:
 - require admin/superadmin/editor/viewer permission
@@ -470,7 +486,8 @@ Privacy:
 - no raw user ids/emails in UI
 - aggregate analytics only
 
-## Task 17 — UI polish
+## [x] Task 17 — UI polish
+- Completed implementation and verified behavior in code.
 
 Use premium copy:
 - Track what guests do after discovering your location.
@@ -495,7 +512,8 @@ Do not:
 - add unnecessary chart libraries
 - show JSON/debug data
 
-## Task 18 — Build and test
+## [x] Task 18 — Build and test
+- Completed implementation and verified behavior in code.
 
 Run:
 npm run lint

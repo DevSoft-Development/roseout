@@ -79,9 +79,10 @@ export async function POST(req: Request) {
     const outingId = data.id;
     console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { outing_id: outingId, location_id: selectedLocationId, contact_method: contactMethod });
 
-    await trackEvent({ event_name: "outing_started", user_id: userId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "unknown", metadata: { contact_method: contactMethod } });
-    await trackEvent({ event_name: contactMethod === "phone" ? "call_clicked" : "reserve_clicked", user_id: userId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "unknown", metadata: { contact_method: contactMethod, reservation_type: asString(payload?.reservation_type) ?? null } });
-    await trackEvent({ event_name: contactMethod === "phone" ? "phone_call_started" : "external_reservation_opened", user_id: userId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "unknown", metadata: { contact_method: contactMethod } });
+    await Promise.allSettled([
+      trackEvent({ event_name: "outing_started", user_id: userId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "unknown", metadata: { contact_method: contactMethod } }),
+      trackEvent({ event_name: contactMethod === "phone" ? "call_clicked" : "reserve_clicked", event_type: contactMethod === "phone" ? "phone_click" : "reservation_started", user_id: userId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "unknown", metadata: { contact_method: contactMethod, reservation_type: asString(payload?.reservation_type) ?? null } }),
+    ]);
 
     return NextResponse.json({ ok: true, outing_id: outingId });
   } catch {
