@@ -10,6 +10,17 @@ const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace
 const hit = (q: string, phrase: string) => q.includes(phrase);
 
 const detectIntents = (query: string, pool: readonly string[]) => pool.filter((x) => hit(query, x));
+const STEAK_INTENT_TERMS = [
+  "steak",
+  "steak dinner",
+  "steakhouse",
+  "steak house",
+  "ribeye",
+  "filet mignon",
+  "porterhouse",
+  "sirloin",
+  "tomahawk steak",
+];
 
 export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearchIntent {
   const normalizedQuery = norm(input || "");
@@ -50,6 +61,10 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     wantsFood || explicitHookahRestaurant || isLocationOnlySearch;
   const finalWantsActivity = (wantsActivity && !isLocationOnlySearch) || (isLocationOnlySearch && !finalWantsFood);
   const hookahOnlyQuery = activityIntents.includes("hookah") && !hasRealMeal;
+  const steakIntentMatch = STEAK_INTENT_TERMS.some((term) => hit(normalizedQuery, term));
+  const restaurantIntent = steakIntentMatch || finalWantsRestaurant || hasRealMeal;
+  const restaurantType = steakIntentMatch ? "steak" : null;
+  const requiredRestaurantCategory = steakIntentMatch ? "steak" : null;
 
   const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
   const isOffTopic = !nonOffTopicSignals;
@@ -88,5 +103,8 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     restaurantSearchInput: "",
     activitySearchInput: "",
     cacheBypassReasons: [],
+    restaurantIntent,
+    restaurantType,
+    requiredRestaurantCategory,
   };
 }

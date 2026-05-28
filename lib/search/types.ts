@@ -34,6 +34,9 @@ export type CanonicalSearchIntent = {
   restaurantSearchInput: string;
   activitySearchInput: string;
   cacheBypassReasons: string[];
+  restaurantIntent?: boolean;
+  restaurantType?: string | null;
+  requiredRestaurantCategory?: string | null;
 };
 
 export type SearchPipelineResult = {

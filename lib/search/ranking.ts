@@ -48,8 +48,12 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
       const bh = [b.name, b.restaurant_name, b.activity_name, b.description, b.primary_category, b.cuisine, b.cuisine_type, b.food_type, b.activity_type, b.primary_tag, b.search_document, b.semantic_search_text].map((v) => String(v ?? "").toLowerCase()).join(" ");
       if (!ah.includes("steak") && !ah.includes("steakhouse")) as -= 100;
       if (!bh.includes("steak") && !bh.includes("steakhouse")) bs -= 100;
+      if (ah.includes("churrasco") || ah.includes("brazilian steakhouse")) as += 25;
+      if (bh.includes("churrasco") || bh.includes("brazilian steakhouse")) bs += 25;
       if (["bakery", "cafe", "coffee", "dessert", "bar"].some((t) => ah.includes(t))) as -= 50;
       if (["bakery", "cafe", "coffee", "dessert", "bar"].some((t) => bh.includes(t))) bs -= 50;
+      if (["activity", "nightlife", "event", "hookah lounge", "lounge only"].some((t) => ah.includes(t))) as -= 120;
+      if (["activity", "nightlife", "event", "hookah lounge", "lounge only"].some((t) => bh.includes(t))) bs -= 120;
     }
 
     return bs - as;
