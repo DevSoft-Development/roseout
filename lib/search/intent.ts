@@ -1,6 +1,7 @@
 import { ADD_ON_FOOD_INTENTS, ACTIVITY_INTENTS, GENERIC_MEAL_TERMS, INTENT_ALIASES, MEAL_FOOD_INTENTS, OUTING_PHRASES, SPECIFIC_MEAL_FOOD_INTENTS } from "@/lib/search/taxonomy";
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 import { detectRequestedCuisines, detectRequestedRestaurantCategories } from "@/lib/search/cuisine-matching";
+import { detectRequestedGeo } from "@/lib/search/geo-matching";
 
 const BOROUGHS = ["brooklyn", "queens", "manhattan", "bronx", "staten island"];
 const NYC_NEIGHBORHOODS = ["astoria", "long island city", "lic", "flushing", "jackson heights", "williamsburg", "harlem", "soho", "chelsea"];
@@ -47,13 +48,14 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
 
   const hookahOnlyFood = explicitHookahRestaurant && !hasRealMeal;
   const foodIntents = [...new Set([...mealFoodIntents, ...addOnFoodIntents, ...(hookahOnlyFood ? ["hookah"] : [])])];
-  const boroughs = BOROUGHS.filter((b) => hit(normalizedQuery, b));
-  const neighborhoods = NYC_NEIGHBORHOODS.filter((n) => hit(normalizedQuery, n));
-  const city = hit(normalizedQuery, "new york") || hit(normalizedQuery, "nyc") ? "new york" : null;
-  const borough = boroughs[0] ?? (neighborhoods.includes("astoria") || neighborhoods.includes("lic") || neighborhoods.includes("long island city") ? "queens" : null);
-  const neighborhood = neighborhoods[0] ?? null;
+  const geoIntent = detectRequestedGeo(normalizedQuery);
+  const boroughs = [...new Set([...BOROUGHS.filter((b) => hit(normalizedQuery, b)), ...(geoIntent?.borough ? [geoIntent.borough] : [])])];
+  const neighborhoods = [...new Set([...NYC_NEIGHBORHOODS.filter((n) => hit(normalizedQuery, n)), ...(geoIntent?.neighborhood ? [geoIntent.neighborhood] : [])])];
+  const city = geoIntent?.city ?? (hit(normalizedQuery, "new york") || hit(normalizedQuery, "nyc") ? "new york" : null);
+  const borough = boroughs[0] ?? null;
+  const neighborhood = neighborhoods[0] ?? geoIntent?.area ?? null;
   const isLocationOnlySearch =
-    boroughs.length > 0 &&
+    (boroughs.length > 0 || Boolean(geoIntent)) &&
     !wantsFood &&
     !wantsActivity &&
     !["date", "outing", "nightlife"].some((p) => hit(normalizedQuery, p));
@@ -69,7 +71,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const restaurantType = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
   const requiredRestaurantCategory = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
 
-  const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
+  const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || Boolean(geoIntent) || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
   const isOffTopic = !nonOffTopicSignals;
 
   return {
@@ -77,7 +79,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     normalizedQuery,
     foodIntent: isLocationOnlySearch ? [] : [...new Set([...mealFoodIntents, ...addOnFoodIntents])],
     activityIntent: isLocationOnlySearch ? [] : [...new Set(activityIntents)],
-    locationIntent: [...boroughs, ...neighborhoods, ...(city ? [city] : [])],
+    locationIntent: [...new Set([...boroughs, ...neighborhoods, ...(geoIntent?.terms ?? []), ...(city ? [city] : [])])],
     borough,
     city,
     neighborhood,
@@ -95,7 +97,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     addOnFoodIntents,
     activityIntents: isLocationOnlySearch ? [] : [...new Set(activityIntents.map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v)))],
     cuisines: isLocationOnlySearch ? [] : [...new Set([...requestedCuisines, ...mealFoodIntents])],
-    locations: boroughs,
+    locations: [...new Set([...boroughs, ...(geoIntent?.terms ?? [])])],
     neighborhoods,
     boroughs,
     vibes: detectIntents(normalizedQuery, ["romantic", "casual", "upscale", "nightlife", "cozy"]),
@@ -109,5 +111,6 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     restaurantIntent,
     restaurantType,
     requiredRestaurantCategory,
+    geoIntent,
   };
 }

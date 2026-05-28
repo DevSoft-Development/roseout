@@ -1,4 +1,5 @@
 import { scoreCuisineCategoryMatch, detectRequestedCuisines } from "@/lib/search/cuisine-matching";
+import { scoreGeoMatch } from "@/lib/search/geo-matching";
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 
 function scoreRecord(record: any, terms: string[]) {
@@ -31,6 +32,11 @@ function scoreRecord(record: any, terms: string[]) {
   }, 0);
 }
 
+function isRestaurantLike(record: any) {
+  const hay = [record?.source_table, record?.location_type, record?.primary_category, record?.cuisine, record?.cuisine_type, record?.restaurant_name, record?.search_document].map((v) => String(v ?? "").toLowerCase()).join(" ");
+  return Boolean(record?.restaurant_name || record?.cuisine || record?.cuisine_type || ["restaurant", "food", "dining", "steakhouse", "seafood", "italian", "sushi", "caribbean", "brunch", "cafe"].some((t) => hay.includes(t)));
+}
+
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
   const query = intent.normalizedQuery || intent.rawQuery || "";
   const requested = detectRequestedCuisines(query);
@@ -61,7 +67,12 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
 
     const ad = scoreCuisineCategoryMatch(a, query, true);
     const bd = scoreCuisineCategoryMatch(b, query, true);
-    as += ad.score; bs += bd.score;
+    const aGeo = scoreGeoMatch(a, intent.geoIntent);
+    const bGeo = scoreGeoMatch(b, intent.geoIntent);
+    const aType = isRestaurantLike(a) ? 25 : -25;
+    const bType = isRestaurantLike(b) ? 25 : -25;
+    as = (ad.score * 3) + (aType * 2) + aGeo + as;
+    bs = (bd.score * 3) + (bType * 2) + bGeo + bs;
     const ah = JSON.stringify(a).toLowerCase(); const bh = JSON.stringify(b).toLowerCase();
     if (requested.length>0) { if (ah.includes("activity") || ah.includes("event")) as -= 100; if (bh.includes("activity")||bh.includes("event")) bs -= 100; }
     return bs - as;

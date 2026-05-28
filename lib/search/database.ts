@@ -1,5 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { CanonicalSearchIntent } from "@/lib/search/types";
+import { detectRequestedGeo, locationMatchesGeo, scoreGeoMatch } from "@/lib/search/geo-matching";
+import { scoreCuisineCategoryMatch } from "@/lib/search/cuisine-matching";
 
 type SearchDomain = "restaurant" | "activity";
 
@@ -342,27 +344,43 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   }
 
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
+  const geoIntent = intent.geoIntent ?? detectRequestedGeo(intent.rawQuery || searchText);
   const intentQuery = `${searchText} ${(intent.locationIntent ?? []).join(" ")} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
   const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
-  const geoFilteredByQuery = domainRecords.filter((record) => matchesGeo(record, intentQuery));
-  const geoFiltered = geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent;
+  const geoFilteredByQuery = geoIntent ? domainRecords.filter((record) => locationMatchesGeo(record, geoIntent)) : domainRecords.filter((record) => matchesGeo(record, intentQuery));
+  const geoFiltered = geoIntent ? geoFilteredByQuery : (geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent);
   const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : (intent.activityIntent ?? intent.activityIntents);
-  let categorized: Record<string, unknown>[] = softCategoryFilter(geoFiltered, terms);
+  let categorized: Record<string, unknown>[] = domain === "restaurant" ? [] : softCategoryFilter(geoFiltered, terms);
   let strictRestaurantCount = 0;
   let fallbackRestaurantCount = 0;
   let restaurantCandidateCount = 0;
   let activityCandidateCount = 0;
 
   if (domain === "restaurant") {
-    const filtered = filterRestaurantCandidatesForQuery(geoFiltered, intentQuery);
-    restaurantCandidateCount = geoFiltered.filter((record) => isRestaurantRecord(record) && !isActivityOnlyRecord(record)).length;
-    strictRestaurantCount = filtered.strictCount;
-    fallbackRestaurantCount = filtered.fallbackCount;
-    categorized = filtered.filtered.sort((a, b) => restaurantIntentScore(b, intentQuery) - restaurantIntentScore(a, intentQuery));
+    const restaurantCandidates = domainRecords.filter((record) => isRestaurantRecord(record) && !isActivityOnlyRecord(record));
+    restaurantCandidateCount = restaurantCandidates.length;
     const strictFoodTerms = getSpecificFoodTerms(intent);
-    if (strictFoodTerms.length > 0 && strictRestaurantCount > 0) {
-      const strictMatches = categorized.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
-      if (strictMatches.length > 0) categorized = strictMatches;
+    const hasSpecificCuisine = strictFoodTerms.length > 0 || intent.cuisines.length > 0 || Boolean(intent.requiredRestaurantCategory);
+    const hardCuisineMatches = hasSpecificCuisine
+      ? restaurantCandidates.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms.length ? strictFoodTerms : intent.cuisines) || scoreCuisineCategoryMatch(record, intent.rawQuery || intentQuery, true).score > 0)
+      : [];
+    strictRestaurantCount = hardCuisineMatches.length;
+
+    if (geoIntent && hardCuisineMatches.length > 0) {
+      const hardCuisineGeoMatches = hardCuisineMatches.filter((record) => locationMatchesGeo(record, geoIntent));
+      categorized = (hardCuisineGeoMatches.length > 0 ? hardCuisineGeoMatches : hardCuisineMatches)
+        .sort((a, b) => (scoreCuisineCategoryMatch(b, intent.rawQuery || intentQuery, true).score * 3 + scoreGeoMatch(b, geoIntent)) - (scoreCuisineCategoryMatch(a, intent.rawQuery || intentQuery, true).score * 3 + scoreGeoMatch(a, geoIntent)));
+      fallbackRestaurantCount = hardCuisineGeoMatches.length > 0 ? 0 : hardCuisineMatches.length;
+    } else {
+      const sourceForGeneric = geoIntent ? geoFiltered : restaurantCandidates;
+      const filtered = filterRestaurantCandidatesForQuery(sourceForGeneric, intentQuery);
+      strictRestaurantCount = Math.max(strictRestaurantCount, filtered.strictCount);
+      fallbackRestaurantCount = filtered.fallbackCount;
+      categorized = filtered.filtered.sort((a, b) => restaurantIntentScore(b, intentQuery) - restaurantIntentScore(a, intentQuery));
+      if (strictFoodTerms.length > 0 && strictRestaurantCount > 0) {
+        const strictMatches = categorized.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
+        if (strictMatches.length > 0) categorized = strictMatches;
+      }
     }
   } else {
     activityCandidateCount = filterActivityCandidatesForQuery(geoFiltered, intentQuery).length;
@@ -390,14 +408,33 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
   if (process.env.NODE_ENV !== "production") {
     console.log("[search-debug]", {
+      originalQuery: intent.rawQuery,
+      normalizedQuery: intent.normalizedQuery,
       query: intentQuery,
+      detectedCuisines: intent.cuisines,
+      detectedGeoTerms: geoIntent?.terms ?? [],
+      geoType: geoIntent?.geoType ?? null,
       mealTerms: getMealTermsFromQuery(intentQuery),
       activityTerms: getActivityTermsFromQuery(intentQuery),
       restaurantCandidateCount,
       strictRestaurantCount,
       fallbackRestaurantCount,
       activityCandidateCount,
+      fallbackStage: domain === "restaurant" ? (strictRestaurantCount > 0 && geoIntent ? "hard_cuisine_then_geo" : fallbackRestaurantCount > 0 ? "generic_or_expanded" : "strict") : undefined,
       finalCardCount: categorized.length,
+      top10: categorized.slice(0, 10).map((record) => {
+        const cuisineScore = scoreCuisineCategoryMatch(record, intent.rawQuery || intentQuery, true).score;
+        const geoScore = scoreGeoMatch(record, geoIntent);
+        const typeScore = isRestaurantRecord(record) && !isActivityOnlyRecord(record) ? 25 : 0;
+        return {
+          name: record.name ?? record.restaurant_name ?? record.activity_name,
+          cuisineScore,
+          geoScore,
+          typeScore,
+          finalScore: cuisineScore * 3 + typeScore * 2 + geoScore,
+          reason: domain === "restaurant" ? (cuisineScore > 0 && geoScore > 0 ? "included:hard_cuisine_geo" : cuisineScore > 0 ? "included:cuisine_geo_expanded" : "included:generic_fallback") : "included:activity_match",
+        };
+      }),
     });
   }
 
