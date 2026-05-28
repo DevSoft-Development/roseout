@@ -6,7 +6,7 @@ type SearchParams = { type?: string; q?: string };
 const safeNumber = (value: unknown) => (typeof value === "number" ? value : Number(value || 0));
 
 export default async function AdminReviewsPage({ searchParams }: { searchParams?: SearchParams }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const type = searchParams?.type || "all";
   const q = (searchParams?.q || "").trim().toLowerCase();
 

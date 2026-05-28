@@ -3,9 +3,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
+import { normalizeRole } from "@/lib/users/roles";
 
 export async function POST(request: Request) {
-  const { error } = await requireAdminApiRole(["superuser", "admin"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin"]);
   if (error) return error;
   const body = await request.json();
   const requestedEmail = String(body.email || "").trim().toLowerCase();
@@ -14,11 +15,14 @@ export async function POST(request: Request) {
 
   let userEmail = requestedEmail, role = "user", firstName = "there", authUserId = userId;
   if (userId) {
-    const userResult = await supabaseAdmin.auth.admin.getUserById(userId);
+    const [{ data: profile }, userResult] = await Promise.all([
+      supabaseAdmin.from("users").select("email, role, full_name").eq("id", userId).maybeSingle(),
+      supabaseAdmin.auth.admin.getUserById(userId),
+    ]);
     if (userResult.error || !userResult.data.user) return Response.json({ error: "User not found." }, { status: 404 });
-    userEmail = userResult.data.user.email?.toLowerCase() || "";
-    role = String(userResult.data.user.user_metadata?.role || "user");
-    firstName = String(userResult.data.user.user_metadata?.first_name || "there");
+    userEmail = (profile?.email || userResult.data.user.email || "").toLowerCase();
+    role = normalizeRole(profile?.role);
+    firstName = String(profile?.full_name || "there").split(" ")[0] || "there";
     authUserId = userResult.data.user.id;
   }
   if (!userEmail) return Response.json({ error: "Email required." }, { status: 400 });

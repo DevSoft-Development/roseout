@@ -79,7 +79,7 @@ export default async function AdminClaimQrPrintPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   const params = await searchParams;
   const q = params.q?.trim() || "";

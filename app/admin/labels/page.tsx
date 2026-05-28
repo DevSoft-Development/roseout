@@ -27,7 +27,13 @@ export default function AdminLabelsPage() {
         return;
       }
 
-      if (data.user.user_metadata?.role !== "superuser") {
+      const { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("role")
+        .eq("email", data.user.email?.toLowerCase() || "")
+        .maybeSingle();
+
+      if (adminUser?.role !== "superadmin") {
         setUnauthorized(true);
         setLoading(false);
         return;

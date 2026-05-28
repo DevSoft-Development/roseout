@@ -22,7 +22,7 @@ function adminSupabase() {
 export async function POST(req: Request) {
   try {
     const { error, adminUser } = await requireAdminApiRole([
-      "superuser",
+      "superadmin",
       "admin",
     ]);
 

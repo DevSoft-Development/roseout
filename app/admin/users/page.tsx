@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminRole } from "@/lib/admin-auth";
+import { formatRoleLabel, isAdminRole, isUserRole, normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -67,11 +68,12 @@ function formatDate(value: string | null) {
 }
 
 function roleBadge(role?: string | null) {
-  if (role === "superuser") return "border-rose-200 bg-rose-50 text-rose-700";
-  if (role === "admin") return "border-rose-200 bg-rose-50 text-rose-700";
-  if (role === "owner") return "border-black/10 bg-[#f5eee8] text-black/70";
-  if (role === "disabled") return "border-red-200 bg-red-50 text-red-700";
-  if (role === "user") return "border-black/10 bg-white text-black/55";
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === "superadmin") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (normalizedRole === "admin") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (normalizedRole === "owner") return "border-black/10 bg-[#f5eee8] text-black/70";
+  if (normalizedRole === "disabled") return "border-red-200 bg-red-50 text-red-700";
+  if (normalizedRole === "user") return "border-black/10 bg-white text-black/55";
 
   return "border-black/10 bg-neutral-100 text-black/50";
 }
@@ -80,11 +82,12 @@ async function updateUserRole(formData: FormData) {
   "use server";
 
   const userId = String(formData.get("user_id") || "");
-  const role = String(formData.get("role") || "user");
+  const role = normalizeRole(String(formData.get("role") || "user"));
   const q = String(formData.get("q") || "");
   const currentRole = String(formData.get("current_role") || "all");
 
   if (!userId) redirect(ADMIN_USERS_BASE_PATH);
+  if (!isUserRole(role)) redirect(ADMIN_USERS_BASE_PATH);
 
   await supabaseAdmin.from("users").upsert(
     {
@@ -94,11 +97,24 @@ async function updateUserRole(formData: FormData) {
     { onConflict: "id" }
   );
 
-  await supabaseAdmin.auth.admin.updateUserById(userId, {
-    user_metadata: {
-      role,
-    },
-  });
+  const { data: updatedUser } = await supabaseAdmin
+    .from("users")
+    .select("email, full_name")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (updatedUser?.email && isAdminRole(role)) {
+    await supabaseAdmin.from("admin_users").upsert(
+      {
+        email: updatedUser.email.toLowerCase(),
+        full_name: updatedUser.full_name || null,
+        role,
+      },
+      { onConflict: "email" },
+    );
+  } else if (updatedUser?.email) {
+    await supabaseAdmin.from("admin_users").delete().eq("email", updatedUser.email.toLowerCase());
+  }
 
   redirect(
     `${ADMIN_USERS_BASE_PATH}?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
@@ -119,17 +135,22 @@ async function disableUser(formData: FormData) {
   await supabaseAdmin.auth.admin.updateUserById(userId, {
     ban_duration: "876000h",
     user_metadata: {
-      role: "disabled",
       disabled: true,
     },
   });
 
-  await supabaseAdmin
+  const { data: disabledUser } = await supabaseAdmin
     .from("users")
     .update({
       role: "disabled",
     })
-    .eq("id", userId);
+    .eq("id", userId)
+    .select("email")
+    .maybeSingle();
+
+  if (disabledUser?.email) {
+    await supabaseAdmin.from("admin_users").delete().eq("email", disabledUser.email.toLowerCase());
+  }
 
   redirect(
     `${ADMIN_USERS_BASE_PATH}?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
@@ -162,13 +183,13 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const currentAdmin = await requireAdminRole(["superuser", "admin"]);
-  const canEditUsers = currentAdmin.role === "superuser";
+  const currentAdmin = await requireAdminRole(["superadmin", "admin"]);
+  const canEditUsers = currentAdmin.role === "superadmin";
 
   const params = await searchParams;
 
   const q = params.q || "";
-  const selectedRole = params.role || "all";
+  const selectedRole = params.role === "all" || !params.role ? "all" : normalizeRole(params.role);
 
   const [profileUsersResult, authUsersResult, adminUsersResult] = await Promise.all([
     supabaseAdmin.from("users").select("*").order("created_at", { ascending: false }),
@@ -216,14 +237,13 @@ export default async function AdminUsersPage({
     const email = (existingUser?.email || authUser.email || null)?.toLowerCase() || null;
     const adminUser = email ? adminUsersByEmail.get(email) : null;
     const metadata = authUser.user_metadata || {};
-    const metadataRole = typeof metadata.role === "string" ? metadata.role : null;
     const metadataName =
       typeof metadata.full_name === "string"
         ? metadata.full_name
         : typeof metadata.name === "string"
           ? metadata.name
           : null;
-    const role = existingUser?.role || metadataRole || adminUser?.role || "user";
+    const role = normalizeRole(existingUser?.role || adminUser?.role || "user");
 
     fullUsersById.set(authUser.id, {
       id: authUser.id,
@@ -240,7 +260,7 @@ export default async function AdminUsersPage({
   );
 
   const safeUsers = fullUsers.filter((user) => {
-    const displayRole = user.role || "user";
+    const displayRole = normalizeRole(user.role);
     const matchesQuery = q
       ? [user.email, user.full_name, displayRole, user.id, user.zip_code, user.derived_market_area]
           .filter(Boolean)
@@ -249,17 +269,17 @@ export default async function AdminUsersPage({
     const matchesRole =
       selectedRole === "all" ||
       displayRole === selectedRole ||
-      user.role === selectedRole;
+      normalizeRole(user.role) === selectedRole;
 
     return matchesQuery && matchesRole;
   });
 
   const totalUsers = fullUsers.length;
   const admins = fullUsers.filter(
-    (u) => u.role === "admin" || u.role === "superuser" 
+    (u) => ["admin", "superadmin"].includes(normalizeRole(u.role))
   ).length;
-  const owners = fullUsers.filter((u) => u.role === "owner").length;
-  const regularUsers = fullUsers.filter((u) => u.role === "user").length;
+  const owners = fullUsers.filter((u) => normalizeRole(u.role) === "owner").length;
+  const regularUsers = fullUsers.filter((u) => normalizeRole(u.role) === "user").length;
 
   return (
     <main
@@ -317,30 +337,11 @@ export default async function AdminUsersPage({
               <option className="text-black" value="all">
                 All Roles
               </option>
-              <option className="text-black" value="user">
-                User
-              </option>
-              <option className="text-black" value="owner">
-                Owner
-              </option>
-              <option className="text-black" value="viewer">
-                Viewer
-              </option>
-              <option className="text-black" value="editor">
-                Editor
-              </option>
-              <option className="text-black" value="reviewer">
-                Reviewer
-              </option>
-              <option className="text-black" value="admin">
-                Admin
-              </option>
-              <option className="text-black" value="superuser">
-                Superuser
-              </option>
-              <option className="text-black" value="disabled">
-                Disabled
-              </option>
+              {USER_ROLE_OPTIONS.map((option) => (
+                <option key={option.value} className="text-black" value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
 
             <button
@@ -352,17 +353,7 @@ export default async function AdminUsersPage({
           </form>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              "all",
-              "user",
-              "owner",
-              "viewer",
-              "editor",
-              "reviewer",
-              "admin",
-              "superuser",
-              "disabled",
-            ].map((role) => (
+            {["all", ...USER_ROLE_OPTIONS.map((option) => option.value)].map((role) => (
               <Link
                 key={role}
                 href={`/admin/dashboard/users?q=${encodeURIComponent(q)}&role=${role}`}
@@ -372,7 +363,7 @@ export default async function AdminUsersPage({
                     : "border-white/10 bg-white/[0.06] text-white/55 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                {role}
+                {role === "all" ? "All" : formatRoleLabel(role)}
               </Link>
             ))}
           </div>
@@ -409,7 +400,7 @@ export default async function AdminUsersPage({
           ) : (
             <div className="space-y-3 p-4">
               {safeUsers.map((user) => {
-                const displayRole = user.role || "user";
+                const displayRole = normalizeRole(user.role);
 
                 return (
                   <div
@@ -445,9 +436,9 @@ export default async function AdminUsersPage({
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <span
-                            className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${roleBadge(user.role)}`}
+                            className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${roleBadge(displayRole)}`}
                           >
-                            {displayRole}
+                            {formatRoleLabel(displayRole)}
                           </span>
 
                           <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-xs font-black uppercase text-black/40">
@@ -467,17 +458,14 @@ export default async function AdminUsersPage({
 
                         <select
                           name="role"
-                          defaultValue={user.role || "user"}
+                          defaultValue={displayRole}
                           className="h-11 flex-1 rounded-full border border-black/10 bg-[#f8f3ef] px-4 text-sm font-black outline-none focus:border-rose-500"
                         >
-                          <option value="user">User</option>
-                          <option value="owner">Owner</option>
-                          <option value="viewer">Viewer</option>
-                          <option value="editor">Editor</option>
-                          <option value="reviewer">Reviewer</option>
-                          <option value="admin">Admin</option>
-                          <option value="superuser">Superuser</option>
-                          <option value="disabled">Disabled</option>
+                          {USER_ROLE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
                         </select>
 
                         <button

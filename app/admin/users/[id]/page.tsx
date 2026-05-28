@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminRole } from "@/lib/admin-auth";
+import { formatRoleLabel, normalizeRole } from "@/lib/users/roles";
 import LoginAsUserButton from "./LoginAsUserButton";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +37,8 @@ function adminSupabase() {
 }
 
 export default async function AdminUserDetailPage({ params }: PageProps) {
-  const currentAdmin = await requireAdminRole(["superuser", "admin"]);
-  const canEditUser = currentAdmin.role === "superuser";
+  const currentAdmin = await requireAdminRole(["superadmin", "admin"]);
+  const canEditUser = currentAdmin.role === "superadmin";
 
   const { id } = await params;
 
@@ -100,7 +101,7 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
           <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-5">
             <p className="text-sm text-white/50">Role</p>
             <h2 className="mt-2 text-2xl font-bold capitalize">
-              {user.role || "user"}
+              {formatRoleLabel(normalizeRole(user.role))}
             </h2>
           </div>
 

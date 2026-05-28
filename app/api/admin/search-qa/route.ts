@@ -116,7 +116,7 @@ async function runQuery(origin: string, query: string) {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor", "reviewer", "viewer"]);
   if (error) return error;
 
   const origin = new URL(request.url).origin;

@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
+import { normalizeRole } from "@/lib/users/roles";
 
 type SearchResult = {
   type: "user" | "location";
@@ -46,7 +47,7 @@ export default function AdminTopBar() {
           .select("role")
           .eq("email", currentUser.email.toLowerCase())
           .maybeSingle();
-        setRole(adminUser?.role || currentUser.user_metadata?.role || null);
+        setRole(adminUser?.role ? normalizeRole(adminUser.role) : null);
       }
     })();
   }, [supabase]);
@@ -83,8 +84,8 @@ export default function AdminTopBar() {
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
-  const canView = ["superuser", "admin", "editor", "viewer"].includes(role || "");
-  const canViewUsers = ["superuser", "admin"].includes(role || "");
+  const canView = ["superadmin", "admin", "editor", "viewer"].includes(role || "");
+  const canViewUsers = ["superadmin", "admin"].includes(role || "");
 
   const navGroups: NavGroup[] = useMemo(
     () => [

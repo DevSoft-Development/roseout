@@ -6,7 +6,7 @@ import BusinessCommunicationSection from "@/components/admin/business/BusinessCo
 export const dynamic = "force-dynamic";
 
 export default async function BusinessViewPage({ searchParams }: { searchParams: Promise<{ q?: string; locationId?: string }> }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const params = await searchParams;
   const q = (params.q || "").trim().toLowerCase();
   const allBusinesses = await listBusinessCRM(500);

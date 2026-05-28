@@ -38,7 +38,7 @@ async function requireCuisineBackfillAuthorization(request: NextRequest) {
   if (hasSecretAuthorization(request)) return null;
 
   const { error } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
     "admin",
     "editor",
   ]);

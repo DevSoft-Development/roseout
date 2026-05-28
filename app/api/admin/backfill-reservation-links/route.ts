@@ -160,7 +160,7 @@ async function requireAuthorization(request: NextRequest) {
 
   if (authorized) return null;
 
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (!error) return null;
 
   if (!adminSecret) {

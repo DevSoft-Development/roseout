@@ -3,7 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (auth.error) return auth.error;
   const { id } = await params;
   const { data, error } = await supabaseAdmin.from("promo_codes").select("*").eq("id", id).maybeSingle();
@@ -12,7 +12,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (auth.error) return auth.error;
   const { id } = await params;
   const body = await request.json();
@@ -22,7 +22,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminApiRole(["superuser", "admin"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin"]);
   if (auth.error) return auth.error;
   const { id } = await params;
   const { error } = await supabaseAdmin.from("promo_codes").update({ is_active: false, updated_at: new Date().toISOString() }).eq("id", id);

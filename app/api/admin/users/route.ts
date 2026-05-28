@@ -1,19 +1,12 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-
-const VALID_ROLES = [
-  "superuser",
-  "admin",
-  "editor",
-  "reviewer",
-  "viewer",
-];
+import { isAdminRole, normalizeRole } from "@/lib/users/roles";
 
 //
 // GET → list admin users
 //
 export async function GET() {
   const { error, supabase } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
     "admin",
   ]);
 
@@ -35,11 +28,11 @@ export async function GET() {
 }
 
 //
-// POST → create admin user (superuser only)
+// POST → create admin user (superadmin only)
 //
 export async function POST(req: Request) {
   const { error, supabase, adminUser } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
   ]);
 
   if (error) return error;
@@ -49,7 +42,7 @@ export async function POST(req: Request) {
 
     const email = body.email?.trim().toLowerCase();
     const fullName = body.full_name?.trim() || null;
-    const role = body.role || "editor";
+    const role = normalizeRole(body.role || "editor");
 
     if (!email) {
       return Response.json(
@@ -58,7 +51,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!VALID_ROLES.includes(role)) {
+    if (!isAdminRole(role)) {
       return Response.json(
         { error: "Invalid role." },
         { status: 400 }
@@ -106,11 +99,11 @@ export async function POST(req: Request) {
 }
 
 //
-// PATCH → update role (superuser only)
+// PATCH → update role (superadmin only)
 //
 export async function PATCH(req: Request) {
   const { error, supabase, adminUser } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
   ]);
 
   if (error) return error;
@@ -119,16 +112,18 @@ export async function PATCH(req: Request) {
     const body = await req.json();
 
     const id = body.id;
-    const role = body.role;
+    const rawRole = body.role;
 
-    if (!id || !role) {
+    if (!id || !rawRole) {
       return Response.json(
         { error: "Missing id or role." },
         { status: 400 }
       );
     }
 
-    if (!VALID_ROLES.includes(role)) {
+    const role = normalizeRole(rawRole);
+
+    if (!isAdminRole(role)) {
       return Response.json(
         { error: "Invalid role." },
         { status: 400 }
@@ -181,11 +176,11 @@ export async function PATCH(req: Request) {
 }
 
 //
-// DELETE → remove admin user (superuser only)
+// DELETE → remove admin user (superadmin only)
 //
 export async function DELETE(req: Request) {
   const { error, supabase, adminUser } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
   ]);
 
   if (error) return error;

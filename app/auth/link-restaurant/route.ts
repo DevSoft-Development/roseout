@@ -47,11 +47,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await supabaseAdmin.auth.admin.updateUserById(body.userId, {
-      user_metadata: {
-        role: "restaurants",
+    await supabaseAdmin.from("users").upsert(
+      {
+        id: body.userId,
+        email,
+        role: "owner",
       },
-    });
+      { onConflict: "id" },
+    );
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

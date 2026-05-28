@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 export default async function FeaturedOutingsPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const [{ data: outings }, { data: locations }] = await Promise.all([
     supabaseAdmin.from("featured_outings").select("*").order("priority", { ascending: true }).limit(100),
     supabaseAdmin.from("locations").select("id,name,restaurant_name,activity_name,city,state,address,rating,category").limit(50),

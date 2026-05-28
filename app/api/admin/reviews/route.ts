@@ -27,7 +27,7 @@ const isMissingTableError = (message?: string | null) => {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (auth.error) return auth.error;
 
   try {

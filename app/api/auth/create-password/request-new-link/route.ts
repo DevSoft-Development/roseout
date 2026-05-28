@@ -20,6 +20,14 @@ export async function POST(request: Request) {
   const user = users.data.users?.find((u) => u.email?.toLowerCase() === email);
   if (!user) return NextResponse.json(generic);
 
+  const { data: profile } = await supabaseAdmin
+    .from("users")
+    .select("role, full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const role = normalizePasswordSetupRole(String(profile?.role || "user"));
+  const firstName = String(profile?.full_name || "there").split(" ")[0] || "there";
+
   const cooldownThreshold = new Date(Date.now() - PASSWORD_SETUP_RESEND_COOLDOWN_MS).toISOString();
   const { data: recent } = await supabaseAdmin
     .from("password_setup_tokens")
@@ -41,7 +49,7 @@ export async function POST(request: Request) {
     email,
     token_hash: tokenHash,
     purpose: PASSWORD_SETUP_PURPOSE,
-    role: normalizePasswordSetupRole(String(user.user_metadata?.role || "user")),
+    role,
     expires_at: expiresAt,
   });
 
@@ -52,7 +60,7 @@ export async function POST(request: Request) {
 
   console.info("[password-setup:create-token]", { email, userId: user.id, tokenHashPrefix: tokenHash.slice(0, 12), expiresAt, purpose: PASSWORD_SETUP_PURPOSE, requestPath: new URL(request.url).pathname, insertSuccess: true });
 
-  const tpl = passwordSetupInviteTemplate({ first_name: String(user.user_metadata?.first_name || "there"), token: rawToken, expires_at: expiresAt, role: String(user.user_metadata?.role || "user") });
+  const tpl = passwordSetupInviteTemplate({ first_name: firstName, token: rawToken, expires_at: expiresAt, role });
   await sendSupportEmail({ to: email, subject: tpl.subject, body: tpl.text, html: tpl.html, department: "security" }).catch((error) => console.error("request-new-link email failure", error));
 
   return NextResponse.json(generic);

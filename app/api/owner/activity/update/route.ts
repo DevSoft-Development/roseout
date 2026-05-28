@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Regular owners must be linked to this activity.
-  // Admin/superuser can update any activity.
+  // Admin/superadmin can update any activity.
   if (!is_admin) {
     const { data: ownerRecord, error: ownerError } = await supabaseAdmin
       .from("activity_owners")

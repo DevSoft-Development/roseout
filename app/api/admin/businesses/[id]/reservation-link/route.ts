@@ -3,7 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
@@ -13,7 +13,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function POST(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   await supabaseAdmin.from("locations").update({ reservation_link_checked_at: new Date().toISOString() }).eq("id", id);

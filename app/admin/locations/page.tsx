@@ -165,7 +165,7 @@ export default async function AdminLocationsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   const params = await searchParams;
 

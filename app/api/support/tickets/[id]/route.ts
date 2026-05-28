@@ -44,7 +44,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = await req.json();
-    const { error } = await requireAdminApiRole(["superuser", "admin"]);
+    const { error } = await requireAdminApiRole(["superadmin", "admin"]);
 
     if (error) {
       return error;

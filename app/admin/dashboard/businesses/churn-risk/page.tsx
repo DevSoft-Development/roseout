@@ -4,7 +4,7 @@ import { listBusinessCRM } from "@/lib/admin-crm";
 import BusinessCommunicationSection from "@/components/admin/business/BusinessCommunicationSection";
 
 export default async function Page() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const businesses = await listBusinessCRM(60);
 
   return (

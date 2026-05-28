@@ -3,7 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const { data, error: qErr } = await supabaseAdmin.from("business_outreach").select("*").eq("location_id", id).order("updated_at", { ascending: false });
@@ -12,7 +12,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const body = await request.json().catch(() => ({}));

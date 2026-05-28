@@ -7,7 +7,7 @@ function fmt(n: number) {
 }
 
 export default async function BusinessCRMPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const businesses = await listBusinessCRM();
 
   const summary = {

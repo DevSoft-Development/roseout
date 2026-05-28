@@ -16,7 +16,7 @@ const DEFAULT_TEMPLATES = [
 ] as const;
 
 export async function GET() {
-  const { error, supabase } = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const { error, supabase } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (error) return error;
 
   const { data, error: fetchError } = await supabase.from("communication_templates").select("*").order("created_at", { ascending: false });
@@ -32,7 +32,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error, supabase, adminUser } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error, supabase, adminUser } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (error) return error;
   const body = await request.json();
 

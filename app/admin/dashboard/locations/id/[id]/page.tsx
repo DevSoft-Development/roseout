@@ -55,7 +55,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 export default async function AdminLocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const { id } = await params;
   const location = await findLocation(id);
   if (!location) notFound();

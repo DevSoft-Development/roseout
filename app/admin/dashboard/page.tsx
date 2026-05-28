@@ -9,7 +9,7 @@ const todayKey = () => new Date().toISOString().split("T")[0];
 const format = (v: number | null | undefined) => Number(v || 0).toLocaleString();
 
 export default async function CentralDashboardPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const today = todayKey();
   const [restaurants, activities, reservations, todayReservations, tickets] = await Promise.all([
     supabase.from("restaurants").select("id", { count: "exact", head: true }),

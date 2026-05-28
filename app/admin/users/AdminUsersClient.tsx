@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
+import { normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
 export default function AdminUsersClient() {
   const supabase = createClient();
@@ -41,7 +42,7 @@ export default function AdminUsersClient() {
       const { error: insertError } = await supabase.from("admin_users").insert({
         email: normalizedEmail,
         full_name: fullName.trim() || null,
-        role,
+        role: normalizeRole(role),
       });
 
       if (insertError) throw insertError;
@@ -107,11 +108,13 @@ export default function AdminUsersClient() {
           onChange={(e) => setRole(e.target.value)}
           className="mt-2 w-full rounded-2xl border border-neutral-300 px-4 py-3 outline-none focus:border-yellow-500"
         >
-          <option value="viewer">Viewer</option>
-          <option value="reviewer">Reviewer</option>
-          <option value="editor">Editor</option>
-          <option value="admin">Admin</option>
-          <option value="superuser">Superuser</option>
+          {USER_ROLE_OPTIONS.filter((option) =>
+            ["viewer", "reviewer", "editor", "admin", "superadmin"].includes(option.value),
+          ).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
 
         <button

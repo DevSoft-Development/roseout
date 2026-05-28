@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const [loc, crm] = await Promise.all([
@@ -17,7 +17,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const body = await request.json().catch(() => ({}));

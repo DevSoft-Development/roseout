@@ -43,7 +43,7 @@ function isCronAuthorized(request: NextRequest) {
 
 async function authorizeAdminOrCron(request: NextRequest) {
   if (process.env.NODE_ENV === "development" || isCronAuthorized(request)) return null;
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   return error;
 }
 

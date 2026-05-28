@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const { error, supabase } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
     "admin",
   ]);
 

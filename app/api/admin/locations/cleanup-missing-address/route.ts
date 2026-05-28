@@ -142,7 +142,7 @@ async function logCleanupRun(meta: Record<string, unknown>, error?: string) {
 export async function POST(request: NextRequest) {
   try {
     const { error: authError } = await requireAdminApiRole([
-      "superuser",
+      "superadmin",
       "admin",
       "editor",
     ]);

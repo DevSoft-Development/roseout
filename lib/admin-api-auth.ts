@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
-import { getMetadataAdminUser, type AdminRole } from "@/lib/admin-auth";
+import { isAdminRole, normalizeRole, type AdminRole } from "@/lib/users/roles";
 
 export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
   const supabase = await createClient();
@@ -22,12 +22,9 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
     .eq("email", user.email.toLowerCase())
     .maybeSingle();
 
-  const effectiveAdminUser = adminUser || getMetadataAdminUser(user);
+  const normalizedRole = normalizeRole(adminUser?.role);
 
-  if (
-    !effectiveAdminUser ||
-    !allowedRoles.includes(effectiveAdminUser.role as AdminRole)
-  ) {
+  if (!adminUser || !isAdminRole(normalizedRole) || !allowedRoles.includes(normalizedRole)) {
     return {
       error: Response.json({ error: "Forbidden" }, { status: 403 }),
       adminUser: null,
@@ -37,7 +34,10 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
 
   return {
     error: null,
-    adminUser: effectiveAdminUser,
+    adminUser: {
+      ...adminUser,
+      role: normalizedRole,
+    },
     supabase,
   };
 }

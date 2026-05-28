@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
-
-const ADMIN_ROLES = new Set(["superuser", "admin", "editor", "reviewer", "viewer"]);
+import { ADMIN_ROLES, normalizeRole } from "@/lib/users/roles";
 
 export type OwnerAccess = {
   isAdmin: boolean;
@@ -8,10 +7,6 @@ export type OwnerAccess = {
   ownedLocationIds: string[];
   ownedSourceLocationIds: string[];
 };
-
-function normalizeRole(role: unknown): string {
-  return typeof role === "string" ? role.trim().toLowerCase() : "";
-}
 
 export async function getLocationOwnerAccess(userId: string): Promise<OwnerAccess> {
   const supabase = await createClient();
@@ -21,9 +16,9 @@ export async function getLocationOwnerAccess(userId: string): Promise<OwnerAcces
     .eq("id", userId)
     .maybeSingle();
 
-  const role = normalizeRole(profile?.role);
-  const isAdmin = ADMIN_ROLES.has(role);
-  const isSuperadmin = role === "superuser";
+  const role = normalizeRole(typeof profile?.role === "string" ? profile.role.trim().toLowerCase() : null);
+  const isAdmin = (ADMIN_ROLES as readonly string[]).includes(role);
+  const isSuperadmin = role === "superadmin";
 
   const ownedLocationIds = new Set<string>();
   const ownedSourceLocationIds = new Set<string>();

@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const { id } = await params;
   const business = await getBusinessCRM(id);
 

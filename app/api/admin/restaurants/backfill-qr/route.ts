@@ -5,7 +5,7 @@ import { syncClaimFieldsToLocations } from "@/lib/claimQr";
 async function isAllowed(req: Request) {
   const secret = req.headers.get("x-internal-import-secret") || req.headers.get("authorization")?.replace("Bearer ", "");
   if (secret && (secret === process.env.IMPORT_SECRET || secret === process.env.CRON_SECRET)) return true;
-  try { await requireAdminRole(["superuser", "admin"]); return true; } catch { return false; }
+  try { await requireAdminRole(["superadmin", "admin"]); return true; } catch { return false; }
 }
 
 async function run(req: Request) {

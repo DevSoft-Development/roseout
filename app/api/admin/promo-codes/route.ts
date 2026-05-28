@@ -20,7 +20,7 @@ function sanitizePromoPayload(body: Record<string, unknown>) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]); if (auth.error) return auth.error;
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]); if (auth.error) return auth.error;
   const params = request.nextUrl.searchParams; const lookup = params.get("lookup"); const q = params.get("q")?.trim() ?? "";
   if (lookup === "users") { const { data, error } = await supabaseAdmin.from("profiles").select("id, full_name, email").or(`full_name.ilike.%${q}%,email.ilike.%${q}%`).limit(20); if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ users: data ?? [] }); }
   if (lookup === "locations") { const { data, error } = await supabaseAdmin.from("locations").select("id, name, address, neighborhood, borough").or(`name.ilike.%${q}%,address.ilike.%${q}%,neighborhood.ilike.%${q}%,borough.ilike.%${q}%`).limit(20); if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ locations: data ?? [] }); }
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor"]); if (auth.error) return auth.error;
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]); if (auth.error) return auth.error;
   const body = (await request.json()) as Record<string, unknown>; const payload = sanitizePromoPayload(body);
   if (!validAudiences.includes(payload.audience as never)) return NextResponse.json({ error: "Invalid audience." }, { status: 400 });
   if (!validTypes.includes(payload.promo_type as never)) return NextResponse.json({ error: "Invalid promo_type." }, { status: 400 });

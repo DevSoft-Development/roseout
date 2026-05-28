@@ -3,7 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (auth.error) return auth.error;
   const { id } = await params;
   const { data, error } = await supabaseAdmin

@@ -2,24 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminRole } from "@/lib/admin-auth";
+import { formatRoleLabel, isAdminRole, isUserRole, normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
 export const dynamic = "force-dynamic";
 
 const ADMIN_USERS_BASE_PATH = "/admin/dashboard/users";
 const THEOUTHAVEN_SITE_URL = "https://www.theouthaven.com";
-
-const VALID_ROLES = [
-  "user",
-  "owner",
-  "viewer",
-  "editor",
-  "reviewer",
-  "admin",
-  "superuser",
-  "disabled",
-];
-
-const ADMIN_ROLES = ["superuser", "admin", "editor", "reviewer", "viewer"];
 
 const SUBSCRIPTION_STATUSES = [
   { label: "No subscription", value: "" },
@@ -94,13 +82,13 @@ function getPasswordResetRedirectUrl() {
 async function updateUser(formData: FormData) {
   "use server";
 
-  await requireAdminRole(["superuser"]);
+  await requireAdminRole(["superadmin"]);
 
   const userId = cleanString(formData.get("user_id"));
   const email = cleanString(formData.get("email")).toLowerCase();
   const fullName = nullableString(formData.get("full_name"));
   const phone = nullableString(formData.get("phone"));
-  const role = cleanString(formData.get("role")) || "user";
+  const role = normalizeRole(cleanString(formData.get("role")) || "user");
   const subscriptionStatus = nullableString(formData.get("subscription_status"));
   const stripeCustomerId = nullableString(formData.get("stripe_customer_id"));
   const stripeSubscriptionId = nullableString(formData.get("stripe_subscription_id"));
@@ -111,7 +99,7 @@ async function updateUser(formData: FormData) {
     editErrorRedirect(userId, "Email is required.");
   }
 
-  if (!VALID_ROLES.includes(role)) {
+  if (!isUserRole(role)) {
     editErrorRedirect(userId, "Invalid role selected.");
   }
 
@@ -126,14 +114,12 @@ async function updateUser(formData: FormData) {
     email: string;
     user_metadata: {
       full_name: string | null;
-      role: string;
       disabled: boolean;
     };
   } = {
     email,
     user_metadata: {
       full_name: fullName,
-      role,
       disabled: role === "disabled",
     },
   };
@@ -167,7 +153,7 @@ async function updateUser(formData: FormData) {
     await supabase.from("admin_users").delete().eq("email", previousEmail);
   }
 
-  if (ADMIN_ROLES.includes(role)) {
+  if (isAdminRole(role)) {
     await supabase.from("admin_users").upsert(
       {
         email,
@@ -186,7 +172,7 @@ async function updateUser(formData: FormData) {
 async function sendPasswordReset(formData: FormData) {
   "use server";
 
-  await requireAdminRole(["superuser"]);
+  await requireAdminRole(["superadmin"]);
 
   const userId = cleanString(formData.get("user_id"));
 
@@ -226,10 +212,6 @@ function getMetadataName(metadata: AuthMetadata) {
   return null;
 }
 
-function getMetadataRole(metadata: AuthMetadata) {
-  return typeof metadata.role === "string" ? metadata.role : null;
-}
-
 async function getEditableUser(id: string) {
   const supabase = adminSupabase();
 
@@ -264,7 +246,7 @@ async function getEditableUser(id: string) {
     adminUser = data || null;
   }
 
-  const role = profileUser?.role || getMetadataRole(authMetadata) || adminUser?.role || "user";
+  const role = normalizeRole(profileUser?.role || adminUser?.role || "user");
 
   return {
     id,
@@ -289,7 +271,7 @@ function formatDate(value: string | null) {
 }
 
 export default async function EditAdminUserPage({ params, searchParams }: PageProps) {
-  await requireAdminRole(["superuser"]);
+  await requireAdminRole(["superadmin"]);
 
   const { id } = await params;
   const { error, message } = await searchParams;
@@ -297,7 +279,7 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
 
   if (!user) notFound();
 
-  const displayRole = user.role || "user";
+  const displayRole = normalizeRole(user.role);
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">
@@ -308,7 +290,7 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
           <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                Superuser User Editor
+                Superadmin User Editor
               </p>
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
                 Edit User
@@ -354,7 +336,7 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
             </p>
             <h2 className="mt-2 text-2xl font-black">{user.email || "No email"}</h2>
             <p className="mt-1 text-sm font-bold text-black/45">
-              Current role: {displayRole} • Joined {formatDate(user.created_at)}
+              Current role: {formatRoleLabel(displayRole)} • Joined {formatDate(user.created_at)}
             </p>
           </div>
 
@@ -373,14 +355,11 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
                   defaultValue={displayRole}
                   className="mt-2 h-12 w-full rounded-2xl border border-black/10 bg-white px-4 font-bold outline-none focus:border-rose-500"
                 >
-                  <option value="user">User</option>
-                  <option value="owner">Owner</option>
-                  <option value="viewer">Viewer</option>
-                  <option value="editor">Editor</option>
-                  <option value="reviewer">Reviewer</option>
-                  <option value="admin">Admin</option>
-                  <option value="superuser">Superuser</option>
-                  <option value="disabled">Disabled</option>
+                  {USER_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -412,7 +391,7 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
 
             <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-800 md:flex-row md:items-center md:justify-between">
               <p>
-                Superusers can edit all account fields here. To change this user&apos;s password,
+                Superadmins can edit all account fields here. To change this user&apos;s password,
                 send them a secure password reset email.
               </p>
               <button

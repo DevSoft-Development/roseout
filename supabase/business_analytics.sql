@@ -184,8 +184,8 @@ as $$
     select 1
     from public.admin_users au
     where au.email = lower(coalesce(auth.jwt() ->> 'email', ''))
-      and au.role in ('superuser', 'admin', 'editor', 'viewer')
-  ) or coalesce(auth.jwt() -> 'user_metadata' ->> 'role', '') in ('superuser', 'admin');
+      and au.role in ('superadmin', 'admin', 'editor', 'viewer')
+  );
 $$;
 
 create or replace function public.can_view_location_analytics(location_uuid uuid)

@@ -12,7 +12,7 @@ async function getLocation(type: LocationType, id: string) {
 }
 
 export default async function AdminLocationSubPage({ params }: { params: Promise<{ type: string; id: string }> }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const { type, id } = await params;
   if (type !== "restaurants" && type !== "activities") notFound();
   const location = await getLocation(type, id);
