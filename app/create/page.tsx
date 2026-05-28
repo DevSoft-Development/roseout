@@ -6,11 +6,8 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
-import { trackOutingBeforeAction } from "@/lib/outings";
 import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
-import { CompleteOutingModal } from "@/components/outings/CompleteOutingModal";
-import { OutingCompletionBanner } from "@/components/outings/OutingCompletionBanner";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
@@ -18,10 +15,6 @@ import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
-import {
-  getExternalReservationUrl,
-  getInternalReservationHref,
-} from "@/lib/reservation";
 
 type RestaurantCard = LocationScoreFields &
   LocationVisibilityFields & {
@@ -1166,14 +1159,6 @@ export default function CreatePage() {
                             const restaurantId = String(restaurant.id);
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
-                            const reservationUrl =
-                              getExternalReservationUrl(restaurant) ||
-                              undefined;
-                            const internalReservationHref =
-                              getInternalReservationHref(
-                                restaurant,
-                                "restaurant",
-                              ) || undefined;
 
                             return (
                               <ResultCard
@@ -1191,7 +1176,9 @@ export default function CreatePage() {
                                 distance={restaurant.distance_miles}
                                 selected={isSelected}
                                 priority={restaurantIndex === 0}
-                                selectLabel={isSelected ? "Saved" : "Save"}
+                                selectLabel={
+                                  isSelected ? "Selected spot" : "Choose this spot"
+                                }
                                 onSelect={() => {
                                   trackRestaurantClick(restaurantId);
                                   trackRestaurantSave(restaurantId);
@@ -1200,32 +1187,7 @@ export default function CreatePage() {
                                 onCardClick={() => trackRestaurantClick(restaurantId)}
                                 locationId={restaurantId}
                                 analyticsMetadata={CREATE_RESULTS_ANALYTICS_METADATA}
-                                detailsHref={`/locations/restaurants/${restaurantId}?from=/create`}
-                                onDetails={() =>
-                                  trackRestaurantClick(restaurantId)
-                                }
-                                websiteUrl={restaurant.website || undefined}
-                                onWebsite={() => {
-                                  trackRestaurantClick(restaurantId);
-                                  trackBusinessEvent(restaurantId, "website_click", { item_type: "restaurant" });
-                                }}
-                                reservationUrl={reservationUrl}
-                                phoneNumber={restaurant.phone || undefined}
-                                internalReservationHref={
-                                  internalReservationHref
-                                }
-                                reservationEnabled={
-                                  restaurant.reservation_enabled === true
-                                }
-                                onReservation={() => {
-                                  trackRestaurantClick(restaurantId);
-                                  trackRestaurantBooking(restaurantId);
-                                  trackBusinessEvent(restaurantId, "reservation_started", {
-                                    item_type: "restaurant",
-                                    party_size: selectedRestaurant?.id === restaurant.id ? undefined : null,
-                                  });
-                                }}
-                              />
+                                />
                             );
                           })}
                         </ResultSection>
@@ -1254,13 +1216,6 @@ export default function CreatePage() {
                             const activityId = String(activity.id);
                             const isSelected =
                               selectedActivity?.id === activity.id;
-                            const reservationUrl =
-                              getExternalReservationUrl(activity) || undefined;
-                            const internalReservationHref =
-                              getInternalReservationHref(
-                                activity,
-                                "activity",
-                              ) || undefined;
                             const distanceFromRestaurantLabel =
                               selectedRestaurant
                                 ? buildDistanceFromRestaurantLabel(
@@ -1303,7 +1258,9 @@ export default function CreatePage() {
                                 }
                                 selected={isSelected}
                                 priority={activityIndex === 0}
-                                selectLabel={isSelected ? "Saved" : "Save"}
+                                selectLabel={
+                                  isSelected ? "Selected spot" : "Choose this spot"
+                                }
                                 onSelect={() => {
                                   trackActivityClick(activityId);
                                   trackActivitySave(activityId);
@@ -1312,27 +1269,7 @@ export default function CreatePage() {
                                 onCardClick={() => trackActivityClick(activityId)}
                                 locationId={activityId}
                                 analyticsMetadata={CREATE_RESULTS_ANALYTICS_METADATA}
-                                detailsHref={`/locations/${activity.detail_location_type || "activities"}/${activityId}?from=/create`}
-                                onDetails={() => trackActivityClick(activityId)}
-                                websiteUrl={activity.website || undefined}
-                                onWebsite={() => {
-                                  trackActivityClick(activityId);
-                                  trackBusinessEvent(activityId, "website_click", { item_type: "activity" });
-                                }}
-                                reservationUrl={reservationUrl}
-                                phoneNumber={activity.phone || undefined}
-                                internalReservationHref={
-                                  internalReservationHref
-                                }
-                                reservationEnabled={
-                                  activity.reservation_enabled === true
-                                }
-                                onReservation={() => {
-                                  trackActivityClick(activityId);
-                                  trackActivityBooking(activityId);
-                                  trackBusinessEvent(activityId, "reservation_started", { item_type: "activity" });
-                                }}
-                              />
+                                />
                             );
                           })}
                         </ResultSection>
@@ -1662,7 +1599,7 @@ function PlanSummarySheet({
                 Plan Summary
               </p>
               <h3 className="mt-1 break-words text-xl font-black tracking-[-0.04em] text-white sm:text-2xl">
-                Your outing is almost ready
+                Your plan is coming together.
               </h3>
               <p className="mt-1 text-xs font-semibold leading-5 text-white/45 sm:text-sm sm:leading-6">
                 {summaryDescription}
@@ -1753,7 +1690,7 @@ function PlanSummarySheet({
 
           <div className="mt-4 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-3 sm:mt-5 sm:p-4">
             <p className="text-[9px] font-black uppercase tracking-[0.2em] text-red-100/70 sm:text-[10px] sm:tracking-[0.22em]">
-              Next Step
+              Ready to make it happen?
             </p>
             <p className="mt-1 text-xs font-bold leading-5 text-white sm:text-sm sm:leading-6">
               {nextStepText}
@@ -1995,15 +1932,6 @@ function ResultCard({
   selectLabel,
   onSelect,
   onCardClick,
-  detailsHref,
-  onDetails,
-  websiteUrl,
-  onWebsite,
-  reservationUrl,
-  phoneNumber,
-  internalReservationHref,
-  reservationEnabled,
-  onReservation,
   locationId,
   analyticsMetadata,
 }: {
@@ -2025,27 +1953,9 @@ function ResultCard({
   selectLabel: string;
   onSelect: () => void;
   onCardClick?: () => void;
-  detailsHref: string;
-  onDetails: () => void;
-  websiteUrl?: string;
-  onWebsite?: () => void;
-  reservationUrl?: string;
-  phoneNumber?: string;
-  internalReservationHref?: string;
-  reservationEnabled?: boolean;
-  onReservation?: () => void;
   locationId?: string | null;
   analyticsMetadata?: LocationAnalyticsMetadata;
 }) {
-  const outingStorageKey = `theouthaven_outing_${locationId || title}`;
-  const [activeOutingId, setActiveOutingId] = useState<string | null>(null);
-  const [showCompletionPrompt, setShowCompletionPrompt] = useState(false);
-  const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [completeMessage, setCompleteMessage] = useState<string | null>(null);
-  useEffect(() => {
-    const existing = typeof window !== "undefined" ? localStorage.getItem(outingStorageKey) : null;
-    if (existing) { setActiveOutingId(existing); setShowCompletionPrompt(true); }
-  }, [outingStorageKey]);
   const whyPicked = getWhyPicked({
     primaryTag,
     reviewKeywords,
@@ -2054,49 +1964,6 @@ function ResultCard({
   });
   const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
-  const handleStartOuting = async (method: "external_reservation" | "phone") => {
-    const telHref = phoneNumber ? `tel:${phoneNumber.replace(/[^\d+]/g, "")}` : null;
-
-    if (method === "external_reservation" && !reservationUrl) {
-      setCompleteMessage("This location does not have a reservation link yet.");
-      return;
-    }
-
-    if (method === "phone" && (!phoneNumber || !telHref)) {
-      setCompleteMessage("This location does not have a phone number yet.");
-      return;
-    }
-
-    try {
-      const outingId = await trackOutingBeforeAction({
-        source_location_id: locationId,
-        location_id: locationId,
-        location_type: type,
-        contact_method: method,
-        reservation_type: "external",
-        external_reservation_url: reservationUrl,
-        phone_number: phoneNumber,
-        source: "create_result_card",
-        page_path: typeof window !== "undefined" ? window.location.pathname : null,
-      });
-
-      if (outingId) {
-        setActiveOutingId(outingId);
-        localStorage.setItem(outingStorageKey, outingId);
-        setShowCompletionPrompt(true);
-      }
-    } finally {
-      if (method === "phone" && telHref) {
-        window.location.href = telHref;
-        setCompleteMessage("Call opened. We'll keep improving outing tracking.");
-      }
-
-      if (method === "external_reservation" && reservationUrl) {
-        window.open(reservationUrl, "_blank", "noopener,noreferrer");
-        setCompleteMessage("Link opened. We'll keep improving outing tracking.");
-      }
-    }
-  };
 
   return (
     <article
@@ -2157,11 +2024,9 @@ function ResultCard({
             </p>
           </div>
 
-          <Link href={detailsHref} onClick={onDetails}>
-            <h3 className="line-clamp-2 break-words text-base font-black leading-tight tracking-[-0.03em] text-white transition group-hover:text-red-100 sm:text-lg">
-              {title}
-            </h3>
-          </Link>
+          <h3 className="line-clamp-2 break-words text-base font-black leading-tight tracking-[-0.03em] text-white transition group-hover:text-red-100 sm:text-lg">
+            {title}
+          </h3>
 
           <p className="line-clamp-1 break-words text-xs font-semibold leading-5 text-white/42">
             {address || "Location details available on the listing."}
@@ -2204,7 +2069,7 @@ function ResultCard({
         </div>
 
         <div className="mt-auto pt-4">
-        <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+        <div className="grid grid-cols-1 gap-2 border-t border-white/10 pt-3">
           <button
             type="button"
             onClick={onSelect}
@@ -2217,87 +2082,8 @@ function ResultCard({
             {selectLabel}
           </button>
 
-          <Link
-            href={detailsHref}
-            onClick={onDetails}
-            className="rounded-full bg-white px-3 py-2.5 text-center text-xs font-black text-black transition hover:bg-red-100"
-          >
-            View details
-          </Link>
-
-          {websiteUrl ? (
-            <a
-              href={websiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onWebsite}
-              className="rounded-full border border-white/12 px-3 py-2.5 text-center text-xs font-black text-white/80 transition hover:bg-white hover:text-black"
-            >
-              Website
-            </a>
-          ) : null}
-
-          {activeOutingId ? (
-            <button type="button" onClick={() => setShowCompleteModal(true)} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">Complete outing</button>
-          ) : reservationEnabled && internalReservationHref ? (
-            <Link
-              href={internalReservationHref}
-              onClick={onReservation}
-              className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white"
-            >
-              Reserve Now
-            </Link>
-          ) : reservationUrl ? (
-            <button
-              type="button"
-              onClick={() => { onReservation?.(); void handleStartOuting("external_reservation"); }}
-              className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white"
-            >
-              Reserve Externally
-            </button>
-          ) : phoneNumber ? (
-            <button type="button" onClick={() => void handleStartOuting("phone")} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">Call Location</button>
-          ) : (
-            <a href={distanceHref || detailsHref} target={distanceHref ? "_blank" : undefined} rel={distanceHref ? "noopener noreferrer" : undefined} className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 px-3 py-2.5 text-center text-xs font-black text-red-100 transition hover:bg-[#e1062a] hover:text-white">{distanceHref ? "Get Directions" : "View Details"}</a>
-          )}
-          {locationId ? (
-            <Link href={`/location/apply/claim?location_id=${encodeURIComponent(locationId)}`} className="rounded-full border border-white/12 px-3 py-2.5 text-center text-xs font-black text-white/80 transition hover:bg-white hover:text-black">Claim this business</Link>
-          ) : null}
         </div>
         </div>
-        <OutingCompletionBanner
-          visible={showCompletionPrompt}
-          onComplete={() => setShowCompleteModal(true)}
-          onNotYet={() => setShowCompletionPrompt(false)}
-          onCancel={async () => {
-            if (!activeOutingId) return;
-            await fetch("/api/outings/cancel", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ outing_id: activeOutingId }),
-            });
-            localStorage.removeItem(outingStorageKey);
-            setShowCompletionPrompt(false);
-          }}
-        />
-        <CompleteOutingModal
-          open={showCompleteModal}
-          onClose={() => setShowCompleteModal(false)}
-          onSubmit={async (payload) => {
-            if (!activeOutingId) return;
-            const response = await fetch("/api/outings/complete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ outing_id: activeOutingId, ...payload }),
-            });
-            if (response.ok) {
-              setCompleteMessage("Outing completed 🎉");
-              localStorage.removeItem(outingStorageKey);
-              setShowCompletionPrompt(false);
-            }
-          }}
-        />
-        {completeMessage ? <p className="mt-2 text-xs font-bold text-emerald-300">{completeMessage}</p> : null}
       </div>
     </article>
   );
