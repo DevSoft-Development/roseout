@@ -533,3 +533,27 @@ Final expected result:
 - Analytics uses analytics_events, outings, locations.
 - Empty states work.
 - Build passes.
+
+
+## Audit — 2026-05-28
+
+| Task number | Required work | Completed? | Files changed | Missing work |
+|---|---|---|---|---|
+| 1 | Shared analytics utility + helpers/types/summary builders | Yes (verified existing code) | None (verified in `lib/analytics/new-business-analytics.ts`) | None |
+| 2 | Category normalization cleanup + label mapping | Yes (verified existing code) | None (verified in `lib/analytics/new-business-analytics.ts`) | None |
+| 3 | Business analytics API rebuild + auth/range/location handling | Yes (verified existing code) | None (verified in `app/api/business/analytics/route.ts`) | None |
+| 4 | Admin analytics API with all platform breakdown payloads | Yes (verified existing code) | None (verified in `app/api/admin/business-analytics/route.ts`) | None |
+| 5 | Admin filtering/sorting + filtered summary/meta behavior | Yes (verified existing code) | None (verified in `app/api/admin/business-analytics/route.ts`) | None |
+| 6 | Bird’s Eye View admin section and statuses | Yes (verified existing code) | None (verified in `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 7 | Inline search + counts + quick filters on admin analytics | Yes (verified existing code) | None (verified in `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 8 | Most searched categories section from events/location signals | Yes (verified existing code) | None (verified in `lib/analytics/new-business-analytics.ts`, `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 9 | Deeper admin breakdowns (event/source/contact/plan/city/borough/category/conversion) | Yes (verified existing code) | None (verified in `app/api/admin/business-analytics/route.ts`, `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 10 | Refactor location-owner analytics API to shared utility | Yes (verified existing code) | None (verified in `app/api/location-owner/analytics/route.ts`) | None |
+| 11 | Shared dashboard component redesign for admin/owner modes | Yes (verified existing code) | None (verified in `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 12 | Admin analytics page redesign using shared dashboard and APIs | Yes (verified existing code) | None (verified in `app/admin/dashboard/analytics/page.tsx`) | None |
+| 13 | Admin drilldown fetch + in-page detail state | Yes (verified existing code) | None (verified in `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 14 | Owner analytics page redesign + owner-safe access + empty state | Yes (verified existing code) | None (verified in `app/business/dashboard/analytics/page.tsx`) | None |
+| 15 | Event tracking consistency and mapping + non-blocking secondary analytics | Yes (verified existing code) | None (verified in `app/api/outings/start/route.ts`, `app/api/outings/complete/route.ts`) | None |
+| 16 | Security/privacy constraints for admin and owner analytics | Yes (verified existing code) | None (verified in `app/api/admin/business-analytics/route.ts`, `app/api/business/analytics/route.ts`, `app/api/location-owner/analytics/route.ts`, `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 17 | UI polish copy/theme constraints/no debug output | Yes (verified existing code) | None (verified in `components/analytics/BusinessAnalyticsDashboard.tsx`) | None |
+| 18 | Lint/build verification and error fixes | Yes (verified on 2026-05-28) | Updated this checklist audit section | No blocking errors found (lint warnings only, build passes) |
