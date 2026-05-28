@@ -180,12 +180,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select exists (
-    select 1
-    from public.admin_users au
-    where au.email = lower(coalesce(auth.jwt() ->> 'email', ''))
-      and au.role in ('superuser', 'admin', 'editor', 'viewer')
-  ) or coalesce(auth.jwt() -> 'user_metadata' ->> 'role', '') in ('superuser', 'admin');
+  select public.is_admin();
 $$;
 
 create or replace function public.can_view_location_analytics(location_uuid uuid)

@@ -65,7 +65,9 @@ create table if not exists public.business_ai_recommendations (
   active boolean default true
 );
 
-create or replace view public.business_crm_snapshot as
+create or replace view public.business_crm_snapshot
+with (security_invoker = true)
+as
 select
   l.id,
   l.name,
