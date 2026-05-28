@@ -19,14 +19,15 @@ type ClaimFieldRow = {
 };
 
 const CLAIM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const CLAIM_CODE_LENGTH = 6;
+const CLAIM_CODE_LENGTH = 8;
 
 const missing = (v: unknown) => !String(v ?? "").trim();
+const legacyClaimUrl = (v: unknown) => String(v ?? "").includes("/location/apply/claim") || String(v ?? "").includes("/claim/");
 export function getClaimSiteUrl() { return (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://theouthaven.vercel.app").replace(/\/$/, ""); }
 export function generateClaimToken() { return crypto.randomUUID(); }
-export function generateClaimCode() { return `OH-${Array.from(crypto.randomBytes(CLAIM_CODE_LENGTH), (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length]).join("")}`; }
+export function generateClaimCode() { const raw = Array.from(crypto.randomBytes(CLAIM_CODE_LENGTH), (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length]).join(""); return `TOH-${raw.slice(0, 4)}-${raw.slice(4)}`; }
 export function normalizeClaimCode(value: unknown) { return String(value || "").trim().toUpperCase().replace(/\s+/g, ""); }
-export function getClaimUrl(claimToken: string) { return `${getClaimSiteUrl()}/location/apply/claim?token=${encodeURIComponent(claimToken)}`; }
+export function getClaimUrl(claimCode: string) { return `${getClaimSiteUrl()}/business/claim?code=${encodeURIComponent(normalizeClaimCode(claimCode))}`; }
 async function generateQrDataUrl(claimUrl: string) { return QRCode.toDataURL(claimUrl, { margin: 2, width: 700 }); }
 
 async function isClaimCodeAvailable(code: string, current?: { table: ClaimSourceTable; id: string | number }) {
@@ -46,18 +47,19 @@ export async function generateUniqueClaimCode(current?: { table: ClaimSourceTabl
 }
 
 export async function createClaimQr(_type: ClaimLocationType = "location") {
+  const claim_code = generateClaimCode();
   const claim_token = generateClaimToken();
-  const claim_url = getClaimUrl(claim_token);
+  const claim_url = getClaimUrl(claim_code);
   const qrCodeDataUrl = await generateQrDataUrl(claim_url);
-  return { claim_code: generateClaimCode(), claim_token, claim_url, claim_status: "unclaimed", qr_link: claim_url, claim_qr_url: qrCodeDataUrl, qr_code_data_url: qrCodeDataUrl };
+  return { claim_code, claim_token, claim_url, claim_status: "unclaimed", qr_link: claim_url, claim_qr_url: qrCodeDataUrl, qr_code_data_url: qrCodeDataUrl };
 }
 
 export async function ensureClaimFields(row: ClaimFieldRow, options: { table?: ClaimSourceTable; regenerateCode?: boolean; regenerateToken?: boolean; regenerateQr?: boolean } = {}) {
   const current = options.table && row.id ? { table: options.table, id: row.id } : undefined;
   const claim_code = options.regenerateCode || missing(row.claim_code) ? await generateUniqueClaimCode(current) : normalizeClaimCode(row.claim_code);
   const claim_token = options.regenerateToken || missing(row.claim_token) ? generateClaimToken() : String(row.claim_token);
-  const claim_url = options.regenerateToken || missing(row.claim_url) ? getClaimUrl(claim_token) : String(row.claim_url);
-  const needsQr = options.regenerateQr || options.regenerateToken || missing(row.qr_code_data_url) || missing(row.claim_qr_url);
+  const claim_url = options.regenerateCode || options.regenerateToken || missing(row.claim_url) || legacyClaimUrl(row.claim_url) ? getClaimUrl(claim_code) : String(row.claim_url);
+  const needsQr = options.regenerateQr || options.regenerateCode || options.regenerateToken || legacyClaimUrl(row.claim_url) || missing(row.qr_code_data_url) || missing(row.claim_qr_url);
   const qr_code_data_url = needsQr ? await generateQrDataUrl(claim_url) : String(row.qr_code_data_url || row.claim_qr_url);
   return { claim_code, claim_token, claim_url, claim_status: row.claim_status || "unclaimed", qr_link: missing(row.qr_link) ? claim_url : String(row.qr_link), claim_qr_url: missing(row.claim_qr_url) || needsQr ? qr_code_data_url : String(row.claim_qr_url), qr_code_data_url };
 }
