@@ -1,0 +1,10 @@
+create index if not exists idx_locations_searchability on public.locations (is_searchable, is_hidden, data_status);
+create index if not exists idx_locations_city on public.locations (city);
+create index if not exists idx_locations_borough on public.locations (borough);
+create index if not exists idx_locations_location_type on public.locations (location_type);
+create index if not exists idx_locations_primary_category on public.locations (primary_category);
+create index if not exists idx_locations_cuisine on public.locations (cuisine);
+create index if not exists idx_locations_activity_type on public.locations (activity_type);
+create index if not exists idx_locations_rating_desc on public.locations (rating desc);
+create index if not exists idx_locations_owner_user_id on public.locations (owner_user_id);
+create index if not exists idx_locations_search_document_fts on public.locations using gin (to_tsvector('english', coalesce(search_document, '')));
