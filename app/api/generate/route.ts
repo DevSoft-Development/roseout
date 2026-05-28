@@ -131,7 +131,7 @@ function toCardRecord(item: any) {
 }
 
 function isOutingEligibleLocation(item: any) {
-  return Boolean(item && (item.name || item.title));
+  return Boolean(item && (item.name || item.restaurant_name || item.activity_name || item.title));
 }
 
 function isWithinTheOutHavenServiceArea(item: any) {
@@ -217,6 +217,9 @@ export async function POST(request: Request) {
     needsActivity: intent.needsActivity,
     wantsPairing: intent.wantsPairing,
     addOnIntent: intent.addOnIntent,
+    restaurantIntent: intent.restaurantIntent,
+    restaurantType: intent.restaurantType,
+    requiredRestaurantCategory: intent.requiredRestaurantCategory,
     multiIntentMode: (intent as any).multiIntentMode,
   };
   const locationOnlySearch = Boolean(
@@ -261,6 +264,7 @@ export async function POST(request: Request) {
   setDiagCount(diagnostics, "top_restaurants", topRestaurants);
   setDiagCount(diagnostics, "top_activities", topActivities);
   setDiagCount(diagnostics, "matched_location_results", matchedLocationResults);
+  const isSteakDinnerQuery = /steak|ribeye|filet mignon|porterhouse|sirloin|tomahawk steak|steakhouse|steak house/i.test(input);
 
   if (
     topRestaurants.length === 0 &&
@@ -311,6 +315,22 @@ export async function POST(request: Request) {
   setDiagCount(diagnostics, "ranked_restaurants", result?.restaurants ?? []);
   setDiagCount(diagnostics, "ranked_activities", result?.activities ?? []);
   setDiagCount(diagnostics, "final_pairs", result?.pairs ?? []);
+  if (process.env.NODE_ENV !== "production" && isSteakDinnerQuery) {
+    const steakTerms = ["steakhouse", "steak house", "steak", "american steakhouse", "brazilian steakhouse", "churrasco", "ribeye", "filet mignon", "porterhouse", "sirloin", "tomahawk steak"];
+    const analyze = (row: any) => {
+      const text = [
+        row?.name, row?.restaurant_name, row?.primary_category, row?.cuisine, row?.cuisine_type, row?.restaurant_type, row?.categories, row?.tags, row?.search_document, row?.description,
+      ].map((v) => String(v ?? "").toLowerCase()).join(" ");
+      const matched = steakTerms.filter((term) => text.includes(term));
+      return { name: row?.name ?? row?.restaurant_name ?? "Unknown", steakSignals: matched, includedBecause: matched.length > 0 ? "steak_signal_match" : "fallback_or_generic_rank" };
+    };
+    const steakMatches = topRestaurants.filter((row: any) => analyze(row).steakSignals.length > 0);
+    diagnostics.notes.push(`steak_debug.raw_restaurant_records=${restaurants.length}`);
+    diagnostics.notes.push(`steak_debug.steak_matches=${steakMatches.length}`);
+    diagnostics.notes.push(`steak_debug.top10=${JSON.stringify(topRestaurants.slice(0, 10).map(analyze))}`);
+    diagnostics.notes.push(`steak_debug.fallback_used=${Boolean(fallbackAttempted || result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed)}`);
+    diagnostics.notes.push("steak_debug.hidden_due_to_missing_action_links=false");
+  }
   if (!hasAnySearchRecords({ restaurants: topRestaurants, activities: topActivities, locations: matchedLocationResults })) {
     diagnostics.notes.push(result?.debug?.empty_reason || "no_final_cards");
   }

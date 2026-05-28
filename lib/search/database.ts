@@ -41,6 +41,7 @@ const FOOD_SYNONYMS: Record<string, string[]> = {
   halal: ["halal"],
   fine_dining: ["fine dining", "upscale", "steakhouse"],
 };
+const STEAK_TERMS = ["steakhouse", "steak house", "steak", "american steakhouse", "brazilian steakhouse", "churrasco", "ribeye", "filet mignon", "porterhouse", "sirloin", "tomahawk steak"];
 
 const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
   queens: ["queens", "astoria", "flushing", "long island city", "lic", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "bayside", "corona", "fresh meadows", "rego park", "ozone park", "queens village", "springfield gardens", "rockaway"],
@@ -158,6 +159,8 @@ function restaurantIntentScore(location: Record<string, unknown>, query: string)
   for (const term of mealTerms) if (hay.includes(term)) points += 40;
   if (hay.includes("steakhouse")) points += 35;
   if (hay.includes("steak")) points += 30;
+  if (hay.includes("churrasco") || hay.includes("brazilian steakhouse")) points += 30;
+  if (hay.includes("grill") && STEAK_TERMS.some((term) => hay.includes(term))) points += 15;
   if (hay.includes("dinner")) points += 20;
   if (hay.includes("restaurant")) points += 20;
   if (isActivityOnlyRecord(location)) points -= 100;
@@ -173,6 +176,16 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
     const hay = locationText(location);
     return mealTerms.some((term) => hay.includes(term));
   });
+  const steakIntent = STEAK_TERMS.some((term) => query.toLowerCase().includes(term));
+  if (steakIntent) {
+    const steakStrictMatches = restaurantCandidates.filter((location) => {
+      const hay = locationText(location);
+      return STEAK_TERMS.some((term) => hay.includes(term)) || (hay.includes("grill") && hay.includes("steak"));
+    });
+    if (steakStrictMatches.length > 0) {
+      return { filtered: steakStrictMatches, strictCount: steakStrictMatches.length, fallbackCount: 0 };
+    }
+  }
   if (strictMealMatches.length > 0) return { filtered: strictMealMatches, strictCount: strictMealMatches.length, fallbackCount: 0 };
   return { filtered: restaurantCandidates, strictCount: 0, fallbackCount: restaurantCandidates.length };
 }
