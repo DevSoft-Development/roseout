@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { getUserMetadataRole, resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
+import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,8 +48,11 @@ export async function GET(request: NextRequest) {
   const user = data.user;
   const email = user.email?.toLowerCase();
 
-  const [adminUserResult, profileResult, locationsResult, restaurantsResult] = await Promise.all([
-    supabaseAdmin.from("admin_users").select("id").eq("email", email || "").maybeSingle(),
+  const [adminRole, profileResult, locationsResult, restaurantsResult] = await Promise.all([
+    getAdminLoginRole(supabaseAdmin as any, {
+      id: user.id,
+      email: user.email ?? null,
+    }),
     supabaseAdmin.from("user_profiles").select("role, account_type").eq("id", user.id).maybeSingle(),
     supabaseAdmin.from("locations").select("id").eq("owner_user_id", user.id).limit(1),
     supabaseAdmin.from("restaurants").select("id").eq("owner_user_id", user.id).limit(1),
@@ -58,7 +62,7 @@ export async function GET(request: NextRequest) {
     role: getUserMetadataRole(user),
     profileRole: profileResult.data?.role || null,
     profileAccountType: profileResult.data?.account_type || null,
-    isAdminUser: Boolean(adminUserResult.data),
+    isAdminUser: Boolean(adminRole),
     isLocationOwner: Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length),
     intendedPath,
   });

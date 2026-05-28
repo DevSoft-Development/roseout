@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import { getZipMarketMapping } from "@/lib/zip-market-mapping";
 import { getUserMetadataRole, resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
+import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
 type Tab = "signin" | "signup";
 type SignupStep = 1 | 2;
@@ -103,8 +104,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       return;
     }
 
-    const [adminUserResult, profileResult, locationsResult, restaurantsResult] = await Promise.all([
-      supabase.from("admin_users").select("id").eq("email", user.email?.toLowerCase() || "").maybeSingle(),
+    const [adminRole, profileResult, locationsResult, restaurantsResult] = await Promise.all([
+      getAdminLoginRole(supabase as any, {
+        id: user.id,
+        email: user.email ?? null,
+      }),
       supabase.from("user_profiles").select("role, account_type").eq("id", user.id).maybeSingle(),
       supabase.from("locations").select("id").eq("owner_user_id", user.id).limit(1),
       supabase.from("restaurants").select("id").eq("owner_user_id", user.id).limit(1),
@@ -116,7 +120,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       role: getUserMetadataRole(user),
       profileRole: profileResult.data?.role || null,
       profileAccountType: profileResult.data?.account_type || null,
-      isAdminUser: Boolean(adminUserResult.data),
+      isAdminUser: Boolean(adminRole),
       isLocationOwner: Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length),
       intendedPath: intendedRoute,
     });
