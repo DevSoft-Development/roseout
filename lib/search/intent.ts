@@ -1,5 +1,6 @@
 import { ADD_ON_FOOD_INTENTS, ACTIVITY_INTENTS, GENERIC_MEAL_TERMS, INTENT_ALIASES, MEAL_FOOD_INTENTS, OUTING_PHRASES, SPECIFIC_MEAL_FOOD_INTENTS } from "@/lib/search/taxonomy";
 import type { CanonicalSearchIntent } from "@/lib/search/types";
+import { detectRequestedCuisines, detectRequestedRestaurantCategories } from "@/lib/search/cuisine-matching";
 
 const BOROUGHS = ["brooklyn", "queens", "manhattan", "bronx", "staten island"];
 const NYC_NEIGHBORHOODS = ["astoria", "long island city", "lic", "flushing", "jackson heights", "williamsburg", "harlem", "soho", "chelsea"];
@@ -61,10 +62,12 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     wantsFood || explicitHookahRestaurant || isLocationOnlySearch;
   const finalWantsActivity = (wantsActivity && !isLocationOnlySearch) || (isLocationOnlySearch && !finalWantsFood);
   const hookahOnlyQuery = activityIntents.includes("hookah") && !hasRealMeal;
+  const requestedCuisines = detectRequestedCuisines(normalizedQuery);
+  const requestedCategories = detectRequestedRestaurantCategories(normalizedQuery);
   const steakIntentMatch = STEAK_INTENT_TERMS.some((term) => hit(normalizedQuery, term));
-  const restaurantIntent = steakIntentMatch || finalWantsRestaurant || hasRealMeal;
-  const restaurantType = steakIntentMatch ? "steak" : null;
-  const requiredRestaurantCategory = steakIntentMatch ? "steak" : null;
+  const restaurantIntent = steakIntentMatch || requestedCategories.length > 0 || finalWantsRestaurant || hasRealMeal;
+  const restaurantType = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
+  const requiredRestaurantCategory = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
 
   const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || ["nightlife", "date", "outing"].some((p) => hit(normalizedQuery, p));
   const isOffTopic = !nonOffTopicSignals;
@@ -91,7 +94,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     specificMealFoodIntents: isLocationOnlySearch ? [] : [...new Set(specificMealFoodIntents)],
     addOnFoodIntents,
     activityIntents: isLocationOnlySearch ? [] : [...new Set(activityIntents.map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v)))],
-    cuisines: (isLocationOnlySearch ? [] : mealFoodIntents).filter((v) => ["italian", "mexican", "thai", "chinese", "japanese", "american", "african", "caribbean"].includes(v)),
+    cuisines: isLocationOnlySearch ? [] : [...new Set([...requestedCuisines, ...mealFoodIntents])],
     locations: boroughs,
     neighborhoods,
     boroughs,

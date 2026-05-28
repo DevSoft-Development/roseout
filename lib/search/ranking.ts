@@ -1,3 +1,4 @@
+import { scoreCuisineCategoryMatch, detectRequestedCuisines } from "@/lib/search/cuisine-matching";
 import type { CanonicalSearchIntent } from "@/lib/search/types";
 
 function scoreRecord(record: any, terms: string[]) {
@@ -31,6 +32,8 @@ function scoreRecord(record: any, terms: string[]) {
 }
 
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
+  const query = intent.normalizedQuery || intent.rawQuery || "";
+  const requested = detectRequestedCuisines(query);
   return [...records].sort((a, b) => {
     const strictTerms = intent.specificMealFoodIntents?.length
       ? intent.specificMealFoodIntents
@@ -56,6 +59,11 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
       if (["activity", "nightlife", "event", "hookah lounge", "lounge only"].some((t) => bh.includes(t))) bs -= 120;
     }
 
+    const ad = scoreCuisineCategoryMatch(a, query, true);
+    const bd = scoreCuisineCategoryMatch(b, query, true);
+    as += ad.score; bs += bd.score;
+    const ah = JSON.stringify(a).toLowerCase(); const bh = JSON.stringify(b).toLowerCase();
+    if (requested.length>0) { if (ah.includes("activity") || ah.includes("event")) as -= 100; if (bh.includes("activity")||bh.includes("event")) bs -= 100; }
     return bs - as;
   });
 }
