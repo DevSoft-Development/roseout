@@ -43,7 +43,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "outing_not_found_or_forbidden", message: "Outing not found or access denied." }, { status: 403 });
     }
 
-    await trackEvent({ event_name: "outing_completed", user_id: data.user_id ?? null, location_id: data.location_id ?? null, source_location_id: data.source_location_id ?? null, outing_id: data.id, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } });
+    await Promise.allSettled([
+      trackEvent({ event_name: "outing_completed", event_type: "reservation_completed", user_id: data.user_id ?? null, location_id: data.location_id ?? null, source_location_id: data.source_location_id ?? null, outing_id: data.id, page_path: cleanString(payload?.page_path), source: "outing_complete", metadata: { rating, matched_vibe: payload?.matched_vibe ?? null, would_go_again: payload?.would_go_again ?? null } }),
+      trackEvent({ event_name: "outing_completion_rating_submitted", user_id: data.user_id ?? null, location_id: data.location_id ?? null, source_location_id: data.source_location_id ?? null, outing_id: data.id, source: "outing_complete", metadata: { rating } }),
+    ]);
 
     return NextResponse.json({ ok: true, outing_id: data.id });
   } catch {
