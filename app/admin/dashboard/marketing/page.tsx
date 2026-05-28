@@ -115,7 +115,7 @@ export default async function MarketingCenterPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const params = await searchParams;
   const activeStatus = ["draft", "scheduled", "sent", "failed"].includes(params.status || "") ? params.status : "all";
   const copy = prefillCopy(params);

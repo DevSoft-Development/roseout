@@ -2,7 +2,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 export async function POST(req: Request) {
   const { error, supabase, adminUser } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
     "admin",
     "editor",
   ]);

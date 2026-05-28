@@ -331,7 +331,7 @@ async function backfillTable(
 async function requireBackfillAuthorization(request: NextRequest) {
   if (hasSecretAuthorization(request)) return null;
 
-  const { error } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   return error;
 }
 

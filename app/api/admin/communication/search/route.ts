@@ -1,7 +1,7 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 export async function GET(request: Request) {
-  const { error, supabase } = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const { error, supabase } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (error) return error;
 
   const { searchParams } = new URL(request.url);

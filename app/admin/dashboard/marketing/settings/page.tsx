@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MarketingSettingsPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   const { data } = await supabaseAdmin.from("marketing_settings").select("key,value");
   const initialSettings = Object.fromEntries((data || []).map((row) => [row.key, row.value]));

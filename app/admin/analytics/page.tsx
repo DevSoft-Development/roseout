@@ -37,7 +37,7 @@ function percent(part: number, total: number) {
 }
 
 export default async function AdminAnalyticsPage() {
-  await requireAdminRole(["superuser", "admin", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "viewer"]);
 
   const [restaurantsResult, activitiesResult, recentEventsResult, reservationsResult] =
     await Promise.all([

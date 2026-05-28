@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
+import { normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
 type ApiResponse = {
   error?: string;
@@ -26,7 +27,7 @@ export default function AddUserPage() {
       first_name: String(form.get("first_name") || "").trim(),
       last_name: String(form.get("last_name") || "").trim(),
       phone: String(form.get("phone") || "").trim() || null,
-      role: String(form.get("role") || "user"),
+      role: normalizeRole(String(form.get("role") || "user")),
       assigned_location_id: String(form.get("assigned_location_id") || "").trim() || null,
       status: String(form.get("status") || "invited"),
       send_invite: sendInvite,
@@ -80,7 +81,11 @@ export default function AddUserPage() {
             <input name="email" required type="email" placeholder="user@email.com" className="h-12 rounded-2xl border border-black/10 px-4 font-bold" />
             <input name="phone" placeholder="Phone (optional)" className="h-12 rounded-2xl border border-black/10 px-4 font-bold" />
             <select name="role" className="h-12 rounded-2xl border border-black/10 px-4 font-bold">
-              <option value="user">Customer / User</option><option value="owner">Location Owner</option><option value="admin">Admin</option>
+              {USER_ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
             <input name="assigned_location_id" placeholder="Assigned location ID (owner only)" className="h-12 rounded-2xl border border-black/10 px-4 font-bold" />
             <select name="status" className="h-12 rounded-2xl border border-black/10 px-4 font-bold"><option value="invited">Invited</option><option value="active">Active</option></select>

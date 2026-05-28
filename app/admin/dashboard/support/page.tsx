@@ -43,7 +43,7 @@ function statusClass(status: string | null | undefined) {
 }
 
 export default async function AdminSupportPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "reviewer", "viewer"]);
 
   const supportTickets = await listSupportTickets(75);
   const openTickets = supportTickets.filter((ticket) => isOpenStatus(ticket.status));

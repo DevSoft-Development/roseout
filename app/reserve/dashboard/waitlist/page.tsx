@@ -32,7 +32,7 @@ function formatSlot(date: string, time: string) {
 }
 
 export default async function ReservationWaitlistDashboardPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   const { data: waitlist } = await supabaseAdmin
     .from("reservation_waitlist")

@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 export default async function UserEditPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  await requireAdminRole(["superuser", "admin"]);
+  await requireAdminRole(["superadmin", "admin"]);
   const params = await searchParams;
   const q = (params.q || "").trim();
 

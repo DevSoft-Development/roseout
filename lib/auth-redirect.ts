@@ -1,5 +1,3 @@
-import type { User } from "@supabase/supabase-js";
-
 type RedirectResolutionInput = {
   role?: string | null;
   profileRole?: string | null;
@@ -9,7 +7,7 @@ type RedirectResolutionInput = {
   intendedPath?: string | null;
 };
 
-const ADMIN_ROLES = new Set(["admin", "super_admin", "superuser"]);
+const ADMIN_ROLES = new Set(["admin", "super_admin", "superadmin"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
 
 function normalizeRole(value: string | null | undefined): string | null {
@@ -41,7 +39,6 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
   return sanitizeIntendedPath(input.intendedPath) || "/create";
 }
 
-export function getUserMetadataRole(user: User | null | undefined): string | null {
-  const metadataRole = user?.user_metadata?.role;
-  return typeof metadataRole === "string" ? metadataRole : null;
+export function getUserMetadataRole(_user: unknown): string | null {
+  return null;
 }

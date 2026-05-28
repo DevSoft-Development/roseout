@@ -8,6 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminLocationLayoutCreatePage() {
-  await requireAdminRole(["superuser", "admin", "editor"]);
+  await requireAdminRole(["superadmin", "admin", "editor"]);
   return <LocationLayoutClient backHref="/admin/dashboard/location-layout" createMode adminMode />;
 }

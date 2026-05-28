@@ -5,7 +5,7 @@ export const metadata = {
 };
 
 export default async function Page() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   return (
     <main className="min-h-screen bg-[#090706] p-6 text-white">

@@ -1,12 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
-
-export type AdminRole =
-  | "superuser"
-  | "admin"
-  | "editor"
-  | "reviewer"
-  | "viewer";
+import { ADMIN_ROLES, isAdminRole, normalizeRole, type AdminRole } from "@/lib/users/roles";
 
 type AdminUser = {
   id: string;
@@ -15,43 +9,7 @@ type AdminUser = {
   role: AdminRole;
 };
 
-function isAdminRole(role: unknown): role is AdminRole {
-  return (
-    role === "superuser" ||
-    role === "admin" ||
-    role === "editor" ||
-    role === "reviewer" ||
-    role === "viewer"
-  );
-}
-
-export function getMetadataAdminUser(user: {
-  id: string;
-  email?: string | null;
-  user_metadata?: {
-    role?: unknown;
-    full_name?: unknown;
-    name?: unknown;
-  };
-}): AdminUser | null {
-  if (!user.email || !isAdminRole(user.user_metadata?.role)) {
-    return null;
-  }
-
-  const metadataName =
-    typeof user.user_metadata?.full_name === "string"
-      ? user.user_metadata.full_name
-      : typeof user.user_metadata?.name === "string"
-        ? user.user_metadata.name
-        : null;
-
-  return {
-    id: user.id,
-    email: user.email.toLowerCase(),
-    full_name: metadataName,
-    role: user.user_metadata.role,
-  };
-}
+export { ADMIN_ROLES, isAdminRole, type AdminRole };
 
 export async function getCurrentAdmin() {
   const supabase = await createClient();
@@ -70,23 +28,22 @@ export async function getCurrentAdmin() {
     .eq("email", user.email.toLowerCase())
     .maybeSingle();
 
-  if (adminUser) {
-    return adminUser;
-  }
+  const normalizedRole = normalizeRole(adminUser?.role);
 
-  const metadataAdminUser = getMetadataAdminUser(user);
-
-  if (!metadataAdminUser) {
+  if (!adminUser || !isAdminRole(normalizedRole)) {
     redirect("/login");
   }
 
-  return metadataAdminUser;
+  return {
+    ...adminUser,
+    role: normalizedRole,
+  } satisfies AdminUser;
 }
 
 export async function requireAdminRole(allowedRoles: AdminRole[]) {
   const adminUser = await getCurrentAdmin();
 
-  if (!allowedRoles.includes(adminUser.role as AdminRole)) {
+  if (!allowedRoles.includes(adminUser.role)) {
     redirect("/admin/unauthorized");
   }
 

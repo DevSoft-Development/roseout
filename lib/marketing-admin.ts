@@ -1,8 +1,8 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export const MARKETING_ADMIN_ROLES = ["superuser", "admin", "editor"] as const;
-export const MARKETING_VIEW_ROLES = ["superuser", "admin", "editor", "viewer"] as const;
+export const MARKETING_ADMIN_ROLES = ["superadmin", "admin", "editor"] as const;
+export const MARKETING_VIEW_ROLES = ["superadmin", "admin", "editor", "viewer"] as const;
 
 export type CampaignStatus = "draft" | "scheduled" | "sent" | "failed";
 export type CampaignType = "social_post" | "email_blast" | "text_blast" | "all_channels";

@@ -10,8 +10,8 @@ type PageProps = {
 };
 
 export default async function AdminSupportTicketPage({ params }: PageProps) {
-  const adminUser = await requireAdminRole(["superuser", "admin", "editor", "reviewer", "viewer"]);
-  const canManageTicket = ["superuser", "admin"].includes(adminUser.role);
+  const adminUser = await requireAdminRole(["superadmin", "admin", "editor", "reviewer", "viewer"]);
+  const canManageTicket = ["superadmin", "admin"].includes(adminUser.role);
 
   const { id } = await params;
   const ticket = await getSupportTicket(id);
@@ -23,7 +23,7 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
     ? await supabaseAdmin
         .from("admin_users")
         .select("email, full_name, role")
-        .in("role", ["superuser", "admin", "editor", "reviewer", "viewer"])
+        .in("role", ["superadmin", "admin", "editor", "reviewer", "viewer"])
         .order("email", { ascending: true })
     : { data: [] };
 

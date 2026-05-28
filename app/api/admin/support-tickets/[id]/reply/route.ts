@@ -4,7 +4,7 @@ import { buildReplySubject, SUPPORT_EMAIL_FROM } from "@/lib/support/ticketing";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error, supabase, adminUser } = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const { error, supabase, adminUser } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (error) return error;
   const body = await request.json();
 

@@ -5,7 +5,7 @@ import { getLocationName } from "@/lib/locationName";
 export const dynamic = "force-dynamic";
 
 export default async function AdminBillingPage() {
-  await requireAdminRole(["superuser", "admin"]);
+  await requireAdminRole(["superadmin", "admin"]);
 
   const { data: locations } = await supabaseAdmin
     .from("locations")

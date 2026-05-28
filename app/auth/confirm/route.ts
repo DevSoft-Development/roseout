@@ -51,12 +51,20 @@ export async function GET(request: NextRequest) {
 
   const user = data.user;
 
-  if (user.user_metadata?.role === "superuser") {
-    response.headers.set("Location", `${siteUrl}/admin/dashboard`);
-    return response;
-  }
-
   const email = user.email?.toLowerCase();
+
+  if (email) {
+    const { data: adminUser } = await supabaseAdmin
+      .from("admin_users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (adminUser) {
+      response.headers.set("Location", `${siteUrl}/admin/dashboard`);
+      return response;
+    }
+  }
 
   if (!email) {
     response.headers.set("Location", `${siteUrl}/restaurants/apply`);
@@ -100,12 +108,6 @@ await supabaseAdmin.from("restaurant_events").insert({
       owner_email: email,
     })
     .eq("id", restaurant.id);
-
-  await supabaseAdmin.auth.admin.updateUserById(user.id, {
-    user_metadata: {
-      role: "restaurants",
-    },
-  });
 
   response.headers.set("Location", `${siteUrl}/restaurants/dashboard`);
   return response;

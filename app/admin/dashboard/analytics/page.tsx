@@ -6,7 +6,7 @@ import BusinessAnalyticsDashboard from "@/components/analytics/BusinessAnalytics
 export const dynamic = "force-dynamic";
 
 export default async function AdminAnalyticsPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   const { data: locations } = await supabaseAdmin
     .from("locations")

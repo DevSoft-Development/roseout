@@ -11,7 +11,7 @@ function isTable(value: unknown): value is Table {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
   if (auth.error) return auth.error;
 
   try {

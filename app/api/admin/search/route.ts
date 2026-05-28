@@ -11,7 +11,7 @@ function escapeSearch(value: string) {
 export async function GET(req: Request) {
   try {
     const { error: authError, supabase } = await requireAdminApiRole([
-      "superuser",
+      "superadmin",
       "admin",
       "editor",
       "viewer",

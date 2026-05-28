@@ -70,7 +70,7 @@ function mapSource(row: Record<string, unknown>, table: "restaurants" | "activit
 }
 
 export async function GET(req: Request) {
-  const auth = await requireAdminApiRole(["superuser", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
   if (auth.error) return auth.error;
 
   const { searchParams } = new URL(req.url);

@@ -3,7 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { getBusinessCRM, getUpgradeFlags } from "@/lib/admin-crm";
 
 export default async function BusinessCRMDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const { id } = await params;
   const business = await getBusinessCRM(id);
 

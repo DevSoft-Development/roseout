@@ -3,18 +3,17 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
-
-const SUPPORTED_ROLES = ["user", "owner", "admin"] as const;
+import { isAdminRole, isUserRole, normalizeRole } from "@/lib/users/roles";
 
 export async function POST(request: Request) {
-  const { error, adminUser } = await requireAdminApiRole(["superuser", "admin"]);
+  const { error, adminUser } = await requireAdminApiRole(["superadmin", "admin"]);
   if (error) return error;
 
   const body = await request.json();
   const email = String(body.email || "").trim().toLowerCase();
   const firstName = String(body.first_name || "").trim();
   const lastName = String(body.last_name || "").trim();
-  const role = String(body.role || "user");
+  const role = normalizeRole(String(body.role || "user"));
   const sendInvite = Boolean(body.send_invite ?? true);
   const phone = body.phone ? String(body.phone).trim() : null;
 
@@ -22,7 +21,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Valid email is required." }, { status: 400 });
   }
 
-  if (!SUPPORTED_ROLES.includes(role as (typeof SUPPORTED_ROLES)[number])) {
+  if (!isUserRole(role)) {
     return Response.json({ error: "Unsupported role." }, { status: 400 });
   }
 
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
 
   const created = await supabaseAdmin.auth.admin.createUser({
     email,
-    user_metadata: { role: normalizePasswordSetupRole(role), first_name: firstName, last_name: lastName },
+    user_metadata: { first_name: firstName, last_name: lastName },
     email_confirm: true,
   });
 
@@ -49,6 +48,17 @@ export async function POST(request: Request) {
     role: normalizePasswordSetupRole(role),
     status: "invited",
   }, { onConflict: "id" });
+
+  if (isAdminRole(role)) {
+    await supabaseAdmin.from("admin_users").upsert(
+      {
+        email,
+        full_name: `${firstName} ${lastName}`.trim() || null,
+        role,
+      },
+      { onConflict: "email" },
+    );
+  }
 
   await supabaseAdmin
     .from("password_setup_tokens")

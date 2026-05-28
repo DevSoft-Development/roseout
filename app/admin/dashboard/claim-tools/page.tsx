@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminClaimToolsPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white print:bg-white print:p-0">

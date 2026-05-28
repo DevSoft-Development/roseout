@@ -17,7 +17,7 @@ const checks = [
 ];
 
 export default async function LaunchChecklistPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   return (
     <main className="min-h-screen bg-[#090706] p-6 text-white">

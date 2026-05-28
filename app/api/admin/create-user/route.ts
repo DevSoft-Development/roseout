@@ -1,22 +1,13 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-
-const VALID_ROLES = [
-  "user",
-  "owner",
-  "viewer",
-  "editor",
-  "reviewer",
-  "admin",
-  "superuser",
-];
+import { isAdminRole, isUserRole, normalizeRole } from "@/lib/users/roles";
 
 function cleanString(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireAdminApiRole(["superuser", "admin"]);
+  const { error } = await requireAdminApiRole(["superadmin", "admin"]);
 
   if (error) return error;
 
@@ -24,7 +15,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const email = cleanString(formData.get("email")).toLowerCase();
     const password = cleanString(formData.get("password"));
-    const role = cleanString(formData.get("role")) || "user";
+    const role = normalizeRole(cleanString(formData.get("role")) || "user");
 
     if (!email || !password) {
       return Response.json(
@@ -33,7 +24,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!VALID_ROLES.includes(role)) {
+    if (!isUserRole(role)) {
       return Response.json({ error: "Invalid role." }, { status: 400 });
     }
 
@@ -41,9 +32,6 @@ export async function POST(request: Request) {
       email,
       password,
       email_confirm: true,
-      user_metadata: {
-        role,
-      },
     });
 
     if (createError || !data.user) {
@@ -62,7 +50,7 @@ export async function POST(request: Request) {
       { onConflict: "id" }
     );
 
-    if (["superuser", "admin", "editor", "reviewer", "viewer"].includes(role)) {
+    if (isAdminRole(role)) {
       await supabaseAdmin.from("admin_users").upsert(
         {
           email,

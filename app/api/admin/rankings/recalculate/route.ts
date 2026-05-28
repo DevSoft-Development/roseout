@@ -35,7 +35,7 @@ function getBadge(score: number, trendScore: number, conversionScore: number) {
 
 export async function POST() {
   const { error, supabase } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
     "admin",
   ]);
 

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ReserveDashboardLocationLayoutPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   return <LocationLayoutClient backHref="/reserve/dashboard" />;
 }

@@ -8,6 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminReservationDiscoveryPage() {
-  await requireAdminRole(["superuser", "admin", "editor"]);
+  await requireAdminRole(["superadmin", "admin", "editor"]);
   return <ReservationDiscoveryClient />;
 }

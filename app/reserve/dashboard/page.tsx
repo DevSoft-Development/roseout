@@ -110,7 +110,7 @@ function estimateCapacityNeeded(partySize: number | null | undefined) {
 }
 
 export default async function ReserveDashboardPage() {
-  await requireAdminRole(["superuser", "admin", "editor", "viewer"]);
+  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
 
   const now = new Date();
   const today = dateKey(now);

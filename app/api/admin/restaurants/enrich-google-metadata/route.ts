@@ -140,7 +140,7 @@ async function requireAuthorization(request: NextRequest) {
   }
 
   const { error } = await requireAdminApiRole([
-    "superuser",
+    "superadmin",
     "admin",
     "editor",
   ]);
