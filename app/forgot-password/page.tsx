@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase-browser";
+import { type TurnstileInstance } from "@marsidev/react-turnstile";
+import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance | null>(null);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,25 +24,37 @@ export default function ForgotPasswordPage() {
       return;
     }
 
+    if (!captchaToken) {
+      setError("Please complete the CAPTCHA.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
-      );
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), captchaToken }),
+      });
 
-      if (resetError) {
-        setError(resetError.message);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Something went wrong.");
+        turnstileRef.current?.reset();
+        setCaptchaToken(null);
         return;
       }
 
-      setMessage("Password reset link sent. Please check your email.");
+      setMessage("If an account exists for that email, a password reset link was sent.");
       setEmail("");
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
     } catch (err: any) {
       setError(err.message || "Something went wrong.");
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
     } finally {
       setLoading(false);
     }
@@ -84,9 +97,14 @@ export default function ForgotPasswordPage() {
           className="mt-2 w-full rounded-2xl border border-neutral-300 px-4 py-3 outline-none focus:border-yellow-500"
         />
 
+
+        <div className="mt-6">
+          <TurnstileWidget onTokenChange={setCaptchaToken} turnstileRef={turnstileRef} />
+        </div>
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !captchaToken}
           className="mt-6 w-full rounded-full bg-yellow-500 px-6 py-4 font-extrabold text-black disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Sending..." : "Send Reset Link"}
