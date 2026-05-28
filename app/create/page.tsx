@@ -330,7 +330,7 @@ export default function CreatePage() {
     const params = new URLSearchParams(window.location.search);
     const campaignSlug = params.get("campaignSlug")?.trim();
     const planExact = params.get("planExact") === "true";
-    const prompt = params.get("prompt")?.trim();
+    const prompt = params.get("prompt")?.trim() || params.get("q")?.trim() || params.get("query")?.trim();
 
     if (planExact && campaignSlug) {
       initialPromptHandled.current = true;
@@ -339,6 +339,14 @@ export default function CreatePage() {
     }
 
     if (!prompt) return;
+
+    if (!params.get("prompt")) {
+      const nextParams = new URLSearchParams(params);
+      nextParams.set("prompt", prompt);
+      nextParams.delete("q");
+      nextParams.delete("query");
+      router.replace(`/create?${nextParams.toString()}`);
+    }
 
     initialPromptHandled.current = true;
     window.setTimeout(() => {
