@@ -7,13 +7,23 @@ export async function isAdmin() {
   const { data } = await supabase.auth.getUser();
   const email = data.user?.email?.toLowerCase();
 
-  if (!email) return false;
+  const userId = data.user?.id;
 
-  const { data: adminUser } = await supabase
+  if (!email || !userId) return false;
+
+  const { data: adminUserById } = await supabase
     .from("admin_users")
     .select("role")
-    .eq("email", email)
+    .eq("user_id", userId)
     .maybeSingle();
 
-  return isAdminRole(adminUser?.role);
+  const { data: adminUserByEmail } = adminUserById
+    ? { data: null }
+    : await supabase
+        .from("admin_users")
+        .select("role")
+        .eq("email", email)
+        .maybeSingle();
+
+  return isAdminRole((adminUserById ?? adminUserByEmail)?.role);
 }

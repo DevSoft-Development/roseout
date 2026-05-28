@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
-import { ADMIN_ROLES, normalizeRole } from "@/lib/users/roles";
+import { getAdminLoginRole } from "@/lib/auth/get-login-destination";
 
 export type OwnerAccess = {
   isAdmin: boolean;
@@ -10,15 +10,10 @@ export type OwnerAccess = {
 
 export async function getLocationOwnerAccess(userId: string): Promise<OwnerAccess> {
   const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
-
-  const role = normalizeRole(typeof profile?.role === "string" ? profile.role.trim().toLowerCase() : null);
-  const isAdmin = (ADMIN_ROLES as readonly string[]).includes(role);
-  const isSuperadmin = role === "superadmin";
+  const { data: user } = await supabase.auth.getUser();
+  const adminRole = user.user?.id === userId ? await getAdminLoginRole(supabase, user.user) : null;
+  const isAdmin = Boolean(adminRole);
+  const isSuperadmin = adminRole === "superadmin";
 
   const ownedLocationIds = new Set<string>();
   const ownedSourceLocationIds = new Set<string>();
@@ -28,12 +23,12 @@ export async function getLocationOwnerAccess(userId: string): Promise<OwnerAcces
       .from("business_claims")
       .select("location_id,source_location_id")
       .eq("user_id", userId)
-      .eq("status", "approved"),
+      .in("status", ["approved", "verified", "active"]),
     supabase
       .from("location_owner_locations")
       .select("location_id,source_location_id")
       .eq("user_id", userId)
-      .eq("status", "active"),
+      .in("status", ["active", "approved", "verified"]),
     supabase.from("locations").select("id").eq("owner_user_id", userId),
   ]);
 

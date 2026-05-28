@@ -22,12 +22,21 @@ export async function getCurrentAdmin() {
     redirect("/login");
   }
 
-  const { data: adminUser } = await supabase
+  const { data: adminUserById } = await supabase
     .from("admin_users")
     .select("id, email, full_name, role")
-    .eq("email", user.email.toLowerCase())
+    .eq("user_id", user.id)
     .maybeSingle();
 
+  const { data: adminUserByEmail } = adminUserById
+    ? { data: null }
+    : await supabase
+        .from("admin_users")
+        .select("id, email, full_name, role")
+        .eq("email", user.email.toLowerCase())
+        .maybeSingle();
+
+  const adminUser = adminUserById ?? adminUserByEmail;
   const normalizedRole = normalizeRole(adminUser?.role);
 
   if (!adminUser || !isAdminRole(normalizedRole)) {
