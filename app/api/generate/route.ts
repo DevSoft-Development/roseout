@@ -165,6 +165,7 @@ async function fetchFallbackRecords(input: string = "") {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const body = await request.json().catch(() => ({}));
   const input =
     typeof body?.message === "string"
@@ -343,7 +344,7 @@ export async function POST(request: Request) {
           ? "Found activity matches. Restaurant inventory is limited for this request."
           : result?.reply ?? "No matching records found yet.";
 
-  return Response.json({
+  const response = {
     ...result,
     reply: finalReply,
     restaurants: topRestaurants,
@@ -373,5 +374,8 @@ export async function POST(request: Request) {
       fallback_used: fallbackAttempted || Boolean(result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed),
       no_results_reason: result?.debug?.empty_reason ?? null,
     },
-  });
+  };
+  const resultCount = response.restaurants.length + response.activities.length + response.matched_locations.length;
+  console.log("ROUTE_TIMING", JSON.stringify({ route: "/api/generate", total_ms: Date.now() - startedAt, db_ms: 0, cache_status: "miss", result_count: resultCount }));
+  return Response.json(response);
 }

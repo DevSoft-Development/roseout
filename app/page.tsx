@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import RecoveryRedirect from "@/components/RecoveryRedirect";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
@@ -7,8 +8,7 @@ import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "TheOutHaven | Plan Better OUTings",
@@ -111,7 +111,13 @@ export default async function HomePage() {
 }
 
 async function loadHomepageSections() {
-  const { data } = await supabaseAdmin.from("locations").select("*").limit(500);
+  const { data } = await supabaseAdmin
+    .from("locations")
+    .select("id,type,source_table,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,is_searchable,is_hidden,data_status")
+    .eq("is_searchable", true)
+    .neq("is_hidden", true)
+    .eq("data_status", "clean")
+    .limit(500);
   const uniqueLocations = dedupeLocations(((data || []) as HomeLocation[]).filter((l) => Boolean(getLocationName(l, ""))));
 
   const seed = Math.floor(Date.now() / (1000 * 60 * 60 * 6));
@@ -157,7 +163,7 @@ function CarouselSection({ title, subtitle, locations }: { title: string; subtit
 function PlaceCard({ location }: { location: HomeLocation }) {
   const tags = getCardChips(location);
   const reserveHref = location.external_reservation_url || location.reservation_url || location.website || null;
-  return <article className="group flex h-full min-h-[340px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/80 p-3 shadow-2xl shadow-black/30"><div className="relative h-44 w-full overflow-hidden rounded-2xl"><img src={getLocationImage(location)} alt={getLocationName(location)} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div><div className="mt-3 flex flex-1 flex-col"><h4 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{getLocationName(location)}</h4><p className="line-clamp-1 text-sm text-white/65">{getPrimaryCategory(location)} · {location.neighborhood || location.city || "New York"}</p><p className="line-clamp-1 text-xs text-white/60">{[getCuisine(location) || location.activity_type, location.rating ? `${location.rating.toFixed(1)} ★` : null].filter(Boolean).join(" · ") || "Curated on TheOutHaven"}</p><div className="mt-3 min-h-[3rem]">{tags.length ? <div className="flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-black text-white/80">{tag}</span>)}</div> : null}</div><div className="mt-auto flex items-center gap-2 pt-4"><Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="inline-block rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve / Visit</a> : null}</div></div></article>;
+  return <article className="group flex h-full min-h-[340px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/80 p-3 shadow-2xl shadow-black/30"><div className="relative h-44 w-full overflow-hidden rounded-2xl"><Image src={getLocationImage(location)} alt={getLocationName(location)} loading="lazy" fill sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div><div className="mt-3 flex flex-1 flex-col"><h4 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{getLocationName(location)}</h4><p className="line-clamp-1 text-sm text-white/65">{getPrimaryCategory(location)} · {location.neighborhood || location.city || "New York"}</p><p className="line-clamp-1 text-xs text-white/60">{[getCuisine(location) || location.activity_type, location.rating ? `${location.rating.toFixed(1)} ★` : null].filter(Boolean).join(" · ") || "Curated on TheOutHaven"}</p><div className="mt-3 min-h-[3rem]">{tags.length ? <div className="flex flex-wrap gap-2">{tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-black text-white/80">{tag}</span>)}</div> : null}</div><div className="mt-auto flex items-center gap-2 pt-4"><Link href={getLocationDetailHref({ id: location.id, type: location.type })} className="inline-block rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View Experience</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="inline-block rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve / Visit</a> : null}</div></div></article>;
 }
 
 function normalizeLabel(value: unknown): string {

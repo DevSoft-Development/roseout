@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
@@ -6,8 +7,7 @@ import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 300;
 
 type ExploreLocation = {
   id: string;
@@ -74,7 +74,13 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
 }
 
 async function loadExploreData() {
-  const { data } = await supabaseAdmin.from("locations").select("*").eq("is_searchable", true).neq("is_hidden", true).eq("data_status", "clean").limit(1200);
+  const { data } = await supabaseAdmin
+    .from("locations")
+    .select("id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,atmosphere,best_for,date_style_tags,search_keywords,reservation_url,external_reservation_url,website,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,created_at,is_searchable,is_hidden,data_status")
+    .eq("is_searchable", true)
+    .neq("is_hidden", true)
+    .eq("data_status", "clean")
+    .limit(24);
   return { locations: dedupeById((data || []) as ExploreLocation[]).filter((row) => Boolean(getLocationName(row, "").trim())) };
 }
 
@@ -95,7 +101,7 @@ function SectionRow({ title, items }: { title: string; items: ExploreLocation[] 
   return <section><h2 className="mb-4 text-2xl font-black">{title}</h2><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{items.slice(0, 4).map((location) => <LocationCard key={`${title}-${location.id}`} location={location} />)}</div></section>;
 }
 
-function LocationCard({ location }: { location: ExploreLocation }) { const rating = location.rating || location.score; const reserveHref = location.external_reservation_url || location.reservation_url || location.website; const detailHref = getLocationDetailHref({ id: location.id, type: location.type || location.source_table }); return <article className="group flex min-h-[350px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-3"><div className="relative h-44 overflow-hidden rounded-2xl"><img src={getLocationImage(location)} alt={getLocationName(location)} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div><div className="mt-3 flex flex-1 flex-col"><h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{getLocationName(location)}</h3><p className="line-clamp-1 text-sm text-white/70">{getPrimaryCategory(location)} · {location.borough || location.city || "New York"}</p><p className="line-clamp-1 text-xs text-white/65">{[getCuisine(location) || location.activity_type, rating ? `${rating.toFixed(1)} ★` : null].filter(Boolean).join(" · ") || "Curated on TheOutHaven"}</p><div className="mt-auto flex gap-2 pt-4"><Link href={detailHref} className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve</a> : null}</div></div></article>; }
+function LocationCard({ location }: { location: ExploreLocation }) { const rating = location.rating || location.score; const reserveHref = location.external_reservation_url || location.reservation_url || location.website; const detailHref = getLocationDetailHref({ id: location.id, type: location.type || location.source_table }); return <article className="group flex min-h-[350px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-3"><div className="relative h-44 overflow-hidden rounded-2xl"><Image src={getLocationImage(location)} alt={getLocationName(location)} fill sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div><div className="mt-3 flex flex-1 flex-col"><h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{getLocationName(location)}</h3><p className="line-clamp-1 text-sm text-white/70">{getPrimaryCategory(location)} · {location.borough || location.city || "New York"}</p><p className="line-clamp-1 text-xs text-white/65">{[getCuisine(location) || location.activity_type, rating ? `${rating.toFixed(1)} ★` : null].filter(Boolean).join(" · ") || "Curated on TheOutHaven"}</p><div className="mt-auto flex gap-2 pt-4"><Link href={detailHref} className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve</a> : null}</div></div></article>; }
 
 function buildSections(locations: ExploreLocation[]) {
   const used = new Set<string>();
