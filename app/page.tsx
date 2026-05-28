@@ -68,14 +68,15 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <section className="rounded-[1.8rem] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
-            <h2 className="text-2xl font-black sm:text-3xl">One platform for premium nights out.</h2>
-            <p className="mt-3 max-w-3xl text-white/70">TheOutHaven curates quality locations, personalized recommendations, and seamless planning so every outing feels intentional.</p>
-          </section>
+          <HomeSearchPrompt />
 
           <CarouselSection title="Featured Date Night Collections" subtitle="Curated romantic and social-ready picks for your next plan." locations={sections.featuredDateNightCollections} />
+          <PlanByOccasion />
           <CarouselSection title="Popular Restaurants" subtitle="High-performing dining destinations people keep choosing." locations={sections.popularRestaurants} />
           <CarouselSection title="Popular Activities" subtitle="Top experiences for birthdays, celebrations, and group outings." locations={sections.popularActivities} />
+          <TonightsVibe />
+          <PopularAreas />
+          <WhyUseTheOutHaven />
 
           <section className="rounded-[1.8rem] border border-white/10 bg-white/[0.03] p-6 sm:p-8">
             <h2 className="text-2xl font-black">How TheOutHaven works</h2>
@@ -108,6 +109,31 @@ export default async function HomePage() {
       </section>
     </main>
   );
+}
+
+function HomeSearchPrompt() {
+  const chips = ["Steak dinner and hookah in Queens", "Romantic rooftop", "Birthday dinner", "Brunch and activity"];
+  return <section className="rounded-[1.8rem] border border-white/10 bg-white/[0.03] p-6 sm:p-8"><h2 className="text-2xl font-black sm:text-3xl">What kind of outing are you planning?</h2><p className="mt-2 max-w-3xl text-white/70">Tell TheOutHaven the vibe, area, food, or activity you want — we&apos;ll help match the plan.</p><div className="mt-5 flex flex-col gap-3 sm:flex-row"><Link href="/create" className="flex-1 rounded-full border border-white/15 bg-black/30 px-5 py-3 text-left text-sm text-white/65 transition hover:border-white/30">Try: steak dinner and hookah in Queens</Link><Link href="/create" className="rounded-full bg-[#e1062a] px-6 py-3 text-center text-sm font-black hover:bg-red-500">Start Planning</Link></div><div className="mt-4 flex flex-wrap gap-2">{chips.map((chip) => <Link key={chip} href={`/create?prompt=${encodeURIComponent(chip)}`} className="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-xs font-black text-white/80 transition hover:border-white/25 hover:bg-white/[0.08]">{chip}</Link>)}</div></section>;
+}
+
+function PlanByOccasion() {
+  const cards = [{ title: "Birthday", description: "Plan a celebration dinner with the right energy.", prompt: "Birthday dinner with music" }, { title: "Date Night", description: "Build a romantic night with dinner and atmosphere.", prompt: "Romantic date night" }, { title: "Girls’ Night", description: "Mix dinner, drinks, and a social-ready spot.", prompt: "Girls night dinner and drinks" }, { title: "After Work Drinks", description: "Find a quick reset with food and cocktails.", prompt: "After work drinks and food" }];
+  return <section><div className="mb-4"><h2 className="text-3xl font-black">Plan by Occasion</h2><p className="mt-1 text-sm text-white/65">Start with the moment — we&apos;ll help shape the plan.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map((card) => <Link key={card.title} href={`/create?prompt=${encodeURIComponent(card.prompt)}`} className="group flex min-h-[172px] flex-col rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/20 hover:bg-white/[0.06]"><h3 className="text-lg font-black">{card.title}</h3><p className="mt-2 text-sm text-white/70">{card.description}</p><p className="mt-auto pt-4 text-xs font-black uppercase tracking-[0.16em] text-white/75 group-hover:text-white">Start planning</p></Link>)}</div></section>;
+}
+
+function TonightsVibe() {
+  const vibes = [{ label: "Romantic", prompt: "Romantic date night" }, { label: "Lively", prompt: "Lively dinner and lounge" }, { label: "Upscale", prompt: "Upscale restaurant and activity" }, { label: "Chill", prompt: "Chill food and activity nearby" }];
+  return <section><div className="mb-4"><h2 className="text-3xl font-black">Tonight&apos;s Vibe</h2><p className="mt-1 text-sm text-white/65">Pick the mood and let TheOutHaven guide the plan.</p></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{vibes.map((vibe) => <Link key={vibe.label} href={`/create?prompt=${encodeURIComponent(vibe.prompt)}`} className="flex min-h-[92px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-center text-sm font-black transition hover:border-white/20 hover:bg-white/[0.07]">{vibe.label}</Link>)}</div></section>;
+}
+
+function PopularAreas() {
+  const areas = ["Queens", "Brooklyn", "Manhattan", "Astoria", "Jamaica", "Williamsburg", "Harlem", "Long Island City"];
+  return <section><div className="mb-4"><h2 className="text-3xl font-black">Popular Areas</h2><p className="mt-1 text-sm text-white/65">Browse outing ideas around the neighborhoods people search most.</p></div><div className="flex flex-wrap gap-2">{areas.map((area) => <Link key={area} href={`/explore?borough=${encodeURIComponent(area)}`} className="rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/85 transition hover:border-white/25 hover:bg-white/[0.08]">{area}</Link>)}</div></section>;
+}
+
+function WhyUseTheOutHaven() {
+  const items = [{ title: "Personalized outing matches", description: "Find places that fit your vibe, area, and occasion." }, { title: "Restaurants + activities together", description: "Build a full plan instead of searching one place at a time." }, { title: "Save, call, or book faster", description: "Keep your options organized and take action when you’re ready." }];
+  return <section><div className="mb-4"><h2 className="text-3xl font-black">Why people use TheOutHaven</h2></div><div className="grid gap-4 sm:grid-cols-3">{items.map((item) => <article key={item.title} className="flex min-h-[148px] flex-col rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4"><h3 className="text-base font-black">{item.title}</h3><p className="mt-2 text-sm text-white/70">{item.description}</p></article>)}</div></section>;
 }
 
 async function loadHomepageSections() {
