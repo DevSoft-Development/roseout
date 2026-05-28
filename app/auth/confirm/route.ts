@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient, type EmailOtpType } from "@supabase/supabase-js";
+import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,17 +54,14 @@ export async function GET(request: NextRequest) {
 
   const email = user.email?.toLowerCase();
 
-  if (email) {
-    const { data: adminUser } = await supabaseAdmin
-      .from("admin_users")
-      .select("id")
-      .eq("email", email)
-      .maybeSingle();
+  const adminRole = await getAdminLoginRole(supabaseAdmin as any, {
+    id: user.id,
+    email: user.email ?? null,
+  });
 
-    if (adminUser) {
-      response.headers.set("Location", `${siteUrl}/admin/dashboard`);
-      return response;
-    }
+  if (adminRole) {
+    response.headers.set("Location", `${siteUrl}/admin/dashboard`);
+    return response;
   }
 
   if (!email) {

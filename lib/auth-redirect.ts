@@ -7,12 +7,13 @@ type RedirectResolutionInput = {
   intendedPath?: string | null;
 };
 
-const ADMIN_ROLES = new Set(["admin", "super_admin", "superadmin"]);
+const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
 
 function normalizeRole(value: string | null | undefined): string | null {
   if (!value) return null;
-  return value.trim().toLowerCase();
+  const role = value.trim().toLowerCase();
+  return role === "superuser" ? "superadmin" : role;
 }
 
 export function sanitizeIntendedPath(path: string | null | undefined): string | null {
