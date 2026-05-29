@@ -31,6 +31,19 @@ type LocationRow = {
 const LOCATION_SELECT =
   "id,name,restaurant_name,activity_name,address,city,state,zip_code,borough,phone,website,location_type,primary_category,claim_status,is_claimed,claimed";
 
+const LOCATION_TYPE_OPTIONS = new Set([
+  "Restaurant",
+  "Lounge",
+  "Bar",
+  "Cafe",
+  "Dessert Spot",
+  "Activity",
+  "Entertainment",
+  "Event Space",
+  "Wellness",
+  "Other",
+]);
+
 function clean(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -325,6 +338,7 @@ export async function POST(req: Request) {
       "state",
       "zipCode",
       "phone",
+      "locationType",
       "businessEmail",
       "contactName",
       "roleAtBusiness",
@@ -348,6 +362,14 @@ export async function POST(req: Request) {
     const zipCode = clean(body.zipCode);
     const phoneRaw = clean(body.phone);
     const ownerPhone = phoneDigits(phoneRaw);
+    const locationTypeRaw = clean(body.locationType);
+    if (!LOCATION_TYPE_OPTIONS.has(locationTypeRaw)) {
+      return Response.json(
+        { ok: false, error: "missing_locationType" },
+        { status: 400 },
+      );
+    }
+    const locationType = locationTypeRaw;
     const ownerEmail = lower(body.businessEmail);
     const contactName = clean(body.contactName);
     const roleAtBusiness = clean(body.roleAtBusiness);
@@ -433,7 +455,8 @@ export async function POST(req: Request) {
         matchedExistingLocation: Boolean(
           duplicate.location_id || matchedExistingLocation,
         ),
-        message: "Your claim is already pending review.",
+        message:
+          "Your claim has been submitted for review. Once approved, you’ll be able to access your location dashboard and add details such as photos, descriptions, hours, contact information, and plan options.",
       });
     }
 
@@ -442,7 +465,7 @@ export async function POST(req: Request) {
       .from("location_claim_requests")
       .insert({
         location_name: locationNameRaw,
-        location_type: "Business",
+        location_type: locationType,
         request_type: "No-code business claim",
         website: websiteRaw || null,
         address: addressRaw,
@@ -475,6 +498,7 @@ export async function POST(req: Request) {
           state: stateRaw,
           zipCode,
           phone: phoneRaw,
+          locationType,
           businessEmail: ownerEmail,
           contactName,
           roleAtBusiness,
@@ -512,9 +536,8 @@ export async function POST(req: Request) {
       ok: true,
       claimRequestId: claim.id,
       matchedExistingLocation,
-      message: matchedExistingLocation
-        ? "Location already added. Claim pending review."
-        : "Location submitted. Claim pending review.",
+      message:
+        "Your claim has been submitted for review. Once approved, you’ll be able to access your location dashboard and add details such as photos, descriptions, hours, contact information, and plan options.",
     });
   } catch (error) {
     console.error("No-code claim submission failed", error);

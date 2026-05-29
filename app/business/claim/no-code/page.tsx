@@ -27,6 +27,7 @@ const initialForm = {
   googlePlaceId: "",
   formattedAddress: "",
   phone: "",
+  locationType: "",
   businessEmail: "",
   contactName: "",
   roleAtBusiness: "",
@@ -102,7 +103,7 @@ export default function NoCodeClaimPage() {
 
       if (!nextCaptchaToken) {
         setError(
-          "Security verification could not be completed. Please try submitting again.",
+          "Security verification could not be completed. Please try again.",
         );
         return;
       }
@@ -117,7 +118,7 @@ export default function NoCodeClaimPage() {
       if (!res.ok || !data.ok) {
         setError(
           data.error === "captcha_failed"
-            ? "Security verification could not be completed. Please try submitting again."
+            ? "Security verification could not be completed. Please try again."
             : "Could not submit your claim. Check the required fields and try again.",
         );
         turnstileRef.current?.reset();
@@ -152,32 +153,17 @@ export default function NoCodeClaimPage() {
             <div className="mt-8 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-                  No-code business claim
+                  Location claim
                 </p>
                 <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl">
                   Submit Your Location Claim
                 </h1>
-                <div className="mt-6 space-y-4 text-base leading-8 text-white/62 sm:text-lg">
+                <div className="mt-6 text-base leading-8 text-white/62 sm:text-lg">
                   <p>
                     Tell us about your location and our team will review your
-                    claim.
-                  </p>
-                  <p>
-                    If your location is already listed on TheOutHaven, we’ll
-                    connect your claim to the existing profile. If it hasn’t
-                    been added yet, we’ll create a new location record for
-                    review.
-                  </p>
-                  <p>
-                    Once your claim is approved, you’ll be able to access your
-                    location dashboard, update your business details, add
-                    photos, manage key information, and choose the plan that
-                    works best for your location.
-                  </p>
-                  <p>
-                    No live search results are shown during this step. Your
-                    submission goes directly to TheOutHaven for review so we can
-                    make sure every location is connected correctly.
+                    claim. Once approved, you’ll be able to access your location
+                    dashboard, update business details, add photos, and choose
+                    the plan that works best for your location.
                   </p>
                 </div>
               </div>
@@ -191,12 +177,13 @@ export default function NoCodeClaimPage() {
                     label="Location name"
                     value={form.locationName}
                     onChange={(value) => update("locationName", value)}
+                    placeholder="Example: Haven Rooftop"
                     required
                     className="sm:col-span-2"
                   />
                   <div className="sm:col-span-2">
                     <GoogleAddressAutocomplete
-                      label="Address"
+                      label="Location Address"
                       value={form.address}
                       city={form.city}
                       state={form.state}
@@ -217,13 +204,57 @@ export default function NoCodeClaimPage() {
                     />
                   </div>
                   <Field
-                    label="Phone"
+                    label="City"
+                    value={form.city}
+                    onChange={(value) => update("city", value)}
+                    required
+                  />
+                  <Field
+                    label="State"
+                    value={form.state}
+                    onChange={(value) => update("state", value)}
+                    required
+                  />
+                  <Field
+                    label="ZIP Code"
+                    value={form.zipCode}
+                    onChange={(value) => update("zipCode", value)}
+                    required
+                  />
+                  <Field
+                    label="Location Phone"
                     value={form.phone}
                     onChange={(value) => update("phone", value)}
                     type="tel"
                     required
-                    className="sm:col-span-2"
                   />
+                  <label className="block">
+                    <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+                      Location Type <span className="text-[#e1062a]">*</span>
+                    </span>
+                    <select
+                      value={form.locationType}
+                      onChange={(event) =>
+                        update("locationType", event.target.value)
+                      }
+                      required
+                      className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 text-sm font-bold text-white outline-none focus:border-[#e1062a]"
+                    >
+                      <option value="" disabled>
+                        Select location type
+                      </option>
+                      <option value="Restaurant">Restaurant</option>
+                      <option value="Lounge">Lounge</option>
+                      <option value="Bar">Bar</option>
+                      <option value="Cafe">Cafe</option>
+                      <option value="Dessert Spot">Dessert Spot</option>
+                      <option value="Activity">Activity</option>
+                      <option value="Entertainment">Entertainment</option>
+                      <option value="Event Space">Event Space</option>
+                      <option value="Wellness">Wellness</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </label>
                   <Field
                     label="Website"
                     value={form.website}
@@ -241,24 +272,6 @@ export default function NoCodeClaimPage() {
                     value={form.businessEmail}
                     onChange={(value) => update("businessEmail", value)}
                     type="email"
-                    required
-                  />
-                  <Field
-                    label="City"
-                    value={form.city}
-                    onChange={(value) => update("city", value)}
-                    required
-                  />
-                  <Field
-                    label="State"
-                    value={form.state}
-                    onChange={(value) => update("state", value)}
-                    required
-                  />
-                  <Field
-                    label="ZIP code"
-                    value={form.zipCode}
-                    onChange={(value) => update("zipCode", value)}
                     required
                   />
                   <Field
@@ -342,6 +355,7 @@ function Field({
   required,
   type = "text",
   className = "",
+  placeholder,
 }: {
   label: string;
   value: string;
@@ -349,6 +363,7 @@ function Field({
   required?: boolean;
   type?: string;
   className?: string;
+  placeholder?: string;
 }) {
   return (
     <label className={`block ${className}`}>
@@ -361,6 +376,7 @@ function Field({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         required={required}
+        placeholder={placeholder}
         className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 text-sm font-bold text-white outline-none placeholder:text-white/25 focus:border-[#e1062a]"
       />
     </label>
@@ -384,11 +400,9 @@ function SuccessPanel({
         {matched ? "Location Already Added" : "Location Submitted for Review"}
       </h1>
       <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/68">
-        Your claim has been submitted for review. Our team will review your
-        location details and connect your claim to the correct TheOutHaven
-        profile. Once approved, you’ll be able to access your location dashboard
-        and add details such as photos, descriptions, hours, contact
-        information, and plan options.
+        Your claim has been submitted for review. Once approved, you’ll be able
+        to access your location dashboard and add details such as photos,
+        descriptions, hours, contact information, and plan options.
       </p>
       <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
         <Link
