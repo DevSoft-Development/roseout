@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createClaimQr } from "@/lib/claimQr";
+import { createClaimQr } from "@/lib/claimQrServer";
 import { syncActivityToLocation } from "@/lib/sync-location";
 import { extractReservationUrl } from "@/lib/reservation-links";
 

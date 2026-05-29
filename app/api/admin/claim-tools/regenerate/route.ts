@@ -1,5 +1,5 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQr";
+import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQrServer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";

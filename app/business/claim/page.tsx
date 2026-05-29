@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import ClaimQrScanLauncher from "@/components/business/ClaimQrScanLauncher";
+import { normalizeClaimCode } from "@/lib/claimQr";
 import { createClient } from "@/lib/supabase-browser";
 
 type VerifiedLocation = {
@@ -33,14 +35,11 @@ const errorCopy: Record<string, string> = {
   disabled_code: "This claim code is not active. Contact TheOutHaven for a new code.",
 };
 
-function normalizeCode(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "");
-}
 
 function ClaimPageInner() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
-  const codeFromUrl = normalizeCode(searchParams.get("code") || "");
+  const codeFromUrl = normalizeClaimCode(searchParams.get("code") || "");
   const [claimCode, setClaimCode] = useState(codeFromUrl);
   const [location, setLocation] = useState<VerifiedLocation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,7 +67,7 @@ function ClaimPageInner() {
   }, [supabase]);
 
   async function verifyCode(nextCode = claimCode) {
-    const code = normalizeCode(nextCode);
+    const code = normalizeClaimCode(nextCode);
     setClaimCode(code);
     setError("");
     setLocation(null);
@@ -178,18 +177,22 @@ function ClaimPageInner() {
               Business owner claim
             </p>
             <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl md:text-6xl">
-              Claim Your Location
+              Scan QR code or enter claim code
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-white/62 sm:text-lg">
-              Use your claim QR or printed claim code to connect a request to your location, or submit your business details once for a private review by TheOutHaven.
+              Use your device camera to scan the QR code on your postcard, or enter the printed claim code manually.
             </p>
 
             <div className="mt-8 grid gap-4">
               <OptionCard
                 title="Scan QR Code"
                 text="Use the QR code from your TheOutHaven claim mailer to start a pending review request."
-                cta="Scan QR Code"
-                href="/business/claim/scan"
+                scanLauncher
+                onCodeFound={(code) => {
+                  const normalized = normalizeClaimCode(code);
+                  setClaimCode(normalized);
+                  verifyCode(normalized);
+                }}
               />
               <OptionCard
                 title="Enter Claim Code"
@@ -211,6 +214,23 @@ function ClaimPageInner() {
               <SubmittedState />
             ) : (
               <>
+                <div className="mb-5">
+                  <h2 className="text-2xl font-black">Scan QR code or enter claim code</h2>
+                  <p className="mt-2 text-sm leading-6 text-white/55">
+                    Use your device camera to scan the QR code on your postcard, or enter the printed claim code manually.
+                  </p>
+                </div>
+
+                <ClaimQrScanLauncher
+                  className="mb-4"
+                  mode="inline"
+                  onCodeFound={(code) => {
+                    const normalized = normalizeClaimCode(code);
+                    setClaimCode(normalized);
+                    verifyCode(normalized);
+                  }}
+                />
+
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -225,7 +245,7 @@ function ClaimPageInner() {
                     <input
                       id="claim-code"
                       value={claimCode}
-                      onChange={(event) => setClaimCode(normalizeCode(event.target.value))}
+                      onChange={(event) => setClaimCode(normalizeClaimCode(event.target.value))}
                       placeholder="Enter your claim code"
                       className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 font-mono text-sm font-black uppercase tracking-[0.14em] text-white outline-none placeholder:font-sans placeholder:tracking-normal placeholder:text-white/25 focus:border-[#e1062a]"
                     />
@@ -290,14 +310,18 @@ function ClaimPageInner() {
   );
 }
 
-function OptionCard({ title, text, cta, href }: { title: string; text: string; cta: string; href: string }) {
+function OptionCard({ title, text, cta, href, scanLauncher = false, onCodeFound }: { title: string; text: string; cta?: string; href?: string; scanLauncher?: boolean; onCodeFound?: (code: string) => void }) {
   return (
     <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20">
       <h2 className="text-lg font-black">{title}</h2>
       <p className="mt-2 text-sm leading-6 text-white/55">{text}</p>
-      <Link href={href} className="mt-4 inline-flex rounded-full bg-white px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-black transition hover:bg-rose-100">
-        {cta}
-      </Link>
+      {scanLauncher ? (
+        <ClaimQrScanLauncher className="mt-4" buttonLabel="Scan QR Code With Device Camera" mode="inline" onCodeFound={onCodeFound} />
+      ) : href && cta ? (
+        <Link href={href} className="mt-4 inline-flex rounded-full bg-white px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-black transition hover:bg-rose-100">
+          {cta}
+        </Link>
+      ) : null}
     </article>
   );
 }

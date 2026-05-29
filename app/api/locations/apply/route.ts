@@ -71,7 +71,7 @@ export async function GET(req: Request) {
 
 async function validateClaimAccess(supabase: ReturnType<typeof adminSupabase>, body: Record<string, unknown>) {
   const token = clean(body.claim_token);
-  const code = normalizeClaimCode(body.claim_code);
+  const code = normalizeClaimCode(String(body.claim_code || ""));
 
   if (!token && !code) {
     return { ok: false, error: "To protect businesses, claiming requires the QR code or claim code provided by the location." };

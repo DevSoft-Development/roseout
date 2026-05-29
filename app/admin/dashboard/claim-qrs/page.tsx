@@ -4,7 +4,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ClaimQrPrintClient from "./ClaimQrPrintClient";
 import RepairClaimQrButton from "./RepairClaimQrButton";
-import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQr";
+import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQrServer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 

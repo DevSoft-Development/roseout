@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
-import { syncClaimFieldsToLocations } from "@/lib/claimQr";
+import { syncClaimFieldsToLocations } from "@/lib/claimQrServer";
 
 async function isAllowed(req: Request) {
   const secret = req.headers.get("x-internal-import-secret") || req.headers.get("authorization")?.replace("Bearer ", "");
