@@ -63,7 +63,7 @@ export async function GET() {
 
     const { data: locationClaims, error: locationError } = await supabaseAdmin
       .from("location_claim_requests")
-      .select("id, location_id, location_name, location_type, address, city, state, zip_code, owner_name, owner_email, owner_phone, notes, status, verification_status, claim_code, submitted_at, created_at")
+      .select("id, user_id, location_id, location_name, location_type, request_type, address, city, state, zip_code, owner_name, owner_email, owner_phone, notes, status, verification_status, match_status, confidence_score, plan_interest, role_at_business, matched_location_snapshot, claim_code, submitted_at, created_at")
       .order("created_at", { ascending: false });
 
     if (locationError) {
