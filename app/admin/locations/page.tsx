@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AdminLocationsSearchBox from "./AdminLocationsSearchBox";
+import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
@@ -165,7 +166,8 @@ export default async function AdminLocationsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
 
   const params = await searchParams;
 
@@ -783,6 +785,23 @@ export default async function AdminLocationsPage({
                       >
                         Create Marketing
                       </Link>
+
+                      {canImpersonate && (
+                        location.owner_user_id ? (
+                          <ImpersonateButton
+                            targetType="location_owner"
+                            locationId={location.id}
+                            locationType={location.locationType}
+                            userId={location.owner_user_id}
+                            label="Log in as owner"
+                            className="flex-1 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-black text-amber-800 transition hover:bg-amber-500 hover:text-white disabled:opacity-50"
+                          />
+                        ) : (
+                          <span className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-black/35">
+                            No owner connected
+                          </span>
+                        )
+                      )}
                     </div>
                   </div>
                 </div>

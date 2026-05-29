@@ -17,6 +17,8 @@ export type BusinessCRMRow = {
   state: string | null;
   is_claimed: boolean | null;
   reservation_url: string | null;
+  location_type?: "restaurants" | "activities" | null;
+  owner_user_id?: string | null;
   crm_status: CRMStatus;
   opportunity_score: number;
   upgrade_probability: number;

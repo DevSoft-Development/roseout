@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
     const { data: restaurants } = await supabase
       .from("restaurants")
-      .select("id,name,restaurant_name,city,state,owner_email,address")
+      .select("id,name,restaurant_name,city,state,owner_email,address,owner_user_id")
       .or(
         `restaurant_name.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,owner_email.ilike.%${q}%,address.ilike.%${q}%`
       )
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
 
     const { data: activities } = await supabase
       .from("activities")
-      .select("id,name,activity_name,city,state,owner_email,address")
+      .select("id,name,activity_name,city,state,owner_email,address,owner_user_id")
       .or(
         `activity_name.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,owner_email.ilike.%${q}%,address.ilike.%${q}%`
       )
@@ -69,6 +69,7 @@ export async function GET(req: Request) {
           r.address ||
           "Restaurant",
         meta: r.owner_email || "No owner email",
+        ownerUserId: r.owner_user_id || null,
       })),
 
       ...(activities || []).map((a: any) => ({
@@ -81,6 +82,7 @@ export async function GET(req: Request) {
           a.address ||
           "Activity",
         meta: a.owner_email || "No owner email",
+        ownerUserId: a.owner_user_id || null,
       })),
     ];
 
