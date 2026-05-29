@@ -129,6 +129,24 @@ function getActivityTermsFromQuery(query: string) {
   return ADD_ON_ACTIVITY_TERMS.filter((term) => q.includes(term));
 }
 
+function hasRooftopRestaurantIntent(query: string) {
+  const q = String(query ?? "").toLowerCase();
+  return q.includes("rooftop") && ["dinner", "restaurant", "dining", "brunch", "lunch", "food", "eat"].some((term) => q.includes(term));
+}
+
+const ROOFTOP_RESTAURANT_MATCH_TERMS = [
+  "rooftop",
+  "roof top",
+  "terrace",
+  "outdoor dining",
+  "patio",
+  "skyline",
+  "views",
+  "view",
+  "city view",
+  "scenic",
+];
+
 function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
   if (!boroughs.length) return true;
   const hay = text(record);
@@ -184,6 +202,22 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
     const hay = locationText(location);
     return mealTerms.some((term) => hay.includes(term));
   });
+  const rooftopIntent = hasRooftopRestaurantIntent(query);
+
+  if (rooftopIntent) {
+    const rooftopMatches = restaurantCandidates.filter((location) => {
+      const hay = text(location);
+      return ROOFTOP_RESTAURANT_MATCH_TERMS.some((term) => hay.includes(term));
+    });
+
+    if (rooftopMatches.length > 0) {
+      return {
+        filtered: rooftopMatches,
+        strictCount: rooftopMatches.length,
+        fallbackCount: 0,
+      };
+    }
+  }
   const steakIntent = STEAK_TERMS.some((term) => query.toLowerCase().includes(term));
   if (steakIntent) {
     const steakStrictMatches = restaurantCandidates.filter((location) => {
