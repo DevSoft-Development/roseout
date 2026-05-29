@@ -37,6 +37,53 @@ function isRestaurantLike(record: any) {
   return Boolean(record?.restaurant_name || record?.cuisine || record?.cuisine_type || ["restaurant", "food", "dining", "steakhouse", "seafood", "italian", "sushi", "caribbean", "brunch", "cafe"].some((t) => hay.includes(t)));
 }
 
+function scoreRooftopRestaurantMatch(record: any, intent: CanonicalSearchIntent) {
+  const wantsRooftop =
+    intent.vibes?.includes("rooftop") ||
+    String(intent.normalizedQuery ?? "").toLowerCase().includes("rooftop") ||
+    String(intent.rawQuery ?? "").toLowerCase().includes("rooftop");
+
+  if (!wantsRooftop) return 0;
+
+  const hay = [
+    record.name,
+    record.restaurant_name,
+    record.description,
+    record.primary_category,
+    record.cuisine,
+    record.cuisine_type,
+    record.food_type,
+    record.activity_type,
+    record.primary_tag,
+    record.borough,
+    record.city,
+    record.neighborhood,
+    record.search_document,
+    record.semantic_search_text,
+    ...(Array.isArray(record.tags) ? record.tags : []),
+    ...(Array.isArray(record.vibe_tags) ? record.vibe_tags : []),
+    ...(Array.isArray(record.best_for_tags) ? record.best_for_tags : []),
+    ...(Array.isArray(record.search_keywords) ? record.search_keywords : []),
+    ...(Array.isArray(record.intent_tags) ? record.intent_tags : []),
+  ]
+    .map((v) => String(v ?? "").toLowerCase())
+    .join(" ");
+
+  let score = 0;
+
+  if (hay.includes("rooftop") || hay.includes("roof top")) score += 120;
+  if (hay.includes("terrace")) score += 75;
+  if (hay.includes("outdoor dining")) score += 65;
+  if (hay.includes("skyline")) score += 65;
+  if (hay.includes("patio")) score += 45;
+  if (hay.includes("views") || hay.includes("view")) score += 45;
+  if (hay.includes("romantic")) score += 35;
+  if (hay.includes("date night")) score += 30;
+  if (hay.includes("scenic")) score += 25;
+
+  return score;
+}
+
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
   const query = intent.normalizedQuery || intent.rawQuery || "";
   const requested = detectRequestedCuisines(query);
@@ -46,8 +93,8 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     const strictTerms = intent.specificMealFoodIntents?.length
       ? intent.specificMealFoodIntents
       : intent.mealFoodIntents.filter((term) => !["dinner", "lunch", "breakfast", "brunch", "restaurant", "food", "eat", "dining"].includes(term));
-    let as = scoreRecord(a, strictTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs);
-    let bs = scoreRecord(b, strictTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs);
+    let as = scoreRecord(a, strictTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs) + scoreRecord(a, intent.vibes);
+    let bs = scoreRecord(b, strictTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs) + scoreRecord(b, intent.vibes);
     if (strictTerms.length > 0) {
       if (`${a.category ?? ""}`.toLowerCase().includes("hookah")) as -= 10;
       if (`${b.category ?? ""}`.toLowerCase().includes("hookah")) bs -= 10;
@@ -75,6 +122,10 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     const bType = isRestaurantLike(b) ? 25 : -25;
     as = (ad.score * 3) + (aType * 2) + (aGeo * geoWeight) + as;
     bs = (bd.score * 3) + (bType * 2) + (bGeo * geoWeight) + bs;
+    const aRooftop = scoreRooftopRestaurantMatch(a, intent);
+    const bRooftop = scoreRooftopRestaurantMatch(b, intent);
+    as += aRooftop;
+    bs += bRooftop;
     const ah = JSON.stringify(a).toLowerCase(); const bh = JSON.stringify(b).toLowerCase();
     if (requested.length>0) { if (ah.includes("activity") || ah.includes("event")) as -= 100; if (bh.includes("activity")||bh.includes("event")) bs -= 100; }
     return bs - as;

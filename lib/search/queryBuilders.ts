@@ -6,20 +6,27 @@ export function buildRestaurantSearchInput(intent: CanonicalSearchIntent): strin
   if (
     (intent.boroughs.length > 0 || Boolean(intent.geoIntent)) &&
     intent.mealFoodIntents.length === 0 &&
-    intent.activityIntents.length === 0
+    intent.activityIntents.length === 0 &&
+    intent.vibes.length === 0
   ) {
     return uniq([...intent.boroughs, ...intent.neighborhoods, ...(intent.geoIntent?.terms ?? []), "restaurant"]).join(" ");
   }
   const specificTerms = intent.specificMealFoodIntents ?? [];
   const mealTerms = specificTerms.length > 0 ? specificTerms : intent.mealFoodIntents;
+  const rooftopSearchTerms = intent.vibes?.includes("rooftop")
+    ? ["rooftop", "roof top", "outdoor dining", "terrace", "patio", "skyline", "views", "view", "city view", "scenic", "lounge", "bar"]
+    : [];
   const terms = uniq([
     ...mealTerms,
     ...intent.cuisines,
     ...(mealTerms.includes("steak") ? ["steakhouse"] : []),
     ...intent.boroughs,
     ...intent.neighborhoods,
+    ...(intent.cities ?? []),
+    ...(intent.locations ?? []),
     ...(intent.geoIntent?.terms ?? []),
     ...intent.vibes,
+    ...rooftopSearchTerms,
   ]);
   return terms.join(" ").trim();
 }

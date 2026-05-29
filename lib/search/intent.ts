@@ -8,7 +8,7 @@ const NYC_NEIGHBORHOODS = ["astoria", "long island city", "lic", "flushing", "ja
 const MEAL_PRIMARY_TERMS = ["steak", "seafood", "dinner", "brunch", "lunch", "breakfast", "restaurant", "food", "date night dinner"];
 const RESTAURANT_TERMS = [...GENERIC_MEAL_TERMS, "meal", "place to eat"];
 const OCCASION_TERMS = ["date", "date night", "night", "brunch", "birthday", "birthday dinner", "group", "group outing", "outing", "fun outing"];
-const VIBE_TERMS = ["romantic", "casual", "upscale", "nightlife", "cozy", "fun", "birthday", "group", "date night", "rooftop"];
+const VIBE_TERMS = ["romantic", "casual", "upscale", "nightlife", "cozy", "fun", "birthday", "group", "date night", "rooftop", "outdoor dining", "terrace", "skyline", "views", "view", "city view", "scenic", "patio"];
 const ROOFTOP_MEAL_PHRASES = [
   "rooftop dinner",
   "rooftop restaurant",
@@ -118,9 +118,12 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const restaurantType = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
   const requiredRestaurantCategory = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
   const occasionIntents = detectIntents(normalizedQuery, OCCASION_TERMS);
+  const rooftopVibes = rooftopMealIntent
+    ? ["rooftop", "outdoor dining", "terrace", "skyline", "views", "view", "patio"]
+    : [];
   const vibes = uniq([
     ...detectIntents(normalizedQuery, VIBE_TERMS),
-    ...(rooftopMealIntent ? ["rooftop"] : []),
+    ...rooftopVibes,
     ...occasionIntents.filter((term) => !["outing", "fun outing"].includes(term)),
   ]);
   const normalizedMealFoodIntents = uniq(mealFoodIntents);
