@@ -48,6 +48,7 @@ type PlanLocation = LocationScoreFields & {
   rating?: number | null;
   review_count?: number | null;
   website?: string | null;
+  phone?: string | null;
   external_reservation_url?: string | null;
   reservation_url?: string | null;
   reservation_link?: string | null;
@@ -98,6 +99,35 @@ const PLAN_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
   source_section: "outing_card",
 };
 
+type ExternalPlanEvent = "reservation_started" | "phone_click" | "website_click" | "share_click" | "directions_click";
+
+function trackPlanExternalAction(
+  locationId: string | null | undefined,
+  eventType: ExternalPlanEvent,
+  metadata: Record<string, unknown> = {},
+) {
+  if (!locationId) return;
+
+  fetch("/api/analytics/location-event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    keepalive: true,
+    body: JSON.stringify({
+      location_id: locationId,
+      event_type: eventType,
+      event_source: "plan",
+      source_page: "/plan",
+      source_section: "outing_actions",
+      metadata,
+    }),
+  }).catch(() => undefined);
+}
+
+function buildCreateHref(prompt: string) {
+  const params = new URLSearchParams({ prompt });
+  return `/create?${params.toString()}`;
+}
+
 export default function PlanPage() {
   return (
     <Suspense fallback={<PlanLoading />}>
@@ -111,6 +141,9 @@ function PlanPageInner() {
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [mounted, setMounted] = useState(false);
   const [loadingExactCampaign, setLoadingExactCampaign] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("Plan saved on this device.");
+  const [shareStatus, setShareStatus] = useState("");
+  const [outingComplete, setOutingComplete] = useState(false);
 
 
   function toPlanLocation(location: ExactCampaignLocation): PlanLocation {
@@ -228,6 +261,56 @@ function PlanPageInner() {
     return names.length ? names.join(" + ") : "Your TheOutHaven Plan";
   }, [restaurant, activity]);
 
+  const completionPrompt = restaurant && activity
+    ? `Find another idea like ${getLocationName(restaurant)} and ${getLocationName(activity)}`
+    : restaurant
+      ? `Add an activity near ${getLocationName(restaurant)}`
+      : activity
+        ? `Add a restaurant near ${getLocationName(activity)}`
+        : "Plan a restaurant and activity nearby";
+
+  function saveCurrentPlan() {
+    if (!plan) return;
+
+    const nextPlan = { ...plan, savedAt: Date.now() };
+    localStorage.setItem(PLAN_KEY, JSON.stringify(nextPlan));
+    setPlan(nextPlan);
+    setSaveStatus("Saved — you can come back to this plan from this device.");
+
+    [restaurant, activity].forEach((location) => {
+      if (location?.id) trackLocationEvent(String(location.id), "save", PLAN_ANALYTICS_METADATA);
+    });
+  }
+
+  async function shareCurrentPlan() {
+    const url = window.location.href;
+    const text = `TheOutHaven plan: ${planTitle}`;
+    const hasNativeShare = typeof navigator.share === "function";
+
+    try {
+      if (hasNativeShare) {
+        await navigator.share({ title: planTitle, text, url });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      }
+
+      setShareStatus(hasNativeShare ? "Share sheet opened." : "Plan link copied.");
+      [restaurant, activity].forEach((location) => {
+        if (location?.id) trackPlanExternalAction(String(location.id), "share_click", { plan_title: planTitle });
+      });
+    } catch {
+      setShareStatus("Share was cancelled — your plan is still saved here.");
+    }
+  }
+
+  function markOutingComplete() {
+    setOutingComplete(true);
+    setSaveStatus("Outing marked complete. Need another idea when you are ready?");
+    [restaurant, activity].forEach((location) => {
+      if (location?.id) trackLocationEvent(String(location.id), "booking", PLAN_ANALYTICS_METADATA);
+    });
+  }
+
   if (!mounted) return <PlanLoading />;
 
   return (
@@ -264,7 +347,7 @@ function PlanPageInner() {
                 href="/create"
                 className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-center text-xs font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
               >
-                Edit Picks
+                Replace Location
               </Link>
 
               <a
@@ -274,6 +357,32 @@ function PlanPageInner() {
                 View Timeline
               </a>
             </div>
+
+            {hasPlan ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={saveCurrentPlan}
+                  className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-5 py-3 text-xs font-black uppercase tracking-[0.12em] text-emerald-100 transition hover:bg-emerald-400/15"
+                >
+                  Save Plan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={shareCurrentPlan}
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-xs font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
+                >
+                  Share Plan
+                </button>
+              </div>
+            ) : null}
+
+            {(saveStatus || shareStatus) && hasPlan ? (
+              <p className="mt-3 text-xs font-bold leading-5 text-white/40">
+                {shareStatus || saveStatus}
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -292,12 +401,11 @@ function PlanPageInner() {
               </p>
 
               <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">
-                Dinner → Activity
+                {restaurant && activity ? "Dinner → Activity" : restaurant ? "Dinner selected" : "Activity selected"}
               </h2>
 
               <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
-                This page now follows the same flow as Create: dinner first,
-                activity second, then action buttons.
+                {buildPlanSummaryText(restaurant, activity, distancePreference)}
               </p>
 
               <div className="mt-5 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-4">
@@ -305,9 +413,50 @@ function PlanPageInner() {
                   Next Step
                 </p>
                 <p className="mt-1 text-sm font-bold leading-6 text-white">
-                  Use the reservation, website, or details buttons to move from
-                  planning into action.
+                  Reserve, call, or open the website for either pick. If it is not right, replace a location or add another stop.
                 </p>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                <Link
+                  href={restaurant ? buildCreateHref(`replace restaurant near ${getLocationName(activity || restaurant)}`) : buildCreateHref(`add restaurant near ${getLocationName(activity)}`)}
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+                >
+                  {restaurant ? "Replace Restaurant" : "Add Restaurant"}
+                </Link>
+
+                <Link
+                  href={activity ? buildCreateHref(`replace activity near ${getLocationName(restaurant || activity)}`) : buildCreateHref(`add activity near ${getLocationName(restaurant)}`)}
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+                >
+                  {activity ? "Replace Activity" : "Add Activity"}
+                </Link>
+
+                <Link
+                  href={buildCreateHref(`add another stop to ${planTitle}`)}
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+                >
+                  Add Another Stop
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={markOutingComplete}
+                  className={`rounded-full px-4 py-3 text-xs font-black uppercase tracking-[0.1em] transition ${
+                    outingComplete
+                      ? "border border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+                      : "bg-white px-4 py-3 text-black hover:bg-red-100"
+                  }`}
+                >
+                  {outingComplete ? "Outing Complete" : "Mark Outing Complete"}
+                </button>
+
+                <Link
+                  href={buildCreateHref(completionPrompt)}
+                  className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
+                >
+                  Need Another Idea?
+                </Link>
               </div>
 
               {(walkingRouteUrl || drivingRouteUrl) && (
@@ -588,9 +737,30 @@ function PlanActionCard({
   const reservationUrl = getExternalReservationUrl(location);
   const internalReservationHref = getInternalReservationHref(location, type);
   const locationId = location.id ? String(location.id) : null;
+  const phoneHref = location.phone ? `tel:${String(location.phone).replace(/[^+\d]/g, "")}` : null;
   const viewRef = useTrackLocationView<HTMLElement>(locationId, PLAN_ANALYTICS_METADATA);
   const trackClick = () => trackLocationEvent(locationId, "click", PLAN_ANALYTICS_METADATA);
   const trackBooking = () => trackLocationEvent(locationId, "booking", PLAN_ANALYTICS_METADATA);
+  const trackReserve = () => {
+    trackClick();
+    trackBooking();
+    trackPlanExternalAction(locationId, "reservation_started", {
+      location_type: type,
+      destination: reservationUrl ? "external" : "theouthaven",
+    });
+  };
+  const trackWebsite = () => {
+    trackClick();
+    trackPlanExternalAction(locationId, "website_click", { location_type: type });
+  };
+  const trackPhone = () => {
+    trackClick();
+    trackPlanExternalAction(locationId, "phone_click", { location_type: type });
+  };
+  const trackDirections = () => {
+    trackClick();
+    trackPlanExternalAction(locationId, "directions_click", { location_type: type });
+  };
 
   return (
     <article ref={viewRef} onClick={(event) => { if ((event.target as HTMLElement).closest("a,button")) return; trackClick(); }} className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
@@ -656,7 +826,7 @@ function PlanActionCard({
               href={directionsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={trackClick}
+              onClick={trackDirections}
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
               Get Directions
@@ -666,39 +836,51 @@ function PlanActionCard({
           {location.reservation_enabled === true && internalReservationHref ? (
             <Link
               href={internalReservationHref}
-              onClick={() => { trackClick(); trackBooking(); }}
+              onClick={trackReserve}
               className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
             >
-              Reserve on TheOutHaven
+              Reserve
             </Link>
           ) : reservationUrl ? (
             <a
               href={reservationUrl}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => { trackClick(); trackBooking(); }}
+              onClick={trackReserve}
               className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
             >
-              Reserve on Partner Site
+              Reserve
             </a>
-          ) : location.website ? (
+          ) : null}
+
+          {phoneHref ? (
+            <a
+              href={phoneHref}
+              onClick={trackPhone}
+              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+            >
+              Call
+            </a>
+          ) : null}
+
+          {location.website ? (
             <a
               href={location.website}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={trackClick}
+              onClick={trackWebsite}
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
               Website
             </a>
-          ) : (
+          ) : !reservationUrl && !phoneHref ? (
             <Link
               href="/create"
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
               Edit
             </Link>
-          )}
+          ) : null}
         </div>
       </div>
     </article>
@@ -717,16 +899,24 @@ function EmptyPlan() {
       </h2>
 
       <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-white/45">
-        Select a restaurant, activity, or both from the Create page, then your
-        dinner-to-activity timeline will appear here.
+        Select a restaurant, activity, or both from Create, then your timeline,
+        reserve buttons, call buttons, and next steps will appear here.
       </p>
 
-      <Link
-        href="/create"
-        className="mt-5 inline-flex rounded-full bg-[#e1062a] px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744]"
-      >
-        Create My Outing
-      </Link>
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        <Link
+          href="/create"
+          className="rounded-full bg-[#e1062a] px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744]"
+        >
+          Create My Outing
+        </Link>
+        <Link
+          href={buildCreateHref("popular restaurants and activities nearby")}
+          className="rounded-full border border-white/10 bg-white/[0.04] px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
+        >
+          Browse Popular Nearby
+        </Link>
+      </div>
     </div>
   );
 }
@@ -864,4 +1054,24 @@ function buildFlowText(
   }
 
   return "Dinner → Activity timeline";
+}
+
+function buildPlanSummaryText(
+  restaurant: PlanLocation | null,
+  activity: PlanLocation | null,
+  distancePreference: "walking" | "miles",
+) {
+  if (restaurant && activity) {
+    return `${getLocationName(restaurant)} is paired with ${getLocationName(activity)}. ${buildFlowText(restaurant, activity, distancePreference)}.`;
+  }
+
+  if (restaurant) {
+    return `${getLocationName(restaurant)} is saved as your dinner pick. Add an activity nearby or use the action buttons to reserve, call, or view details.`;
+  }
+
+  if (activity) {
+    return `${getLocationName(activity)} is saved as your activity pick. Add a restaurant nearby or use the action buttons to call, open the website, or view details.`;
+  }
+
+  return "Start by choosing a restaurant, activity, or both from Create.";
 }
