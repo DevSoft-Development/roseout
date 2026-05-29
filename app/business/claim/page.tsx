@@ -157,6 +157,7 @@ function ClaimPageInner() {
       }
 
       setStep("submitted");
+      window.location.href = data.dashboardUrl || "/locations/dashboard";
     } catch {
       setError("Could not submit claim request. Please try again.");
     } finally {
@@ -246,7 +247,7 @@ function ClaimPageInner() {
                     </p>
                     <h2 className="mt-3 text-2xl font-black">Submit your ownership details</h2>
                     <p className="mt-2 text-sm leading-6 text-white/50">
-                      The claim code confirms you have the postcard. TheOutHaven may still review the claim before the listing is fully transferred.
+                      The claim code confirms you have the postcard. Sign-in is required so TheOutHaven can securely link this location to your owner account.
                     </p>
                     <div className="mt-5 grid gap-4">
                       <Field label="Business email" value={form.businessEmail} onChange={(value) => setForm((prev) => ({ ...prev, businessEmail: value }))} type="email" required />
@@ -267,7 +268,7 @@ function ClaimPageInner() {
                       disabled={submitting}
                       className="mt-5 w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {submitting ? "Submitting..." : "Submit Claim"}
+                      {submitting ? "Claiming..." : "Claim Location"}
                     </button>
                   </form>
                 )}
@@ -348,14 +349,14 @@ function SubmittedState() {
       <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Claim request submitted</p>
       <h2 className="mt-4 text-3xl font-black">Your claim request is under review.</h2>
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/62">
-        TheOutHaven will review your request before the listing is fully transferred or approved. You can prepare your profile details now.
+        Your claim code was verified, your owner account was linked, and your Free Discovery dashboard is ready.
       </p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        <Link href="/location-owner/onboarding" className="rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white transition hover:bg-red-500">
-          Continue to profile setup
+        <Link href="/locations/dashboard" className="rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white transition hover:bg-red-500">
+          Continue to owner dashboard
         </Link>
-        <Link href="/location-owner/dashboard" className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black">
-          Go to dashboard
+        <Link href="/locations/dashboard" className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black">
+          View claimed location
         </Link>
       </div>
     </section>

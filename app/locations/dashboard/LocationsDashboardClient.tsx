@@ -61,6 +61,7 @@ type LocationItem = LocationScoreFields &
     is_claimed?: boolean | null;
     claimed?: boolean | null;
     claim_status?: string | null;
+    claim_verification_status?: string | null;
     claimed_at?: string | null;
     claimed_by_email?: string | null;
     owner_user_id?: string | null;
@@ -73,7 +74,14 @@ type LocationItem = LocationScoreFields &
     external_reservation_url?: string | null;
     reservation_link?: string | null;
     plan?: string | null;
+    subscription_plan?: string | null;
     is_pro?: boolean | null;
+    view_count?: number | null;
+    click_count?: number | null;
+    call_count?: number | null;
+    reservation_click_count?: number | null;
+    external_reservation_click_count?: number | null;
+    reservation_settings?: Record<string, unknown> | null;
     primary_category?: string | null;
     cuisine?: string | null;
     cuisine_type?: string | null;
@@ -424,6 +432,8 @@ export default function LocationsDashboardClient({
 
 
 
+                  <OwnerPlanOverview location={selected} />
+
                   <BusinessSetupChecklist location={selected} />
 
                   <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
@@ -479,10 +489,9 @@ export default function LocationsDashboardClient({
                         size={18}
                       />
                       <div>
-                        <p className="text-sm font-black">Admin Mode Ready</p>
+                        <p className="text-sm font-black">Owner dashboard ready</p>
                         <p className="mt-1 text-xs leading-5 text-white/50">
-                          This page now checks location impersonation cookies
-                          before loading normal owner data.
+                          Free Discovery keeps your claimed profile visible. Pro includes Reserve, reservation settings, and deeper demand tools.
                         </p>
                       </div>
                     </div>
@@ -507,6 +516,84 @@ export default function LocationsDashboardClient({
   );
 }
 
+
+function formatPlanName(location: LocationItem) {
+  const raw = String(location.subscription_plan || location.plan || "free_discovery").toLowerCase();
+
+  if (Boolean(location.is_pro) || raw.includes("pro")) return "Pro Plan";
+  return "Free Discovery";
+}
+
+function OwnerPlanOverview({ location }: { location: LocationItem }) {
+  const isPro = formatPlanName(location) === "Pro Plan";
+  const reservationLink = location.reservation_link || location.reservation_url || location.external_reservation_url;
+  const reservationSettings = location.reservation_settings || {};
+  const analytics = [
+    ["Profile views", location.view_count || 0],
+    ["Guest clicks", location.click_count || 0],
+    ["Phone actions", location.call_count || 0],
+    ["Reservation clicks", location.reservation_click_count || location.external_reservation_click_count || 0],
+  ] as const;
+
+  return (
+    <div className="mt-6 grid gap-4 xl:grid-cols-[1fr_0.95fr]">
+      <section className="rounded-[1.75rem] border border-black/10 bg-white p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
+              Plan status
+            </p>
+            <h3 className="mt-2 text-2xl font-black">{formatPlanName(location)}</h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
+              {isPro
+                ? "Pro includes Reserve for reservations, waitlists, guest tools, and deeper analytics."
+                : "Free Discovery keeps your claimed profile visible with basic contact, tracking, and discovery tools."}
+            </p>
+          </div>
+          <Link
+            href="/business#plans"
+            className={`rounded-full px-4 py-2 text-center text-xs font-black ${
+              isPro ? "border border-black/10 bg-white text-black" : "bg-[#e1062a] text-white"
+            }`}
+          >
+            {isPro ? "Manage Pro" : "Upgrade to Pro"}
+          </Link>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <ContactBlock label="Claim status" value={getClaimStatusText(location)} />
+          <ContactBlock label="Verification" value={String(location.claim_verification_status || "code_verified").replace(/_/g, " ")} />
+          <ContactBlock label="Phone tracking" value={location.phone ? "Phone actions enabled" : "Add a phone number"} />
+          <ContactBlock label="External reservations" value={reservationLink ? "Tracking link connected" : "No reservation link set"} />
+        </div>
+      </section>
+
+      <section className="rounded-[1.75rem] border border-black/10 bg-white p-5">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
+          Reserve + analytics
+        </p>
+        {isPro ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-900">
+            Reserve is included. Reservation settings: {Object.keys(reservationSettings).length ? "configured" : "ready to configure"}.
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-950">
+            Reservation settings unlock with Pro. Free Discovery still tracks basic profile, phone, and external reservation interest.
+          </div>
+        )}
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {analytics.map(([label, value]) => (
+            <div key={label} className="rounded-2xl bg-black/[0.04] p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/35">{label}</p>
+              <p className="mt-2 text-2xl font-black">{Number(value || 0).toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
 
 function BusinessSetupChecklist({ location }: { location: LocationItem }) {
   const hasReservationLink = Boolean(
