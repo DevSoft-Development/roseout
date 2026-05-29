@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import { getZipMarketMapping } from "@/lib/zip-market-mapping";
-import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
-import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
+import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 
 type Tab = "signin" | "signup";
 type SignupStep = 1 | 2;
@@ -104,38 +103,33 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       return;
     }
 
-    const [adminRole, profileResult, locationsResult, restaurantsResult] = await Promise.all([
-      getAdminLoginRole(supabase as any, {
-        id: user.id,
-        email: user.email ?? null,
-      }),
-      supabase.from("user_profiles").select("role, account_type").eq("id", user.id).maybeSingle(),
-      supabase.from("locations").select("id").eq("owner_user_id", user.id).limit(1),
-      supabase.from("restaurants").select("id").eq("owner_user_id", user.id).limit(1),
-    ]);
+    const intendedRoute = sanitizeIntendedPath(
+      new URL(window.location.href).searchParams.get("next"),
+    );
 
-    const intendedRoute = sanitizeIntendedPath(new URL(window.location.href).searchParams.get("next"));
+    const destinationResponse = await fetch(
+      `/api/auth/login-destination${
+        intendedRoute ? `?next=${encodeURIComponent(intendedRoute)}` : ""
+      }`,
+      {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      },
+    );
 
-    const redirectTarget = resolvePostLoginRedirect({
-      adminRole,
-      role: null,
-      profileRole: profileResult.data?.role || null,
-      profileAccountType: profileResult.data?.account_type || null,
-      isAdminUser: Boolean(adminRole),
-      isLocationOwner:
-        Boolean(locationsResult.data?.length) ||
-        Boolean(restaurantsResult.data?.length),
-      intendedPath: intendedRoute,
-    });
+    const destinationData = await destinationResponse.json().catch(() => null);
 
-    console.log("LOGIN_REDIRECT_DEBUG", {
-      userId: user.id,
-      email: user.email,
-      adminRole,
-      redirectTarget,
-    });
+    console.log("LOGIN_REDIRECT_DEBUG", destinationData);
 
-    window.location.href = redirectTarget;
+    if (!destinationResponse.ok) {
+      setError(
+        destinationData?.reason || "Login succeeded, but we could not resolve your dashboard.",
+      );
+      return;
+    }
+
+    window.location.href = destinationData?.redirectTo || "/create";
   };
 
   const handleCreate = async (e: React.FormEvent) => {
