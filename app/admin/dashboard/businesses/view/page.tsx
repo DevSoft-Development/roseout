@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getUpgradeFlags, listBusinessCRM } from "@/lib/admin-crm";
 import BusinessCommunicationSection from "@/components/admin/business/BusinessCommunicationSection";
@@ -6,7 +7,8 @@ import BusinessCommunicationSection from "@/components/admin/business/BusinessCo
 export const dynamic = "force-dynamic";
 
 export default async function BusinessViewPage({ searchParams }: { searchParams: Promise<{ q?: string; locationId?: string }> }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
   const params = await searchParams;
   const q = (params.q || "").trim().toLowerCase();
   const allBusinesses = await listBusinessCRM(500);
@@ -32,11 +34,12 @@ export default async function BusinessViewPage({ searchParams }: { searchParams:
                 <Link key={business.id} href={`/admin/dashboard/businesses/view?locationId=${business.id}${q ? `&q=${encodeURIComponent(q)}` : ""}`} className={`block rounded-xl border px-3 py-2 ${selected?.id===business.id?"border-rose-300/60 bg-rose-500/10":"border-white/10 hover:bg-white/5"}`}>
                   <p className="font-semibold">{business.name}</p>
                   <p className="text-xs text-white/60">{business.crm_status} · Opp {Math.round(business.opportunity_score)} · Churn {Math.round(business.churn_risk_score)}</p>
+                  {canImpersonate && (business.owner_user_id ? <div className="mt-2"><ImpersonateButton targetType="location_owner" locationId={business.id} locationType={business.location_type || "restaurants"} userId={business.owner_user_id} label="Log in as owner" className="rounded-full border border-amber-200/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-black text-amber-50 hover:bg-amber-500/25 disabled:opacity-50" /></div> : <p className="mt-2 text-[11px] font-semibold text-white/35">No owner connected</p>)}
                 </Link>
               ))}
             </div>
           </div>
-          {selected ? <div className="space-y-4"><section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">{selected.name}</h2><p className="mt-1 text-sm text-white/65">{[selected.city,selected.state].filter(Boolean).join(', ') || 'Unknown city/state'}</p><div className="mt-3 flex flex-wrap gap-2">{getUpgradeFlags(selected).map((f)=><span key={f} className="rounded-full border border-rose-300/40 bg-rose-500/10 px-2 py-1 text-xs">{f}</span>)}</div></section><BusinessCommunicationSection business={selected} /><section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h3 className="font-black">CRM Tabs</h3><p className="mt-2 text-sm text-white/70">Overview · Analytics · Sales / Plan · Upgrade Opportunity · Reservation Links · Claim Codes · Outreach · Follow Ups · Communication · Notes / History · Promotions · Churn Risk</p></section></div> : <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">No businesses found.</div>}
+          {selected ? <div className="space-y-4"><section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">{selected.name}</h2><p className="mt-1 text-sm text-white/65">{[selected.city,selected.state].filter(Boolean).join(', ') || 'Unknown city/state'}</p><div className="mt-3 flex flex-wrap gap-2">{getUpgradeFlags(selected).map((f)=><span key={f} className="rounded-full border border-rose-300/40 bg-rose-500/10 px-2 py-1 text-xs">{f}</span>)}</div>{canImpersonate && <div className="mt-4">{selected.owner_user_id ? <ImpersonateButton targetType="location_owner" locationId={selected.id} locationType={selected.location_type || "restaurants"} userId={selected.owner_user_id} label="Log in as owner" className="rounded-full border border-amber-200/40 bg-amber-500/15 px-4 py-2 text-xs font-black uppercase tracking-wide text-amber-50 hover:bg-amber-500/25 disabled:opacity-50" /> : <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-wide text-white/45">No owner connected</span>}</div>}</section><BusinessCommunicationSection business={selected} /><section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h3 className="font-black">CRM Tabs</h3><p className="mt-2 text-sm text-white/70">Overview · Analytics · Sales / Plan · Upgrade Opportunity · Reservation Links · Claim Codes · Outreach · Follow Ups · Communication · Notes / History · Promotions · Churn Risk</p></section></div> : <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">No businesses found.</div>}
         </section>
       </div>
     </main>

@@ -7,6 +7,7 @@ import {
   ExternalLink,
   LogOut,
   Menu,
+  Shield,
   Search,
   ShieldCheck,
   Sparkles,
@@ -30,6 +31,7 @@ type SearchResult = {
   title: string;
   subtitle: string;
   meta: string;
+  ownerUserId?: string | null;
 };
 
 type NavItem = {
@@ -53,6 +55,7 @@ type NavGroup = {
   sections?: NavSection[];
   widthClass?: string;
   gridClass?: string;
+  align?: "left" | "right";
   activePaths?: string[];
   activePrefixes?: string[];
 };
@@ -102,12 +105,19 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openMobileGroups, setOpenMobileGroups] = useState<Record<string, boolean>>({});
   const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
+  const [impersonationOpen, setImpersonationOpen] = useState(false);
+  const [impersonationTab, setImpersonationTab] = useState<"users" | "locations">("users");
+  const [impersonationQuery, setImpersonationQuery] = useState("");
+  const [impersonationResults, setImpersonationResults] = useState<SearchResult[]>([]);
+  const [impersonationSearching, setImpersonationSearching] = useState(false);
+  const [impersonationStartingId, setImpersonationStartingId] = useState<string | null>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
   const canView = ["superadmin", "admin", "editor", "viewer"].includes(adminRole);
   const canManagePlatform = ["superadmin", "admin"].includes(adminRole);
+  const canImpersonate = canManagePlatform;
 
   const dashboardItem: NavItem = useMemo(
     () => ({ label: "Dashboard", href: "/admin/dashboard", visible: canView, exact: true }),
@@ -170,17 +180,16 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
       },
       {
         label: "Analytics",
-        activePaths: ["/admin/dashboard/analytics", "/admin/search-qa", "/admin/dashboard/logs"],
+        activePaths: ["/admin/dashboard/analytics", "/admin/search-qa"],
         items: [
           { label: "Analytics Overview", href: "/admin/dashboard/analytics", visible: canView, exact: true },
           { label: "Search QA", href: "/admin/search-qa", visible: canView },
-          { label: "Logs", href: "/admin/dashboard/logs", visible: canView },
         ],
       },
       {
-        label: "More",
-        widthClass: "w-[min(42rem,calc(100vw-2rem))]",
-        gridClass: "sm:grid-cols-3",
+        label: "Admin Tools",
+        widthClass: "w-[360px] max-w-[calc(100vw-24px)]",
+        align: "right",
         activePaths: [
           "/admin/dashboard/reviews",
           "/admin/dashboard/support",
@@ -190,11 +199,6 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/email-templates",
           "/admin/dashboard/settings/promo-codes",
           "/admin/dashboard/seo-tools",
-          "/admin/dashboard/settings",
-          "/admin/dashboard/feature-flags",
-          "/admin/dashboard/users",
-          "/admin/platform",
-          "/admin/dashboard/launch-checklist",
         ],
         sections: [
           {
@@ -215,20 +219,10 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               { label: "SEO Tools", href: "/admin/dashboard/seo-tools", visible: canView },
             ],
           },
-          {
-            label: "Settings",
-            items: [
-              { label: "Settings", href: "/admin/dashboard/settings", visible: canView, exact: true },
-              { label: "Feature Flags", href: "/admin/dashboard/feature-flags", visible: canView },
-              { label: "Users", href: "/admin/dashboard/users", visible: canManagePlatform },
-              { label: "Platform", href: "/admin/platform", visible: canManagePlatform },
-              { label: "Launch Checklist", href: "/admin/dashboard/launch-checklist", visible: canView },
-            ],
-          },
         ],
       },
     ],
-    [canManagePlatform, canView],
+    [canView],
   );
 
   const visibleGroups = navGroups
@@ -255,6 +249,8 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
       { label: "Platform Settings", href: "/admin/platform", visible: canManagePlatform },
       { label: "General Settings", href: "/admin/dashboard/settings", visible: canManagePlatform },
       { label: "Feature Flags", href: "/admin/dashboard/feature-flags", visible: canManagePlatform },
+      { label: "Users", href: "/admin/dashboard/users", visible: canManagePlatform },
+      { label: "Launch Checklist", href: "/admin/dashboard/launch-checklist", visible: canManagePlatform },
       { label: "Logs", href: "/admin/dashboard/logs", visible: canManagePlatform },
     ],
   };
@@ -290,6 +286,19 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     if (group.label === "Analytics" && pathname === "/admin/dashboard/analytics/reservations") {
       return false;
     }
+    if (group.label === "Admin Tools") {
+      const adminToolPaths = [
+        "/admin/dashboard/reviews",
+        "/admin/dashboard/support",
+        "/admin/dashboard/communication",
+        "/admin/dashboard/campaigns",
+        "/admin/dashboard/sms",
+        "/admin/dashboard/email-templates",
+        "/admin/dashboard/settings/promo-codes",
+        "/admin/dashboard/seo-tools",
+      ];
+      return adminToolPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+    }
     if (group.activePaths?.includes(pathname)) return true;
     if (group.activePrefixes?.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return true;
     return [...(group.items ?? []), ...(group.sections?.flatMap((section) => section.items) ?? [])].some((item) =>
@@ -319,6 +328,35 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     return () => clearTimeout(timer);
   }, [query, searchOpen]);
 
+
+  useEffect(() => {
+    const cleanQuery = impersonationQuery.trim();
+    if (!impersonationOpen || cleanQuery.length < 2) {
+      setImpersonationResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setImpersonationSearching(true);
+      try {
+        const res = await fetch(`/api/admin/search?q=${encodeURIComponent(cleanQuery)}`);
+        const data = await res.json();
+        const allResults = (data.results || []) as SearchResult[];
+        setImpersonationResults(
+          impersonationTab === "users"
+            ? allResults.filter((item) => item.type === "user")
+            : allResults.filter((item) => item.type === "location"),
+        );
+      } catch {
+        setImpersonationResults([]);
+      } finally {
+        setImpersonationSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [impersonationOpen, impersonationQuery, impersonationTab]);
+
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -339,6 +377,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         setSearchOpen(false);
         setMobileNavOpen(false);
         setOpenNavGroup(null);
+        setImpersonationOpen(false);
       }
     };
 
@@ -355,11 +394,48 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     setSearchOpen(false);
     setMobileNavOpen(false);
     setOpenNavGroup(null);
+    setImpersonationOpen(false);
   };
 
   const handleSearchLinkClick = () => {
     closeMenus();
     setQuery("");
+  };
+
+
+  const openImpersonation = (tab: "users" | "locations") => {
+    setImpersonationTab(tab);
+    setImpersonationOpen(true);
+    setProfileOpen(false);
+    setMobileNavOpen(false);
+  };
+
+  const startImpersonation = async (item: SearchResult) => {
+    const confirmed = window.confirm(
+      "You are about to log in as this account. This action will be recorded in the admin audit log.",
+    );
+    if (!confirmed) return;
+
+    setImpersonationStartingId(item.id);
+    try {
+      const res = await fetch("/api/admin/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          item.type === "user"
+            ? { targetType: "user", targetUserId: item.id }
+            : { targetType: "location_owner", locationId: item.id, locationType: item.locationType },
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.redirectTo) {
+        window.alert(data.error || "Unable to start secure impersonation.");
+        return;
+      }
+      window.location.href = data.redirectTo;
+    } finally {
+      setImpersonationStartingId(null);
+    }
   };
 
   const handleSignOut = async () => {
@@ -481,8 +557,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                 </button>
                 <div
                   className={cx(
-                    "absolute left-0 top-full z-[150] mt-3 rounded-3xl border border-white/10 bg-[#120d0b]/95 p-2 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl transition-all duration-150",
-                    group.widthClass || "w-80",
+                    "absolute top-full z-[160] mt-3 max-h-[calc(100vh-90px)] overflow-y-auto rounded-3xl border border-white/10 bg-[#120d0b]/95 p-2 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl transition-all duration-150",
+                    group.align === "right" ? "right-0" : "left-0",
+                    group.widthClass || "w-80 max-w-[calc(100vw-24px)]",
                     groupOpen ? "visible translate-y-0 opacity-100" : "invisible -translate-y-1 opacity-0",
                   )}
                 >
@@ -605,7 +682,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               <ChevronDown className={cx("h-4 w-4 text-white/55 transition-transform", profileOpen && "rotate-180")} />
             </button>
             {profileOpen && (
-              <div className="absolute right-0 z-[160] mt-3 w-[min(21rem,calc(100vw-1rem))] rounded-2xl border border-white/10 bg-[#120d0b]/95 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
+              <div className="absolute right-0 z-[170] mt-3 max-h-[calc(100vh-90px)] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-2xl border border-white/10 bg-[#120d0b]/95 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
                 <div className="rounded-2xl border border-rose-200/15 bg-gradient-to-br from-white/[0.07] to-rose-950/20 p-4">
                   <div className="flex items-start gap-3">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-200 to-amber-200 text-sm font-black text-[#5b1022]">
@@ -643,6 +720,21 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                   {renderProfileSection(profileQuickActions)}
                   {renderProfileSection(profileAdminControls)}
                   {renderProfileSection(profileSupport)}
+                  {canImpersonate && (
+                    <div className="border-t border-white/10 pt-3">
+                      <p className="px-2 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100/55">Impersonation</p>
+                      <div className="mt-1 grid gap-1">
+                        <button type="button" onClick={() => openImpersonation("users")} className="flex items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold text-white/75 transition hover:bg-white/[0.06] hover:text-white">
+                          Log in as User
+                          <Shield className="h-3.5 w-3.5 text-rose-100/70" />
+                        </button>
+                        <button type="button" onClick={() => openImpersonation("locations")} className="flex items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold text-white/75 transition hover:bg-white/[0.06] hover:text-white">
+                          Log in as Location / Location Owner
+                          <Shield className="h-3.5 w-3.5 text-rose-100/70" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -657,6 +749,73 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           </div>
         </div>
       </div>
+
+
+      {impersonationOpen && canImpersonate && (
+        <div className="fixed inset-0 z-[180] bg-black/70 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="mx-auto max-h-[calc(100vh-48px)] max-w-2xl overflow-y-auto rounded-[2rem] border border-white/10 bg-[#120d0b]/98 p-5 text-white shadow-[0_30px_100px_rgba(0,0,0,0.72)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.26em] text-rose-200/70">Secure admin action</p>
+                <h2 className="mt-2 text-2xl font-black">Log in as user or location owner</h2>
+                <p className="mt-1 text-sm text-white/55">Search, confirm, and start an audited impersonation session.</p>
+              </div>
+              <button type="button" onClick={() => setImpersonationOpen(false)} className="rounded-full border border-white/10 bg-white/[0.05] p-2 text-white/70 hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/25 p-1">
+              <button type="button" onClick={() => setImpersonationTab("users")} className={cx("rounded-xl px-3 py-2 text-sm font-black", impersonationTab === "users" ? "bg-rose-500/20 text-rose-50" : "text-white/55 hover:text-white")}>Users</button>
+              <button type="button" onClick={() => setImpersonationTab("locations")} className={cx("rounded-xl px-3 py-2 text-sm font-black", impersonationTab === "locations" ? "bg-rose-500/20 text-rose-50" : "text-white/55 hover:text-white")}>Location Owners</button>
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-2">
+              <Search className="h-4 w-4 text-rose-100/70" />
+              <input
+                value={impersonationQuery}
+                onChange={(event) => setImpersonationQuery(event.target.value)}
+                placeholder={impersonationTab === "users" ? "Search by user name or email..." : "Search by location, owner name, or owner email..."}
+                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+                autoFocus
+              />
+            </div>
+
+            <div className="mt-4 max-h-[24rem] overflow-y-auto pr-1">
+              {impersonationSearching && <p className="px-2 py-4 text-sm text-white/55">Searching...</p>}
+              {!impersonationSearching && impersonationQuery.trim().length < 2 && (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">Type at least two characters to search.</div>
+              )}
+              {!impersonationSearching && impersonationQuery.trim().length >= 2 && impersonationResults.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-rose-200/15 bg-rose-950/10 p-4 text-sm text-white/60">No results found.</div>
+              )}
+              {impersonationResults.map((item) => {
+                const canStartLocation = item.type === "user" || Boolean(item.ownerUserId);
+                return (
+                  <div key={`impersonate-${item.type}-${item.id}`} className="mt-2 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-white">{item.title}</p>
+                        <p className="truncate text-xs text-white/55">{item.subtitle}</p>
+                        <p className="truncate text-[11px] uppercase tracking-[0.14em] text-rose-100/50">{item.meta}</p>
+                        {item.type === "location" && !item.ownerUserId && <p className="mt-1 text-xs font-semibold text-amber-100/70">No owner connected</p>}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!canStartLocation || impersonationStartingId === item.id}
+                        onClick={() => startImpersonation(item)}
+                        className="rounded-full border border-rose-200/25 bg-rose-500/15 px-4 py-2 text-xs font-black text-rose-50 transition hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {impersonationStartingId === item.id ? "Starting secure login..." : item.type === "user" ? "Log in as user" : "Log in as owner"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {mobileNavOpen && (
         <div className="max-h-[calc(100vh-72px)] overflow-y-auto border-t border-white/10 bg-[#090706]/98 px-4 pb-4 shadow-2xl backdrop-blur-2xl xl:hidden">
@@ -736,6 +895,18 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                     <Sparkles className="h-3 w-3" />
                     Internal Console
                   </span>
+                </div>
+                {canImpersonate && (
+                  <div className="grid gap-2 border-t border-white/10 pt-3">
+                    <p className="px-1 text-[10px] font-black uppercase tracking-[0.22em] text-rose-100/55">Impersonation</p>
+                    <button type="button" onClick={() => openImpersonation("users")} className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left text-sm font-black text-white/80">Log in as User</button>
+                    <button type="button" onClick={() => openImpersonation("locations")} className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left text-sm font-black text-white/80">Log in as Location / Location Owner</button>
+                  </div>
+                )}
+                <div className="grid gap-1 border-t border-white/10 pt-3">
+                  {renderProfileSection(profileQuickActions)}
+                  {renderProfileSection(profileAdminControls)}
+                  {renderProfileSection(profileSupport)}
                 </div>
                 <button
                   onClick={handleSignOut}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminRole } from "@/lib/admin-auth";
+import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { formatRoleLabel, isAdminRole, isUserRole, normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
 export const dynamic = "force-dynamic";
@@ -174,6 +175,7 @@ export default async function AdminUsersPage({
 }) {
   const currentAdmin = await requireAdminRole(["superadmin", "admin"]);
   const canEditUsers = currentAdmin.role === "superadmin";
+  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
 
   const params = await searchParams;
 
@@ -471,6 +473,15 @@ export default async function AdminUsersPage({
                           >
                             Edit
                           </Link>
+                        )}
+
+                        {canImpersonate && (
+                          <ImpersonateButton
+                            userId={user.id}
+                            targetType="user"
+                            label="Log in as user"
+                            className="rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-black text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:opacity-50"
+                          />
                         )}
 
                         <form action={disableUser}>
