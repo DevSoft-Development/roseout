@@ -7,15 +7,16 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
+import { buildMetadata } from "@/lib/seo";
 
 export const revalidate = 300;
 
-export const metadata: Metadata = {
-  title: "TheOutHaven | Plan Better OUTings",
+export const metadata: Metadata = buildMetadata({
+  title: "Plan Better Outings",
   description:
-    "Discover restaurants, nightlife, experiences, and curated outing ideas personalized around your vibe, budget, and location.",
-  alternates: { canonical: "https://www.theouthaven.com" },
-};
+    "TheOutHaven helps people discover restaurants, activities, and curated outing ideas across New York City and Long Island.",
+  path: "/",
+});
 
 type HomeLocation = {
   id: string;
@@ -222,7 +223,7 @@ function PlanByOccasion() {
         {occasionCards.map((card) => (
           <Link
             key={card.title}
-            href={createPromptHref(card.prompt)}
+            href={occasionHref(card.title, card.prompt)}
             className="group flex min-h-[178px] flex-col rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/20 hover:bg-white/[0.06]"
           >
             <h3 className="text-lg font-black">{card.title}</h3>
@@ -472,9 +473,19 @@ function createPromptHref(prompt: string) {
   return `/create?prompt=${encodeURIComponent(prompt)}`;
 }
 
+function occasionHref(title: string, prompt: string) {
+  const landingPages: Record<string, string> = {
+    "Date Night": "/explore/date-night",
+    "Brunch Plans": "/explore/brunch-spots",
+    "Rooftop Night": "/explore/rooftop-restaurants",
+    "Dinner + Hookah": "/explore/hookah-lounges",
+  };
+
+  return landingPages[title] || createPromptHref(prompt);
+}
+
 function areaHref(area: string) {
-  if (area === "Long Island") return createPromptHref("restaurants and activities in Long Island");
-  return `/explore?borough=${encodeURIComponent(area)}`;
+  return `/explore/${area.toLowerCase().replace(/\s+/g, "-")}`;
 }
 
 function ratingLabel(location: HomeLocation) {

@@ -18,7 +18,7 @@ export default function ClaimQrScanner({
   description = "Point your camera at the QR code on your TheOutHaven postcard.",
 }: ClaimQrScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const scannerIdRef = useRef(
+  const [scannerId] = useState(() =>
     `claim-qr-reader-${Math.random().toString(36).slice(2)}`
   );
   const hasScannedRef = useRef(false);
@@ -54,7 +54,7 @@ export default function ClaimQrScanner({
 
         if (!mounted) return;
 
-        const scanner = new Html5Qrcode(scannerIdRef.current);
+        const scanner = new Html5Qrcode(scannerId);
         scannerRef.current = scanner;
 
         await scanner.start(
@@ -101,7 +101,7 @@ export default function ClaimQrScanner({
       mounted = false;
       void stopScanner();
     };
-  }, [description, onCodeFound]);
+  }, [description, onCodeFound, scannerId]);
 
   async function handleClose() {
     const scanner = scannerRef.current;
@@ -144,7 +144,7 @@ export default function ClaimQrScanner({
       </div>
 
       <div
-        id={scannerIdRef.current}
+        id={scannerId}
         className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#0d0d0d]"
       />
     </div>

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -6,8 +7,16 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
+import { buildMetadata } from "@/lib/seo";
 
 export const revalidate = 300;
+
+export const metadata: Metadata = buildMetadata({
+  title: "Explore Restaurants, Activities & Outing Ideas",
+  description:
+    "Explore searchable restaurants, activities, neighborhoods, and outing ideas across New York City and Long Island on TheOutHaven.",
+  path: "/explore",
+});
 
 type ExploreLocation = {
   id: string;
@@ -70,7 +79,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
 
   const sections = buildSections(filtered);
 
-  return <main className="min-h-screen overflow-x-hidden bg-[#070303] text-white"><TheOutHavenHeader /><section className="relative overflow-hidden px-5 pb-16 pt-32 sm:px-6 lg:pt-40"><div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_15%_20%,rgba(225,6,42,0.28),transparent_36%),radial-gradient(circle_at_85%_0%,rgba(255,255,255,.1),transparent_24%),linear-gradient(150deg,#080303_0%,#160807_50%,#080303_100%)]" /><div className="mx-auto max-w-7xl space-y-8"><HeroSearch /><FilterRow selectedBorough={selectedBorough} selectedKind={selectedKind} selectedCategory={selectedCategory} categoryOptions={categoryOptions} />{sections.map((s) => <SectionRow key={s.title} title={s.title} items={s.items} />)}</div></section><PublicFooter /></main>;
+  return <main className="min-h-screen overflow-x-hidden bg-[#070303] text-white"><TheOutHavenHeader /><section className="relative overflow-hidden px-5 pb-16 pt-32 sm:px-6 lg:pt-40"><div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_15%_20%,rgba(225,6,42,0.28),transparent_36%),radial-gradient(circle_at_85%_0%,rgba(255,255,255,.1),transparent_24%),linear-gradient(150deg,#080303_0%,#160807_50%,#080303_100%)]" /><div className="mx-auto max-w-7xl space-y-8"><HeroSearch /><SeoLandingLinks /><FilterRow selectedBorough={selectedBorough} selectedKind={selectedKind} selectedCategory={selectedCategory} categoryOptions={categoryOptions} />{sections.map((s) => <SectionRow key={s.title} title={s.title} items={s.items} />)}</div></section><PublicFooter /></main>;
 }
 
 async function loadExploreData() {
@@ -86,6 +95,35 @@ async function loadExploreData() {
 
 function HeroSearch() {
   return <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/35 sm:p-10"><h1 className="text-4xl font-black tracking-tight sm:text-6xl">Explore TheOutHaven</h1><p className="mt-4 max-w-3xl text-white/75">Search NYC restaurants and activities with live location data.</p><form action="/create" method="get" className="mt-6 flex flex-col gap-3 sm:flex-row"><input type="text" name="prompt" placeholder="Search by vibe, cuisine, borough, or activity" className="w-full rounded-full border border-white/20 bg-black/35 px-5 py-3 text-sm outline-none focus:border-[#e1062a]" /><button type="submit" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black">Search</button></form></div>;
+}
+
+
+function SeoLandingLinks() {
+  const links = [
+    ["Queens", "/explore/queens"],
+    ["Brooklyn", "/explore/brooklyn"],
+    ["Manhattan", "/explore/manhattan"],
+    ["Long Island", "/explore/long-island"],
+    ["Steak Restaurants", "/explore/steak-restaurants"],
+    ["Brunch Spots", "/explore/brunch-spots"],
+    ["Hookah Lounges", "/explore/hookah-lounges"],
+    ["Rooftop Restaurants", "/explore/rooftop-restaurants"],
+    ["Date Night", "/explore/date-night"],
+  ] as const;
+
+  return (
+    <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
+      <h2 className="text-xl font-black">Browse popular areas and categories</h2>
+      <p className="mt-1 text-sm text-white/60">Crawlable local pages powered by public TheOutHaven location data.</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {links.map(([label, href]) => (
+          <Link key={href} href={href} className="rounded-full border border-white/15 bg-black/25 px-4 py-2 text-sm font-black text-white/80 hover:bg-white hover:text-black">
+            {label}
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function FilterRow({ selectedBorough, selectedKind, selectedCategory, categoryOptions }: { selectedBorough: string; selectedKind: string; selectedCategory: string; categoryOptions: string[] }) {

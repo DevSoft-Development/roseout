@@ -1,5 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { buildMetadata } from "@/lib/seo";
+
+
+export const metadata: Metadata = buildMetadata({
+  title: "Business Listings",
+  description:
+    "Claim and manage a TheOutHaven business listing so guests can discover accurate restaurant, activity, contact, and reservation details.",
+  path: "/business",
+});
 
 const claimCta = "/business/claim";
 const plansCta = "/business#plans";

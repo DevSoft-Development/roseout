@@ -4,26 +4,43 @@ import { getSiteUrl } from "@/lib/site-url";
 
 export const dynamic = "force-dynamic";
 
+const MAX_LOCATION_URLS = 5000;
+const LOCAL_SEO_ROUTES = [
+  "/explore/queens",
+  "/explore/brooklyn",
+  "/explore/manhattan",
+  "/explore/bronx",
+  "/explore/staten-island",
+  "/explore/long-island",
+  "/explore/steak-restaurants",
+  "/explore/brunch-spots",
+  "/explore/hookah-lounges",
+  "/explore/rooftop-restaurants",
+  "/explore/date-night",
+];
+
 function adminSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        persistSession: false,
-      },
-    }
+    { auth: { persistSession: false } },
   );
 }
 
 function safeDate(value?: string | null) {
   if (!value) return new Date();
-
   const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
 
-  if (Number.isNaN(date.getTime())) return new Date();
-
-  return date;
+function route(path: string, priority: number, changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"]): MetadataRoute.Sitemap[number] {
+  const siteUrl = getSiteUrl();
+  return {
+    url: path === "/" ? siteUrl : `${siteUrl}${path}`,
+    lastModified: new Date(),
+    changeFrequency,
+    priority,
+  };
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -31,70 +48,42 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const supabase = adminSupabase();
 
   const staticRoutes: MetadataRoute.Sitemap = [
-    {
-      url: `${siteUrl}`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 1,
-    },
-    {
-      url: `${siteUrl}/create`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.95,
-    },
-    {
-      url: `${siteUrl}/signup`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
-    {
-      url: `${siteUrl}/login`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.4,
-    },
-    {
-      url: `${siteUrl}/privacy`,
-      lastModified: new Date(),
-      changeFrequency: "yearly",
-      priority: 0.3,
-    },
-    {
-      url: `${siteUrl}/terms`,
-      lastModified: new Date(),
-      changeFrequency: "yearly",
-      priority: 0.3,
-    },
+    route("/", 1, "daily"),
+    route("/explore", 0.95, "daily"),
+    route("/create", 0.9, "daily"),
+    route("/business", 0.8, "monthly"),
+    route("/privacy", 0.3, "yearly"),
+    route("/terms", 0.3, "yearly"),
+    route("/contact", 0.5, "monthly"),
+    ...LOCAL_SEO_ROUTES.map((path) => route(path, 0.72, "weekly")),
   ];
 
   const { data: locations } = await supabase
     .from("locations")
-    .select(
-      "id, location_type, created_at, is_searchable, data_status, is_hidden, status, name, address, city, state, latitude, longitude, main_image",
-    )
+    .select("id, location_type, type, source_table, slug, updated_at, created_at, is_searchable, data_status, is_hidden, status")
     .eq("is_searchable", true)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')
-    .limit(5000);
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .limit(MAX_LOCATION_URLS);
 
   const locationRoutes: MetadataRoute.Sitemap =
     locations
-      ?.filter(
-        (location: any) =>
-          location.status !== "closed" && location.status !== "archived",
-      )
+      ?.filter((location: any) => {
+        const status = String(location.status || "").toLowerCase();
+        return location.is_searchable === true && location.data_status === "clean" && location.is_hidden !== true && status !== "closed" && status !== "archived";
+      })
       .map((location: any) => {
-        const routeType =
-          location.location_type === "restaurant" ? "restaurants" : "activities";
+        const rawType = String(location.location_type || location.type || location.source_table || "restaurant").toLowerCase();
+        const routeType = rawType.includes("activity") ? "activities" : "restaurants";
+        const identifier = location.slug || location.id;
 
         return {
-          url: `${siteUrl}/locations/${routeType}/${location.id}`,
-          lastModified: safeDate(location.created_at),
+          url: `${siteUrl}/locations/${routeType}/${identifier}`,
+          lastModified: safeDate(location.updated_at || location.created_at),
           changeFrequency: "weekly",
-          priority: location.location_type === "restaurant" ? 0.75 : 0.7,
+          priority: routeType === "restaurants" ? 0.75 : 0.7,
         };
       }) || [];
 
