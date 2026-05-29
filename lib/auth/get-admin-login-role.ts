@@ -3,7 +3,7 @@ type AuthUserLike = {
   email?: string | null;
 };
 
-type AdminLoginRole = "admin" | "superadmin" | null;
+export type AdminLoginRole = "admin" | "superadmin" | null;
 
 function normalizeAdminLoginRole(role: unknown): AdminLoginRole {
   const normalized =
@@ -29,7 +29,11 @@ export async function getAdminLoginRole(
     .maybeSingle();
 
   if (error) {
-    console.error("Admin role lookup failed:", error.message);
+    console.error("getAdminLoginRole failed", {
+      userId: user.id,
+      email: user.email,
+      message: error.message,
+    });
     return null;
   }
 

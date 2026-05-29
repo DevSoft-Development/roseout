@@ -92,18 +92,10 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     e.preventDefault();
     setLoading(true);
     setError("");
-
-    const normalizedEmail = normalizeEmail(signin.email);
-
-    if (!normalizedEmail) {
-      setLoading(false);
-      return setError("Please enter the email address for your account.");
-    }
-
-    setSignin((current) => ({ ...current, email: normalizedEmail }));
+    setMessage("");
 
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
+      email: signin.email.trim().toLowerCase(),
       password: signin.password,
     });
 
@@ -112,50 +104,37 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       return setError(error.message);
     }
 
-    const sessionResult = data.session
-      ? { data: { session: data.session }, error: null }
-      : await supabase.auth.getSession();
-    const session = sessionResult.data.session;
-    const user = data.user || session?.user;
-    const accessToken = session?.access_token;
-    const refreshToken = session?.refresh_token;
+    const user = data.user;
+    const accessToken = data.session?.access_token;
 
-    if (!user || !accessToken || !refreshToken) {
-      console.warn("LOGIN_SESSION_TOKEN_DEBUG", {
-        hasUser: Boolean(user),
-        hasAccessToken: Boolean(accessToken),
-        hasRefreshToken: Boolean(refreshToken),
-        getSessionError: sessionResult.error?.message ?? null,
-      });
+    if (!user?.id || !accessToken) {
       setLoading(false);
-      setError(
-        "Sign-in succeeded, but the browser did not receive the session tokens needed to finish setup. Please refresh the page and sign in again.",
-      );
-      return;
+      return setError("Login succeeded, but your session was not ready. Please try again.");
     }
 
     const intendedRoute = sanitizeIntendedPath(
       new URL(window.location.href).searchParams.get("next"),
     );
 
-    const destinationResponse = await fetch("/api/auth/login-destination", {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+    const destinationResponse = await fetch(
+      `/api/auth/login-destination${
+        intendedRoute ? `?next=${encodeURIComponent(intendedRoute)}` : ""
+      }`,
+      {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       },
-      body: JSON.stringify({
-        accessToken,
-        refreshToken,
-        next: intendedRoute,
-      }),
-    });
+    );
 
     const destinationData = await destinationResponse.json().catch(() => null);
 
-    console.debug("LOGIN_REDIRECT_DEBUG", {
+    console.log("LOGIN_REDIRECT_DEBUG", {
+      ok: destinationResponse.ok,
+      status: destinationResponse.status,
       redirectTo: destinationData?.redirectTo,
       adminRole: destinationData?.adminRole,
       reason: destinationData?.reason,
@@ -166,13 +145,10 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
 
     if (!destinationResponse.ok) {
       setLoading(false);
-      const syncReason = destinationData?.reason
-        ? ` (${destinationData.reason})`
-        : "";
-      setError(
-        `Sign-in succeeded, but we could not finish redirect setup${syncReason}. Please refresh and try again.`,
+      return setError(
+        destinationData?.reason ||
+          "Login succeeded, but we could not resolve your dashboard.",
       );
-      return;
     }
 
     window.location.assign(destinationData?.redirectTo || "/create");
