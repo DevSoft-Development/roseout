@@ -110,6 +110,27 @@ function geoHaystack(location: Record<string, unknown>) {
 }
 
 function field(location: Record<string, unknown>, name: string) { return normalizeGeoText(location[name]); }
+function locationState(location: Record<string, unknown>) {
+  return normalizeGeoText(
+    location.state ??
+    location.state_code ??
+    location.region ??
+    location.address ??
+    location.formatted_address ??
+    location.search_document ??
+    ""
+  );
+}
+function isClearlyOtherState(location: Record<string, unknown>, allowedState: string) {
+  const hay = locationState(location);
+  if (!hay) return false;
+
+  const otherStates = allowedState === "NY"
+    ? ["new jersey", " nj ", "connecticut", " ct ", "pennsylvania", " pa "]
+    : [];
+
+  return otherStates.some((token) => ` ${hay} `.includes(token));
+}
 function stateMatches(location: Record<string, unknown>, state = "NY") { const s = field(location, "state"); const sc = field(location, "state_code"); return s === normalizeGeoText(state) || sc === normalizeGeoText(state) || (state === "NY" && s === "new york"); }
 function locationHasAny(location: Record<string, unknown>, tokens: string[]) { const hay = geoHaystack(location); return tokens.some((token) => hasPhrase(hay, token)); }
 function isNycOnly(location: Record<string, unknown>) { return locationHasAny(location, ["queens", "brooklyn", "manhattan", "bronx", "staten island", ...Object.keys(NYC_NEIGHBORHOOD_ALIASES)]); }
@@ -117,6 +138,13 @@ function isNycOnly(location: Record<string, unknown>) { return locationHasAny(lo
 export function scoreGeoMatch(location: Record<string, unknown>, geoIntent?: GeoIntent | null): number {
   if (!geoIntent) return 0;
   let score = 0;
+  if (
+    geoIntent.state === "NY" &&
+    ["borough", "neighborhood", "city"].includes(geoIntent.geoType) &&
+    isClearlyOtherState(location, "NY")
+  ) {
+    score -= 500;
+  }
   const hay = geoHaystack(location);
   const county = field(location, "county");
   const city = field(location, "city");
@@ -153,6 +181,15 @@ export function scoreGeoMatch(location: Record<string, unknown>, geoIntent?: Geo
 
 export function locationMatchesGeo(location: Record<string, unknown>, geoIntent?: GeoIntent | null): boolean {
   if (!geoIntent) return true;
+
+  if (
+    geoIntent.state === "NY" &&
+    ["borough", "neighborhood", "city"].includes(geoIntent.geoType) &&
+    isClearlyOtherState(location, "NY")
+  ) {
+    return false;
+  }
+
   return scoreGeoMatch(location, geoIntent) > 0;
 }
 

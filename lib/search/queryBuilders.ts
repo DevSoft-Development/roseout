@@ -32,12 +32,13 @@ export function buildActivitySearchInput(intent: CanonicalSearchIntent): string 
   ) {
     return uniq([...intent.boroughs, ...intent.neighborhoods, ...(intent.geoIntent?.terms ?? []), "activity", "nightlife", "experience"]).join(" ");
   }
+  const activityVibes = intent.vibes.filter((vibe) => vibe !== "rooftop" || intent.activityIntents.includes("rooftop"));
   const terms = uniq([
     ...intent.activityIntents.map((v) => (v === "paint_and_sip" ? "paint and sip sip and paint painting studio" : v)),
     ...intent.boroughs,
     ...intent.neighborhoods,
     ...(intent.geoIntent?.terms ?? []),
-    ...intent.vibes,
+    ...activityVibes,
   ]);
   return terms.join(" ").trim();
 }

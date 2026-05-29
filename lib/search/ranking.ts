@@ -40,6 +40,8 @@ function isRestaurantLike(record: any) {
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
   const query = intent.normalizedQuery || intent.rawQuery || "";
   const requested = detectRequestedCuisines(query);
+  const explicitGeo = Boolean(intent.geoIntent || intent.borough || intent.neighborhood || intent.city);
+  const geoWeight = explicitGeo ? 4 : 1;
   return [...records].sort((a, b) => {
     const strictTerms = intent.specificMealFoodIntents?.length
       ? intent.specificMealFoodIntents
@@ -71,8 +73,8 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     const bGeo = scoreGeoMatch(b, intent.geoIntent);
     const aType = isRestaurantLike(a) ? 25 : -25;
     const bType = isRestaurantLike(b) ? 25 : -25;
-    as = (ad.score * 3) + (aType * 2) + aGeo + as;
-    bs = (bd.score * 3) + (bType * 2) + bGeo + bs;
+    as = (ad.score * 3) + (aType * 2) + (aGeo * geoWeight) + as;
+    bs = (bd.score * 3) + (bType * 2) + (bGeo * geoWeight) + bs;
     const ah = JSON.stringify(a).toLowerCase(); const bh = JSON.stringify(b).toLowerCase();
     if (requested.length>0) { if (ah.includes("activity") || ah.includes("event")) as -= 100; if (bh.includes("activity")||bh.includes("event")) bs -= 100; }
     return bs - as;
@@ -80,5 +82,12 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
 }
 
 export function rankActivities(records: any[], intent: CanonicalSearchIntent) {
-  return [...records].sort((a, b) => scoreRecord(b, intent.activityIntents) - scoreRecord(a, intent.activityIntents));
+  const explicitGeo = Boolean(intent.geoIntent || intent.borough || intent.neighborhood || intent.city);
+  const geoWeight = explicitGeo ? 4 : 1;
+
+  return [...records].sort((a, b) => {
+    const aScore = scoreRecord(a, intent.activityIntents) + scoreGeoMatch(a, intent.geoIntent) * geoWeight;
+    const bScore = scoreRecord(b, intent.activityIntents) + scoreGeoMatch(b, intent.geoIntent) * geoWeight;
+    return bScore - aScore;
+  });
 }

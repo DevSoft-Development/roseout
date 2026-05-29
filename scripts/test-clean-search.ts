@@ -9,6 +9,10 @@ const queries = [
   "Dessert after dinner",
   "Hookah lounge in Queens",
   "Restaurant with hookah in Queens",
+  "romantic rooftop dinner in Manhattan",
+  "steak dinner in Queens",
+  "seafood dinner in Brooklyn",
+  "rooftop bar in Manhattan",
 ] as const;
 
 async function run() {
@@ -61,6 +65,30 @@ for (const query of queries) {
       .map((activity) => `${activity.name ?? ""} ${activity.category ?? ""}`.toLowerCase())
       .join(" ");
     assert.equal(/candle making|dance studio/.test(activityText), false);
+  }
+
+  if (query === "romantic rooftop dinner in Manhattan") {
+    assert.equal(intent.needsRestaurant, true);
+    assert.equal(intent.needsActivity, false);
+    assert.equal(intent.wantsPairing, false);
+    assert.equal(intent.activityIntents.includes("rooftop"), false);
+    assert.ok(intent.vibes.includes("rooftop"));
+    assert.equal(intent.borough, "manhattan");
+    assert.equal(result.activities.length, 0);
+    assert.equal(result.debug?.geoStrictRequired, true);
+  }
+
+  if (query === "steak dinner in Queens" || query === "seafood dinner in Brooklyn") {
+    assert.equal(intent.needsRestaurant, true);
+    assert.equal(intent.needsActivity, false);
+    assert.equal(result.activities.length, 0);
+    assert.equal(result.debug?.geoStrictRequired, true);
+  }
+
+  if (query === "rooftop bar in Manhattan") {
+    assert.ok(intent.activityIntents.includes("rooftop"));
+    assert.equal(intent.needsActivity, true);
+    assert.equal(result.debug?.geoStrictRequired, true);
   }
 }
 
