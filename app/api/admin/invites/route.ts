@@ -1,4 +1,4 @@
-import { createClaimQr } from "@/lib/claimQr";
+import { createClaimQr } from "@/lib/claimQrServer";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseAdmin = createClient(

@@ -82,7 +82,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const token = searchParams.get("token")?.trim();
   const rawCode = searchParams.get("code");
-  const code = normalizeClaimCode(rawCode);
+  const code = normalizeClaimCode(rawCode || "");
 
   if (!token && !code) {
     return Response.json(
