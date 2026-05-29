@@ -1,5 +1,9 @@
 import { createClient } from "@/lib/supabase-browser";
-import { isAdminRole, normalizeRole } from "@/lib/users/roles";
+
+function normalizeAdminRole(role: unknown) {
+  if (role === "superuser" || role === "super_admin") return "superadmin";
+  return role;
+}
 
 export async function isAdmin() {
   const supabase = createClient();
@@ -10,11 +14,13 @@ export async function isAdmin() {
 
   if (!user?.id) return false;
 
-  const { data: adminUser } = await supabase
+  const { data } = await supabase
     .from("admin_users")
     .select("role")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  return isAdminRole(normalizeRole(adminUser?.role));
+  const role = normalizeAdminRole(data?.role);
+
+  return role === "admin" || role === "superadmin";
 }

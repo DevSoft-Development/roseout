@@ -8,20 +8,23 @@ type RedirectResolutionInput = {
   intendedPath?: string | null;
 };
 
-const ADMIN_ROLES = new Set(["superadmin", "admin", "editor", "viewer"]);
+const ADMIN_ROLES = new Set(["superadmin", "admin"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
 
 function normalizeRole(value: string | null | undefined): string | null {
   if (!value) return null;
   const role = value.trim().toLowerCase();
-  return role === "superuser" || role === "super_admin" ? "superadmin" : role;
+  if (role === "superuser" || role === "super_admin") return "superadmin";
+  return role;
 }
 
 export function sanitizeIntendedPath(path: string | null | undefined): string | null {
   if (!path) return null;
   if (!path.startsWith("/")) return null;
   if (path.startsWith("//")) return null;
-  if (path.startsWith("/login") || path.startsWith("/signup")) return null;
+  if (path.startsWith("/login")) return null;
+  if (path.startsWith("/signup")) return null;
+  if (path.startsWith("/auth")) return null;
   return path;
 }
 
@@ -37,6 +40,14 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
     input.profileRole,
     input.profileAccountType,
   ].map(normalizeRole);
+
+  const isAdminFromProfile = roleCandidates.some(
+    (role) => role && ADMIN_ROLES.has(role),
+  );
+
+  if (isAdminFromProfile) {
+    return "/admin/dashboard";
+  }
 
   const isOwner =
     input.isLocationOwner ||

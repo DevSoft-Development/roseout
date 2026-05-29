@@ -1,7 +1,19 @@
 import { createClient } from "@/lib/supabase-server";
-import { isAdminRole, normalizeRole, type AdminRole } from "@/lib/users/roles";
 
-export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
+type AdminRole = "admin" | "superadmin";
+
+function normalizeAdminRole(role: unknown): AdminRole | null {
+  const normalized =
+    role === "superuser" || role === "super_admin" ? "superadmin" : role;
+
+  if (normalized === "admin" || normalized === "superadmin") {
+    return normalized;
+  }
+
+  return null;
+}
+
+export async function requireAdminApiRole(allowedRoles: readonly string[]) {
   const supabase = await createClient();
 
   const {
@@ -22,14 +34,9 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const normalizedRole = normalizeRole(adminUser?.role);
+  const role = normalizeAdminRole(adminUser?.role);
 
-  if (
-    adminError ||
-    !adminUser ||
-    !isAdminRole(normalizedRole) ||
-    !allowedRoles.includes(normalizedRole)
-  ) {
+  if (adminError || !adminUser || !role || !allowedRoles.includes(role)) {
     return {
       error: Response.json({ error: "Forbidden" }, { status: 403 }),
       adminUser: null,
@@ -46,7 +53,7 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
         typeof user.user_metadata?.full_name === "string"
           ? user.user_metadata.full_name
           : null,
-      role: normalizedRole,
+      role,
     },
     supabase,
   };
