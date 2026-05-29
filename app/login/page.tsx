@@ -132,7 +132,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
 
     const destinationData = await destinationResponse.json().catch(() => null);
 
-    console.log("LOGIN_REDIRECT_DEBUG", {
+    console.log("SIGNUP_LOGIN_REDIRECT_DEBUG", {
       ok: destinationResponse.ok,
       status: destinationResponse.status,
       redirectTo: destinationData?.redirectTo,
