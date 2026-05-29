@@ -114,12 +114,13 @@ export default async function ExplorePage({
   const selectedArea = normalizeArea(params.area);
 
   const locations = await loadExploreData();
+  const normalizedQuery = normalizeSearch(q);
 
   const filteredLocations = rankLocations(
     locations.filter((location) => {
       const text = searchableText(location);
 
-      const matchesQuery = !q || text.includes(q.toLowerCase());
+      const matchesQuery = !normalizedQuery || text.includes(normalizedQuery);
       const matchesKind = selectedKind === "all" || matchesKindFilter(location, selectedKind);
       const matchesArea = selectedArea === "all" || matchesAreaFilter(location, selectedArea);
 
@@ -166,7 +167,10 @@ export default async function ExplorePage({
                   All Places
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-                  Browse curated restaurants, activities, lounges, rooftops, and local spots.
+                  Browse places first, then view details or start a full outing around a spot.
+                </p>
+                <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 text-white/42">
+                  Explore places first. Use Start Outing when you want TheOutHaven to build the plan around a spot.
                 </p>
               </div>
 
@@ -231,23 +235,23 @@ function HeroSearch({ q }: { q: string }) {
             Find your next place out.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-white/68">
-            Restaurants, activities, rooftops, lounges, brunch spots, and date-night ideas curated for TheOutHaven.
+            Browse restaurants, activities, rooftops, lounges, brunch spots, and date-night ideas. Want the full plan? Start from any place or build an outing.
           </p>
         </div>
 
         <div className="flex flex-col justify-end">
           <form action="/explore" method="get" className="rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-3">
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <input
                 type="text"
                 name="q"
                 defaultValue={q}
                 placeholder="Search by vibe, food, activity, or area"
-                className="min-h-12 w-full rounded-full border border-white/10 bg-black/45 px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-[#e1062a]"
+                className="min-h-12 min-w-0 flex-1 rounded-full border border-white/10 bg-black/45 px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-[#e1062a]"
               />
               <button
                 type="submit"
-                className="min-h-12 rounded-full bg-[#e1062a] px-6 text-sm font-black text-white transition hover:bg-red-500"
+                className="min-h-12 w-full rounded-full bg-[#e1062a] px-6 text-sm font-black text-white transition hover:bg-red-500 sm:w-auto sm:min-w-[112px] whitespace-nowrap"
               >
                 Search
               </button>
@@ -258,7 +262,7 @@ function HeroSearch({ q }: { q: string }) {
             href="/create"
             className="mt-3 text-center text-sm font-black text-white/65 transition hover:text-white"
           >
-            Want a full plan? Build an outing →
+            Need the full plan? Build an outing →
           </Link>
         </div>
       </div>
@@ -406,20 +410,29 @@ function LocationCard({ location }: { location: ExploreLocation }) {
           </div>
         ) : null}
 
-        <div className="mt-auto flex items-center gap-2 pt-4">
-          <Link
-            href={detailHref}
-            className="flex-1 rounded-full bg-[#e1062a] px-4 py-2.5 text-center text-xs font-black text-white transition hover:bg-red-500"
-          >
-            View Details
-          </Link>
+        <div className="mt-auto grid gap-2 pt-4">
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href={detailHref}
+              className="rounded-full bg-[#e1062a] px-4 py-2.5 text-center text-xs font-black text-white transition hover:bg-red-500"
+            >
+              View Details
+            </Link>
+
+            <Link
+              href={`/create?placeId=${encodeURIComponent(location.id)}&placeName=${encodeURIComponent(name)}`}
+              className="rounded-full border border-white/15 bg-white/[0.055] px-4 py-2.5 text-center text-xs font-black text-white/75 transition hover:bg-white hover:text-black"
+            >
+              Start Outing
+            </Link>
+          </div>
 
           {reserveHref ? (
             <a
               href={reserveHref}
               target="_blank"
               rel="noreferrer"
-              className="rounded-full border border-white/15 bg-white/[0.055] px-4 py-2.5 text-xs font-black text-white/75 transition hover:bg-white hover:text-black"
+              className="rounded-full border border-white/15 bg-black/35 px-4 py-2.5 text-center text-xs font-black text-white/65 transition hover:border-[#e1062a]/60 hover:text-white"
             >
               Reserve
             </a>
@@ -435,13 +448,13 @@ function EmptyState() {
     <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-8 text-center shadow-xl shadow-black/20">
       <h3 className="text-2xl font-black">No places found yet.</h3>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/60">
-        Try a different area, vibe, or category.
+        Try a different search, area, or category — or build a guided outing instead.
       </p>
       <Link
         href="/create"
         className="mt-5 inline-flex rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
       >
-        Build an outing instead
+        Build an outing
       </Link>
     </div>
   );
@@ -500,11 +513,16 @@ function rankScore(location: ExploreLocation) {
   );
 }
 
+function normalizeSearch(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function searchableText(location: ExploreLocation) {
-  return [
-    location.type,
-    location.source_table,
-    location.location_type,
+  return normalizeSearch([
     location.name,
     location.restaurant_name,
     location.activity_name,
@@ -512,8 +530,8 @@ function searchableText(location: ExploreLocation) {
     location.city,
     location.borough,
     location.neighborhood,
-    location.category,
     location.primary_category,
+    location.category,
     location.cuisine,
     location.cuisine_type,
     location.activity_type,
@@ -525,39 +543,97 @@ function searchableText(location: ExploreLocation) {
     ...toList(location.search_keywords),
   ]
     .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+    .join(" "));
 }
 
 function matchesKindFilter(location: ExploreLocation, kind: string) {
   const text = searchableText(location);
 
-  if (kind === "restaurants") return isRestaurant(location);
-  if (kind === "activities") return !isRestaurant(location) || text.includes("activity");
-  if (kind === "rooftops") return text.includes("rooftop");
-  if (kind === "lounges") return text.includes("lounge") || text.includes("hookah") || text.includes("nightlife");
-  if (kind === "brunch") return text.includes("brunch") || text.includes("breakfast");
+  if (kind === "restaurants") {
+    return isRestaurant(location);
+  }
+
+  if (kind === "activities") {
+    return isActivity(location);
+  }
+
+  if (kind === "rooftops") {
+    return text.includes("rooftop");
+  }
+
+  if (kind === "lounges") {
+    return (
+      text.includes("lounge") ||
+      text.includes("hookah") ||
+      text.includes("bar") ||
+      text.includes("nightlife")
+    );
+  }
+
+  if (kind === "brunch") {
+    return text.includes("brunch") || text.includes("breakfast");
+  }
 
   return true;
 }
 
 function matchesAreaFilter(location: ExploreLocation, area: string) {
-  const normalizedArea = area.toLowerCase();
+  const normalizedArea = normalizeSearch(area);
+  const text = normalizeSearch(
+    [location.borough, location.city, location.neighborhood].filter(Boolean).join(" "),
+  );
 
-  return [location.borough, location.city, location.neighborhood]
-    .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(normalizedArea));
+  if (normalizedArea === "long island") {
+    return [
+      "long island",
+      "nassau",
+      "suffolk",
+      "hempstead",
+      "freeport",
+      "garden city",
+      "mineola",
+      "westbury",
+      "huntington",
+      "melville",
+      "babylon",
+      "islip",
+      "patchogue",
+      "riverhead",
+    ].some((term) => text.includes(term));
+  }
+
+  return text.includes(normalizedArea);
 }
 
 function isRestaurant(location: ExploreLocation) {
   const text = searchableText(location);
+  const recordText = normalizeSearch([location.type, location.source_table, location.location_type].join(" "));
 
   return (
     Boolean(location.restaurant_name) ||
+    recordText.includes("restaurant") ||
     text.includes("restaurant") ||
     text.includes("dinner") ||
     text.includes("brunch") ||
+    text.includes("breakfast") ||
     text.includes("cuisine")
+  );
+}
+
+function isActivity(location: ExploreLocation) {
+  const text = searchableText(location);
+
+  return (
+    Boolean(location.activity_name) ||
+    text.includes("activity") ||
+    text.includes("sip and paint") ||
+    text.includes("bowling") ||
+    text.includes("arcade") ||
+    text.includes("museum") ||
+    text.includes("comedy") ||
+    text.includes("escape room") ||
+    text.includes("paint") ||
+    text.includes("karaoke")
   );
 }
 
@@ -567,7 +643,7 @@ function getTypeLabel(location: ExploreLocation) {
   if (text.includes("rooftop")) return "Rooftop";
   if (text.includes("hookah") || text.includes("lounge")) return "Lounge";
   if (isRestaurant(location)) return "Restaurant";
-  if (text.includes("activity")) return "Activity";
+  if (isActivity(location)) return "Activity";
 
   return cleanLabel(location.location_type || location.type || location.source_table) || "Place";
 }
