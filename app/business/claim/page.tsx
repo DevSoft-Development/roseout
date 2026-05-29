@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import ClaimQrScanner from "@/components/business/ClaimQrScanner";
 import { createClient } from "@/lib/supabase-browser";
 
 type VerifiedLocation = {
@@ -46,6 +47,7 @@ function ClaimPageInner() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [showScanner, setShowScanner] = useState(false);
   const [step, setStep] = useState<ClaimStep>(searchParams.get("submitted") === "pending" ? "submitted" : "verify");
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [form, setForm] = useState({
@@ -186,10 +188,10 @@ function ClaimPageInner() {
 
             <div className="mt-8 grid gap-4">
               <OptionCard
-                title="Scan QR Code"
-                text="Use the QR code from your TheOutHaven claim mailer to start a pending review request."
-                cta="Scan QR Code"
-                href="/business/claim/scan"
+                title="Scan QR code or enter claim code"
+                text="Use your device camera to scan the QR code on your postcard, or enter the printed claim code manually."
+                cta="Start Claim"
+                href="#claim-code"
               />
               <OptionCard
                 title="Enter Claim Code"
@@ -218,7 +220,37 @@ function ClaimPageInner() {
                   }}
                   className="rounded-[1.5rem] border border-white/10 bg-black p-5"
                 >
-                  <label className="block" htmlFor="claim-code">
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
+                    Scan QR code or enter claim code
+                  </p>
+                  <p className="mt-3 text-sm font-bold leading-6 text-white/55">
+                    Use your device camera to scan the QR code on your postcard, or enter the printed claim code manually.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError("");
+                      setShowScanner(true);
+                    }}
+                    className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-6 py-4 text-sm font-black text-white transition hover:border-[#e1062a]/60 hover:bg-[#e1062a]/10"
+                  >
+                    Scan QR Code With Device Camera
+                  </button>
+
+                  {showScanner && (
+                    <ClaimQrScanner
+                      onClose={() => setShowScanner(false)}
+                      onCodeFound={(code) => {
+                        const normalized = normalizeCode(code);
+                        setShowScanner(false);
+                        setClaimCode(normalized);
+                        verifyCode(normalized);
+                      }}
+                    />
+                  )}
+
+                  <label className="mt-5 block" htmlFor="claim-code">
                     <span className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
                       Claim code
                     </span>

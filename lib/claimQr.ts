@@ -61,7 +61,7 @@ export async function ensureClaimFields(row: ClaimFieldRow, options: { table?: C
   const claim_url = options.regenerateCode || options.regenerateToken || missing(row.claim_url) || legacyClaimUrl(row.claim_url) ? getClaimUrl(claim_code) : String(row.claim_url);
   const needsQr = options.regenerateQr || options.regenerateCode || options.regenerateToken || legacyClaimUrl(row.claim_url) || missing(row.qr_code_data_url) || missing(row.claim_qr_url);
   const qr_code_data_url = needsQr ? await generateQrDataUrl(claim_url) : String(row.qr_code_data_url || row.claim_qr_url);
-  return { claim_code, claim_token, claim_url, claim_status: row.claim_status || "unclaimed", qr_link: missing(row.qr_link) ? claim_url : String(row.qr_link), claim_qr_url: missing(row.claim_qr_url) || needsQr ? qr_code_data_url : String(row.claim_qr_url), qr_code_data_url };
+  return { claim_code, claim_token, claim_url, claim_status: row.claim_status || "unclaimed", qr_link: missing(row.qr_link) || legacyClaimUrl(row.qr_link) ? claim_url : String(row.qr_link), claim_qr_url: missing(row.claim_qr_url) || needsQr ? qr_code_data_url : String(row.claim_qr_url), qr_code_data_url };
 }
 
 export async function ensureClaimFieldsForTable(table: ClaimSourceTable, limit = 5000) {
