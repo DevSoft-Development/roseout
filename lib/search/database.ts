@@ -17,6 +17,11 @@ export type SearchDebug = {
   afterCategoryFilterActivityCount?: number;
   fallbackRestaurantUsed?: boolean;
   fallbackActivityUsed?: boolean;
+  geoStrictRequired?: boolean;
+  geoIntent?: ReturnType<typeof detectRequestedGeo>;
+  geoFilteredByQueryCount?: number;
+  geoFilteredByIntentCount?: number;
+  geoFilteredFinalCount?: number;
   rejectedRecords?: Array<{ name: string; reason: string; domain?: string | null }>;
 };
 
@@ -351,10 +356,38 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   const nameForDebug = (record: Record<string, unknown>) => String(record.name ?? record.restaurant_name ?? record.activity_name ?? record.business_name ?? "Unknown");
   const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
   const geoFilteredByQuery = geoIntent ? domainRecords.filter((record) => locationMatchesGeo(record, geoIntent)) : domainRecords.filter((record) => matchesGeo(record, intentQuery));
-  const geoFiltered = geoIntent
-    ? (geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent.length > 0 ? geoFilteredByIntent : domainRecords)
-    : (geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent.length > 0 ? geoFilteredByIntent : domainRecords);
-  if ((geoIntent || intent.boroughs.length > 0) && geoFilteredByQuery.length === 0 && domainRecords.length > 0) {
+  const hasExplicitGeo =
+    Boolean(geoIntent) ||
+    (intent.boroughs?.length ?? 0) > 0 ||
+    (intent.neighborhoods?.length ?? 0) > 0 ||
+    (intent.cities?.length ?? 0) > 0 ||
+    (intent.locations?.length ?? 0) > 0;
+  const strictGeoRequired =
+    hasExplicitGeo &&
+    ["borough", "neighborhood", "city", "county", "region", "area_group"].includes(String(geoIntent?.geoType ?? "borough"));
+
+  let geoFiltered: Record<string, unknown>[];
+  if (strictGeoRequired) {
+    geoFiltered = geoFilteredByQuery.length > 0
+      ? geoFilteredByQuery
+      : geoFilteredByIntent.length > 0
+        ? geoFilteredByIntent
+        : [];
+  } else {
+    geoFiltered = geoFilteredByQuery.length > 0
+      ? geoFilteredByQuery
+      : geoFilteredByIntent.length > 0
+        ? geoFilteredByIntent
+        : domainRecords;
+  }
+
+  if (strictGeoRequired && geoFiltered.length === 0 && domainRecords.length > 0) {
+    rejectedRecords.push(...domainRecords.slice(0, 20).map((record) => ({
+      name: nameForDebug(record),
+      reason: "strict_geo_removed_non_matching_location",
+      domain: inferRecordDomain(record),
+    })));
+  } else if ((geoIntent || intent.boroughs.length > 0) && geoFilteredByQuery.length === 0 && domainRecords.length > 0) {
     rejectedRecords.push(...domainRecords.slice(0, 20).map((record) => ({
       name: nameForDebug(record),
       reason: "geo_softened_no_exact_location_match",
@@ -380,11 +413,15 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
     if (geoIntent && hardCuisineMatches.length > 0) {
       const hardCuisineGeoMatches = hardCuisineMatches.filter((record) => locationMatchesGeo(record, geoIntent));
-      categorized = (hardCuisineGeoMatches.length > 0 ? hardCuisineGeoMatches : hardCuisineMatches)
+      const hardCuisineSource = hardCuisineGeoMatches.length > 0 ? hardCuisineGeoMatches : strictGeoRequired ? [] : hardCuisineMatches;
+      categorized = hardCuisineSource
         .sort((a, b) => (scoreCuisineCategoryMatch(b, intent.rawQuery || intentQuery, true).score * 3 + scoreGeoMatch(b, geoIntent)) - (scoreCuisineCategoryMatch(a, intent.rawQuery || intentQuery, true).score * 3 + scoreGeoMatch(a, geoIntent)));
-      fallbackRestaurantCount = hardCuisineGeoMatches.length > 0 ? 0 : hardCuisineMatches.length;
+      fallbackRestaurantCount = hardCuisineGeoMatches.length > 0 ? 0 : hardCuisineSource.length;
+      if (strictGeoRequired && hardCuisineGeoMatches.length === 0) {
+        rejectedRecords.push(...hardCuisineMatches.slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: "strict_geo_removed_hard_cuisine_non_matching_location", domain: inferRecordDomain(record) })));
+      }
     } else {
-      const sourceForGeneric = geoIntent ? geoFiltered : restaurantCandidates;
+      const sourceForGeneric = (strictGeoRequired || geoIntent) ? geoFiltered : restaurantCandidates;
       const filtered = filterRestaurantCandidatesForQuery(sourceForGeneric, intentQuery);
       strictRestaurantCount = Math.max(strictRestaurantCount, filtered.strictCount);
       fallbackRestaurantCount = filtered.fallbackCount;
@@ -411,7 +448,17 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     }
   }
 
-  const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors, rejectedRecords };
+  const debug: SearchDebug = {
+    searchedTables: [SEARCHED_TABLE],
+    rpcCalls: [],
+    sourceErrors,
+    rejectedRecords,
+    geoStrictRequired: strictGeoRequired,
+    geoIntent,
+    geoFilteredByQueryCount: geoFilteredByQuery.length,
+    geoFilteredByIntentCount: geoFilteredByIntent.length,
+    geoFilteredFinalCount: geoFiltered.length,
+  };
   if (domain === "restaurant") {
     debug.rawRestaurantCount = domainRecords.length;
     debug.afterGeoFilterRestaurantCount = geoFiltered.length;
@@ -461,9 +508,26 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
 export const searchRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", intent.restaurantSearchInput || intent.mealFoodIntents.join(" "));
 export const searchActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", intent.activitySearchInput || intent.activityIntents.join(" "));
+function fallbackGeoTerms(intent: CanonicalSearchIntent) {
+  return [
+    ...intent.boroughs,
+    ...intent.neighborhoods,
+    ...(intent.locations ?? []),
+    ...(intent.cities ?? []),
+    ...(intent.geoIntent?.terms ?? []),
+  ];
+}
+
 export const searchFallbackRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", [
-  ...intent.boroughs,
+  ...fallbackGeoTerms(intent),
   "restaurant",
   ...((intent.specificMealFoodIntents?.length ?? 0) > 0 ? intent.specificMealFoodIntents : intent.mealFoodIntents),
+  ...intent.vibes,
 ].join(" "), true);
-export const searchFallbackActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", [...intent.boroughs, "activity", "lounge", "nightlife", ...intent.activityIntents].join(" "), true);
+export const searchFallbackActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", [
+  ...fallbackGeoTerms(intent),
+  "activity",
+  "lounge",
+  "nightlife",
+  ...intent.activityIntents,
+].join(" "), true);

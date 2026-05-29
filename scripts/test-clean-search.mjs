@@ -18,6 +18,19 @@ const cases = [
   ["Dessert after dinner", (i) => { assert.ok(i.addOnFoodIntents.includes("dessert")); assert.equal(i.activityIntents.length, 0); }],
   ["Hookah lounge in Queens", (i) => { assert.ok(i.activityIntents.includes("hookah")); assert.equal(i.wantsActivity, true); }],
   ["Restaurant with hookah in Queens", (i) => { assert.equal(i.wantsRestaurant, true); }],
+  ["romantic rooftop dinner in Manhattan", (i) => {
+    i.restaurantSearchInput = buildRestaurantSearchInput(i); i.activitySearchInput = buildActivitySearchInput(i);
+    assert.equal(i.needsRestaurant, true); assert.equal(i.needsActivity, false); assert.equal(i.wantsPairing, false);
+    assert.equal(i.activityIntents.includes("rooftop"), false); assert.ok(i.vibes.includes("rooftop")); assert.ok(i.vibes.includes("romantic"));
+    assert.equal(i.borough, "manhattan"); assert.ok(i.restaurantSearchInput.includes("dinner")); assert.ok(i.restaurantSearchInput.includes("manhattan")); assert.ok(i.restaurantSearchInput.includes("rooftop"));
+    assert.equal(i.activitySearchInput.includes("rooftop"), false);
+  }],
+  ["steak dinner in Queens", (i) => { assert.equal(i.needsRestaurant, true); assert.equal(i.needsActivity, false); assert.equal(i.borough, "queens"); }],
+  ["seafood dinner in Brooklyn", (i) => { assert.equal(i.needsRestaurant, true); assert.equal(i.needsActivity, false); assert.equal(i.borough, "brooklyn"); }],
+  ["rooftop bar in Manhattan", (i) => {
+    i.activitySearchInput = buildActivitySearchInput(i);
+    assert.ok(i.activityIntents.includes("rooftop")); assert.equal(i.needsActivity, true); assert.equal(i.borough, "manhattan"); assert.ok(i.activitySearchInput.includes("rooftop"));
+  }],
 ];
 
 for (const [q, check] of cases) {

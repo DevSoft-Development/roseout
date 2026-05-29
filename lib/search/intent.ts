@@ -9,6 +9,17 @@ const MEAL_PRIMARY_TERMS = ["steak", "seafood", "dinner", "brunch", "lunch", "br
 const RESTAURANT_TERMS = [...GENERIC_MEAL_TERMS, "meal", "place to eat"];
 const OCCASION_TERMS = ["date", "date night", "night", "brunch", "birthday", "birthday dinner", "group", "group outing", "outing", "fun outing"];
 const VIBE_TERMS = ["romantic", "casual", "upscale", "nightlife", "cozy", "fun", "birthday", "group", "date night", "rooftop"];
+const ROOFTOP_MEAL_PHRASES = [
+  "rooftop dinner",
+  "rooftop restaurant",
+  "rooftop dining",
+  "romantic rooftop dinner",
+  "rooftop brunch",
+  "rooftop lunch",
+  "dinner on a rooftop",
+  "eat on a rooftop",
+];
+const ROOFTOP_MEAL_TERMS = ["dinner", "restaurant", "dining", "brunch", "lunch", "food", "eat"];
 
 const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 const hit = (q: string, phrase: string) => q.includes(phrase);
@@ -61,6 +72,12 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     }
   }
 
+  const rooftopNightlifeIntent = ["rooftop bar", "rooftop lounge", "rooftop activity", "drinks then rooftop", "rooftop after dinner", "rooftop lounge after dinner"].some((phrase) => hit(normalizedQuery, phrase));
+  const rooftopMealIntent = !rooftopNightlifeIntent && (
+    ROOFTOP_MEAL_PHRASES.some((phrase) => hit(normalizedQuery, phrase)) ||
+    (hit(normalizedQuery, "rooftop") && ROOFTOP_MEAL_TERMS.some((term) => hit(normalizedQuery, term)))
+  );
+
   const explicitHookahRestaurant = ["hookah restaurant", "restaurant with hookah", "hookah with food", "hookah spot that serves food", "eat at hookah", "dinner with hookah"].some((p) => hit(normalizedQuery, p));
   const mealPrimaryHit = MEAL_PRIMARY_TERMS.some((p) => hit(normalizedQuery, p));
   const hasRealMeal = mealFoodIntents.length > 0 || mealPrimaryHit || RESTAURANT_TERMS.some((p) => hit(normalizedQuery, p));
@@ -75,7 +92,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   if (dessertAsOutingStop && !activityIntents.includes("dessert")) activityIntents.push("dessert");
   if (thingsToDoActivity && !activityIntents.includes("activity")) activityIntents.push("activity");
   const wantsFood = mealFoodIntents.length > 0 || addOnFoodIntents.length > 0 || RESTAURANT_TERMS.some((p) => hit(normalizedQuery, p)) || explicitHookahRestaurant || mealPrimaryHit;
-  const wantsActivity = activityIntents.length > 0;
+  const wantsActivity = activityIntents.some((intent) => !(intent === "rooftop" && rooftopMealIntent));
   const wantsFullOuting = (wantsFood && wantsActivity && !hookahAsSamePlaceAddOn) || OUTING_PHRASES.some((p) => hit(normalizedQuery, p));
 
   const geoIntent = detectRequestedGeo(normalizedQuery);
@@ -101,9 +118,17 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const restaurantType = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
   const requiredRestaurantCategory = requestedCategories[0] || (steakIntentMatch ? "steak" : null);
   const occasionIntents = detectIntents(normalizedQuery, OCCASION_TERMS);
-  const vibes = uniq([...detectIntents(normalizedQuery, VIBE_TERMS), ...occasionIntents.filter((term) => !["outing", "fun outing"].includes(term))]);
+  const vibes = uniq([
+    ...detectIntents(normalizedQuery, VIBE_TERMS),
+    ...(rooftopMealIntent ? ["rooftop"] : []),
+    ...occasionIntents.filter((term) => !["outing", "fun outing"].includes(term)),
+  ]);
   const normalizedMealFoodIntents = uniq(mealFoodIntents);
-  const normalizedActivityIntents = uniq(activityIntents.map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v)));
+  const normalizedActivityIntents = uniq(
+    activityIntents
+      .map((v) => (v === "sip_and_paint" ? "paint_and_sip" : v))
+      .filter((v) => !(v === "rooftop" && rooftopMealIntent))
+  );
   const foodIntents = uniq([...normalizedMealFoodIntents, ...addOnFoodIntents, ...(hookahAsSamePlaceAddOn ? ["hookah"] : [])]);
   const addOnIntent = uniq([
     ...normalizedActivityIntents.filter((term) => ["hookah", "bowling", "paint_and_sip", "karaoke", "arcade", "lounge", "rooftop"].includes(term)),
