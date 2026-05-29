@@ -90,16 +90,24 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     e.preventDefault();
     setLoading(true);
     setError("");
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: signin.email,
+      email: signin.email.trim().toLowerCase(),
       password: signin.password,
     });
-    setLoading(false);
-    if (error) return setError(error.message);
+
+    if (error) {
+      setLoading(false);
+      return setError(error.message);
+    }
 
     const user = data.user;
-    if (!user) {
-      setError("We could not find an account for those credentials. Please sign up first.");
+    const accessToken = data.session?.access_token;
+    const refreshToken = data.session?.refresh_token;
+
+    if (!user || !accessToken || !refreshToken) {
+      setLoading(false);
+      setError("Login succeeded, but your session was not ready. Please try again.");
       return;
     }
 
@@ -115,21 +123,33 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
         method: "GET",
         credentials: "include",
         cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Supabase-Refresh-Token": refreshToken,
+        },
       },
     );
 
     const destinationData = await destinationResponse.json().catch(() => null);
 
-    console.log("LOGIN_REDIRECT_DEBUG", destinationData);
+    console.log("LOGIN_REDIRECT_DEBUG", {
+      redirectTo: destinationData?.redirectTo,
+      adminRole: destinationData?.adminRole,
+      reason: destinationData?.reason,
+      userId: destinationData?.userId,
+      email: destinationData?.email,
+    });
 
     if (!destinationResponse.ok) {
+      setLoading(false);
       setError(
-        destinationData?.reason || "Login succeeded, but we could not resolve your dashboard.",
+        destinationData?.reason ||
+          "Login succeeded, but we could not resolve your dashboard.",
       );
       return;
     }
 
-    window.location.href = destinationData?.redirectTo || "/create";
+    window.location.assign(destinationData?.redirectTo || "/create");
   };
 
   const handleCreate = async (e: React.FormEvent) => {
