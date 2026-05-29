@@ -69,6 +69,8 @@ const passwordLabels: Record<keyof ReturnType<typeof passwordChecks>, string> = 
   special: "SPECIAL",
 };
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
 export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab }) {
   const supabase = createClient();
   const router = useRouter();
@@ -91,8 +93,17 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     setLoading(true);
     setError("");
 
+    const normalizedEmail = normalizeEmail(signin.email);
+
+    if (!normalizedEmail) {
+      setLoading(false);
+      return setError("Please enter the email address for your account.");
+    }
+
+    setSignin((current) => ({ ...current, email: normalizedEmail }));
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: signin.email.trim().toLowerCase(),
+      email: normalizedEmail,
       password: signin.password,
     });
 
@@ -101,12 +112,25 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       return setError(error.message);
     }
 
-    const user = data.user;
-    const accessToken = data.session?.access_token;
+    const sessionResult = data.session
+      ? { data: { session: data.session }, error: null }
+      : await supabase.auth.getSession();
+    const session = sessionResult.data.session;
+    const user = data.user || session?.user;
+    const accessToken = session?.access_token;
+    const refreshToken = session?.refresh_token;
 
-    if (!user || !accessToken) {
+    if (!user || !accessToken || !refreshToken) {
+      console.warn("LOGIN_SESSION_TOKEN_DEBUG", {
+        hasUser: Boolean(user),
+        hasAccessToken: Boolean(accessToken),
+        hasRefreshToken: Boolean(refreshToken),
+        getSessionError: sessionResult.error?.message ?? null,
+      });
       setLoading(false);
-      setError("Login succeeded, but your session was not ready. Please try again.");
+      setError(
+        "Sign-in succeeded, but the browser did not receive the session tokens needed to finish setup. Please refresh the page and sign in again.",
+      );
       return;
     }
 
@@ -114,35 +138,39 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       new URL(window.location.href).searchParams.get("next"),
     );
 
-    const destinationResponse = await fetch(
-      `/api/auth/login-destination${
-        intendedRoute ? `?next=${encodeURIComponent(intendedRoute)}` : ""
-      }`,
-      {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+    const destinationResponse = await fetch("/api/auth/login-destination", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
       },
-    );
+      body: JSON.stringify({
+        accessToken,
+        refreshToken,
+        next: intendedRoute,
+      }),
+    });
 
     const destinationData = await destinationResponse.json().catch(() => null);
 
-    console.log("LOGIN_REDIRECT_DEBUG", {
+    console.debug("LOGIN_REDIRECT_DEBUG", {
       redirectTo: destinationData?.redirectTo,
       adminRole: destinationData?.adminRole,
       reason: destinationData?.reason,
       userId: destinationData?.userId,
       email: destinationData?.email,
+      debug: destinationData?.debug,
     });
 
     if (!destinationResponse.ok) {
       setLoading(false);
+      const syncReason = destinationData?.reason
+        ? ` (${destinationData.reason})`
+        : "";
       setError(
-        destinationData?.reason ||
-          "Login succeeded, but we could not resolve your dashboard.",
+        `Sign-in succeeded, but we could not finish redirect setup${syncReason}. Please refresh and try again.`,
       );
       return;
     }
@@ -178,8 +206,17 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       }
     }
 
+    const normalizedSignupEmail = normalizeEmail(signup.email);
+
+    if (!normalizedSignupEmail) {
+      setLoading(false);
+      return setError("Please enter the email address for your new account.");
+    }
+
+    setSignup((current) => ({ ...current, email: normalizedSignupEmail }));
+
     const { data, error } = await supabase.auth.signUp({
-      email: signup.email.trim().toLowerCase(),
+      email: normalizedSignupEmail,
       password: signup.password,
       options: {
         data: {
@@ -357,6 +394,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                   placeholder="you@example.com"
                   value={signin.email}
                   onChange={(e) => setSignin((s) => ({ ...s, email: e.target.value }))}
+                  onBlur={(e) => setSignin((s) => ({ ...s, email: normalizeEmail(e.target.value) }))}
                   className={inputClass}
                 />
               </div>
@@ -440,7 +478,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     </div>
                     <div className="sm:col-span-2">
                       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Email</label>
-                      <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                      <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} onBlur={(e) => setSignup((s) => ({ ...s, email: normalizeEmail(e.target.value) }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
                     </div>
                     <div>
                       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Mobile Number (Optional)</label>
