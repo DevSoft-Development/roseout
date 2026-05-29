@@ -64,9 +64,9 @@ async function safeMaybeSingle(
   columns: string,
   column: string,
   value: string,
-) {
+): Promise<{ data: any; error: any }> {
   try {
-    return await (supabaseAdmin as any)
+    return await supabaseAdmin
       .from(table)
       .select(columns)
       .eq(column, value)
@@ -81,9 +81,9 @@ async function safeLimitOne(
   table: string,
   column: string,
   value: string,
-) {
+): Promise<{ data: any[] | null; error: any }> {
   try {
-    return await (supabaseAdmin as any)
+    return await supabaseAdmin
       .from(table)
       .select("id")
       .eq(column, value)
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
   if (!user?.id) {
     return NextResponse.json(
       {
-        redirectTo: "/login",
+        redirectTo: "/signup",
         adminRole: null,
         reason: reason || "no_authenticated_user",
       },
