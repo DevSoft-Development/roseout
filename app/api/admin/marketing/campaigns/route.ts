@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     video_url: normalizeStringOrNull(body.video_url),
     cta_url: normalizeStringOrNull(body.cta_url),
     scheduled_at: normalizeStringOrNull(body.scheduled_at),
-    created_by: adminUser?.id || null,
+    created_by: adminUser?.user_id || null,
     created_by_email: adminUser?.email || null,
     updated_at: nowIso(),
   };

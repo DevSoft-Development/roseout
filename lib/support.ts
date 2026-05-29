@@ -261,14 +261,14 @@ export async function isSupportRequestAdmin() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email) {
+  if (!user?.id) {
     return false;
   }
 
   const { data: adminUser } = await supabase
     .from("admin_users")
-    .select("id")
-    .eq("email", user.email.toLowerCase())
+    .select("user_id")
+    .eq("user_id", user.id)
     .maybeSingle();
 
   return Boolean(adminUser);
@@ -598,10 +598,19 @@ export async function assignSupportTicket(ticketId: string, adminEmail: string) 
     throw new Error("Select an admin user to assign this ticket.");
   }
 
+  const authUsersResult = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (authUsersResult.error) throw authUsersResult.error;
+
+  const authUser = authUsersResult.data.users.find((user) => user.email?.toLowerCase() === cleanEmail);
+
+  if (!authUser) {
+    throw new Error("Admin user not found.");
+  }
+
   const { data: adminUser, error: adminError } = await supabaseAdmin
     .from("admin_users")
-    .select("email, full_name, role")
-    .eq("email", cleanEmail)
+    .select("user_id, role")
+    .eq("user_id", authUser.id)
     .maybeSingle();
 
   if (adminError) throw adminError;
@@ -610,11 +619,19 @@ export async function assignSupportTicket(ticketId: string, adminEmail: string) 
     throw new Error("Admin user not found.");
   }
 
+  const metadata = authUser.user_metadata || {};
+  const adminFullName =
+    typeof metadata.full_name === "string"
+      ? metadata.full_name
+      : typeof metadata.name === "string"
+        ? metadata.name
+        : null;
+
   const assignedAt = new Date().toISOString();
   const assignedTicket = {
     ...ticket,
-    assigned_admin_email: adminUser.email,
-    assigned_admin_name: adminUser.full_name,
+    assigned_admin_email: authUser.email ?? cleanEmail,
+    assigned_admin_name: adminFullName,
     updated_at: assignedAt,
     last_message_at: assignedAt,
   } satisfies SupportTicket;
@@ -622,8 +639,8 @@ export async function assignSupportTicket(ticketId: string, adminEmail: string) 
   const { error: updateError } = await supabaseAdmin
     .from("support_tickets")
     .update({
-      assigned_admin_email: adminUser.email,
-      assigned_admin_name: adminUser.full_name,
+      assigned_admin_email: authUser.email ?? cleanEmail,
+      assigned_admin_name: adminFullName,
       updated_at: assignedAt,
       last_message_at: assignedAt,
     })
@@ -636,7 +653,7 @@ export async function assignSupportTicket(ticketId: string, adminEmail: string) 
     author_name: "TheOutHaven Support",
     author_email: process.env.ADMIN_NOTIFY_EMAIL || null,
     author_phone: null,
-    body: `Ticket assigned to ${adminUser.full_name || adminUser.email}.`,
+    body: `Ticket assigned to ${adminFullName || authUser.email || cleanEmail}.`,
     created_at: assignedAt,
   } satisfies SupportMessage;
 

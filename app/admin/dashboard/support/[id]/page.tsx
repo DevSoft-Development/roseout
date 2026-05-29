@@ -10,7 +10,7 @@ type PageProps = {
 };
 
 export default async function AdminSupportTicketPage({ params }: PageProps) {
-  const adminUser = await requireAdminRole(["superadmin", "admin", "editor", "reviewer", "viewer"]);
+  const adminUser = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const canManageTicket = ["superadmin", "admin"].includes(adminUser.role);
 
   const { id } = await params;
@@ -19,13 +19,36 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
   if (!ticket) notFound();
 
   const messages = await getSupportTicketMessages(ticket.id);
-  const { data: adminUsers } = canManageTicket
-    ? await supabaseAdmin
-        .from("admin_users")
-        .select("email, full_name, role")
-        .in("role", ["superadmin", "admin", "editor", "reviewer", "viewer"])
-        .order("email", { ascending: true })
-    : { data: [] };
+  const [adminUsersResult, authUsersResult] = canManageTicket
+    ? await Promise.all([
+        supabaseAdmin
+          .from("admin_users")
+          .select("user_id, role")
+          .in("role", ["superadmin", "admin", "editor", "viewer"]),
+        supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      ])
+    : [{ data: [] }, { data: { users: [] } }];
+
+  const authUsersById = new Map((authUsersResult.data?.users || []).map((user) => [user.id, user]));
+  const adminUsers = (adminUsersResult.data || [])
+    .map((adminUser) => {
+      const authUser = authUsersById.get(adminUser.user_id);
+      const metadata = authUser?.user_metadata || {};
+      const fullName =
+        typeof metadata.full_name === "string"
+          ? metadata.full_name
+          : typeof metadata.name === "string"
+            ? metadata.name
+            : null;
+
+      return {
+        email: authUser?.email ?? null,
+        full_name: fullName,
+        role: adminUser.role,
+      };
+    })
+    .filter((adminUser) => adminUser.email)
+    .sort((a, b) => (a.email || "").localeCompare(b.email || ""));
 
   return (
     <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
@@ -44,7 +67,7 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
           accessKey={ticket.public_access_token}
           adminMode
           canManageTicket={canManageTicket}
-          adminUsers={adminUsers || []}
+          adminUsers={adminUsers}
         />
       </div>
     </main>

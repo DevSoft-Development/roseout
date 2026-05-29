@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     ]);
     if (userResult.error || !userResult.data.user) return Response.json({ error: "User not found." }, { status: 404 });
     userEmail = (profile?.email || userResult.data.user.email || "").toLowerCase();
-    role = normalizeRole(profile?.role);
+    role = normalizeRole(profile?.role) || "user";
     firstName = String(profile?.full_name || "there").split(" ")[0] || "there";
     authUserId = userResult.data.user.id;
   }

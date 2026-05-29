@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     body: body.body,
     category: body.category || "custom",
     is_system: false,
-    created_by: adminUser?.id || null,
+    created_by: adminUser?.user_id || null,
   };
 
   const { data, error: insertError } = await supabase.from("communication_templates").insert(payload).select("*").single();

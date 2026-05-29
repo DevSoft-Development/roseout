@@ -41,11 +41,11 @@ export default function AdminTopBar() {
       const { data } = await supabase.auth.getUser();
       const currentUser = data.user;
       setUser(currentUser);
-      if (currentUser?.email) {
+      if (currentUser?.id) {
         const { data: adminUser } = await supabase
           .from("admin_users")
           .select("role")
-          .eq("email", currentUser.email.toLowerCase())
+          .eq("user_id", currentUser.id)
           .maybeSingle();
         setRole(adminUser?.role ? normalizeRole(adminUser.role) : null);
       }

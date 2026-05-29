@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import { getZipMarketMapping } from "@/lib/zip-market-mapping";
-import { getUserMetadataRole, resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
+import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
 type Tab = "signin" | "signup";
@@ -117,12 +117,22 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     const intendedRoute = sanitizeIntendedPath(new URL(window.location.href).searchParams.get("next"));
 
     const redirectTarget = resolvePostLoginRedirect({
-      role: getUserMetadataRole(user),
+      adminRole,
+      role: null,
       profileRole: profileResult.data?.role || null,
       profileAccountType: profileResult.data?.account_type || null,
       isAdminUser: Boolean(adminRole),
-      isLocationOwner: Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length),
+      isLocationOwner:
+        Boolean(locationsResult.data?.length) ||
+        Boolean(restaurantsResult.data?.length),
       intendedPath: intendedRoute,
+    });
+
+    console.log("LOGIN_REDIRECT_DEBUG", {
+      userId: user.id,
+      email: user.email,
+      adminRole,
+      redirectTarget,
     });
 
     window.location.href = redirectTarget;

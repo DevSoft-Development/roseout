@@ -50,6 +50,6 @@ export async function POST(request: NextRequest) {
   if (payload.discount_percent !== null && (payload.discount_percent < 0 || payload.discount_percent > 100)) return NextResponse.json({ error: "Percent discount must be 0-100." }, { status: 400 });
   if (payload.max_redemptions !== null && payload.max_redemptions < 0) return NextResponse.json({ error: "max_redemptions cannot be negative." }, { status: 400 });
   if (payload.expires_at && new Date(payload.expires_at).getTime() <= new Date(payload.starts_at).getTime()) return NextResponse.json({ error: "Expiration must be after start." }, { status: 400 });
-  const { data, error } = await supabaseAdmin.from("promo_codes").insert({ ...payload, created_by: auth.adminUser?.id ?? null }).select("*").single();
+  const { data, error } = await supabaseAdmin.from("promo_codes").insert({ ...payload, created_by: auth.adminUser?.user_id ?? null }).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 }); return NextResponse.json({ promo_code: data });
 }

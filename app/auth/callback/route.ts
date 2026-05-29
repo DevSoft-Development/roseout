@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { getUserMetadataRole, resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
+import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
 const supabaseAdmin = createClient(
@@ -46,8 +46,6 @@ export async function GET(request: NextRequest) {
   }
 
   const user = data.user;
-  const email = user.email?.toLowerCase();
-
   const [adminRole, profileResult, locationsResult, restaurantsResult] = await Promise.all([
     getAdminLoginRole(supabaseAdmin as any, {
       id: user.id,
@@ -59,11 +57,14 @@ export async function GET(request: NextRequest) {
   ]);
 
   const redirectTarget = resolvePostLoginRedirect({
-    role: getUserMetadataRole(user),
+    adminRole,
+    role: null,
     profileRole: profileResult.data?.role || null,
     profileAccountType: profileResult.data?.account_type || null,
     isAdminUser: Boolean(adminRole),
-    isLocationOwner: Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length),
+    isLocationOwner:
+      Boolean(locationsResult.data?.length) ||
+      Boolean(restaurantsResult.data?.length),
     intendedPath,
   });
 

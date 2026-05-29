@@ -1,4 +1,5 @@
 type RedirectResolutionInput = {
+  adminRole?: string | null;
   role?: string | null;
   profileRole?: string | null;
   profileAccountType?: string | null;
@@ -7,13 +8,13 @@ type RedirectResolutionInput = {
   intendedPath?: string | null;
 };
 
-const ADMIN_ROLES = new Set(["admin", "superadmin"]);
+const ADMIN_ROLES = new Set(["superadmin", "admin", "editor", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
 
 function normalizeRole(value: string | null | undefined): string | null {
   if (!value) return null;
   const role = value.trim().toLowerCase();
-  return role === "superuser" ? "superadmin" : role;
+  return role === "superuser" || role === "super_admin" ? "superadmin" : role;
 }
 
 export function sanitizeIntendedPath(path: string | null | undefined): string | null {
@@ -25,21 +26,25 @@ export function sanitizeIntendedPath(path: string | null | undefined): string | 
 }
 
 export function resolvePostLoginRedirect(input: RedirectResolutionInput): string {
-  const roleCandidates = [input.role, input.profileRole, input.profileAccountType].map(normalizeRole);
-  const isAdmin = input.isAdminUser || roleCandidates.some((role) => role && ADMIN_ROLES.has(role));
+  const adminRole = normalizeRole(input.adminRole);
 
-  if (isAdmin) {
+  if (input.isAdminUser || (adminRole && ADMIN_ROLES.has(adminRole))) {
     return "/admin/dashboard";
   }
 
-  const isOwner = input.isLocationOwner || roleCandidates.some((role) => role && OWNER_ROLES.has(role));
+  const roleCandidates = [
+    input.role,
+    input.profileRole,
+    input.profileAccountType,
+  ].map(normalizeRole);
+
+  const isOwner =
+    input.isLocationOwner ||
+    roleCandidates.some((role) => role && OWNER_ROLES.has(role));
+
   if (isOwner) {
     return "/dashboard";
   }
 
   return sanitizeIntendedPath(input.intendedPath) || "/create";
-}
-
-export function getUserMetadataRole(_user: unknown): string | null {
-  return null;
 }

@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase-browser";
 import { normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
 export default function AdminUsersClient() {
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("editor");
@@ -26,26 +23,20 @@ export default function AdminUsersClient() {
     setLoading(true);
 
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-
-      const { data: existingUser } = await supabase
-        .from("admin_users")
-        .select("id")
-        .eq("email", normalizedEmail)
-        .maybeSingle();
-
-      if (existingUser) {
-        setError("This user is already an admin.");
-        return;
-      }
-
-      const { error: insertError } = await supabase.from("admin_users").insert({
-        email: normalizedEmail,
-        full_name: fullName.trim() || null,
-        role: normalizeRole(role),
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          full_name: fullName.trim() || null,
+          role: normalizeRole(role),
+        }),
       });
+      const data = await response.json();
 
-      if (insertError) throw insertError;
+      if (!response.ok) {
+        throw new Error(data.error || "Could not add admin user.");
+      }
 
       setMessage("Admin user added successfully.");
       setEmail("");
@@ -109,7 +100,7 @@ export default function AdminUsersClient() {
           className="mt-2 w-full rounded-2xl border border-neutral-300 px-4 py-3 outline-none focus:border-yellow-500"
         >
           {USER_ROLE_OPTIONS.filter((option) =>
-            ["viewer", "reviewer", "editor", "admin", "superadmin"].includes(option.value),
+            ["viewer", "editor", "admin", "superadmin"].includes(option.value),
           ).map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

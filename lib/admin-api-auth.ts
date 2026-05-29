@@ -8,7 +8,7 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email) {
+  if (!user?.id) {
     return {
       error: Response.json({ error: "Unauthorized" }, { status: 401 }),
       adminUser: null,
@@ -16,15 +16,20 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
     };
   }
 
-  const { data: adminUser } = await supabase
+  const { data: adminUser, error: adminError } = await supabase
     .from("admin_users")
-    .select("id, email, full_name, role")
-    .eq("email", user.email.toLowerCase())
+    .select("user_id, role")
+    .eq("user_id", user.id)
     .maybeSingle();
 
   const normalizedRole = normalizeRole(adminUser?.role);
 
-  if (!adminUser || !isAdminRole(normalizedRole) || !allowedRoles.includes(normalizedRole)) {
+  if (
+    adminError ||
+    !adminUser ||
+    !isAdminRole(normalizedRole) ||
+    !allowedRoles.includes(normalizedRole)
+  ) {
     return {
       error: Response.json({ error: "Forbidden" }, { status: 403 }),
       adminUser: null,
@@ -35,7 +40,12 @@ export async function requireAdminApiRole(allowedRoles: AdminRole[]) {
   return {
     error: null,
     adminUser: {
-      ...adminUser,
+      user_id: adminUser.user_id,
+      email: user.email ?? null,
+      full_name:
+        typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name
+          : null,
       role: normalizedRole,
     },
     supabase,

@@ -37,9 +37,9 @@ type AppUser = {
 };
 
 type AdminUserRow = {
-  email: string | null;
-  full_name: string | null;
+  user_id: string;
   role: string | null;
+  created_at?: string | null;
 };
 
 const supabaseAdmin = createClient(
@@ -97,23 +97,16 @@ async function updateUserRole(formData: FormData) {
     { onConflict: "id" }
   );
 
-  const { data: updatedUser } = await supabaseAdmin
-    .from("users")
-    .select("email, full_name")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (updatedUser?.email && isAdminRole(role)) {
+  if (isAdminRole(role)) {
     await supabaseAdmin.from("admin_users").upsert(
       {
-        email: updatedUser.email.toLowerCase(),
-        full_name: updatedUser.full_name || null,
+        user_id: userId,
         role,
       },
-      { onConflict: "email" },
+      { onConflict: "user_id" },
     );
-  } else if (updatedUser?.email) {
-    await supabaseAdmin.from("admin_users").delete().eq("email", updatedUser.email.toLowerCase());
+  } else {
+    await supabaseAdmin.from("admin_users").delete().eq("user_id", userId);
   }
 
   redirect(
@@ -139,18 +132,14 @@ async function disableUser(formData: FormData) {
     },
   });
 
-  const { data: disabledUser } = await supabaseAdmin
+  await supabaseAdmin
     .from("users")
     .update({
       role: "disabled",
     })
-    .eq("id", userId)
-    .select("email")
-    .maybeSingle();
+    .eq("id", userId);
 
-  if (disabledUser?.email) {
-    await supabaseAdmin.from("admin_users").delete().eq("email", disabledUser.email.toLowerCase());
-  }
+  await supabaseAdmin.from("admin_users").delete().eq("user_id", userId);
 
   redirect(
     `${ADMIN_USERS_BASE_PATH}?q=${encodeURIComponent(q)}&role=${encodeURIComponent(
@@ -189,12 +178,12 @@ export default async function AdminUsersPage({
   const params = await searchParams;
 
   const q = params.q || "";
-  const selectedRole = params.role === "all" || !params.role ? "all" : normalizeRole(params.role);
+  const selectedRole = params.role === "all" || !params.role ? "all" : normalizeRole(params.role) || "all";
 
   const [profileUsersResult, authUsersResult, adminUsersResult] = await Promise.all([
     supabaseAdmin.from("users").select("*").order("created_at", { ascending: false }),
     supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-    supabaseAdmin.from("admin_users").select("email, full_name, role"),
+    supabaseAdmin.from("admin_users").select("user_id, role, created_at"),
   ]);
 
   const error = profileUsersResult.error && authUsersResult.error
@@ -220,10 +209,8 @@ export default async function AdminUsersPage({
   const profileUsers = (profileUsersResult.data || []) as AppUser[];
   const authUsers = authUsersResult.data?.users || [];
   const adminUsers = (adminUsersResult.data || []) as AdminUserRow[];
-  const adminUsersByEmail = new Map(
-    adminUsers
-      .filter((adminUser) => adminUser.email)
-      .map((adminUser) => [adminUser.email!.toLowerCase(), adminUser])
+  const adminUsersByUserId = new Map(
+    adminUsers.map((adminUser) => [adminUser.user_id, adminUser])
   );
 
   const fullUsersById = new Map<string, AppUser>();
@@ -235,7 +222,7 @@ export default async function AdminUsersPage({
   for (const authUser of authUsers) {
     const existingUser = fullUsersById.get(authUser.id);
     const email = (existingUser?.email || authUser.email || null)?.toLowerCase() || null;
-    const adminUser = email ? adminUsersByEmail.get(email) : null;
+    const adminUser = adminUsersByUserId.get(authUser.id) || null;
     const metadata = authUser.user_metadata || {};
     const metadataName =
       typeof metadata.full_name === "string"
@@ -248,7 +235,7 @@ export default async function AdminUsersPage({
     fullUsersById.set(authUser.id, {
       id: authUser.id,
       email,
-      full_name: existingUser?.full_name || metadataName || adminUser?.full_name || null,
+      full_name: existingUser?.full_name || metadataName || null,
       role,
       created_at: existingUser?.created_at || authUser.created_at || null,
     });
@@ -276,7 +263,7 @@ export default async function AdminUsersPage({
 
   const totalUsers = fullUsers.length;
   const admins = fullUsers.filter(
-    (u) => ["admin", "superadmin"].includes(normalizeRole(u.role))
+    (u) => ["admin", "superadmin"].includes(normalizeRole(u.role) || "")
   ).length;
   const owners = fullUsers.filter((u) => normalizeRole(u.role) === "owner").length;
   const regularUsers = fullUsers.filter((u) => normalizeRole(u.role) === "user").length;
@@ -400,7 +387,7 @@ export default async function AdminUsersPage({
           ) : (
             <div className="space-y-3 p-4">
               {safeUsers.map((user) => {
-                const displayRole = normalizeRole(user.role);
+                const displayRole = normalizeRole(user.role) || "user";
 
                 return (
                   <div

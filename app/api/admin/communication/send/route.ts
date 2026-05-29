@@ -36,10 +36,10 @@ export async function POST(request: Request) {
     status: "sent",
     provider_message_id: providerId,
     metadata: {},
-    created_by: adminUser?.id || null,
+    created_by: adminUser?.user_id || null,
   });
 
-  await logEvent("admin_activity", { adminId: adminUser?.id || null, action: "send_communication", channel, to: body.to });
+  await logEvent("admin_activity", { adminId: adminUser?.user_id || null, action: "send_communication", channel, to: body.to });
 
   return Response.json({ ok: true, providerMessageId: providerId });
 }
