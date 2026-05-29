@@ -4,7 +4,35 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
 
-export async function GET(request: Request) {
+export const dynamic = "force-dynamic";
+
+type AuthUserForRedirect = {
+  id: string;
+  email?: string | null;
+};
+
+async function getUserFromRequest(request: Request): Promise<{
+  user: AuthUserForRedirect | null;
+  reason?: string;
+}> {
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length)
+    : null;
+
+  if (token) {
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+
+    if (!error && data.user?.id) {
+      return {
+        user: {
+          id: data.user.id,
+          email: data.user.email ?? null,
+        },
+      };
+    }
+  }
+
   const supabase = await createClient();
 
   const {
@@ -12,12 +40,30 @@ export async function GET(request: Request) {
     error,
   } = await supabase.auth.getUser();
 
-  if (error || !user?.id) {
+  if (!error && user?.id) {
+    return {
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+      },
+    };
+  }
+
+  return {
+    user: null,
+    reason: "no_authenticated_user",
+  };
+}
+
+export async function GET(request: Request) {
+  const { user, reason } = await getUserFromRequest(request);
+
+  if (!user?.id) {
     return NextResponse.json(
       {
         redirectTo: "/login",
         adminRole: null,
-        reason: "no_authenticated_user",
+        reason: reason || "no_authenticated_user",
       },
       { status: 401 },
     );
@@ -26,7 +72,7 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const intendedPath = sanitizeIntendedPath(requestUrl.searchParams.get("next"));
 
-  const adminRole = await getAdminLoginRole(supabaseAdmin, {
+  const adminRole = await getAdminLoginRole(supabaseAdmin as any, {
     id: user.id,
     email: user.email ?? null,
   });
@@ -37,11 +83,13 @@ export async function GET(request: Request) {
       .select("role, account_type")
       .eq("id", user.id)
       .maybeSingle(),
+
     supabaseAdmin
       .from("locations")
       .select("id")
       .eq("owner_user_id", user.id)
       .limit(1),
+
     supabaseAdmin
       .from("restaurants")
       .select("id")
@@ -50,7 +98,8 @@ export async function GET(request: Request) {
   ]);
 
   const isLocationOwner =
-    Boolean(locationsResult.data?.length) || Boolean(restaurantsResult.data?.length);
+    Boolean(locationsResult.data?.length) ||
+    Boolean(restaurantsResult.data?.length);
 
   const redirectTo = resolvePostLoginRedirect({
     adminRole,
@@ -70,5 +119,10 @@ export async function GET(request: Request) {
     profileRole: profileResult.data?.role ?? null,
     profileAccountType: profileResult.data?.account_type ?? null,
     isLocationOwner,
+    debug: {
+      profileError: profileResult.error?.message ?? null,
+      locationsError: locationsResult.error?.message ?? null,
+      restaurantsError: restaurantsResult.error?.message ?? null,
+    },
   });
 }
