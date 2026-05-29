@@ -22,10 +22,11 @@ type ClaimLocationRow = {
   claimed?: boolean | null;
   owner_user_id?: string | null;
   claimed_by_email?: string | null;
+  claimed_by?: string | null;
 };
 
 const SAFE_LOCATION_SELECT =
-  "id, name, restaurant_name, activity_name, address, city, borough, state, zip_code, location_type, primary_category, phone, website, claim_status, is_claimed, claimed, owner_user_id, claimed_by_email";
+  "id, name, restaurant_name, activity_name, address, city, borough, state, zip_code, location_type, primary_category, phone, website, claim_status, is_claimed, claimed, owner_user_id, claimed_by, claimed_by_email";
 
 function publicLocation(row: ClaimLocationRow) {
   return {
@@ -50,7 +51,7 @@ function blockedError(row: ClaimLocationRow) {
   if (status === "redeemed") return "used_code";
   if (status === "expired") return "expired_code";
   if (status === "disabled") return "disabled_code";
-  if (status === "approved" || row.is_claimed || row.claimed || row.owner_user_id || row.claimed_by_email) {
+  if (status === "approved" || row.is_claimed || row.claimed || row.owner_user_id || row.claimed_by || row.claimed_by_email) {
     return "location_claimed";
   }
 
@@ -72,7 +73,7 @@ async function findLocationByCode(code: string) {
     const { data: source, error: sourceError } = await supabaseAdmin
       .from(table)
       .select(
-        `id, name, ${nameColumn}, address, city, borough, state, zip_code, primary_category, phone, website, claim_status, is_claimed, claimed, owner_user_id, claimed_by_email`,
+        `id, name, ${nameColumn}, address, city, borough, state, zip_code, primary_category, phone, website, claim_status, is_claimed, claimed, owner_user_id, claimed_by, claimed_by_email`,
       )
       .eq("claim_code", code)
       .maybeSingle();

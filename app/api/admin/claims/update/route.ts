@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendLocationClaimApproved } from "@/lib/notifications";
 
 function getJoinedValue<T extends Record<string, any>>(
@@ -15,6 +17,9 @@ function getJoinedValue<T extends Record<string, any>>(
 }
 
 export async function POST(req: Request) {
+  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  if (auth.error) return auth.error;
+
   try {
     const { id, type, status } = await req.json();
 
@@ -29,7 +34,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Invalid status." }, { status: 400 });
     }
 
-    if (!["restaurant", "activity"].includes(type)) {
+    if (!["restaurant", "activity", "location"].includes(type)) {
       return Response.json({ error: "Invalid claim type." }, { status: 400 });
     }
 
@@ -41,6 +46,65 @@ export async function POST(req: Request) {
       status === "approved"
         ? `${siteUrl}/locations/signup?token=${signupToken}`
         : null;
+
+
+    if (type === "location") {
+      const { data: claim, error: claimLookupError } = await supabaseAdmin
+        .from("location_claim_requests")
+        .select("id, location_id, owner_email, owner_phone, owner_name")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (claimLookupError || !claim) {
+        return Response.json(
+          { error: "Location claim request not found." },
+          { status: 404 }
+        );
+      }
+
+      const now = new Date().toISOString();
+      const { error: claimUpdateError } = await supabaseAdmin
+        .from("location_claim_requests")
+        .update({
+          status,
+          reviewed_at: now,
+          reviewed_by: auth.adminUser?.user_id || null,
+        })
+        .eq("id", id);
+
+      if (claimUpdateError) {
+        return Response.json(
+          { error: claimUpdateError.message },
+          { status: 500 }
+        );
+      }
+
+      if (claim.location_id) {
+        const { error: locationUpdateError } = await supabaseAdmin
+          .from("locations")
+          .update({
+            claim_status: status,
+            claim_verification_status: status === "approved" ? "code_verified" : "review_rejected",
+            is_claimed: status === "approved",
+            claimed: status === "approved",
+            claimed_at: status === "approved" ? now : null,
+            claimed_by_email: status === "approved" ? claim.owner_email : null,
+            owner_email: status === "approved" ? claim.owner_email : null,
+            owner_name: status === "approved" ? claim.owner_name : null,
+            owner_phone: status === "approved" ? claim.owner_phone : null,
+          })
+          .eq("id", claim.location_id);
+
+        if (locationUpdateError) {
+          return Response.json(
+            { error: locationUpdateError.message },
+            { status: 500 }
+          );
+        }
+      }
+
+      return Response.json({ success: true });
+    }
 
     if (type === "restaurant") {
       const { data: claim, error: claimLookupError } = await supabase

@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { redirect } from "next/navigation";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createAuthClient } from "@/lib/supabase-server";
 import LocationsDashboardClient from "./LocationsDashboardClient";
 import { getLocationName } from "@/lib/locationName";
 import type { LocationClaimFields } from "@/lib/locationClaim";
@@ -42,7 +44,7 @@ type LocationItem = LocationClaimFields &
   };
 
 function adminSupabase() {
-  return createClient(
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
@@ -81,6 +83,10 @@ export default async function DashboardPage() {
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
 
   const supabase = adminSupabase();
+  const authSupabase = await createAuthClient();
+  const {
+    data: { user },
+  } = await authSupabase.auth.getUser();
 
   let locations: LocationItem[] = [];
   let impersonationLabel = "";
@@ -114,6 +120,24 @@ export default async function DashboardPage() {
       .order("created_at", { ascending: false });
 
     locations = (allLocations || []).map(toDashboardLocation);
+  } else if (user?.id) {
+    const email = user.email || "";
+    const ownedFilters = [
+      `owner_user_id.eq.${user.id}`,
+      `claimed_by.eq.${user.id}`,
+      email ? `owner_email.eq.${email}` : null,
+      email ? `claimed_by_email.eq.${email}` : null,
+    ].filter(Boolean).join(",");
+
+    const { data: ownedLocations } = await supabase
+      .from("locations")
+      .select(LOCATION_DASHBOARD_COLUMNS)
+      .or(ownedFilters)
+      .order("created_at", { ascending: false });
+
+    locations = (ownedLocations || []).map(toDashboardLocation);
+  } else {
+    redirect("/login?next=/locations/dashboard");
   }
 
   return (

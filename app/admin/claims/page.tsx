@@ -7,7 +7,7 @@ type ClaimStatus = "approved" | "rejected";
 
 type LocationClaim = {
   id: string;
-  type: "restaurant" | "activity";
+  type: "restaurant" | "activity" | "location";
   location_name: string;
   location_type?: string | null;
   address?: string | null;
@@ -18,6 +18,8 @@ type LocationClaim = {
   owner_email?: string | null;
   owner_phone?: string | null;
   message?: string | null;
+  verification_status?: string | null;
+  claim_code?: string | null;
   status: string;
   created_at?: string;
 };
@@ -105,7 +107,28 @@ export default function AdminClaimsPage() {
       })
     );
 
-    setClaims([...restaurantClaims, ...activityClaims]);
+    const locationClaims: LocationClaim[] = (data.locationClaims || []).map(
+      (claim: any) => ({
+        id: claim.id,
+        type: "location",
+        location_name: claim.location_name || "Unnamed Location",
+        location_type: claim.location_type,
+        address: claim.address,
+        city: claim.city,
+        state: claim.state,
+        zip_code: claim.zip_code,
+        owner_name: claim.owner_name,
+        owner_email: claim.owner_email,
+        owner_phone: claim.owner_phone,
+        message: claim.notes,
+        verification_status: claim.verification_status,
+        claim_code: claim.claim_code,
+        status: claim.status,
+        created_at: claim.submitted_at || claim.created_at,
+      })
+    );
+
+    setClaims([...locationClaims, ...restaurantClaims, ...activityClaims]);
     setLoading(false);
   }
 
@@ -115,7 +138,7 @@ export default function AdminClaimsPage() {
 
   async function updateClaimStatus(
     id: string,
-    type: "restaurant" | "activity",
+    type: "restaurant" | "activity" | "location",
     status: ClaimStatus
   ) {
     setUpdatingId(id);
@@ -284,9 +307,7 @@ export default function AdminClaimsPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">
-                            {claim.type === "restaurant"
-                              ? "Restaurant"
-                              : "Activity"}
+                            {claim.type === "restaurant" ? "Restaurant" : claim.type === "activity" ? "Activity" : "Location"}
                           </span>
 
                           <span
@@ -316,6 +337,21 @@ export default function AdminClaimsPage() {
                           <p className="mt-2 text-sm leading-6 text-black/50">
                             {address}
                           </p>
+                        )}
+
+                        {(claim.verification_status || claim.claim_code) && (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {claim.verification_status && (
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase text-emerald-700">
+                                {claim.verification_status.replace(/_/g, " ")}
+                              </span>
+                            )}
+                            {claim.claim_code && (
+                              <span className="rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-[11px] font-black uppercase text-black/45">
+                                {claim.claim_code}
+                              </span>
+                            )}
+                          </div>
                         )}
 
                         {claim.message && (
