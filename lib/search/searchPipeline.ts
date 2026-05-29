@@ -1,15 +1,15 @@
-import { shouldBypassSearchCache } from "@/lib/search/cache";
-import { searchActivities, searchFallbackActivities, searchFallbackRestaurants, searchRestaurants, type SearchDebug } from "@/lib/search/database";
+import { shouldBypassSearchCache } from "./cache";
+import { searchActivities, searchFallbackActivities, searchFallbackRestaurants, searchRestaurants, type SearchDebug } from "./database";
 
 function mergeSourceErrors(...groups: Array<string[] | undefined>) {
   return Array.from(new Set(groups.flatMap((group) => group ?? [])));
 }
-import { parseCanonicalIntent } from "@/lib/search/intent";
-import { buildOutingPairs } from "@/lib/search/pairing";
-import { buildActivitySearchInput, buildRestaurantSearchInput } from "@/lib/search/queryBuilders";
-import { rankActivities, rankRestaurants } from "@/lib/search/ranking";
-import { buildSearchResponse } from "@/lib/search/response";
-import type { SearchPipelineResult } from "@/lib/search/types";
+import { parseCanonicalIntent } from "./intent";
+import { buildOutingPairs } from "./pairing";
+import { buildActivitySearchInput, buildRestaurantSearchInput } from "./queryBuilders";
+import { rankActivities, rankRestaurants } from "./ranking";
+import { buildSearchResponse } from "./response";
+import type { SearchPipelineResult } from "./types";
 
 export async function runTheOutHavenSearch(input: string, body?: any): Promise<SearchPipelineResult> {
   const intent = parseCanonicalIntent(input, body);
@@ -72,6 +72,7 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     searchedTables: Array.from(new Set([...(restaurantSearch.debug.searchedTables ?? []), ...(activitySearch.debug.searchedTables ?? [])])),
     rpcCalls: Array.from(new Set([...(restaurantSearch.debug.rpcCalls ?? []), ...(activitySearch.debug.rpcCalls ?? [])])),
     sourceErrors: mergeSourceErrors(restaurantSearch.debug.sourceErrors, activitySearch.debug.sourceErrors),
+    rejectedRecords: [...(restaurantSearch.debug.rejectedRecords ?? []), ...(activitySearch.debug.rejectedRecords ?? [])],
     rawRestaurantCount: restaurantSearch.debug.rawRestaurantCount ?? 0,
     rawActivityCount: activitySearch.debug.rawActivityCount ?? 0,
     afterGeoFilterRestaurantCount: restaurantSearch.debug.afterGeoFilterRestaurantCount ?? 0,

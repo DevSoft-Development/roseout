@@ -1,4 +1,8 @@
-export type CanonicalSearchIntent = {
+import { parseCanonicalIntent as parseCoreCanonicalIntent } from "./search/intent";
+import { buildActivitySearchInput as buildCoreActivitySearchInput, buildRestaurantSearchInput as buildCoreRestaurantSearchInput } from "./search/queryBuilders";
+import type { CanonicalSearchIntent as CoreCanonicalSearchIntent } from "./search/types";
+
+export type CanonicalSearchIntent = Omit<CoreCanonicalSearchIntent, "restaurantIntent" | "activityIntent" | "borough" | "city" | "primaryDomain" | "cities"> & {
   version: string;
   originalQuery: string;
   normalizedInput: string;
@@ -7,9 +11,7 @@ export type CanonicalSearchIntent = {
   city?: string;
   state?: string;
   outingMode: "single_stop" | "multi_stop";
-  wantsRestaurant: boolean;
-  wantsActivity: boolean;
-  restaurantIntent: {
+  restaurantIntent: boolean | {
     required: boolean;
     mealPrimary: boolean;
     cuisineTerms: string[];
@@ -17,7 +19,7 @@ export type CanonicalSearchIntent = {
     restaurantKeywords: string[];
     excludedAddonTerms: string[];
   };
-  activityIntent: {
+  activityIntent: string[] | {
     required: boolean;
     activityTypes: string[];
     addonTerms: string[];
@@ -25,23 +27,13 @@ export type CanonicalSearchIntent = {
   };
   hardFilters: { borough?: string; city?: string; state?: string };
   cardPolicy: { forceCards: boolean; prohibitTextOnlyWhenCardsExist: boolean };
-
-  // backwards compatibility fields used by route/google import
   rawInput: string;
   mode: "restaurant_only" | "activity_only" | "full_outing" | "location_lookup" | "off_topic";
-  wantsFood: boolean;
-  wantsFullOuting: boolean;
-  foodIntents: string[];
   primaryMealIntents: string[];
   foodAddOnIntents: string[];
-  activityIntents: string[];
   primaryActivityIntents: string[];
   secondaryActivityIntents: string[];
-  vibes: string[];
   requestedTags: string[];
-  locations: string[];
-  neighborhoods: string[];
-  boroughs: string[];
   cities: string[];
   budget: { level: string | null; maxPrice: number | null; raw: string | null };
   distance: { maxMiles: number | null; userLat: number | null; userLng: number | null };
@@ -65,6 +57,7 @@ export type CanonicalSearchIntent = {
   isDessertOnly: boolean;
   isMealPrimary: boolean;
 };
+
 export type CanonicalOutingIntent = {
   rawQuery: string;
   locationText: string | null;
@@ -87,110 +80,103 @@ export type CanonicalOutingIntent = {
   sequencing: "restaurant_first" | "activity_first" | "same_place_ok" | "unknown";
 };
 
-const VERSION = "canonical-multistop-meal-addon-v1";
-const BOROUGHS = ["queens", "brooklyn", "manhattan", "bronx", "staten island", "astoria"];
-const MEAL_TERMS = ["steak", "seafood", "dinner", "lunch", "brunch", "breakfast", "restaurant", "food", "eat", "meal", "sushi", "tacos", "pasta"];
-const DISH_TERMS = ["steak", "seafood", "sushi", "tacos", "pasta"];
-const ACTIVITY_TERMS = ["hookah", "lounge", "nightlife", "bar", "club", "bowling", "arcade", "comedy", "movie", "rooftop", "dessert", "drinks", "activity", "things to do"];
-const ADDON_TERMS = ["hookah", "lounge", "dessert", "drinks", "rooftop", "after dinner", "nightlife", "bar", "club"];
+const VERSION = "canonical-search-v4-adapter";
 
-const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, " ");
-const has = (t: string, w: string) => t.includes(w);
+function titleCase(value: string | null | undefined) {
+  if (!value) return undefined;
+  return value.split(/\s+/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function legacyMode(intent: CoreCanonicalSearchIntent): CanonicalSearchIntent["mode"] {
+  if (intent.isOffTopic) return "off_topic";
+  if (intent.wantsRestaurant && intent.wantsActivity) return "full_outing";
+  if (intent.wantsRestaurant) return "restaurant_only";
+  if (intent.wantsActivity) return "activity_only";
+  return "location_lookup";
+}
 
 export function parseSearchIntent(input: string, body: any = {}, _candidates: any[] = []): CanonicalSearchIntent {
-  const text = norm(input || "");
-  const locations = BOROUGHS.filter((b) => has(text, b));
-  const borough = locations.find((b) => ["queens", "brooklyn", "manhattan", "bronx", "staten island"].includes(b));
-  const hasMealTerm = MEAL_TERMS.some((term) => has(text, term));
-  const hasHookah = has(text, "hookah");
-  const hasLounge = has(text, "lounge");
-  const hasDessert = has(text, "dessert");
-  const hasActivity = ACTIVITY_TERMS.some((t) => has(text, t));
-  const dishTerms = DISH_TERMS.filter((d) => has(text, d));
-  const foodIntents = [...new Set([...(hasMealTerm ? ["dinner"] : []), ...dishTerms])];
-  const activityIntents = [...new Set([...(hasHookah ? ["hookah"] : []), ...(hasLounge ? ["lounge"] : []), ...(hasDessert ? ["dessert"] : []), ...(has(text, "bowling") ? ["bowling"] : []), ...(has(text, "comedy") ? ["comedy"] : []), ...(has(text, "rooftop") ? ["rooftop"] : []), ...(has(text, "nightlife") ? ["nightlife"] : [])])];
-  const isHookahOnly = hasHookah && !hasMealTerm;
-  const wantsRestaurant = hasMealTerm || (!hasActivity && !isHookahOnly);
-  const wantsActivity = hasActivity;
-  const multi = wantsRestaurant && wantsActivity;
-  const restaurantKeywords = [...new Set([...dishTerms, ...(has(text, "dinner") ? ["dinner"] : []), "restaurant", ...(dishTerms.includes("steak") ? ["steakhouse"] : [])])];
-  const restaurantQuery = `${restaurantKeywords.join(" ")} restaurant ${locations.join(" ")}`.trim() || text;
-  const activityQuery = `${activityIntents.join(" ")} activity ${locations.join(" ")}`.trim() || text;
+  const core = parseCoreCanonicalIntent(input, body);
+  core.restaurantSearchInput = buildCoreRestaurantSearchInput(core);
+  core.activitySearchInput = buildCoreActivitySearchInput(core);
+
+  const restaurantKeywords = [
+    ...(core.specificMealFoodIntents.length ? core.specificMealFoodIntents : core.mealFoodIntents),
+    ...core.cuisines,
+    "restaurant",
+  ].filter(Boolean);
+  const activityTypes = core.activityIntents;
+  const multi = core.wantsRestaurant && core.wantsActivity;
 
   return {
+    ...core,
     version: VERSION,
     originalQuery: input,
-    normalizedInput: text,
-    locationText: borough ? borough[0].toUpperCase() + borough.slice(1) : undefined,
-    borough: borough ? borough[0].toUpperCase() + borough.slice(1) : undefined,
+    normalizedInput: core.normalizedQuery,
+    locationText: titleCase(core.neighborhood || core.borough || core.city || core.geoIntent?.region),
+    borough: titleCase(core.borough),
+    city: titleCase(core.city),
+    state: core.geoIntent?.state,
     outingMode: multi ? "multi_stop" : "single_stop",
-    wantsRestaurant,
-    wantsActivity,
     restaurantIntent: {
-      required: wantsRestaurant,
-      mealPrimary: hasMealTerm,
-      cuisineTerms: [],
-      dishTerms,
+      required: core.needsRestaurant,
+      mealPrimary: Boolean(core.mealFirst || core.mealFoodIntents.length),
+      cuisineTerms: core.cuisines,
+      dishTerms: core.specificMealFoodIntents,
       restaurantKeywords,
-      excludedAddonTerms: ADDON_TERMS,
+      excludedAddonTerms: ["hookah", "lounge", "dessert", "drinks", "rooftop", "after dinner", "nightlife", "bar", "club"],
     },
     activityIntent: {
-      required: wantsActivity,
-      activityTypes: activityIntents,
-      addonTerms: hasHookah ? ["hookah"] : [],
+      required: core.needsActivity,
+      activityTypes,
+      addonTerms: core.addOnIntent,
       loungeTerms: ["hookah lounge", "lounge"],
     },
-    hardFilters: { borough: borough ? borough[0].toUpperCase() + borough.slice(1) : undefined },
+    hardFilters: { borough: titleCase(core.borough), city: titleCase(core.city), state: core.geoIntent?.state },
     cardPolicy: { forceCards: true, prohibitTextOnlyWhenCardsExist: true },
-
     rawInput: input,
-    mode: multi ? "full_outing" : wantsRestaurant ? "restaurant_only" : wantsActivity ? "activity_only" : locations.length ? "location_lookup" : "off_topic",
-    wantsFood: wantsRestaurant,
-    wantsFullOuting: multi,
-    foodIntents,
-    primaryMealIntents: foodIntents,
-    foodAddOnIntents: [],
-    activityIntents,
-    primaryActivityIntents: activityIntents,
-    secondaryActivityIntents: [],
-    vibes: [], requestedTags: [],
-    locations,
-    neighborhoods: [], boroughs: locations, cities: [],
+    mode: legacyMode(core),
+    primaryMealIntents: core.mealFoodIntents,
+    foodAddOnIntents: core.addOnFoodIntents,
+    primaryActivityIntents: activityTypes,
+    secondaryActivityIntents: core.addOnIntent.filter((term) => !activityTypes.includes(term)),
+    requestedTags: [...core.vibes, ...(core.occasionIntents ?? [])],
+    cities: core.cities ?? (core.city ? [core.city] : []),
     budget: { level: null, maxPrice: null, raw: null },
     distance: { maxMiles: body.maxMiles ?? null, userLat: body.lat ?? null, userLng: body.lng ?? null },
     multiIntentMode: multi,
     routing: {
-      restaurantQuery,
-      activityQuery,
-      shouldSearchRestaurants: wantsRestaurant,
-      shouldSearchActivities: wantsActivity,
-      shouldForceRestaurantCards: wantsRestaurant,
-      shouldForceActivityCards: wantsActivity,
+      restaurantQuery: core.restaurantSearchInput,
+      activityQuery: core.activitySearchInput,
+      shouldSearchRestaurants: core.needsRestaurant,
+      shouldSearchActivities: core.needsActivity,
+      shouldForceRestaurantCards: core.needsRestaurant,
+      shouldForceActivityCards: core.needsActivity,
       allowTextOnlyFallback: false,
     },
-    confidence: { score: 0.85, reasons: ["canonical-intent-pipeline"] },
-    explicitTerms: [...new Set([...foodIntents, ...activityIntents, ...locations])],
-    primaryDomain: multi ? "mixed" : wantsRestaurant ? "restaurant" : "activity",
-    requiresRestaurant: wantsRestaurant,
-    requiresActivity: wantsActivity,
-    isHookahOnly,
-    isLoungeOnly: hasLounge && !hasMealTerm,
-    isDessertOnly: hasDessert && !hasMealTerm,
-    isMealPrimary: hasMealTerm,
+    confidence: { score: core.isOffTopic ? 0.2 : 0.9, reasons: ["canonical-search-v4"] },
+    explicitTerms: [...new Set([...core.foodIntents, ...core.activityIntents, ...core.locations, ...core.vibes])],
+    primaryDomain: core.primaryDomain ?? (multi ? "mixed" : core.wantsRestaurant ? "restaurant" : "activity"),
+    requiresRestaurant: core.needsRestaurant,
+    requiresActivity: core.needsActivity,
+    isHookahOnly: core.hookahMode === "activity" && core.activityIntents.includes("hookah"),
+    isLoungeOnly: core.hookahMode === "activity" && core.activityIntents.includes("lounge") && !core.activityIntents.includes("hookah"),
+    isDessertOnly: core.addOnFoodIntents.includes("dessert") && !core.needsRestaurant,
+    isMealPrimary: Boolean(core.mealFirst || core.mealFoodIntents.length),
   };
 }
 
 export function buildRestaurantSearchInput(intent: CanonicalSearchIntent) {
-  return intent.routing.restaurantQuery;
+  return intent.routing?.restaurantQuery ?? buildCoreRestaurantSearchInput(intent as unknown as CoreCanonicalSearchIntent);
 }
 
 export function buildActivitySearchInput(intent: CanonicalSearchIntent) {
-  return intent.routing.activityQuery;
+  return intent.routing?.activityQuery ?? buildCoreActivitySearchInput(intent as unknown as CoreCanonicalSearchIntent);
 }
 
 export function getSearchIntentVersion() { return VERSION; }
 export function enrichIntentWithCandidateLocations(intent: CanonicalSearchIntent) { return intent; }
-export function isFoodAddOnIntent(intent: string) { return intent === "dessert"; }
+export function isFoodAddOnIntent(intent: string) { return ["dessert", "drinks", "cocktails", "coffee"].includes(intent); }
 export function isLoungeActivityIntent(intent: string) { return ["hookah", "lounge", "nightlife"].includes(intent); }
-export function hasPrimaryMealIntent(intent: CanonicalSearchIntent) { return intent.primaryMealIntents.length > 0; }
+export function hasPrimaryMealIntent(intent: CanonicalSearchIntent) { return intent.primaryMealIntents.length > 0 || Boolean(intent.mealFirst); }
 export function shouldSplitIntoRestaurantAndActivity(intent: CanonicalSearchIntent) { return intent.outingMode === "multi_stop"; }

@@ -1,6 +1,6 @@
-import { scoreCuisineCategoryMatch, detectRequestedCuisines } from "@/lib/search/cuisine-matching";
-import { scoreGeoMatch } from "@/lib/search/geo-matching";
-import type { CanonicalSearchIntent } from "@/lib/search/types";
+import { scoreCuisineCategoryMatch, detectRequestedCuisines } from "./cuisine-matching";
+import { scoreGeoMatch } from "./geo-matching";
+import type { CanonicalSearchIntent } from "./types";
 
 function scoreRecord(record: any, terms: string[]) {
   const text = [

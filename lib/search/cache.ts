@@ -1,6 +1,6 @@
-import type { CanonicalSearchIntent } from "@/lib/search/types";
+import type { CanonicalSearchIntent } from "./types";
 
-export const CLEAN_SEARCH_CACHE_VERSION = "clean-search-v3-geo-cuisine-long-island";
+export const CLEAN_SEARCH_CACHE_VERSION = "clean-search-v4-canonical-intent-no-empty";
 
 export function shouldBypassSearchCache(intent: CanonicalSearchIntent) {
   const q = intent.normalizedQuery;
@@ -15,5 +15,6 @@ export function shouldBypassSearchCache(intent: CanonicalSearchIntent) {
   if (intent.geoIntent) reasons.push(`geo:${intent.geoIntent.geoType}`);
   if (intent.wantsFood && intent.wantsActivity) reasons.push("food+activity");
   if (intent.wantsFullOuting) reasons.push("full-outing");
-  return { bypass: reasons.length > 0, reasons, version: CLEAN_SEARCH_CACHE_VERSION };
+  if (intent.needsRestaurant || intent.needsActivity) reasons.push("avoid-empty-card-reuse");
+  return { bypass: reasons.length > 0, reasons, version: CLEAN_SEARCH_CACHE_VERSION, cacheEmptyResponses: false };
 }

@@ -26,6 +26,15 @@ const NYC_SERVICE_TERMS = [
   "bayside",
   "rego park",
   "corona",
+  "long island",
+  "nassau",
+  "suffolk",
+  "freeport",
+  "huntington",
+  "hempstead",
+  "long beach",
+  "garden city",
+  "hamptons",
 ];
 
 type SearchDiagnostics = {
@@ -105,6 +114,33 @@ function normalizeLocation(item: any) {
   };
 }
 
+function normalizeCardTags(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  const labels = values.flatMap((item) => {
+    if (!item) return [];
+    if (Array.isArray(item)) return normalizeCardTags(item);
+    if (typeof item === "string") {
+      const trimmed = item.trim();
+      if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed.toLowerCase())) return [];
+      if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+        try {
+          return normalizeCardTags(JSON.parse(trimmed));
+        } catch {
+          return [];
+        }
+      }
+      return trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+    }
+    return [String(item).trim()].filter(Boolean);
+  });
+
+  return labels
+    .map((label) => label.replace(/_/g, " ").replace(/-/g, " ").trim())
+    .filter((label) => label && !["[]", "{}", "null", "undefined"].includes(label.toLowerCase()))
+    .filter((label, index, arr) => arr.findIndex((item) => item.toLowerCase() === label.toLowerCase()) === index)
+    .slice(0, 8);
+}
+
 function toCardRecord(item: any) {
   return {
     id: item?.id ?? item?.source_id ?? item?.place_id ?? null,
@@ -122,7 +158,7 @@ function toCardRecord(item: any) {
     phone_number: item?.phone_number ?? item?.phone ?? null,
     reservation_url: item?.reservation_url ?? item?.reservation_link ?? null,
     external_reservation_url: item?.external_reservation_url ?? null,
-    tags: Array.isArray(item?.tags) ? item.tags : [],
+    tags: normalizeCardTags([item?.tags, item?.vibe_tags, item?.best_for_tags, item?.intent_tags]),
     distance: item?.pair_distance_miles ?? item?.distance_miles ?? null,
     source_table: item?.source_table ?? null,
     detail_location_type: item?.detail_location_type ?? null,
@@ -221,6 +257,10 @@ export async function POST(request: Request) {
     restaurantType: intent.restaurantType,
     requiredRestaurantCategory: intent.requiredRestaurantCategory,
     multiIntentMode: (intent as any).multiIntentMode,
+    hookahMode: intent.hookahMode,
+    mealFirst: intent.mealFirst,
+    primaryDomain: intent.primaryDomain,
+    occasionIntents: intent.occasionIntents,
   };
   const locationOnlySearch = Boolean(
     (intent?.boroughs?.length ?? 0) > 0 &&
@@ -393,6 +433,8 @@ export async function POST(request: Request) {
       final_activities: topActivities.length,
       fallback_used: fallbackAttempted || Boolean(result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed),
       no_results_reason: result?.debug?.empty_reason ?? null,
+      rejected_records: result?.debug?.rejectedRecords ?? [],
+      cache: result?.debug?.cache_status ?? null,
     },
   };
   const resultCount = response.restaurants.length + response.activities.length + response.matched_locations.length;

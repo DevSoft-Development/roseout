@@ -1,7 +1,7 @@
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { CanonicalSearchIntent } from "@/lib/search/types";
-import { detectRequestedGeo, locationMatchesGeo, scoreGeoMatch } from "@/lib/search/geo-matching";
-import { scoreCuisineCategoryMatch } from "@/lib/search/cuisine-matching";
+import { supabaseAdmin } from "../supabase-admin";
+import type { CanonicalSearchIntent } from "./types";
+import { detectRequestedGeo, locationMatchesGeo, scoreGeoMatch } from "./geo-matching";
+import { scoreCuisineCategoryMatch } from "./cuisine-matching";
 
 type SearchDomain = "restaurant" | "activity";
 
@@ -17,6 +17,7 @@ export type SearchDebug = {
   afterCategoryFilterActivityCount?: number;
   fallbackRestaurantUsed?: boolean;
   fallbackActivityUsed?: boolean;
+  rejectedRecords?: Array<{ name: string; reason: string; domain?: string | null }>;
 };
 
 const SEARCHED_TABLE = "locations";
@@ -66,7 +67,7 @@ const MEAL_TERMS = [
 ];
 
 const ADD_ON_ACTIVITY_TERMS = [
-  "hookah", "hookah lounge", "lounge", "nightclub", "club", "karaoke", "bowling", "arcade", "vr", "paint", "sip and paint", "activity", "experience",
+  "hookah", "hookah lounge", "lounge", "nightclub", "club", "karaoke", "bowling", "arcade", "vr", "paint", "sip and paint", "paint and sip", "activity", "experience", "rooftop",
 ];
 
 function stringifySearchValue(value: unknown): string {
@@ -346,9 +347,20 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   const domainRecords = records.filter((record) => isDomainMatch(record, domain));
   const geoIntent = intent.geoIntent ?? detectRequestedGeo(intent.rawQuery || searchText);
   const intentQuery = `${searchText} ${(intent.locationIntent ?? []).join(" ")} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
+  const rejectedRecords: Array<{ name: string; reason: string; domain?: string | null }> = [];
+  const nameForDebug = (record: Record<string, unknown>) => String(record.name ?? record.restaurant_name ?? record.activity_name ?? record.business_name ?? "Unknown");
   const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
   const geoFilteredByQuery = geoIntent ? domainRecords.filter((record) => locationMatchesGeo(record, geoIntent)) : domainRecords.filter((record) => matchesGeo(record, intentQuery));
-  const geoFiltered = geoIntent ? geoFilteredByQuery : (geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent);
+  const geoFiltered = geoIntent
+    ? (geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent.length > 0 ? geoFilteredByIntent : domainRecords)
+    : (geoFilteredByQuery.length > 0 ? geoFilteredByQuery : geoFilteredByIntent.length > 0 ? geoFilteredByIntent : domainRecords);
+  if ((geoIntent || intent.boroughs.length > 0) && geoFilteredByQuery.length === 0 && domainRecords.length > 0) {
+    rejectedRecords.push(...domainRecords.slice(0, 20).map((record) => ({
+      name: nameForDebug(record),
+      reason: "geo_softened_no_exact_location_match",
+      domain: inferRecordDomain(record),
+    })));
+  }
   const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : (intent.activityIntent ?? intent.activityIntents);
   let categorized: Record<string, unknown>[] = domain === "restaurant" ? [] : softCategoryFilter(geoFiltered, terms);
   let strictRestaurantCount = 0;
@@ -379,7 +391,10 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       categorized = filtered.filtered.sort((a, b) => restaurantIntentScore(b, intentQuery) - restaurantIntentScore(a, intentQuery));
       if (strictFoodTerms.length > 0 && strictRestaurantCount > 0) {
         const strictMatches = categorized.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
-        if (strictMatches.length > 0) categorized = strictMatches;
+        if (strictMatches.length > 0) {
+          rejectedRecords.push(...categorized.filter((record) => !matchesSpecificFoodIntent(record, strictFoodTerms)).slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: `missing_specific_food:${strictFoodTerms.join("|")}`, domain: inferRecordDomain(record) })));
+          categorized = strictMatches;
+        }
       }
     }
   } else {
@@ -389,11 +404,14 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     if (intent.needsRestaurant && intent.needsActivity && (intent.addOnIntent ?? []).length > 0) {
       const addOn = (intent.addOnIntent ?? []).map((x) => x.replaceAll("_", " "));
       const addOnMatches = categorized.filter((record) => addOn.some((term) => recordSearchText(record).includes(term)));
-      if (addOnMatches.length > 0) categorized = addOnMatches;
+      if (addOnMatches.length > 0) {
+        rejectedRecords.push(...categorized.filter((record) => !addOn.some((term) => recordSearchText(record).includes(term))).slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: `missing_activity_add_on:${addOn.join("|")}`, domain: inferRecordDomain(record) })));
+        categorized = addOnMatches;
+      }
     }
   }
 
-  const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors };
+  const debug: SearchDebug = { searchedTables: [SEARCHED_TABLE], rpcCalls: [], sourceErrors, rejectedRecords };
   if (domain === "restaurant") {
     debug.rawRestaurantCount = domainRecords.length;
     debug.afterGeoFilterRestaurantCount = geoFiltered.length;

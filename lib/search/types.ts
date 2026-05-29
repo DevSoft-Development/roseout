@@ -26,7 +26,9 @@ export type CanonicalSearchIntent = {
   locations: string[];
   neighborhoods: string[];
   boroughs: string[];
+  cities?: string[];
   vibes: string[];
+  occasionIntents?: string[];
   strictFoodMode: boolean;
   strictActivityMode: boolean;
   isOffTopic: boolean;
@@ -37,7 +39,10 @@ export type CanonicalSearchIntent = {
   restaurantIntent?: boolean;
   restaurantType?: string | null;
   requiredRestaurantCategory?: string | null;
-  geoIntent?: import("@/lib/search/geo-matching").GeoIntent | null;
+  geoIntent?: import("./geo-matching").GeoIntent | null;
+  hookahMode?: "restaurant_add_on" | "activity" | "activity_add_on" | null;
+  mealFirst?: boolean;
+  primaryDomain?: "restaurant" | "activity" | "mixed";
 };
 
 export type SearchPipelineResult = {

@@ -1,4 +1,4 @@
-import type { CanonicalSearchIntent } from "@/lib/search/types";
+import type { CanonicalSearchIntent } from "./types";
 
 export function buildOutingPairs(restaurants: any[], activities: any[], intent: CanonicalSearchIntent) {
   if (!(intent.wantsFood && intent.wantsActivity)) return [];

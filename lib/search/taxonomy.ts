@@ -11,7 +11,7 @@ export const GENERIC_MEAL_TERMS = [
 ] as const;
 
 export const SPECIFIC_MEAL_FOOD_INTENTS = [
-  "steak","steakhouse","seafood","sushi","pasta","soul_food","caribbean","italian","mexican","thai","chinese","japanese","american","african","vegan","vegetarian","halal","burgers","pizza","tacos","fine_dining",
+  "steak","steakhouse","seafood","fish","crab","lobster","shrimp","oyster","sushi","pasta","soul_food","caribbean","italian","mexican","thai","chinese","japanese","american","african","vegan","vegetarian","halal","burgers","pizza","tacos","fine_dining",
 ] as const;
 
 export const MEAL_FOOD_INTENTS = [
@@ -31,7 +31,7 @@ export const INTENT_ALIASES: Record<string, string[]> = {
   hookah: ["hookah", "shisha", "hookah lounge", "hookah bar"],
   paint_and_sip: ["paint and sip", "sip and paint", "paint n sip", "sip n paint", "paint night", "painting class", "painting studio", "wine and paint", "paint with wine"],
   steak: ["steak", "steak dinner", "steakhouse", "ribeye", "porterhouse", "filet mignon"],
-  seafood: ["seafood", "seafood dinner", "fish", "crab", "lobster", "shrimp"],
+  seafood: ["seafood", "seafood dinner", "fish", "crab", "lobster", "shrimp", "oyster"],
 };
 
 export const OUTING_PHRASES = ["and", "after", "then", "followed by", "date night", "outing"];
