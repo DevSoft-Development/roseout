@@ -1,27 +1,13 @@
 import type { Metadata } from "next";
 import LoginPage from "@/app/login/page";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Create Your Account | TheOutHaven",
-  description:
-    "Create your free TheOutHaven account to discover restaurants, activities, personalized outing ideas, and premium nightlife experiences.",
-  openGraph: {
-    title: "Create Your Account | TheOutHaven",
-    description:
-      "Create your free TheOutHaven account to discover restaurants, activities, personalized outing ideas, and premium nightlife experiences.",
-    url: "/signup",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Create Your Account | TheOutHaven",
-    description:
-      "Create your free TheOutHaven account to discover restaurants, activities, personalized outing ideas, and premium nightlife experiences.",
-  },
-  alternates: {
-    canonical: "/signup",
-  },
-};
+export const metadata: Metadata = buildMetadata({
+  title: "Sign Up",
+  description: "Create a TheOutHaven account to discover and save restaurants, activities, and outing ideas across NYC and Long Island.",
+  path: "/signup",
+  noIndex: true,
+});
 
 export default function SignupPage() {
   return <LoginPage initialTab="signup" />;

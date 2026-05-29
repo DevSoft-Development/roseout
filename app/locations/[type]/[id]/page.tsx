@@ -233,6 +233,12 @@ export default function LocationDetailPage() {
   }, [location]);
 
   const tags = getLocationTags(location);
+  const relatedExploreLinks = buildRelatedExploreLinks({
+    borough: location?.borough,
+    city: location?.city,
+    category,
+    cuisine: location?.cuisine || location?.cuisine_type || location?.activity_type,
+  });
   const dateStyleTags = toArray(location?.date_style_tags);
   const reviewKeywords = toArray(location?.review_keywords);
   const bestFor = toArray(location?.best_for);
@@ -596,6 +602,18 @@ export default function LocationDetailPage() {
                 </div>
               </LuxuryCard>
 
+              {relatedExploreLinks.length > 0 && (
+                <LuxuryCard eyebrow="Related Discovery" title="Explore nearby and similar places.">
+                  <div className="flex flex-wrap gap-2">
+                    {relatedExploreLinks.map((link) => (
+                      <Link key={link.href} href={link.href} className="rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/75 transition hover:bg-white hover:text-black">
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
+                </LuxuryCard>
+              )}
+
               {galleryImages.length > 1 && (
                 <LuxuryCard eyebrow="Photo Gallery" title="A closer look.">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -825,6 +843,35 @@ export default function LocationDetailPage() {
       )}
     </>
   );
+}
+
+
+function buildRelatedExploreLinks({
+  borough,
+  city,
+  category,
+  cuisine,
+}: {
+  borough?: unknown;
+  city?: unknown;
+  category?: unknown;
+  cuisine?: unknown;
+}) {
+  const links: { label: string; href: string }[] = [];
+  const area = String(borough || city || "").trim();
+  const areaSlug = area.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const categoryText = `${category || ""} ${cuisine || ""}`.toLowerCase();
+
+  if (["queens", "brooklyn", "manhattan", "bronx", "staten-island", "long-island"].includes(areaSlug)) {
+    links.push({ label: `More in ${area}`, href: `/explore/${areaSlug}` });
+  }
+  if (categoryText.includes("steak")) links.push({ label: "More steak restaurants", href: "/explore/steak-restaurants" });
+  if (categoryText.includes("brunch")) links.push({ label: "More brunch spots", href: "/explore/brunch-spots" });
+  if (categoryText.includes("hookah")) links.push({ label: "More hookah lounges", href: "/explore/hookah-lounges" });
+  if (categoryText.includes("rooftop")) links.push({ label: "More rooftop restaurants", href: "/explore/rooftop-restaurants" });
+
+  links.push({ label: "Date night ideas", href: "/explore/date-night" });
+  return links.filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index).slice(0, 5);
 }
 
 function DynamicLocationHeader({

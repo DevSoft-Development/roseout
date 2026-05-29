@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AdminTopBar from "./components/AdminTopBar";
+import { noIndexRobots } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: {
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
     template: "%s | TheOutHaven Admin",
   },
   description: "TheOutHaven internal admin dashboard.",
+  robots: noIndexRobots(),
 };
 
 export default function AdminLayout({

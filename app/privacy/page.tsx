@@ -1,10 +1,13 @@
+import type { Metadata } from "next";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Privacy Policy – TheOutHaven",
+export const metadata: Metadata = buildMetadata({
+  title: "Privacy Policy",
   description:
-    "Read TheOutHaven's Privacy Policy, including how TheOutHaven collects, uses, protects, and manages user information, location data, AI prompts, email, and SMS consent.",
-};
+    "Read TheOutHaven's Privacy Policy, including how information is collected, used, protected, and managed across the service.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (

@@ -1,10 +1,13 @@
+import type { Metadata } from "next";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata = {
-  title: "Terms of Service – TheOutHaven",
+export const metadata: Metadata = buildMetadata({
+  title: "Terms of Service",
   description:
-    "Read TheOutHaven's Terms of Service for using the AI-powered outing planner, restaurant and activity recommendations, accounts, communications, and business listings.",
-};
+    "Read TheOutHaven's Terms of Service for using outing planning, restaurant and activity discovery, accounts, communications, and business listings.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

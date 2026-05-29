@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import { buildMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = buildMetadata({
+  title: "User Account",
+  path: "/user",
+  noIndex: true,
+});
 
 export default async function UserLayout({
   children,

@@ -45,8 +45,11 @@ export default function TheOutHavenFooter() {
           title="Explore"
           links={[
             { label: "Home", href: "/" },
+            { label: "Explore", href: "/explore" },
             { label: "Plan Outing", href: "/create" },
-            { label: "About", href: "/about" },
+            { label: "Queens", href: "/explore/queens" },
+            { label: "Brooklyn", href: "/explore/brooklyn" },
+            { label: "Long Island", href: "/explore/long-island" },
           ]}
         />
 
@@ -54,9 +57,9 @@ export default function TheOutHavenFooter() {
         <FooterColumn
           title="Business"
           links={[
-            { label: "For Businesses", href: "/location/apply" },
-            { label: "Claim Listing", href: "/location/apply/claim" },
-            { label: "Add Location", href: "/location/apply/new" },
+            { label: "For Businesses", href: "/business" },
+            { label: "Claim Listing", href: "/business/claim" },
+            { label: "Apply", href: "/location/apply" },
           ]}
         />
 
