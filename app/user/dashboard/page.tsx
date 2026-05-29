@@ -37,9 +37,17 @@ export default async function UserDashboardPage() {
     "theouthaven_impersonate_user_id"
   )?.value;
 
+  const authSupabase = await import("@/lib/supabase-server").then((m) =>
+    m.createClient(),
+  );
+
+  const {
+    data: { user },
+  } = await authSupabase.auth.getUser();
+
   const supabase = adminSupabase();
 
-  const userId = impersonatedUserId || null;
+  const userId = impersonatedUserId || user?.id || null;
 
   if (!userId) {
     redirect("/login");

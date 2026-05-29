@@ -1,13 +1,19 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-type AdminRole = "admin" | "superadmin";
+type AdminRole = "admin" | "superadmin" | "editor" | "viewer";
 
 function normalizeAdminRole(role: unknown): AdminRole | null {
   const normalized =
     role === "superuser" || role === "super_admin" ? "superadmin" : role;
 
-  if (normalized === "admin" || normalized === "superadmin") {
+  if (
+    normalized === "admin" ||
+    normalized === "superadmin" ||
+    normalized === "editor" ||
+    normalized === "viewer"
+  ) {
     return normalized;
   }
 
@@ -25,7 +31,7 @@ export async function getCurrentAdmin() {
     redirect("/login");
   }
 
-  const { data: adminUser, error } = await supabase
+  const { data: adminUser, error } = await supabaseAdmin
     .from("admin_users")
     .select("user_id, role")
     .eq("user_id", user.id)

@@ -10,6 +10,13 @@ type RedirectResolutionInput = {
 
 const ADMIN_ROLES = new Set(["superadmin", "admin"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
+const BLOCKED_INTENDED_PATH_PREFIXES = [
+  "/login",
+  "/signup",
+  "/logout",
+  "/auth",
+  "/api/auth",
+];
 
 function normalizeRole(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -20,12 +27,33 @@ function normalizeRole(value: string | null | undefined): string | null {
 
 export function sanitizeIntendedPath(path: string | null | undefined): string | null {
   if (!path) return null;
-  if (!path.startsWith("/")) return null;
-  if (path.startsWith("//")) return null;
-  if (path.startsWith("/login")) return null;
-  if (path.startsWith("/signup")) return null;
-  if (path.startsWith("/auth")) return null;
-  return path;
+
+  const trimmedPath = path.trim();
+  const lowerPath = trimmedPath.toLowerCase();
+
+  if (!trimmedPath.startsWith("/")) return null;
+  if (trimmedPath.startsWith("//")) return null;
+  if (lowerPath.startsWith("javascript:")) return null;
+
+  const pathname = trimmedPath.split(/[?#]/, 1)[0].toLowerCase();
+
+  if (
+    BLOCKED_INTENDED_PATH_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    )
+  ) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmedPath, "https://theouthaven.local");
+
+    if (url.origin !== "https://theouthaven.local") return null;
+
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
 }
 
 export function resolvePostLoginRedirect(input: RedirectResolutionInput): string {
@@ -57,5 +85,11 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
     return "/dashboard";
   }
 
-  return sanitizeIntendedPath(input.intendedPath) || "/create";
+  const safePath = sanitizeIntendedPath(input.intendedPath);
+
+  if (safePath) {
+    return safePath;
+  }
+
+  return "/create";
 }

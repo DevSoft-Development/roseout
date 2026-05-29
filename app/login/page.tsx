@@ -90,68 +90,56 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+
     setLoading(true);
     setError("");
     setMessage("");
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: signin.email.trim().toLowerCase(),
-      password: signin.password,
-    });
-
-    if (error) {
-      setLoading(false);
-      return setError(error.message);
-    }
-
-    const user = data.user;
-    const accessToken = data.session?.access_token;
-
-    if (!user?.id || !accessToken) {
-      setLoading(false);
-      return setError("Login succeeded, but your session was not ready. Please try again.");
-    }
-
+    const normalizedEmail = normalizeEmail(signin.email);
     const intendedRoute = sanitizeIntendedPath(
       new URL(window.location.href).searchParams.get("next"),
     );
 
-    const destinationResponse = await fetch(
-      `/api/auth/login-destination${
-        intendedRoute ? `?next=${encodeURIComponent(intendedRoute)}` : ""
-      }`,
-      {
-        method: "GET",
+    try {
+      const response = await fetch("/api/auth/sign-in", {
+        method: "POST",
         credentials: "include",
         cache: "no-store",
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
         },
-      },
-    );
+        body: JSON.stringify({
+          email: normalizedEmail,
+          password: signin.password,
+          next: intendedRoute,
+        }),
+      });
 
-    const destinationData = await destinationResponse.json().catch(() => null);
+      const data = await response.json().catch(() => null);
 
-    console.log("SIGNUP_LOGIN_REDIRECT_DEBUG", {
-      ok: destinationResponse.ok,
-      status: destinationResponse.status,
-      redirectTo: destinationData?.redirectTo,
-      adminRole: destinationData?.adminRole,
-      reason: destinationData?.reason,
-      userId: destinationData?.userId,
-      email: destinationData?.email,
-      debug: destinationData?.debug,
-    });
+      console.log("THEOUTHAVEN_SIGN_IN_RESULT", {
+        ok: response.ok,
+        status: response.status,
+        redirectTo: data?.redirectTo,
+        adminRole: data?.adminRole,
+        profileRole: data?.profileRole,
+        profileAccountType: data?.profileAccountType,
+        isLocationOwner: data?.isLocationOwner,
+        debug: data?.debug,
+      });
 
-    if (!destinationResponse.ok) {
+      if (!response.ok || !data?.ok) {
+        setLoading(false);
+        setError(data?.message || "We could not sign you in. Please try again.");
+        return;
+      }
+
+      window.location.replace(data.redirectTo || "/create");
+    } catch (error) {
+      console.error("Sign in failed", error);
       setLoading(false);
-      return setError(
-        destinationData?.reason ||
-          "Login succeeded, but we could not resolve your dashboard.",
-      );
+      setError("We could not sign you in. Please check your connection and try again.");
     }
-
-    window.location.assign(destinationData?.redirectTo || "/create");
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -274,7 +262,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <h3 className="text-lg font-medium">Sign Up for Business</h3>
               <p className="mt-2 text-sm text-white/70">Claim your location, manage reservations, and reach more customers.</p>
-              <button onClick={() => router.push("/location/apply")} className={`mt-4 w-full ${primaryButtonClass}`}>Apply for Business</button>
+              <button type="button" onClick={() => router.push("/location/apply")} className={`mt-4 w-full ${primaryButtonClass}`}>Apply for Business</button>
             </div>
           </div>
 
@@ -397,7 +385,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                 />
               </div>
 
-              <button disabled={loading} className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
+              <button type="submit" disabled={loading} className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
 
               <p className="text-center text-sm text-white/55">
                 Need an account?{" "}
@@ -521,7 +509,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                 {signupStep === 1 ? (
                   <button type="button" onClick={() => setSignupStep(2)} className={`flex-1 ${primaryButtonClass}`}>Continue</button>
                 ) : (
-                  <button disabled={loading} className={`flex-1 ${primaryButtonClass}`}>{loading ? "Creating..." : "Create Account"}</button>
+                  <button type="submit" disabled={loading} className={`flex-1 ${primaryButtonClass}`}>{loading ? "Creating..." : "Create Account"}</button>
                 )}
               </div>
             </form>
