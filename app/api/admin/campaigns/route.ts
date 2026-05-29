@@ -22,9 +22,9 @@ export async function POST(req: Request) {
   const { error, adminUser } = await requireMarketingAdminApi(); if (error) return error;
   const body=await req.json();
   if(!body?.name || typeof body.name!=='string') return NextResponse.json({error:'name is required'},{status:400});
-  const payload={ name: body.name.trim(), campaign_type: normalizeCampaignType(body.campaign_type), status: normalizeCampaignStatus(body.status), audience_segment: normalizeStringOrNull(body.audience), selected_platforms: Array.isArray(body.channels)?body.channels:[], created_by: adminUser?.id ?? null, created_by_email: adminUser?.email ?? null };
+  const payload={ name: body.name.trim(), campaign_type: normalizeCampaignType(body.campaign_type), status: normalizeCampaignStatus(body.status), audience_segment: normalizeStringOrNull(body.audience), selected_platforms: Array.isArray(body.channels)?body.channels:[], created_by: adminUser?.user_id ?? null, created_by_email: adminUser?.email ?? null };
   const {data,error:insertError}=await supabaseAdmin.from('marketing_campaigns').insert(payload).select('*').single();
   if(insertError) return NextResponse.json({error:insertError.message},{status:500});
-  await logAdminEvent({category:'Campaigns',message:`Campaign created: ${payload.name}`,level:'info',actor_id:adminUser?.id,actor_email:adminUser?.email,entity_type:'marketing_campaigns',entity_id:data.id});
+  await logAdminEvent({category:'Campaigns',message:`Campaign created: ${payload.name}`,level:'info',actor_id:adminUser?.user_id,actor_email:adminUser?.email,entity_type:'marketing_campaigns',entity_id:data.id});
   return NextResponse.json({campaign:data},{status:201});
 }

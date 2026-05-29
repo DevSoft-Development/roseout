@@ -52,11 +52,10 @@ export async function POST(request: Request) {
   if (isAdminRole(role)) {
     await supabaseAdmin.from("admin_users").upsert(
       {
-        email,
-        full_name: `${firstName} ${lastName}`.trim() || null,
+        user_id: created.data.user.id,
         role,
       },
-      { onConflict: "email" },
+      { onConflict: "user_id" },
     );
   }
 
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
     role: normalizePasswordSetupRole(role),
     assigned_location_id: body.assigned_location_id || null,
     expires_at: expiresAt,
-    created_by: adminUser?.id || null,
+    created_by: adminUser?.user_id || null,
   });
 
   if (insertError) {

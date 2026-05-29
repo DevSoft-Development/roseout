@@ -23,12 +23,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     body: body.body,
     provider_message_id: emailResult.id,
     provider_thread_id: ticket.provider_thread_id,
-    created_by: adminUser?.id || null,
+    created_by: adminUser?.user_id || null,
   });
 
   await supabase.from("support_tickets").update({ status: body.status || "pending", last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", ticket.id);
 
-  await supabase.from("communication_logs").insert({ channel: "email", direction: "outbound", from_address: SUPPORT_EMAIL_FROM, to_address: ticket.requester_email, subject, body: body.body, status: "sent", provider_message_id: emailResult.id, recipient_type: "support_ticket", recipient_id: ticket.id, created_by: adminUser?.id || null });
+  await supabase.from("communication_logs").insert({ channel: "email", direction: "outbound", from_address: SUPPORT_EMAIL_FROM, to_address: ticket.requester_email, subject, body: body.body, status: "sent", provider_message_id: emailResult.id, recipient_type: "support_ticket", recipient_id: ticket.id, created_by: adminUser?.user_id || null });
 
   return Response.json({ ok: true });
 }

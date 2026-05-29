@@ -38,8 +38,7 @@ type EditableUser = {
 };
 
 type AdminUserRow = {
-  email: string | null;
-  full_name: string | null;
+  user_id: string;
   role: string | null;
 };
 
@@ -105,11 +104,6 @@ async function updateUser(formData: FormData) {
 
   const supabase = adminSupabase();
 
-  const [{ data: existingUser }, { data: existingAuthUser }] = await Promise.all([
-    supabase.from("users").select("email").eq("id", userId).maybeSingle(),
-    supabase.auth.admin.getUserById(userId),
-  ]);
-
   const authUpdates: {
     email: string;
     user_metadata: {
@@ -148,22 +142,16 @@ async function updateUser(formData: FormData) {
     editErrorRedirect(userId, userError.message);
   }
 
-  const previousEmail = (existingUser?.email || existingAuthUser.user?.email || null)?.toLowerCase();
-  if (previousEmail && previousEmail !== email) {
-    await supabase.from("admin_users").delete().eq("email", previousEmail);
-  }
-
   if (isAdminRole(role)) {
     await supabase.from("admin_users").upsert(
       {
-        email,
-        full_name: fullName,
+        user_id: userId,
         role,
       },
-      { onConflict: "email" },
+      { onConflict: "user_id" },
     );
   } else {
-    await supabase.from("admin_users").delete().eq("email", email);
+    await supabase.from("admin_users").delete().eq("user_id", userId);
   }
 
   redirect(`${ADMIN_USERS_BASE_PATH}/${userId}?updated=1`);
@@ -236,22 +224,20 @@ async function getEditableUser(id: string) {
   const email = (profileUser?.email || authUser?.email || null)?.toLowerCase() || null;
   let adminUser: AdminUserRow | null = null;
 
-  if (email) {
-    const { data } = await supabase
-      .from("admin_users")
-      .select("email, full_name, role")
-      .eq("email", email)
-      .maybeSingle<AdminUserRow>();
+  const { data } = await supabase
+    .from("admin_users")
+    .select("user_id, role")
+    .eq("user_id", id)
+    .maybeSingle<AdminUserRow>();
 
-    adminUser = data || null;
-  }
+  adminUser = data || null;
 
   const role = normalizeRole(profileUser?.role || adminUser?.role || "user");
 
   return {
     id,
     email,
-    full_name: profileUser?.full_name || getMetadataName(authMetadata) || adminUser?.full_name || null,
+    full_name: profileUser?.full_name || getMetadataName(authMetadata) || null,
     phone: profileUser?.phone || null,
     role,
     subscription_status: profileUser?.subscription_status || null,
@@ -279,7 +265,7 @@ export default async function EditAdminUserPage({ params, searchParams }: PagePr
 
   if (!user) notFound();
 
-  const displayRole = normalizeRole(user.role);
+  const displayRole = normalizeRole(user.role) || "user";
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8">

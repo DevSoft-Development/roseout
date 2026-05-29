@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
+import { normalizeRole } from "@/lib/users/roles";
 import { getLocationName } from "@/lib/locationName";
 
 export default function AdminLabelsPage() {
@@ -30,10 +31,10 @@ export default function AdminLabelsPage() {
       const { data: adminUser } = await supabase
         .from("admin_users")
         .select("role")
-        .eq("email", data.user.email?.toLowerCase() || "")
+        .eq("user_id", data.user.id)
         .maybeSingle();
 
-      if (adminUser?.role !== "superadmin") {
+      if (normalizeRole(adminUser?.role) !== "superadmin") {
         setUnauthorized(true);
         setLoading(false);
         return;

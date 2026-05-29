@@ -11,13 +11,7 @@ export const USER_ROLES = [
 
 export type UserRole = (typeof USER_ROLES)[number];
 
-export const ADMIN_ROLES = [
-  "superadmin",
-  "admin",
-  "editor",
-  "reviewer",
-  "viewer",
-] as const;
+export const ADMIN_ROLES = ["superadmin", "admin", "editor", "viewer"] as const;
 
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 
@@ -33,16 +27,22 @@ export const USER_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 ];
 
 export function normalizeRole(role?: string | null) {
-  if (role === "superuser") return "superadmin";
-  return role ?? "user";
+  if (!role) return null;
+  const normalized = role.trim().toLowerCase();
+
+  if (normalized === "superuser" || normalized === "super_admin") {
+    return "superadmin";
+  }
+
+  return normalized;
 }
 
-export function isUserRole(role: string): role is UserRole {
-  return (USER_ROLES as readonly string[]).includes(role);
+export function isUserRole(role: string | null): role is UserRole {
+  return typeof role === "string" && (USER_ROLES as readonly string[]).includes(role);
 }
 
 export function isAdminRole(role: unknown): role is AdminRole {
-  return typeof role === "string" && (ADMIN_ROLES as readonly string[]).includes(normalizeRole(role));
+  return typeof role === "string" && (ADMIN_ROLES as readonly string[]).includes(normalizeRole(role) || "");
 }
 
 export function formatRoleLabel(role?: string | null) {

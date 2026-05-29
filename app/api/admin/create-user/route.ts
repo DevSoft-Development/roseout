@@ -53,10 +53,10 @@ export async function POST(request: Request) {
     if (isAdminRole(role)) {
       await supabaseAdmin.from("admin_users").upsert(
         {
-          email,
+          user_id: data.user.id,
           role,
         },
-        { onConflict: "email" }
+        { onConflict: "user_id" }
       );
     }
 

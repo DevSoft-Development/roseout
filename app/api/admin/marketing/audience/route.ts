@@ -87,7 +87,7 @@ export async function POST(req: Request) {
       description: typeof body.description === "string" ? body.description.trim() : null,
       segment_key: typeof body.segment_key === "string" && body.segment_key.trim() ? body.segment_key.trim() : null,
       filters: typeof body.filters === "object" && body.filters ? body.filters : {},
-      created_by: adminUser?.id || null,
+      created_by: adminUser?.user_id || null,
     })
     .select("*")
     .single();

@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       });
 
       await supabase.from("admin_impersonation_logs").insert({
-        admin_id: adminUser?.id,
+        admin_id: adminUser?.user_id,
         admin_email: adminUser?.email,
         target_user_id: targetUser.id,
         target_user_email: targetUser.email,
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
     });
 
     await supabase.from("admin_impersonation_logs").insert({
-      admin_id: adminUser?.id,
+      admin_id: adminUser?.user_id,
       admin_email: adminUser?.email,
       target_user_id: location.owner_user_id || null,
       target_user_email: location.owner_email || null,

@@ -17,7 +17,7 @@ export async function getLocationOwnerAccess(userId: string): Promise<OwnerAcces
     .maybeSingle();
 
   const role = normalizeRole(typeof profile?.role === "string" ? profile.role.trim().toLowerCase() : null);
-  const isAdmin = (ADMIN_ROLES as readonly string[]).includes(role);
+  const isAdmin = (ADMIN_ROLES as readonly string[]).includes(role || "");
   const isSuperadmin = role === "superadmin";
 
   const ownedLocationIds = new Set<string>();
