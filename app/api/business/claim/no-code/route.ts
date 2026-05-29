@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { verifyCaptcha } from "@/lib/security/verifyCaptcha";
 import { createClient } from "@/lib/supabase-server";
 import {
   sendAdminNewClaimEmail,
@@ -27,7 +28,8 @@ type LocationRow = {
   claimed?: boolean | null;
 };
 
-const LOCATION_SELECT = "id,name,restaurant_name,activity_name,address,city,state,zip_code,borough,phone,website,location_type,primary_category,claim_status,is_claimed,claimed";
+const LOCATION_SELECT =
+  "id,name,restaurant_name,activity_name,address,city,state,zip_code,borough,phone,website,location_type,primary_category,claim_status,is_claimed,claimed";
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -42,11 +44,25 @@ function phoneDigits(value: unknown) {
 }
 
 function normalizeWebsite(value: unknown) {
-  return lower(value).replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
+  return lower(value)
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/$/, "");
+}
+
+function optionalNumber(value: string) {
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function compactName(row: LocationRow) {
-  return row.name || row.restaurant_name || row.activity_name || "TheOutHaven location";
+  return (
+    row.name ||
+    row.restaurant_name ||
+    row.activity_name ||
+    "TheOutHaven location"
+  );
 }
 
 function tokenSet(value: string) {
@@ -93,15 +109,62 @@ async function findBestMatch(input: {
   const phone = input.phone;
   const queries: any[] = [];
 
-  if (phone) queries.push(supabaseAdmin.from("locations").select(LOCATION_SELECT).ilike("phone", `%${phone.slice(-7)}%`).limit(10));
-  if (input.zipCode) queries.push(supabaseAdmin.from("locations").select(LOCATION_SELECT).eq("zip_code", input.zipCode).ilike("address", input.address).limit(10));
+  if (phone)
+    queries.push(
+      supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .ilike("phone", `%${phone.slice(-7)}%`)
+        .limit(10),
+    );
+  if (input.zipCode)
+    queries.push(
+      supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .eq("zip_code", input.zipCode)
+        .ilike("address", input.address)
+        .limit(10),
+    );
   if (input.city && input.state) {
-    const firstNameToken = input.locationName.split(" ")[0] || input.locationName;
-    queries.push(supabaseAdmin.from("locations").select(LOCATION_SELECT).ilike("city", input.city).ilike("state", input.state).ilike("name", `%${firstNameToken}%`).limit(20));
-    queries.push(supabaseAdmin.from("locations").select(LOCATION_SELECT).ilike("city", input.city).ilike("state", input.state).ilike("restaurant_name", `%${firstNameToken}%`).limit(20));
-    queries.push(supabaseAdmin.from("locations").select(LOCATION_SELECT).ilike("city", input.city).ilike("state", input.state).ilike("activity_name", `%${firstNameToken}%`).limit(20));
+    const firstNameToken =
+      input.locationName.split(" ")[0] || input.locationName;
+    queries.push(
+      supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .ilike("city", input.city)
+        .ilike("state", input.state)
+        .ilike("name", `%${firstNameToken}%`)
+        .limit(20),
+    );
+    queries.push(
+      supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .ilike("city", input.city)
+        .ilike("state", input.state)
+        .ilike("restaurant_name", `%${firstNameToken}%`)
+        .limit(20),
+    );
+    queries.push(
+      supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .ilike("city", input.city)
+        .ilike("state", input.state)
+        .ilike("activity_name", `%${firstNameToken}%`)
+        .limit(20),
+    );
   }
-  if (input.website) queries.push(supabaseAdmin.from("locations").select(LOCATION_SELECT).ilike("website", `%${input.website}%`).limit(10));
+  if (input.website)
+    queries.push(
+      supabaseAdmin
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .ilike("website", `%${input.website}%`)
+        .limit(10),
+    );
 
   const results = await Promise.all(queries);
   const candidates = new Map<string, LocationRow>();
@@ -110,7 +173,11 @@ async function findBestMatch(input: {
     for (const row of result.data || []) candidates.set(row.id, row);
   }
 
-  let best: { row: LocationRow; score: number; status: "exact_match" | "possible_match" | "no_match" | "pending_review" } | null = null;
+  let best: {
+    row: LocationRow;
+    score: number;
+    status: "exact_match" | "possible_match" | "no_match" | "pending_review";
+  } | null = null;
   for (const row of candidates.values()) {
     const rowPhone = phoneDigits(row.phone);
     const rowAddress = lower(row.address);
@@ -122,23 +189,74 @@ async function findBestMatch(input: {
     const nameSimilarity = similarity(input.locationName, rowName);
 
     let score = 0;
-    if (phone && rowPhone && (rowPhone === phone || rowPhone.endsWith(phone.slice(-7)))) score += 45;
-    if (input.address && rowAddress === input.address && input.zipCode && rowZip === input.zipCode) score += 45;
-    if (input.locationName && rowName === input.locationName && rowCity === input.city && rowState === input.state) score += 35;
-    if (nameSimilarity >= 0.6 && phone && rowPhone && rowPhone.endsWith(phone.slice(-7))) score += 35;
-    if (nameSimilarity >= 0.6 && input.address && rowAddress.includes(input.address.slice(0, 10))) score += 30;
-    if (input.website && rowWebsite && rowWebsite === input.website) score += 25;
+    if (
+      phone &&
+      rowPhone &&
+      (rowPhone === phone || rowPhone.endsWith(phone.slice(-7)))
+    )
+      score += 45;
+    if (
+      input.address &&
+      rowAddress === input.address &&
+      input.zipCode &&
+      rowZip === input.zipCode
+    )
+      score += 45;
+    if (
+      input.locationName &&
+      rowName === input.locationName &&
+      rowCity === input.city &&
+      rowState === input.state
+    )
+      score += 35;
+    if (
+      nameSimilarity >= 0.6 &&
+      phone &&
+      rowPhone &&
+      rowPhone.endsWith(phone.slice(-7))
+    )
+      score += 35;
+    if (
+      nameSimilarity >= 0.6 &&
+      input.address &&
+      rowAddress.includes(input.address.slice(0, 10))
+    )
+      score += 30;
+    if (input.website && rowWebsite && rowWebsite === input.website)
+      score += 25;
 
-    const status: "exact_match" | "possible_match" | "no_match" | "pending_review" = score >= 80 ? "exact_match" : score >= 45 ? "possible_match" : score > 0 ? "pending_review" : "no_match";
+    const status:
+      | "exact_match"
+      | "possible_match"
+      | "no_match"
+      | "pending_review" =
+      score >= 80
+        ? "exact_match"
+        : score >= 45
+          ? "possible_match"
+          : score > 0
+            ? "pending_review"
+            : "no_match";
     if (!best || score > best.score) best = { row, score, status };
   }
 
   if (!best || best.status === "pending_review" || best.status === "no_match") {
-    const fallbackBest = best as { score: number; status: "exact_match" | "possible_match" | "no_match" | "pending_review" } | null;
-    return { row: null, confidenceScore: fallbackBest?.score || null, matchStatus: fallbackBest?.status || "no_match" as const };
+    const fallbackBest = best as {
+      score: number;
+      status: "exact_match" | "possible_match" | "no_match" | "pending_review";
+    } | null;
+    return {
+      row: null,
+      confidenceScore: fallbackBest?.score || null,
+      matchStatus: fallbackBest?.status || ("no_match" as const),
+    };
   }
 
-  return { row: best.row, confidenceScore: best.score, matchStatus: best.status };
+  return {
+    row: best.row,
+    confidenceScore: best.score,
+    matchStatus: best.status,
+  };
 }
 
 async function maybeSendEmails(args: {
@@ -154,13 +272,22 @@ async function maybeSendEmails(args: {
   createdAt?: string | null;
 }) {
   const createdAt = args.createdAt ? new Date(args.createdAt).getTime() : 0;
-  const olderThan24Hours = !createdAt || Date.now() - createdAt > 24 * 60 * 60 * 1000;
+  const olderThan24Hours =
+    !createdAt || Date.now() - createdAt > 24 * 60 * 60 * 1000;
   if (!olderThan24Hours) return;
 
   await Promise.allSettled([
     args.matched
-      ? sendNoCodeMatchedClaimEmail({ email: args.ownerEmail, contactName: args.contactName, locationName: args.locationName })
-      : sendNoCodeNewLocationClaimEmail({ email: args.ownerEmail, contactName: args.contactName, locationName: args.locationName }),
+      ? sendNoCodeMatchedClaimEmail({
+          email: args.ownerEmail,
+          contactName: args.contactName,
+          locationName: args.locationName,
+        })
+      : sendNoCodeNewLocationClaimEmail({
+          email: args.ownerEmail,
+          contactName: args.contactName,
+          locationName: args.locationName,
+        }),
     sendAdminNewClaimEmail({
       locationName: args.locationName,
       requestType: args.requestType,
@@ -177,9 +304,37 @@ async function maybeSendEmails(args: {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const required = ["locationName", "address", "city", "state", "zipCode", "phone", "businessEmail", "contactName", "roleAtBusiness"];
+    const captchaToken = clean(body.captchaToken);
+    const forwardedFor = req.headers
+      .get("x-forwarded-for")
+      ?.split(",")[0]
+      ?.trim();
+    const captcha = await verifyCaptcha(captchaToken, forwardedFor);
+
+    if (!captcha.success) {
+      return Response.json(
+        { ok: false, error: "captcha_failed" },
+        { status: 400 },
+      );
+    }
+
+    const required = [
+      "locationName",
+      "address",
+      "city",
+      "state",
+      "zipCode",
+      "phone",
+      "businessEmail",
+      "contactName",
+      "roleAtBusiness",
+    ];
     for (const field of required) {
-      if (!clean(body[field])) return Response.json({ ok: false, error: `missing_${field}` }, { status: 400 });
+      if (!clean(body[field]))
+        return Response.json(
+          { ok: false, error: `missing_${field}` },
+          { status: 400 },
+        );
     }
 
     const authSupabase = await createClient();
@@ -197,8 +352,14 @@ export async function POST(req: Request) {
     const contactName = clean(body.contactName);
     const roleAtBusiness = clean(body.roleAtBusiness);
     const websiteRaw = clean(body.website);
-    const planInterest = clean(body.planInterest) === "pro" ? "pro" : "free_discovery";
+    const planInterest =
+      clean(body.planInterest) === "pro" ? "pro" : "free_discovery";
     const notes = clean(body.notes);
+    const neighborhood = clean(body.neighborhood);
+    const latitude = clean(body.latitude);
+    const longitude = clean(body.longitude);
+    const googlePlaceId = clean(body.googlePlaceId);
+    const formattedAddress = clean(body.formattedAddress);
 
     const match = await findBestMatch({
       locationName: lower(locationNameRaw),
@@ -211,7 +372,9 @@ export async function POST(req: Request) {
     });
 
     const matchedExistingLocation = Boolean(match.row);
-    const verificationStatus = matchedExistingLocation ? "background_matched" : "needs_admin_match";
+    const verificationStatus = matchedExistingLocation
+      ? "background_matched"
+      : "needs_admin_match";
     const matchedLocationSnapshot = match.row ? snapshot(match.row) : null;
 
     const duplicateChecks = [
@@ -248,7 +411,9 @@ export async function POST(req: Request) {
     for (const result of duplicateResults) {
       if (result.error) throw result.error;
     }
-    const duplicate = duplicateResults.flatMap((result) => result.data || [])[0];
+    const duplicate = duplicateResults.flatMap(
+      (result) => result.data || [],
+    )[0];
     if (duplicate) {
       await maybeSendEmails({
         ownerEmail,
@@ -262,7 +427,14 @@ export async function POST(req: Request) {
         planInterest,
         createdAt: duplicate.created_at,
       });
-      return Response.json({ ok: true, claimRequestId: duplicate.id, matchedExistingLocation: Boolean(duplicate.location_id || matchedExistingLocation), message: "Your claim is already pending review." });
+      return Response.json({
+        ok: true,
+        claimRequestId: duplicate.id,
+        matchedExistingLocation: Boolean(
+          duplicate.location_id || matchedExistingLocation,
+        ),
+        message: "Your claim is already pending review.",
+      });
     }
 
     const now = new Date().toISOString();
@@ -277,6 +449,11 @@ export async function POST(req: Request) {
         city: cityRaw,
         state: stateRaw,
         zip_code: zipCode,
+        neighborhood: neighborhood || null,
+        latitude: optionalNumber(latitude),
+        longitude: optionalNumber(longitude),
+        google_place_id: googlePlaceId || null,
+        formatted_address: formattedAddress || null,
         owner_name: contactName,
         owner_email: ownerEmail,
         owner_phone: ownerPhone || phoneRaw,
@@ -304,6 +481,11 @@ export async function POST(req: Request) {
           website: websiteRaw || null,
           planInterest,
           notes: notes || null,
+          neighborhood: neighborhood || null,
+          latitude: latitude || null,
+          longitude: longitude || null,
+          googlePlaceId: googlePlaceId || null,
+          formattedAddress: formattedAddress || null,
         },
         submitted_at: now,
         created_at: now,
@@ -330,10 +512,15 @@ export async function POST(req: Request) {
       ok: true,
       claimRequestId: claim.id,
       matchedExistingLocation,
-      message: matchedExistingLocation ? "Location already added. Claim pending review." : "Location submitted. Claim pending review.",
+      message: matchedExistingLocation
+        ? "Location already added. Claim pending review."
+        : "Location submitted. Claim pending review.",
     });
   } catch (error) {
     console.error("No-code claim submission failed", error);
-    return Response.json({ ok: false, error: "submit_failed" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: "submit_failed" },
+      { status: 500 },
+    );
   }
 }
