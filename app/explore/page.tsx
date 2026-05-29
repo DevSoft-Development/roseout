@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -7,16 +6,8 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
-import { buildMetadata } from "@/lib/seo";
 
 export const revalidate = 300;
-
-export const metadata: Metadata = buildMetadata({
-  title: "Explore Restaurants, Activities & Outing Ideas",
-  description:
-    "Explore searchable restaurants, activities, neighborhoods, and outing ideas across New York City and Long Island on TheOutHaven.",
-  path: "/explore",
-});
 
 type ExploreLocation = {
   id: string;
@@ -60,65 +51,252 @@ type ExploreLocation = {
   data_status: string | null;
 };
 
-const BOROUGHS = ["All", "Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"] as const;
+const QUICK_CHIPS = [
+  "Date Night",
+  "Dinner",
+  "Rooftops",
+  "Brunch",
+  "Hookah",
+  "Activities",
+  "Queens",
+];
 
-export default async function ExplorePage({ searchParams }: { searchParams: Promise<{ borough?: string; kind?: string; category?: string }> }) {
+const KIND_FILTERS = [
+  { label: "All", value: "all" },
+  { label: "Restaurants", value: "restaurants" },
+  { label: "Activities", value: "activities" },
+  { label: "Rooftops", value: "rooftops" },
+  { label: "Lounges", value: "lounges" },
+  { label: "Brunch", value: "brunch" },
+];
+
+const AREA_FILTERS = [
+  { label: "All Areas", value: "all" },
+  { label: "Queens", value: "Queens" },
+  { label: "Brooklyn", value: "Brooklyn" },
+  { label: "Manhattan", value: "Manhattan" },
+  { label: "Bronx", value: "Bronx" },
+  { label: "Long Island", value: "Long Island" },
+];
+
+const COLLECTIONS = [
+  {
+    title: "Date Night",
+    description: "Romantic, polished, and easy to plan.",
+    query: "date night",
+  },
+  {
+    title: "Rooftop Views",
+    description: "Dinner, drinks, and a skyline moment.",
+    query: "rooftop",
+  },
+  {
+    title: "Brunch Plans",
+    description: "Weekend spots with a social vibe.",
+    query: "brunch",
+  },
+  {
+    title: "Weekend Fun",
+    description: "Activities, lounges, and after-dinner ideas.",
+    query: "weekend fun",
+  },
+];
+
+export default async function ExplorePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; kind?: string; area?: string }>;
+}) {
   const params = await searchParams;
-  const selectedBorough = BOROUGHS.find((b) => b.toLowerCase() === String(params.borough || "").toLowerCase()) || "All";
-  const selectedKind = ["all", "restaurant", "activity"].includes(String(params.kind || "all").toLowerCase()) ? String(params.kind || "all").toLowerCase() : "all";
-  const data = await loadExploreData();
-  const categoryOptions = buildCategoryOptions(data.locations);
-  const selectedCategory = categoryOptions.find((c) => c.toLowerCase() === String(params.category || "").toLowerCase()) || "All";
 
-  const filtered = data.locations.filter((l) => {
-    const boroughOk = selectedBorough === "All" || String(l.borough || "").toLowerCase() === selectedBorough.toLowerCase();
-    const kindOk = selectedKind === "all" || (selectedKind === "restaurant" ? isRestaurant(l) : !isRestaurant(l));
-    const categoryOk = selectedCategory === "All" || searchableText(l).includes(selectedCategory.toLowerCase());
-    return boroughOk && kindOk && categoryOk;
-  });
+  const q = cleanParam(params.q);
+  const selectedKind = normalizeKind(params.kind);
+  const selectedArea = normalizeArea(params.area);
 
-  const sections = buildSections(filtered);
+  const locations = await loadExploreData();
 
-  return <main className="min-h-screen overflow-x-hidden bg-[#070303] text-white"><TheOutHavenHeader /><section className="relative overflow-hidden px-5 pb-16 pt-32 sm:px-6 lg:pt-40"><div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_15%_20%,rgba(225,6,42,0.28),transparent_36%),radial-gradient(circle_at_85%_0%,rgba(255,255,255,.1),transparent_24%),linear-gradient(150deg,#080303_0%,#160807_50%,#080303_100%)]" /><div className="mx-auto max-w-7xl space-y-8"><HeroSearch /><SeoLandingLinks /><FilterRow selectedBorough={selectedBorough} selectedKind={selectedKind} selectedCategory={selectedCategory} categoryOptions={categoryOptions} />{sections.map((s) => <SectionRow key={s.title} title={s.title} items={s.items} />)}</div></section><PublicFooter /></main>;
+  const filteredLocations = rankLocations(
+    locations.filter((location) => {
+      const text = searchableText(location);
+
+      const matchesQuery = !q || text.includes(q.toLowerCase());
+      const matchesKind = selectedKind === "all" || matchesKindFilter(location, selectedKind);
+      const matchesArea = selectedArea === "all" || matchesAreaFilter(location, selectedArea);
+
+      return matchesQuery && matchesKind && matchesArea;
+    }),
+  );
+
+  return (
+    <main className="min-h-screen overflow-x-hidden bg-[#070303] text-white">
+      <TheOutHavenHeader />
+
+      <section className="relative px-5 pb-14 pt-28 sm:px-6 lg:pt-36">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_8%,rgba(225,6,42,0.26),transparent_32%),radial-gradient(circle_at_90%_0%,rgba(255,255,255,.08),transparent_24%),linear-gradient(150deg,#070303_0%,#120605_48%,#070303_100%)]" />
+
+        <div className="mx-auto max-w-7xl">
+          <HeroSearch q={q} />
+
+          <div className="mt-5">
+            <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-white/45">
+              Popular
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {QUICK_CHIPS.map((chip) => (
+                <Link
+                  key={chip}
+                  href={`/explore?q=${encodeURIComponent(chip)}`}
+                  className="shrink-0 rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/15 hover:text-white"
+                >
+                  {chip}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <FeaturedCollections />
+
+          <section className="mt-10">
+            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
+                  Browse
+                </p>
+                <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+                  All Places
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
+                  Browse curated restaurants, activities, lounges, rooftops, and local spots.
+                </p>
+              </div>
+
+              <Link
+                href="/create"
+                className="w-fit rounded-full border border-white/15 bg-white/[0.06] px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black"
+              >
+                Build an outing
+              </Link>
+            </div>
+
+            <FilterPills selectedKind={selectedKind} selectedArea={selectedArea} q={q} />
+
+            {filteredLocations.length > 0 ? (
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {filteredLocations.slice(0, 24).map((location) => (
+                  <LocationCard key={location.id} location={location} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState />
+            )}
+          </section>
+        </div>
+      </section>
+
+      <PublicFooter />
+    </main>
+  );
 }
 
 async function loadExploreData() {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("locations")
-    .select("id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,atmosphere,best_for,date_style_tags,search_keywords,reservation_url,external_reservation_url,website,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,created_at,is_searchable,is_hidden,data_status")
+    .select(
+      "id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,atmosphere,best_for,date_style_tags,search_keywords,reservation_url,external_reservation_url,website,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,created_at,is_searchable,is_hidden,data_status",
+    )
     .eq("is_searchable", true)
     .neq("is_hidden", true)
     .eq("data_status", "clean")
-    .limit(24);
-  return { locations: dedupeById((data || []) as ExploreLocation[]).filter((row) => Boolean(getLocationName(row, "").trim())) };
+    .limit(72);
+
+  if (error) {
+    console.error("EXPLORE_LOAD_ERROR", error.message);
+    return [];
+  }
+
+  return dedupeById((data || []) as ExploreLocation[]).filter((row) =>
+    Boolean(getLocationName(row, "").trim()),
+  );
 }
 
-function HeroSearch() {
-  return <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/35 sm:p-10"><h1 className="text-4xl font-black tracking-tight sm:text-6xl">Explore TheOutHaven</h1><p className="mt-4 max-w-3xl text-white/75">Search NYC restaurants and activities with live location data.</p><form action="/create" method="get" className="mt-6 flex flex-col gap-3 sm:flex-row"><input type="text" name="prompt" placeholder="Search by vibe, cuisine, borough, or activity" className="w-full rounded-full border border-white/20 bg-black/35 px-5 py-3 text-sm outline-none focus:border-[#e1062a]" /><button type="submit" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black">Search</button></form></div>;
-}
-
-
-function SeoLandingLinks() {
-  const links = [
-    ["Queens", "/explore/queens"],
-    ["Brooklyn", "/explore/brooklyn"],
-    ["Manhattan", "/explore/manhattan"],
-    ["Long Island", "/explore/long-island"],
-    ["Steak Restaurants", "/explore/steak-restaurants"],
-    ["Brunch Spots", "/explore/brunch-spots"],
-    ["Hookah Lounges", "/explore/hookah-lounges"],
-    ["Rooftop Restaurants", "/explore/rooftop-restaurants"],
-    ["Date Night", "/explore/date-night"],
-  ] as const;
-
+function HeroSearch({ q }: { q: string }) {
   return (
-    <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
-      <h2 className="text-xl font-black">Browse popular areas and categories</h2>
-      <p className="mt-1 text-sm text-white/60">Crawlable local pages powered by public TheOutHaven location data.</p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {links.map(([label, href]) => (
-          <Link key={href} href={href} className="rounded-full border border-white/15 bg-black/25 px-4 py-2 text-sm font-black text-white/80 hover:bg-white hover:text-black">
-            {label}
+    <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-black/45 shadow-2xl shadow-black/40 backdrop-blur-xl">
+      <div className="grid gap-6 p-5 sm:p-8 lg:grid-cols-[1.1fr_.9fr] lg:p-10">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
+            Explore
+          </p>
+          <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
+            Find your next place out.
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-white/68">
+            Restaurants, activities, rooftops, lounges, brunch spots, and date-night ideas curated for TheOutHaven.
+          </p>
+        </div>
+
+        <div className="flex flex-col justify-end">
+          <form action="/explore" method="get" className="rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                name="q"
+                defaultValue={q}
+                placeholder="Search by vibe, food, activity, or area"
+                className="min-h-12 w-full rounded-full border border-white/10 bg-black/45 px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-[#e1062a]"
+              />
+              <button
+                type="submit"
+                className="min-h-12 rounded-full bg-[#e1062a] px-6 text-sm font-black text-white transition hover:bg-red-500"
+              >
+                Search
+              </button>
+            </div>
+          </form>
+
+          <Link
+            href="/create"
+            className="mt-3 text-center text-sm font-black text-white/65 transition hover:text-white"
+          >
+            Want a full plan? Build an outing →
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeaturedCollections() {
+  return (
+    <section className="mt-9">
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+            Curated
+          </p>
+          <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">
+            Featured Collections
+          </h2>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {COLLECTIONS.map((collection) => (
+          <Link
+            key={collection.title}
+            href={`/explore?q=${encodeURIComponent(collection.query)}`}
+            className="group relative min-h-[150px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-[#e1062a]/60 hover:bg-white/[0.075]"
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,.32),transparent_36%),linear-gradient(145deg,rgba(255,255,255,.08),transparent_55%)] opacity-80 transition group-hover:opacity-100" />
+            <div className="relative flex h-full flex-col justify-between">
+              <span className="w-fit rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/65">
+                Explore
+              </span>
+              <div className="pt-8">
+                <h3 className="text-xl font-black">{collection.title}</h3>
+                <p className="mt-1 text-sm leading-5 text-white/62">{collection.description}</p>
+              </div>
+            </div>
           </Link>
         ))}
       </div>
@@ -126,45 +304,392 @@ function SeoLandingLinks() {
   );
 }
 
-function FilterRow({ selectedBorough, selectedKind, selectedCategory, categoryOptions }: { selectedBorough: string; selectedKind: string; selectedCategory: string; categoryOptions: string[] }) {
-  return <div className="space-y-3"><ChipList title="Borough" options={BOROUGHS} selected={selectedBorough} keyName="borough" /><ChipList title="Type" options={["all", "restaurant", "activity"]} selected={selectedKind} keyName="kind" /><ChipList title="Category" options={categoryOptions} selected={selectedCategory} keyName="category" /></div>;
+function FilterPills({
+  selectedKind,
+  selectedArea,
+  q,
+}: {
+  selectedKind: string;
+  selectedArea: string;
+  q: string;
+}) {
+  return (
+    <div className="space-y-3 rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-3">
+      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {KIND_FILTERS.map((filter) => (
+          <Link
+            key={filter.value}
+            href={exploreHref({ q, kind: filter.value, area: selectedArea })}
+            className={pillClass(selectedKind === filter.value)}
+          >
+            {filter.label}
+          </Link>
+        ))}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {AREA_FILTERS.map((filter) => (
+          <Link
+            key={filter.value}
+            href={exploreHref({ q, kind: selectedKind, area: filter.value })}
+            className={pillClass(selectedArea.toLowerCase() === filter.value.toLowerCase())}
+          >
+            {filter.label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function ChipList({ title, options, selected, keyName }: { title: string; options: readonly string[]; selected: string; keyName: string }) {
-  return <div><p className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-white/60">{title}</p><div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{options.map((opt) => <Link key={opt} href={buildHref(keyName, opt)} className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black ${String(opt).toLowerCase() === selected.toLowerCase() ? "border-[#e1062a] bg-[#e1062a]/25" : "border-white/20 bg-white/[0.04]"}`}>{opt}</Link>)}</div></div>;
+function LocationCard({ location }: { location: ExploreLocation }) {
+  const name = getLocationName(location);
+  const detailHref = getLocationDetailHref({
+    id: location.id,
+    type: location.type || location.source_table,
+  });
+
+  const reserveHref = location.external_reservation_url || location.reservation_url || location.website;
+  const locationArea = [location.neighborhood, location.city || location.borough]
+    .filter(Boolean)
+    .join(", ");
+
+  const categoryLine =
+    [getCuisine(location), location.activity_type, getPrimaryCategory(location)]
+      .map((item) => cleanLabel(item))
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(" · ") || "Curated on TheOutHaven";
+
+  const tags = cleanedTags(location).slice(0, 2);
+  const typeLabel = getTypeLabel(location);
+
+  return (
+    <article className="group overflow-hidden rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-3 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.065]">
+      <div className="relative h-48 overflow-hidden rounded-[1.2rem] bg-white/[0.04]">
+        <Image
+          src={getLocationImage(location)}
+          alt={name}
+          fill
+          sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw"
+          className="object-cover transition duration-500 group-hover:scale-105"
+        />
+
+        <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/60 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white backdrop-blur">
+          {typeLabel}
+        </div>
+      </div>
+
+      <div className="flex min-h-[190px] flex-col px-1 pb-1 pt-4">
+        <h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-black leading-tight">
+          {name}
+        </h3>
+
+        <p className="mt-1 line-clamp-1 text-sm font-semibold text-white/62">
+          {locationArea || "New York"}
+        </p>
+
+        <p className="mt-1 line-clamp-1 text-sm text-white/50">
+          {categoryLine}
+        </p>
+
+        {tags.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs font-bold text-white/62"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-auto flex items-center gap-2 pt-4">
+          <Link
+            href={detailHref}
+            className="flex-1 rounded-full bg-[#e1062a] px-4 py-2.5 text-center text-xs font-black text-white transition hover:bg-red-500"
+          >
+            View Details
+          </Link>
+
+          {reserveHref ? (
+            <a
+              href={reserveHref}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-white/15 bg-white/[0.055] px-4 py-2.5 text-xs font-black text-white/75 transition hover:bg-white hover:text-black"
+            >
+              Reserve
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
 }
 
-function SectionRow({ title, items }: { title: string; items: ExploreLocation[] }) {
-  if (!items.length) return null;
-  return <section><h2 className="mb-4 text-2xl font-black">{title}</h2><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{items.slice(0, 4).map((location) => <LocationCard key={`${title}-${location.id}`} location={location} />)}</div></section>;
+function EmptyState() {
+  return (
+    <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-8 text-center shadow-xl shadow-black/20">
+      <h3 className="text-2xl font-black">No places found yet.</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/60">
+        Try a different area, vibe, or category.
+      </p>
+      <Link
+        href="/create"
+        className="mt-5 inline-flex rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
+      >
+        Build an outing instead
+      </Link>
+    </div>
+  );
 }
 
-function LocationCard({ location }: { location: ExploreLocation }) { const rating = location.rating || location.score; const reserveHref = location.external_reservation_url || location.reservation_url || location.website; const detailHref = getLocationDetailHref({ id: location.id, type: location.type || location.source_table }); return <article className="group flex min-h-[350px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-3"><div className="relative h-44 overflow-hidden rounded-2xl"><Image src={getLocationImage(location)} alt={getLocationName(location)} fill sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div><div className="mt-3 flex flex-1 flex-col"><h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-black">{getLocationName(location)}</h3><p className="line-clamp-1 text-sm text-white/70">{getPrimaryCategory(location)} · {location.borough || location.city || "New York"}</p><p className="line-clamp-1 text-xs text-white/65">{[getCuisine(location) || location.activity_type, rating ? `${rating.toFixed(1)} ★` : null].filter(Boolean).join(" · ") || "Curated on TheOutHaven"}</p><div className="mt-auto flex gap-2 pt-4"><Link href={detailHref} className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black">View</Link>{reserveHref ? <a href={reserveHref} target="_blank" rel="noreferrer" className="rounded-full border border-white/20 bg-white/[0.05] px-4 py-2 text-xs font-black">Reserve</a> : null}</div></div></article>; }
+function PublicFooter() {
+  const links = [
+    ["Home", "/"],
+    ["Explore", "/explore"],
+    ["Create Outing", "/create"],
+    ["Business", "/business"],
+    ["Sign In", "/signup"],
+    ["Terms", "/terms"],
+    ["Privacy", "/privacy"],
+    ["SMS Terms", "/sms-terms"],
+    ["Contact", "/contact"],
+  ] as const;
 
-function buildSections(locations: ExploreLocation[]) {
-  const used = new Set<string>();
-  const alloc = (candidates: ExploreLocation[]) => candidates.filter((l) => !used.has(l.id)).slice(0, 4).map((l) => (used.add(l.id), l));
-  const ranked = rankLocations(locations);
+  return (
+    <footer className="border-t border-white/10 bg-black/50 px-5 py-10 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-wrap gap-4 text-sm text-white/60">
+          {links.map(([label, href]) => (
+            <Link key={label} href={href} className="hover:text-white">
+              {label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function dedupeById(locations: ExploreLocation[]) {
+  const seen = new Set<string>();
+
+  return locations.filter((location) => {
+    if (!location.id || seen.has(location.id)) return false;
+    seen.add(location.id);
+    return true;
+  });
+}
+
+function rankLocations(locations: ExploreLocation[]) {
+  return [...locations].sort((a, b) => rankScore(b) - rankScore(a));
+}
+
+function rankScore(location: ExploreLocation) {
+  return (
+    (location.featured ? 100 : 0) +
+    Number(location.rating || location.score || 0) * 35 +
+    Number(location.total_reviews || 0) * 1.4 +
+    Number(location.saves_count || 0) * 0.8 +
+    Number(location.reservation_count || 0) * 1.2 +
+    Number(location.views_count || 0) * 0.04
+  );
+}
+
+function searchableText(location: ExploreLocation) {
   return [
-    { title: "Popular near you", items: alloc(ranked) },
-    { title: "Date night picks", items: alloc(filterAndRank(locations, ["date night", "romantic", "intimate", "cocktail"])) },
-    { title: "Weekend brunch", items: alloc(filterAndRank(locations, ["brunch", "breakfast", "cafe", "bottomless", "restaurant"], { restaurantOnly: true })) },
-    { title: "Romantic restaurants", items: alloc(filterAndRank(locations, ["romantic", "intimate", "fine dining"], { restaurantOnly: true })) },
-    { title: "Hookah lounges", items: alloc(filterAndRank(locations, ["hookah", "lounge", "shisha", "nightlife"], { activityOnly: true })) },
-    { title: "Birthday dinner spots", items: alloc(filterAndRank(locations, ["birthday", "celebration", "dinner", "group"], { restaurantOnly: true })) },
-    { title: "Activities after dinner", items: alloc(filterAndRank(locations, ["activity", "arcade", "karaoke", "bowling", "lounge", "bar"], { activityOnly: true })) },
-    { title: "Newly added locations", items: alloc([...locations].sort((a, b) => (Date.parse(b.created_at || "0") || 0) - (Date.parse(a.created_at || "0") || 0))) },
-  ].filter((s) => s.items.length);
+    location.type,
+    location.source_table,
+    location.location_type,
+    location.name,
+    location.restaurant_name,
+    location.activity_name,
+    location.business_name,
+    location.city,
+    location.borough,
+    location.neighborhood,
+    location.category,
+    location.primary_category,
+    location.cuisine,
+    location.cuisine_type,
+    location.activity_type,
+    ...toList(location.tags),
+    ...toList(location.vibes),
+    ...toList(location.atmosphere),
+    ...toList(location.best_for),
+    ...toList(location.date_style_tags),
+    ...toList(location.search_keywords),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
-function dedupeById(locations: ExploreLocation[]) { const seen = new Set<string>(); return locations.filter((l) => l.id && !seen.has(l.id) && seen.add(l.id)); }
-function isRestaurant(location: ExploreLocation) { return String(location.location_type || location.type || location.source_table || "").toLowerCase().includes("restaurant") || searchableText(location).includes("restaurant") || Boolean(location.restaurant_name); }
-function searchableText(location: ExploreLocation) { return [location.source_table, location.type, location.location_type, location.name, location.restaurant_name, location.activity_name, location.business_name, location.city, location.borough, location.neighborhood, location.category, location.primary_category, location.cuisine, location.cuisine_type, location.activity_type, ...toList(location.tags), ...toList(location.vibes), ...toList(location.atmosphere), ...toList(location.best_for), ...toList(location.date_style_tags), ...toList(location.search_keywords)].filter(Boolean).join(" ").toLowerCase(); }
-function toList(v: unknown): string[] { if (!v) return []; if (Array.isArray(v)) return v.map((x) => String(x)); if (typeof v === "string") return v.split(",").map((s) => s.trim()).filter(Boolean); return [String(v)]; }
-function score(location: ExploreLocation) { return (location.rating || location.score || 0) * 35 + (location.total_reviews || 0) * 1.5 + (location.views_count || 0) * 0.05 + (location.saves_count || 0) * 0.7 + (location.reservation_count || 0) * 1.2 + (location.featured ? 30 : 0); }
-function rankLocations(locations: ExploreLocation[]) { return [...locations].sort((a, b) => score(b) - score(a)); }
-function filterAndRank(locations: ExploreLocation[], keywords: string[], options?: { restaurantOnly?: boolean; activityOnly?: boolean }) { return rankLocations(locations.filter((l) => (!options?.restaurantOnly || isRestaurant(l)) && (!options?.activityOnly || !isRestaurant(l)) && keywords.some((k) => searchableText(l).includes(k.toLowerCase())))); }
-function buildCategoryOptions(locations: ExploreLocation[]) { const vals = new Set<string>(); for (const l of locations) { [l.primary_category, l.category, l.cuisine, l.activity_type].forEach((v) => { const t = String(v || "").trim(); if (t) vals.add(t); }); } return ["All", ...Array.from(vals).sort((a, b) => a.localeCompare(b)).slice(0, 16)] as string[]; }
-function buildHref(keyName: string, value: string) { return `/explore?${keyName}=${encodeURIComponent(value)}`; }
+function matchesKindFilter(location: ExploreLocation, kind: string) {
+  const text = searchableText(location);
 
-function PublicFooter() { const links = [["Home","/"],["Explore","/explore"],["Create Outing","/create"],["Business","/business"],["Sign In","/signup"],["Terms","/terms"],["Privacy","/privacy"],["SMS Terms","/sms-terms"],["Contact","/contact"]] as const; return <footer className="mt-12 border-t border-white/10 bg-black/50 px-5 py-10 sm:px-6"><div className="mx-auto max-w-7xl"><div className="flex flex-wrap gap-4 text-sm text-white/70">{links.map(([label,href])=><Link key={label} href={href} className="hover:text-white">{label}</Link>)}</div></div></footer>; }
+  if (kind === "restaurants") return isRestaurant(location);
+  if (kind === "activities") return !isRestaurant(location) || text.includes("activity");
+  if (kind === "rooftops") return text.includes("rooftop");
+  if (kind === "lounges") return text.includes("lounge") || text.includes("hookah") || text.includes("nightlife");
+  if (kind === "brunch") return text.includes("brunch") || text.includes("breakfast");
+
+  return true;
+}
+
+function matchesAreaFilter(location: ExploreLocation, area: string) {
+  const normalizedArea = area.toLowerCase();
+
+  return [location.borough, location.city, location.neighborhood]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedArea));
+}
+
+function isRestaurant(location: ExploreLocation) {
+  const text = searchableText(location);
+
+  return (
+    Boolean(location.restaurant_name) ||
+    text.includes("restaurant") ||
+    text.includes("dinner") ||
+    text.includes("brunch") ||
+    text.includes("cuisine")
+  );
+}
+
+function getTypeLabel(location: ExploreLocation) {
+  const text = searchableText(location);
+
+  if (text.includes("rooftop")) return "Rooftop";
+  if (text.includes("hookah") || text.includes("lounge")) return "Lounge";
+  if (isRestaurant(location)) return "Restaurant";
+  if (text.includes("activity")) return "Activity";
+
+  return cleanLabel(location.location_type || location.type || location.source_table) || "Place";
+}
+
+function cleanedTags(location: ExploreLocation) {
+  const rawTags = [
+    ...toList(location.best_for),
+    ...toList(location.vibes),
+    ...toList(location.atmosphere),
+    ...toList(location.date_style_tags),
+    ...toList(location.tags),
+  ];
+
+  const seen = new Set<string>();
+  const blocked = new Set(["", "[]", "null", "undefined", "theouthaven friendly outing"]);
+
+  return rawTags
+    .map((tag) => cleanLabel(tag))
+    .filter((tag): tag is string => Boolean(tag))
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (blocked.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function cleanLabel(value: unknown) {
+  if (!value) return "";
+
+  const cleaned = String(value)
+    .replace(/[\[\]"]/g, "")
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned.toLowerCase() === "null" || cleaned.toLowerCase() === "undefined") {
+    return "";
+  }
+
+  return cleaned
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function toList(value: unknown): string[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (!trimmed || trimmed === "[]" || trimmed.toLowerCase() === "null") {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item)).filter(Boolean);
+      }
+    } catch {
+      // Not JSON. Continue with comma split.
+    }
+
+    return trimmed
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [String(value)];
+}
+
+function cleanParam(value: string | undefined) {
+  return String(value || "").trim();
+}
+
+function normalizeKind(value: string | undefined) {
+  const normalized = String(value || "all").toLowerCase();
+
+  return KIND_FILTERS.some((filter) => filter.value === normalized) ? normalized : "all";
+}
+
+function normalizeArea(value: string | undefined) {
+  const normalized = String(value || "all").trim();
+
+  return AREA_FILTERS.some((filter) => filter.value.toLowerCase() === normalized.toLowerCase())
+    ? normalized
+    : "all";
+}
+
+function exploreHref({
+  q,
+  kind,
+  area,
+}: {
+  q: string;
+  kind: string;
+  area: string;
+}) {
+  const params = new URLSearchParams();
+
+  if (q) params.set("q", q);
+  if (kind && kind !== "all") params.set("kind", kind);
+  if (area && area.toLowerCase() !== "all") params.set("area", area);
+
+  const query = params.toString();
+
+  return query ? `/explore?${query}` : "/explore";
+}
+
+function pillClass(active: boolean) {
+  return [
+    "shrink-0 rounded-full border px-4 py-2 text-sm font-black transition",
+    active
+      ? "border-[#e1062a] bg-[#e1062a]/20 text-white"
+      : "border-white/12 bg-black/25 text-white/60 hover:border-white/25 hover:bg-white/[0.06] hover:text-white",
+  ].join(" ");
+}
