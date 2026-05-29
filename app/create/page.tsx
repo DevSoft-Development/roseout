@@ -868,6 +868,12 @@ export default function CreatePage() {
     await submitSearch(cleanInput, { addOnTarget, preservePlan: true });
   }
 
+  function runHelpfulSuggestion(prompt: string) {
+    setError("");
+    setInput("");
+    window.setTimeout(() => submitSearch(prompt), 0);
+  }
+
   function trackBusinessEvent(
     locationId: string,
     eventType:
@@ -1077,9 +1083,11 @@ export default function CreatePage() {
         className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 sm:py-8"
       >
         {error && (
-          <div className="mb-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 sm:mb-5">
-            {error}
-          </div>
+          <HelpfulSearchState
+            title="We could not finish that search."
+            message={error}
+            onSuggestion={runHelpfulSuggestion}
+          />
         )}
 
         {!messages.length && !loading && <StartPanel />}
@@ -1113,12 +1121,12 @@ export default function CreatePage() {
 
             if (!hasCards) {
               return (
-                <div
+                <HelpfulSearchState
                   key={index}
-                  className="rounded-2xl border border-white/10 bg-[#101010] p-4 text-sm font-semibold leading-7 text-white/70"
-                >
-                  {message.content}
-                </div>
+                  title="No perfect matches yet."
+                  message={message.content || "Try loosening one part of your search so TheOutHaven can show useful places."}
+                  onSuggestion={runHelpfulSuggestion}
+                />
               );
             }
 
@@ -1470,6 +1478,51 @@ function dedupeSearchResults({
     restaurants: sortResultsNearFirst(dedupedRestaurants),
     activities: sortResultsNearFirst(dedupedActivities),
   };
+}
+
+function HelpfulSearchState({
+  title,
+  message,
+  onSuggestion,
+}: {
+  title: string;
+  message: string;
+  onSuggestion: (prompt: string) => void;
+}) {
+  const suggestions = [
+    { label: "Try another area", prompt: "restaurants and activities in Brooklyn" },
+    { label: "Remove one filter", prompt: "fun dinner and activity nearby" },
+    { label: "Search without borough", prompt: "date night restaurant and activity" },
+    { label: "Browse popular spots nearby", prompt: "popular restaurants and activities near me" },
+    { label: "Try restaurants only", prompt: "best restaurants nearby" },
+    { label: "Try activities only", prompt: "fun activities nearby" },
+  ];
+
+  return (
+    <div className="mb-4 rounded-[1.1rem] border border-white/10 bg-[#101010] p-4 shadow-xl shadow-black/25 sm:mb-5 sm:rounded-[1.25rem] sm:p-5">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">
+        Keep Building
+      </p>
+      <h3 className="mt-1 text-xl font-black tracking-[-0.03em] text-white sm:text-2xl">
+        {title}
+      </h3>
+      <p className="mt-2 text-sm font-semibold leading-6 text-white/55">
+        {message}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {suggestions.map((suggestion) => (
+          <button
+            key={suggestion.label}
+            type="button"
+            onClick={() => onSuggestion(suggestion.prompt)}
+            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-white/70 transition hover:border-[#e1062a]/40 hover:text-white sm:px-4 sm:text-[11px]"
+          >
+            {suggestion.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function AddOnSearchPrompt({ onOpen }: { onOpen: () => void }) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
+  BUSINESS_ANALYTICS_EVENT_TYPES,
   trackLocationAnalyticsEvent,
   type BusinessAnalyticsEventType,
 } from "@/lib/analytics/business-analytics";
@@ -32,6 +33,19 @@ const BUSINESS_EVENT_BY_LOCATION_EVENT: Record<LocationEventType, BusinessAnalyt
   save: "share_click",
   booking: "reservation_completed",
   skip: "search_appearance",
+};
+
+const BUSINESS_EVENT_BY_LEGACY_EVENT: Partial<Record<string, BusinessAnalyticsEventType>> = {
+  profile_view: "profile_view",
+  search_appearance: "search_appearance",
+  search_click: "search_click",
+  directions_click: "directions_click",
+  website_click: "website_click",
+  phone_click: "phone_click",
+  reservation_started: "reservation_started",
+  reservation_completed: "reservation_completed",
+  reservation_cancelled: "reservation_cancelled",
+  share_click: "share_click",
 };
 
 function cleanString(value: unknown, max = MAX_TEXT_LENGTH) {
@@ -133,11 +147,14 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     const metadata = buildLocationMetadata(body, eventType);
     const analytics = await incrementLocationAnalytics(locationId, eventType);
+    const businessEventType = rawEventType && BUSINESS_ANALYTICS_EVENT_TYPES.includes(rawEventType as BusinessAnalyticsEventType)
+      ? (rawEventType as BusinessAnalyticsEventType)
+      : BUSINESS_EVENT_BY_LEGACY_EVENT[rawEventType || ""] || BUSINESS_EVENT_BY_LOCATION_EVENT[eventType];
 
     await trackLocationAnalyticsEvent({
       locationId,
       userId: user?.id || null,
-      eventType: BUSINESS_EVENT_BY_LOCATION_EVENT[eventType],
+      eventType: businessEventType,
       eventSource: cleanString(body.event_source, 80) || "web",
       sessionId: cleanString(body.session_id, 180),
       searchQuery: cleanString(body.search_query, 500),
