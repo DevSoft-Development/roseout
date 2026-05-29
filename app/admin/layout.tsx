@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AdminTopBar from "./components/AdminTopBar";
+import { requireAdminRole } from "@/lib/admin-auth";
 import { noIndexRobots } from "@/lib/seo";
 
 export const metadata: Metadata = {
@@ -11,14 +12,20 @@ export const metadata: Metadata = {
   robots: noIndexRobots(),
 };
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const admin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+
   return (
-    <div className="min-h-screen bg-[#090706] text-white">
-      <AdminTopBar />
+    <div className="min-h-screen overflow-x-hidden bg-[#090706] text-white">
+      <AdminTopBar
+        adminName={admin.full_name || "Admin"}
+        adminEmail={admin.email || ""}
+        adminRole={admin.role}
+      />
       {children}
     </div>
   );
