@@ -1,4 +1,4 @@
-import type { CanonicalSearchIntent } from "@/lib/search/types";
+import type { CanonicalSearchIntent } from "./types";
 
 const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
 

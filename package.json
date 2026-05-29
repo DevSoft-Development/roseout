@@ -10,9 +10,10 @@
     "lint": "eslint",
     "verify:homepage": "node scripts/verify-homepage-lock.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --module commonjs --target es2020 --outDir .tmp-test scripts/search-intent-regression.ts lib/searchIntent.ts && node .tmp-test/scripts/search-intent-regression.js",
-    "verify:search-pipeline": "tsc --module commonjs --target es2020 --outDir .tmp-test scripts/verify-search-pipeline.ts lib/searchIntent.ts && node .tmp-test/scripts/verify-search-pipeline.js",
-    "test:clean-search": "npx tsx scripts/test-clean-search.ts"
+    "test": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-intent-regression.ts lib/searchIntent.ts && node .tmp-test/scripts/search-intent-regression.js",
+    "verify:search-pipeline": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/verify-search-pipeline.ts lib/searchIntent.ts && node .tmp-test/scripts/verify-search-pipeline.js",
+    "test:clean-search": "npx tsx scripts/test-clean-search.ts",
+    "qa:search": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-core-qa.ts && node .tmp-test/scripts/search-core-qa.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

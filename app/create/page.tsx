@@ -2130,7 +2130,7 @@ function normalizeLabel(value: unknown): string {
     const trimmed = value.trim();
     if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed)) return "";
     if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
-      try { return normalizeLabel(JSON.parse(trimmed)); } catch {}
+      try { return normalizeLabel(JSON.parse(trimmed)); } catch { return ""; }
     }
     const cleaned = trimmed.replace(/^"|"$/g, "");
     const labelMap: Record<string, string> = { "theouthaven-friendly outing": "TheOutHaven Pick", "date-night": "Date Night", "group-outing": "Group Outing", "group-outings": "Group Outing" };

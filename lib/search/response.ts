@@ -1,4 +1,4 @@
-import type { CanonicalSearchIntent, SearchPipelineResult } from "@/lib/search/types";
+import type { CanonicalSearchIntent, SearchPipelineResult } from "./types";
 
 export function buildSearchResponse(
   intent: CanonicalSearchIntent,
