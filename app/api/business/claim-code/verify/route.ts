@@ -48,13 +48,9 @@ function publicLocation(row: ClaimLocationRow) {
 function blockedError(row: ClaimLocationRow) {
   const status = String(row.claim_status || "").toLowerCase();
 
-  if (status === "redeemed") return "used_code";
+  if (status === "redeemed" || status === "approved_redeemed") return "used_code";
   if (status === "expired") return "expired_code";
   if (status === "disabled") return "disabled_code";
-  if (status === "approved" || row.is_claimed || row.claimed || row.owner_user_id || row.claimed_by || row.claimed_by_email) {
-    return "location_claimed";
-  }
-
   return null;
 }
 

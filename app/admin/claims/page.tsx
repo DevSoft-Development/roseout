@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getLocationName } from "@/lib/locationName";
 
-type ClaimStatus = "approved" | "rejected";
+type ClaimStatus = "approved" | "rejected" | "needs_more_info";
 
 type LocationClaim = {
   id: string;
@@ -19,6 +19,14 @@ type LocationClaim = {
   owner_phone?: string | null;
   message?: string | null;
   verification_status?: string | null;
+  match_status?: string | null;
+  confidence_score?: number | null;
+  plan_interest?: string | null;
+  role_at_business?: string | null;
+  request_type?: string | null;
+  user_id?: string | null;
+  location_id?: string | null;
+  matched_location_snapshot?: unknown;
   claim_code?: string | null;
   status: string;
   created_at?: string;
@@ -43,8 +51,20 @@ function statusBadge(status?: string | null) {
 
   if (value === "approved") return "border-rose-200 bg-rose-50 text-rose-700";
   if (value === "rejected") return "border-red-200 bg-red-50 text-red-700";
+  if (value === "needs_more_info") return "border-sky-200 bg-sky-50 text-sky-700";
 
   return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function Badge({ tone, children }: { tone: "emerald" | "amber" | "red" | "rose" | "slate"; children: ReactNode }) {
+  const tones = {
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
+    red: "border-red-200 bg-red-50 text-red-700",
+    rose: "border-rose-200 bg-rose-50 text-rose-700",
+    slate: "border-black/10 bg-white text-black/45",
+  };
+  return <span className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${tones[tone]}`}>{children}</span>;
 }
 
 export default function AdminClaimsPage() {
@@ -122,6 +142,14 @@ export default function AdminClaimsPage() {
         owner_phone: claim.owner_phone,
         message: claim.notes,
         verification_status: claim.verification_status,
+        match_status: claim.match_status,
+        confidence_score: claim.confidence_score,
+        plan_interest: claim.plan_interest,
+        role_at_business: claim.role_at_business,
+        request_type: claim.request_type,
+        user_id: claim.user_id,
+        location_id: claim.location_id,
+        matched_location_snapshot: claim.matched_location_snapshot,
         claim_code: claim.claim_code,
         status: claim.status,
         created_at: claim.submitted_at || claim.created_at,
@@ -171,12 +199,14 @@ export default function AdminClaimsPage() {
     const pending = claims.filter((claim) => claim.status === "pending").length;
     const approved = claims.filter((claim) => claim.status === "approved").length;
     const rejected = claims.filter((claim) => claim.status === "rejected").length;
+    const needsMoreInfo = claims.filter((claim) => claim.status === "needs_more_info").length;
 
     return {
       total: claims.length,
       pending,
       approved,
       rejected,
+      needsMoreInfo,
     };
   }, [claims]);
 
@@ -339,20 +369,19 @@ export default function AdminClaimsPage() {
                           </p>
                         )}
 
-                        {(claim.verification_status || claim.claim_code) && (
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {claim.verification_status && (
-                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase text-emerald-700">
-                                {claim.verification_status.replace(/_/g, " ")}
-                              </span>
-                            )}
-                            {claim.claim_code && (
-                              <span className="rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-[11px] font-black uppercase text-black/45">
-                                {claim.claim_code}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {claim.claim_code ? <Badge tone="emerald">Code Verified</Badge> : <Badge tone="slate">No Code</Badge>}
+                          {claim.verification_status === "background_matched" && <Badge tone="emerald">Background Matched</Badge>}
+                          {claim.verification_status === "needs_admin_match" && <Badge tone="amber">Needs Admin Match</Badge>}
+                          {claim.match_status && <Badge tone={claim.match_status === "no_match" ? "red" : claim.match_status === "exact_match" ? "emerald" : "amber"}>{claim.match_status.replace(/_/g, " ")}</Badge>}
+                          {claim.plan_interest === "pro" ? <Badge tone="rose">Pro Plan</Badge> : claim.plan_interest ? <Badge tone="slate">Free Discovery</Badge> : null}
+                          {claim.request_type && <Badge tone="slate">{claim.request_type}</Badge>}
+                          {claim.claim_code && (
+                            <span className="rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-[11px] font-black uppercase text-black/45">
+                              {claim.claim_code}
+                            </span>
+                          )}
+                        </div>
 
                         {claim.message && (
                           <div className="mt-4 rounded-2xl border border-black/10 bg-[#f5eee8] p-4">
@@ -396,6 +425,13 @@ export default function AdminClaimsPage() {
                               {claim.owner_phone || "Not provided"}
                             </strong>
                           </p>
+
+                          <p className="truncate">
+                            <span className="font-black text-black/40">
+                              Role:
+                            </span>{" "}
+                            <strong>{claim.role_at_business || "Not provided"}</strong>
+                          </p>
                         </div>
                       </div>
 
@@ -412,6 +448,20 @@ export default function AdminClaimsPage() {
                           className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:scale-[1.03] disabled:opacity-50"
                         >
                           {isUpdating ? "Updating..." : "Approve"}
+                        </button>
+
+                        <button
+                          disabled={isUpdating}
+                          onClick={() =>
+                            updateClaimStatus(
+                              claim.id,
+                              claim.type,
+                              "needs_more_info"
+                            )
+                          }
+                          className="flex-1 rounded-full border border-black/10 bg-sky-700 px-4 py-3 text-sm font-black text-white transition hover:bg-sky-800 disabled:opacity-50"
+                        >
+                          Needs More Info
                         </button>
 
                         <button

@@ -46,7 +46,7 @@ function ClaimPageInner() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState<ClaimStep>("verify");
+  const [step, setStep] = useState<ClaimStep>(searchParams.get("submitted") === "pending" ? "submitted" : "verify");
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [form, setForm] = useState({
     businessEmail: "",
@@ -157,7 +157,6 @@ function ClaimPageInner() {
       }
 
       setStep("submitted");
-      window.location.href = data.dashboardUrl || "/locations/dashboard";
     } catch {
       setError("Could not submit claim request. Please try again.");
     } finally {
@@ -182,17 +181,27 @@ function ClaimPageInner() {
               Claim Your Location
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-white/62 sm:text-lg">
-              Scan the QR code on your TheOutHaven claim postcard or enter your claim code to verify the location connected to your business.
+              Use your claim QR or printed claim code to connect a request to your location, or submit your business details once for a private review by TheOutHaven.
             </p>
 
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <InfoCard
-                title="Scan your QR code"
-                text="Use the QR code from your postcard to open this page with your claim code already attached."
+            <div className="mt-8 grid gap-4">
+              <OptionCard
+                title="Scan QR Code"
+                text="Use the QR code from your TheOutHaven claim mailer to start a pending review request."
+                cta="Scan QR Code"
+                href="/business/claim/scan"
               />
-              <InfoCard
-                title="Enter claim code manually"
-                text="Type the printed code exactly as shown. We will verify it securely and pull up the matching location."
+              <OptionCard
+                title="Enter Claim Code"
+                text="Enter the printed claim code to verify the location connected to your request. Ownership remains pending until TheOutHaven approves it."
+                cta="Enter Code"
+                href="#claim-code"
+              />
+              <OptionCard
+                title="I Don’t Have a Code"
+                text="Didn’t receive a TheOutHaven claim mailer? Submit your business details and we’ll match your location in the background. If your location is already added, your claim will be connected for review."
+                cta="Submit My Location"
+                href="/business/claim/no-code"
               />
             </div>
           </div>
@@ -247,7 +256,7 @@ function ClaimPageInner() {
                     </p>
                     <h2 className="mt-3 text-2xl font-black">Submit your ownership details</h2>
                     <p className="mt-2 text-sm leading-6 text-white/50">
-                      The claim code confirms you have the postcard. Sign-in is required so TheOutHaven can securely link this location to your owner account.
+                      The claim code confirms you have the postcard. Sign-in is required so TheOutHaven can place your request in review before any management access is granted.
                     </p>
                     <div className="mt-5 grid gap-4">
                       <Field label="Business email" value={form.businessEmail} onChange={(value) => setForm((prev) => ({ ...prev, businessEmail: value }))} type="email" required />
@@ -268,7 +277,7 @@ function ClaimPageInner() {
                       disabled={submitting}
                       className="mt-5 w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {submitting ? "Claiming..." : "Claim Location"}
+                      {submitting ? "Submitting claim..." : "Submit for Review"}
                     </button>
                   </form>
                 )}
@@ -281,11 +290,14 @@ function ClaimPageInner() {
   );
 }
 
-function InfoCard({ title, text }: { title: string; text: string }) {
+function OptionCard({ title, text, cta, href }: { title: string; text: string; cta: string; href: string }) {
   return (
-    <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+    <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20">
       <h2 className="text-lg font-black">{title}</h2>
       <p className="mt-2 text-sm leading-6 text-white/55">{text}</p>
+      <Link href={href} className="mt-4 inline-flex rounded-full bg-white px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-black transition hover:bg-rose-100">
+        {cta}
+      </Link>
     </article>
   );
 }
@@ -347,16 +359,16 @@ function SubmittedState() {
   return (
     <section className="rounded-[1.5rem] border border-emerald-400/25 bg-emerald-400/10 p-6 text-center">
       <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Claim request submitted</p>
-      <h2 className="mt-4 text-3xl font-black">Your claim request is under review.</h2>
+      <h2 className="mt-4 text-3xl font-black">Claim Submitted for Review</h2>
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/62">
-        Your claim code was verified, your owner account was linked, and your Free Discovery dashboard is ready.
+        Your claim code was verified and your claim is now pending review. TheOutHaven will confirm your business details before giving access to manage this location.
       </p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        <Link href="/locations/dashboard" className="rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white transition hover:bg-red-500">
-          Continue to owner dashboard
+        <Link href="/business" className="rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white transition hover:bg-red-500">
+          Back to Business
         </Link>
         <Link href="/locations/dashboard" className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black">
-          View claimed location
+          Go to Dashboard
         </Link>
       </div>
     </section>
