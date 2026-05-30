@@ -39,7 +39,7 @@ async function loadExploreData() {
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select(
-      "id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,atmosphere,best_for,date_style_tags,search_keywords,search_document,reservation_url,external_reservation_url,website,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,created_at,is_searchable,is_hidden,data_status",
+      "id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,atmosphere,best_for,date_style_tags,search_keywords,search_document,reservation_url,external_reservation_url,website,rating,score,total_reviews,reservation_count,featured,created_at,is_searchable,is_hidden,data_status",
     )
     .eq("is_searchable", true)
     .eq("data_status", "clean")
@@ -53,7 +53,7 @@ async function loadExploreData() {
     return [];
   }
 
-  return dedupeById((data || []) as ExploreLocation[]).filter((row) =>
+  return dedupeById((data || []) as unknown as ExploreLocation[]).filter((row) =>
     Boolean(getLocationName(row, "").trim()),
   );
 }
