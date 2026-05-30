@@ -13,6 +13,12 @@ import type { SearchPipelineResult } from "./types";
 
 export async function runTheOutHavenSearch(input: string, body?: any): Promise<SearchPipelineResult> {
   const intent = parseCanonicalIntent(input, body);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[create-intent-debug]", {
+      llmIntentRaw: body?.searchIntent ?? body?.normalizedIntent ?? body?.llmIntent ?? body?.intent ?? null,
+      normalizedIntent: intent.normalizedIntent,
+    });
+  }
   if (intent.isOffTopic) {
     return {
       success: false,
@@ -64,11 +70,26 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     ? (fallback_used.restaurants || fallback_used.activities ? "fallback_attempted_no_cards" : "strict_category_filter_removed_all")
     : undefined;
 
+  const devDebug = process.env.NODE_ENV !== "production" ? {
+    llmIntentRaw: body?.searchIntent ?? body?.normalizedIntent ?? body?.llmIntent ?? body?.intent ?? null,
+    normalizedIntent: intent.normalizedIntent,
+    restaurantTermsUsed: restaurantSearch.debug.restaurantTermsUsed ?? intent.normalizedIntent?.restaurantTerms ?? [],
+    activityTermsUsed: activitySearch.debug.activityTermsUsed ?? intent.normalizedIntent?.activityTerms ?? [],
+    geoUsed: intent.normalizedIntent?.geo ?? null,
+    restaurantResultsBeforeFilter: restaurantSearch.debug.rawRestaurantCount ?? 0,
+    restaurantResultsAfterFilter: restaurantSearch.debug.afterCategoryFilterRestaurantCount ?? 0,
+    activityResultsBeforeFilter: activitySearch.debug.rawActivityCount ?? 0,
+    activityResultsAfterFilter: activitySearch.debug.afterCategoryFilterActivityCount ?? 0,
+    removedRestaurantBecauseOfActivityTerms: restaurantSearch.debug.removedRestaurantBecauseOfActivityTerms ?? 0,
+    removedActivityBecauseOfRestaurantTerms: activitySearch.debug.removedActivityBecauseOfRestaurantTerms ?? 0,
+  } : {};
+
   return buildSearchResponse(intent, restaurants, activities, pairs, matchedLocations, {
     search_system: "clean-search-v1",
     query: input,
     restaurantSearchInput: intent.restaurantSearchInput,
     activitySearchInput: intent.activitySearchInput,
+    ...devDebug,
     searchedTables: Array.from(new Set([...(restaurantSearch.debug.searchedTables ?? []), ...(activitySearch.debug.searchedTables ?? [])])),
     rpcCalls: Array.from(new Set([...(restaurantSearch.debug.rpcCalls ?? []), ...(activitySearch.debug.rpcCalls ?? [])])),
     sourceErrors: mergeSourceErrors(restaurantSearch.debug.sourceErrors, activitySearch.debug.sourceErrors),

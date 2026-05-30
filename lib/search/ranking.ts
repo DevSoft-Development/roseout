@@ -85,16 +85,25 @@ function scoreRooftopRestaurantMatch(record: any, intent: CanonicalSearchIntent)
 }
 
 export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
-  const query = intent.normalizedQuery || intent.rawQuery || "";
+  const query = intent.restaurantSearchInput || [
+    ...(intent.normalizedIntent?.restaurantTerms ?? []),
+    ...(intent.normalizedIntent?.cuisineTerms ?? []),
+    ...(intent.normalizedIntent?.mealTerms ?? []),
+    ...intent.cuisines,
+    ...intent.mealFoodIntents,
+  ].join(" ") || intent.normalizedQuery || intent.rawQuery || "";
   const requested = detectRequestedCuisines(query);
   const explicitGeo = Boolean(intent.geoIntent || intent.borough || intent.neighborhood || intent.city);
   const geoWeight = explicitGeo ? 4 : 1;
   return [...records].sort((a, b) => {
-    const strictTerms = intent.specificMealFoodIntents?.length
-      ? intent.specificMealFoodIntents
-      : intent.mealFoodIntents.filter((term) => !["dinner", "lunch", "breakfast", "brunch", "restaurant", "food", "eat", "dining"].includes(term));
-    let as = scoreRecord(a, strictTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs) + scoreRecord(a, intent.vibes);
-    let bs = scoreRecord(b, strictTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs) + scoreRecord(b, intent.vibes);
+    const strictTerms = [
+      ...(intent.normalizedIntent?.cuisineTerms ?? []),
+      ...(intent.specificMealFoodIntents?.length ? intent.specificMealFoodIntents : intent.mealFoodIntents),
+    ].filter((term, index, arr) => arr.indexOf(term) === index)
+      .filter((term) => !["dinner", "lunch", "breakfast", "brunch", "restaurant", "food", "eat", "dining"].includes(term));
+    const restaurantVibes = (intent.normalizedIntent?.vibeTerms ?? intent.vibes).filter((term) => term !== "nightlife");
+    let as = scoreRecord(a, strictTerms) + scoreRecord(a, intent.cuisines) + scoreRecord(a, intent.boroughs) + scoreRecord(a, restaurantVibes);
+    let bs = scoreRecord(b, strictTerms) + scoreRecord(b, intent.cuisines) + scoreRecord(b, intent.boroughs) + scoreRecord(b, restaurantVibes);
     if (strictTerms.length > 0) {
       if (`${a.category ?? ""}`.toLowerCase().includes("hookah")) as -= 10;
       if (`${b.category ?? ""}`.toLowerCase().includes("hookah")) bs -= 10;
@@ -137,8 +146,9 @@ export function rankActivities(records: any[], intent: CanonicalSearchIntent) {
   const geoWeight = explicitGeo ? 4 : 1;
 
   return [...records].sort((a, b) => {
-    const aScore = scoreRecord(a, intent.activityIntents) + scoreGeoMatch(a, intent.geoIntent) * geoWeight;
-    const bScore = scoreRecord(b, intent.activityIntents) + scoreGeoMatch(b, intent.geoIntent) * geoWeight;
+    const activityTerms = intent.normalizedIntent?.activityTerms ?? intent.activityIntents;
+    const aScore = scoreRecord(a, activityTerms) + scoreGeoMatch(a, intent.geoIntent) * geoWeight;
+    const bScore = scoreRecord(b, activityTerms) + scoreGeoMatch(b, intent.geoIntent) * geoWeight;
     return bScore - aScore;
   });
 }

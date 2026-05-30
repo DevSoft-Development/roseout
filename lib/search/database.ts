@@ -31,6 +31,11 @@ export type SearchDebug = {
   sameBoroughFallbackCount?: number;
   geoFilteredFinalCount?: number;
   rejectedRecords?: Array<{ name: string; reason: string; domain?: string | null }>;
+  restaurantTermsUsed?: string[];
+  activityTermsUsed?: string[];
+  geoUsed?: unknown;
+  removedRestaurantBecauseOfActivityTerms?: number;
+  removedActivityBecauseOfRestaurantTerms?: number;
 };
 
 const SEARCHED_TABLE = "locations";
@@ -40,8 +45,8 @@ const GENERIC_RESTAURANT_TERMS = new Set([
 ]);
 
 const FOOD_SYNONYMS: Record<string, string[]> = {
-  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon"],
-  steakhouse: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon"],
+  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "tomahawk steak", "churrasco", "brazilian steakhouse"],
+  steakhouse: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "tomahawk steak", "churrasco", "brazilian steakhouse"],
   seafood: ["seafood", "fish", "crab", "lobster", "shrimp", "oyster"],
   sushi: ["sushi", "sashimi", "omakase", "japanese"],
   pasta: ["pasta", "italian"],
@@ -57,7 +62,7 @@ const FOOD_SYNONYMS: Record<string, string[]> = {
   halal: ["halal"],
   fine_dining: ["fine dining", "upscale", "steakhouse"],
 };
-const STEAK_TERMS = ["steakhouse", "steak house", "steak", "american steakhouse", "brazilian steakhouse", "churrasco", "ribeye", "filet mignon", "porterhouse", "sirloin", "tomahawk steak"];
+const STEAK_TERMS = ["steakhouse", "steak house", "steak", "american steakhouse", "brazilian steakhouse", "churrasco", "ribeye", "filet", "filet mignon", "porterhouse", "sirloin", "tomahawk", "tomahawk steak"];
 
 const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
   queens: ["queens", "astoria", "flushing", "long island city", "lic", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "bayside", "corona", "fresh meadows", "rego park", "ozone park", "queens village", "springfield gardens", "rockaway"],
@@ -80,7 +85,7 @@ const MEAL_TERMS = [
 ];
 
 const ADD_ON_ACTIVITY_TERMS = [
-  "hookah", "hookah lounge", "lounge", "nightclub", "club", "karaoke", "bowling", "arcade", "vr", "paint", "sip and paint", "paint and sip", "activity", "experience", "rooftop",
+  "hookah", "hookah lounge", "lounge", "nightclub", "club", "karaoke", "bowling", "bowling alley", "lanes", "bowl", "arcade", "vr", "paint", "sip and paint", "paint and sip", "museum", "live music", "activity", "experience", "rooftop",
 ];
 
 function stringifySearchValue(value: unknown): string {
@@ -135,6 +140,19 @@ function getMealTermsFromQuery(query: string) {
 function getActivityTermsFromQuery(query: string) {
   const q = query.toLowerCase();
   return ADD_ON_ACTIVITY_TERMS.filter((term) => q.includes(term));
+}
+function getRestaurantLaneTerms(intent: CanonicalSearchIntent) {
+  return [...new Set([
+    ...(intent.normalizedIntent?.restaurantTerms ?? []),
+    ...(intent.normalizedIntent?.cuisineTerms ?? []),
+    ...(intent.normalizedIntent?.mealTerms ?? []),
+    ...((intent.specificMealFoodIntents?.length ?? 0) > 0 ? intent.specificMealFoodIntents : intent.mealFoodIntents),
+    ...intent.cuisines,
+  ].map((term) => String(term ?? "").replaceAll("_", " ").toLowerCase()).filter(Boolean))];
+}
+function getActivityLaneTerms(intent: CanonicalSearchIntent) {
+  return [...new Set([...(intent.normalizedIntent?.activityTerms ?? []), ...intent.activityIntents]
+    .map((term) => String(term ?? "").replaceAll("_", " ").toLowerCase()).filter(Boolean))];
 }
 
 function hasRooftopRestaurantIntent(query: string) {
@@ -241,15 +259,23 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
   return { filtered: restaurantCandidates, strictCount: 0, fallbackCount: restaurantCandidates.length };
 }
 
-function filterActivityCandidatesForQuery(locations: Record<string, unknown>[], query: string) {
-  const activityTerms = getActivityTermsFromQuery(query);
+function activityTermMatches(hay: string, term: string) {
+  const normalized = term.replaceAll("_", " ");
+  if (normalized === "bowling") return ["bowling", "bowling alley", "lanes", "bowl"].some((token) => hay.includes(token));
+  if (normalized === "paint and sip") return ["paint and sip", "sip and paint", "painting"].some((token) => hay.includes(token));
+  return hay.includes(normalized);
+}
+
+function filterActivityCandidatesForTerms(locations: Record<string, unknown>[], activityTerms: string[]) {
+  const terms = activityTerms.map((term) => term.replaceAll("_", " ")).filter(Boolean);
   return locations.filter((location) => {
     const hay = locationText(location);
-    const hasActivitySignal = activityTerms.length ? activityTerms.some((term) => hay.includes(term)) : true;
-    if (!hasActivitySignal) return false;
-    if (isRestaurantRecord(location) && activityTerms.length > 0 && !activityTerms.some((term) => hay.includes(term))) return false;
-    return true;
+    return terms.length ? terms.some((term) => activityTermMatches(hay, term)) : true;
   });
+}
+
+function filterActivityCandidatesForQuery(locations: Record<string, unknown>[], query: string) {
+  return filterActivityCandidatesForTerms(locations, getActivityTermsFromQuery(query));
 }
 
 export function inferRecordDomain(record: Record<string, unknown>): SearchDomain | null {
@@ -284,6 +310,10 @@ function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
 }
 
 function getSpecificFoodTerms(intent: CanonicalSearchIntent) {
+  const normalized = intent.normalizedIntent;
+  const laneSpecific = [...(normalized?.cuisineTerms ?? []), ...(normalized?.restaurantTerms ?? [])]
+    .filter((term) => !GENERIC_RESTAURANT_TERMS.has(String(term).toLowerCase()));
+  if (laneSpecific.length > 0) return [...new Set(laneSpecific)];
   const specific = intent.specificMealFoodIntents ?? [];
   if (specific.length > 0) return specific;
 
@@ -468,7 +498,8 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       domain: inferRecordDomain(record),
     })));
   }
-  const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : (intent.activityIntent ?? intent.activityIntents);
+  const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : getActivityLaneTerms(intent);
+  const restaurantLaneQuery = getRestaurantLaneTerms(intent).join(" ") || intent.restaurantSearchInput || searchText;
   let categorized: Record<string, unknown>[] = domain === "restaurant" ? [] : softCategoryFilter(geoFiltered, terms);
   let strictRestaurantCount = 0;
   let fallbackRestaurantCount = 0;
@@ -481,7 +512,7 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     const strictFoodTerms = getSpecificFoodTerms(intent);
     const hasSpecificCuisine = strictFoodTerms.length > 0 || intent.cuisines.length > 0 || Boolean(intent.requiredRestaurantCategory);
     const hardCuisineMatches = hasSpecificCuisine
-      ? restaurantCandidates.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms.length ? strictFoodTerms : intent.cuisines) || scoreCuisineCategoryMatch(record, intent.rawQuery || intentQuery, true).score > 0)
+      ? restaurantCandidates.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms.length ? strictFoodTerms : intent.cuisines) || scoreCuisineCategoryMatch(record, restaurantLaneQuery, true).score > 0)
       : [];
     strictRestaurantCount = hardCuisineMatches.length;
 
@@ -489,7 +520,7 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       const hardCuisineGeoMatches = hardCuisineMatches.filter((record) => locationMatchesGeo(record, geoIntent));
       const hardCuisineSource = hardCuisineGeoMatches.length > 0 ? hardCuisineGeoMatches : strictGeoRequired ? [] : hardCuisineMatches;
       categorized = hardCuisineSource
-        .sort((a, b) => (scoreCuisineCategoryMatch(b, intent.rawQuery || intentQuery, true).score * 3 + scoreGeoMatch(b, geoIntent)) - (scoreCuisineCategoryMatch(a, intent.rawQuery || intentQuery, true).score * 3 + scoreGeoMatch(a, geoIntent)));
+        .sort((a, b) => (scoreCuisineCategoryMatch(b, restaurantLaneQuery, true).score * 3 + scoreGeoMatch(b, geoIntent)) - (scoreCuisineCategoryMatch(a, restaurantLaneQuery, true).score * 3 + scoreGeoMatch(a, geoIntent)));
       fallbackRestaurantCount = hardCuisineGeoMatches.length > 0 ? 0 : hardCuisineSource.length;
       if (strictGeoRequired && hardCuisineGeoMatches.length === 0) {
         rejectedRecords.push(...hardCuisineMatches.slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: "strict_geo_removed_hard_cuisine_non_matching_location", domain: inferRecordDomain(record) })));
@@ -509,8 +540,9 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       }
     }
   } else {
-    activityCandidateCount = filterActivityCandidatesForQuery(geoFiltered, intentQuery).length;
-    categorized = filterActivityCandidatesForQuery(geoFiltered, intentQuery);
+    const activityLaneTerms = getActivityLaneTerms(intent);
+    activityCandidateCount = filterActivityCandidatesForTerms(geoFiltered, activityLaneTerms).length;
+    categorized = filterActivityCandidatesForTerms(geoFiltered, activityLaneTerms);
     if (!hasAddOnActivityIntent(intentQuery)) categorized = softCategoryFilter(categorized, terms);
     if (intent.needsRestaurant && intent.needsActivity && (intent.addOnIntent ?? []).length > 0) {
       const addOn = (intent.addOnIntent ?? []).map((x) => x.replaceAll("_", " "));
@@ -527,6 +559,11 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     rpcCalls: [],
     sourceErrors,
     rejectedRecords,
+    restaurantTermsUsed: getRestaurantLaneTerms(intent),
+    activityTermsUsed: getActivityLaneTerms(intent),
+    geoUsed: intent.normalizedIntent?.geo ?? null,
+    removedRestaurantBecauseOfActivityTerms: 0,
+    removedActivityBecauseOfRestaurantTerms: 0,
     geoStrictRequired: strictGeoRequired,
     geoIntent,
     geoFilteredByQueryCount: geoFilteredByQuery.length,
@@ -556,7 +593,7 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       detectedGeoTerms: geoIntent?.terms ?? [],
       geoType: geoIntent?.geoType ?? null,
       mealTerms: getMealTermsFromQuery(intentQuery),
-      activityTerms: getActivityTermsFromQuery(intentQuery),
+      activityTerms: getActivityLaneTerms(intent),
       restaurantCandidateCount,
       strictRestaurantCount,
       fallbackRestaurantCount,
@@ -567,7 +604,7 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       fallbackStage: domain === "restaurant" ? (strictRestaurantCount > 0 && geoIntent ? "hard_cuisine_then_geo" : fallbackRestaurantCount > 0 ? "generic_or_expanded" : "strict") : undefined,
       finalCardCount: categorized.length,
       top10: categorized.slice(0, 10).map((record) => {
-        const cuisineScore = scoreCuisineCategoryMatch(record, intent.rawQuery || intentQuery, true).score;
+        const cuisineScore = scoreCuisineCategoryMatch(record, restaurantLaneQuery, true).score;
         const geoScore = scoreGeoMatch(record, geoIntent);
         const typeScore = isRestaurantRecord(record) && !isActivityOnlyRecord(record) ? 25 : 0;
         return {
@@ -600,13 +637,12 @@ function fallbackGeoTerms(intent: CanonicalSearchIntent) {
 export const searchFallbackRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", [
   ...fallbackGeoTerms(intent),
   "restaurant",
-  ...((intent.specificMealFoodIntents?.length ?? 0) > 0 ? intent.specificMealFoodIntents : intent.mealFoodIntents),
-  ...intent.vibes,
+  ...getRestaurantLaneTerms(intent),
+  ...(intent.normalizedIntent?.vibeTerms ?? intent.vibes).filter((term) => !getActivityLaneTerms(intent).includes(term)),
 ].join(" "), true);
 export const searchFallbackActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", [
   ...fallbackGeoTerms(intent),
   "activity",
-  "lounge",
-  "nightlife",
-  ...intent.activityIntents,
+  ...(getActivityLaneTerms(intent).length ? [] : ["lounge", "nightlife"]),
+  ...getActivityLaneTerms(intent),
 ].join(" "), true);

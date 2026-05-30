@@ -1,5 +1,25 @@
 export type RenderMode = "cards" | "empty" | "text";
 
+
+export type NormalizedLaneSearchIntent = {
+  primaryDomain: "restaurant" | "activity" | "mixed";
+  wantsPairing: boolean;
+  needsRestaurant: boolean;
+  needsActivity: boolean;
+  restaurantTerms: string[];
+  cuisineTerms: string[];
+  mealTerms: string[];
+  activityTerms: string[];
+  vibeTerms: string[];
+  geo: {
+    raw: string | null;
+    neighborhood: string | null;
+    borough: string | null;
+    city: string | null;
+    region: string | null;
+  };
+};
+
 export type CanonicalSearchIntent = {
   rawQuery: string;
   normalizedQuery: string;
@@ -43,6 +63,7 @@ export type CanonicalSearchIntent = {
   hookahMode?: "restaurant_add_on" | "activity" | "activity_add_on" | null;
   mealFirst?: boolean;
   primaryDomain?: "restaurant" | "activity" | "mixed";
+  normalizedIntent?: NormalizedLaneSearchIntent;
 };
 
 export type SearchPipelineResult = {
