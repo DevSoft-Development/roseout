@@ -3,7 +3,41 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const revalidate = 300;
 
-const CARD_FIELDS = "id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,rating,score,total_reviews,reservation_url,external_reservation_url,website,featured";
+const CARD_FIELDS = [
+  "id",
+  "source_table",
+  "source_id",
+  "location_type",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "main_image",
+  "image_url",
+  "images",
+  "city",
+  "borough",
+  "neighborhood",
+  "state",
+  "primary_category",
+  "primary_tag",
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "activity_type",
+  "tags",
+  "vibe_tags",
+  "best_for_tags",
+  "google_types",
+  "rating",
+  "review_count",
+  "theouthaven_score",
+  "popularity_score",
+  "reservation_url",
+  "reservation_link",
+  "external_reservation_url",
+  "website",
+  "is_featured"
+].join(",");
 
 export async function GET(request: NextRequest) {
   const start = Date.now();
@@ -20,8 +54,14 @@ export async function GET(request: NextRequest) {
   let query = supabaseAdmin.from("locations").select(CARD_FIELDS, { count: "planned" }).eq("is_searchable", true).neq("is_hidden", true).eq("data_status", "clean");
   if (city) query = query.ilike("city", city);
   if (borough) query = query.ilike("borough", borough);
-  if (category) query = query.or(`primary_category.ilike.%${category}%,category.ilike.%${category}%,cuisine.ilike.%${category}%,activity_type.ilike.%${category}%`);
-  if (type) query = query.or(`location_type.ilike.%${type}%,type.ilike.%${type}%,source_table.ilike.%${type}%`);
+  if (category) {
+    query = query.or(
+      `primary_category.ilike.%${category}%,primary_tag.ilike.%${category}%,cuisine.ilike.%${category}%,cuisine_type.ilike.%${category}%,food_type.ilike.%${category}%,activity_type.ilike.%${category}%`
+    );
+  }
+  if (type) {
+    query = query.or(`location_type.ilike.%${type}%,source_table.ilike.%${type}%`);
+  }
 
   const dbStart = Date.now();
   const { data, error, count } = await query.order("rating", { ascending: false, nullsFirst: false }).range(from, to);

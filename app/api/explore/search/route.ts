@@ -4,39 +4,46 @@ import { getLocationName } from "@/lib/locationName";
 
 const SELECT_FIELDS = [
   "id",
-  "type",
   "source_table",
+  "source_id",
   "location_type",
   "name",
   "restaurant_name",
   "activity_name",
-  "business_name",
   "main_image",
   "image_url",
   "images",
   "city",
   "borough",
   "neighborhood",
-  "category",
+  "state",
+  "zip_code",
   "primary_category",
+  "primary_tag",
   "cuisine",
   "cuisine_type",
+  "food_type",
   "activity_type",
   "tags",
-  "vibes",
+  "vibe_tags",
+  "best_for_tags",
+  "google_types",
   "atmosphere",
   "best_for",
   "date_style_tags",
   "search_keywords",
   "search_document",
+  "description",
   "reservation_url",
+  "reservation_link",
   "external_reservation_url",
   "website",
   "rating",
-  "score",
-  "total_reviews",
-  "reservation_count",
-  "featured",
+  "review_count",
+  "theouthaven_score",
+  "popularity_score",
+  "quality_score",
+  "is_featured",
   "created_at",
   "is_searchable",
   "is_hidden",
@@ -47,16 +54,17 @@ const SEARCH_COLUMNS = [
   "name",
   "restaurant_name",
   "activity_name",
-  "business_name",
   "city",
   "borough",
   "neighborhood",
-  "category",
   "primary_category",
+  "primary_tag",
   "cuisine",
   "cuisine_type",
+  "food_type",
   "activity_type",
   "search_document",
+  "description",
 ];
 
 const LONG_ISLAND_TERMS = [
@@ -88,35 +96,50 @@ const LONG_ISLAND_TERMS = [
 
 type ExploreLocation = {
   id: string;
-  type: string | null;
+  type?: string | null;
   source_table: string | null;
+  source_id?: string | null;
   location_type: string | null;
   name: string | null;
   restaurant_name: string | null;
   activity_name: string | null;
-  business_name: string | null;
+  business_name?: string | null;
   city: string | null;
   borough: string | null;
   neighborhood: string | null;
-  category: string | null;
+  state?: string | null;
+  zip_code?: string | null;
+  category?: string | null;
   primary_category: string | null;
+  primary_tag?: string | null;
   cuisine: string | null;
   cuisine_type: string | null;
+  food_type?: string | null;
   activity_type: string | null;
   tags: string[] | string | null;
-  vibes: string[] | string | null;
+  vibes?: string[] | string | null;
+  vibe_tags?: string[] | string | null;
+  best_for_tags?: string[] | string | null;
+  google_types?: string[] | string | null;
   atmosphere: string[] | string | null;
   best_for: string[] | string | null;
   date_style_tags: string[] | string | null;
   search_keywords: string[] | string | null;
   search_document: string | null;
+  description?: string | null;
+  reservation_link?: string | null;
   rating: number | null;
-  score: number | null;
-  total_reviews: number | null;
+  score?: number | null;
+  total_reviews?: number | null;
+  review_count?: number | null;
+  theouthaven_score?: number | null;
+  popularity_score?: number | null;
+  quality_score?: number | null;
   reservation_count?: number | null;
   views_count?: number | null;
   saves_count?: number | null;
-  featured: boolean | null;
+  featured?: boolean | null;
+  is_featured?: boolean | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -147,7 +170,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { data, error } = await query
-      .order("featured", { ascending: false, nullsFirst: false })
+      .order("is_featured", { ascending: false, nullsFirst: false })
       .order("rating", { ascending: false, nullsFirst: false })
       .limit(240);
 
@@ -208,10 +231,10 @@ function rankScore(location: ExploreLocation, q: string) {
 
   return (
     queryScore +
-    (location.featured ? 100 : 0) +
-    Number(location.rating || location.score || 0) * 35 +
-    Number(location.total_reviews || 0) * 1.4 +
-    Number(location.reservation_count || 0) * 1.2
+    (location.is_featured || location.featured ? 100 : 0) +
+    Number(location.rating || location.theouthaven_score || location.score || 0) * 35 +
+    Number(location.review_count || location.total_reviews || 0) * 1.4 +
+    Number(location.popularity_score || 0) * 0.5
   );
 }
 
@@ -308,17 +331,21 @@ function searchableText(location: ExploreLocation) {
       location.name,
       location.restaurant_name,
       location.activity_name,
-      location.business_name,
       location.city,
       location.borough,
       location.neighborhood,
-      location.category,
       location.primary_category,
+      location.primary_tag,
       location.cuisine,
       location.cuisine_type,
+      location.food_type,
       location.activity_type,
       location.search_document,
+      location.description,
       ...toList(location.tags),
+      ...toList(location.vibe_tags),
+      ...toList(location.best_for_tags),
+      ...toList(location.google_types),
       ...toList(location.vibes),
       ...toList(location.atmosphere),
       ...toList(location.best_for),

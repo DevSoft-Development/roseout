@@ -127,7 +127,9 @@ export default async function ExploreLandingPage({ params }: Props) {
 async function loadLandingLocations(page: (typeof LANDING_PAGES)[LandingSlug]) {
   let query = supabaseAdmin
     .from("locations")
-    .select("id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,search_document,rating,score,total_reviews,featured,is_searchable,is_hidden,data_status,status")
+    .select(
+      "id,source_table,source_id,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,state,primary_category,primary_tag,cuisine,cuisine_type,food_type,activity_type,tags,vibe_tags,best_for_tags,google_types,atmosphere,best_for,date_style_tags,search_keywords,search_document,description,rating,review_count,theouthaven_score,popularity_score,is_featured,is_searchable,is_hidden,data_status,status"
+    )
     .eq("is_searchable", true)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
@@ -148,18 +150,21 @@ function matchesLanding(location: LandingLocation, page: (typeof LANDING_PAGES)[
     location.name,
     location.restaurant_name,
     location.activity_name,
-    location.business_name,
     location.city,
     location.borough,
     location.neighborhood,
-    location.category,
     location.primary_category,
+    location.primary_tag,
     location.cuisine,
     location.cuisine_type,
+    location.food_type,
     location.activity_type,
     location.search_document,
+    location.description,
     ...(Array.isArray(location.tags) ? location.tags : []),
-    ...(Array.isArray(location.vibes) ? location.vibes : []),
+    ...(Array.isArray(location.vibe_tags) ? location.vibe_tags : []),
+    ...(Array.isArray(location.best_for_tags) ? location.best_for_tags : []),
+    ...(Array.isArray(location.google_types) ? location.google_types : []),
   ]
     .filter(Boolean)
     .join(" ")
