@@ -12,41 +12,56 @@ import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 
 export type ExploreLocation = {
   id: string;
-  type: string | null;
+  type?: string | null;
   source_table: string | null;
+  source_id?: string | null;
   location_type: string | null;
   name: string | null;
   restaurant_name: string | null;
   activity_name: string | null;
-  business_name: string | null;
+  business_name?: string | null;
   main_image: string | null;
   image_url: string | null;
   images: string[] | null;
   city: string | null;
   borough: string | null;
   neighborhood: string | null;
-  category: string | null;
+  state?: string | null;
+  zip_code?: string | null;
+  category?: string | null;
   primary_category: string | null;
+  primary_tag?: string | null;
   cuisine: string | null;
   cuisine_type: string | null;
+  food_type?: string | null;
   activity_type: string | null;
   tags: string[] | string | null;
-  vibes: string[] | string | null;
+  vibes?: string[] | string | null;
+  vibe_tags?: string[] | string | null;
+  best_for_tags?: string[] | string | null;
+  google_types?: string[] | string | null;
   atmosphere: string[] | string | null;
   best_for: string[] | string | null;
   date_style_tags: string[] | string | null;
   search_keywords: string[] | string | null;
   search_document?: string | null;
+  description?: string | null;
   reservation_url: string | null;
+  reservation_link?: string | null;
   external_reservation_url: string | null;
   website: string | null;
   rating: number | null;
-  score: number | null;
-  total_reviews: number | null;
+  score?: number | null;
+  total_reviews?: number | null;
+  review_count?: number | null;
+  theouthaven_score?: number | null;
+  popularity_score?: number | null;
+  quality_score?: number | null;
   views_count?: number | null;
   saves_count?: number | null;
   reservation_count?: number | null;
-  featured: boolean | null;
+  featured?: boolean | null;
+  is_featured?: boolean | null;
   created_at: string | null;
   is_searchable: boolean | null;
   is_hidden: boolean | null;
@@ -250,7 +265,11 @@ export default function ExploreClient({
         console.error("EXPLORE_CLIENT_FALLBACK_ERROR", fallbackErr);
       }
 
-      setError("Search is having trouble right now. Try a different query or clear the filters.");
+      setError(
+        process.env.NODE_ENV === "development"
+          ? `Explore search failed: ${err instanceof Error ? err.message : "Unknown error"}`
+          : "Search is having trouble right now. Try a different query or clear the filters."
+      );
       setLocations([]);
     } finally {
       setLoading(false);
@@ -557,7 +576,10 @@ function ResultsHeader({
 function LocationCard({ location }: { location: ExploreLocation }) {
   const name = getLocationName(location);
   const reserveHref =
-    location.external_reservation_url || location.reservation_url || location.website;
+    location.external_reservation_url ||
+    location.reservation_url ||
+    location.reservation_link ||
+    location.website;
 
   const detailHref = getLocationDetailHref({
     id: location.id,
@@ -575,7 +597,12 @@ function LocationCard({ location }: { location: ExploreLocation }) {
     .join(", ");
 
   const categoryLine =
-    [getCuisine(location), location.activity_type, getPrimaryCategory(location)]
+    [
+      getCuisine(location),
+      location.food_type,
+      location.activity_type,
+      getPrimaryCategory(location),
+    ]
       .map((item) => cleanLabel(item))
       .filter(Boolean)
       .slice(0, 2)
@@ -724,17 +751,21 @@ function searchableText(location: ExploreLocation) {
       location.name,
       location.restaurant_name,
       location.activity_name,
-      location.business_name,
       location.city,
       location.borough,
       location.neighborhood,
-      location.category,
       location.primary_category,
+      location.primary_tag,
       location.cuisine,
       location.cuisine_type,
+      location.food_type,
       location.activity_type,
       location.search_document,
+      location.description,
       ...toList(location.tags),
+      ...toList(location.vibe_tags),
+      ...toList(location.best_for_tags),
+      ...toList(location.google_types),
       ...toList(location.vibes),
       ...toList(location.atmosphere),
       ...toList(location.best_for),
@@ -782,13 +813,19 @@ function isActivity(location: ExploreLocation) {
 
 function getTypeLabel(location: ExploreLocation) {
   const text = searchableText(location);
+  const rawType = String(
+    location.location_type ||
+      location.source_table ||
+      location.type ||
+      ""
+  ).toLowerCase();
 
   if (text.includes("rooftop")) return "Rooftop";
   if (text.includes("hookah") || text.includes("lounge")) return "Lounge";
   if (isRestaurant(location)) return "Restaurant";
   if (isActivity(location)) return "Activity";
 
-  return cleanLabel(location.location_type || location.type || location.source_table) || "Place";
+  return cleanLabel(rawType) || "Place";
 }
 
 function cleanedTags(location: ExploreLocation) {
