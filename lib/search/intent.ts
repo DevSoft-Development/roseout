@@ -1,5 +1,5 @@
 import { ADD_ON_FOOD_INTENTS, ACTIVITY_INTENTS, GENERIC_MEAL_TERMS, INTENT_ALIASES, MEAL_FOOD_INTENTS, OUTING_PHRASES, SPECIFIC_MEAL_FOOD_INTENTS } from "./taxonomy";
-import type { CanonicalSearchIntent } from "./types";
+import type { CanonicalSearchIntent, NormalizedLaneSearchIntent } from "./types";
 import { detectRequestedCuisines, detectRequestedRestaurantCategories } from "./cuisine-matching";
 import { detectRequestedGeo } from "./geo-matching";
 
@@ -20,6 +20,26 @@ const ROOFTOP_MEAL_PHRASES = [
   "eat on a rooftop",
 ];
 const ROOFTOP_MEAL_TERMS = ["dinner", "restaurant", "dining", "brunch", "lunch", "food", "eat"];
+const CONNECTOR_TERMS = new Set(["with", "and", "then", "near", "in", "after", "before", "plus", "followed", "by", "for", "to", "do", "things"]);
+const MEAL_CONTEXT_TERMS = new Set(["dinner", "lunch", "breakfast", "brunch"]);
+const RESTAURANT_VIBE_TERMS = new Set(["romantic", "casual", "upscale", "cozy", "date night", "rooftop", "outdoor dining", "terrace", "skyline", "views", "view", "city view", "scenic", "patio", "birthday", "group"]);
+const ACTIVITY_ALIAS_TERMS: Record<string, string[]> = {
+  bowling: ["bowling", "bowling alley", "lanes", "bowl"],
+  karaoke: ["karaoke", "singing"],
+  arcade: ["arcade", "games"],
+  museum: ["museum", "gallery"],
+  hookah: ["hookah", "shisha", "hookah lounge"],
+  live_music: ["live music", "jazz", "music"],
+  paint_and_sip: ["paint and sip", "sip and paint", "painting"],
+};
+const FOOD_ALIAS_TERMS: Record<string, string[]> = {
+  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "churrasco", "brazilian steakhouse"],
+  sushi: ["sushi", "omakase", "sashimi", "japanese"],
+  seafood: ["seafood", "fish", "crab", "lobster", "shrimp", "oyster"],
+  brunch: ["brunch"],
+  dinner: ["dinner"],
+  rooftop: ["rooftop dinner", "rooftop dining", "rooftop restaurant"],
+};
 
 const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 const hit = (q: string, phrase: string) => q.includes(phrase);
@@ -39,6 +59,106 @@ const STEAK_INTENT_TERMS = [
 
 function uniq(values: Array<string | null | undefined>) {
   return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function extractStringTerms(value: unknown): string[] {
+  if (!value) return [];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(extractStringTerms);
+  if (typeof value === "object") return Object.values(value as Record<string, unknown>).flatMap(extractStringTerms);
+  return [];
+}
+
+function splitTerm(value: string) {
+  return norm(value).split(/\s+/).filter((term) => term && !CONNECTOR_TERMS.has(term));
+}
+
+function laneTermsFromText(query: string, aliases: Record<string, string[]>) {
+  return Object.entries(aliases)
+    .filter(([, terms]) => terms.some((term) => hit(query, norm(term))))
+    .map(([canonical]) => canonical);
+}
+
+function bodyIntent(body: any) {
+  return body?.searchIntent ?? body?.normalizedIntent ?? body?.llmIntent ?? body?.intent ?? null;
+}
+
+function pickBodyTerms(source: unknown, keys: string[]) {
+  if (!source || typeof source !== "object") return [];
+  return keys.flatMap((key) => extractStringTerms((source as Record<string, unknown>)[key]));
+}
+
+export function normalizeParsedSearchIntent(args: {
+  rawQuery: string;
+  parsedIntent?: unknown;
+  primaryDomain: "restaurant" | "activity" | "mixed";
+  wantsPairing: boolean;
+  needsRestaurant: boolean;
+  needsActivity: boolean;
+  mealFoodIntents: string[];
+  specificMealFoodIntents: string[];
+  cuisines: string[];
+  activityIntents: string[];
+  vibes: string[];
+  geoIntent: ReturnType<typeof detectRequestedGeo> | null;
+  borough: string | null;
+  neighborhood: string | null;
+  city: string | null;
+}): NormalizedLaneSearchIntent {
+  const query = norm(args.rawQuery);
+  const parsed = args.parsedIntent;
+  const rawRestaurantTerms = pickBodyTerms(parsed, ["restaurantTerms", "foodTerms", "dishTerms", "restaurantKeywords", "mealTerms", "cuisineTerms"]);
+  const rawActivityTerms = pickBodyTerms(parsed, ["activityTerms", "activityTypes", "addonTerms"]);
+  const detectedFood = laneTermsFromText(query, FOOD_ALIAS_TERMS);
+  const detectedActivity = laneTermsFromText(query, ACTIVITY_ALIAS_TERMS);
+
+  const restaurantTerms = uniq([
+    ...rawRestaurantTerms.flatMap(splitTerm).filter((term) => !detectedActivity.includes(term)),
+    ...args.mealFoodIntents,
+    ...args.specificMealFoodIntents,
+    ...detectedFood,
+  ]).filter((term) => !CONNECTOR_TERMS.has(term) && !(ACTIVITY_INTENTS as readonly string[]).includes(term));
+
+  const cuisineTerms = uniq([
+    ...args.cuisines,
+    ...args.specificMealFoodIntents,
+    ...detectedFood.filter((term) => !MEAL_CONTEXT_TERMS.has(term)),
+  ]).filter((term) => !MEAL_CONTEXT_TERMS.has(term));
+
+  const mealTerms = uniq([
+    ...args.mealFoodIntents.filter((term) => MEAL_CONTEXT_TERMS.has(term)),
+    ...detectedFood.filter((term) => MEAL_CONTEXT_TERMS.has(term)),
+    ...rawRestaurantTerms.flatMap(splitTerm).filter((term) => MEAL_CONTEXT_TERMS.has(term)),
+  ]);
+
+  const activityTerms = uniq([
+    ...rawActivityTerms.flatMap(splitTerm),
+    ...args.activityIntents,
+    ...detectedActivity,
+  ]).filter((term) => !CONNECTOR_TERMS.has(term) && !(SPECIFIC_MEAL_FOOD_INTENTS as readonly string[]).includes(term) && !(GENERIC_MEAL_TERMS as readonly string[]).includes(term));
+
+  const needsRestaurant = args.needsRestaurant || restaurantTerms.length > 0 || cuisineTerms.length > 0 || mealTerms.length > 0;
+  const needsActivity = args.needsActivity || activityTerms.length > 0;
+  const primaryDomain = needsRestaurant && needsActivity ? "mixed" : needsRestaurant ? "restaurant" : "activity";
+
+  return {
+    primaryDomain,
+    wantsPairing: args.wantsPairing || (needsRestaurant && needsActivity),
+    needsRestaurant,
+    needsActivity,
+    restaurantTerms: uniq([...restaurantTerms, ...mealTerms]),
+    cuisineTerms,
+    mealTerms,
+    activityTerms,
+    vibeTerms: uniq(args.vibes).filter((term) => RESTAURANT_VIBE_TERMS.has(term) || !restaurantTerms.includes(term)),
+    geo: {
+      raw: args.geoIntent?.raw ?? null,
+      neighborhood: args.neighborhood ?? args.geoIntent?.neighborhood ?? null,
+      borough: args.borough ?? args.geoIntent?.borough ?? null,
+      city: args.city ?? args.geoIntent?.city ?? null,
+      region: args.geoIntent?.region ?? null,
+    },
+  };
 }
 
 function includesConnectorBetween(query: string, leftTerms: string[], rightTerms: string[]) {
@@ -140,7 +260,25 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
 
   const nonOffTopicSignals = finalWantsFood || finalWantsActivity || boroughs.length > 0 || Boolean(geoIntent) || occasionIntents.length > 0;
   const isOffTopic = !nonOffTopicSignals;
-  const primaryDomain = finalWantsRestaurant && finalWantsActivity ? "mixed" : finalWantsRestaurant ? "restaurant" : "activity";
+  const provisionalPrimaryDomain = finalWantsRestaurant && finalWantsActivity ? "mixed" : finalWantsRestaurant ? "restaurant" : "activity";
+  const normalizedIntent = normalizeParsedSearchIntent({
+    rawQuery: input,
+    parsedIntent: bodyIntent(_body),
+    primaryDomain: provisionalPrimaryDomain,
+    wantsPairing: Boolean((finalWantsRestaurant || hasRealMeal) && (finalWantsActivity || hookahAsSeparateActivity) && !hookahAsSamePlaceAddOn),
+    needsRestaurant: finalWantsRestaurant || hasRealMeal,
+    needsActivity: finalWantsActivity || hookahAsSeparateActivity,
+    mealFoodIntents: isLocationOnlySearch ? [] : normalizedMealFoodIntents,
+    specificMealFoodIntents: isLocationOnlySearch ? [] : uniq(specificMealFoodIntents),
+    cuisines: isLocationOnlySearch ? [] : uniq([...requestedCuisines, ...normalizedMealFoodIntents.filter((term) => !GENERIC_MEAL_TERMS.includes(term as any))]),
+    activityIntents: isLocationOnlySearch ? [] : normalizedActivityIntents,
+    vibes,
+    geoIntent,
+    borough,
+    neighborhood,
+    city,
+  });
+  const primaryDomain = normalizedIntent.primaryDomain;
 
   return {
     rawQuery: input,
@@ -151,13 +289,13 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     borough,
     city,
     neighborhood,
-    needsRestaurant: finalWantsRestaurant || hasRealMeal,
-    needsActivity: finalWantsActivity || hookahAsSeparateActivity,
-    wantsPairing: Boolean((finalWantsRestaurant || hasRealMeal) && (finalWantsActivity || hookahAsSeparateActivity) && !hookahAsSamePlaceAddOn),
+    needsRestaurant: normalizedIntent.needsRestaurant,
+    needsActivity: normalizedIntent.needsActivity,
+    wantsPairing: normalizedIntent.wantsPairing,
     addOnIntent,
     wantsFood: finalWantsFood,
-    wantsRestaurant: finalWantsRestaurant,
-    wantsActivity: finalWantsActivity || hookahAsSeparateActivity,
+    wantsRestaurant: normalizedIntent.needsRestaurant,
+    wantsActivity: normalizedIntent.needsActivity,
     wantsFullOuting: isLocationOnlySearch ? false : wantsFullOuting,
     foodIntents: isLocationOnlySearch ? [] : foodIntents,
     mealFoodIntents: isLocationOnlySearch ? [] : normalizedMealFoodIntents,
@@ -185,5 +323,6 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     hookahMode: hookahAsSamePlaceAddOn ? "restaurant_add_on" : hookahOrLoungeOnly ? "activity" : hasHookah || hasLounge ? "activity_add_on" : null,
     mealFirst: Boolean(finalWantsRestaurant || hasRealMeal),
     primaryDomain,
+    normalizedIntent,
   };
 }

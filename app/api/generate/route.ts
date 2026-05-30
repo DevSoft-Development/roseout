@@ -230,6 +230,14 @@ export async function POST(request: Request) {
 
   const result = await runTheOutHavenSearch(input, body);
   const intent = result?.intent ?? body?.intent ?? parseCanonicalIntent(input, body);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("THEOUTHAVEN_CREATE_INTENT", JSON.stringify({
+      llmIntentRaw: body?.searchIntent ?? body?.normalizedIntent ?? body?.llmIntent ?? body?.intent ?? null,
+      normalizedIntent: intent.normalizedIntent ?? null,
+      restaurantSearchInput: intent.restaurantSearchInput ?? "",
+      activitySearchInput: intent.activitySearchInput ?? "",
+    }, null, 2));
+  }
 
   const mergedLocations = [
     ...(result?.matched_locations ?? []),
@@ -261,6 +269,7 @@ export async function POST(request: Request) {
     mealFirst: intent.mealFirst,
     primaryDomain: intent.primaryDomain,
     occasionIntents: intent.occasionIntents,
+    normalizedIntent: intent.normalizedIntent,
   };
   const locationOnlySearch = Boolean(
     (intent?.boroughs?.length ?? 0) > 0 &&
@@ -434,6 +443,21 @@ export async function POST(request: Request) {
       fallback_used: fallbackAttempted || Boolean(result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed),
       no_results_reason: result?.debug?.empty_reason ?? null,
       rejected_records: result?.debug?.rejectedRecords ?? [],
+      debug_lanes: process.env.NODE_ENV !== "production" ? {
+        llmIntentRaw: result?.debug?.llmIntentRaw ?? null,
+        normalizedIntent: result?.debug?.normalizedIntent ?? intent.normalizedIntent ?? null,
+        restaurantSearchInput: result?.debug?.restaurantSearchInput ?? intent?.restaurantSearchInput ?? "",
+        activitySearchInput: result?.debug?.activitySearchInput ?? intent?.activitySearchInput ?? "",
+        restaurantTermsUsed: result?.debug?.restaurantTermsUsed ?? [],
+        activityTermsUsed: result?.debug?.activityTermsUsed ?? [],
+        geoUsed: result?.debug?.geoUsed ?? null,
+        restaurantResultsBeforeFilter: result?.debug?.restaurantResultsBeforeFilter ?? 0,
+        restaurantResultsAfterFilter: result?.debug?.restaurantResultsAfterFilter ?? 0,
+        activityResultsBeforeFilter: result?.debug?.activityResultsBeforeFilter ?? 0,
+        activityResultsAfterFilter: result?.debug?.activityResultsAfterFilter ?? 0,
+        removedRestaurantBecauseOfActivityTerms: result?.debug?.removedRestaurantBecauseOfActivityTerms ?? 0,
+        removedActivityBecauseOfRestaurantTerms: result?.debug?.removedActivityBecauseOfRestaurantTerms ?? 0,
+      } : undefined,
       cache: result?.debug?.cache_status ?? null,
     },
   };
