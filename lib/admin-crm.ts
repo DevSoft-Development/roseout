@@ -26,18 +26,28 @@ export type BusinessCRMRow = {
   category?: string | null;
   primary_category?: string | null;
   cuisine?: string | null;
+  cuisine_type?: string | null;
   description?: string | null;
   status?: string | null;
   is_searchable?: boolean | null;
   is_claimed: boolean | null;
   reservation_url: string | null;
+  reservation_link?: string | null;
+  booking_url?: string | null;
   external_reservation_url?: string | null;
+  best_reservation_url?: string | null;
+  image_url?: string | null;
+  main_image?: string | null;
   location_type?: "restaurants" | "activities" | null;
   owner_user_id?: string | null;
   owner_email?: string | null;
   claim_status?: string | null;
   owner_status?: string | null;
+  plan?: string | null;
   plan_status?: string | null;
+  subscription_plan?: string | null;
+  subscription_status?: string | null;
+  is_pro?: boolean | null;
   pipeline_stage?: string | null;
   outreach_status?: string | null;
   follow_up_date?: string | null;
@@ -79,27 +89,41 @@ function toNumber(value: unknown) {
 }
 
 function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
-  const id = String(row.id ?? row.location_id ?? "");
-  const name = String(row.name ?? row.location_name ?? row.restaurant_name ?? row.activity_name ?? "Untitled Location");
-
   return {
     ...row,
-    id,
-    location_id: row.location_id ?? id,
-    name,
-    location_name: row.location_name ?? name,
-    city: row.city ?? row.borough ?? "",
-    borough: row.borough ?? row.city ?? "",
+    id: String(row.id ?? row.location_id ?? ""),
+    location_id: row.location_id ?? row.id,
+    name: String(row.name ?? row.location_name ?? "Untitled Location"),
+    location_name: row.location_name ?? row.name ?? "Untitled Location",
+    city: row.city ?? "",
+    borough: row.borough ?? row.neighborhood ?? row.city ?? "",
     state: row.state ?? "",
     zip: row.zip ?? row.zip_code ?? "",
     zip_code: row.zip_code ?? row.zip ?? "",
     category: row.category ?? row.primary_category ?? "",
-    cuisine: row.cuisine ?? "",
+    cuisine: row.cuisine ?? row.cuisine_type ?? "",
+    image_url: row.image_url ?? row.main_image ?? "",
+    main_image: row.main_image ?? row.image_url ?? "",
+    reservation_url:
+      row.best_reservation_url ??
+      row.reservation_url ??
+      row.reservation_link ??
+      row.booking_url ??
+      row.external_reservation_url ??
+      "",
+    plan: row.plan ?? row.subscription_plan ?? "free_discovery",
+    plan_status: row.plan_status ?? row.subscription_status ?? "inactive",
     is_claimed: Boolean(row.is_claimed),
     is_searchable: Boolean(row.is_searchable),
-    reservation_url: row.reservation_url ?? null,
-    location_type: row.location_type === "activities" ? "activities" : row.location_type === "restaurants" ? "restaurants" : null,
-    crm_status: (row.crm_status ?? (row.is_claimed ? "Claimed" : "Unclaimed")) as CRMStatus,
+    is_pro: Boolean(row.is_pro),
+    location_type:
+      row.location_type === "activities"
+        ? "activities"
+        : row.location_type === "restaurants"
+          ? "restaurants"
+          : null,
+    crm_status: (row.crm_status ??
+      (row.is_claimed ? "Claimed" : "Unclaimed")) as CRMStatus,
     opportunity_score: toNumber(row.opportunity_score),
     upgrade_probability: toNumber(row.upgrade_probability),
     engagement_score: toNumber(row.engagement_score),
@@ -107,8 +131,10 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     conversion_score: toNumber(row.conversion_score),
     retention_score: toNumber(row.retention_score),
     churn_risk_score: toNumber(row.churn_risk_score),
-    trending_score: toNumber(row.trending_score),
-    profile_quality_score: toNumber(row.profile_quality_score),
+    trending_score: toNumber(row.trending_score ?? row.trend_score),
+    profile_quality_score: toNumber(
+      row.profile_quality_score ?? row.quality_score,
+    ),
     seo_score: toNumber(row.seo_score),
     reservation_readiness_score: toNumber(row.reservation_readiness_score),
     open_tasks: toNumber(row.open_tasks),
@@ -125,6 +151,38 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
   };
 }
 
+function normalizeCRMRows(
+  rows: Record<string, any>[] | null | undefined,
+): BusinessCRMRow[] {
+  const normalizedRows = (rows ?? []).map((row) => ({
+    ...row,
+    id: row.id ?? row.location_id,
+    location_id: row.location_id ?? row.id,
+    name: row.name ?? row.location_name ?? "Untitled Location",
+    location_name: row.location_name ?? row.name ?? "Untitled Location",
+    category: row.category ?? row.primary_category ?? "",
+    cuisine: row.cuisine ?? row.cuisine_type ?? "",
+    borough: row.borough ?? row.neighborhood ?? row.city ?? "",
+    zip: row.zip ?? row.zip_code ?? "",
+    image_url: row.image_url ?? row.main_image ?? "",
+    main_image: row.main_image ?? row.image_url ?? "",
+    reservation_url:
+      row.best_reservation_url ??
+      row.reservation_url ??
+      row.reservation_link ??
+      row.booking_url ??
+      row.external_reservation_url ??
+      "",
+    plan: row.plan ?? row.subscription_plan ?? "free_discovery",
+    plan_status: row.plan_status ?? row.subscription_status ?? "inactive",
+    is_claimed: Boolean(row.is_claimed),
+    is_searchable: Boolean(row.is_searchable),
+    is_pro: Boolean(row.is_pro),
+  }));
+
+  return normalizedRows.map((row) => normalizeCRMRow(row));
+}
+
 const CRM_SELECT = "*";
 
 export async function listBusinessCRM(limit = 120): Promise<BusinessCRMRow[]> {
@@ -134,7 +192,7 @@ export async function listBusinessCRM(limit = 120): Promise<BusinessCRMRow[]> {
     .order("opportunity_score", { ascending: false })
     .limit(limit);
 
-  if (!primary.error) return (primary.data || []).map((row) => normalizeCRMRow(row));
+  if (!primary.error) return normalizeCRMRows(primary.data);
 
   const snapshot = await supabaseAdmin
     .from("business_crm_snapshot")
@@ -142,12 +200,14 @@ export async function listBusinessCRM(limit = 120): Promise<BusinessCRMRow[]> {
     .order("opportunity_score", { ascending: false })
     .limit(limit);
 
-  if (!snapshot.error) return (snapshot.data || []).map((row) => normalizeCRMRow(row));
+  if (!snapshot.error) return normalizeCRMRows(snapshot.data);
 
   console.error("Failed to fetch CRM views", primary.error, snapshot.error);
   const fallback = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, address, city, borough, state, phone, website, primary_category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at")
+    .select(
+      "id, name, restaurant_name, activity_name, address, city, borough, state, phone, website, primary_category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at",
+    )
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -156,18 +216,29 @@ export async function listBusinessCRM(limit = 120): Promise<BusinessCRMRow[]> {
     return [];
   }
 
-  return (fallback.data || []).map((row) => normalizeCRMRow(row));
+  return normalizeCRMRows(fallback.data);
 }
 
-export async function getBusinessCRM(id: string): Promise<BusinessCRMRow | null> {
-  for (const table of ["admin_crm_locations_view", "business_crm_snapshot"] as const) {
-    const { data, error } = await supabaseAdmin.from(table).select(CRM_SELECT).or(`id.eq.${id},location_id.eq.${id}`).maybeSingle();
-    if (!error && data) return normalizeCRMRow(data);
+export async function getBusinessCRM(
+  id: string,
+): Promise<BusinessCRMRow | null> {
+  for (const table of [
+    "admin_crm_locations_view",
+    "business_crm_snapshot",
+  ] as const) {
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .select(CRM_SELECT)
+      .or(`id.eq.${id},location_id.eq.${id}`)
+      .maybeSingle();
+    if (!error && data) return normalizeCRMRows([data])[0] ?? null;
   }
 
   const { data, error } = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, address, city, borough, state, phone, website, primary_category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at")
+    .select(
+      "id, name, restaurant_name, activity_name, address, city, borough, state, phone, website, primary_category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at",
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -176,18 +247,50 @@ export async function getBusinessCRM(id: string): Promise<BusinessCRMRow | null>
     return null;
   }
 
-  return data ? normalizeCRMRow(data) : null;
+  return data ? (normalizeCRMRows([data])[0] ?? null) : null;
 }
 
 export async function getLocationCrmRelatedData(locationId: string) {
-  const [notes, reminders, communications, logs, claims, support] = await Promise.all([
-    supabaseAdmin.from("business_crm_notes").select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25),
-    supabaseAdmin.from("business_crm_reminders").select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25),
-    supabaseAdmin.from("business_communication_logs").select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25),
-    supabaseAdmin.from("admin_system_logs").select("*").eq("entity_type", "location").eq("entity_id", locationId).order("created_at", { ascending: false }).limit(50),
-    supabaseAdmin.from("business_claims").select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25),
-    supabaseAdmin.from("support_tickets").select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25),
-  ]);
+  const [notes, reminders, communications, logs, claims, support] =
+    await Promise.all([
+      supabaseAdmin
+        .from("business_crm_notes")
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+      supabaseAdmin
+        .from("business_crm_reminders")
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+      supabaseAdmin
+        .from("business_communication_logs")
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+      supabaseAdmin
+        .from("admin_system_logs")
+        .select("*")
+        .eq("entity_type", "location")
+        .eq("entity_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabaseAdmin
+        .from("business_claims")
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+      supabaseAdmin
+        .from("support_tickets")
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ]);
 
   return {
     notes: notes.error ? [] : notes.data || [],
@@ -202,14 +305,19 @@ export async function getLocationCrmRelatedData(locationId: string) {
 export function getUpgradeFlags(business: BusinessCRMRow): string[] {
   const flags: string[] = [];
 
-  if (!business.is_claimed && business.traffic_score >= 70) flags.push("High Traffic Free Account");
-  if (business.reservation_completions_30d >= 30) flags.push("High Reservation Activity");
+  if (!business.is_claimed && business.traffic_score >= 70)
+    flags.push("High Traffic Free Account");
+  if (business.reservation_completions_30d >= 30)
+    flags.push("High Reservation Activity");
   if (business.trending_score >= 65) flags.push("Trending Location");
   if (!business.reservation_url) flags.push("Missing Reservation Link");
-  if (business.search_appearances_30d >= 200) flags.push("Strong Search Visibility");
+  if (business.search_appearances_30d >= 200)
+    flags.push("Strong Search Visibility");
   if (business.saves_30d >= 20) flags.push("High Save Rate");
-  if (business.conversion_rate_30d <= 0.08 && business.traffic_score >= 60) flags.push("High Conversion Potential");
-  if (business.opportunity_score >= 75) flags.push("Candidate For Promoted Listings");
+  if (business.conversion_rate_30d <= 0.08 && business.traffic_score >= 60)
+    flags.push("High Conversion Potential");
+  if (business.opportunity_score >= 75)
+    flags.push("Candidate For Promoted Listings");
   if ((business.open_tasks || 0) > 0) flags.push("Open CRM Tasks");
   if ((business.pending_claims || 0) > 0) flags.push("Pending Claim");
 
