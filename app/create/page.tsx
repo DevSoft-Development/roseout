@@ -323,7 +323,18 @@ export default function CreatePage() {
     const params = new URLSearchParams(window.location.search);
     const campaignSlug = params.get("campaignSlug")?.trim();
     const planExact = params.get("planExact") === "true";
-    const prompt = params.get("prompt")?.trim() || params.get("q")?.trim() || params.get("query")?.trim();
+    const locationId = params.get("locationId")?.trim();
+    const locationName = params.get("locationName")?.trim();
+    const source = params.get("source")?.trim();
+    const exploreLocationPrompt =
+      source === "explore" && locationId && locationName
+        ? `Plan an outing around ${locationName}`
+        : "";
+    const prompt =
+      params.get("prompt")?.trim() ||
+      params.get("q")?.trim() ||
+      params.get("query")?.trim() ||
+      exploreLocationPrompt;
 
     if (planExact && campaignSlug) {
       initialPromptHandled.current = true;
@@ -975,6 +986,10 @@ export default function CreatePage() {
     if (currentParams.get("planExact") === "true") params.set("planExact", "true");
     const locationId = currentParams.get("locationId");
     if (locationId) params.set("locationId", locationId);
+    const locationName = currentParams.get("locationName");
+    if (locationName) params.set("locationName", locationName);
+    const source = currentParams.get("source");
+    if (source) params.set("source", source);
     const sourceTable = currentParams.get("sourceTable");
     if (sourceTable) params.set("sourceTable", sourceTable);
 
