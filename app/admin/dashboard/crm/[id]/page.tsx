@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@/lib/admin-auth";
-import { getBusinessCRM, getClaimStatus, getDisplayCRMStatus, getLocationCrmRelatedData, getUpgradeFlags, type BusinessCRMRow } from "@/lib/admin-crm";
+import { dedupeUrls, formatFullAddress, getBusinessCRM, getClaimStatus, getDisplayCRMStatus, getLocationCrmRelatedData, getUpgradeFlags, safeUpdateLocationPhotos, stripCityStateZipFromStreetAddress, type BusinessCRMRow } from "@/lib/admin-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 import CommunicationPanel from "./CommunicationPanel";
+import PhotosPanelClient from "./PhotosPanel";
+import ReservationsPanel from "./ReservationPanel";
 import { createClaimQr } from "@/lib/claimQrServer";
+import { getCanonicalAppUrl } from "@/lib/site-url";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +47,7 @@ function badge(value?: string | null, tone = "default") {
 }
 
 function formatLocationAddress(business: Partial<BusinessCRMRow>) {
-  const address = String(business.address || "").trim();
-  const city = String(business.city || business.borough || "").trim();
-  const state = String(business.state || "").trim();
-  const zip = String(business.zip_code || business.zip || "").trim();
-  const lower = address.toLowerCase();
-  const extras = [city, state, zip].filter((part) => part && !lower.includes(part.toLowerCase()));
-  return [address, ...extras].filter(Boolean).join(", ") || "Address unavailable";
+  return formatFullAddress({ address: business.address, city: business.city || business.borough, state: business.state, zip: business.zip_code || business.zip }) || "Address unavailable";
 }
 
 function normalizeImageList(value: unknown): string[] {
@@ -82,7 +79,7 @@ async function saveLocationProfile(formData: FormData) {
 
   const updates = {
     name: String(formData.get("name") || "").trim() || null,
-    address: String(formData.get("address") || "").trim() || null,
+    address: stripCityStateZipFromStreetAddress(String(formData.get("address") || ""), String(formData.get("city") || ""), String(formData.get("state") || ""), String(formData.get("zip_code") || "")) || null,
     city: String(formData.get("city") || "").trim() || null,
     borough: String(formData.get("borough") || "").trim() || null,
     state: String(formData.get("state") || "").trim() || null,
@@ -122,12 +119,13 @@ async function saveLocationPhotos(formData: FormData) {
   const admin = await requireAdminRole(["superadmin", "admin", "editor"]);
   const locationId = String(formData.get("location_id") || "");
   const mainImage = String(formData.get("main_image") || "").trim() || null;
-  const gallery = String(formData.get("gallery_images") || "").split(/\n|,/).map((url) => url.trim()).filter(Boolean);
-  const error = await safeUpdateLocation(locationId, { main_image: mainImage, image_url: mainImage, gallery_images: gallery, photos: gallery, updated_at: new Date().toISOString() });
+  const gallery = dedupeUrls(String(formData.get("gallery_images") || "").split(/\n|,/));
+  const error = await safeUpdateLocationPhotos(locationId, { mainImage, galleryImages: gallery });
   await supabaseAdmin.from("location_photo_change_logs").insert({ location_id: locationId, main_image: mainImage, gallery_count: gallery.length, actor_user_id: admin.user_id, actor_email: admin.email });
   await logAdminEvent({ level: error ? "error" : "info", category: "crm", action: "location_photos_updated", message: error ? `Photo update had partial failures for ${locationId}` : `Photos updated for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId, metadata: { gallery_count: gallery.length, error } });
   revalidatePath(`/admin/dashboard/crm/${locationId}`);
-  redirect(`/admin/dashboard/crm/${locationId}?tab=photos`);
+  revalidatePath(`/admin/dashboard/crm/${locationId}?tab=photos`);
+  redirect(`/admin/dashboard/crm/${locationId}?tab=photos&saved=1`);
 }
 
 async function savePlanBilling(formData: FormData) {
@@ -160,6 +158,27 @@ async function saveLocationSettings(formData: FormData) {
   await logAdminEvent({ level: error ? "error" : "info", category: "crm", action: "location_settings_updated", message: `Settings updated for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId, metadata: { updates, error } });
   revalidatePath(`/admin/dashboard/crm/${locationId}`);
   redirect(`/admin/dashboard/crm/${locationId}?tab=settings`);
+}
+
+async function deleteLocationSuperadmin(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(["superadmin"]);
+  const locationId = String(formData.get("location_id") || "");
+  const confirmation = String(formData.get("confirmation") || "");
+  if (!locationId || confirmation !== "DELETE LOCATION") redirect(`/admin/dashboard/crm/${locationId}?tab=settings&delete_error=confirmation`);
+  const { data: location } = await supabaseAdmin.from("locations").select("id, name, location_name").eq("id", locationId).maybeSingle();
+  await supabaseAdmin.from("location_deletion_logs").insert({ location_id: locationId, location_name: (location as any)?.name || (location as any)?.location_name || null, actor_user_id: admin.user_id, actor_email: admin.email, action: "permanent_delete", reason: "CRM superadmin deletion" }).then(undefined, () => undefined);
+  await logAdminEvent({ level: "warning", category: "crm", action: "location_delete_requested", message: `Permanent delete requested for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId });
+  for (const table of ["business_crm_notes", "business_crm_reminders", "business_communication_logs", "location_plan_change_logs", "location_photo_change_logs", "location_owner_locations", "location_claim_codes", "claim_qr_codes", "business_claim_codes", "qr_claim_codes", "business_claims", "location_claim_requests"]) {
+    await supabaseAdmin.from(table).delete().eq("location_id", locationId).then(undefined, () => undefined);
+  }
+  const { error } = await supabaseAdmin.from("locations").delete().eq("id", locationId);
+  if (error) {
+    if (/reservation|foreign key|violates/i.test(error.message)) redirect(`/admin/dashboard/crm/${locationId}?tab=settings&delete_error=reservations`);
+    redirect(`/admin/dashboard/crm/${locationId}?tab=settings&delete_error=failed`);
+  }
+  revalidatePath("/admin/dashboard/crm");
+  redirect("/admin/dashboard/crm?deleted=1");
 }
 
 async function regenerateLocationClaimQr(formData: FormData) {
@@ -263,7 +282,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
 
       {activeTab === "overview" ? <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Location command center</h2><p className="mt-2 text-sm leading-6 text-white/60">Owner, claim, plan, analytics, support, logs, and data quality context are consolidated here so admins do not need to jump across disconnected pages.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><StatCard label="Profile views 30d" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances 30d" value={fmt(business.search_appearances_30d)} /><StatCard label="Reserve intent 30d" value={fmt(business.reservation_completions_30d)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /></div></article>
-        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Next recommended action</h2><ul className="mt-4 space-y-2 text-sm text-white/70">{(flags.length ? flags : ["Monitor weekly", "Keep profile fresh", "Review search visibility"]).map((flag) => <li key={flag} className="rounded-2xl border border-white/10 bg-black/20 p-3">{flag}</li>)}</ul></article>
+        <NextRecommendedActions business={business} flags={flags} isAdmin={["superadmin", "admin"].includes(admin.role)} />
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Recent activity</h2>{related.logs.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{related.logs.slice(0, 6).map((log: any) => <li key={log.id} className="rounded-2xl border border-white/10 bg-black/20 p-3"><b>{log.action || log.category}</b> · {log.message}<span className="block text-xs text-white/40">{formatDate(log.created_at)}</span></li>)}</ul> : <EmptyPanel title="No activity yet" text="CRM actions, profile edits, claim changes, QR activity, and support notes will appear here after admins perform them." />}</article>
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Open tasks & support</h2>{related.reminders.length || related.supportTickets.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{[...related.reminders, ...related.supportTickets].slice(0, 6).map((item: any) => <li key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">{item.title || item.subject || item.message || "CRM item"}<span className="block text-xs text-white/40">{item.reminder_status || item.status || "open"}</span></li>)}</ul> : <EmptyPanel title="No open tasks" text="Tasks, reminders, and support tickets tied to this location will appear here." />}</article>
       </section> : null}
@@ -274,15 +293,27 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "logs" ? <section className="space-y-4"><Panel title="Location logs" items={related.logs} empty="No admin activity has been recorded for this location yet." href="/admin/dashboard/logs" hrefLabel="Open platform logs" /></section> : null}
       {activeTab === "communication" ? <CommunicationPanel locationId={business.id} defaultEmail={business.owner_email} defaultPhone={business.phone} templates={related.templates} logs={related.communications} canSend={canEdit} /> : null}
       {activeTab === "support" ? <Panel title="Support" items={related.supportTickets} empty="No support tickets have been opened for this location yet." href="/admin/dashboard/support" hrefLabel="Open support inbox" /> : null}
-      {activeTab === "photos" ? <PhotosPanel business={business} canEdit={canEdit} /> : null}
-      {activeTab === "reservations" ? <EmptyPanel title="Reservations" text={`Reservation URL: ${business.reservation_url || business.external_reservation_url || "not set"}. Review reserve clicks, call clicks, website clicks, and completions for this location here.`} /> : null}
+      {activeTab === "photos" ? <PhotosPanelClient business={business} canEdit={canEdit} saveAction={saveLocationPhotos} /> : null}
+      {activeTab === "reservations" ? <ReservationsPanel business={business} reservations={related.reservations || []} canSend={canEdit} /> : null}
       {activeTab === "owner" ? <OwnerPanel business={business} owners={related.owners} /> : null}
       {activeTab === "plan" ? <PlanBillingPanel business={business} canEdit={admin.role === "superadmin"} isSuperadmin={admin.role === "superadmin"} /> : null}
       {activeTab === "qr" ? <QRCodePanel business={business} qrCodes={related.qrCodes} canRegenerate={["superadmin", "admin"].includes(admin.role)} /> : null}
       {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use the profile and settings tabs to improve location-level search visibility.`} /> : null}
-      {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} /> : null}
+      {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
     </div>
   </main>;
+}
+
+function NextRecommendedActions({ business, flags, isAdmin }: { business: BusinessCRMRow; flags: string[]; isAdmin: boolean }) {
+  const items = [
+    { label: "Send outreach", href: `/admin/dashboard/crm/${business.id}?tab=communication&channel=email`, show: true },
+    { label: "Create follow-up", href: `/admin/dashboard/crm/${business.id}?tab=settings#follow-up`, show: true },
+    { label: "Review claim", href: `/admin/dashboard/crm/${business.id}?tab=claims`, show: getClaimStatus(business).toLowerCase().includes("pending") || !business.is_claimed },
+    { label: "Upgrade plan", href: `/admin/dashboard/crm/${business.id}?tab=plan`, show: isAdmin },
+    { label: "Generate QR", href: `/admin/dashboard/crm/${business.id}?tab=qr`, show: true },
+    { label: "Fix reservation setup", href: `/admin/dashboard/crm/${business.id}?tab=reservations`, show: !business.reservation_url && !business.external_reservation_url },
+  ].filter((item) => item.show);
+  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Next recommended action</h2><p className="mt-2 text-sm text-white/55">Use these shortcuts to act on the highest-impact CRM tasks for this location.</p><div className="mt-4 flex flex-wrap gap-2">{items.map((item) => <Link key={item.label} href={item.href} className="rounded-full border border-white/10 bg-black/25 px-4 py-2 text-sm font-black text-white/80 hover:bg-rose-600">{item.label}</Link>)}</div><ul className="mt-4 space-y-2 text-sm text-white/60">{(flags.length ? flags : ["Monitor weekly", "Keep profile fresh", "Review search visibility"]).map((flag) => <li key={flag} className="rounded-2xl border border-white/10 bg-black/20 p-3">{flag}</li>)}</ul></article>;
 }
 
 function inputClass() { return "w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none disabled:opacity-60"; }
@@ -312,8 +343,10 @@ function PlanBillingPanel({ business, canEdit, isSuperadmin }: { business: Busin
 function QRCodePanel({ business, qrCodes, canRegenerate }: { business: BusinessCRMRow; qrCodes: any[]; canRegenerate: boolean }) {
   const current = qrCodes[0] || business;
   const code = current.claim_code || current.code;
-  const url = current.qr_url || current.claim_url || current.qr_link || business.claim_url;
-  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">QR Codes</h2><div className="flex gap-2"><Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open bulk QR page</Link>{url ? <Link href={url} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print/download QR</Link> : null}</div></div>{code || url ? <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm text-white/70"><div><dt className="text-xs text-white/40">Claim code</dt><dd>{code || "—"}</dd></div><div><dt className="text-xs text-white/40">QR URL</dt><dd className="break-all">{url || "—"}</dd></div><div><dt className="text-xs text-white/40">Status</dt><dd>{current.status || current.claim_status || "active"}</dd></div><div><dt className="text-xs text-white/40">Created</dt><dd>{formatDate(current.created_at)}</dd></div><div><dt className="text-xs text-white/40">Last scanned</dt><dd>{formatDate(current.last_scanned_at || current.last_scanned)}</dd></div><div><dt className="text-xs text-white/40">Scan count</dt><dd>{current.scan_count || current.scans || business.qr_scans_30d || 0}</dd></div></dl> : <EmptyPanel title="No claim QR code" text="No claim QR code has been generated for this location yet. Generate one here or use the bulk QR tools." />}<form action={regenerateLocationClaimQr} className="mt-5"><input type="hidden" name="location_id" value={business.id} /><button disabled={!canRegenerate} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Regenerate QR</button>{!canRegenerate ? <p className="mt-2 text-sm text-white/45">Admin or superadmin permission is required to regenerate QR codes.</p> : null}</form></article>;
+  const rawUrl = current.qr_url || current.claim_url || current.qr_link || business.claim_url;
+  const url = rawUrl ? String(rawUrl).replace(/https?:\/\/(www\.)?roseout\.com/gi, getCanonicalAppUrl()) : "";
+  const oldDomain = Boolean(rawUrl && /roseout\.com/i.test(String(rawUrl)));
+  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">QR Codes</h2><div className="flex gap-2"><Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open bulk QR page</Link>{url ? <Link href={url} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print/download QR</Link> : null}</div></div>{code || url ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70"><p><b>Claim code:</b> {code || "—"}</p><p className="mt-2 break-all"><b>Current QR URL:</b> {url || "—"}</p>{oldDomain ? <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-amber-100">This QR uses an old domain. Regenerate it to use theouthaven.com.</p> : null}<p className="mt-2"><b>Status:</b> {current.status || current.claim_status || "active"}</p><p className="mt-2"><b>Scan count:</b> {current.scan_count || current.scans || business.qr_scans_30d || 0}</p></div> : <EmptyPanel title="No claim QR code" text="No claim QR code has been generated for this location yet. Generate one here or use the bulk QR tools." />}<form action={regenerateLocationClaimQr} className="mt-5"><input type="hidden" name="location_id" value={business.id} /><button disabled={!canRegenerate} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Regenerate with TheOutHaven URL</button>{!canRegenerate ? <p className="mt-2 text-sm text-white/45">Admin or superadmin permission is required to regenerate QR codes.</p> : null}</form></article>;
 }
 
 function OwnerPanel({ business, owners }: { business: BusinessCRMRow; owners: any[] }) {
@@ -322,8 +355,8 @@ function OwnerPanel({ business, owners }: { business: BusinessCRMRow; owners: an
   return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Owner account</h2>{email || business.owner_user_id ? <dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm text-white/70"><div><dt className="text-xs text-white/40">Owner email</dt><dd>{email || "—"}</dd></div><div><dt className="text-xs text-white/40">Owner name</dt><dd>{owner.full_name || owner.name || owner.owner_name || "—"}</dd></div><div><dt className="text-xs text-white/40">Linked date</dt><dd>{formatDate(owner.created_at || owner.linked_at)}</dd></div><div><dt className="text-xs text-white/40">Claim source</dt><dd>{owner.claim_source || owner.source || "—"}</dd></div><div><dt className="text-xs text-white/40">Owner status</dt><dd>{business.owner_status || owner.status || "linked"}</dd></div><div><dt className="text-xs text-white/40">Owner user ID</dt><dd className="break-all">{business.owner_user_id || owner.owner_user_id || "—"}</dd></div></dl> : <div className="mt-4"><EmptyPanel title="No owner linked yet" text="No owner linked yet. Use claims, invite, or a claim link to connect this location to an owner account." /><div className="mt-4 flex flex-wrap gap-2"><Link href="/admin/dashboard/claims" className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Open claims</Link><Link href={`/admin/dashboard/crm/${business.id}?tab=communication`} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/70">Invite owner</Link><Link href={`/business/claim?location=${business.id}`} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/70">Copy claim link</Link></div></div>}</article>;
 }
 
-function LocationSettingsPanel({ business, canEdit }: { business: BusinessCRMRow; canEdit: boolean }) {
-  return <section className="grid gap-4 lg:grid-cols-[1fr_0.75fr]"><form action={saveLocationSettings} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><input type="hidden" name="location_id" value={business.id} /><h2 className="text-xl font-black">Location settings</h2><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="space-y-2 text-sm font-bold text-white/65"><span>Active</span><select name="active" defaultValue={business.active === false ? "false" : "true"} disabled={!canEdit} className={selectClass()}><option value="true">Active</option><option value="false">Inactive</option></select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Searchable</span><select name="is_searchable" defaultValue={business.is_searchable ? "true" : "false"} disabled={!canEdit} className={selectClass()}><option value="true">Searchable</option><option value="false">Hidden from search</option></select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>CRM priority</span><select name="crm_priority" defaultValue={business.crm_priority || business.priority_level || "normal"} disabled={!canEdit} className={selectClass()}>{["low","normal","high","urgent"].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Follow-up date</span><input type="date" name="follow_up_date" defaultValue={business.follow_up_date || ""} disabled={!canEdit} className={inputClass()} /></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Outreach status</span><select name="outreach_status" defaultValue={business.outreach_status || "none"} disabled={!canEdit} className={selectClass()}>{["none","needs_outreach","contacted","follow_up","interested","not_interested","do_not_contact"].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>CRM status</span><select name="crm_status" defaultValue={getDisplayCRMStatus(business)} disabled={!canEdit} className={selectClass()}>{["New Lead","Needs Outreach","Contacted","Follow Up","Upgrade Opportunity","Active Free","Active Pro","At Risk","Churned"].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65 md:col-span-2"><span>Internal notes</span><textarea name="internal_notes" defaultValue={business.internal_notes || ""} disabled={!canEdit} rows={6} className={inputClass()} /></label></div><button disabled={!canEdit} className="mt-5 rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Save settings</button></form><div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Danger zone</h2><details className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4"><summary className="cursor-pointer font-bold text-rose-100">Destructive controls disabled</summary><p className="mt-3 text-sm leading-6 text-white/60">Destructive controls are intentionally disabled. Use inactive/searchable controls to remove this location from public flows safely.</p><button disabled className="mt-3 rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/35">Delete location unavailable</button></details></div></section>;
+function LocationSettingsPanel({ business, canEdit, isSuperadmin }: { business: BusinessCRMRow; canEdit: boolean; isSuperadmin: boolean }) {
+  return <section className="grid gap-4 lg:grid-cols-[1fr_0.75fr]"><form action={saveLocationSettings} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><input type="hidden" name="location_id" value={business.id} /><h2 className="text-xl font-black">Location settings</h2><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="space-y-2 text-sm font-bold text-white/65"><span>Active</span><select name="active" defaultValue={business.active === false ? "false" : "true"} disabled={!canEdit} className={selectClass()}><option value="true">Active</option><option value="false">Inactive</option></select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Searchable</span><select name="is_searchable" defaultValue={business.is_searchable ? "true" : "false"} disabled={!canEdit} className={selectClass()}><option value="true">Searchable</option><option value="false">Hidden from search</option></select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>CRM priority</span><select name="crm_priority" defaultValue={business.crm_priority || business.priority_level || "normal"} disabled={!canEdit} className={selectClass()}>{["low","normal","high","urgent"].map((v)=><option key={v}>{v}</option>)}</select></label><label id="follow-up" className="space-y-2 text-sm font-bold text-white/65"><span>Follow-up date</span><input type="date" name="follow_up_date" defaultValue={business.follow_up_date || ""} disabled={!canEdit} className={inputClass()} /></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Outreach status</span><select name="outreach_status" defaultValue={business.outreach_status || "none"} disabled={!canEdit} className={selectClass()}>{["none","needs_outreach","contacted","follow_up","interested","not_interested","do_not_contact"].map((v)=><option key={v}>{v}</option>)}</select><p className="text-xs font-medium leading-5 text-white/45">The latest communication/outreach state for this location. Examples: Not contacted, contacted, follow-up needed, interested, not interested, do not contact.</p></label><label className="space-y-2 text-sm font-bold text-white/65"><span>CRM status</span><select name="crm_status" defaultValue={getDisplayCRMStatus(business)} disabled={!canEdit} className={selectClass()}>{["New Lead","Needs Outreach","Contacted","Follow Up","Upgrade Opportunity","Active Free","Active Pro","At Risk","Churned"].map((v)=><option key={v}>{v}</option>)}</select><p className="text-xs font-medium leading-5 text-white/45">The overall internal lifecycle stage for this location.</p></label><label className="space-y-2 text-sm font-bold text-white/65 md:col-span-2"><span>Internal notes</span><textarea name="internal_notes" defaultValue={business.internal_notes || ""} disabled={!canEdit} rows={6} className={inputClass()} /></label></div><button disabled={!canEdit} className="mt-5 rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Save settings</button></form><div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Danger zone</h2><p className="mt-2 text-sm leading-6 text-white/60">Destructive controls are restricted. Use inactive/searchable controls to remove this location from public flows safely.</p><form action={saveLocationSettings} className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4"><input type="hidden" name="location_id" value={business.id} /><input type="hidden" name="active" value="false" /><input type="hidden" name="is_searchable" value="false" /><input type="hidden" name="crm_priority" value={business.crm_priority || "normal"} /><input type="hidden" name="outreach_status" value={business.outreach_status || "none"} /><input type="hidden" name="crm_status" value={getDisplayCRMStatus(business)} /><input type="hidden" name="internal_notes" value={business.internal_notes || ""} /><button disabled={!canEdit} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/75 disabled:opacity-50">Deactivate location</button></form>{isSuperadmin ? <details className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4"><summary className="cursor-pointer font-bold text-rose-100">Permanently delete location</summary><p className="mt-3 text-sm leading-6 text-white/70">This will permanently delete this location and related CRM data. This action cannot be undone.</p><form action={deleteLocationSuperadmin} className="mt-3 space-y-3"><input type="hidden" name="location_id" value={business.id} /><input name="confirmation" placeholder="DELETE LOCATION" className={inputClass()} /><button className="rounded-full bg-rose-700 px-4 py-2 text-sm font-black text-white">Permanently delete location</button></form></details> : <p className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/55">Only superadmins can permanently delete locations.</p>}</div></section>;
 }
 
 function Panel({ title, items, empty, href, hrefLabel }: { title: string; items: any[]; empty: string; href: string; hrefLabel: string }) {

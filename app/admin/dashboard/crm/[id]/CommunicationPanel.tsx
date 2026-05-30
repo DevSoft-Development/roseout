@@ -1,19 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Template = { id: string; name?: string; channel?: string; subject?: string | null; body?: string | null };
 type Log = { id: string; channel?: string; subject?: string | null; body?: string | null; to_address?: string | null; recipient?: string | null; status?: string | null; created_at?: string | null };
 
 export default function CommunicationPanel({ locationId, defaultEmail, defaultPhone, templates, logs, canSend }: { locationId: string; defaultEmail?: string | null; defaultPhone?: string | null; templates: Template[]; logs: Log[]; canSend: boolean }) {
   const router = useRouter();
-  const [channel, setChannel] = useState<"email" | "sms">("email");
-  const [to, setTo] = useState(defaultEmail || "");
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  const searchParams = useSearchParams();
+  const initialChannel = searchParams.get("channel") === "sms" ? "sms" : "email";
+  const [channel, setChannel] = useState<"email" | "sms">(initialChannel);
+  const [to, setTo] = useState(initialChannel === "sms" ? defaultPhone || "" : defaultEmail || "");
+  const [subject, setSubject] = useState(searchParams.get("subject") || "");
+  const [body, setBody] = useState(searchParams.get("body") || "");
   const [templateId, setTemplateId] = useState("");
   const [saveTemplate, setSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const filteredTemplates = useMemo(() => templates.filter((template) => (template.channel || "email") === channel), [templates, channel]);
@@ -37,7 +40,7 @@ export default function CommunicationPanel({ locationId, defaultEmail, defaultPh
     setMessage(null);
     try {
       if (saveTemplate) {
-        await fetch("/api/admin/communication/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `CRM ${channel} ${new Date().toLocaleDateString()}`, channel, subject, body }) });
+        await fetch("/api/admin/communication/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: templateName || `CRM ${channel} ${new Date().toLocaleDateString()}`, channel, subject, body, category: "crm" }) });
       }
       const response = await fetch("/api/admin/communication/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channel, to, subject, body, recipientType: "location", recipientId: locationId }) });
       const payload = await response.json().catch(() => ({}));
@@ -63,7 +66,8 @@ export default function CommunicationPanel({ locationId, defaultEmail, defaultPh
         <select value={templateId} onChange={(e) => applyTemplate(e.target.value)} disabled={!canSend} className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white"><option value="">Select template</option>{filteredTemplates.map((template) => <option key={template.id} value={template.id}>{template.name || "Template"}</option>)}</select>
         {channel === "email" ? <input value={subject} onChange={(e) => setSubject(e.target.value)} disabled={!canSend} placeholder="Subject" className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/35" /> : null}
         <textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={!canSend} rows={8} placeholder="Write your message..." className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/35" />
-        <label className="flex items-center gap-2 text-sm font-bold text-white/65"><input type="checkbox" checked={saveTemplate} onChange={(e) => setSaveTemplate(e.target.checked)} disabled={!canSend} /> Save as new template</label>
+        <label className="flex items-center gap-2 text-sm font-bold text-white/65"><input type="checkbox" checked={saveTemplate} onChange={(e) => setSaveTemplate(e.target.checked)} disabled={!canSend} /> Create custom template</label>
+        {saveTemplate ? <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} disabled={!canSend} placeholder="Template name" className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder:text-white/35" /> : null}
         <button type="button" onClick={send} disabled={!canSend || sending || !to || !body} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">{sending ? "Sending..." : "Send"}</button>
         {message ? <p className="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">{message}</p> : null}
         {!canSend ? <p className="text-sm text-white/45">Viewer role is read-only.</p> : null}

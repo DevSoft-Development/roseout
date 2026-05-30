@@ -322,7 +322,7 @@ function normalizeClaim(row: any) {
 }
 
 export async function getLocationCrmRelatedData(locationId: string) {
-  const [notes, reminders, businessComms, comms, logs, businessClaims, locationClaims, ownerClaims, supportTickets, qr1, qr2, qr3, qr4, owners1, owners2, owners3, planChanges, photoChanges, templates] = await Promise.all([
+  const [notes, reminders, businessComms, comms, logs, businessClaims, locationClaims, ownerClaims, supportTickets, qr1, qr2, qr3, qr4, owners1, owners2, owners3, planChanges, photoChanges, templates, reservations] = await Promise.all([
     safeSelect("business_crm_notes", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
     safeSelect("business_crm_reminders", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
     safeSelect("business_communication_logs", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
@@ -342,6 +342,7 @@ export async function getLocationCrmRelatedData(locationId: string) {
     safeSelect("location_plan_change_logs", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
     safeSelect("location_photo_change_logs", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
     safeSelect("communication_templates", (q) => q.select("*").order("created_at", { ascending: false }).limit(100)),
+    safeSelect("reservations", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(100)),
   ]);
 
   return {
@@ -356,6 +357,7 @@ export async function getLocationCrmRelatedData(locationId: string) {
     planChanges,
     photoChanges,
     templates,
+    reservations,
   };
 }
 
@@ -372,4 +374,103 @@ export function getUpgradeFlags(business: BusinessCRMRow): string[] {
   if ((business.open_tasks || 0) > 0) flags.push("Open CRM Tasks");
   if ((business.pending_claims || 0) > 0) flags.push("Pending Claim");
   return flags;
+}
+
+export function dedupeUrls(urls: unknown[]): string[] {
+  const seen = new Set<string>();
+  const clean: string[] = [];
+  for (const raw of urls) {
+    const url = String(raw ?? "").trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    clean.push(url);
+  }
+  return clean;
+}
+
+export function normalizeImageArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return dedupeUrls(value.flatMap((item) => {
+      if (typeof item === "string") return [item];
+      if (item && typeof item === "object") return [(item as any).url, (item as any).src, (item as any).href].filter(Boolean);
+      return [];
+    }));
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return normalizeImageArray(parsed);
+    } catch {}
+    return dedupeUrls(trimmed.split(/[\n,]+/));
+  }
+  return [];
+}
+
+export function getLocationMainImage(location: Partial<BusinessCRMRow> | Record<string, any>) {
+  return String((location as any).main_image || (location as any).image_url || "").trim() || null;
+}
+
+export function getLocationGalleryImages(location: Partial<BusinessCRMRow> | Record<string, any>) {
+  return dedupeUrls([
+    ...normalizeImageArray((location as any).gallery_images),
+    ...normalizeImageArray((location as any).gallery),
+    ...normalizeImageArray((location as any).photos),
+    ...normalizeImageArray((location as any).image_gallery),
+    ...normalizeImageArray((location as any).images),
+  ]);
+}
+
+function escapeAddressPart(value?: string | null) {
+  return String(value || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function stripCityStateZipFromStreetAddress(address?: string | null, city?: string | null, state?: string | null, zip?: string | null) {
+  let street = String(address || "").trim();
+  const parts = [city, state, zip].map(escapeAddressPart).filter(Boolean);
+  if (!street || parts.length === 0) return street;
+
+  const cityStateZip = [city, state, zip].map((part) => String(part || "").trim()).filter(Boolean).join("\\s*,?\\s*");
+  if (cityStateZip) street = street.replace(new RegExp(`\\s*,?\\s*${cityStateZip}\\s*$`, "i"), "");
+  for (const part of parts) street = street.replace(new RegExp(`\\s*,?\\s*${part}\\s*$`, "i"), "");
+  return street.replace(/\s*,\s*$/, "").trim();
+}
+
+export function formatFullAddress({ address, city, state, zip }: { address?: string | null; city?: string | null; state?: string | null; zip?: string | null }) {
+  const street = stripCityStateZipFromStreetAddress(address, city, state, zip);
+  return [street, city, state, zip].map((part) => String(part || "").trim()).filter(Boolean).join(", ");
+}
+
+export async function safeUpdateLocationPhotos(locationId: string, payload: { mainImage?: string | null; galleryImages?: string[] }) {
+  const mainImage = payload.mainImage ?? null;
+  const galleryImages = dedupeUrls(payload.galleryImages || []);
+  let updates: Record<string, any> = {
+    main_image: mainImage,
+    image_url: mainImage,
+    gallery_images: galleryImages,
+    gallery: galleryImages,
+    photos: galleryImages,
+    image_gallery: galleryImages,
+    images: galleryImages,
+    updated_at: new Date().toISOString(),
+  };
+  const missingColumn = (message?: string) => /column .* does not exist|could not find .* column|schema cache/i.test(message || "");
+  const errors: string[] = [];
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { error } = await supabaseAdmin.from("locations").update(updates).eq("id", locationId);
+    if (!error) return null;
+    errors.push(error.message);
+    if (!missingColumn(error.message)) break;
+    const match = error.message.match(/'([^']+)'|column "?([a-zA-Z0-9_]+)"?/);
+    const column = match?.[1] || match?.[2];
+    if (column && updates[column] !== undefined) delete updates[column];
+    else {
+      const optional = ["gallery", "photos", "image_gallery", "images", "gallery_images", "image_url", "main_image"].find((key) => updates[key] !== undefined);
+      if (optional) delete updates[optional];
+      else break;
+    }
+  }
+  return errors.join("; ");
 }

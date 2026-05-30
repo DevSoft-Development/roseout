@@ -2,6 +2,7 @@ import crypto from "crypto";
 import QRCode from "qrcode";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
+import { getCanonicalAppUrl } from "@/lib/site-url";
 
 export type ClaimLocationType = "restaurant" | "activity" | "location";
 type ClaimSourceTable = "restaurants" | "activities" | "locations";
@@ -24,7 +25,7 @@ const CLAIM_CODE_LENGTH = 8;
 
 const missing = (v: unknown) => !String(v ?? "").trim();
 const legacyClaimUrl = (v: unknown) => String(v ?? "").includes("/location/apply/claim") || String(v ?? "").includes("/claim/");
-export function getClaimSiteUrl() { return (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://theouthaven.vercel.app").replace(/\/$/, ""); }
+export function getClaimSiteUrl() { return getCanonicalAppUrl().replace(/\/$/, ""); }
 export function generateClaimToken() { return crypto.randomUUID(); }
 export function generateClaimCode() { const raw = Array.from(crypto.randomBytes(CLAIM_CODE_LENGTH), (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length]).join(""); return `TOH-${raw.slice(0, 4)}-${raw.slice(4)}`; }
 export function getClaimUrl(claimCode: string) { return `${getClaimSiteUrl()}${buildClaimUrlFromCode(claimCode)}`; }

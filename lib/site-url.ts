@@ -1,4 +1,4 @@
-const CANONICAL_SITE_URL = "https://www.TheOutHaven.com";
+const CANONICAL_SITE_URL = "https://theouthaven.com";
 
 function normalizeSiteUrl(value?: string | null): string {
   const raw = (value || "").trim();
@@ -23,9 +23,10 @@ function normalizeSiteUrl(value?: string | null): string {
 
 export function getSiteUrl(): string {
   return normalizeSiteUrl(
-    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.APP_URL ||
       process.env.SITE_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
       process.env.APP_URL ||
       CANONICAL_SITE_URL,
   );
@@ -58,4 +59,13 @@ export function buildSiteUrl(path: string): string {
 
 export function getCreatePasswordUrl(token: string): string {
   return `${getSiteUrl()}/auth/create-password?token=${encodeURIComponent(token.trim())}`;
+}
+
+export function getCanonicalAppUrl(): string {
+  return normalizeSiteUrl(
+    process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.APP_URL ||
+      CANONICAL_SITE_URL,
+  );
 }
