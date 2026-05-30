@@ -13,6 +13,7 @@ import {
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import {
@@ -39,6 +40,10 @@ type PlanLocation = LocationScoreFields & {
   tags?: string[] | null;
   google_types?: string[] | null;
   detail_location_type?: "restaurants" | "activities" | null;
+  source_table?: string | null;
+  sourceTable?: string | null;
+  location_type?: string | null;
+  type?: string | null;
   primary_tag?: string | null;
   price_range?: string | null;
   atmosphere?: string | null;
@@ -729,10 +734,11 @@ function PlanActionCard({
 }) {
   const title = getLocationName(location, type === "restaurant" ? "Restaurant" : "Activity");
 
-  const detailHref =
-    type === "restaurant"
-      ? `/explore/restaurants/${location.id}?from=/plan`
-      : `/explore/${location.detail_location_type || "activities"}/${location.id}?from=/plan`;
+  const detailHref = `${getLocationDetailHref({
+    id: location.id,
+    type,
+    location,
+  })}?from=/plan`;
 
   const reservationUrl = getExternalReservationUrl(location);
   const internalReservationHref = getInternalReservationHref(location, type);
