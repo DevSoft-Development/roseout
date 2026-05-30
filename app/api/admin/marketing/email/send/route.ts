@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { renderBrandedEmail } from "@/lib/email/render";
+import { resolveEmailSender } from "@/lib/email/brand";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   hasSuccessfulSend,
@@ -31,10 +33,16 @@ type Recipient = {
   email_opted_out_at?: string | null;
 };
 
-function marketingHtml(body: string, unsubscribeHref: string) {
-  return `${body}
-<hr style="border:none;border-top:1px solid #eee;margin:28px 0" />
-<p style="font-family:Arial,sans-serif;color:#666;font-size:12px;line-height:1.5">You are receiving this because you opted in to TheOutHaven marketing emails. <a href="${unsubscribeHref}">Unsubscribe</a>.</p>`;
+function marketingHtml(subject: string, body: string, unsubscribeHref: string) {
+  return renderBrandedEmail({
+    department: "marketing",
+    subject,
+    preview: subject,
+    heading: subject,
+    intro: body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+    secondaryCta: { label: "Manage preferences or unsubscribe", url: unsubscribeHref },
+    marketing: true,
+  }).html;
 }
 
 async function loadEmailRecipients(): Promise<Recipient[]> {
@@ -105,10 +113,11 @@ export async function POST(req: Request) {
     const recipientEmail = recipient.email!;
     try {
       const result = await resend.emails.send({
-        from: process.env.EMAIL_FROM || "TheOutHaven <hello@theouthaven.com>",
+        from: resolveEmailSender("marketing").from,
         to: recipientEmail,
         subject: campaign.email_subject,
-        html: marketingHtml(campaign.email_body, unsubscribeUrl(recipient.id, recipientEmail)),
+        replyTo: resolveEmailSender("marketing").replyTo,
+        html: marketingHtml(campaign.email_subject, campaign.email_body, unsubscribeUrl(recipient.id, recipientEmail)),
       });
 
       sent += 1;

@@ -15,6 +15,7 @@ import {
 } from "@/lib/locationHours";
 import { checkReservationAvailability } from "@/lib/reservations/availability";
 import { trackLocationAnalyticsEvent } from "@/lib/analytics/business-analytics";
+import { sendRawBrandedEmail } from "@/lib/email/sender";
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -110,23 +111,14 @@ async function sendEmail({
   html: string;
   replyTo?: string;
 }) {
-  if (!process.env.RESEND_API_KEY || !to) return;
-
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from:
-        process.env.RESERVE_FROM_EMAIL ||
-        "TheOutHaven Reserve <hello@theouthaven.com>",
-      to,
-      subject,
-      html,
-      reply_to: replyTo || undefined,
-    }),
+  if (!to) return;
+  await sendRawBrandedEmail({
+    to,
+    subject,
+    heading: subject,
+    body: html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+    department: "reservations",
+    replyTo,
   });
 }
 

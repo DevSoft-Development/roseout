@@ -2,7 +2,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
-import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
+import { sendRenderedEmail } from "@/lib/email/sender";
 import { isAdminRole, isUserRole, normalizeRole } from "@/lib/users/roles";
 
 export async function POST(request: Request) {
@@ -95,12 +95,11 @@ export async function POST(request: Request) {
       role: normalizePasswordSetupRole(role),
     });
 
-    await sendSupportEmail({
+    await sendRenderedEmail({
       to: email,
-      subject: emailTemplate.subject,
-      body: emailTemplate.text,
-      html: emailTemplate.html,
-      department: "security",
+      rendered: emailTemplate,
+      department: emailTemplate.department,
+      templateKey: "password_setup_invite",
     });
 
     console.info("Password setup email sent");

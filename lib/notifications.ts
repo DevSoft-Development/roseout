@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { resolveEmailSender } from "@/lib/email/brand";
 import twilio from "twilio";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -38,11 +39,11 @@ export async function sendNotification({
   if (toEmail && emailHtml && process.env.RESEND_API_KEY) {
     try {
       const email = await resend.emails.send({
-        from: from || process.env.EMAIL_FROM || "TheOutHaven <hello@theouthaven.com>",
+        from: from || resolveEmailSender("account").from,
         to: toEmail,
         subject,
         html: emailHtml,
-        replyTo: replyTo || undefined,
+        replyTo: replyTo || resolveEmailSender("account").replyTo,
       });
 
       results.email = email;
