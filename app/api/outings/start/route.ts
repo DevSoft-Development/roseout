@@ -68,12 +68,12 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error: error.message, location_id: selectedLocationId, contact_method: contactMethod });
-      return NextResponse.json({ ok: false, error: "outing_tracking_failed", message: "We could not start tracking this outing." }, { status: 500 });
+      return NextResponse.json({ ok: true, outing_id: null, tracking_status: "unavailable" });
     }
 
     if (!data?.id) {
       console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED_NO_DATA", { location_id: selectedLocationId, contact_method: contactMethod });
-      return NextResponse.json({ ok: false, error: "outing_tracking_missing_data", message: "Outing tracking did not return a valid outing record." }, { status: 500 });
+      return NextResponse.json({ ok: true, outing_id: null, tracking_status: "unavailable" });
     }
 
     const outingId = data.id;

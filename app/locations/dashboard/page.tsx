@@ -7,6 +7,7 @@ import { getLocationName } from "@/lib/locationName";
 import type { LocationClaimFields } from "@/lib/locationClaim";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
+import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,7 @@ export default async function DashboardPage() {
 
   let locations: LocationItem[] = [];
   let impersonationLabel = "";
+  const ownerAccess = user?.id ? await getLocationOwnerAccess(user.id) : null;
 
   if (impersonatedLocationId) {
     const { data } = await supabase
@@ -113,29 +115,41 @@ export default async function DashboardPage() {
 
     locations = (ownedLocations || []).map(toDashboardLocation);
     impersonationLabel = "Viewing as location owner";
-  } else if (adminUserId) {
+  } else if (adminUserId && ownerAccess?.isAdmin) {
     const { data: allLocations } = await supabase
       .from("locations")
       .select(LOCATION_DASHBOARD_COLUMNS)
       .order("created_at", { ascending: false });
 
     locations = (allLocations || []).map(toDashboardLocation);
-  } else if (user?.id) {
-    const email = user.email || "";
-    const ownedFilters = [
-      `owner_user_id.eq.${user.id}`,
-      `claimed_by.eq.${user.id}`,
-      email ? `owner_email.eq.${email}` : null,
-      email ? `claimed_by_email.eq.${email}` : null,
-    ].filter(Boolean).join(",");
+  } else if (user?.id && ownerAccess) {
+    if (!ownerAccess.isAdmin && ownerAccess.ownedLocationIds.length === 0 && ownerAccess.ownedSourceLocationIds.length === 0) {
+      redirect("/create");
+    }
 
-    const { data: ownedLocations } = await supabase
+    let query = supabase
       .from("locations")
       .select(LOCATION_DASHBOARD_COLUMNS)
-      .or(ownedFilters)
       .order("created_at", { ascending: false });
 
-    locations = (ownedLocations || []).map(toDashboardLocation);
+    if (!ownerAccess.isAdmin) {
+      const ownerFilters = [
+        ...ownerAccess.ownedLocationIds.map((id) => `id.eq.${id}`),
+        ...ownerAccess.ownedSourceLocationIds.map((id) => `source_id.eq.${id}`),
+      ];
+
+      if (ownerFilters.length === 0) {
+        redirect("/create");
+      }
+
+      query = query.or(ownerFilters.join(","));
+    }
+
+    const { data: ownedLocations } = await query;
+
+    locations = (ownedLocations || [])
+      .filter((location) => hasOwnerAccessToLocation(ownerAccess, location as Record<string, any>))
+      .map(toDashboardLocation);
   } else {
     redirect("/login?next=/locations/dashboard");
   }
