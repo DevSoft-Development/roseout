@@ -17,13 +17,16 @@ export async function GET(request: NextRequest) {
     const query = buildExploreQuery(q, kind, area);
     const simple = Boolean(!q || /^[\w\s-]+$/.test(q));
     const result = await runEnterpriseSearch(query, { useLLM: !simple && q.split(/\s+/).length > 3, displayLimit: 48 });
-    let items = kind === "restaurants" || kind === "rooftops" ? result.restaurants : kind === "activities" || kind === "lounges" ? result.activities : [...result.restaurants, ...result.activities];
+    const mixedWithPairing = result.render_mode === "mixed_pairs" || result.render_mode === "partial_mixed";
+    let exploreNote: string | undefined;
+    let items = kind === "restaurants" || kind === "rooftops" ? result.restaurants : kind === "activities" || kind === "lounges" ? result.activities : mixedWithPairing && result.pairs.length ? [...result.pairs, ...result.restaurants, ...result.activities] : [...result.restaurants, ...result.activities];
+    if (kind === "all" && mixedWithPairing && !result.pairs.length) exploreNote = "No walkable pairs found. Showing individual matches. Prefer using /create for full pair planning.";
     if (kind === "rooftops") items = items.filter((item:any)=>/[\s-]roof|rooftop|terrace|skyline|view|lounge/i.test([item.name,item.primary_category,item.description,item.search_document,item.tags].flat().join(" ")));
     if (kind === "lounges") items = items.filter((item:any)=>/lounge|hookah|bar|nightlife|cocktail/i.test([item.name,item.primary_category,item.activity_type,item.description,item.search_document,item.tags].flat().join(" ")));
     const total = items.length;
     const start = (page - 1) * perPage;
     items = items.slice(start, start + perPage);
-    return NextResponse.json({ success: true, items, restaurants: result.restaurants, activities: result.activities, total, debug: process.env.NODE_ENV !== "production" ? result.debug : undefined });
+    return NextResponse.json({ success: true, items, restaurants: result.restaurants, activities: result.activities, pairs: result.pairs, note: exploreNote, total, debug: process.env.NODE_ENV !== "production" ? result.debug : undefined });
   } catch (error) {
     console.error("EXPLORE_SEARCH_ERROR", error);
     return NextResponse.json({ success: false, items: [], restaurants: [], activities: [], total: 0, error: error instanceof Error ? error.message : "Explore search failed" }, { status: 200 });
