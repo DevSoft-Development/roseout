@@ -39,11 +39,11 @@ async function loadExploreData() {
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select(
-      "id,source_table,source_id,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,state,zip_code,primary_category,primary_tag,cuisine,cuisine_type,food_type,activity_type,tags,vibe_tags,best_for_tags,google_types,atmosphere,best_for,date_style_tags,search_keywords,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,popularity_score,quality_score,is_featured,created_at,is_searchable,is_hidden,data_status"
+      "id,source_table,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,primary_category,cuisine,cuisine_type,activity_type,tags,vibe_tags,best_for_tags,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,is_featured,created_at,is_searchable,is_hidden,data_status"
     )
     .eq("is_searchable", true)
     .eq("data_status", "clean")
-    .or("is_hidden.is.false,is_hidden.is.null")
+    .not("is_hidden", "is", true)
     .order("is_featured", { ascending: false, nullsFirst: false })
     .order("rating", { ascending: false, nullsFirst: false })
     .limit(96);
