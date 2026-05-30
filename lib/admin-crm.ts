@@ -24,6 +24,7 @@ export type BusinessCRMRow = {
   phone?: string | null;
   website?: string | null;
   category?: string | null;
+  primary_category?: string | null;
   cuisine?: string | null;
   description?: string | null;
   status?: string | null;
@@ -87,13 +88,15 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     location_id: row.location_id ?? id,
     name,
     location_name: row.location_name ?? name,
-    city: row.city ?? row.borough ?? null,
-    borough: row.borough ?? row.city ?? null,
-    state: row.state ?? null,
-    zip: row.zip ?? row.zip_code ?? null,
-    zip_code: row.zip_code ?? row.zip ?? null,
-    is_claimed: row.is_claimed ?? false,
-    is_searchable: row.is_searchable ?? null,
+    city: row.city ?? row.borough ?? "",
+    borough: row.borough ?? row.city ?? "",
+    state: row.state ?? "",
+    zip: row.zip ?? row.zip_code ?? "",
+    zip_code: row.zip_code ?? row.zip ?? "",
+    category: row.category ?? row.primary_category ?? "",
+    cuisine: row.cuisine ?? "",
+    is_claimed: Boolean(row.is_claimed),
+    is_searchable: Boolean(row.is_searchable),
     reservation_url: row.reservation_url ?? null,
     location_type: row.location_type === "activities" ? "activities" : row.location_type === "restaurants" ? "restaurants" : null,
     crm_status: (row.crm_status ?? (row.is_claimed ? "Claimed" : "Unclaimed")) as CRMStatus,
@@ -144,7 +147,7 @@ export async function listBusinessCRM(limit = 120): Promise<BusinessCRMRow[]> {
   console.error("Failed to fetch CRM views", primary.error, snapshot.error);
   const fallback = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, address, city, borough, state, zip_code, phone, website, category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at")
+    .select("id, name, restaurant_name, activity_name, address, city, borough, state, phone, website, primary_category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -164,7 +167,7 @@ export async function getBusinessCRM(id: string): Promise<BusinessCRMRow | null>
 
   const { data, error } = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, address, city, borough, state, zip_code, phone, website, category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at")
+    .select("id, name, restaurant_name, activity_name, address, city, borough, state, phone, website, primary_category, cuisine, description, status, is_searchable, is_claimed, reservation_url, external_reservation_url, location_type, owner_user_id, created_at, updated_at")
     .eq("id", id)
     .maybeSingle();
 
