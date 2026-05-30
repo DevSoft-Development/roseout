@@ -2,7 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 
-const SELECT_FIELDS = "id,type,source_table,location_type,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,atmosphere,best_for,date_style_tags,search_keywords,search_document,reservation_url,external_reservation_url,website,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,created_at,is_searchable,is_hidden,data_status";
+const SELECT_FIELDS = [
+  "id",
+  "type",
+  "source_table",
+  "location_type",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "business_name",
+  "main_image",
+  "image_url",
+  "images",
+  "city",
+  "borough",
+  "neighborhood",
+  "category",
+  "primary_category",
+  "cuisine",
+  "cuisine_type",
+  "activity_type",
+  "tags",
+  "vibes",
+  "atmosphere",
+  "best_for",
+  "date_style_tags",
+  "search_keywords",
+  "search_document",
+  "reservation_url",
+  "external_reservation_url",
+  "website",
+  "rating",
+  "score",
+  "total_reviews",
+  "reservation_count",
+  "featured",
+  "created_at",
+  "is_searchable",
+  "is_hidden",
+  "data_status"
+].join(",");
 
 const SEARCH_COLUMNS = [
   "name",
@@ -74,9 +113,9 @@ type ExploreLocation = {
   rating: number | null;
   score: number | null;
   total_reviews: number | null;
-  views_count: number | null;
-  saves_count: number | null;
-  reservation_count: number | null;
+  reservation_count?: number | null;
+  views_count?: number | null;
+  saves_count?: number | null;
   featured: boolean | null;
 };
 
@@ -92,7 +131,7 @@ export async function GET(request: NextRequest) {
       .select(SELECT_FIELDS)
       .eq("is_searchable", true)
       .eq("data_status", "clean")
-      .or("is_hidden.is.false,is_hidden.is.null");
+      .neq("is_hidden", true);
 
     const searchTerms = searchTokens(q);
 
@@ -113,11 +152,24 @@ export async function GET(request: NextRequest) {
       .limit(240);
 
     if (error) {
-      console.error("EXPLORE_SEARCH_ERROR", error);
-      return NextResponse.json({ success: false, items: [] }, { status: 200 });
+      console.error("EXPLORE_SEARCH_ERROR", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          items: [],
+          error: process.env.NODE_ENV === "development" ? error.message : "Explore search failed",
+        },
+        { status: 200 },
+      );
     }
 
-    const rankedItems = dedupeById((data || []) as ExploreLocation[])
+    const rankedItems = dedupeById((data || []) as unknown as ExploreLocation[])
       .filter((location) => Boolean(getLocationName(location, "").trim()))
       .filter((location) => area === "all" || matchesAreaFilter(location, area))
       .filter((location) => kind === "all" || matchesKindFilter(location, kind))
@@ -159,9 +211,7 @@ function rankScore(location: ExploreLocation, q: string) {
     (location.featured ? 100 : 0) +
     Number(location.rating || location.score || 0) * 35 +
     Number(location.total_reviews || 0) * 1.4 +
-    Number(location.saves_count || 0) * 0.8 +
-    Number(location.reservation_count || 0) * 1.2 +
-    Number(location.views_count || 0) * 0.04
+    Number(location.reservation_count || 0) * 1.2
   );
 }
 

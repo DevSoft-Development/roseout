@@ -43,9 +43,9 @@ export type ExploreLocation = {
   rating: number | null;
   score: number | null;
   total_reviews: number | null;
-  views_count: number | null;
-  saves_count: number | null;
-  reservation_count: number | null;
+  views_count?: number | null;
+  saves_count?: number | null;
+  reservation_count?: number | null;
   featured: boolean | null;
   created_at: string | null;
   is_searchable: boolean | null;
@@ -63,6 +63,7 @@ type ExploreClientProps = {
 type SearchResponse = {
   success?: boolean;
   items?: ExploreLocation[];
+  error?: string;
 };
 
 const QUICK_CHIPS = [
@@ -205,12 +206,50 @@ export default function ExploreClient({
       const data = (await response.json()) as SearchResponse;
 
       if (!response.ok || data.success === false) {
-        throw new Error("Search failed");
+        throw new Error(data.error || "Explore search failed");
       }
 
       setLocations(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
       console.error("EXPLORE_CLIENT_SEARCH_ERROR", err);
+
+      try {
+        const fallbackParams = new URLSearchParams();
+
+        if (cleanArea !== "all") {
+          if (cleanArea === "Queens" || cleanArea === "Brooklyn" || cleanArea === "Manhattan" || cleanArea === "Bronx" || cleanArea === "Staten Island") {
+            fallbackParams.set("borough", cleanArea);
+          } else {
+            fallbackParams.set("city", cleanArea);
+          }
+        }
+
+        if (cleanKind !== "all") {
+          fallbackParams.set("type", cleanKind);
+        }
+
+        fallbackParams.set("limit", "48");
+
+        const fallbackResponse = await fetch(`/api/explore?${fallbackParams.toString()}`, {
+          headers: { Accept: "application/json" },
+        });
+
+        const fallbackData = await fallbackResponse.json();
+
+        if (fallbackResponse.ok && Array.isArray(fallbackData.items)) {
+          const fallbackItems = fallbackData.items.filter((item: ExploreLocation) => {
+            if (!cleanQ) return true;
+            return searchableText(item).includes(normalizeSearch(cleanQ));
+          });
+
+          setLocations(fallbackItems);
+          setError("");
+          return;
+        }
+      } catch (fallbackErr) {
+        console.error("EXPLORE_CLIENT_FALLBACK_ERROR", fallbackErr);
+      }
+
       setError("Search is having trouble right now. Try a different query or clear the filters.");
       setLocations([]);
     } finally {
