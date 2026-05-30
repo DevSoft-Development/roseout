@@ -57,7 +57,7 @@ function getDisplayClaimUrl(claimUrl: string | null) {
     return null;
   }
 
-  return claimUrl.replace(/^(https?:\/\/)?(www\.)?roseout\.com/i, "https://www.theouthaven.com");
+  return claimUrl.replace(/^(https?:\/\/)?(www\.)?roseout\.com/i, "https://theouthaven.com");
 }
 
 function compareText(left: string, right: string) {

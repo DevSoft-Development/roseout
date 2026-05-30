@@ -436,6 +436,8 @@ export default function LocationsDashboardClient({
 
                   <BusinessSetupChecklist location={selected} />
 
+                  <ReservationEmbedCard location={selected} />
+
                   <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
                     <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
                       Owner Contact
@@ -516,6 +518,17 @@ export default function LocationsDashboardClient({
   );
 }
 
+
+function ReservationEmbedCard({ location }: { location: LocationItem }) {
+  const appUrl = "https://theouthaven.com";
+  const enabled = Boolean((location as any).reservation_embed_enabled || (location as any).reservation_enabled || location.reservation_url || location.external_reservation_url);
+  const embedUrl = `${appUrl}/embed/reservations/${location.id}`;
+  const iframe = `<iframe\n  src="${embedUrl}"\n  width="100%"\n  height="720"\n  style="border:0;border-radius:16px;overflow:hidden;"\n  loading="lazy"\n  title="TheOutHaven Reservations"\n></iframe>`;
+  return <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
+    <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">Reservations Embed</p>
+    {enabled ? <div className="mt-4 space-y-3"><p className="text-sm font-semibold text-black/65">Copy this code and paste it into your website where you want your TheOutHaven reservation widget to appear.</p><textarea readOnly value={iframe} rows={7} className="w-full rounded-2xl border border-black/10 bg-neutral-50 p-3 font-mono text-xs text-black" /><div className="flex flex-wrap gap-2"><a href={embedUrl} target="_blank" className="rounded-full bg-black px-4 py-2 text-sm font-black text-white">Preview</a><span className="rounded-full border border-black/10 px-4 py-2 text-sm font-bold text-black/60">Copy from code box</span></div><p className="break-all text-xs text-black/50">Reservation page URL: {embedUrl}</p><p className="text-sm text-black/60">Need help? Contact reserve@theouthaven.com.</p></div> : <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm font-semibold text-rose-900">Reservation embeds are available for Reserve-enabled locations. Contact reserve@theouthaven.com to upgrade or activate Reserve.</div>}
+  </div>;
+}
 
 function formatPlanName(location: LocationItem) {
   const raw = String(location.subscription_plan || location.plan || "free_discovery").toLowerCase();
