@@ -1,6 +1,15 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
 export type SearchType = "restaurant" | "activity" | "mixed_outing" | "any";
 export type GeoStrictness = "none" | "soft" | "medium" | "strict";
+export type PairDistanceMode = "walking" | "nearby" | "same_area" | "any";
+
+export type PairingPreference = {
+  requiresPairing: boolean;
+  distanceMode: PairDistanceMode;
+  maxPairDistanceMiles: number | null;
+  maxPairWalkingMinutes: number | null;
+  requireWalkablePair: boolean;
+};
 
 export type RestaurantIntent = {
   mealTerms: string[];
@@ -42,6 +51,7 @@ export type SearchIntent = {
   needsRestaurant: boolean;
   needsActivity: boolean;
   wantsPairing: boolean;
+  pairingPreference?: PairingPreference;
   restaurantIntent: RestaurantIntent;
   activityIntent: ActivityIntent;
   geo: GeoIntent;
@@ -123,8 +133,15 @@ export type EnterprisePair = {
   activity: EnterpriseLocation;
   title: string;
   explanation: string;
+  pairExplanation?: string;
   score: number;
+  pairScore: number;
   distance_miles: number | null;
+  pairDistanceMiles: number | null;
+  pairWalkingMinutes: number | null;
+  pairDistanceLabel: string;
+  pairWarnings: string[];
+  isWalkable: boolean;
 };
 
 export type EnterpriseSearchResult = {
