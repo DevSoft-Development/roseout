@@ -98,7 +98,7 @@ select
   l.address,
   l.phone,
   l.website,
-  l.category,
+  l.primary_category as category,
   l.cuisine,
   l.description,
   l.status,
