@@ -5,6 +5,13 @@ const rateRules: Array<{ prefix: string; limit: number; windowMs: number }> = [
   { prefix: "/api/auth", limit: 30, windowMs: 60_000 },
   { prefix: "/api/admin/search", limit: 60, windowMs: 60_000 },
   { prefix: "/api/contact", limit: 20, windowMs: 60_000 },
+  { prefix: "/api/claim", limit: 20, windowMs: 60_000 },
+  { prefix: "/api/business/claim", limit: 20, windowMs: 60_000 },
+  { prefix: "/api/business/claim-code", limit: 20, windowMs: 60_000 },
+  { prefix: "/api/explore", limit: 60, windowMs: 60_000 },
+  { prefix: "/api/generate", limit: 30, windowMs: 60_000 },
+  { prefix: "/api/locations/apply", limit: 15, windowMs: 60_000 },
+  { prefix: "/api/restaurants/apply", limit: 15, windowMs: 60_000 },
   { prefix: "/api/reservations", limit: 60, windowMs: 60_000 },
   { prefix: "/api/reserve", limit: 60, windowMs: 60_000 },
 ];

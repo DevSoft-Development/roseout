@@ -82,7 +82,7 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
     roleCandidates.some((role) => role && OWNER_ROLES.has(role));
 
   if (isOwner) {
-    return "/dashboard";
+    return "/owner/dashboard";
   }
 
   const safePath = sanitizeIntendedPath(input.intendedPath);
