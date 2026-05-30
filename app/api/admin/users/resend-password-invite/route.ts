@@ -2,7 +2,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
-import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
+import { sendRenderedEmail } from "@/lib/email/sender";
 import { normalizeRole } from "@/lib/users/roles";
 
 export async function POST(request: Request) {
@@ -41,6 +41,6 @@ export async function POST(request: Request) {
   console.info("[password-setup:create-token]", { email: userEmail, userId: authUserId, tokenHashPrefix: tokenHash.slice(0, 12), expiresAt, purpose: PASSWORD_SETUP_PURPOSE, requestPath: new URL(request.url).pathname, insertSuccess: true });
 
   const emailTemplate = passwordSetupInviteTemplate({ first_name: firstName, token: rawToken, expires_at: expiresAt, role });
-  await sendSupportEmail({ to: userEmail, subject: emailTemplate.subject, body: emailTemplate.text, html: emailTemplate.html, department: "security" });
+  await sendRenderedEmail({ to: userEmail, rendered: emailTemplate, department: emailTemplate.department, templateKey: "password_setup_invite" });
   return Response.json({ success: true, message: "Password setup email resent." });
 }

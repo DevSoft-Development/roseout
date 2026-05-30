@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPasswordSetupToken, getPasswordSetupExpiry, hashPasswordSetupToken, normalizePasswordSetupRole, PASSWORD_SETUP_PURPOSE, PASSWORD_SETUP_RESEND_COOLDOWN_MS } from "@/lib/auth/passwordSetupTokens";
 import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetupInvite";
-import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
+import { sendRenderedEmail } from "@/lib/email/sender";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
   console.info("[password-setup:create-token]", { email, userId: user.id, tokenHashPrefix: tokenHash.slice(0, 12), expiresAt, purpose: PASSWORD_SETUP_PURPOSE, requestPath: new URL(request.url).pathname, insertSuccess: true });
 
   const tpl = passwordSetupInviteTemplate({ first_name: firstName, token: rawToken, expires_at: expiresAt, role });
-  await sendSupportEmail({ to: email, subject: tpl.subject, body: tpl.text, html: tpl.html, department: "security" }).catch((error) => console.error("request-new-link email failure", error));
+  await sendRenderedEmail({ to: email, rendered: tpl, department: tpl.department, templateKey: "password_setup_invite" }).catch((error) => console.error("request-new-link email failure", error));
 
   return NextResponse.json(generic);
 }

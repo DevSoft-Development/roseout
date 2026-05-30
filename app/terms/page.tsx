@@ -226,7 +226,7 @@ export default function TermsPage() {
               <p className="mt-2 font-bold text-white">
                 TheOutHaven
                 <br />
-                Email: hello@theouthaven.com
+                Email: concierge@theouthaven.com
                 <br />
                 Website: https://theouthaven.com
               </p>
