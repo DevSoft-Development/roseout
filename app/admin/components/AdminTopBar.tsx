@@ -127,7 +127,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
   const navGroups: NavGroup[] = useMemo(
     () => [
       {
-        label: "Locations",
+        label: "CRM",
         activePaths: [
           "/admin/dashboard/claims",
           "/admin/dashboard/claim-qrs",
@@ -135,15 +135,17 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/import",
           "/admin/dashboard/data-quality",
         ],
-        activePrefixes: ["/admin/dashboard/locations"],
+        activePrefixes: ["/admin/dashboard/crm", "/admin/dashboard/locations"],
         items: [
-          { label: "All Locations", href: "/admin/dashboard/locations", visible: canView },
-          { label: "Add Location", href: "/admin/dashboard/locations/new", visible: canView, exact: true },
-          { label: "Claims", href: "/admin/dashboard/claims", visible: canView },
-          { label: "Claim QRs", href: "/admin/dashboard/claim-qrs", visible: canView },
-          { label: "Claim Tools", href: "/admin/dashboard/claim-tools", visible: canView },
-          { label: "Import", href: "/admin/dashboard/import", visible: canView },
-          { label: "Data Quality", href: "/admin/dashboard/data-quality", visible: canView },
+          { label: "All Locations", href: "/admin/dashboard/crm", visible: canView },
+          { label: "Upgrade Opportunities", href: "/admin/dashboard/crm?filter=upgrade-opportunities", visible: canView },
+          { label: "At Risk Locations", href: "/admin/dashboard/crm?filter=at-risk", visible: canView },
+          { label: "Pending Claims", href: "/admin/dashboard/crm?filter=pending-claims", visible: canView },
+          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owners", visible: canView },
+          { label: "Location Tasks", href: "/admin/dashboard/crm?filter=open-tasks", visible: canView },
+          { label: "Follow-ups", href: "/admin/dashboard/crm?filter=follow-ups", visible: canView },
+          { label: "QR Codes", href: "/admin/dashboard/crm?filter=qr", visible: canView },
+          { label: "Legacy Locations", href: "/admin/dashboard/locations", visible: canView },
         ],
       },
       {
@@ -160,14 +162,12 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         activePrefixes: [
           "/admin/dashboard/owner-accounts",
           "/admin/dashboard/businesses",
-          "/admin/dashboard/business-crm",
           "/admin/dashboard/billing",
           "/admin/dashboard/plans",
         ],
         items: [
           { label: "Owner Accounts", href: "/admin/dashboard/owner-accounts", visible: canView },
           { label: "Businesses", href: "/admin/dashboard/businesses", visible: canView },
-          { label: "Business CRM", href: "/admin/dashboard/business-crm", visible: canView },
           { label: "Billing", href: "/admin/dashboard/billing", visible: canView },
           { label: "Plans", href: "/admin/dashboard/plans", visible: canView },
           {
@@ -179,10 +179,10 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         ],
       },
       {
-        label: "Analytics",
+        label: "Platform Analytics",
         activePaths: ["/admin/dashboard/analytics", "/admin/search-qa"],
         items: [
-          { label: "Analytics Overview", href: "/admin/dashboard/analytics", visible: canView, exact: true },
+          { label: "Platform Analytics", href: "/admin/dashboard/analytics", visible: canView, exact: true },
           { label: "Search QA", href: "/admin/search-qa", visible: canView },
         ],
       },
@@ -251,7 +251,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
       { label: "Feature Flags", href: "/admin/dashboard/feature-flags", visible: canManagePlatform },
       { label: "Users", href: "/admin/dashboard/users", visible: canManagePlatform },
       { label: "Launch Checklist", href: "/admin/dashboard/launch-checklist", visible: canManagePlatform },
-      { label: "Logs", href: "/admin/dashboard/logs", visible: canManagePlatform },
+      { label: "Platform Logs", href: "/admin/dashboard/logs", visible: canManagePlatform },
     ],
   };
 

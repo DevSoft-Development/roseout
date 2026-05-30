@@ -388,6 +388,12 @@ export default async function AdminLocationsPage({
                 + Add Location
               </Link>
               <Link
+                href="/admin/dashboard/crm"
+                className="rounded-full border border-rose-300/30 bg-rose-500/15 px-5 py-3 text-sm font-black text-rose-100 hover:bg-rose-500/25"
+              >
+                Open CRM
+              </Link>
+              <Link
                 href="/admin/dashboard/claim-qrs"
                 className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
               >
@@ -638,7 +644,7 @@ export default async function AdminLocationsPage({
                 >
                   <div className="grid gap-4 xl:grid-cols-[1fr_420px_140px] xl:items-center">
                     <Link
-                      href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}
+                      href={`/admin/dashboard/crm/${location.id}`}
                       className="flex min-w-0 items-center gap-4"
                     >
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
@@ -766,10 +772,16 @@ export default async function AdminLocationsPage({
 
                     <div className="flex gap-2 xl:flex-col">
                       <Link
+                        href={`/admin/dashboard/crm/${location.id}`}
+                        className="flex-1 rounded-full bg-[#1b1210] px-4 py-2 text-center text-xs font-black text-white transition hover:bg-rose-700"
+                      >
+                        Open in CRM
+                      </Link>
+                      <Link
                         href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}
                         className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
-                        View
+                        Legacy View
                       </Link>
 
                       <Link

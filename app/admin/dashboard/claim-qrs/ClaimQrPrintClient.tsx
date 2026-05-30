@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type ClaimQrLocation = {
@@ -255,6 +256,9 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                     {displayClaimUrl}
                   </p>
                 )}
+                <Link href={`/admin/dashboard/crm/${location.id}?tab=qr`} className="no-print mt-3 inline-flex rounded-full bg-[#1b1210] px-3 py-2 text-xs font-black text-white">
+                  Open Location CRM
+                </Link>
               </div>
             </div>
           );
