@@ -51,6 +51,12 @@ type ExploreLocation = {
   data_status: string | null;
 };
 
+type ExploreSearchParams = {
+  q?: string;
+  kind?: string;
+  area?: string;
+};
+
 const QUICK_CHIPS = [
   "Date Night",
   "Dinner",
@@ -76,6 +82,7 @@ const AREA_FILTERS = [
   { label: "Brooklyn", value: "Brooklyn" },
   { label: "Manhattan", value: "Manhattan" },
   { label: "Bronx", value: "Bronx" },
+  { label: "Staten Island", value: "Staten Island" },
   { label: "Long Island", value: "Long Island" },
 ];
 
@@ -105,7 +112,7 @@ const COLLECTIONS = [
 export default async function ExplorePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kind?: string; area?: string }>;
+  searchParams: Promise<ExploreSearchParams>;
 }) {
   const params = await searchParams;
 
@@ -114,15 +121,16 @@ export default async function ExplorePage({
   const selectedArea = normalizeArea(params.area);
 
   const locations = await loadExploreData();
-  const normalizedQuery = normalizeSearch(q);
 
   const filteredLocations = rankLocations(
     locations.filter((location) => {
       const text = searchableText(location);
 
-      const matchesQuery = !normalizedQuery || text.includes(normalizedQuery);
-      const matchesKind = selectedKind === "all" || matchesKindFilter(location, selectedKind);
-      const matchesArea = selectedArea === "all" || matchesAreaFilter(location, selectedArea);
+      const matchesQuery = !q || text.includes(normalizeSearch(q));
+      const matchesKind =
+        selectedKind === "all" || matchesKindFilter(location, selectedKind);
+      const matchesArea =
+        selectedArea === "all" || matchesAreaFilter(location, selectedArea);
 
       return matchesQuery && matchesKind && matchesArea;
     }),
@@ -142,11 +150,16 @@ export default async function ExplorePage({
             <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-white/45">
               Popular
             </p>
+
             <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {QUICK_CHIPS.map((chip) => (
                 <Link
                   key={chip}
-                  href={`/explore?q=${encodeURIComponent(chip)}`}
+                  href={exploreHref({
+                    q: chip,
+                    kind: selectedKind,
+                    area: selectedArea,
+                  })}
                   className="shrink-0 rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/15 hover:text-white"
                 >
                   {chip}
@@ -155,7 +168,7 @@ export default async function ExplorePage({
             </div>
           </div>
 
-          <FeaturedCollections />
+          <FeaturedCollections selectedKind={selectedKind} selectedArea={selectedArea} />
 
           <section className="mt-10">
             <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -163,14 +176,13 @@ export default async function ExplorePage({
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
                   Browse
                 </p>
+
                 <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
                   All Places
                 </h2>
+
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
                   Browse places first, then view details or start a full outing around a spot.
-                </p>
-                <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 text-white/42">
-                  Explore places first. Use Start Outing when you want TheOutHaven to build the plan around a spot.
                 </p>
               </div>
 
@@ -186,7 +198,7 @@ export default async function ExplorePage({
 
             {filteredLocations.length > 0 ? (
               <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {filteredLocations.slice(0, 24).map((location) => (
+                {filteredLocations.slice(0, 32).map((location) => (
                   <LocationCard key={location.id} location={location} />
                 ))}
               </div>
@@ -211,7 +223,7 @@ async function loadExploreData() {
     .eq("is_searchable", true)
     .neq("is_hidden", true)
     .eq("data_status", "clean")
-    .limit(72);
+    .limit(96);
 
   if (error) {
     console.error("EXPLORE_LOAD_ERROR", error.message);
@@ -226,21 +238,28 @@ async function loadExploreData() {
 function HeroSearch({ q }: { q: string }) {
   return (
     <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-black/45 shadow-2xl shadow-black/40 backdrop-blur-xl">
-      <div className="grid gap-6 p-5 sm:p-8 lg:grid-cols-[1.1fr_.9fr] lg:p-10">
+      <div className="grid gap-6 p-5 sm:p-8 lg:grid-cols-[1.05fr_.95fr] lg:p-10">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">
             Explore
           </p>
+
           <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
             Find your next place out.
           </h1>
+
           <p className="mt-4 max-w-2xl text-base leading-7 text-white/68">
-            Browse restaurants, activities, rooftops, lounges, brunch spots, and date-night ideas. Want the full plan? Start from any place or build an outing.
+            Browse restaurants, activities, rooftops, lounges, brunch spots, and date-night ideas.
+            Want the full plan? Start from any place or build an outing.
           </p>
         </div>
 
         <div className="flex flex-col justify-end">
-          <form action="/explore" method="get" className="rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-3">
+          <form
+            action="/explore"
+            method="get"
+            className="rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-3"
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <input
                 type="text"
@@ -249,9 +268,10 @@ function HeroSearch({ q }: { q: string }) {
                 placeholder="Search by vibe, food, activity, or area"
                 className="min-h-12 min-w-0 flex-1 rounded-full border border-white/10 bg-black/45 px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-[#e1062a]"
               />
+
               <button
                 type="submit"
-                className="min-h-12 w-full rounded-full bg-[#e1062a] px-6 text-sm font-black text-white transition hover:bg-red-500 sm:w-auto sm:min-w-[112px] whitespace-nowrap"
+                className="min-h-12 w-full whitespace-nowrap rounded-full bg-[#e1062a] px-6 text-sm font-black text-white transition hover:bg-red-500 sm:w-auto sm:min-w-[112px]"
               >
                 Search
               </button>
@@ -270,7 +290,13 @@ function HeroSearch({ q }: { q: string }) {
   );
 }
 
-function FeaturedCollections() {
+function FeaturedCollections({
+  selectedKind,
+  selectedArea,
+}: {
+  selectedKind: string;
+  selectedArea: string;
+}) {
   return (
     <section className="mt-9">
       <div className="mb-4 flex items-end justify-between gap-4">
@@ -278,6 +304,7 @@ function FeaturedCollections() {
           <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
             Curated
           </p>
+
           <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">
             Featured Collections
           </h2>
@@ -288,17 +315,25 @@ function FeaturedCollections() {
         {COLLECTIONS.map((collection) => (
           <Link
             key={collection.title}
-            href={`/explore?q=${encodeURIComponent(collection.query)}`}
+            href={exploreHref({
+              q: collection.query,
+              kind: selectedKind,
+              area: selectedArea,
+            })}
             className="group relative min-h-[150px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-[#e1062a]/60 hover:bg-white/[0.075]"
           >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,.32),transparent_36%),linear-gradient(145deg,rgba(255,255,255,.08),transparent_55%)] opacity-80 transition group-hover:opacity-100" />
+
             <div className="relative flex h-full flex-col justify-between">
               <span className="w-fit rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/65">
                 Explore
               </span>
+
               <div className="pt-8">
                 <h3 className="text-xl font-black">{collection.title}</h3>
-                <p className="mt-1 text-sm leading-5 text-white/62">{collection.description}</p>
+                <p className="mt-1 text-sm leading-5 text-white/62">
+                  {collection.description}
+                </p>
               </div>
             </div>
           </Link>
@@ -336,7 +371,9 @@ function FilterPills({
           <Link
             key={filter.value}
             href={exploreHref({ q, kind: selectedKind, area: filter.value })}
-            className={pillClass(selectedArea.toLowerCase() === filter.value.toLowerCase())}
+            className={pillClass(
+              selectedArea.toLowerCase() === filter.value.toLowerCase(),
+            )}
           >
             {filter.label}
           </Link>
@@ -348,12 +385,18 @@ function FilterPills({
 
 function LocationCard({ location }: { location: ExploreLocation }) {
   const name = getLocationName(location);
+  const reserveHref =
+    location.external_reservation_url || location.reservation_url || location.website;
+
   const detailHref = getLocationDetailHref({
     id: location.id,
-    type: location.type || location.source_table,
+    type: location.type || location.location_type || location.source_table,
   });
 
-  const reserveHref = location.external_reservation_url || location.reservation_url || location.website;
+  const startOutingHref = `/create?placeId=${encodeURIComponent(
+    location.id,
+  )}&placeName=${encodeURIComponent(name)}`;
+
   const locationArea = [location.neighborhood, location.city || location.borough]
     .filter(Boolean)
     .join(", ");
@@ -384,7 +427,7 @@ function LocationCard({ location }: { location: ExploreLocation }) {
         </div>
       </div>
 
-      <div className="flex min-h-[190px] flex-col px-1 pb-1 pt-4">
+      <div className="flex min-h-[215px] flex-col px-1 pb-1 pt-4">
         <h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-black leading-tight">
           {name}
         </h3>
@@ -420,7 +463,7 @@ function LocationCard({ location }: { location: ExploreLocation }) {
             </Link>
 
             <Link
-              href={`/create?placeId=${encodeURIComponent(location.id)}&placeName=${encodeURIComponent(name)}`}
+              href={startOutingHref}
               className="rounded-full border border-white/15 bg-white/[0.055] px-4 py-2.5 text-center text-xs font-black text-white/75 transition hover:bg-white hover:text-black"
             >
               Start Outing
@@ -447,9 +490,11 @@ function EmptyState() {
   return (
     <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-8 text-center shadow-xl shadow-black/20">
       <h3 className="text-2xl font-black">No places found yet.</h3>
+
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/60">
         Try a different search, area, or category — or build a guided outing instead.
       </p>
+
       <Link
         href="/create"
         className="mt-5 inline-flex rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
@@ -513,37 +558,34 @@ function rankScore(location: ExploreLocation) {
   );
 }
 
-function normalizeSearch(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[_-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function searchableText(location: ExploreLocation) {
-  return normalizeSearch([
-    location.name,
-    location.restaurant_name,
-    location.activity_name,
-    location.business_name,
-    location.city,
-    location.borough,
-    location.neighborhood,
-    location.primary_category,
-    location.category,
-    location.cuisine,
-    location.cuisine_type,
-    location.activity_type,
-    ...toList(location.tags),
-    ...toList(location.vibes),
-    ...toList(location.atmosphere),
-    ...toList(location.best_for),
-    ...toList(location.date_style_tags),
-    ...toList(location.search_keywords),
-  ]
-    .filter(Boolean)
-    .join(" "));
+  return normalizeSearch(
+    [
+      location.type,
+      location.source_table,
+      location.location_type,
+      location.name,
+      location.restaurant_name,
+      location.activity_name,
+      location.business_name,
+      location.city,
+      location.borough,
+      location.neighborhood,
+      location.category,
+      location.primary_category,
+      location.cuisine,
+      location.cuisine_type,
+      location.activity_type,
+      ...toList(location.tags),
+      ...toList(location.vibes),
+      ...toList(location.atmosphere),
+      ...toList(location.best_for),
+      ...toList(location.date_style_tags),
+      ...toList(location.search_keywords),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 function matchesKindFilter(location: ExploreLocation, kind: string) {
@@ -579,8 +621,11 @@ function matchesKindFilter(location: ExploreLocation, kind: string) {
 
 function matchesAreaFilter(location: ExploreLocation, area: string) {
   const normalizedArea = normalizeSearch(area);
+
   const text = normalizeSearch(
-    [location.borough, location.city, location.neighborhood].filter(Boolean).join(" "),
+    [location.borough, location.city, location.neighborhood]
+      .filter(Boolean)
+      .join(" "),
   );
 
   if (normalizedArea === "long island") {
@@ -607,16 +652,17 @@ function matchesAreaFilter(location: ExploreLocation, area: string) {
 
 function isRestaurant(location: ExploreLocation) {
   const text = searchableText(location);
-  const recordText = normalizeSearch([location.type, location.source_table, location.location_type].join(" "));
 
   return (
     Boolean(location.restaurant_name) ||
-    recordText.includes("restaurant") ||
     text.includes("restaurant") ||
     text.includes("dinner") ||
     text.includes("brunch") ||
-    text.includes("breakfast") ||
-    text.includes("cuisine")
+    text.includes("cuisine") ||
+    text.includes("steak") ||
+    text.includes("seafood") ||
+    text.includes("cafe") ||
+    text.includes("bakery")
   );
 }
 
@@ -658,14 +704,23 @@ function cleanedTags(location: ExploreLocation) {
   ];
 
   const seen = new Set<string>();
-  const blocked = new Set(["", "[]", "null", "undefined", "theouthaven friendly outing"]);
+
+  const blocked = new Set([
+    "",
+    "[]",
+    "null",
+    "undefined",
+    "theouthaven friendly outing",
+  ]);
 
   return rawTags
     .map((tag) => cleanLabel(tag))
     .filter((tag): tag is string => Boolean(tag))
     .filter((tag) => {
       const key = tag.toLowerCase();
+
       if (blocked.has(key) || seen.has(key)) return false;
+
       seen.add(key);
       return true;
     });
@@ -681,7 +736,11 @@ function cleanLabel(value: unknown) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!cleaned || cleaned.toLowerCase() === "null" || cleaned.toLowerCase() === "undefined") {
+  if (
+    !cleaned ||
+    cleaned.toLowerCase() === "null" ||
+    cleaned.toLowerCase() === "undefined"
+  ) {
     return "";
   }
 
@@ -707,6 +766,7 @@ function toList(value: unknown): string[] {
 
     try {
       const parsed = JSON.parse(trimmed);
+
       if (Array.isArray(parsed)) {
         return parsed.map((item) => String(item)).filter(Boolean);
       }
@@ -727,16 +787,28 @@ function cleanParam(value: string | undefined) {
   return String(value || "").trim();
 }
 
-function normalizeKind(value: string | undefined) {
-  const normalized = String(value || "all").toLowerCase();
+function normalizeSearch(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return KIND_FILTERS.some((filter) => filter.value === normalized) ? normalized : "all";
+function normalizeKind(value: string | undefined) {
+  const normalized = normalizeSearch(value || "all");
+
+  return KIND_FILTERS.some((filter) => filter.value === normalized)
+    ? normalized
+    : "all";
 }
 
 function normalizeArea(value: string | undefined) {
   const normalized = String(value || "all").trim();
 
-  return AREA_FILTERS.some((filter) => filter.value.toLowerCase() === normalized.toLowerCase())
+  return AREA_FILTERS.some(
+    (filter) => filter.value.toLowerCase() === normalized.toLowerCase(),
+  )
     ? normalized
     : "all";
 }
@@ -746,15 +818,21 @@ function exploreHref({
   kind,
   area,
 }: {
-  q: string;
-  kind: string;
-  area: string;
+  q?: string;
+  kind?: string;
+  area?: string;
 }) {
   const params = new URLSearchParams();
 
-  if (q) params.set("q", q);
-  if (kind && kind !== "all") params.set("kind", kind);
-  if (area && area.toLowerCase() !== "all") params.set("area", area);
+  const cleanQ = cleanParam(q);
+  const cleanKind = normalizeKind(kind);
+  const cleanArea = normalizeArea(area);
+
+  if (cleanQ) params.set("q", cleanQ);
+  if (cleanKind && cleanKind !== "all") params.set("kind", cleanKind);
+  if (cleanArea && cleanArea.toLowerCase() !== "all") {
+    params.set("area", cleanArea);
+  }
 
   const query = params.toString();
 
