@@ -1,98 +1,207 @@
 # TheOutHaven Production Readiness Checklist
 
-Use this checklist before every production deploy. Mark each item with the date, owner, and evidence link when possible (build log, Playwright trace, Supabase policy query, Lighthouse report, or screenshot).
+This checklist is the source of truth for deciding whether TheOutHaven is production-ready.
 
-## Public routes
+Passing build, lint, and typecheck is not enough.
 
-- [ ] `/` loads with production content and no broken assets.
-- [ ] `/explore` loads with searchable places or a clear empty state.
-- [ ] `/create` loads the outing builder and primary search input.
-- [ ] `/business` loads the business marketing page.
-- [ ] `/business/claim` loads the public claim entry point.
-- [ ] `/signup` loads the auth UI without duplicate or broken signup routing.
-- [ ] `/admin/dashboard` resolves to the dashboard for admins or a clean auth redirect for signed-out users.
-- [ ] Critical route health smoke tests pass in Playwright.
+The app should not be considered production-ready unless the strict production check passes:
 
-## Search
+```bash
+npm run production-check:strict
+```
 
-- [ ] Explore search accepts natural-language queries and updates without a full page reload.
-- [ ] Create search accepts outing queries and returns cards or a helpful empty state.
-- [ ] Search failures show a clean recovery message, not a crash or generic application error.
-- [ ] Empty states include an obvious next action.
-- [ ] Result cards link to valid detail pages.
+After deployment, the live production smoke test should pass:
 
-## Auth
+```bash
+npm run production-check:live
+```
 
-- [ ] Signup and login tabs/buttons are visible on `/signup`.
-- [ ] Login form exposes forgot-password recovery.
-- [ ] Signup form exposes create-account fields and terms requirements.
-- [ ] Signed-out protected routes redirect cleanly to auth.
-- [ ] Password policy and Turnstile behavior are verified in production-like env vars.
+## 1. Public Pages
 
-## Admin
+Required pages:
 
-- [ ] Admin dashboard resolves for admin accounts.
-- [ ] Non-admin and signed-out users cannot access admin data.
-- [ ] Admin location, claim, user, analytics, and support pages load without server errors.
-- [ ] Admin actions emit audit/logging events where expected.
+* Home page
+* Explore page
+* Create page
+* Business page
+* Business claim page
+* Signup/login page
+* Plan page
+* Pricing page
+* Location details pages
 
-## Business claim flow
+Production-ready means:
 
-- [ ] Public claim page loads and explains claim requirements.
-- [ ] Business owner claim submission succeeds with valid data.
-- [ ] Duplicate/ineligible claims show clear messages.
-- [ ] Admin claim review queue receives new claims.
-- [ ] Approved claims grant the expected owner permissions.
+* No 404s
+* No app crashes
+* No duplicate footers
+* No broken primary buttons
+* No dead-end flows
+* Mobile layout works
+* Main CTAs are clear
 
-## QR claim codes
+## 2. Search
 
-- [ ] Admin QR code generation page loads.
-- [ ] QR claim code resolves to the intended claim flow.
-- [ ] Expired or invalid QR codes show safe, clear errors.
-- [ ] QR scans do not expose private business or user data.
+Production-ready means:
 
-## Location owner dashboard
+* Explore search works without page reload errors
+* Create search works without crashing
+* “rooftop dinner in Manhattan” returns relevant rooftop/dinner results or a clean empty state
+* “steak dinner” returns relevant food/restaurant results or a clean empty state
+* Borough/city/state searches respect geography
+* Queens searches do not show New Jersey first
+* Long Island and Long Island cities work
+* Search does not scan every location slowly
+* Search error messages do not appear during normal use
 
-- [ ] Owner dashboard loads for claimed-location owners.
-- [ ] Owners only see locations they own.
-- [ ] Reservation, analytics, review, and marketing panels load or show clean empty states.
-- [ ] Owner edit actions validate input and preserve location visibility rules.
+## 3. Auth
 
-## Analytics
+Production-ready means:
 
-- [ ] Client-side route and interaction tracking does not block core UX.
-- [ ] Business analytics dashboards load with real data or clean empty states.
-- [ ] Admin analytics pages avoid exposing data to unauthorized users.
-- [ ] Event ingestion failures are logged without crashing public pages.
+* /signup loads correctly
+* Login form works
+* Signup form works
+* Forgot password works
+* Password setup link works
+* Expired password link shows a clean recovery option
+* User login routes users correctly
+* Admin login routes admins correctly
+* Location owner login routes owners correctly
+* Login does not just refresh the page
 
-## Supabase/RLS/security
+## 4. Admin
 
-- [ ] Required production Supabase env vars are present.
-- [ ] RLS policies are enabled on user, owner, claim, admin, reservation, and analytics tables.
-- [ ] Anonymous users cannot read or mutate private records.
-- [ ] Service-role code only runs server-side.
-- [ ] Rate limits and abuse protections are enabled on public mutation/search endpoints.
-- [ ] Secrets are not logged in build, runtime, or Playwright output.
+Production-ready means:
 
-## SEO
+* Admin dashboard loads
+* Admin routes are protected
+* Admin topbar/dropdown appears where expected
+* Reservations are easy to access
+* Claims are organized under locations
+* Users can be managed
+* Delete user confirmation appears
+* Logs show useful activity
+* Admin pages are not cluttered
 
-- [ ] Public pages have production metadata titles/descriptions.
-- [ ] `robots.txt` and sitemap routes resolve.
-- [ ] Noindex is applied to auth/admin/private pages.
-- [ ] Canonicals and Open Graph images are valid for public marketing and location pages.
+## 5. Business Claim Flow
 
-## Performance
+Production-ready means:
 
-- [ ] Production build completes successfully.
-- [ ] Critical public routes render within acceptable TTFB/LCP budgets.
-- [ ] Search requests stay within target latency or show loading states.
-- [ ] Images use optimized sizing/fallback behavior.
-- [ ] Bundle growth is reviewed before deploy.
+* Business claim page loads
+* QR scan flow works
+* Manual claim code flow works
+* No-code/manual claim form works
+* Claim submissions create pending review records
+* Captcha works where required
+* Emails are sent for claim milestones
+* Location owners can access approved locations only
 
-## Deployment
+## 6. QR Claim Codes
 
-- [ ] `npm run production-check` passes or all failures are explicitly triaged.
-- [ ] Required environment variables exist in the deployment target.
-- [ ] Database migrations/policies are applied before app deploy.
-- [ ] Rollback plan is documented for the release.
-- [ ] Post-deploy smoke tests are run against the production URL.
+Production-ready means:
+
+* QR codes generate for all imported locations
+* QR claim code is created automatically on import
+* Admin can print all QR claim codes
+* Admin can print individual QR claim codes
+* QR scan links work wherever shown
+* QR codes do not stay stuck as pending after generation
+
+## 7. Location Owner Dashboard
+
+Production-ready means:
+
+* Owner dashboard loads
+* Owner can only access their own location
+* Owner analytics are scoped correctly
+* Owner can update allowed business information
+* Owner cannot access admin-only data
+* Owner plan/free/pro/reserve status is clear
+
+## 8. Analytics
+
+Production-ready means:
+
+* One analytics system is active
+* Old analytics system is removed or disabled
+* Search analytics record correctly
+* Location views record correctly
+* Reserve/call/website clicks record correctly
+* Admin analytics has bird’s-eye view
+* Owner analytics only shows that owner’s location data
+* Analytics does not break build if optional data is missing
+
+## 9. Supabase and Security
+
+Production-ready means:
+
+* RLS is enabled on sensitive tables
+* Public APIs expose only safe public data
+* Admin APIs verify superadmin server-side
+* Owner APIs verify ownership server-side
+* Service role key is never exposed client-side
+* Public env vars use the correct public prefix
+* Captcha/rate limiting exists for sensitive flows
+* No schema cache errors
+* No missing-column runtime errors
+
+## 10. SEO
+
+Production-ready means:
+
+* Public pages have title and description metadata
+* Location details pages have SEO-friendly metadata
+* Business page has metadata
+* Sitemap exists
+* Robots.txt exists
+* Location pages use clean slugs
+* Open Graph data exists
+* Structured data is added where appropriate
+
+## 11. Performance
+
+Production-ready means:
+
+* Search is fast
+* Home page does not over-fetch
+* Explore page does not load unnecessary data
+* Images are optimized
+* Heavy filters are not all client-side
+* Build output does not warn about major performance issues
+* Core pages load quickly on mobile
+
+## 12. Deployment
+
+Production-ready means:
+
+* npm run production-check:strict passes before deploy
+* Vercel preview works
+* Production env vars are complete
+* Supabase production env vars are correct
+* Migrations are applied
+* Live production smoke test passes after deploy
+* Rollback plan exists
+
+## Current Release Rule
+
+Use this meaning:
+
+```bash
+npm run production-check
+```
+
+Build-safe only.
+
+```bash
+npm run production-check:strict
+```
+
+Release-safe.
+
+```bash
+npm run production-check:live
+```
+
+Live-site verified.
+
+Do not call the app production-ready unless strict and live checks pass.

@@ -42,3 +42,46 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 - TWILIO_ACCOUNT_SID
 - TWILIO_AUTH_TOKEN
 - TWILIO_FROM_NUMBER
+
+## Production Checks
+
+Run the basic local check:
+
+```bash
+npm run production-check
+```
+
+This checks typecheck, lint, build, and optional E2E.
+
+Important: optional E2E may be skipped if Playwright is not installed.
+
+Run the strict local release gate before deployment:
+
+```bash
+npm run production-check:strict
+```
+
+This must pass before deploying to production.
+
+Run the live production smoke test after deployment:
+
+```bash
+npm run production-check:live
+```
+
+This tests the live site:
+
+```txt
+https://theouthaven.com
+```
+
+The basic check may skip E2E.
+
+The strict and live checks must not skip E2E.
+
+More details:
+
+```txt
+docs/PRODUCTION_CHECKS.md
+docs/PRODUCTION_READINESS.md
+```
