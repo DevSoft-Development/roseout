@@ -135,6 +135,78 @@ function stateMatches(location: Record<string, unknown>, state = "NY") { const s
 function locationHasAny(location: Record<string, unknown>, tokens: string[]) { const hay = geoHaystack(location); return tokens.some((token) => hasPhrase(hay, token)); }
 function isNycOnly(location: Record<string, unknown>) { return locationHasAny(location, ["queens", "brooklyn", "manhattan", "bronx", "staten island", ...Object.keys(NYC_NEIGHBORHOOD_ALIASES)]); }
 
+function hasAnyPhrase(hay: string, phrases: string[]) {
+  return phrases.some((phrase) => hasPhrase(hay, phrase));
+}
+
+function boroughFromLocation(location: Record<string, unknown>) {
+  const hay = geoHaystack(location);
+  const borough = field(location, "borough");
+  const city = field(location, "city");
+  const neighborhood = field(location, "neighborhood");
+
+  for (const [boroughName, aliases] of Object.entries(NYC_BOROUGH_ALIASES)) {
+    if (borough === boroughName) return boroughName;
+    if (hasAnyPhrase(borough, aliases)) return boroughName;
+    if (hasAnyPhrase(city, aliases)) return boroughName;
+    if (hasAnyPhrase(neighborhood, aliases)) return boroughName;
+    if (hasAnyPhrase(hay, aliases)) return boroughName;
+  }
+
+  for (const [neighborhoodName, mappedBorough] of Object.entries(NEIGHBORHOOD_TO_BOROUGH)) {
+    if (
+      hasPhrase(neighborhood, neighborhoodName) ||
+      hasPhrase(city, neighborhoodName) ||
+      hasPhrase(hay, neighborhoodName)
+    ) {
+      return mappedBorough;
+    }
+  }
+
+  return null;
+}
+
+function exactNeighborhoodMatch(location: Record<string, unknown>, neighborhood: string) {
+  const hay = geoHaystack(location);
+  const city = field(location, "city");
+  const locationNeighborhood = field(location, "neighborhood");
+  const address = field(location, "address");
+  const formattedAddress = field(location, "formatted_address");
+
+  const aliases = NYC_NEIGHBORHOOD_ALIASES[neighborhood] ?? [neighborhood];
+
+  return aliases.some((alias) => {
+    return (
+      hasPhrase(locationNeighborhood, alias) ||
+      hasPhrase(city, alias) ||
+      hasPhrase(address, alias) ||
+      hasPhrase(formattedAddress, alias) ||
+      hasPhrase(hay, alias)
+    );
+  });
+}
+
+function sameRequestedBorough(location: Record<string, unknown>, requestedBorough?: string | null) {
+  if (!requestedBorough) return false;
+  return boroughFromLocation(location) === normalizeGeoText(requestedBorough);
+}
+
+export function isExactRequestedNeighborhoodMatch(
+  location: Record<string, unknown>,
+  geoIntent?: GeoIntent | null,
+) {
+  if (!geoIntent?.neighborhood) return false;
+  return exactNeighborhoodMatch(location, geoIntent.neighborhood);
+}
+
+export function isSameRequestedBoroughMatch(
+  location: Record<string, unknown>,
+  geoIntent?: GeoIntent | null,
+) {
+  if (!geoIntent?.borough) return false;
+  return sameRequestedBorough(location, geoIntent.borough);
+}
+
 export function scoreGeoMatch(location: Record<string, unknown>, geoIntent?: GeoIntent | null): number {
   if (!geoIntent) return 0;
   let score = 0;
@@ -165,12 +237,26 @@ export function scoreGeoMatch(location: Record<string, unknown>, geoIntent?: Geo
   }
 
   if (geoIntent.neighborhood) {
-    if ([neighborhood, city].some((v) => hasPhrase(v, geoIntent.neighborhood!)) || hasPhrase(hay, geoIntent.neighborhood)) score += 100;
-    if (geoIntent.borough && borough.includes(geoIntent.borough)) score += 45;
+    if (exactNeighborhoodMatch(location, geoIntent.neighborhood)) {
+      score += 250;
+    } else if (geoIntent.borough && sameRequestedBorough(location, geoIntent.borough)) {
+      score += 80;
+    } else {
+      score -= 250;
+    }
   }
+
   if (geoIntent.borough) {
-    if (borough.includes(geoIntent.borough) || city.includes(geoIntent.borough) || hasPhrase(hay, geoIntent.borough)) score += 90;
-    const knownNeighborhoods = Object.entries(NEIGHBORHOOD_TO_BOROUGH).filter(([, b]) => b === geoIntent.borough).map(([n]) => n);
+    if (sameRequestedBorough(location, geoIntent.borough)) {
+      score += 150;
+    } else if (geoIntent.geoType === "borough") {
+      score -= 200;
+    }
+
+    const knownNeighborhoods = Object.entries(NEIGHBORHOOD_TO_BOROUGH)
+      .filter(([, b]) => b === geoIntent.borough)
+      .map(([n]) => n);
+
     if (knownNeighborhoods.some((n) => hasPhrase(hay, n))) score += 60;
   }
   if (geoIntent.city && (city.includes(geoIntent.city) || hasPhrase(hay, geoIntent.city) || (geoIntent.city === "new york" && locationHasAny(location, Object.keys(NYC_BOROUGH_ALIASES))))) score += 50;
@@ -188,6 +274,32 @@ export function locationMatchesGeo(location: Record<string, unknown>, geoIntent?
     isClearlyOtherState(location, "NY")
   ) {
     return false;
+  }
+
+  if (geoIntent.geoType === "neighborhood" && geoIntent.neighborhood) {
+    if (exactNeighborhoodMatch(location, geoIntent.neighborhood)) return true;
+    if (sameRequestedBorough(location, geoIntent.borough)) return true;
+    return false;
+  }
+
+  if (geoIntent.geoType === "borough" && geoIntent.borough) {
+    return sameRequestedBorough(location, geoIntent.borough);
+  }
+
+  if (geoIntent.region === "long_island") {
+    const county = field(location, "county");
+
+    const hasLongIslandCountyOrAreaSignal =
+      ["nassau", "suffolk"].some((c) => county.includes(c)) ||
+      locationHasAny(location, [...NASSAU_AREAS, ...SUFFOLK_AREAS]);
+
+    if (hasLongIslandCountyOrAreaSignal) return true;
+
+    if (isNycOnly(location)) return false;
+
+    if (locationHasAny(location, LONG_ISLAND_REGION_ALIASES)) return true;
+
+    return scoreGeoMatch(location, geoIntent) > 0;
   }
 
   return scoreGeoMatch(location, geoIntent) > 0;
