@@ -15,7 +15,9 @@
     "test:clean-search": "npx tsx scripts/test-clean-search.ts",
     "qa:search": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-core-qa.ts && node .tmp-test/scripts/search-core-qa.js",
     "verify:seo": "node scripts/verify-seo.mjs",
-    "test:search-production": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-production-readiness-regression.ts lib/search/intent.ts lib/search/geo-matching.ts lib/search/ranking.ts lib/search/cuisine-matching.ts lib/search/taxonomy.ts && node .tmp-test/scripts/search-production-readiness-regression.js"
+    "test:search-production": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-production-readiness-regression.ts lib/search/intent.ts lib/search/geo-matching.ts lib/search/ranking.ts lib/search/cuisine-matching.ts lib/search/taxonomy.ts && node .tmp-test/scripts/search-production-readiness-regression.js",
+    "production-check": "node scripts/production-check.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -37,6 +39,7 @@
     "html5-qrcode": "^2.3.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
