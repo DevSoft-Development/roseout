@@ -24,7 +24,7 @@
     "test:e2e:required": "node scripts/run-e2e-required.mjs",
     "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run test:e2e:required",
     "production-check:live": "npm run typecheck && npm run lint && npm run build && PLAYWRIGHT_BASE_URL=https://theouthaven.com npm run test:e2e:required",
-    "test:search-quality": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-quality-regression.ts lib/search/intent.ts lib/search/queryBuilders.ts lib/search/geo-matching.ts lib/search/ranking.ts lib/search/pairing.ts lib/search/cuisine-matching.ts lib/search/taxonomy.ts && node .tmp-test/scripts/search-quality-regression.js"
+    "test:search-quality": "npx tsx scripts/search-quality-regression.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
