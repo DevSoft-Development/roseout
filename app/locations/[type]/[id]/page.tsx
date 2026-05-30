@@ -76,16 +76,74 @@ type ReviewRecord = Record<string, unknown> & {
 
 function toArray(value: unknown): string[] {
   if (!value) return [];
-  if (Array.isArray(value)) return value.map(String);
+
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => toArray(item))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
 
   if (typeof value === "string") {
-    return value
+    const trimmed = value.trim();
+
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .flatMap((item) => toArray(item))
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // Not JSON. Fall back to comma-separated parsing.
+    }
+
+    return trimmed
+      .replace(/^\[|\]$/g, "")
       .split(",")
-      .map((v) => v.trim())
+      .map((item) =>
+        item
+          .trim()
+          .replace(/^["']|["']$/g, "")
+          .replace(/[-_]+/g, " "),
+      )
       .filter(Boolean);
   }
 
   return [];
+}
+
+function formatDisplayLabel(value: unknown) {
+  const text = String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (!text) return "";
+
+  return text
+    .split(" ")
+    .map((word) =>
+      word.length <= 2
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+    )
+    .join(" ");
+}
+
+function cleanDisplayTags(items: unknown[], limit = 8) {
+  return Array.from(
+    new Set(
+      items
+        .flatMap((item) => toArray(item))
+        .map(formatDisplayLabel)
+        .filter(Boolean),
+    ),
+  ).slice(0, limit);
 }
 
 export default function LocationDetailPage() {
@@ -244,6 +302,19 @@ export default function LocationDetailPage() {
   const bestFor = toArray(location?.best_for);
   const specialFeatures = toArray(location?.special_features);
   const signatureItems = toArray(location?.signature_items);
+  const displayVibeTags = cleanDisplayTags([
+    tags,
+    dateStyleTags,
+    reviewKeywords,
+    bestFor,
+    specialFeatures,
+    signatureItems,
+    location?.primary_tag,
+    location?.atmosphere,
+  ]).slice(0, 7);
+  const displayBestFor = cleanDisplayTags(bestFor, 10);
+  const displaySpecialFeatures = cleanDisplayTags(specialFeatures, 10);
+  const displaySignatureItems = cleanDisplayTags(signatureItems, 10);
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
     getOperatingHours(location),
   );
@@ -318,11 +389,11 @@ export default function LocationDetailPage() {
     category,
     cuisine: location?.cuisine || location?.activity_type,
     atmosphere: location?.atmosphere,
-    reviewKeywords,
-    bestFor,
+    reviewKeywords: cleanDisplayTags(reviewKeywords, 8),
+    bestFor: displayBestFor,
     qualityScore: location?.quality_score || score,
     popularityScore: location?.popularity_score,
-    vibeTags: [...tags, ...dateStyleTags],
+    vibeTags: displayVibeTags,
     city: location?.city,
   });
 
@@ -422,8 +493,8 @@ export default function LocationDetailPage() {
         from={from}
       />
 
-      <main className="min-h-screen bg-black pt-20 text-white">
-        <section className="relative min-h-screen overflow-hidden">
+      <main className="min-h-screen bg-[#050202] pt-20 text-white">
+        <section className="relative min-h-[88vh] overflow-hidden">
           {getLocationImage(location) ? (
             <Image
               src={getLocationImage(location)}
@@ -436,8 +507,8 @@ export default function LocationDetailPage() {
             <div className="absolute inset-0 bg-black" />
           )}
 
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(225,6,42,0.34),transparent_34%),radial-gradient(circle_at_78%_8%,rgba(127,29,29,0.4),transparent_28%)]" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/20" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(220,38,38,0.32),transparent_32%),radial-gradient(circle_at_82%_8%,rgba(127,29,29,0.26),transparent_30%)]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#050202] via-black/78 to-black/25" />
 
           <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-5 pb-10 pt-24 sm:px-8">
             <div className="mt-auto grid items-end gap-8 pb-8 lg:grid-cols-[1fr_330px]">
@@ -446,20 +517,18 @@ export default function LocationDetailPage() {
                   TheOutHaven Location
                 </p>
 
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-black">
-                    {category}
-                  </span>
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <PremiumTag>{formatDisplayLabel(category)}</PremiumTag>
 
                   {location.price_range && (
-                    <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
-                      {location.price_range}
-                    </span>
+                    <PremiumTag>{location.price_range}</PremiumTag>
                   )}
 
-                  <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
-                    🌸 {location.review_count || reviews.length || 0} Reviews
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
+                    <HavenMark className="h-5 w-5 text-[9px]" />
+                    {location.review_count || reviews.length || 0} Reviews
                   </span>
+
                   {galleryImages.length > 1 && (
                     <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
                       {galleryImages.length} Photos
@@ -472,8 +541,9 @@ export default function LocationDetailPage() {
                 </h1>
 
                 {location.primary_tag && (
-                  <p className="mt-5 text-xl font-black text-red-200">
-                    ✨ {location.primary_tag}
+                  <p className="mt-5 inline-flex items-center gap-2 text-xl font-black text-red-100">
+                    <HavenMark />
+                    {formatDisplayLabel(location.primary_tag)}
                   </p>
                 )}
 
@@ -487,6 +557,14 @@ export default function LocationDetailPage() {
                   {location.description ||
                     "A curated TheOutHaven location selected for memorable outings, quality experiences, and strong match potential."}
                 </p>
+
+                {displayVibeTags.length > 0 && (
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {displayVibeTags.map((tag) => (
+                      <PremiumTag key={tag}>{tag}</PremiumTag>
+                    ))}
+                  </div>
+                )}
 
                 <div className="mt-8 flex flex-wrap gap-3">
                   {reservationUrl && (
@@ -547,17 +625,13 @@ export default function LocationDetailPage() {
                 </div>
               </div>
 
-              <div className="rounded-[2rem] border border-white/15 bg-white/10 p-5 text-white shadow-2xl backdrop-blur-xl">
+              <div className="rounded-[2rem] border border-white/15 bg-black/55 p-3 text-white shadow-2xl shadow-red-950/20 backdrop-blur-xl">
                 <ScoreBadge score={score} />
 
-                <p className="mt-4 text-sm leading-6 text-white/65">
-                  TheOutHaven uses location details, review words, vibe signals,
-                  and experience quality to improve recommendations.
-                </p>
-
                 {Number(location.review_score || 0) >= 85 && (
-                  <div className="mt-4 rounded-full bg-red-600 px-4 py-2 text-center text-xs font-black text-white shadow-lg shadow-red-950/40">
-                    🌹 Review Favorite
+                  <div className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-red-300/25 bg-red-600/20 px-4 py-2 text-center text-xs font-black uppercase tracking-[0.16em] text-red-50">
+                    <HavenMark className="h-5 w-5 text-[9px]" />
+                    Review Favorite
                   </div>
                 )}
               </div>
@@ -565,17 +639,17 @@ export default function LocationDetailPage() {
           </div>
         </section>
 
-        <section className="border-y border-white/10 bg-[#0d0707] px-5 py-5">
+        <section className="border-y border-white/10 bg-[#090303] px-5 py-5 shadow-2xl shadow-black/30">
           <div className="mx-auto grid max-w-7xl gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <QuickDetail label="Category" value={category} />
             <QuickDetail label="Neighborhood" value={location.neighborhood || location.city || "Explore area"} />
             <QuickDetail label="Hours" value={operatingHoursDisplay || "Confirm directly"} />
             <QuickDetail label="Reservations" value={reservationUrl ? "Available" : "Call or visit website"} />
-            <QuickDetail label="Best for" value={bestFor[0] || location.primary_tag || "Curated outing"} />
+            <QuickDetail label="Best for" value={displayBestFor[0] || formatDisplayLabel(location.primary_tag) || "Curated outing"} />
           </div>
         </section>
 
-        <section className="relative overflow-hidden bg-black px-5 py-16">
+        <section className="relative overflow-hidden bg-[#050202] px-5 py-16">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(225,6,42,0.18),transparent_30%)]" />
 
           <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_380px]">
@@ -596,7 +670,7 @@ export default function LocationDetailPage() {
               <LuxuryCard eyebrow="About / Experience" title="What to expect.">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <EditorialTile label="Atmosphere" value={location.atmosphere || location.primary_tag || "Curated hospitality setting"} />
-                  <EditorialTile label="Signature" value={signatureItems[0] || specialFeatures[0] || "Memorable experience moments"} />
+                  <EditorialTile label="Signature" value={displaySignatureItems[0] || displaySpecialFeatures[0] || "Memorable experience moments"} />
                   <EditorialTile label="Experience" value={location.description || "Selected for guests looking for elevated plans with a clear sense of place."} />
                   <EditorialTile label="Planning note" value={reservationUrl ? "Reserve ahead for the smoothest visit." : "Confirm hours and availability before heading out."} />
                 </div>
@@ -627,16 +701,16 @@ export default function LocationDetailPage() {
                 </LuxuryCard>
               )}
 
-              {bestFor.length > 0 && (
-                <DetailGrid title="Best For" items={bestFor} />
+              {displayBestFor.length > 0 && (
+                <DetailGrid title="Best For" items={displayBestFor} />
               )}
 
-              {specialFeatures.length > 0 && (
-                <DetailGrid title="Special Features" items={specialFeatures} />
+              {displaySpecialFeatures.length > 0 && (
+                <DetailGrid title="Special Features" items={displaySpecialFeatures} />
               )}
 
-              {signatureItems.length > 0 && (
-                <DetailGrid title="Signature Picks" items={signatureItems} />
+              {displaySignatureItems.length > 0 && (
+                <DetailGrid title="Signature Picks" items={displaySignatureItems} />
               )}
 
               <LuxuryCard
@@ -659,8 +733,8 @@ export default function LocationDetailPage() {
                             {review.customer_name || "TheOutHaven Guest"}
                           </p>
 
-                          <p className="rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
-                            {"🌸".repeat(Number(review.rating || 0))}{" "}
+                          <p className="inline-flex items-center gap-2 rounded-full border border-red-300/25 bg-red-600/20 px-3 py-1 text-xs font-black text-red-50">
+                            <HavenMark className="h-5 w-5 text-[9px]" />
                             {review.rating}/5
                           </p>
                         </div>
@@ -669,18 +743,16 @@ export default function LocationDetailPage() {
                           {review.review_text}
                         </p>
 
-                        {toArray(review.ai_keywords).length > 0 && (
+                        {cleanDisplayTags(toArray(review.ai_keywords), 6).length > 0 && (
                           <div className="mt-4 flex flex-wrap gap-2">
-                            {toArray(review.ai_keywords)
-                              .slice(0, 6)
-                              .map((keyword) => (
-                                <span
-                                  key={keyword}
-                                  className="rounded-full border border-red-500/25 bg-red-500/10 px-3 py-1 text-xs font-bold text-red-100"
-                                >
-                                  {keyword}
-                                </span>
-                              ))}
+                            {cleanDisplayTags(toArray(review.ai_keywords), 6).map((keyword) => (
+                              <span
+                                key={keyword}
+                                className="rounded-full border border-red-300/20 bg-red-950/30 px-3 py-1 text-xs font-bold text-red-50"
+                              >
+                                {formatDisplayLabel(keyword)}
+                              </span>
+                            ))}
                           </div>
                         )}
 
@@ -923,7 +995,7 @@ function DynamicLocationHeader({
                 Results
               </a>
               <span>/</span>
-              <span className="truncate text-red-300">{category}</span>
+              <span className="truncate text-red-300">{formatDisplayLabel(category)}</span>
             </div>
 
             <p
@@ -976,8 +1048,8 @@ function LuxuryCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-white shadow-2xl backdrop-blur-xl">
-      <p className="text-xs font-black uppercase tracking-[0.3em] text-red-400">
+    <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.035] to-red-950/[0.08] p-6 text-white shadow-2xl shadow-black/30 backdrop-blur-xl">
+      <p className="text-xs font-black uppercase tracking-[0.3em] text-red-300/80">
         {eyebrow}
       </p>
 
@@ -988,38 +1060,66 @@ function LuxuryCard({
   );
 }
 
+function PremiumTag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-red-400/20 bg-red-950/25 px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-red-50 shadow-sm shadow-red-950/20">
+      {children}
+    </span>
+  );
+}
+
+function HavenMark({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-300/30 bg-red-600/20 text-[10px] font-black tracking-tight text-red-50 shadow-sm shadow-red-950/30 ${className}`}
+      aria-hidden="true"
+    >
+      OH
+    </span>
+  );
+}
+
 function DetailGrid({ title, items }: { title: string; items: string[] }) {
+  const cleanItems = cleanDisplayTags(items, 12);
+
+  if (cleanItems.length === 0) return null;
+
   return (
     <LuxuryCard eyebrow={title} title={title}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
-          <div
-            key={item}
-            className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-bold text-white/70"
-          >
-            {item}
-          </div>
+      <div className="flex flex-wrap gap-2">
+        {cleanItems.map((item) => (
+          <PremiumTag key={item}>{item}</PremiumTag>
         ))}
       </div>
     </LuxuryCard>
   );
 }
 
-
 function QuickDetail({ label, value }: { label: string; value: string | number }) {
+  const displayValue =
+    typeof value === "string" && label !== "Hours"
+      ? formatDisplayLabel(value) || value
+      : value;
+
   return (
-    <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">{label}</p>
-      <p className="mt-2 line-clamp-2 text-sm font-black text-white/80">{value}</p>
+    <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-4 shadow-lg shadow-black/20">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-200/45">
+        {label}
+      </p>
+      <p className="mt-2 line-clamp-2 text-sm font-black text-white/85">
+        {displayValue}
+      </p>
     </div>
   );
 }
 
 function EditorialTile({ label, value }: { label: string; value: string }) {
+  const displayValue = label === "Experience" ? value : formatDisplayLabel(value) || value;
+
   return (
     <div className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
       <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-200/60">{label}</p>
-      <p className="mt-2 text-sm font-semibold leading-6 text-white/70">{value}</p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-white/70">{displayValue}</p>
     </div>
   );
 }
@@ -1045,14 +1145,14 @@ function buildRecommendationBullets({
   vibeTags: string[];
   city?: string | null;
 }) {
-  const primary = cuisine || category;
+  const primary = formatDisplayLabel(cuisine || category).toLowerCase();
   const bullets = [
     `A strong match for guests looking for ${primary || "a polished experience"}${city ? ` in ${city}` : ""}.`,
     bestFor[0]
       ? `Especially useful for ${bestFor.slice(0, 2).join(" and ").toLowerCase()} plans where the setting matters.`
       : `A polished option for date nights, celebrations, and intentional outings.`,
     atmosphere
-      ? `The overall feel leans ${String(atmosphere).toLowerCase()}, helping guests choose the right mood before they go.`
+      ? `The overall feel leans ${formatDisplayLabel(atmosphere).toLowerCase()}, helping guests choose the right mood before they go.`
       : reviewKeywords[0]
         ? `Imported review language points to ${reviewKeywords.slice(0, 2).join(" and ").toLowerCase()} as notable guest signals.`
         : `Recommended when guests want a more elevated plan without sorting through generic listings.`,
@@ -1073,8 +1173,8 @@ function MiniInsight({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/35">
         {label}
       </p>
-      <p className="mt-1 text-sm font-black capitalize text-white/80">
-        {value}
+      <p className="mt-1 text-sm font-black text-white/80">
+        {formatDisplayLabel(value) || value}
       </p>
     </div>
   );
