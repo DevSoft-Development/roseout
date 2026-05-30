@@ -39,6 +39,23 @@ export async function POST(request: Request) {
     created_by: adminUser?.user_id || null,
   });
 
+  if (body.recipientType === "location" && body.recipientId) {
+    const { error: locationLogError } = await supabase.from("business_communication_logs").insert({
+      location_id: body.recipientId,
+      channel,
+      direction: "outbound",
+      to_address: body.to,
+      subject: body.subject || null,
+      body: body.body,
+      delivery_status: "sent",
+      provider_message_id: providerId,
+      created_by: adminUser?.user_id || null,
+    });
+    if (locationLogError) {
+      await logEvent("admin_activity", { adminId: adminUser?.user_id || null, action: "business_communication_log_failed", error: locationLogError.message });
+    }
+  }
+
   await logEvent("admin_activity", { adminId: adminUser?.user_id || null, action: "send_communication", channel, to: body.to });
 
   return Response.json({ ok: true, providerMessageId: providerId });

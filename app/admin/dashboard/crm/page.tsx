@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
-import { getUpgradeFlags, listBusinessCRM, type BusinessCRMRow } from "@/lib/admin-crm";
+import { getBusinessCRMSummary, getClaimStatus, getDisplayCRMStatus, getUpgradeFlags, listBusinessCRMPage } from "@/lib/admin-crm";
 
 export const dynamic = "force-dynamic";
 
@@ -21,38 +21,28 @@ function badgeClass(value?: string | null) {
   return "border-white/10 bg-white/[0.06] text-white/70";
 }
 
-function matchesFilter(row: BusinessCRMRow, filter: string) {
-  if (filter === "upgrade-opportunities") return row.opportunity_score >= 70 || row.crm_status === "Upgrade Opportunity";
-  if (filter === "at-risk") return row.churn_risk_score >= 65 || row.crm_status === "At Risk";
-  if (filter === "pending-claims") return (row.pending_claims || 0) > 0 || row.claim_status === "pending";
-  if (filter === "owners") return Boolean(row.owner_user_id || row.owner_email || row.is_claimed);
-  if (filter === "open-tasks") return (row.open_tasks || 0) > 0;
-  if (filter === "follow-ups") return Boolean(row.follow_up_date);
-  if (filter === "qr") return true;
-  return true;
-}
-
-export default async function CRMPage({ searchParams }: { searchParams: Promise<{ q?: string; filter?: string }> }) {
+export default async function CRMPage({ searchParams }: { searchParams: Promise<{ q?: string; filter?: string; page?: string; pageSize?: string }> }) {
   await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const params = await searchParams;
-  const q = String(params.q || "").trim().toLowerCase();
+  const q = String(params.q || "").trim();
   const filter = params.filter || "all";
-  const rows = (await listBusinessCRM(250)).filter((row) => matchesFilter(row, filter));
-  const businesses = q
-    ? rows.filter((row) => [row.name, row.location_name, row.city, row.borough, row.state, row.category, row.owner_email].some((value) => String(value || "").toLowerCase().includes(q)))
-    : rows;
-
-  const summary = {
-    total: rows.length,
-    searchable: rows.filter((b) => b.is_searchable).length,
-    claimed: rows.filter((b) => b.is_claimed).length,
-    unclaimed: rows.filter((b) => !b.is_claimed).length,
-    pendingClaims: rows.reduce((sum, b) => sum + (b.pending_claims || 0), 0),
-    upgradeCandidates: rows.filter((b) => b.opportunity_score >= 70).length,
-    atRisk: rows.filter((b) => b.churn_risk_score >= 65 || b.crm_status === "At Risk").length,
-    openTasks: rows.reduce((sum, b) => sum + (b.open_tasks || 0), 0),
-    reservationIntent: rows.reduce((sum, b) => sum + b.reservation_completions_30d, 0),
-    searchAppearances: rows.reduce((sum, b) => sum + b.search_appearances_30d, 0),
+  const page = Math.max(Number(params.page || 1), 1);
+  const pageSize = Math.min(Math.max(Number(params.pageSize || 100), 25), 250);
+  const [pageData, summary] = await Promise.all([
+    listBusinessCRMPage({ page, pageSize, query: q, filter }),
+    getBusinessCRMSummary(),
+  ]);
+  const businesses = pageData.rows;
+  const pageStart = pageData.total === 0 ? 0 : (pageData.page - 1) * pageData.pageSize + 1;
+  const pageEnd = Math.min(pageData.page * pageData.pageSize, pageData.total);
+  const baseParams = new URLSearchParams();
+  if (q) baseParams.set("q", q);
+  if (filter !== "all") baseParams.set("filter", filter);
+  if (pageSize !== 100) baseParams.set("pageSize", String(pageSize));
+  const pageHref = (nextPage: number) => {
+    const next = new URLSearchParams(baseParams);
+    next.set("page", String(nextPage));
+    return `/admin/dashboard/crm?${next.toString()}`;
   };
 
   return (
@@ -68,8 +58,9 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
               </p>
             </div>
             <form className="flex min-w-[280px] flex-col gap-2 sm:flex-row">
-              <input name="q" defaultValue={params.q || ""} placeholder="Search locations, owners, city..." className="rounded-full border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35" />
+              <input name="q" defaultValue={params.q || ""} placeholder="Search locations, owners, address..." className="rounded-full border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35" />
               {filter !== "all" ? <input type="hidden" name="filter" value={filter} /> : null}
+              <input type="hidden" name="pageSize" value={pageSize} />
               <button className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/40">Search</button>
             </form>
           </div>
@@ -105,7 +96,7 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
             ["Follow-ups", "follow-ups"],
             ["QR Codes", "qr"],
           ].map(([label, value]) => (
-            <Link key={value} href={value === "all" ? "/admin/dashboard/crm" : `/admin/dashboard/crm?filter=${value}`} className={`whitespace-nowrap rounded-full px-4 py-2 ${filter === value ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>
+            <Link key={value} href={`/admin/dashboard/crm?${new URLSearchParams({ ...(q ? { q } : {}), ...(value !== "all" ? { filter: value } : {}), ...(pageSize !== 100 ? { pageSize: String(pageSize) } : {}), page: "1" }).toString()}`} className={`whitespace-nowrap rounded-full px-4 py-2 ${filter === value ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>
               {label}
             </Link>
           ))}
@@ -120,21 +111,20 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1250px] text-left text-sm">
+              <table className="w-full min-w-[1150px] table-fixed text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.2em] text-white/55">
                   <tr>
                     {[
-                      "Location",
-                      "City/State",
-                      "CRM Status",
-                      "Claim Status",
-                      "Owner",
-                      "Plan",
-                      "Analytics 30d",
-                      "Tasks/Alerts",
-                      "Last Activity",
-                      "Actions",
-                    ].map((header) => <th key={header} className="px-3 py-3">{header}</th>)}
+                      ["LOCATION", "w-[245px]"],
+                      ["CRM STATUS", "w-[105px]"],
+                      ["CLAIM STATUS", "w-[105px]"],
+                      ["OWNER", "w-[120px]"],
+                      ["PLAN", "w-[95px]"],
+                      ["ANALYTICS 30D", "w-[120px]"],
+                      ["TASKS / ALERTS", "w-[120px]"],
+                      ["LAST ACTIVITY", "w-[95px]"],
+                      ["ACTIONS", "w-[145px]"],
+                    ].map(([header, width]) => <th key={header} className={`${width} px-3 py-3 align-bottom whitespace-nowrap`}>{header}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -142,28 +132,27 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
                     const flags = getUpgradeFlags(business);
                     return (
                       <tr key={business.id} className="border-t border-white/10 align-top hover:bg-white/[0.025]">
-                        <td className="px-3 py-4">
+                        <td className="px-3 py-4 align-top">
                           <Link href={`/admin/dashboard/crm/${business.id}`} className="font-black text-rose-200 hover:text-rose-100">{business.name}</Link>
-                          <p className="mt-1 text-xs text-white/50">{business.address || business.category || "Location profile"}</p>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/50">{business.address || [business.city || business.borough, business.state].filter(Boolean).join(", ") || business.category || "Location profile"}</p>
                         </td>
-                        <td className="px-3 py-4 text-white/70">{[business.city || business.borough, business.state].filter(Boolean).join(", ") || "—"}</td>
-                        <td className="px-3 py-4"><span className={`rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(business.crm_status)}`}>{business.crm_status}</span></td>
-                        <td className="px-3 py-4"><span className={`rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(business.claim_status || (business.is_claimed ? "Claimed" : "Unclaimed"))}`}>{business.claim_status || (business.is_claimed ? "Claimed" : "Unclaimed")}</span></td>
-                        <td className="px-3 py-4 text-white/70">{business.owner_email || business.owner_status || (business.owner_user_id ? "Linked owner" : "No owner")}</td>
-                        <td className="px-3 py-4 text-white/70">{business.plan_status || (business.opportunity_score >= 70 ? "Upgrade candidate" : "Free Discovery")}</td>
-                        <td className="px-3 py-4 text-xs text-white/70">
+                        <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getDisplayCRMStatus(business))}`}>{getDisplayCRMStatus(business)}</span></td>
+                        <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getClaimStatus(business))}`}>{getClaimStatus(business)}</span></td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70 break-words">{business.owner_email || business.owner_status || (business.owner_user_id ? "Linked owner" : "No owner")}</td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70 whitespace-nowrap">{business.plan || business.plan_status || (business.opportunity_score >= 70 ? "Upgrade" : "Free")}</td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70 whitespace-nowrap">
                           <div>Views: {fmt(business.profile_views_30d)}</div>
                           <div>Search: {fmt(business.search_appearances_30d)}</div>
                           <div>Reservations: {fmt(business.reservation_completions_30d)}</div>
                         </td>
-                        <td className="px-3 py-4">
+                        <td className="px-3 py-4 align-top">
                           <div className="flex flex-wrap gap-1">
                             {flags.slice(0, 3).map((flag) => <span key={flag} className="rounded-full border border-rose-200/30 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-100">{flag}</span>)}
                             {!flags.length ? <span className="text-xs text-white/45">No active alerts</span> : null}
                           </div>
                         </td>
-                        <td className="px-3 py-4 text-white/60">{dateLabel(business.last_contacted_at || business.updated_at || business.created_at)}</td>
-                        <td className="px-3 py-4">
+                        <td className="px-3 py-4 align-top text-xs text-white/60 whitespace-nowrap">{dateLabel(business.last_contacted_at || business.updated_at || business.created_at)}</td>
+                        <td className="px-3 py-4 align-top">
                           <div className="flex flex-wrap gap-2">
                             <Link href={`/admin/dashboard/crm/${business.id}`} className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white">View CRM</Link>
                             <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70">Edit</Link>
@@ -178,6 +167,14 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
               </table>
             </div>
           )}
+
+          <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-white/60 sm:flex-row sm:items-center sm:justify-between">
+            <p>Showing <span className="font-bold text-white">{fmt(pageStart)}</span>-<span className="font-bold text-white">{fmt(pageEnd)}</span> of <span className="font-bold text-white">{fmt(pageData.total)}</span> locations</p>
+            <div className="flex gap-2">
+              <Link aria-disabled={pageData.page <= 1} href={pageData.page <= 1 ? "#" : pageHref(pageData.page - 1)} className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page <= 1 ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}>Previous</Link>
+              <Link aria-disabled={pageData.page >= pageData.totalPages} href={pageData.page >= pageData.totalPages ? "#" : pageHref(pageData.page + 1)} className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page >= pageData.totalPages ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}>Next</Link>
+            </div>
+          </div>
         </section>
       </div>
     </main>
