@@ -1,6 +1,12 @@
 import { supabaseAdmin } from "../supabase-admin";
 import type { CanonicalSearchIntent } from "./types";
-import { detectRequestedGeo, locationMatchesGeo, scoreGeoMatch } from "./geo-matching";
+import {
+  detectRequestedGeo,
+  isExactRequestedNeighborhoodMatch,
+  isSameRequestedBoroughMatch,
+  locationMatchesGeo,
+  scoreGeoMatch,
+} from "./geo-matching";
 import { scoreCuisineCategoryMatch } from "./cuisine-matching";
 
 type SearchDomain = "restaurant" | "activity";
@@ -21,6 +27,8 @@ export type SearchDebug = {
   geoIntent?: ReturnType<typeof detectRequestedGeo>;
   geoFilteredByQueryCount?: number;
   geoFilteredByIntentCount?: number;
+  exactNeighborhoodFilteredCount?: number;
+  sameBoroughFallbackCount?: number;
   geoFilteredFinalCount?: number;
   rejectedRecords?: Array<{ name: string; reason: string; domain?: string | null }>;
 };
@@ -197,11 +205,6 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
   const mealIntent = hasMealIntent(query);
   const mealTerms = getMealTermsFromQuery(query);
   const restaurantCandidates = locations.filter((location) => isRestaurantRecord(location) && !isActivityOnlyRecord(location));
-  if (!mealIntent) return { filtered: restaurantCandidates, strictCount: restaurantCandidates.length, fallbackCount: restaurantCandidates.length };
-  const strictMealMatches = restaurantCandidates.filter((location) => {
-    const hay = locationText(location);
-    return mealTerms.some((term) => hay.includes(term));
-  });
   const rooftopIntent = hasRooftopRestaurantIntent(query);
 
   if (rooftopIntent) {
@@ -218,6 +221,12 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
       };
     }
   }
+
+  if (!mealIntent) return { filtered: restaurantCandidates, strictCount: restaurantCandidates.length, fallbackCount: restaurantCandidates.length };
+  const strictMealMatches = restaurantCandidates.filter((location) => {
+    const hay = locationText(location);
+    return mealTerms.some((term) => hay.includes(term));
+  });
   const steakIntent = STEAK_TERMS.some((term) => query.toLowerCase().includes(term));
   if (steakIntent) {
     const steakStrictMatches = restaurantCandidates.filter((location) => {
@@ -389,30 +398,61 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   const rejectedRecords: Array<{ name: string; reason: string; domain?: string | null }> = [];
   const nameForDebug = (record: Record<string, unknown>) => String(record.name ?? record.restaurant_name ?? record.activity_name ?? record.business_name ?? "Unknown");
   const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
-  const geoFilteredByQuery = geoIntent ? domainRecords.filter((record) => locationMatchesGeo(record, geoIntent)) : domainRecords.filter((record) => matchesGeo(record, intentQuery));
+
+  const geoFilteredByQuery = geoIntent
+    ? domainRecords.filter((record) => locationMatchesGeo(record, geoIntent))
+    : domainRecords.filter((record) => matchesGeo(record, intentQuery));
+
+  const exactNeighborhoodFiltered =
+    geoIntent?.geoType === "neighborhood" && geoIntent.neighborhood
+      ? domainRecords.filter((record) => isExactRequestedNeighborhoodMatch(record, geoIntent))
+      : [];
+
+  const sameBoroughFallbackFiltered =
+    geoIntent?.geoType === "neighborhood" && geoIntent.borough
+      ? domainRecords.filter((record) => isSameRequestedBoroughMatch(record, geoIntent))
+      : [];
+
   const hasExplicitGeo =
     Boolean(geoIntent) ||
     (intent.boroughs?.length ?? 0) > 0 ||
     (intent.neighborhoods?.length ?? 0) > 0 ||
     (intent.cities?.length ?? 0) > 0 ||
     (intent.locations?.length ?? 0) > 0;
+
   const strictGeoRequired =
     hasExplicitGeo &&
     ["borough", "neighborhood", "city", "county", "region", "area_group"].includes(String(geoIntent?.geoType ?? "borough"));
 
   let geoFiltered: Record<string, unknown>[];
+
   if (strictGeoRequired) {
-    geoFiltered = geoFilteredByQuery.length > 0
-      ? geoFilteredByQuery
-      : geoFilteredByIntent.length > 0
-        ? geoFilteredByIntent
-        : [];
+    if (geoIntent?.geoType === "neighborhood") {
+      geoFiltered =
+        exactNeighborhoodFiltered.length > 0
+          ? exactNeighborhoodFiltered
+          : sameBoroughFallbackFiltered.length > 0
+            ? sameBoroughFallbackFiltered
+            : geoFilteredByQuery.length > 0
+              ? geoFilteredByQuery
+              : geoFilteredByIntent.length > 0
+                ? geoFilteredByIntent
+                : [];
+    } else {
+      geoFiltered =
+        geoFilteredByQuery.length > 0
+          ? geoFilteredByQuery
+          : geoFilteredByIntent.length > 0
+            ? geoFilteredByIntent
+            : [];
+    }
   } else {
-    geoFiltered = geoFilteredByQuery.length > 0
-      ? geoFilteredByQuery
-      : geoFilteredByIntent.length > 0
-        ? geoFilteredByIntent
-        : domainRecords;
+    geoFiltered =
+      geoFilteredByQuery.length > 0
+        ? geoFilteredByQuery
+        : geoFilteredByIntent.length > 0
+          ? geoFilteredByIntent
+          : domainRecords;
   }
 
   if (strictGeoRequired && geoFiltered.length === 0 && domainRecords.length > 0) {
@@ -491,6 +531,8 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     geoIntent,
     geoFilteredByQueryCount: geoFilteredByQuery.length,
     geoFilteredByIntentCount: geoFilteredByIntent.length,
+    exactNeighborhoodFilteredCount: exactNeighborhoodFiltered.length,
+    sameBoroughFallbackCount: sameBoroughFallbackFiltered.length,
     geoFilteredFinalCount: geoFiltered.length,
   };
   if (domain === "restaurant") {
@@ -519,6 +561,9 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       strictRestaurantCount,
       fallbackRestaurantCount,
       activityCandidateCount,
+      exactNeighborhoodFilteredCount: exactNeighborhoodFiltered.length,
+      sameBoroughFallbackCount: sameBoroughFallbackFiltered.length,
+      geoFilteredFinalCount: geoFiltered.length,
       fallbackStage: domain === "restaurant" ? (strictRestaurantCount > 0 && geoIntent ? "hard_cuisine_then_geo" : fallbackRestaurantCount > 0 ? "generic_or_expanded" : "strict") : undefined,
       finalCardCount: categorized.length,
       top10: categorized.slice(0, 10).map((record) => {
