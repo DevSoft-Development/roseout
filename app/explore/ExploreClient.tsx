@@ -225,6 +225,7 @@ export default function ExploreClient({
       }
 
       setLocations(Array.isArray(data.items) ? data.items : []);
+      setError("");
     } catch (err) {
       console.error("EXPLORE_CLIENT_SEARCH_ERROR", err);
 
@@ -265,11 +266,7 @@ export default function ExploreClient({
         console.error("EXPLORE_CLIENT_FALLBACK_ERROR", fallbackErr);
       }
 
-      setError(
-        process.env.NODE_ENV === "development"
-          ? `Explore search failed: ${err instanceof Error ? err.message : "Unknown error"}`
-          : "Search is having trouble right now. Try a different query or clear the filters."
-      );
+      setError(`Explore search failed: ${err instanceof Error ? err.message : "Unknown error"}`);
       setLocations([]);
     } finally {
       setLoading(false);

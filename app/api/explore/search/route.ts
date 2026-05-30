@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 
-const SELECT_FIELDS = [
+const EXPLORE_CARD_FIELDS = [
   "id",
   "source_table",
-  "source_id",
   "location_type",
   "name",
   "restaurant_name",
@@ -16,22 +15,13 @@ const SELECT_FIELDS = [
   "city",
   "borough",
   "neighborhood",
-  "state",
-  "zip_code",
   "primary_category",
-  "primary_tag",
   "cuisine",
   "cuisine_type",
-  "food_type",
   "activity_type",
   "tags",
   "vibe_tags",
   "best_for_tags",
-  "google_types",
-  "atmosphere",
-  "best_for",
-  "date_style_tags",
-  "search_keywords",
   "search_document",
   "description",
   "reservation_url",
@@ -41,31 +31,12 @@ const SELECT_FIELDS = [
   "rating",
   "review_count",
   "theouthaven_score",
-  "popularity_score",
-  "quality_score",
   "is_featured",
   "created_at",
   "is_searchable",
   "is_hidden",
   "data_status"
 ].join(",");
-
-const SEARCH_COLUMNS = [
-  "name",
-  "restaurant_name",
-  "activity_name",
-  "city",
-  "borough",
-  "neighborhood",
-  "primary_category",
-  "primary_tag",
-  "cuisine",
-  "cuisine_type",
-  "food_type",
-  "activity_type",
-  "search_document",
-  "description",
-];
 
 const LONG_ISLAND_TERMS = [
   "long island",
@@ -151,28 +122,51 @@ export async function GET(request: NextRequest) {
   try {
     let query = supabaseAdmin
       .from("locations")
-      .select(SELECT_FIELDS)
+      .select(EXPLORE_CARD_FIELDS)
       .eq("is_searchable", true)
       .eq("data_status", "clean")
-      .neq("is_hidden", true);
+      .not("is_hidden", "is", true);
 
     const searchTerms = searchTokens(q);
 
     if (searchTerms.length > 0) {
-      const orClauses = searchTerms.flatMap((term) =>
-        SEARCH_COLUMNS.map((column) => `${column}.ilike.%${escapeIlikeTerm(term)}%`),
+      const safeSearch = escapeIlikeTerm(searchTerms.join(" "));
+
+      query = query.or(
+        [
+          `search_document.ilike.%${safeSearch}%`,
+          `name.ilike.%${safeSearch}%`,
+          `restaurant_name.ilike.%${safeSearch}%`,
+          `activity_name.ilike.%${safeSearch}%`,
+          `primary_category.ilike.%${safeSearch}%`,
+          `cuisine.ilike.%${safeSearch}%`,
+          `cuisine_type.ilike.%${safeSearch}%`,
+          `activity_type.ilike.%${safeSearch}%`,
+        ].join(","),
       );
-      query = query.or(orClauses.join(","));
     }
 
     if (area !== "all") {
-      query = query.or(buildAreaOr(area));
+      const areaTerms = area.toLowerCase() === "long island" ? LONG_ISLAND_TERMS : [area];
+
+      const areaOr = areaTerms
+        .flatMap((term) => {
+          const safeTerm = escapeIlikeTerm(term);
+          return [
+            `borough.ilike.%${safeTerm}%`,
+            `city.ilike.%${safeTerm}%`,
+            `neighborhood.ilike.%${safeTerm}%`,
+          ];
+        })
+        .join(",");
+
+      query = query.or(areaOr);
     }
 
     const { data, error } = await query
       .order("is_featured", { ascending: false, nullsFirst: false })
       .order("rating", { ascending: false, nullsFirst: false })
-      .limit(240);
+      .limit(120);
 
     if (error) {
       console.error("EXPLORE_SEARCH_ERROR", {
@@ -186,7 +180,10 @@ export async function GET(request: NextRequest) {
         {
           success: false,
           items: [],
-          error: process.env.NODE_ENV === "development" ? error.message : "Explore search failed",
+          error: error.message || "Explore search failed",
+          details: error.details || null,
+          hint: error.hint || null,
+          code: error.code || null,
         },
         { status: 200 },
       );
@@ -202,22 +199,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, items: rankedItems });
   } catch (error) {
     console.error("EXPLORE_SEARCH_ERROR", error);
-    return NextResponse.json({ success: false, items: [] }, { status: 200 });
+    return NextResponse.json(
+      {
+        success: false,
+        items: [],
+        error: error instanceof Error ? error.message : "Explore search failed",
+      },
+      { status: 200 },
+    );
   }
-}
-
-function buildAreaOr(area: string) {
-  const terms = area.toLowerCase() === "long island" ? LONG_ISLAND_TERMS : [area];
-  return terms
-    .flatMap((term) => {
-      const safeTerm = escapeIlikeTerm(term);
-      return [
-        `borough.ilike.%${safeTerm}%`,
-        `city.ilike.%${safeTerm}%`,
-        `neighborhood.ilike.%${safeTerm}%`,
-      ];
-    })
-    .join(",");
 }
 
 function rankScore(location: ExploreLocation, q: string) {
