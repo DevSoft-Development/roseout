@@ -1,5 +1,5 @@
--- Lightweight business CRM foundation.
--- Safe, additive migration.
+-- Step Set 1 CRM hub foundation.
+-- Safety: this migration does not rename existing view columns or change public/search views.
 
 alter table if exists public.locations
   add column if not exists crm_status text default 'Unclaimed',
@@ -14,6 +14,9 @@ alter table if exists public.locations
   add column if not exists outreach_status text default 'none',
   add column if not exists outreach_notes text,
   add column if not exists last_contacted_at timestamptz,
+  add column if not exists priority_level text,
+  add column if not exists assigned_admin uuid null,
+  add column if not exists internal_notes text,
   add column if not exists retention_recommendation text;
 
 create table if not exists public.business_crm_reminders (
@@ -55,16 +58,43 @@ create table if not exists public.business_communication_logs (
   created_at timestamptz default now()
 );
 
-create table if not exists public.business_ai_recommendations (
+create table if not exists public.admin_system_logs (
   id uuid primary key default gen_random_uuid(),
-  location_id uuid not null references public.locations(id) on delete cascade,
-  recommendation_type text not null,
-  confidence_score numeric default 0,
-  reason text,
-  generated_at timestamptz default now(),
-  active boolean default true
+  created_at timestamptz not null default now(),
+  level text not null default 'info',
+  category text not null,
+  action text null,
+  message text not null,
+  source text null,
+  actor_user_id uuid null,
+  actor_id uuid null,
+  actor_email text null,
+  entity_type text null,
+  entity_id text null,
+  metadata jsonb not null default '{}'::jsonb,
+  request_id text null,
+  ip text null,
+  user_agent text null
 );
 
+alter table if exists public.admin_system_logs
+  add column if not exists action text null,
+  add column if not exists actor_user_id uuid null,
+  add column if not exists actor_id uuid null,
+  add column if not exists ip text null,
+  add column if not exists user_agent text null;
+
+alter table if exists public.admin_system_logs
+  alter column entity_id type text using entity_id::text;
+
+create index if not exists admin_system_logs_created_idx on public.admin_system_logs (created_at desc);
+create index if not exists admin_system_logs_level_idx on public.admin_system_logs (level);
+create index if not exists admin_system_logs_category_idx on public.admin_system_logs (category);
+create index if not exists admin_system_logs_actor_user_id_idx on public.admin_system_logs (actor_user_id);
+create index if not exists admin_system_logs_entity_type_idx on public.admin_system_logs (entity_type);
+create index if not exists admin_system_logs_action_idx on public.admin_system_logs (action);
+
+-- Preserve legacy output names/order on business_crm_snapshot. Friendly aliases are appended only.
 create or replace view public.business_crm_snapshot as
 select
   l.id as location_id,
@@ -109,6 +139,8 @@ select
   l.follow_up_date,
   l.outreach_status,
   l.last_contacted_at,
+  l.priority_level,
+  l.internal_notes,
   l.created_at,
   l.updated_at
 from public.locations l
@@ -127,6 +159,7 @@ left join (
   group by lda.location_id
 ) analytics on analytics.location_id = l.id;
 
+-- CRM-only additive view may expose both legacy and friendly aliases. It does not replace public/search views.
 create or replace view public.admin_crm_locations_view as
 select
   s.id,
@@ -168,44 +201,8 @@ select
   s.follow_up_date,
   s.outreach_status,
   s.last_contacted_at,
+  s.priority_level,
+  s.internal_notes,
   s.created_at,
   s.updated_at
 from public.business_crm_snapshot s;
-
-create or replace function public.recalculate_business_crm_scores()
-returns void
-language plpgsql
-security definer
-as $$
-begin
-  update public.locations l
-  set
-    traffic_score = least(100, coalesce(s.profile_views_30d, 0) / 10.0),
-    engagement_score = least(100, (coalesce(s.search_appearances_30d, 0) / 8.0) + (coalesce(s.saves_30d, 0) * 2.5)),
-    conversion_score = least(100, coalesce(s.conversion_rate_30d, 0) * 1000),
-    retention_score = case when l.is_claimed then 65 else 40 end + least(35, coalesce(s.reservation_completions_30d, 0) / 4.0),
-    opportunity_score = greatest(0, least(100,
-      coalesce(s.profile_views_30d, 0) / 10.0 * 0.35 +
-      ((coalesce(s.search_appearances_30d, 0) / 8.0) + (coalesce(s.saves_30d, 0) * 2.5)) * 0.2 +
-      (coalesce(s.conversion_rate_30d, 0) * 1000) * 0.25 +
-      ((case when l.is_claimed then 65 else 40 end + least(35, coalesce(s.reservation_completions_30d, 0) / 4.0))) * 0.2
-    )),
-    upgrade_probability = greatest(0, least(100, coalesce(l.opportunity_score, 0) * 0.85 + case when l.is_claimed then 10 else 0 end)),
-    churn_risk_score = greatest(0, least(100, 100 - coalesce(l.retention_score, 0))),
-    crm_status = case
-      when l.is_claimed and coalesce(l.opportunity_score, 0) >= 75 then 'Upgrade Opportunity'
-      when l.is_claimed then 'Active Free'
-      when not l.is_claimed then 'Unclaimed'
-      else coalesce(l.crm_status, 'Unclaimed')
-    end,
-    retention_recommendation = case
-      when (100 - coalesce(l.retention_score, 0)) >= 65 then 'High churn risk: start retention outreach'
-      when coalesce(l.opportunity_score, 0) >= 75 then 'Upsell candidate: prioritize pro outreach'
-      else 'Monitor weekly'
-    end
-  from public.business_crm_snapshot s
-  where s.location_id = l.id;
-end;
-$$;
-
-comment on function public.recalculate_business_crm_scores is 'Run nightly (pg_cron) to refresh business CRM and upgrade scores.';

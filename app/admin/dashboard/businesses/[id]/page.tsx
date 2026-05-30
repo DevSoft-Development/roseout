@@ -25,7 +25,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1400px] space-y-6">
         <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-white/55">Business CRM Detail</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-white/55">CRM Detail</p>
           <h1 className="mt-2 text-3xl font-black">{name}</h1>
           <p className="mt-2 text-sm text-white/65">{[location?.city, location?.state].filter(Boolean).join(", ")} · {location?.category || "Uncategorized"}</p>
           <div className="mt-4 flex flex-wrap gap-2">

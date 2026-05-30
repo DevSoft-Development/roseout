@@ -1,12 +1,12 @@
 import { createClient } from "@/lib/supabase-server";
 
-type AdminRole = "admin" | "superadmin";
+type AdminRole = "admin" | "superadmin" | "editor" | "viewer";
 
 function normalizeAdminRole(role: unknown): AdminRole | null {
   const normalized =
     role === "superuser" || role === "super_admin" ? "superadmin" : role;
 
-  if (normalized === "admin" || normalized === "superadmin") {
+  if (normalized === "admin" || normalized === "superadmin" || normalized === "editor" || normalized === "viewer") {
     return normalized;
   }
 
