@@ -1,162 +1,39 @@
-import { inferRecordDomain, searchFallbackActivities, searchFallbackRestaurants } from "@/lib/search/database";
-import { parseCanonicalIntent } from "@/lib/search/intent";
-import { runTheOutHavenSearch } from "@/lib/search/searchPipeline";
-
-
-const NYC_SERVICE_TERMS = [
-  "new york",
-  "nyc",
-  "brooklyn",
-  "queens",
-  "manhattan",
-  "bronx",
-  "staten island",
-  "astoria",
-  "elmhurst",
-  "jackson heights",
-  "ridgewood",
-  "long island city",
-  "lic",
-  "jamaica",
-  "flushing",
-  "forest hills",
-  "fresh meadows",
-  "sunnyside",
-  "woodside",
-  "bayside",
-  "rego park",
-  "corona",
-  "long island",
-  "nassau",
-  "suffolk",
-  "freeport",
-  "huntington",
-  "hempstead",
-  "long beach",
-  "garden city",
-  "hamptons",
-];
-
-type SearchDiagnostics = {
-  input: string;
-  stage: string;
-  preliminaryIntent?: any;
-  finalIntent?: any;
-  counts: Record<string, number>;
-  notes: string[];
-  errors: string[];
-};
-
-function createSearchDiagnostics(input: string): SearchDiagnostics {
-  return {
-    input,
-    stage: "started",
-    counts: {},
-    notes: [],
-    errors: [],
-  };
-}
-
-function setDiagCount(
-  diagnostics: SearchDiagnostics,
-  key: string,
-  value: unknown
-) {
-  diagnostics.counts[key] =
-    Array.isArray(value) ? value.length : typeof value === "number" ? value : 0;
-}
-
-function logSearchDiagnostics(diagnostics: SearchDiagnostics) {
-  const safeDiagnostics =
-    process.env.NODE_ENV === "production"
-      ? {
-          input: diagnostics.input,
-          stage: diagnostics.stage,
-          counts: diagnostics.counts,
-          notes: diagnostics.notes,
-          errors: diagnostics.errors,
-        }
-      : diagnostics;
-
-  console.log(
-    "THEOUTHAVEN_SEARCH_DIAGNOSTICS",
-    JSON.stringify(safeDiagnostics, null, 2)
-  );
-}
-
-function hasAnySearchRecords(records: {
-  locations?: any[];
-  restaurants?: any[];
-  activities?: any[];
-}) {
-  return (
-    (records.locations?.length || 0) > 0 ||
-    (records.restaurants?.length || 0) > 0 ||
-    (records.activities?.length || 0) > 0
-  );
-}
-
-function getSourceErrorReply(args: {
-  sourceErrorCount: number;
-  finalHasCards: boolean;
-}) {
-  const { sourceErrorCount, finalHasCards } = args;
-  if (finalHasCards || sourceErrorCount < 2) return null;
-  return "Search providers are temporarily unavailable. Please retry in a moment.";
-}
-
-function normalizeLocation(item: any) {
-  return {
-    ...item,
-    location: typeof item?.location === "string" ? item.location.trim() : "",
-    borough: typeof item?.borough === "string" ? item.borough.trim() : "",
-    city: typeof item?.city === "string" ? item.city.trim() : "",
-  };
-}
+import { runEnterpriseSearch } from "@/lib/search/enterprise";
 
 function normalizeCardTags(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [value];
-  const labels = values.flatMap((item) => {
+  return Array.from(new Set(values.flatMap((item) => {
     if (!item) return [];
     if (Array.isArray(item)) return normalizeCardTags(item);
     if (typeof item === "string") {
       const trimmed = item.trim();
       if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed.toLowerCase())) return [];
       if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
-        try {
-          return normalizeCardTags(JSON.parse(trimmed));
-        } catch {
-          return [];
-        }
+        try { return normalizeCardTags(JSON.parse(trimmed)); } catch { return []; }
       }
       return trimmed.split(",").map((part) => part.trim()).filter(Boolean);
     }
     return [String(item).trim()].filter(Boolean);
-  });
-
-  return labels
-    .map((label) => label.replace(/_/g, " ").replace(/-/g, " ").trim())
-    .filter((label) => label && !["[]", "{}", "null", "undefined"].includes(label.toLowerCase()))
-    .filter((label, index, arr) => arr.findIndex((item) => item.toLowerCase() === label.toLowerCase()) === index)
-    .slice(0, 8);
+  }).map((label) => label.replace(/_/g, " ").replace(/-/g, " ").trim()).filter(Boolean))).slice(0, 8);
 }
 
 function toCardRecord(item: any) {
   return {
     id: item?.id ?? item?.source_id ?? item?.place_id ?? null,
     name: item?.name ?? item?.restaurant_name ?? item?.activity_name ?? item?.business_name ?? "Unknown location",
-    location_type: item?.location_type ?? item?.type ?? inferRecordDomain(item),
+    location_type: item?.location_type ?? (item?.restaurant_name ? "restaurant" : item?.activity_name ? "activity" : null),
     primary_category: item?.primary_category ?? item?.category ?? null,
     cuisine: item?.cuisine ?? item?.cuisine_type ?? null,
     activity_type: item?.activity_type ?? null,
     address: item?.address ?? null,
     city: item?.city ?? null,
     borough: item?.borough ?? null,
+    neighborhood: item?.neighborhood ?? null,
     image_url: item?.image_url ?? item?.main_image ?? (Array.isArray(item?.images) ? item.images[0] : null),
     rating: item?.rating ?? null,
     price_level: item?.price_level ?? item?.price_range ?? null,
     phone_number: item?.phone_number ?? item?.phone ?? null,
-    reservation_url: item?.reservation_url ?? item?.reservation_link ?? null,
+    reservation_url: item?.reservation_url ?? item?.reservation_link ?? item?.booking_url ?? null,
     external_reservation_url: item?.external_reservation_url ?? null,
     tags: normalizeCardTags([item?.tags, item?.vibe_tags, item?.best_for_tags, item?.intent_tags]),
     distance: item?.pair_distance_miles ?? item?.distance_miles ?? null,
@@ -166,302 +43,16 @@ function toCardRecord(item: any) {
   };
 }
 
-function isOutingEligibleLocation(item: any) {
-  return Boolean(item && (item.name || item.restaurant_name || item.activity_name || item.title));
-}
-
-function isWithinTheOutHavenServiceArea(item: any) {
-  const area = [
-    item?.borough,
-    item?.city,
-    item?.neighborhood,
-    item?.address,
-    item?.search_document,
-    item?.location,
-  ].join(" ").toLowerCase();
-
-  if (!area.trim()) return true;
-
-  return NYC_SERVICE_TERMS.some((token) => area.includes(token));
-}
-
-async function fetchFallbackRecords(input: string = "") {
-  const fallbackIntent = parseCanonicalIntent(input, {});
-  const [restaurantsResult, activitiesResult] = await Promise.all([
-    searchFallbackRestaurants(fallbackIntent),
-    searchFallbackActivities(fallbackIntent),
-  ]);
-  const restaurants = restaurantsResult.records ?? [];
-  const activities = activitiesResult.records ?? [];
-  return {
-    locations: [...restaurants, ...activities],
-    restaurants,
-    activities,
-  };
-}
-
 export async function POST(request: Request) {
   const startedAt = Date.now();
   const body = await request.json().catch(() => ({}));
-  const input =
-    typeof body?.message === "string"
-      ? body.message
-      : typeof body?.input === "string"
-        ? body.input
-        : typeof body?.query === "string"
-          ? body.query
-          : "";
-
-  if (!input || !input.trim()) {
-    return Response.json({
-      success: false,
-      reply: "Please provide a search request.",
-      restaurants: [],
-      activities: [],
-      matched_locations: [],
-      pairs: [],
-      render_mode: "text",
-      card_counts: { restaurants: 0, activities: 0, matched_locations: 0, pairs: 0 },
-    });
+  const input = typeof body?.message === "string" ? body.message : typeof body?.input === "string" ? body.input : typeof body?.query === "string" ? body.query : "";
+  if (!input.trim()) {
+    return Response.json({ success: false, reply: "Please provide a search request.", restaurants: [], activities: [], matched_locations: [], pairs: [], render_mode: "text", card_counts: { restaurants: 0, activities: 0, matched_locations: 0, pairs: 0 } });
   }
-
-  const diagnostics = createSearchDiagnostics(input);
-  diagnostics.stage = "intent_parse_start";
-
-  const result = await runTheOutHavenSearch(input, body);
-  const intent = result?.intent ?? body?.intent ?? parseCanonicalIntent(input, body);
-  if (process.env.NODE_ENV !== "production") {
-    console.log("THEOUTHAVEN_CREATE_INTENT", JSON.stringify({
-      llmIntentRaw: body?.searchIntent ?? body?.normalizedIntent ?? body?.llmIntent ?? body?.intent ?? null,
-      normalizedIntent: intent.normalizedIntent ?? null,
-      restaurantSearchInput: intent.restaurantSearchInput ?? "",
-      activitySearchInput: intent.activitySearchInput ?? "",
-    }, null, 2));
-  }
-
-  const mergedLocations = [
-    ...(result?.matched_locations ?? []),
-    ...(result?.restaurants ?? []),
-    ...(result?.activities ?? []),
-  ];
-  const locations = mergedLocations.map(normalizeLocation);
-  setDiagCount(diagnostics, "merged_locations", mergedLocations);
-  setDiagCount(diagnostics, "normalized_locations", locations);
-
-  diagnostics.stage = "response_ready";
-  diagnostics.preliminaryIntent = body?.intent ?? null;
-  diagnostics.finalIntent = {
-    foodIntent: intent.foodIntent,
-    activityIntent: intent.activityIntent,
-    locationIntent: intent.locationIntent,
-    borough: intent.borough,
-    city: intent.city,
-    neighborhood: intent.neighborhood,
-    needsRestaurant: intent.needsRestaurant,
-    needsActivity: intent.needsActivity,
-    wantsPairing: intent.wantsPairing,
-    addOnIntent: intent.addOnIntent,
-    restaurantIntent: intent.restaurantIntent,
-    restaurantType: intent.restaurantType,
-    requiredRestaurantCategory: intent.requiredRestaurantCategory,
-    multiIntentMode: (intent as any).multiIntentMode,
-    hookahMode: intent.hookahMode,
-    mealFirst: intent.mealFirst,
-    primaryDomain: intent.primaryDomain,
-    occasionIntents: intent.occasionIntents,
-    normalizedIntent: intent.normalizedIntent,
-  };
-  const locationOnlySearch = Boolean(
-    (intent?.boroughs?.length ?? 0) > 0 &&
-      (intent?.mealFoodIntents?.length ?? 0) === 0 &&
-      (intent?.activityIntents?.length ?? 0) === 0
-  );
-  diagnostics.notes.push(`location_only_search=${locationOnlySearch}`);
-  diagnostics.notes.push(`restaurant_search_input=${intent?.restaurantSearchInput ?? ""}`);
-  diagnostics.notes.push(`activity_search_input=${intent?.activitySearchInput ?? ""}`);
-  setDiagCount(diagnostics, "requested_locations", [...(intent?.locations ?? []), ...(intent?.boroughs ?? [])]);
-  setDiagCount(diagnostics, "location_only_search", locationOnlySearch ? 1 : 0);
-
-  const usableLocations = locations.filter(
-    (item: any) => isOutingEligibleLocation(item) && isWithinTheOutHavenServiceArea(item)
-  );
-  const sourceLocations = usableLocations.length > 0 ? usableLocations : locations;
-  setDiagCount(diagnostics, "usable_locations", usableLocations);
-  setDiagCount(diagnostics, "source_locations", sourceLocations);
-  if (usableLocations.length === 0 && locations.length > 0) {
-    diagnostics.notes.push(
-      "All normalized locations were removed by approval/service-area filtering."
-    );
-  }
-
-  const restaurants = result?.restaurants ?? [];
-  const activities = result?.activities ?? [];
-  setDiagCount(diagnostics, "initial_restaurants", restaurants);
-  setDiagCount(diagnostics, "initial_activities", activities);
-
-  const rankedRestaurants = [...restaurants];
-  const rankedActivities = [...activities];
-  let topRestaurants = [...rankedRestaurants];
-  let topActivities = [...rankedActivities];
-  let matchedLocationResults = result?.matched_locations ?? [];
-  let fallbackAttempted = false;
-
-  setDiagCount(diagnostics, "filtered_restaurants", restaurants);
-  setDiagCount(diagnostics, "filtered_activities", activities);
-  setDiagCount(diagnostics, "ranked_restaurants", rankedRestaurants);
-  setDiagCount(diagnostics, "ranked_activities", rankedActivities);
-  setDiagCount(diagnostics, "top_restaurants", topRestaurants);
-  setDiagCount(diagnostics, "top_activities", topActivities);
-  setDiagCount(diagnostics, "matched_location_results", matchedLocationResults);
-  const isSteakDinnerQuery = /steak|ribeye|filet mignon|porterhouse|sirloin|tomahawk steak|steakhouse|steak house/i.test(input);
-
-  if (
-    topRestaurants.length === 0 &&
-    topActivities.length === 0 &&
-    matchedLocationResults.length === 0
-  ) {
-    fallbackAttempted = true;
-    const fallbackRecords = await fetchFallbackRecords(input);
-    const normalizedFallbackLocations = (fallbackRecords.locations ?? [])
-      .map(normalizeLocation)
-      .filter(
-        (item: any) =>
-          isOutingEligibleLocation(item) && isWithinTheOutHavenServiceArea(item)
-      );
-
-    const requestedLocations: string[] = Array.isArray(intent?.locations)
-      ? intent.locations
-      : [];
-    const locationFilteredFallback =
-      requestedLocations.length > 0
-        ? normalizedFallbackLocations.filter((item: any) => {
-            const haystack = `${item?.location ?? ""} ${item?.borough ?? ""} ${item?.city ?? ""}`.toLowerCase();
-            return requestedLocations.some((loc) => haystack.includes(String(loc).toLowerCase()));
-          })
-        : normalizedFallbackLocations;
-
-    const emergencyRestaurants = locationFilteredFallback.filter(
-      (item: any) => inferRecordDomain(item) === "restaurant"
-    );
-    const emergencyActivities = locationFilteredFallback.filter(
-      (item: any) => inferRecordDomain(item) === "activity"
-    );
-
-    topRestaurants = emergencyRestaurants;
-    topActivities = emergencyActivities;
-    matchedLocationResults = locationFilteredFallback;
-
-    diagnostics.notes.push("Emergency fallback records used for empty-card recovery.");
-    setDiagCount(diagnostics, "emergency_restaurants", emergencyRestaurants);
-    setDiagCount(diagnostics, "emergency_activities", emergencyActivities);
-    setDiagCount(diagnostics, "emergency_matched_locations", locationFilteredFallback);
-  }
-
-  setDiagCount(diagnostics, "rpc_restaurants", result?.debug?.rawRestaurantCount);
-  setDiagCount(diagnostics, "rpc_activities", result?.debug?.rawActivityCount);
-  setDiagCount(diagnostics, "eligibility_restaurants", result?.debug?.afterCategoryFilterRestaurantCount);
-  setDiagCount(diagnostics, "eligibility_activities", result?.debug?.afterCategoryFilterActivityCount);
-  setDiagCount(diagnostics, "ranked_restaurants", result?.restaurants ?? []);
-  setDiagCount(diagnostics, "ranked_activities", result?.activities ?? []);
-  setDiagCount(diagnostics, "final_pairs", result?.pairs ?? []);
-  if (process.env.NODE_ENV !== "production" && isSteakDinnerQuery) {
-    const steakTerms = ["steakhouse", "steak house", "steak", "american steakhouse", "brazilian steakhouse", "churrasco", "ribeye", "filet mignon", "porterhouse", "sirloin", "tomahawk steak"];
-    const analyze = (row: any) => {
-      const text = [
-        row?.name, row?.restaurant_name, row?.primary_category, row?.cuisine, row?.cuisine_type, row?.restaurant_type, row?.categories, row?.tags, row?.search_document, row?.description,
-      ].map((v) => String(v ?? "").toLowerCase()).join(" ");
-      const matched = steakTerms.filter((term) => text.includes(term));
-      return { name: row?.name ?? row?.restaurant_name ?? "Unknown", steakSignals: matched, includedBecause: matched.length > 0 ? "steak_signal_match" : "fallback_or_generic_rank" };
-    };
-    const steakMatches = topRestaurants.filter((row: any) => analyze(row).steakSignals.length > 0);
-    diagnostics.notes.push(`steak_debug.raw_restaurant_records=${restaurants.length}`);
-    diagnostics.notes.push(`steak_debug.steak_matches=${steakMatches.length}`);
-    diagnostics.notes.push(`steak_debug.top10=${JSON.stringify(topRestaurants.slice(0, 10).map(analyze))}`);
-    diagnostics.notes.push(`steak_debug.fallback_used=${Boolean(fallbackAttempted || result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed)}`);
-    diagnostics.notes.push("steak_debug.hidden_due_to_missing_action_links=false");
-  }
-  if (!hasAnySearchRecords({ restaurants: topRestaurants, activities: topActivities, locations: matchedLocationResults })) {
-    diagnostics.notes.push(result?.debug?.empty_reason || "no_final_cards");
-  }
-  logSearchDiagnostics(diagnostics);
-
-  const finalHasCards =
-    topRestaurants.length > 0 ||
-    topActivities.length > 0 ||
-    matchedLocationResults.length > 0 ||
-    (result?.pairs?.length ?? 0) > 0;
-
-  const sourceErrors = result?.debug?.sourceErrors ?? [];
-  const sourceErrorCount = sourceErrors.length;
-  const sourceErrorReply = getSourceErrorReply({
-    sourceErrorCount,
-    finalHasCards,
-  });
-
-  const finalReply =
-    sourceErrorReply
-      ? sourceErrorReply
-      : !finalHasCards && sourceErrorCount > 0
-        ? (process.env.NODE_ENV === "production"
-          ? "Search providers are temporarily unavailable. Please retry in a moment."
-          : "Search database error. Check debug.sourceErrors.")
-      : topRestaurants.length && topActivities.length
-      ? "Found food and activity options for your outing."
-      : topRestaurants.length
-        ? "Found restaurant matches. Activity inventory is limited for this request."
-        : topActivities.length
-          ? "Found activity matches. Restaurant inventory is limited for this request."
-          : result?.reply ?? "No matching records found yet.";
-
-  const response = {
-    ...result,
-    reply: finalReply,
-    restaurants: topRestaurants,
-    activities: topActivities,
-    matched_locations: matchedLocationResults,
-    cards: [
-      ...topRestaurants.map(toCardRecord),
-      ...topActivities.map(toCardRecord),
-      ...matchedLocationResults.map(toCardRecord),
-    ],
-    render_mode: finalHasCards || locationOnlySearch ? "cards" : result?.render_mode ?? "empty",
-    card_counts: {
-      ...result?.card_counts,
-      restaurants: topRestaurants.length,
-      activities: topActivities.length,
-      matched_locations: matchedLocationResults.length,
-    },
-    diagnostics: {
-      requested_locations: [...(intent?.locations ?? []), ...(intent?.boroughs ?? [])],
-      location_only_search: locationOnlySearch,
-      restaurant_search_input: intent?.restaurantSearchInput ?? "",
-      activity_search_input: intent?.activitySearchInput ?? "",
-      after_geo_filter_restaurants: result?.debug?.afterGeoFilterRestaurantCount ?? 0,
-      after_geo_filter_activities: result?.debug?.afterGeoFilterActivityCount ?? 0,
-      final_restaurants: topRestaurants.length,
-      final_activities: topActivities.length,
-      fallback_used: fallbackAttempted || Boolean(result?.debug?.fallbackRestaurantUsed || result?.debug?.fallbackActivityUsed),
-      no_results_reason: result?.debug?.empty_reason ?? null,
-      rejected_records: result?.debug?.rejectedRecords ?? [],
-      debug_lanes: process.env.NODE_ENV !== "production" ? {
-        llmIntentRaw: result?.debug?.llmIntentRaw ?? null,
-        normalizedIntent: result?.debug?.normalizedIntent ?? intent.normalizedIntent ?? null,
-        restaurantSearchInput: result?.debug?.restaurantSearchInput ?? intent?.restaurantSearchInput ?? "",
-        activitySearchInput: result?.debug?.activitySearchInput ?? intent?.activitySearchInput ?? "",
-        restaurantTermsUsed: result?.debug?.restaurantTermsUsed ?? [],
-        activityTermsUsed: result?.debug?.activityTermsUsed ?? [],
-        geoUsed: result?.debug?.geoUsed ?? null,
-        restaurantResultsBeforeFilter: result?.debug?.restaurantResultsBeforeFilter ?? 0,
-        restaurantResultsAfterFilter: result?.debug?.restaurantResultsAfterFilter ?? 0,
-        activityResultsBeforeFilter: result?.debug?.activityResultsBeforeFilter ?? 0,
-        activityResultsAfterFilter: result?.debug?.activityResultsAfterFilter ?? 0,
-        removedRestaurantBecauseOfActivityTerms: result?.debug?.removedRestaurantBecauseOfActivityTerms ?? 0,
-        removedActivityBecauseOfRestaurantTerms: result?.debug?.removedActivityBecauseOfRestaurantTerms ?? 0,
-      } : undefined,
-      cache: result?.debug?.cache_status ?? null,
-    },
-  };
-  const resultCount = response.restaurants.length + response.activities.length + response.matched_locations.length;
-  console.log("ROUTE_TIMING", JSON.stringify({ route: "/api/generate", total_ms: Date.now() - startedAt, db_ms: 0, cache_status: "miss", result_count: resultCount }));
+  const result = await runEnterpriseSearch(input, { body, useLLM: true });
+  const cards = [...result.restaurants, ...result.activities, ...result.matched_locations].map(toCardRecord);
+  const response = { ...result, cards, render_mode: result.render_mode === "empty" ? "empty" : result.render_mode, diagnostics: { requested_locations: result.debug && (result.debug as any).geo ? [(result.debug as any).geo.raw].filter(Boolean) : [], restaurant_search_input: ((result.debug as any)?.restaurantTerms ?? []).join(" "), activity_search_input: ((result.debug as any)?.activityTerms ?? []).join(" "), final_restaurants: result.restaurants.length, final_activities: result.activities.length, fallback_used: Boolean((result.debug as any)?.restaurantRecoveryUsed || (result.debug as any)?.activityRecoveryUsed), no_results_reason: result.render_mode === "empty" ? "no_strong_matches" : null } };
+  console.log("ROUTE_TIMING", JSON.stringify({ route: "/api/generate", total_ms: Date.now() - startedAt, db_ms: 0, cache_status: "enterprise-rpc", result_count: result.restaurants.length + result.activities.length + result.matched_locations.length }));
   return Response.json(response);
 }

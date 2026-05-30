@@ -1,0 +1,52 @@
+import type { ActivityIntent, EnterpriseLocation, RestaurantIntent } from "./types";
+
+const uniq = (items: string[]) => Array.from(new Set(items.map((x) => x.toLowerCase().trim()).filter(Boolean)));
+const includesPhrase = (query: string, phrase: string) => new RegExp(`(^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(query);
+
+export const MEAL_SYNONYMS: Record<string, string[]> = {
+  breakfast: ["breakfast"], brunch: ["brunch", "eggs benedict", "pancakes", "waffles", "mimosa", "bottomless brunch", "breakfast"], lunch: ["lunch"], dinner: ["dinner", "restaurant", "dining"], "late night": ["late night"], dessert: ["dessert", "cake", "bakery", "pastries", "ice cream", "gelato", "sweets", "chocolate"], coffee: ["coffee", "cafe", "espresso", "latte", "cappuccino", "coffee shop"], drinks: ["drinks", "cocktails"], "happy hour": ["happy hour"], "date night": ["date night", "romantic"], "romantic dinner": ["romantic dinner", "romantic"], "quick bite": ["quick bite"], "casual dinner": ["casual dinner"], "fine dining": ["fine dining"], "group dinner": ["group dinner"], "birthday dinner": ["birthday dinner"], "girls night": ["girls night"], "business dinner": ["business dinner"]
+};
+
+export const FOOD_SYNONYMS: Record<string, string[]> = {
+  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib", "churrasco", "brazilian steakhouse"],
+  seafood: ["seafood", "fish", "lobster", "crab", "shrimp", "oyster", "oysters", "raw bar", "clam", "mussels", "scallops"],
+  sushi: ["sushi", "sashimi", "omakase", "nigiri", "maki", "rolls", "japanese sushi"],
+  italian: ["italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"],
+  mexican: ["mexican", "tacos", "taco", "burritos", "birria", "tequila", "taqueria", "tex-mex"],
+  caribbean: ["caribbean", "jamaican", "jerk", "oxtail", "curry goat", "roti", "doubles", "patties", "trinidadian", "haitian", "dominican", "puerto rican", "cuban"],
+  rooftop: ["rooftop", "roof top", "terrace", "patio", "outdoor dining", "skyline", "city views", "scenic views", "view", "roof deck"],
+  american: ["american", "new american", "southern", "soul food"], latin: ["latin", "colombian", "peruvian", "brazilian", "argentinian"], mediterranean: ["mediterranean", "greek", "turkish", "lebanese", "middle eastern", "israeli", "moroccan"], french: ["french"], spanish: ["spanish", "tapas"], portuguese: ["portuguese"], german: ["german"], irish: ["irish"], british: ["british"], indian: ["indian"], pakistani: ["pakistani"], bangladeshi: ["bangladeshi"], nepalese: ["nepalese"], thai: ["thai"], vietnamese: ["vietnamese"], chinese: ["chinese", "cantonese", "szechuan", "sichuan", "shanghainese", "taiwanese", "dim sum", "hot pot"], korean: ["korean"], japanese: ["japanese", "ramen", "izakaya", "teppanyaki", "hibachi"], filipino: ["filipino"], indonesian: ["indonesian"], malaysian: ["malaysian"], singaporean: ["singaporean"], african: ["african", "nigerian", "ethiopian", "senegalese", "ghanaian", "south african"], vegan: ["vegan", "plant-based"], vegetarian: ["vegetarian"], "gluten-free": ["gluten-free"], kosher: ["kosher"], halal: ["halal"], bbq: ["bbq", "barbecue"], burger: ["burger"], chicken: ["chicken", "wings", "fried chicken"], bakery: ["bakery"], cafe: ["cafe"], "wine bar": ["wine bar"], "cocktail bar": ["cocktail bar"], lounge: ["lounge restaurant"]
+};
+
+export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
+  bowling: ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"], karaoke: ["karaoke"], hookah: ["hookah", "hookah lounge"], "live music": ["live music", "concert", "jazz club", "open mic"], museum: ["museum", "exhibit", "exhibition", "cultural center"], lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"], comedy: ["comedy club"], "wine tasting": ["wine tasting"], brewery: ["brewery", "beer garden"], arcade: ["arcade", "games"], "mini golf": ["mini golf"], billiards: ["pool hall", "billiards"], darts: ["darts"], "axe throwing": ["axe throwing"], "escape room": ["escape room"], vr: ["vr", "virtual reality", "immersive experience"], trivia: ["trivia"], "board games": ["board games"], "paint and sip": ["paint and sip", "sip and paint"], pottery: ["pottery"], "cooking class": ["cooking class"], "dance class": ["dance class"], movies: ["movie theater", "cinema"], theater: ["theater", "broadway", "off-broadway"], gallery: ["art gallery", "gallery"], poetry: ["poetry"], bookstore: ["bookstore", "library event"], park: ["park", "waterfront", "pier", "beach", "boardwalk", "garden", "botanical garden", "zoo", "aquarium", "boat ride", "cruise", "rooftop view", "observation deck", "walking tour", "sightseeing"], spa: ["spa", "massage", "sauna", "wellness", "yoga", "fitness class"], sports: ["skating", "roller skating", "ice skating", "basketball", "golf", "driving range", "batting cages", "climbing", "rock climbing", "gym", "sports bar"], shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"]
+};
+
+export const FOOD_TERMS = uniq(Object.values(FOOD_SYNONYMS).flat());
+export const MEAL_TERMS = uniq(Object.values(MEAL_SYNONYMS).flat());
+export const ACTIVITY_TERMS = uniq(Object.values(ACTIVITY_SYNONYMS).flat());
+
+function detectFromMap(query: string, map: Record<string, string[]>) {
+  const q = query.toLowerCase();
+  return uniq(Object.entries(map).flatMap(([canonical, terms]) => terms.some((term) => includesPhrase(q, term)) ? [canonical, ...terms.filter((term) => includesPhrase(q, term))] : []));
+}
+export function detectFoodTerms(query: string) { return detectFromMap(query, FOOD_SYNONYMS); }
+export function detectCuisineTerms(query: string) { return detectFoodTerms(query).filter((t) => !["rooftop"].includes(t)); }
+export function detectMealTerms(query: string) { return detectFromMap(query, MEAL_SYNONYMS); }
+export function detectActivityTerms(query: string) {
+  const q = query.toLowerCase();
+  const terms = detectFromMap(query, ACTIVITY_SYNONYMS);
+  if (includesPhrase(q, "things to do") || includesPhrase(q, "fun things")) terms.push("things to do", "activity");
+  if (includesPhrase(q, "bowl") && /(lane|game|entertainment|alley|bowling|activity)/i.test(q)) terms.push("bowling");
+  return uniq(terms);
+}
+export function expandFoodSynonyms(terms: string[]) { return uniq(terms.flatMap((term) => FOOD_SYNONYMS[term.toLowerCase()] ?? [term])); }
+export function expandActivitySynonyms(terms: string[]) { return uniq(terms.flatMap((term) => ACTIVITY_SYNONYMS[term.toLowerCase()] ?? [term])); }
+export function isSpecificFoodIntent(intent: RestaurantIntent) { return intent.foodTerms.length > 0 || intent.cuisineTerms.length > 0 || intent.categoryTerms.some((t) => !["restaurant", "dining"].includes(t)); }
+export function isGenericMealIntent(intent: RestaurantIntent) { return !isSpecificFoodIntent(intent) && intent.mealTerms.length > 0; }
+export function isSpecificActivityIntent(intent: ActivityIntent) { return intent.activityTerms.some((t) => !["things to do", "activity"].includes(t)) || intent.categoryTerms.length > 0; }
+export function textForRecord(record: EnterpriseLocation) { return [record.name, record.restaurant_name, record.activity_name, record.location_type, record.primary_category, record.cuisine, record.cuisine_type, record.activity_type, record.description, record.neighborhood, record.borough, record.city, record.state, record.search_document, record.semantic_search_text, record.tags, record.vibe_tags, record.best_for_tags, record.date_style_tags, record.search_keywords, record.google_types, record.semantic_tags, record.intent_tags].flat().join(" ").toLowerCase(); }
+export function termMatchesRecord(record: EnterpriseLocation, terms: string[]) { const text = textForRecord(record); return terms.some((term) => includesPhrase(text, term) || text.includes(term.toLowerCase())); }
+export function activityTermMatches(record: EnterpriseLocation, terms: string[]) { return termMatchesRecord(record, terms); }
+export const createEmptyRestaurantIntent = (): RestaurantIntent => ({ mealTerms: [], foodTerms: [], cuisineTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [] });
+export const createEmptyActivityIntent = (): ActivityIntent => ({ activityTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [] });
