@@ -15,6 +15,29 @@ export type CRMStatus =
   | "Pro"
   | "Enterprise";
 
+export type BusinessCRMFilter =
+  | "all"
+  | "upgrade-opportunities"
+  | "at-risk"
+  | "pending-claims"
+  | "owner-accounts"
+  | "location-tasks"
+  | "follow-ups"
+  | "qr-codes";
+
+export type PendingCRMClaim = {
+  id: string;
+  source_table: string;
+  location_id?: string | null;
+  submitted_business_name?: string | null;
+  claimant_name?: string | null;
+  claimant_email?: string | null;
+  claimant_phone?: string | null;
+  status: string;
+  submitted_at?: string | null;
+  review_notes?: string | null;
+};
+
 export type BusinessCRMRow = {
   id: string;
   location_id?: string | null;
@@ -79,12 +102,14 @@ export type BusinessCRMRow = {
   internal_notes?: string | null;
   crm_status: CRMStatus;
   opportunity_score: number;
+  upgrade_score?: number;
   upgrade_probability: number;
   engagement_score: number;
   traffic_score: number;
   conversion_score: number;
   retention_score: number;
   churn_risk_score: number;
+  churn_risk?: number;
   trending_score: number;
   profile_quality_score?: number;
   seo_score?: number;
@@ -111,6 +136,9 @@ export type BusinessCRMSummary = {
   unclaimed: number;
   pendingClaims: number;
   upgradeCandidates: number;
+  upgradeOpportunitiesCount: number;
+  atRiskCount: number;
+  pendingClaimsCount: number;
   atRisk: number;
   openTasks: number;
   reservationIntent: number;
@@ -118,7 +146,9 @@ export type BusinessCRMSummary = {
 };
 
 const CRM_SELECT = "*";
-const SEARCH_COLUMNS = ["name", "location_name", "address", "city", "borough", "state", "category", "cuisine", "owner_email"];
+const CRM_SOURCE_TABLES = ["admin_crm_locations_view", "business_crm_snapshot", "locations"] as const;
+const CLAIM_SOURCE_TABLES = ["business_claims", "location_claim_requests", "owner_claims", "claim_requests"] as const;
+const PENDING_CLAIM_STATUSES = new Set(["pending", "pending-review", "submitted", "awaiting-review", "needs-review", "pending-claim"]);
 
 function toNumber(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -129,15 +159,59 @@ function cleanStatus(value: unknown) {
   return String(value ?? "").trim();
 }
 
+export function normalizeStatus(value: unknown) {
+  return cleanStatus(value).toLowerCase().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+}
+
+function titleizeStatus(value: unknown) {
+  return cleanStatus(value).replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function hasText(value: unknown) {
+  return cleanStatus(value).length > 0;
+}
+
+function hasReservationLink(row: Partial<BusinessCRMRow>) {
+  return [row.reservation_url, row.reservation_link, row.booking_url, row.external_reservation_url, row.best_reservation_url].some(hasText);
+}
+
+function isFreeOrInactivePlan(row: Partial<BusinessCRMRow>) {
+  const plan = normalizeStatus(row.plan ?? row.subscription_plan);
+  const status = normalizeStatus(row.plan_status ?? row.subscription_status);
+  return !plan || ["free", "free-discovery", "inactive"].includes(plan) || ["inactive", "canceled", "cancelled"].includes(status);
+}
+
+function isReservePlan(row: Partial<BusinessCRMRow>) {
+  const plan = normalizeStatus(row.plan ?? row.subscription_plan);
+  return plan.includes("reserve") || plan.includes("pro-reserve");
+}
+
+function isActiveOrSearchable(row: Partial<BusinessCRMRow>) {
+  return row.active !== false || row.is_searchable !== false || !["inactive", "hidden", "disabled"].includes(normalizeStatus(row.status));
+}
+
+function isOverdueDate(value?: string | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date < today;
+}
+
+function hasImage(row: Partial<BusinessCRMRow>) {
+  return [row.image_url, row.main_image].some(hasText) || Boolean(Array.isArray(row.images) && row.images.length);
+}
+
 export function getClaimStatus(row: Partial<BusinessCRMRow>) {
   const raw = cleanStatus(row.claim_status);
   if (raw) {
-    const normalized = raw.toLowerCase().replace(/[\s_-]+/g, " ");
-    if (normalized === "pending" || normalized === "pending claim" || normalized === "pending review") return "Pending Claim";
+    const normalized = normalizeStatus(raw);
+    if (PENDING_CLAIM_STATUSES.has(normalized)) return "Pending Claim";
     if (normalized === "approved" || normalized === "claimed") return "Claimed";
     if (normalized === "rejected" || normalized === "denied") return "Rejected";
     if (normalized === "unclaimed") return "Unclaimed";
-    return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return titleizeStatus(raw);
   }
   return row.is_claimed ? "Claimed" : "Unclaimed";
 }
@@ -145,10 +219,13 @@ export function getClaimStatus(row: Partial<BusinessCRMRow>) {
 export function getDisplayCRMStatus(row: Partial<BusinessCRMRow>) {
   const raw = cleanStatus(row.crm_status);
   const claim = getClaimStatus(row).toLowerCase();
-  if (!raw || raw.toLowerCase() === "unclaimed" || raw.toLowerCase() === claim) return "Needs Outreach" as CRMStatus;
-  if (raw === "Claimed") return "Active Free";
-  if (raw === "Pro") return "Active Pro";
-  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) as CRMStatus;
+  const normalized = normalizeStatus(raw);
+  if (!raw || normalized === "unclaimed" || normalized === normalizeStatus(claim)) return "Needs Outreach" as CRMStatus;
+  if (normalized === "claimed") return "Active Free";
+  if (normalized === "pro") return "Active Pro";
+  if (normalized === "at-risk") return "At Risk";
+  if (normalized === "upgrade-opportunity" || normalized === "upgrade-opportunities") return "Upgrade Opportunity";
+  return titleizeStatus(raw) as CRMStatus;
 }
 
 function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
@@ -175,13 +252,15 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     active: row.active == null ? row.status !== "inactive" : Boolean(row.active),
     is_pro: Boolean(row.is_pro || row.plan === "pro" || row.subscription_plan === "pro"),
     location_type: row.location_type === "activities" ? "activities" : row.location_type === "restaurants" ? "restaurants" : null,
-    opportunity_score: toNumber(row.opportunity_score),
+    opportunity_score: toNumber(row.opportunity_score ?? row.upgrade_score),
+    upgrade_score: toNumber(row.upgrade_score ?? row.opportunity_score),
     upgrade_probability: toNumber(row.upgrade_probability),
     engagement_score: toNumber(row.engagement_score),
     traffic_score: toNumber(row.traffic_score),
     conversion_score: toNumber(row.conversion_score),
     retention_score: toNumber(row.retention_score),
-    churn_risk_score: toNumber(row.churn_risk_score),
+    churn_risk_score: toNumber(row.churn_risk_score ?? row.churn_risk),
+    churn_risk: toNumber(row.churn_risk ?? row.churn_risk_score),
     trending_score: toNumber(row.trending_score ?? row.trend_score),
     profile_quality_score: toNumber(row.profile_quality_score ?? row.quality_score),
     seo_score: toNumber(row.seo_score),
@@ -205,50 +284,184 @@ function normalizeCRMRows(rows: Record<string, any>[] | null | undefined): Busin
   return (rows ?? []).map((row) => normalizeCRMRow(row));
 }
 
-function applySearch(query: any, q?: string) {
-  const term = String(q || "").trim();
-  if (!term) return query;
-  const safeTerm = term.replace(/[%,()]/g, "");
-  return query.or(SEARCH_COLUMNS.map((col) => `${col}.ilike.%${safeTerm}%`).join(","));
+function rowMatchesSearch(row: Partial<BusinessCRMRow>, q?: string) {
+  const term = String(q || "").trim().toLowerCase();
+  if (!term) return true;
+  return [
+    row.name,
+    row.location_name,
+    (row as any).restaurant_name,
+    (row as any).activity_name,
+    row.address,
+    row.city,
+    row.borough,
+    row.state,
+    row.owner_email,
+    (row as any).claimed_by_email,
+    row.category,
+    row.cuisine,
+  ].some((value) => String(value ?? "").toLowerCase().includes(term));
 }
 
-function applyFilter(query: any, filter?: string) {
-  switch (filter) {
+function claimMatchesSearch(claim: PendingCRMClaim, q?: string) {
+  const term = String(q || "").trim().toLowerCase();
+  if (!term) return true;
+  return [claim.submitted_business_name, claim.claimant_name, claim.claimant_email, claim.claimant_phone, claim.status].some((value) => String(value ?? "").toLowerCase().includes(term));
+}
+
+export function isUpgradeOpportunity(row: Partial<BusinessCRMRow>) {
+  if (!isFreeOrInactivePlan(row) || !isActiveOrSearchable(row)) return false;
+  const crmStatus = normalizeStatus(row.crm_status);
+  const claimStatus = normalizeStatus(row.claim_status);
+  const claimedFree = claimStatus === "claimed" && isFreeOrInactivePlan(row);
+  return toNumber(row.search_appearances_30d) > 0
+    || toNumber(row.profile_views_30d) > 0
+    || toNumber(row.reservation_completions_30d) > 0
+    || !hasReservationLink(row)
+    || claimedFree
+    || crmStatus === "upgrade-opportunity"
+    || crmStatus === "upgrade-opportunities"
+    || toNumber((row as any).upgrade_score ?? row.opportunity_score) > 0;
+}
+
+export function isAtRiskLocation(row: Partial<BusinessCRMRow>) {
+  const crmStatus = normalizeStatus(row.crm_status);
+  const planStatus = normalizeStatus(row.plan_status ?? row.subscription_status);
+  return crmStatus === "at-risk"
+    || toNumber((row as any).churn_risk ?? row.churn_risk_score) > 0
+    || ["past-due", "canceled", "cancelled"].includes(planStatus)
+    || row.active === false
+    || row.is_searchable === false
+    || !hasImage(row)
+    || !hasText(row.phone)
+    || !hasText(row.website)
+    || (isReservePlan(row) && !hasReservationLink(row))
+    || isOverdueDate(row.follow_up_date);
+}
+
+function matchesBusinessFilter(row: BusinessCRMRow, filter?: string) {
+  switch (normalizeStatus(filter || "all")) {
     case "upgrade-opportunities":
-      return query.gte("opportunity_score", 70);
+    case "upgrade-opportunity":
+      return isUpgradeOpportunity(row);
     case "at-risk":
-      return query.gte("churn_risk_score", 65);
-    case "pending-claims":
-      return query.or("pending_claims.gt.0,claim_status.ilike.%pending%");
+      return isAtRiskLocation(row);
+    case "owner-accounts":
     case "owners":
-      return query.or("owner_user_id.not.is.null,owner_email.not.is.null,is_claimed.eq.true");
+      return Boolean(row.owner_user_id || row.owner_email || row.is_claimed);
+    case "location-tasks":
     case "open-tasks":
-      return query.gt("open_tasks", 0);
+      return toNumber(row.open_tasks) > 0;
     case "follow-ups":
-      return query.not("follow_up_date", "is", null);
+      return Boolean(row.follow_up_date);
+    case "qr-codes":
+    case "qr":
+      return [row.claim_qr_url, row.qr_link, row.qr_code_data_url, row.claim_code, row.claim_url].some(hasText);
+    case "all":
     default:
-      return query;
+      return true;
   }
+}
+
+function sortCRMRows(rows: BusinessCRMRow[], filter?: string) {
+  const normalized = normalizeStatus(filter || "all");
+  return [...rows].sort((a, b) => {
+    if (normalized === "at-risk") return (toNumber((b as any).churn_risk ?? b.churn_risk_score) - toNumber((a as any).churn_risk ?? a.churn_risk_score)) || String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
+    return (toNumber((b as any).upgrade_score ?? b.opportunity_score) - toNumber((a as any).upgrade_score ?? a.opportunity_score)) || String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+  });
+}
+
+async function fetchCRMRowsFrom(table: string) {
+  const chunkSize = 1000;
+  const rows: Record<string, any>[] = [];
+  let total = 0;
+  for (let page = 0; page < 50; page += 1) {
+    const from = page * chunkSize;
+    const to = from + chunkSize - 1;
+    const { data, error, count } = await supabaseAdmin.from(table).select(CRM_SELECT, { count: page === 0 ? "exact" : undefined }).range(from, to);
+    if (error) throw error;
+    if (page === 0) total = count ?? data?.length ?? 0;
+    rows.push(...(data || []));
+    if (!data || data.length < chunkSize || rows.length >= total) break;
+  }
+  return { rows: normalizeCRMRows(rows), total: total || rows.length };
+}
+
+async function fetchAllCRMRows() {
+  for (const table of CRM_SOURCE_TABLES) {
+    try {
+      const result = await fetchCRMRowsFrom(table);
+      return result;
+    } catch (error: any) {
+      console.error(`Failed to fetch ${table} CRM rows`, error?.message || error);
+    }
+  }
+  return { rows: [] as BusinessCRMRow[], total: 0 };
+}
+
+function normalizeClaim(row: any, sourceTable = "claims"): PendingCRMClaim {
+  return {
+    ...row,
+    id: String(row.id ?? `${sourceTable}-${row.location_id ?? row.email ?? row.claimant_email ?? row.created_at ?? "claim"}`),
+    source_table: sourceTable,
+    location_id: row.location_id ?? row.business_id ?? row.location_uuid ?? null,
+    status: getClaimStatus({ claim_status: row.status ?? row.claim_status, is_claimed: false }),
+    claimant_name: row.claimant_name ?? row.owner_name ?? row.name ?? row.contact_name ?? row.full_name,
+    claimant_email: row.claimant_email ?? row.owner_email ?? row.email ?? row.contact_email,
+    claimant_phone: row.claimant_phone ?? row.owner_phone ?? row.phone ?? row.contact_phone,
+    submitted_business_name: row.submitted_business_name ?? row.business_name ?? row.location_name ?? row.restaurant_name ?? row.activity_name ?? row.name,
+    submitted_at: row.submitted_at ?? row.created_at ?? row.inserted_at,
+    review_notes: row.review_notes ?? row.notes ?? row.admin_notes,
+  };
+}
+
+async function fetchClaimRows(table: string) {
+  const ordered = await safeSelect(table, (q) => q.select("*").order("created_at", { ascending: false }).limit(1000));
+  if (ordered.length > 0) return ordered;
+  return safeSelect(table, (q) => q.select("*").limit(1000));
+}
+
+export async function listPendingCRMClaims(query?: string): Promise<PendingCRMClaim[]> {
+  const claims: PendingCRMClaim[] = [];
+  const seen = new Set<string>();
+  for (const table of CLAIM_SOURCE_TABLES) {
+    const rows = await fetchClaimRows(table);
+    for (const row of rows as any[]) {
+      const claim = normalizeClaim(row, table);
+      if (!PENDING_CLAIM_STATUSES.has(normalizeStatus(row.status ?? row.claim_status ?? claim.status))) continue;
+      const key = `${claim.source_table}:${claim.id}`;
+      if (seen.has(key) || !claimMatchesSearch(claim, query)) continue;
+      seen.add(key);
+      claims.push(claim);
+    }
+  }
+  return claims.sort((a, b) => String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")));
 }
 
 export async function listBusinessCRMPage({ page = 1, pageSize = 100, query, filter }: { page?: number; pageSize?: number; query?: string; filter?: string }) {
-  const safePageSize = Math.min(Math.max(Number(pageSize) || 100, 25), 250);
+  const safePageSize = Math.min(Math.max(Number(pageSize) || 100, 25), 1000);
   const safePage = Math.max(Number(page) || 1, 1);
   const from = (safePage - 1) * safePageSize;
-  const to = from + safePageSize - 1;
+  const normalizedFilter = normalizeStatus(filter || "all") as BusinessCRMFilter;
 
-  for (const table of ["admin_crm_locations_view", "business_crm_snapshot", "locations"] as const) {
-    let builder = supabaseAdmin.from(table).select(CRM_SELECT, { count: "exact" });
-    builder = applyFilter(applySearch(builder, query), filter).order(table === "locations" ? "created_at" : "opportunity_score", { ascending: false }).range(from, to);
-    const { data, error, count } = await builder;
-    if (!error) {
-      const total = count ?? data?.length ?? 0;
-      return { rows: normalizeCRMRows(data), total, page: safePage, pageSize: safePageSize, totalPages: Math.max(1, Math.ceil(total / safePageSize)) };
-    }
-    console.error(`Failed to fetch ${table} CRM page`, error.message);
+  if (normalizedFilter === "pending-claims") {
+    const [claims, crm] = await Promise.all([listPendingCRMClaims(query), fetchAllCRMRows()]);
+    const byId = new Map(crm.rows.map((row) => [String(row.location_id ?? row.id), row]));
+    const claimRows = claims.map((claim) => claim.location_id ? byId.get(String(claim.location_id)) : null).filter(Boolean) as BusinessCRMRow[];
+    return {
+      rows: claimRows.slice(from, from + safePageSize),
+      pendingClaims: claims.slice(from, from + safePageSize),
+      total: claims.length,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, Math.ceil(claims.length / safePageSize)),
+    };
   }
 
-  return { rows: [], total: 0, page: safePage, pageSize: safePageSize, totalPages: 1 };
+  const { rows } = await fetchAllCRMRows();
+  const filtered = sortCRMRows(rows.filter((row) => matchesBusinessFilter(row, normalizedFilter) && rowMatchesSearch(row, query)), normalizedFilter);
+  const total = filtered.length;
+  return { rows: filtered.slice(from, from + safePageSize), pendingClaims: [] as PendingCRMClaim[], total, page: safePage, pageSize: safePageSize, totalPages: Math.max(1, Math.ceil(total / safePageSize)) };
 }
 
 export async function listBusinessCRM(limit = 1000): Promise<BusinessCRMRow[]> {
@@ -257,27 +470,29 @@ export async function listBusinessCRM(limit = 1000): Promise<BusinessCRMRow[]> {
 }
 
 export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
-  const page = await listBusinessCRMPage({ page: 1, pageSize: 250 });
-  const rows = page.rows;
-  const totalCount = page.total;
+  const [crm, pendingClaims] = await Promise.all([fetchAllCRMRows(), listPendingCRMClaims()]);
+  const rows = crm.rows;
+  const totalCount = crm.total || rows.length;
   const countWhere = async (column: string, value: any) => {
     const { count, error } = await supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq(column, value);
     return error ? rows.filter((r: any) => r[column] === value).length : count || 0;
   };
   const searchable = await countWhere("is_searchable", true);
   const claimed = await countWhere("is_claimed", true);
-  const pendingClaims = (await safeSelect("business_claims", (q) => q.select("id").ilike("status", "%pending%"))).length
-    || (await safeSelect("location_claim_requests", (q) => q.select("id").ilike("status", "%pending%"))).length
-    || rows.reduce((sum, b) => sum + (b.pending_claims || 0), 0);
+  const upgradeCandidates = rows.filter(isUpgradeOpportunity).length;
+  const atRisk = rows.filter(isAtRiskLocation).length;
 
   return {
     total: totalCount,
     searchable,
     claimed,
     unclaimed: Math.max(totalCount - claimed, 0),
-    pendingClaims,
-    upgradeCandidates: rows.filter((b) => b.opportunity_score >= 70 || b.crm_status === "Upgrade Opportunity").length,
-    atRisk: rows.filter((b) => b.churn_risk_score >= 65 || b.crm_status === "At Risk").length,
+    pendingClaims: pendingClaims.length,
+    pendingClaimsCount: pendingClaims.length,
+    upgradeCandidates,
+    upgradeOpportunitiesCount: upgradeCandidates,
+    atRisk,
+    atRiskCount: atRisk,
     openTasks: rows.reduce((sum, b) => sum + (b.open_tasks || 0), 0),
     reservationIntent: rows.reduce((sum, b) => sum + b.reservation_completions_30d, 0),
     searchAppearances: rows.reduce((sum, b) => sum + b.search_appearances_30d, 0),
@@ -304,21 +519,6 @@ export async function safeSelect(table: string, builder: (query: any) => any) {
     console.error(`Optional CRM table ${table} failed`, error);
     return [];
   }
-}
-
-function normalizeClaim(row: any) {
-  return {
-    ...row,
-    id: row.id ?? `${row.location_id}-${row.email ?? row.claimant_email ?? Math.random()}`,
-    status: getClaimStatus({ claim_status: row.status ?? row.claim_status, is_claimed: false }),
-    claimant_name: row.claimant_name ?? row.owner_name ?? row.name ?? row.contact_name,
-    claimant_email: row.claimant_email ?? row.owner_email ?? row.email,
-    claimant_phone: row.claimant_phone ?? row.owner_phone ?? row.phone,
-    submitted_business_name: row.submitted_business_name ?? row.business_name ?? row.location_name,
-    submitted_at: row.submitted_at ?? row.created_at,
-    reviewed_at: row.reviewed_at ?? row.updated_at,
-    review_notes: row.review_notes ?? row.notes ?? row.admin_notes,
-  };
 }
 
 export async function getLocationCrmRelatedData(locationId: string) {
@@ -350,7 +550,7 @@ export async function getLocationCrmRelatedData(locationId: string) {
     reminders,
     communications: [...businessComms, ...comms],
     logs,
-    claims: [...businessClaims, ...locationClaims, ...ownerClaims].map(normalizeClaim),
+    claims: [...businessClaims.map((row: any) => normalizeClaim(row, "business_claims")), ...locationClaims.map((row: any) => normalizeClaim(row, "location_claim_requests")), ...ownerClaims.map((row: any) => normalizeClaim(row, "owner_claims"))],
     supportTickets,
     qrCodes: [...qr1, ...qr2, ...qr3, ...qr4],
     owners: [...owners1, ...owners2, ...owners3],
@@ -446,7 +646,7 @@ export function formatFullAddress({ address, city, state, zip }: { address?: str
 export async function safeUpdateLocationPhotos(locationId: string, payload: { mainImage?: string | null; galleryImages?: string[] }) {
   const mainImage = payload.mainImage ?? null;
   const galleryImages = dedupeUrls(payload.galleryImages || []);
-  let updates: Record<string, any> = {
+  const updates: Record<string, any> = {
     main_image: mainImage,
     image_url: mainImage,
     gallery_images: galleryImages,

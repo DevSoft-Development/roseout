@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
-import { getBusinessCRMSummary, getClaimStatus, getDisplayCRMStatus, getUpgradeFlags, listBusinessCRMPage } from "@/lib/admin-crm";
+import { getBusinessCRMSummary, getClaimStatus, getDisplayCRMStatus, getUpgradeFlags, listBusinessCRMPage, normalizeStatus, type PendingCRMClaim } from "@/lib/admin-crm";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +21,65 @@ function badgeClass(value?: string | null) {
   return "border-white/10 bg-white/[0.06] text-white/70";
 }
 
+function emptyCopy(filter: string) {
+  switch (normalizeStatus(filter)) {
+    case "upgrade-opportunities":
+      return "No upgrade opportunities match the current filters yet. Free searchable locations with strong engagement, claimed free listings, or missing Reserve setup will appear here.";
+    case "at-risk":
+      return "No at-risk locations match the current filters. Locations with overdue follow-ups, churn risk, missing key profile data, inactive/search-hidden status, or billing issues will appear here.";
+    case "pending-claims":
+      return "No pending claims are waiting for review.";
+    default:
+      return "Locations will appear here as soon as real location records exist. Use the filters above or clear search to return to the full CRM.";
+  }
+}
+
+function PendingClaimsPanel({ claims }: { claims: PendingCRMClaim[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[950px] table-fixed text-left text-sm">
+        <thead className="text-xs uppercase tracking-[0.2em] text-white/55">
+          <tr>
+            {[
+              ["Submitted Location", "w-[210px]"],
+              ["Claimant", "w-[160px]"],
+              ["Email", "w-[190px]"],
+              ["Phone", "w-[120px]"],
+              ["Status", "w-[120px]"],
+              ["Submitted", "w-[115px]"],
+              ["Actions", "w-[170px]"],
+            ].map(([header, width]) => <th key={header} className={`${width} px-3 py-3 align-bottom whitespace-nowrap`}>{header}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {claims.map((claim) => (
+            <tr key={`${claim.source_table}-${claim.id}`} className="border-t border-white/10 align-top hover:bg-white/[0.025]">
+              <td className="px-3 py-4 align-top font-black text-rose-100">{claim.submitted_business_name || "Submitted claim"}</td>
+              <td className="px-3 py-4 align-top text-white/70">{claim.claimant_name || "—"}</td>
+              <td className="break-words px-3 py-4 align-top text-white/70">{claim.claimant_email || "—"}</td>
+              <td className="px-3 py-4 align-top text-white/70">{claim.claimant_phone || "—"}</td>
+              <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(claim.status)}`}>{claim.status}</span></td>
+              <td className="px-3 py-4 align-top text-xs text-white/60 whitespace-nowrap">{dateLabel(claim.submitted_at)}</td>
+              <td className="px-3 py-4 align-top">
+                <div className="flex flex-wrap gap-2">
+                  <Link href="/admin/dashboard/claims" className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white">View claim</Link>
+                  {claim.location_id ? <Link href={`/admin/dashboard/crm/${claim.location_id}`} className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70">View CRM</Link> : null}
+                  <Link href="/admin/dashboard/claims" className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70">Review</Link>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default async function CRMPage({ searchParams }: { searchParams: Promise<{ q?: string; filter?: string; page?: string; pageSize?: string }> }) {
   await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const params = await searchParams;
   const q = String(params.q || "").trim();
-  const filter = params.filter || "all";
+  const filter = normalizeStatus(params.filter || "all");
   const page = Math.max(Number(params.page || 1), 1);
   const pageSize = Math.min(Math.max(Number(params.pageSize || 100), 25), 250);
   const [pageData, summary] = await Promise.all([
@@ -33,12 +87,13 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
     getBusinessCRMSummary(),
   ]);
   const businesses = pageData.rows;
+  const pendingClaims = pageData.pendingClaims || [];
   const pageStart = pageData.total === 0 ? 0 : (pageData.page - 1) * pageData.pageSize + 1;
   const pageEnd = Math.min(pageData.page * pageData.pageSize, pageData.total);
   const baseParams = new URLSearchParams();
   if (q) baseParams.set("q", q);
   if (filter !== "all") baseParams.set("filter", filter);
-  if (pageSize !== 100) baseParams.set("pageSize", String(pageSize));
+  baseParams.set("pageSize", String(pageSize));
   const pageHref = (nextPage: number) => {
     const next = new URLSearchParams(baseParams);
     next.set("page", String(nextPage));
@@ -60,6 +115,7 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
             <form className="flex min-w-[280px] flex-col gap-2 sm:flex-row">
               <input name="q" defaultValue={params.q || ""} placeholder="Search locations, owners, address..." className="rounded-full border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35" />
               {filter !== "all" ? <input type="hidden" name="filter" value={filter} /> : null}
+              <input type="hidden" name="page" value="1" />
               <input type="hidden" name="pageSize" value={pageSize} />
               <button className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/40">Search</button>
             </form>
@@ -87,27 +143,40 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
 
         <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
           {[
-            ["All Locations", "all"],
-            ["Upgrade Opportunities", "upgrade-opportunities"],
-            ["At Risk", "at-risk"],
-            ["Pending Claims", "pending-claims"],
-            ["Owner Accounts", "owners"],
-            ["Location Tasks", "open-tasks"],
-            ["Follow-ups", "follow-ups"],
-            ["QR Codes", "qr"],
-          ].map(([label, value]) => (
-            <Link key={value} href={`/admin/dashboard/crm?${new URLSearchParams({ ...(q ? { q } : {}), ...(value !== "all" ? { filter: value } : {}), ...(pageSize !== 100 ? { pageSize: String(pageSize) } : {}), page: "1" }).toString()}`} className={`whitespace-nowrap rounded-full px-4 py-2 ${filter === value ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>
-              {label}
-            </Link>
-          ))}
+            ["All Locations", "all", summary.total],
+            ["Upgrade Opportunities", "upgrade-opportunities", summary.upgradeOpportunitiesCount],
+            ["At Risk", "at-risk", summary.atRiskCount],
+            ["Pending Claims", "pending-claims", summary.pendingClaimsCount],
+            ["Owner Accounts", "owner-accounts", summary.claimed],
+            ["Location Tasks", "location-tasks", summary.openTasks],
+            ["Follow-ups", "follow-ups", null],
+            ["QR Codes", "qr-codes", null],
+          ].map(([label, value, count]) => {
+            const next = new URLSearchParams();
+            if (value !== "all") next.set("filter", String(value));
+            next.set("page", "1");
+            next.set("pageSize", String(pageSize));
+            if (q) next.set("q", q);
+            return (
+              <Link key={String(value)} href={`/admin/dashboard/crm?${next.toString()}`} className={`whitespace-nowrap rounded-full px-4 py-2 ${filter === value ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>
+                {label}{typeof count === "number" ? ` (${fmt(count)})` : ""}
+              </Link>
+            );
+          })}
         </nav>
 
         <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-          {businesses.length === 0 ? (
+          {filter === "pending-claims" && pendingClaims.length > 0 ? (
+            <PendingClaimsPanel claims={pendingClaims} />
+          ) : businesses.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center">
               <h2 className="text-2xl font-black">No CRM records match this view</h2>
-              <p className="mx-auto mt-2 max-w-2xl text-sm text-white/55">Locations will appear here as soon as real location records exist. Use the filters above or clear search to return to the full CRM.</p>
-              <Link href="/admin/dashboard/locations/new" className="mt-5 inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white">Add location</Link>
+              <p className="mx-auto mt-2 max-w-2xl text-sm text-white/55">{emptyCopy(filter)}</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
+                {q ? <Link href={`/admin/dashboard/crm?${new URLSearchParams({ ...(filter !== "all" ? { filter } : {}), page: "1", pageSize: String(pageSize) }).toString()}`} className="inline-flex rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white/80">Clear search</Link> : null}
+                {filter !== "all" ? <Link href={`/admin/dashboard/crm?${new URLSearchParams({ page: "1", pageSize: String(pageSize), ...(q ? { q } : {}) }).toString()}`} className="inline-flex rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white/80">Clear filter</Link> : null}
+                <Link href="/admin/dashboard/locations/new" className="inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white">Add location</Link>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -169,7 +238,7 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
           )}
 
           <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-white/60 sm:flex-row sm:items-center sm:justify-between">
-            <p>Showing <span className="font-bold text-white">{fmt(pageStart)}</span>-<span className="font-bold text-white">{fmt(pageEnd)}</span> of <span className="font-bold text-white">{fmt(pageData.total)}</span> locations</p>
+            <p>Showing <span className="font-bold text-white">{fmt(pageStart)}</span>-<span className="font-bold text-white">{fmt(pageEnd)}</span> of <span className="font-bold text-white">{fmt(pageData.total)}</span> {filter === "pending-claims" ? "claims" : "locations"}</p>
             <div className="flex gap-2">
               <Link aria-disabled={pageData.page <= 1} href={pageData.page <= 1 ? "#" : pageHref(pageData.page - 1)} className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page <= 1 ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}>Previous</Link>
               <Link aria-disabled={pageData.page >= pageData.totalPages} href={pageData.page >= pageData.totalPages ? "#" : pageHref(pageData.page + 1)} className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page >= pageData.totalPages ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}>Next</Link>
