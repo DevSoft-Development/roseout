@@ -98,7 +98,7 @@ function toArray(value: unknown): string[] {
           .filter(Boolean);
       }
     } catch {
-      // Not JSON. Fall back to comma-separated parsing.
+      // Not JSON. Continue to comma split.
     }
 
     return trimmed
@@ -108,6 +108,7 @@ function toArray(value: unknown): string[] {
         item
           .trim()
           .replace(/^["']|["']$/g, "")
+          .replace(/^(?:and|or)\s+/i, "")
           .replace(/[-_]+/g, " "),
       )
       .filter(Boolean);
@@ -135,15 +136,26 @@ function formatDisplayLabel(value: unknown) {
     .join(" ");
 }
 
-function cleanDisplayTags(items: unknown[], limit = 8) {
+function cleanDisplayTags(items: unknown, limit = 8) {
   return Array.from(
     new Set(
-      items
-        .flatMap((item) => toArray(item))
+      toArray(items)
         .map(formatDisplayLabel)
         .filter(Boolean),
     ),
   ).slice(0, limit);
+}
+
+function formatTagListForSentence(items: unknown, fallback = "a polished, social mood") {
+  const cleanItems = cleanDisplayTags(items, 3);
+
+  if (cleanItems.length === 0) return fallback;
+  if (cleanItems.length === 1) return cleanItems[0].toLowerCase();
+  if (cleanItems.length === 2) {
+    return `${cleanItems[0].toLowerCase()} and ${cleanItems[1].toLowerCase()}`;
+  }
+
+  return `${cleanItems[0].toLowerCase()}, ${cleanItems[1].toLowerCase()}, and ${cleanItems[2].toLowerCase()}`;
 }
 
 export default function LocationDetailPage() {
@@ -319,7 +331,27 @@ export default function LocationDetailPage() {
     getOperatingHours(location),
   );
   const galleryImages = Array.from(
-    new Set([getLocationImage(location), ...toArray(location?.images), location?.main_image, location?.image_url].filter(Boolean)),
+    new Set(
+      [
+        getLocationImage(location),
+        location?.main_image,
+        location?.image_url,
+        location?.photo_url,
+        location?.cover_image,
+        location?.hero_image,
+        location?.thumbnail_url,
+        location?.google_photo_url,
+        location?.google_image_url,
+        location?.yelp_image_url,
+        ...toArray(location?.images),
+        ...toArray(location?.photos),
+        ...toArray(location?.gallery_images),
+        ...toArray(location?.image_urls),
+        ...toArray(location?.photo_urls),
+      ]
+        .map((image) => String(image || "").trim())
+        .filter((image) => image && image !== "null" && image !== "undefined"),
+    ),
   ) as string[];
   useEffect(() => {
     if (!location?.id) return;
@@ -388,9 +420,9 @@ export default function LocationDetailPage() {
   const recommendationBullets = buildRecommendationBullets({
     category,
     cuisine: location?.cuisine || location?.activity_type,
-    atmosphere: location?.atmosphere,
-    reviewKeywords: cleanDisplayTags(reviewKeywords, 8),
-    bestFor: displayBestFor,
+    atmosphere: formatTagListForSentence(location?.atmosphere || displayVibeTags),
+    reviewKeywords: cleanDisplayTags(reviewKeywords, 6),
+    bestFor: cleanDisplayTags(bestFor, 6),
     qualityScore: location?.quality_score || score,
     popularityScore: location?.popularity_score,
     vibeTags: displayVibeTags,
@@ -529,9 +561,9 @@ export default function LocationDetailPage() {
                     {location.review_count || reviews.length || 0} Reviews
                   </span>
 
-                  {galleryImages.length > 1 && (
+                  {galleryImages.length > 0 && (
                     <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
-                      {galleryImages.length} Photos
+                      {galleryImages.length === 1 ? "1 Photo" : `${galleryImages.length} Photos`}
                     </span>
                   )}
                 </div>
@@ -669,7 +701,13 @@ export default function LocationDetailPage() {
 
               <LuxuryCard eyebrow="About / Experience" title="What to expect.">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <EditorialTile label="Atmosphere" value={location.atmosphere || location.primary_tag || "Curated hospitality setting"} />
+                  <EditorialTile
+                    label="Atmosphere"
+                    value={formatTagListForSentence(
+                      location.atmosphere || location.primary_tag,
+                      "Curated hospitality setting",
+                    )}
+                  />
                   <EditorialTile label="Signature" value={displaySignatureItems[0] || displaySpecialFeatures[0] || "Memorable experience moments"} />
                   <EditorialTile label="Experience" value={location.description || "Selected for guests looking for elevated plans with a clear sense of place."} />
                   <EditorialTile label="Planning note" value={reservationUrl ? "Reserve ahead for the smoothest visit." : "Confirm hours and availability before heading out."} />
@@ -688,12 +726,24 @@ export default function LocationDetailPage() {
                 </LuxuryCard>
               )}
 
-              {galleryImages.length > 1 && (
+              {galleryImages.length > 0 && (
                 <LuxuryCard eyebrow="Photo Gallery" title="A closer look.">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {galleryImages.slice(1, 7).map((image, index) => (
-                      <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="group overflow-hidden rounded-[1.35rem] border border-white/10 bg-white/[0.04]">
-                        <Image src={image} alt={`${name} gallery photo ${index + 1}`} width={520} height={380} className="h-52 w-full object-cover transition duration-500 group-hover:scale-105" />
+                    {galleryImages.slice(0, 6).map((image, index) => (
+                      <a
+                        key={`${image}-${index}`}
+                        href={image}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group overflow-hidden rounded-[1.35rem] border border-white/10 bg-white/[0.04]"
+                      >
+                        <Image
+                          src={image}
+                          alt={`${name} gallery photo ${index + 1}`}
+                          width={520}
+                          height={380}
+                          className="h-52 w-full object-cover transition duration-500 group-hover:scale-105"
+                        />
                       </a>
                     ))}
                   </div>
@@ -1071,10 +1121,10 @@ function PremiumTag({ children }: { children: React.ReactNode }) {
 function HavenMark({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-300/30 bg-red-600/20 text-[10px] font-black tracking-tight text-red-50 shadow-sm shadow-red-950/30 ${className}`}
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-300/30 bg-red-600/20 text-[13px] font-black text-red-50 shadow-sm shadow-red-950/30 ${className}`}
       aria-hidden="true"
     >
-      OH
+      ◆
     </span>
   );
 }
@@ -1149,19 +1199,19 @@ function buildRecommendationBullets({
   const bullets = [
     `A strong match for guests looking for ${primary || "a polished experience"}${city ? ` in ${city}` : ""}.`,
     bestFor[0]
-      ? `Especially useful for ${bestFor.slice(0, 2).join(" and ").toLowerCase()} plans where the setting matters.`
+      ? `Especially useful for ${formatTagListForSentence(bestFor)} plans where the setting matters.`
       : `A polished option for date nights, celebrations, and intentional outings.`,
-    atmosphere
-      ? `The overall feel leans ${formatDisplayLabel(atmosphere).toLowerCase()}, helping guests choose the right mood before they go.`
+    atmosphere || vibeTags.length > 0
+      ? `The overall feel leans ${formatTagListForSentence(atmosphere || vibeTags)}, helping guests choose the right mood before they go.`
       : reviewKeywords[0]
-        ? `Imported review language points to ${reviewKeywords.slice(0, 2).join(" and ").toLowerCase()} as notable guest signals.`
+        ? `Imported review language points to ${formatTagListForSentence(reviewKeywords, "positive guest signals")} as notable guest signals.`
         : `Recommended when guests want a more elevated plan without sorting through generic listings.`,
   ];
 
   if (Number(qualityScore || 0) >= 80 || Number(popularityScore || 0) >= 80) {
     bullets.push("Quality and popularity signals make it a standout candidate for high-intent searches.");
   } else if (vibeTags[0]) {
-    bullets.push(`TheOutHaven sees this as a natural fit for ${vibeTags.slice(0, 2).join(" and ").toLowerCase()} moments.`);
+    bullets.push(`TheOutHaven sees this as a natural fit for ${formatTagListForSentence(vibeTags)} moments.`);
   }
 
   return bullets.slice(0, 4);
