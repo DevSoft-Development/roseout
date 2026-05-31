@@ -55,6 +55,7 @@ export async function GET(request: Request) {
     enrichmentQueued,
     remainingPublishReady,
     remainingUncheckedDedupe,
+    needsScoring,
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,
@@ -91,17 +92,17 @@ export async function GET(request: Request) {
       query
         .eq("import_status", "staged")
         .eq("quality_status", "publish_ready")
-        .eq("duplicate_status", "unique")
-        .not("address", "is", null)
-        .not("latitude", "is", null)
-        .not("longitude", "is", null)
-        .not("primary_category", "is", null),
+        .eq("duplicate_status", "unique"),
     ),
     safeCount("location_import_staging", (query) =>
       query
         .eq("import_status", "staged")
-        .in("duplicate_status", ["unchecked", "unique", "possible_duplicate"])
-        .neq("quality_status", "reject"),
+        .eq("duplicate_status", "unchecked"),
+    ),
+    safeCount("location_import_staging", (query) =>
+      query
+        .eq("import_status", "staged")
+        .or("quality_status.in.(needs_review,unchecked),quality_score.is.null"),
     ),
     safeCount("locations", (query) =>
       query.eq("is_searchable", true).is("claim_code", null),
@@ -146,6 +147,7 @@ export async function GET(request: Request) {
     enrichmentQueued,
     remainingPublishReady,
     remainingUncheckedDedupe,
+    needsScoring,
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,

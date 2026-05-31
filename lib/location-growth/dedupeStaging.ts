@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { calculateStagingQuality, hasCompleteStagingQuality } from "@/lib/location-growth/stagingQuality";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type StagingRow = Record<string, any>;
@@ -157,7 +158,18 @@ export async function dedupeStagedLocationsChunk({
     hasMore: false,
   };
 
-  for (const row of rows) {
+  for (let row of rows) {
+    if (!hasCompleteStagingQuality(row)) {
+      const scored = calculateStagingQuality(row);
+      const { error: scoreError } = await supabaseAdmin
+        .from("location_import_staging")
+        .update({ ...scored, updated_at: new Date().toISOString() })
+        .eq("id", row.id);
+
+      if (scoreError) throw new Error(`Dedupe quality update failed: ${scoreError.message}`);
+      row = { ...row, ...scored };
+    }
+
     if (row.quality_status === "reject") {
       counts.rejected += 1;
       await supabaseAdmin
