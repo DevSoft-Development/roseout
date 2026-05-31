@@ -228,7 +228,11 @@ const ratingOptions = [
 ];
 
 const NYC_OFFSET_STORAGE_KEY = "theouthaven_nyc_import_offset";
-const OSM_OFFSET_STORAGE_KEY = "theouthaven_osm_import_offset";
+const DEFAULT_OSM_CATEGORY_GROUP = "nightlife";
+
+function getOsmOffsetKey(group: string) {
+  return `theouthaven_osm_import_offset_${group || "all"}`;
+}
 
 const queryCountOptions = [
   { label: "1 query", value: "1" },
@@ -269,7 +273,9 @@ export default function ImportPage() {
   const [nycOffset, setNycOffset] = useState("0");
   const [osmLimit, setOsmLimit] = useState("250");
   const [osmOffset, setOsmOffset] = useState("0");
-  const [osmCategoryGroup, setOsmCategoryGroup] = useState("all");
+  const [osmCategoryGroup, setOsmCategoryGroup] = useState(
+    DEFAULT_OSM_CATEGORY_GROUP,
+  );
   const [dedupeBatchId, setDedupeBatchId] = useState("");
   const [publishBatchId, setPublishBatchId] = useState("");
   const [dedupeScope, setDedupeScope] = useState("all");
@@ -292,9 +298,12 @@ export default function ImportPage() {
       setNycOffset(savedNycOffset);
     }
 
-    const savedOsmOffset = window.localStorage.getItem(OSM_OFFSET_STORAGE_KEY);
-    if (savedOsmOffset) {
-      // Persisted app-managed OSM pagination should restore the previous cursor.
+    const savedOsmOffset = window.localStorage.getItem(
+      getOsmOffsetKey(DEFAULT_OSM_CATEGORY_GROUP),
+    );
+    if (savedOsmOffset !== null) {
+      // Persisted app-managed OSM pagination should restore the previous cursor
+      // for the default category group.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOsmOffset(savedOsmOffset);
     }
@@ -303,10 +312,6 @@ export default function ImportPage() {
   useEffect(() => {
     window.localStorage.setItem(NYC_OFFSET_STORAGE_KEY, nycOffset);
   }, [nycOffset]);
-
-  useEffect(() => {
-    window.localStorage.setItem(OSM_OFFSET_STORAGE_KEY, osmOffset);
-  }, [osmOffset]);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -406,7 +411,11 @@ export default function ImportPage() {
       return data;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setActionResult({ success: false, error: message });
+      setActionResult({
+        success: false,
+        error: message,
+        ...(key === "osm" ? { categoryGroup: osmCategoryGroup } : {}),
+      });
       return null;
     } finally {
       setRunningAction(null);
@@ -572,19 +581,28 @@ export default function ImportPage() {
           ? Number(data.nextOffset)
           : offset + limit;
       if (Number.isFinite(nextOffset)) {
+        const key = getOsmOffsetKey(osmCategoryGroup);
+        window.localStorage.setItem(key, String(nextOffset));
         setOsmOffset(String(nextOffset));
-        window.localStorage.setItem(OSM_OFFSET_STORAGE_KEY, String(nextOffset));
       }
     }
   };
 
+  const handleOsmCategoryGroupChange = (nextGroup: string) => {
+    setOsmCategoryGroup(nextGroup);
+    const key = getOsmOffsetKey(nextGroup);
+    const saved = window.localStorage.getItem(key);
+    setOsmOffset(saved || "0");
+  };
+
   const resetOsmOffset = () => {
     const confirmed = window.confirm(
-      "Reset OSM import offset to 0? The next OSM import will start from the beginning again.",
+      `Reset OSM offset for ${osmCategoryGroup} to 0?`,
     );
     if (!confirmed) return;
+    const key = getOsmOffsetKey(osmCategoryGroup);
+    window.localStorage.setItem(key, "0");
     setOsmOffset("0");
-    window.localStorage.setItem(OSM_OFFSET_STORAGE_KEY, "0");
   };
 
   const runCleanupBatch = async () => {
@@ -729,7 +747,7 @@ export default function ImportPage() {
             osmOffset={osmOffset}
             setOsmOffset={setOsmOffset}
             osmCategoryGroup={osmCategoryGroup}
-            setOsmCategoryGroup={setOsmCategoryGroup}
+            setOsmCategoryGroup={handleOsmCategoryGroupChange}
             dedupeScope={dedupeScope}
             setDedupeScope={setDedupeScope}
             dedupeBatchId={dedupeBatchId}
@@ -1150,7 +1168,7 @@ function LocationGrowthPanel(props: {
         <ActionCard
           title="Import OSM Activities"
           description="Stage date-friendly activities from OpenStreetMap. OSM uses a saved cursor/offset so you can import the next batch without pulling the same records."
-          note="OSM offset is app-managed because Overpass does not provide true offset pagination."
+          note="Start with Nightlife or Culture. Use All only after smaller groups work because Overpass may reject or time out broad queries."
           button="Import OSM Batch"
           secondaryButton="Import Next OSM Batch"
           tertiaryButton="Reset OSM Offset"
@@ -1171,11 +1189,11 @@ function LocationGrowthPanel(props: {
                 value={props.osmCategoryGroup}
                 onChange={props.setOsmCategoryGroup}
                 options={[
-                  { label: "All", value: "all" },
                   { label: "Nightlife", value: "nightlife" },
                   { label: "Culture", value: "culture" },
                   { label: "Activities", value: "activities" },
                   { label: "Dessert", value: "dessert" },
+                  { label: "All", value: "all" },
                 ]}
               />
               <ReadOnlyField label="Region" value="NYC" />
@@ -1595,11 +1613,22 @@ function ResultBanner({
     "scope",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
+  const isAllOverpassFailure =
+    !ok &&
+    String(result.categoryGroup || "").toLowerCase() === "all" &&
+    (errorText.includes("HTTP 406") ||
+      errorText.toLowerCase().includes("timeout"));
   return (
     <div className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
-      {!ok && errorText.toLowerCase().includes("timeout") ? (
+      {isAllOverpassFailure ? (
+        <p className="mt-2 font-bold">
+          Overpass rejected the broad All query. Try Nightlife, Culture,
+          Activities, or Dessert separately.
+        </p>
+      ) : null}
+      {!isAllOverpassFailure && !ok && errorText.toLowerCase().includes("timeout") ? (
         <p className="mt-2 font-bold">
           OSM timed out. Try limit 100 or a smaller category group.
         </p>

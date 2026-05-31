@@ -18,7 +18,12 @@ async function authorize(request: NextRequest) {
   return error;
 }
 
-function toBoundedNumber(value: unknown, fallback: number, min: number, max: number) {
+function toBoundedNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const numeric = Number(value ?? fallback);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(Math.max(Math.trunc(numeric), min), max);
@@ -65,7 +70,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      ...result,
+      batchId: result.batchId,
+      seen: result.seen,
+      mapped: result.mapped,
+      staged: result.staged,
+      duplicatesRemoved: result.duplicatesRemoved,
+      limit: result.limit,
+      offset: result.offset,
+      nextOffset: result.nextOffset,
+      categoryGroup: result.categoryGroup,
     });
   } catch (error) {
     return jsonError(error);
