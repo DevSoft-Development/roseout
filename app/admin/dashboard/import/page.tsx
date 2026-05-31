@@ -313,7 +313,8 @@ export default function ImportPage() {
   );
   const [osmDebugTagKey, setOsmDebugTagKey] = useState("amenity");
   const [osmDebugTagValue, setOsmDebugTagValue] = useState("bar");
-  const [osmDebugBbox, setOsmDebugBbox] = useState("nyc");
+  const [osmDebugBbox, setOsmDebugBbox] = useState("nyc_metro");
+  const [osmDebugQueryMode, setOsmDebugQueryMode] = useState("node_only");
   const [dedupeBatchId, setDedupeBatchId] = useState("");
   const [publishBatchId, setPublishBatchId] = useState("");
   const [dedupeScope, setDedupeScope] = useState("all");
@@ -681,7 +682,8 @@ export default function ImportPage() {
     postAction("osm-test", "/api/admin/location-growth/test-osm", {
       tagKey: osmDebugTagKey || "amenity",
       tagValue: osmDebugTagValue || "bar",
-      bbox: osmDebugBbox || "nyc",
+      bbox: osmDebugBbox || "nyc_metro",
+      queryMode: osmDebugQueryMode || "node_only",
     });
 
   const runCleanupBatch = async () => {
@@ -864,6 +866,8 @@ export default function ImportPage() {
             setOsmDebugTagValue={setOsmDebugTagValue}
             osmDebugBbox={osmDebugBbox}
             setOsmDebugBbox={setOsmDebugBbox}
+            osmDebugQueryMode={osmDebugQueryMode}
+            setOsmDebugQueryMode={setOsmDebugQueryMode}
             onTestOsmQuery={testOsmQuery}
             onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
@@ -1265,6 +1269,8 @@ function LocationGrowthPanel(props: {
   setOsmDebugTagValue: (value: string) => void;
   osmDebugBbox: string;
   setOsmDebugBbox: (value: string) => void;
+  osmDebugQueryMode: string;
+  setOsmDebugQueryMode: (value: string) => void;
   onTestOsmQuery: () => void;
   onDedupe: () => void;
   onPublish: () => void;
@@ -1410,6 +1416,11 @@ function LocationGrowthPanel(props: {
               <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
                 Test OSM Query
               </summary>
+              <p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-3 text-xs leading-5 text-rose-100">
+                If OSM import returns zero, test amenity=bar with node-only NYC
+                Metro. If the test returns results but import does not, the
+                importer query/cursor is the problem.
+              </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <TextField
                   label="Tag key"
@@ -1430,6 +1441,15 @@ function LocationGrowthPanel(props: {
                   options={[
                     { label: "NYC", value: "nyc" },
                     { label: "NYC Metro", value: "nyc_metro" },
+                  ]}
+                />
+                <SelectField
+                  label="Query mode"
+                  value={props.osmDebugQueryMode}
+                  onChange={props.setOsmDebugQueryMode}
+                  options={[
+                    { label: "Node only", value: "node_only" },
+                    { label: "N/W/R", value: "nwr" },
                   ]}
                 />
                 <button

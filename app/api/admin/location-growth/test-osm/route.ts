@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import {
+  buildNodeOnlyFilterQuery,
+  buildSingleFilterQuery,
   NYC_BBOX,
   NYC_METRO_BBOX,
   OVERPASS_ENDPOINTS,
+  OVERPASS_USER_AGENT,
   type OsmFilter,
 } from "@/lib/location-growth/osmActivities";
 
@@ -29,13 +32,13 @@ function cleanTag(value: unknown, fallback: string) {
 }
 
 function getBbox(value: unknown) {
-  return value === "nyc_metro" ? NYC_METRO_BBOX : NYC_BBOX;
+  return value === "nyc" ? NYC_BBOX : NYC_METRO_BBOX;
 }
 
 type DebugOsmElement = {
   id?: number | string;
   type?: string;
-  tags?: { name?: string };
+  tags?: Record<string, string>;
   lat?: number;
   lon?: number;
   center?: { lat?: number; lon?: number };
@@ -51,22 +54,19 @@ function isDebugPayload(
   );
 }
 
-function buildDebugQuery({
-  tagKey,
-  tagValue,
-  bbox,
-}: Pick<OsmFilter, "tagKey" | "tagValue"> & {
-  bbox: typeof NYC_BBOX;
+function getQuery({
+  bboxName,
+  filter,
+  queryMode,
+}: {
+  bboxName: "nyc" | "nyc_metro";
+  filter: OsmFilter;
+  queryMode: "nwr" | "node_only";
 }) {
-  const box = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
-
-  return `[out:json][timeout:25];
-(
-  node["${tagKey}"="${tagValue}"](${box});
-  way["${tagKey}"="${tagValue}"](${box});
-  relation["${tagKey}"="${tagValue}"](${box});
-);
-out center 10;`;
+  const bbox = getBbox(bboxName);
+  return queryMode === "node_only"
+    ? buildNodeOnlyFilterQuery({ bbox, filter })
+    : buildSingleFilterQuery({ bbox, filter });
 }
 
 export async function POST(request: NextRequest) {
@@ -76,12 +76,10 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const tagKey = cleanTag(body.tagKey, "amenity");
   const tagValue = cleanTag(body.tagValue, "bar");
-  const bboxName = body.bbox === "nyc_metro" ? "nyc_metro" : "nyc";
-  const query = buildDebugQuery({
-    tagKey,
-    tagValue,
-    bbox: getBbox(bboxName),
-  });
+  const bboxName = body.bbox === "nyc" ? "nyc" : "nyc_metro";
+  const queryMode = body.queryMode === "nwr" ? "nwr" : "node_only";
+  const filter = { label: `${tagKey}=${tagValue}`, tagKey, tagValue };
+  const query = getQuery({ bboxName, filter, queryMode });
 
   let rawError = "";
 
@@ -95,6 +93,7 @@ export async function POST(request: NextRequest) {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           Accept: "application/json",
+          "User-Agent": OVERPASS_USER_AGENT,
         },
         body: new URLSearchParams({ data: query }).toString(),
         cache: "no-store",
@@ -118,15 +117,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         endpoint,
-        query,
         count: payload.elements.length,
-        elements: payload.elements.slice(0, 5).map((element) => ({
-          id: element.id,
+        query,
+        queryMode,
+        firstElements: payload.elements.slice(0, 5).map((element) => ({
           type: element.type,
+          id: element.id,
           name: element.tags?.name ?? null,
           lat: element.lat ?? null,
           lon: element.lon ?? null,
           center: element.center ?? null,
+          tags: element.tags ?? {},
         })),
       });
     } catch (error) {
@@ -144,8 +145,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(
     {
       success: false,
+      endpoint: null,
       query,
+      queryMode,
       count: 0,
+      firstElements: [],
       rawError: rawError || "All Overpass endpoints failed",
     },
     { status: 500 },
