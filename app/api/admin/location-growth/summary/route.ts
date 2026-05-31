@@ -54,6 +54,7 @@ export async function GET(request: Request) {
     rejected,
     enrichmentQueued,
     remainingPublishReady,
+    remainingUncheckedDedupe,
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,
@@ -95,6 +96,12 @@ export async function GET(request: Request) {
         .not("latitude", "is", null)
         .not("longitude", "is", null)
         .not("primary_category", "is", null),
+    ),
+    safeCount("location_import_staging", (query) =>
+      query
+        .eq("import_status", "staged")
+        .in("duplicate_status", ["unchecked", "unique", "possible_duplicate"])
+        .neq("quality_status", "reject"),
     ),
     safeCount("locations", (query) =>
       query.eq("is_searchable", true).is("claim_code", null),
@@ -138,6 +145,7 @@ export async function GET(request: Request) {
     rejected,
     enrichmentQueued,
     remainingPublishReady,
+    remainingUncheckedDedupe,
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,

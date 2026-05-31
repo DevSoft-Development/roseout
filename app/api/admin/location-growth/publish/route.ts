@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { generateMissingLocationQrs } from "@/lib/qr/locationQr";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,16 @@ function jsonError(error: unknown, status = 500) {
   );
 }
 
+function shouldUseFallback(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return (
+    message.toLowerCase().includes("could not find the function") ||
+    message.toLowerCase().includes("function") && message.toLowerCase().includes("does not exist") ||
+    message.toLowerCase().includes("statement timeout") ||
+    message.toLowerCase().includes("canceling statement due to statement timeout")
+  );
+}
+
 async function getRemainingPublishReady() {
   const { count, error } = await supabaseAdmin
     .from("location_import_staging")
@@ -71,12 +82,30 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
 
-    const limit = toBoundedNumber(body.limit, 500, 1, 1000);
+    const limit = toBoundedNumber(body.limit, 500, 1, 500);
     const batchId =
       typeof body.batchId === "string" && body.batchId.trim()
         ? body.batchId.trim()
         : null;
     const publishAll = body.all === true || !batchId;
+
+    const runFallback = async (rpcError: Error) => {
+      const fallback = await publishReadyStagedLocations({ limit, batchId });
+      const remainingPublishReady = await getRemainingPublishReady();
+      const qr = await generateMissingLocationQrs(limit);
+
+      return NextResponse.json({
+        success: true,
+        scope: publishAll ? "all" : "batch",
+        batchId: batchId || undefined,
+        limit,
+        fallbackUsed: true,
+        rpcError: rpcError.message,
+        ...fallback,
+        remainingPublishReady,
+        qr,
+      });
+    };
 
     if (publishAll) {
       const { data, error } = await supabaseAdmin.rpc(
@@ -87,9 +116,11 @@ export async function POST(request: NextRequest) {
       );
 
       if (error) {
-        throw new Error(
-          `Failed to publish all ready staged records: ${error.message}`,
+        const rpcError = new Error(
+          `Failed to publish all ready staged records: ${error.message || JSON.stringify(error)}`,
         );
+        if (shouldUseFallback(rpcError)) return runFallback(rpcError);
+        throw rpcError;
       }
 
       const remainingPublishReady = await getRemainingPublishReady();
@@ -111,7 +142,11 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      throw new Error(`Failed to publish batch ${batchId}: ${error.message}`);
+      const rpcError = new Error(
+        `Failed to publish batch ${batchId}: ${error.message || JSON.stringify(error)}`,
+      );
+      if (shouldUseFallback(rpcError)) return runFallback(rpcError);
+      throw rpcError;
     }
 
     const remainingPublishReady = await getRemainingPublishReady();
