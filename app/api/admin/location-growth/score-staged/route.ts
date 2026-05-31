@@ -11,7 +11,8 @@ async function authorize(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return null;
   if (
     process.env.IMPORT_SECRET &&
-    request.headers.get("x-internal-import-secret") === process.env.IMPORT_SECRET
+    request.headers.get("x-internal-import-secret") ===
+      process.env.IMPORT_SECRET
   ) {
     return null;
   }
@@ -19,7 +20,12 @@ async function authorize(request: NextRequest) {
   return error;
 }
 
-function toBoundedNumber(value: unknown, fallback: number, min: number, max: number) {
+function toBoundedNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const numeric = Number(value ?? fallback);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(Math.max(Math.trunc(numeric), min), max);
@@ -53,7 +59,9 @@ export async function POST(request: NextRequest) {
         : null;
     const limit = toBoundedNumber(body.limit, 250, 1, 500);
 
-    let query = needsScoringQuery().order("created_at", { ascending: true }).limit(limit);
+    let query = needsScoringQuery()
+      .order("created_at", { ascending: true })
+      .limit(limit);
     if (batchId) query = query.eq("batch_id", batchId);
 
     const { data, error } = await query;
@@ -65,6 +73,7 @@ export async function POST(request: NextRequest) {
       publishReady: 0,
       review: 0,
       rejected: 0,
+      needsPhoto: 0,
     };
 
     for (const row of rows) {
@@ -72,6 +81,7 @@ export async function POST(request: NextRequest) {
       if (scored.quality_status === "publish_ready") counts.publishReady += 1;
       if (scored.quality_status === "review") counts.review += 1;
       if (scored.quality_status === "reject") counts.rejected += 1;
+      if (scored.quality_status === "needs_photo") counts.needsPhoto += 1;
 
       const { error: updateError } = await supabaseAdmin
         .from("location_import_staging")
@@ -88,8 +98,10 @@ export async function POST(request: NextRequest) {
 
     let remainingQuery = needsScoringQuery();
     if (batchId) remainingQuery = remainingQuery.eq("batch_id", batchId);
-    const { count: remainingCount, error: countError } = await remainingQuery.limit(1);
-    if (countError) throw new Error(`Score remaining count failed: ${countError.message}`);
+    const { count: remainingCount, error: countError } =
+      await remainingQuery.limit(1);
+    if (countError)
+      throw new Error(`Score remaining count failed: ${countError.message}`);
 
     return NextResponse.json({
       success: true,
@@ -97,6 +109,7 @@ export async function POST(request: NextRequest) {
       publishReady: counts.publishReady,
       review: counts.review,
       rejected: counts.rejected,
+      needsPhoto: counts.needsPhoto,
       hasMore: (remainingCount || 0) > 0,
     });
   } catch (error) {

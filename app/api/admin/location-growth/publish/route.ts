@@ -20,7 +20,12 @@ async function authorize(request: NextRequest) {
   return error;
 }
 
-function toBoundedNumber(value: unknown, fallback: number, min: number, max: number) {
+function toBoundedNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const numeric = Number(value ?? fallback);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(Math.max(Math.trunc(numeric), min), max);
@@ -49,9 +54,12 @@ function shouldUseFallback(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
   return (
     message.toLowerCase().includes("could not find the function") ||
-    message.toLowerCase().includes("function") && message.toLowerCase().includes("does not exist") ||
+    (message.toLowerCase().includes("function") &&
+      message.toLowerCase().includes("does not exist")) ||
     message.toLowerCase().includes("statement timeout") ||
-    message.toLowerCase().includes("canceling statement due to statement timeout")
+    message
+      .toLowerCase()
+      .includes("canceling statement due to statement timeout")
   );
 }
 
@@ -62,6 +70,8 @@ async function getRemainingPublishReady() {
     .eq("import_status", "staged")
     .eq("quality_status", "publish_ready")
     .eq("duplicate_status", "unique")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)

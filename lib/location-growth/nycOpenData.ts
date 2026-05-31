@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
+  applySearchQualityFields,
   normalizeCuisine,
   uniqueLower,
   type StagedLocationInput,
@@ -85,7 +86,6 @@ async function markBatchFailed(batchId: string | null, error: unknown) {
     );
   }
 }
-
 
 function getCompletenessScore(item: any) {
   let score = 0;
@@ -269,7 +269,9 @@ export async function importNycRestaurants({
       .filter((item): item is StagedLocationInput => Boolean(item))
       .map((item) => ({ ...item, batch_id: batchId }));
 
-    const staged = dedupeStagedLocationsForUpsert(mapped);
+    const staged = dedupeStagedLocationsForUpsert(
+      mapped.map(applySearchQualityFields),
+    );
     const duplicatesRemoved = mapped.length - staged.length;
 
     if (staged.length) {

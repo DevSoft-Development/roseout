@@ -36,6 +36,10 @@ const PUBLIC_RESTAURANT_LOCATION_SELECT = `
   reservation_url,
   reservation_link,
   is_searchable,
+  quality_status,
+  duplicate_status,
+  has_photos,
+  photo_status,
   data_status,
   missing_fields,
   is_hidden,
@@ -48,6 +52,10 @@ export async function GET() {
     .select(PUBLIC_RESTAURANT_LOCATION_SELECT)
     .eq("location_type", "restaurant")
     .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')

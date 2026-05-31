@@ -35,8 +35,12 @@ const CARD_FIELDS = [
   "is_featured",
   "created_at",
   "is_searchable",
+  "quality_status",
+  "duplicate_status",
+  "has_photos",
+  "photo_status",
   "is_hidden",
-  "data_status"
+  "data_status",
 ].join(",");
 
 export async function GET(request: NextRequest) {
@@ -55,6 +59,8 @@ export async function GET(request: NextRequest) {
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
@@ -71,10 +77,12 @@ export async function GET(request: NextRequest) {
     .order("rating", { ascending: false, nullsFirst: false })
     .range(from, to);
   const dbMs = Date.now() - dbStart;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   const items = data || [];
-  const hasMore = typeof count === "number" ? page * limit < count : items.length === limit;
+  const hasMore =
+    typeof count === "number" ? page * limit < count : items.length === limit;
   const totalMs = Date.now() - start;
 
   console.log(
@@ -88,5 +96,11 @@ export async function GET(request: NextRequest) {
     }),
   );
 
-  return NextResponse.json({ items, page, limit, hasMore, totalEstimate: count ?? null });
+  return NextResponse.json({
+    items,
+    page,
+    limit,
+    hasMore,
+    totalEstimate: count ?? null,
+  });
 }
