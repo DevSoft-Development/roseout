@@ -53,6 +53,14 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   const llmPreference = llmIntent?.pairingPreference;
   merged.pairingPreference = detectedPreference.distanceMode !== "any" ? detectedPreference : { ...detectedPreference, ...(llmPreference ?? {}), requiresPairing: merged.wantsPairing || Boolean(llmPreference?.requiresPairing) };
   if (!merged.wantsPairing && merged.pairingPreference.distanceMode === "any") merged.pairingPreference.requiresPairing = false;
+  const unsafeVibe = (merged as any).vibe;
+  merged.vibe = Array.isArray(unsafeVibe)
+    ? unsafeVibe.map(String).map((item) => item.trim()).filter(Boolean)
+    : typeof unsafeVibe === "string"
+      ? [unsafeVibe.trim()].filter(Boolean)
+      : Array.isArray(base.vibe)
+        ? base.vibe
+        : [];
   return merged;
 }
 export function restaurantSearchTerms(intent: SearchIntent) { return uniq([...intent.restaurantIntent.mealTerms, ...intent.restaurantIntent.foodTerms, ...intent.restaurantIntent.cuisineTerms, ...intent.restaurantIntent.categoryTerms, ...intent.restaurantIntent.featureTerms]); }

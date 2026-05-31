@@ -63,7 +63,7 @@ function intentText(intent: SearchIntent) {
     intent.rawQuery,
     intent.occasion,
     intent.budget,
-    ...intent.vibe,
+    ...(Array.isArray(intent.vibe) ? intent.vibe : []),
     ...intent.restaurantIntent.mealTerms,
     ...intent.restaurantIntent.foodTerms,
     ...intent.restaurantIntent.cuisineTerms,
