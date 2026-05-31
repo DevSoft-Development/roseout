@@ -13,11 +13,22 @@ import {
 import { getSiteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
-  ...buildMetadata({ title: undefined, description: DEFAULT_DESCRIPTION, path: "/" }),
+  ...buildMetadata({
+    title: undefined,
+    description: DEFAULT_DESCRIPTION,
+    path: "/",
+  }),
   metadataBase: new URL(getSiteUrl()),
   title: {
     default: DEFAULT_TITLE,
     template: `%s | ${SITE_NAME}`,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
