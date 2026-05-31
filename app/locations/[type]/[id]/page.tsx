@@ -529,7 +529,7 @@ export default function LocationDetailPage() {
         <section className="relative min-h-[88vh] overflow-hidden">
           {getLocationImage(location) ? (
             <Image
-              src={getLocationImage(location)}
+              src={getLocationImage(location)!}
               alt={name}
               fill
               priority

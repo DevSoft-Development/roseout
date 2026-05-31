@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
+import { hasLocationImage } from "@/lib/locationImage";
 
 function cleanParam(value: string | null) { return (value ?? "").trim(); }
 function normalizeKind(value: string | null) { const v=cleanParam(value).toLowerCase(); if (["restaurants","restaurant","food","brunch"].includes(v)) return "restaurants"; if (["activities","activity","things","things-to-do"].includes(v)) return "activities"; if (["rooftops","rooftop"].includes(v)) return "rooftops"; if (["lounges","lounge"].includes(v)) return "lounges"; return "all"; }
@@ -20,6 +21,13 @@ export async function GET(request: NextRequest) {
     const mixedWithPairing = result.render_mode === "mixed_pairs" || result.render_mode === "partial_mixed";
     let exploreNote: string | undefined;
     let items = kind === "restaurants" || kind === "rooftops" ? result.restaurants : kind === "activities" || kind === "lounges" ? result.activities : mixedWithPairing && result.pairs.length ? [...result.pairs, ...result.restaurants, ...result.activities] : [...result.restaurants, ...result.activities];
+    items = items.filter((item: any) => {
+      if (item?.restaurant || item?.activity) {
+        return hasLocationImage(item.restaurant) && hasLocationImage(item.activity);
+      }
+
+      return hasLocationImage(item);
+    });
     if (kind === "all" && mixedWithPairing && !result.pairs.length) exploreNote = "No walkable pairs found. Showing individual matches. Prefer using /create for full pair planning.";
     if (kind === "rooftops") items = items.filter((item:any)=>/[\s-]roof|rooftop|terrace|skyline|view|lounge/i.test([item.name,item.primary_category,item.description,item.search_document,item.tags].flat().join(" ")));
     if (kind === "lounges") items = items.filter((item:any)=>/lounge|hookah|bar|nightlife|cocktail/i.test([item.name,item.primary_category,item.activity_type,item.description,item.search_document,item.tags].flat().join(" ")));

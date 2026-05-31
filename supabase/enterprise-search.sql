@@ -15,6 +15,14 @@ with candidates as (
     and coalesce(l.is_searchable,true) = true
     and coalesce(l.status,'') not in ('hidden','deleted','archived')
     and coalesce(l.data_status,'clean') not in ('hidden','deleted','archived')
+    and coalesce(l.has_photos,false) = true
+    and coalesce(l.photo_status,'missing_photo') <> 'missing_photo'
+    and (
+      public.oh_is_valid_photo_text(l.main_image)
+      or public.oh_is_valid_photo_text(l.image_url)
+      or public.oh_jsonb_has_valid_photo(to_jsonb(l.images))
+      or public.oh_jsonb_has_valid_photo(to_jsonb(l.gallery_images))
+    )
 ), scored as (
   select c.*,
     (select coalesce(sum(case when lower(c.name) = lower(t) or lower(coalesce(c.restaurant_name,'')) = lower(t) or lower(coalesce(c.activity_name,'')) = lower(t) then 90 when lower(coalesce(c.primary_category,'')) like '%'||lower(t)||'%' or lower(coalesce(c.cuisine,'')) like '%'||lower(t)||'%' or lower(coalesce(c.cuisine_type,'')) like '%'||lower(t)||'%' or lower(coalesce(c.activity_type,'')) like '%'||lower(t)||'%' then 70 when c.haystack like '%'||lower(t)||'%' then 30 else 0 end),0) from unnest(coalesce(p_search_terms,array[]::text[])) t) as term_score_calc,
