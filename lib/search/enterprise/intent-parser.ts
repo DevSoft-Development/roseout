@@ -2,18 +2,38 @@ import OpenAI from "openai";
 import type { SearchIntent } from "./types";
 import { deterministicIntentFromQuery, normalizeIntent } from "./normalize-intent";
 
-const model = process.env.OPENAI_SEARCH_MODEL || "gpt-4.1-mini";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 
 function cleanEnvValue(value: string | undefined) {
   return value?.trim().replace(/^["']|["']$/g, "");
 }
 
-function extractJson(text: string) {
-  const trimmed = text.trim();
+function getOpenAIClient() {
+  const apiKey = cleanEnvValue(process.env.OPENAI_API_KEY);
 
-  if (!trimmed) {
+  if (!apiKey) {
     return null;
   }
+
+  try {
+    return new OpenAI({ apiKey });
+  } catch (error) {
+    console.error("[enterprise intent parser] failed to create OpenAI client", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+
+    return null;
+  }
+}
+
+function getSearchModel() {
+  return cleanEnvValue(process.env.OPENAI_SEARCH_MODEL) || DEFAULT_MODEL;
+}
+
+function extractJson(text: string) {
+  const trimmed = String(text || "").trim();
+
+  if (!trimmed) return null;
 
   try {
     return JSON.parse(trimmed);
@@ -29,71 +49,356 @@ function extractJson(text: string) {
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function safeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function sanitizeLlmIntent(value: unknown) {
+  if (!isPlainObject(value)) return null;
+
+  const restaurantIntent = isPlainObject(value.restaurantIntent)
+    ? value.restaurantIntent
+    : {};
+
+  const activityIntent = isPlainObject(value.activityIntent)
+    ? value.activityIntent
+    : {};
+
+  const geo = isPlainObject(value.geo) ? value.geo : {};
+
+  const pairingPreference = isPlainObject(value.pairingPreference)
+    ? value.pairingPreference
+    : {};
+
+  return {
+    searchType:
+      typeof value.searchType === "string" ? value.searchType : undefined,
+    primaryDomain:
+      typeof value.primaryDomain === "string" ? value.primaryDomain : undefined,
+    needsRestaurant:
+      typeof value.needsRestaurant === "boolean"
+        ? value.needsRestaurant
+        : undefined,
+    needsActivity:
+      typeof value.needsActivity === "boolean" ? value.needsActivity : undefined,
+    wantsPairing:
+      typeof value.wantsPairing === "boolean" ? value.wantsPairing : undefined,
+
+    restaurantIntent: {
+      mealTerms: safeStringArray(restaurantIntent.mealTerms),
+      foodTerms: safeStringArray(restaurantIntent.foodTerms),
+      cuisineTerms: safeStringArray(restaurantIntent.cuisineTerms),
+      categoryTerms: safeStringArray(restaurantIntent.categoryTerms),
+      vibeTerms: safeStringArray(restaurantIntent.vibeTerms),
+      featureTerms: safeStringArray(restaurantIntent.featureTerms),
+      negativeTerms: safeStringArray(restaurantIntent.negativeTerms),
+    },
+
+    activityIntent: {
+      activityTerms: safeStringArray(activityIntent.activityTerms),
+      categoryTerms: safeStringArray(activityIntent.categoryTerms),
+      vibeTerms: safeStringArray(activityIntent.vibeTerms),
+      featureTerms: safeStringArray(activityIntent.featureTerms),
+      negativeTerms: safeStringArray(activityIntent.negativeTerms),
+    },
+
+    geo: {
+      raw: typeof geo.raw === "string" ? geo.raw : undefined,
+      neighborhood:
+        typeof geo.neighborhood === "string" ? geo.neighborhood : undefined,
+      city: typeof geo.city === "string" ? geo.city : undefined,
+      borough: typeof geo.borough === "string" ? geo.borough : undefined,
+      county: typeof geo.county === "string" ? geo.county : undefined,
+      region: typeof geo.region === "string" ? geo.region : undefined,
+      state: typeof geo.state === "string" ? geo.state : undefined,
+    },
+
+    pairingPreference: {
+      requiresPairing:
+        typeof pairingPreference.requiresPairing === "boolean"
+          ? pairingPreference.requiresPairing
+          : undefined,
+      distanceMode:
+        typeof pairingPreference.distanceMode === "string"
+          ? pairingPreference.distanceMode
+          : undefined,
+      maxPairDistanceMiles:
+        typeof pairingPreference.maxPairDistanceMiles === "number"
+          ? pairingPreference.maxPairDistanceMiles
+          : null,
+      maxPairWalkingMinutes:
+        typeof pairingPreference.maxPairWalkingMinutes === "number"
+          ? pairingPreference.maxPairWalkingMinutes
+          : null,
+      requireWalkablePair:
+        typeof pairingPreference.requireWalkablePair === "boolean"
+          ? pairingPreference.requireWalkablePair
+          : undefined,
+    },
+
+    occasion: typeof value.occasion === "string" ? value.occasion : undefined,
+    vibe: typeof value.vibe === "string" ? value.vibe : undefined,
+    budget: typeof value.budget === "string" ? value.budget : undefined,
+    timeContext:
+      typeof value.timeContext === "string" ? value.timeContext : undefined,
+  };
+}
+
+function mergeLlmWithBaseline(
+  query: string,
+  baseline: SearchIntent,
+  llmValue: unknown,
+): SearchIntent {
+  const safeLlm = sanitizeLlmIntent(llmValue);
+
+  if (!safeLlm) {
+    return baseline;
+  }
+
+  const normalizedLlm = normalizeIntent(query, safeLlm as Partial<SearchIntent>);
+
+  return {
+    ...baseline,
+    ...normalizedLlm,
+
+    restaurantIntent: {
+      ...baseline.restaurantIntent,
+      ...normalizedLlm.restaurantIntent,
+      mealTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.mealTerms || []),
+          ...(normalizedLlm.restaurantIntent?.mealTerms || []),
+        ]),
+      ],
+      foodTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.foodTerms || []),
+          ...(normalizedLlm.restaurantIntent?.foodTerms || []),
+        ]),
+      ],
+      cuisineTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.cuisineTerms || []),
+          ...(normalizedLlm.restaurantIntent?.cuisineTerms || []),
+        ]),
+      ],
+      categoryTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.categoryTerms || []),
+          ...(normalizedLlm.restaurantIntent?.categoryTerms || []),
+        ]),
+      ],
+      vibeTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.vibeTerms || []),
+          ...(normalizedLlm.restaurantIntent?.vibeTerms || []),
+        ]),
+      ],
+      featureTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.featureTerms || []),
+          ...(normalizedLlm.restaurantIntent?.featureTerms || []),
+        ]),
+      ],
+      negativeTerms: [
+        ...new Set([
+          ...(baseline.restaurantIntent?.negativeTerms || []),
+          ...(normalizedLlm.restaurantIntent?.negativeTerms || []),
+        ]),
+      ],
+    },
+
+    activityIntent: {
+      ...baseline.activityIntent,
+      ...normalizedLlm.activityIntent,
+      activityTerms: [
+        ...new Set([
+          ...(baseline.activityIntent?.activityTerms || []),
+          ...(normalizedLlm.activityIntent?.activityTerms || []),
+        ]),
+      ],
+      categoryTerms: [
+        ...new Set([
+          ...(baseline.activityIntent?.categoryTerms || []),
+          ...(normalizedLlm.activityIntent?.categoryTerms || []),
+        ]),
+      ],
+      vibeTerms: [
+        ...new Set([
+          ...(baseline.activityIntent?.vibeTerms || []),
+          ...(normalizedLlm.activityIntent?.vibeTerms || []),
+        ]),
+      ],
+      featureTerms: [
+        ...new Set([
+          ...(baseline.activityIntent?.featureTerms || []),
+          ...(normalizedLlm.activityIntent?.featureTerms || []),
+        ]),
+      ],
+      negativeTerms: [
+        ...new Set([
+          ...(baseline.activityIntent?.negativeTerms || []),
+          ...(normalizedLlm.activityIntent?.negativeTerms || []),
+        ]),
+      ],
+    },
+
+    geo: {
+      ...baseline.geo,
+      ...normalizedLlm.geo,
+      raw: normalizedLlm.geo?.raw || baseline.geo?.raw || null,
+      neighborhood:
+        normalizedLlm.geo?.neighborhood || baseline.geo?.neighborhood || null,
+      city: normalizedLlm.geo?.city || baseline.geo?.city || null,
+      borough: normalizedLlm.geo?.borough || baseline.geo?.borough || null,
+      county: normalizedLlm.geo?.county || baseline.geo?.county || null,
+      region: normalizedLlm.geo?.region || baseline.geo?.region || null,
+      state: normalizedLlm.geo?.state || baseline.geo?.state || null,
+      latitude: baseline.geo?.latitude ?? normalizedLlm.geo?.latitude ?? null,
+      longitude: baseline.geo?.longitude ?? normalizedLlm.geo?.longitude ?? null,
+      radiusMiles:
+        baseline.geo?.radiusMiles ?? normalizedLlm.geo?.radiusMiles ?? null,
+    },
+
+    pairingPreference: {
+      requiresPairing:
+        normalizedLlm.pairingPreference?.requiresPairing ??
+        baseline.pairingPreference?.requiresPairing ??
+        false,
+      distanceMode:
+        normalizedLlm.pairingPreference?.distanceMode ??
+        baseline.pairingPreference?.distanceMode ??
+        "any",
+      maxPairDistanceMiles:
+        normalizedLlm.pairingPreference?.maxPairDistanceMiles ??
+        baseline.pairingPreference?.maxPairDistanceMiles ??
+        null,
+      maxPairWalkingMinutes:
+        normalizedLlm.pairingPreference?.maxPairWalkingMinutes ??
+        baseline.pairingPreference?.maxPairWalkingMinutes ??
+        null,
+      requireWalkablePair:
+        normalizedLlm.pairingPreference?.requireWalkablePair ??
+        baseline.pairingPreference?.requireWalkablePair ??
+        false,
+    },
+  };
+}
+
+const SYSTEM_PROMPT = `Return JSON only. You classify TheOutHaven local date-night search intent.
+
+TheOutHaven searches restaurants, activities, and paired outings.
+
+Rules:
+- Separate restaurant intent from activity intent.
+- Do not put food terms in activity intent.
+- Do not put activity terms in restaurant intent.
+- "after", "before", "then", "with", "near", "nearby", and "walking distance" are relationship words, not search terms.
+- "steak dinner" means restaurant only.
+- "rooftop dinner" means restaurant only unless another activity is requested.
+- "hookah lounge" can be an activity/nightlife venue unless the user asks for food there.
+- "bowling", "karaoke", "museum", "comedy show", "arcade", "spa", "paint and sip" are activities.
+- If user asks restaurant + activity, set wantsPairing true.
+- If user asks walking distance, nearby, close by, same block, no driving, short walk, set pairingPreference.
+
+Pairing preference:
+- walking distance/no driving/short walk/same block: distanceMode "walking", maxPairDistanceMiles 0.75, maxPairWalkingMinutes 15, requireWalkablePair true.
+- nearby/close by/close together: distanceMode "nearby", maxPairDistanceMiles 1.5, maxPairWalkingMinutes 30, requireWalkablePair true.
+- same area/neighborhood: distanceMode "same_area", maxPairDistanceMiles 3, requireWalkablePair false.
+- no distance phrase: distanceMode "any", maxPairDistanceMiles null, requireWalkablePair false.
+
+Return this JSON shape:
+{
+  "searchType": "restaurant" | "activity" | "mixed_outing" | "any",
+  "primaryDomain": "restaurant" | "activity" | "mixed" | "any",
+  "needsRestaurant": boolean,
+  "needsActivity": boolean,
+  "wantsPairing": boolean,
+  "restaurantIntent": {
+    "mealTerms": string[],
+    "foodTerms": string[],
+    "cuisineTerms": string[],
+    "categoryTerms": string[],
+    "vibeTerms": string[],
+    "featureTerms": string[],
+    "negativeTerms": string[]
+  },
+  "activityIntent": {
+    "activityTerms": string[],
+    "categoryTerms": string[],
+    "vibeTerms": string[],
+    "featureTerms": string[],
+    "negativeTerms": string[]
+  },
+  "geo": {
+    "raw": string | null,
+    "neighborhood": string | null,
+    "city": string | null,
+    "borough": string | null,
+    "county": string | null,
+    "region": string | null,
+    "state": string | null
+  },
+  "pairingPreference": {
+    "requiresPairing": boolean,
+    "distanceMode": "walking" | "nearby" | "same_area" | "any",
+    "maxPairDistanceMiles": number | null,
+    "maxPairWalkingMinutes": number | null,
+    "requireWalkablePair": boolean
+  },
+  "occasion": string | null,
+  "vibe": string | null,
+  "budget": string | null,
+  "timeContext": string | null
+}`;
+
 export async function parseEnterpriseIntent(
   query: string,
-  options?: { useLLM?: boolean; body?: any },
+  options?: { useLLM?: boolean; body?: unknown },
 ): Promise<{
   intent: SearchIntent;
   llmIntentRaw: unknown;
   llmError?: string;
 }> {
-  const fallback = () => ({
-    intent: deterministicIntentFromQuery(query),
-    llmIntentRaw: null,
-  });
+  const baseline = deterministicIntentFromQuery(query);
 
-  const apiKey = cleanEnvValue(process.env.OPENAI_API_KEY);
+  if (options?.useLLM === false) {
+    return {
+      intent: baseline,
+      llmIntentRaw: null,
+      llmError: "LLM disabled for this request.",
+    };
+  }
 
-  if (options?.useLLM === false || !apiKey) {
-    return fallback();
+  const openai = getOpenAIClient();
+
+  if (!openai) {
+    return {
+      intent: baseline,
+      llmIntentRaw: null,
+      llmError: "OpenAI client unavailable. Using deterministic baseline.",
+    };
   }
 
   try {
-    const openai = new OpenAI({ apiKey });
-
     const completion = await openai.chat.completions.create({
-      model,
+      model: getSearchModel(),
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `Return JSON only. Classify TheOutHaven local search intent. Separate restaurant and activity lanes; never put activity terms in restaurant intent or food terms in activity intent.
-
-If the user asks for a restaurant and activity close together, walking distance, nearby, same block, around the corner, or no driving, identify this as a pair-level distance constraint. Do not treat “walking distance” as an activity term.
-
-Pairing preference schema:
-pairingPreference { requiresPairing:boolean, distanceMode:"walking"|"nearby"|"same_area"|"any", maxPairDistanceMiles:number|null, maxPairWalkingMinutes:number|null, requireWalkablePair:boolean }
-
-Walking language (walking distance, walkable, walking, short walk, quick walk, within walking distance, can walk to, no driving, without driving, same block, around the corner) => distanceMode walking, requireWalkablePair true, maxPairDistanceMiles 0.75, maxPairWalkingMinutes 15.
-Nearby language (nearby, close by, close together, near each other) => distanceMode nearby, requireWalkablePair true, maxPairDistanceMiles 1.5, maxPairWalkingMinutes 30.
-Same-area language (same neighborhood, same area, in the area) => distanceMode same_area, requireWalkablePair false, maxPairDistanceMiles 3, maxPairWalkingMinutes null.
-Mixed restaurant + activity searches without distance language => distanceMode any, requireWalkablePair false, maxPairDistanceMiles null.
-
-Recognize examples:
-steak dinner with bowling in Astoria => mixed_outing restaurant steak dinner activity bowling geo Astoria Queens.
-sushi then karaoke in Manhattan => mixed.
-things to do in Queens => activity.
-rooftop dinner in Long Island City => restaurant geo Long Island City Queens.
-rooftop dinner with bowling in LIC => mixed geo Long Island City Queens.
-Italian restaurant in Nassau => restaurant geo Nassau County Long Island.
-date night in Hoboken => mixed or any geo Hoboken NJ.
-
-Example query: “steak dinner with bowling walking distance in Astoria”
-Return shape includes:
-{
-  "searchType":"mixed_outing",
-  "needsRestaurant":true,
-  "needsActivity":true,
-  "wantsPairing":true,
-  "restaurantIntent":{"foodTerms":["steak"],"mealTerms":["dinner"]},
-  "activityIntent":{"activityTerms":["bowling"]},
-  "geo":{"neighborhood":"Astoria","borough":"Queens","city":"New York","state":"NY"},
-  "pairingPreference":{"requiresPairing":true,"distanceMode":"walking","maxPairDistanceMiles":0.75,"maxPairWalkingMinutes":15,"requireWalkablePair":true}
-}
-
-Fields:
-searchType, primaryDomain, needsRestaurant, needsActivity, wantsPairing, pairingPreference, restaurantIntent {mealTerms,foodTerms,cuisineTerms,categoryTerms,vibeTerms,featureTerms,negativeTerms}, activityIntent {activityTerms,categoryTerms,vibeTerms,featureTerms,negativeTerms}, geo {raw,neighborhood,city,borough,county,region,state}, occasion, vibe, budget, timeContext.`,
+          content: SYSTEM_PROMPT,
         },
         {
           role: "user",
@@ -105,26 +410,27 @@ searchType, primaryDomain, needsRestaurant, needsActivity, wantsPairing, pairing
     const rawText = completion.choices[0]?.message?.content ?? "{}";
     const parsed = extractJson(rawText);
 
-    if (!parsed || typeof parsed !== "object") {
+    if (!parsed) {
       return {
-        ...fallback(),
-        llmError: "LLM returned invalid JSON intent.",
+        intent: baseline,
+        llmIntentRaw: rawText,
+        llmError: "LLM returned invalid JSON. Used deterministic baseline.",
       };
     }
 
     return {
-      intent: normalizeIntent(query, parsed),
+      intent: mergeLlmWithBaseline(query, baseline, parsed),
       llmIntentRaw: parsed,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
-    console.error("[enterprise intent parser] LLM failed; using deterministic fallback", {
+    console.error("[enterprise intent parser] LLM failed; search continued with baseline", {
       message,
     });
 
     return {
-      intent: deterministicIntentFromQuery(query),
+      intent: baseline,
       llmIntentRaw: null,
       llmError: message,
     };
