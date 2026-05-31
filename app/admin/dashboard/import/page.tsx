@@ -91,6 +91,12 @@ type ActionResult = Record<string, unknown> & {
   batchId?: string;
 };
 
+type OsmCursor = {
+  categoryGroup: string;
+  filterIndex: number;
+  offset: number;
+};
+
 type DuplicateMatch = {
   id: string;
   stagingId: string;
@@ -230,8 +236,74 @@ const ratingOptions = [
 const NYC_OFFSET_STORAGE_KEY = "theouthaven_nyc_import_offset";
 const DEFAULT_OSM_CATEGORY_GROUP = "nightlife";
 
-function getOsmOffsetKey(group: string) {
-  return `theouthaven_osm_import_offset_${group || "all"}`;
+const OSM_FILTER_LABELS = [
+  { group: "nightlife", label: "Bars", tag: "amenity=bar" },
+  { group: "nightlife", label: "Pubs", tag: "amenity=pub" },
+  { group: "nightlife", label: "Nightclubs", tag: "amenity=nightclub" },
+  { group: "nightlife", label: "Biergartens", tag: "amenity=biergarten" },
+  { group: "culture", label: "Museums", tag: "tourism=museum" },
+  { group: "culture", label: "Galleries", tag: "tourism=gallery" },
+  { group: "culture", label: "Attractions", tag: "tourism=attraction" },
+  { group: "culture", label: "Theaters", tag: "amenity=theatre" },
+  { group: "culture", label: "Cinemas", tag: "amenity=cinema" },
+  { group: "culture", label: "Arts Centres", tag: "amenity=arts_centre" },
+  { group: "activities", label: "Bowling Alleys", tag: "amenity=bowling_alley" },
+  { group: "activities", label: "Bowling", tag: "sport=bowling" },
+  { group: "activities", label: "Mini Golf", tag: "leisure=miniature_golf" },
+  { group: "activities", label: "Parks", tag: "leisure=park" },
+  { group: "activities", label: "Karaoke", tag: "amenity=karaoke_box" },
+  { group: "activities", label: "Community Centres", tag: "amenity=community_centre" },
+  { group: "dessert", label: "Ice Cream", tag: "shop=ice_cream" },
+  { group: "dessert", label: "Pastry Shops", tag: "shop=pastry" },
+  { group: "dessert", label: "Bakeries", tag: "shop=bakery" },
+  { group: "dessert", label: "Chocolate Shops", tag: "shop=chocolate" },
+  { group: "dessert", label: "Cafes", tag: "amenity=cafe" },
+];
+
+function getOsmFilterForCursor(categoryGroup: string, filterIndex: number) {
+  const filters =
+    categoryGroup === "all"
+      ? OSM_FILTER_LABELS
+      : OSM_FILTER_LABELS.filter((filter) => filter.group === categoryGroup);
+
+  return filters[filterIndex] || filters[0] || null;
+}
+
+function getOsmCursorKey(group: string) {
+  return `theouthaven_osm_import_cursor_${group || "nightlife"}`;
+}
+
+function getDefaultOsmCursor(categoryGroup = DEFAULT_OSM_CATEGORY_GROUP): OsmCursor {
+  return {
+    categoryGroup,
+    filterIndex: 0,
+    offset: 0,
+  };
+}
+
+function readOsmCursor(categoryGroup: string): OsmCursor {
+  if (typeof window === "undefined") return getDefaultOsmCursor(categoryGroup);
+
+  const saved = window.localStorage.getItem(getOsmCursorKey(categoryGroup));
+  if (!saved) return getDefaultOsmCursor(categoryGroup);
+
+  try {
+    const parsed = JSON.parse(saved) as Partial<OsmCursor>;
+    return {
+      categoryGroup,
+      filterIndex: Math.max(Number(parsed.filterIndex || 0), 0),
+      offset: Math.max(Number(parsed.offset || 0), 0),
+    };
+  } catch {
+    return getDefaultOsmCursor(categoryGroup);
+  }
+}
+
+function saveOsmCursor(cursor: OsmCursor) {
+  window.localStorage.setItem(
+    getOsmCursorKey(cursor.categoryGroup),
+    JSON.stringify(cursor),
+  );
 }
 
 const queryCountOptions = [
@@ -272,9 +344,11 @@ export default function ImportPage() {
   const [nycLimit, setNycLimit] = useState("500");
   const [nycOffset, setNycOffset] = useState("0");
   const [osmLimit, setOsmLimit] = useState("250");
-  const [osmOffset, setOsmOffset] = useState("0");
   const [osmCategoryGroup, setOsmCategoryGroup] = useState(
     DEFAULT_OSM_CATEGORY_GROUP,
+  );
+  const [osmCursor, setOsmCursor] = useState<OsmCursor>(() =>
+    getDefaultOsmCursor(DEFAULT_OSM_CATEGORY_GROUP),
   );
   const [dedupeBatchId, setDedupeBatchId] = useState("");
   const [publishBatchId, setPublishBatchId] = useState("");
@@ -298,15 +372,9 @@ export default function ImportPage() {
       setNycOffset(savedNycOffset);
     }
 
-    const savedOsmOffset = window.localStorage.getItem(
-      getOsmOffsetKey(DEFAULT_OSM_CATEGORY_GROUP),
-    );
-    if (savedOsmOffset !== null) {
-      // Persisted app-managed OSM pagination should restore the previous cursor
-      // for the default category group.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOsmOffset(savedOsmOffset);
-    }
+    // Persisted app-managed OSM cursor should restore the previous filter and
+    // offset for the default category group.
+    setOsmCursor(readOsmCursor(DEFAULT_OSM_CATEGORY_GROUP));
   }, []);
 
   useEffect(() => {
@@ -556,53 +624,53 @@ export default function ImportPage() {
     return Math.min(Math.max(Math.trunc(limit), 1), 1000);
   };
 
-  const getSafeOsmOffset = () => {
-    const offset = Number(osmOffset || 0);
-    if (!Number.isFinite(offset)) return 0;
-    return Math.max(Math.trunc(offset), 0);
-  };
-
   const runOsmImport = async () => {
     const limit = getSafeOsmLimit();
-    const offset = getSafeOsmOffset();
+    const cursor = {
+      ...osmCursor,
+      categoryGroup: osmCategoryGroup || DEFAULT_OSM_CATEGORY_GROUP,
+    };
     const data = await postAction(
       "osm",
       "/api/admin/location-growth/import-osm-activities",
       {
         limit,
-        offset,
-        categoryGroup: osmCategoryGroup || "all",
+        categoryGroup: osmCategoryGroup || DEFAULT_OSM_CATEGORY_GROUP,
+        cursor,
       },
     );
 
     if (data && data.success !== false) {
-      const nextOffset =
-        data?.nextOffset !== undefined && data.nextOffset !== null
-          ? Number(data.nextOffset)
-          : offset + limit;
-      if (Number.isFinite(nextOffset)) {
-        const key = getOsmOffsetKey(osmCategoryGroup);
-        window.localStorage.setItem(key, String(nextOffset));
-        setOsmOffset(String(nextOffset));
+      if (data.nextCursor && typeof data.nextCursor === "object") {
+        const nextCursorData = data.nextCursor as Partial<OsmCursor>;
+        const nextCursor = {
+          categoryGroup: String(
+            nextCursorData.categoryGroup ||
+              osmCategoryGroup ||
+              DEFAULT_OSM_CATEGORY_GROUP,
+          ),
+          filterIndex: Math.max(Number(nextCursorData.filterIndex || 0), 0),
+          offset: Math.max(Number(nextCursorData.offset || 0), 0),
+        };
+        saveOsmCursor(nextCursor);
+        setOsmCursor(nextCursor);
       }
     }
   };
 
   const handleOsmCategoryGroupChange = (nextGroup: string) => {
     setOsmCategoryGroup(nextGroup);
-    const key = getOsmOffsetKey(nextGroup);
-    const saved = window.localStorage.getItem(key);
-    setOsmOffset(saved || "0");
+    setOsmCursor(readOsmCursor(nextGroup));
   };
 
-  const resetOsmOffset = () => {
+  const resetOsmCursor = () => {
     const confirmed = window.confirm(
-      `Reset OSM offset for ${osmCategoryGroup} to 0?`,
+      `Reset OSM cursor for ${osmCategoryGroup}? The next import will start from the first OSM filter again.`,
     );
     if (!confirmed) return;
-    const key = getOsmOffsetKey(osmCategoryGroup);
-    window.localStorage.setItem(key, "0");
-    setOsmOffset("0");
+    const nextCursor = getDefaultOsmCursor(osmCategoryGroup);
+    saveOsmCursor(nextCursor);
+    setOsmCursor(nextCursor);
   };
 
   const runCleanupBatch = async () => {
@@ -744,8 +812,7 @@ export default function ImportPage() {
             setNycOffset={setNycOffset}
             osmLimit={osmLimit}
             setOsmLimit={setOsmLimit}
-            osmOffset={osmOffset}
-            setOsmOffset={setOsmOffset}
+            osmCursor={osmCursor}
             osmCategoryGroup={osmCategoryGroup}
             setOsmCategoryGroup={handleOsmCategoryGroupChange}
             dedupeScope={dedupeScope}
@@ -767,7 +834,7 @@ export default function ImportPage() {
             onImportNycNext={runNycImport}
             onImportOsm={runOsmImport}
             onImportOsmNext={runOsmImport}
-            onResetOsmOffset={resetOsmOffset}
+            onResetOsmCursor={resetOsmCursor}
             onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
                 batchId:
@@ -1082,8 +1149,7 @@ function LocationGrowthPanel(props: {
   setNycOffset: (value: string) => void;
   osmLimit: string;
   setOsmLimit: (value: string) => void;
-  osmOffset: string;
-  setOsmOffset: (value: string) => void;
+  osmCursor: OsmCursor;
   osmCategoryGroup: string;
   setOsmCategoryGroup: (value: string) => void;
   dedupeScope: string;
@@ -1105,11 +1171,16 @@ function LocationGrowthPanel(props: {
   onImportNycNext: () => void;
   onImportOsm: () => void;
   onImportOsmNext: () => void;
-  onResetOsmOffset: () => void;
+  onResetOsmCursor: () => void;
   onDedupe: () => void;
   onPublish: () => void;
   onEnrich: () => void;
 }) {
+  const currentOsmFilter = getOsmFilterForCursor(
+    props.osmCategoryGroup,
+    props.osmCursor.filterIndex,
+  );
+
   const summaryCards = [
     ["Live", props.summary?.liveLocations],
     ["Searchable", props.summary?.searchableLocations],
@@ -1167,18 +1238,20 @@ function LocationGrowthPanel(props: {
 
         <ActionCard
           title="Import OSM Activities"
-          description="Stage date-friendly activities from OpenStreetMap. OSM uses a saved cursor/offset so you can import the next batch without pulling the same records."
-          note="Start with Nightlife or Culture. Use All only after smaller groups work because Overpass may reject or time out broad queries."
+          description="Stage activities from OpenStreetMap using a saved cursor. The importer queries one OSM category filter at a time to avoid Overpass rejection."
+          note="Start with Nightlife at limit 50. If that works, increase to 250."
           button="Import OSM Batch"
           secondaryButton="Import Next OSM Batch"
-          tertiaryButton="Reset OSM Offset"
+          tertiaryButton="Reset OSM Cursor"
           running={props.runningAction === "osm"}
           onClick={props.onImportOsm}
           onSecondaryClick={props.onImportOsmNext}
-          onTertiaryClick={props.onResetOsmOffset}
+          onTertiaryClick={props.onResetOsmCursor}
         >
           <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} min={1} max={1000} />
-          <NumberField label="Offset" value={props.osmOffset} onChange={props.setOsmOffset} />
+          <ReadOnlyField label="Cursor filter label" value={currentOsmFilter?.label || "First filter"} />
+          <ReadOnlyField label="Cursor filter tag" value={currentOsmFilter?.tag || `filterIndex ${props.osmCursor.filterIndex}`} />
+          <ReadOnlyField label="Cursor offset" value={String(props.osmCursor.offset)} />
           <details className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
             <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
               Advanced OSM options
@@ -1289,7 +1362,7 @@ function ImportHistoryPanel({
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
         <h2 className="text-lg font-bold">Latest Import Batches</h2>
-        <p className="mt-1 text-sm text-zinc-500">Staged import health, publishing, and review actions. OSM offset is app-managed because Overpass does not provide true offset pagination.</p>
+        <p className="mt-1 text-sm text-zinc-500">Staged import health, publishing, and review actions. OSM cursor state is app-managed because Overpass does not provide true offset pagination.</p>
         <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-zinc-400">
           <summary className="cursor-pointer font-black uppercase tracking-[0.18em] text-zinc-300">Emergency SQL to find recent batch IDs</summary>
           <pre className="mt-3 overflow-auto whitespace-pre-wrap rounded-xl bg-black/30 p-3 text-zinc-300">{`select
@@ -1602,6 +1675,10 @@ function ResultBanner({
     "limit",
     "offset",
     "nextOffset",
+    "filterIndex",
+    "filterLabel",
+    "filterTag",
+    "hasMore",
     "seen",
     "mapped",
     "staged",
@@ -1613,24 +1690,25 @@ function ResultBanner({
     "scope",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
-  const isAllOverpassFailure =
+  const isOverpassFilterRejected =
     !ok &&
-    String(result.categoryGroup || "").toLowerCase() === "all" &&
-    (errorText.includes("HTTP 406") ||
-      errorText.toLowerCase().includes("timeout"));
+    errorText.includes("HTTP 406") &&
+    String(result.error || "").toLowerCase().includes("overpass");
   return (
     <div className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
-      {isAllOverpassFailure ? (
+      {!result.error && typeof result.message === "string" ? (
+        <p className="mt-2">{result.message}</p>
+      ) : null}
+      {isOverpassFilterRejected ? (
         <p className="mt-2 font-bold">
-          Overpass rejected the broad All query. Try Nightlife, Culture,
-          Activities, or Dessert separately.
+          Overpass rejected this specific OSM filter. Try another category group or lower the limit.
         </p>
       ) : null}
-      {!isAllOverpassFailure && !ok && errorText.toLowerCase().includes("timeout") ? (
+      {!isOverpassFilterRejected && !ok && errorText.toLowerCase().includes("timeout") ? (
         <p className="mt-2 font-bold">
-          OSM timed out. Try limit 100 or a smaller category group.
+          OSM timed out. Try limit 50 or a different category group.
         </p>
       ) : null}
       {result.batchId && ok ? (
@@ -1645,6 +1723,10 @@ function ResultBanner({
             ["Offset", result.offset],
             ["Next offset", result.nextOffset],
             ["Category", result.categoryGroup],
+            ["Filter label", result.filterLabel],
+            ["Filter tag", result.filterTag],
+            ["Filter index", result.filterIndex],
+            ["Has more", result.hasMore],
             ["Seen", result.seen],
             ["Mapped", result.mapped],
             ["Staged", result.staged],
