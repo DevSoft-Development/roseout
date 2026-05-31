@@ -179,20 +179,28 @@ const formatTypingPrompt = (prompt: string) => `${prompt}....`;
 const INITIAL_TYPING_PROMPT = formatTypingPrompt(typingSearches[0]);
 
 function cleanSearchErrorMessage(message: string) {
-  const lower = message.toLowerCase();
+  const lower = String(message || "").toLowerCase();
 
   if (
     lower.includes("string did not match") ||
     lower.includes("expected pattern") ||
     lower.includes("invalid url") ||
+    lower.includes("failed to parse url") ||
     lower.includes("unexpected token") ||
     lower.includes("failed to fetch") ||
-    lower.includes("networkerror")
+    lower.includes("networkerror") ||
+    lower.includes("supabase") ||
+    lower.includes("rpc") ||
+    lower.includes("html") ||
+    lower.includes("<!doctype")
   ) {
     return "Search is having trouble right now. Please try again or simplify the request.";
   }
 
-  return message || "Search is having trouble right now. Please try again.";
+  return (
+    message ||
+    "Search is having trouble right now. Please try again or simplify the request."
+  );
 }
 
 const loadingLines = [
@@ -760,12 +768,30 @@ export default function CreatePage() {
         );
       }
 
-      if (!response.ok || data.error) {
+      if (!response.ok) {
         throw new Error(
-          data.user_message ||
-            data.internal_message ||
-            data.reply ||
-            "TheOutHaven could not create results.",
+          cleanSearchErrorMessage(
+            data.user_message ||
+              data.reply ||
+              data.internal_message ||
+              "TheOutHaven could not create results.",
+          ),
+        );
+      }
+
+      if (data.error) {
+        console.error("[create] search route returned safe error", {
+          error: data.error,
+          internal_message:
+            process.env.NODE_ENV === "development" ? data.internal_message : undefined,
+        });
+
+        throw new Error(
+          cleanSearchErrorMessage(
+            data.user_message ||
+              data.reply ||
+              "Search is having trouble right now. Please try again or simplify the request.",
+          ),
         );
       }
 

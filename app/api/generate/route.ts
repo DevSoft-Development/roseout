@@ -91,6 +91,7 @@ function emptySearchResponse(reply: string) {
     matched_locations: [],
     matchedLocations: [],
     pairs: [],
+    cards: [],
     render_mode: "empty",
     renderMode: "empty",
     card_counts: {
@@ -192,8 +193,7 @@ export async function POST(request: Request) {
 
     return Response.json(response);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown search error";
+    const message = error instanceof Error ? error.message : String(error);
 
     console.error("[api/generate] search failed", {
       message,
@@ -202,34 +202,14 @@ export async function POST(request: Request) {
 
     return Response.json(
       {
-        success: false,
-        error: "SEARCH_ROUTE_FAILED",
-        reply:
+        ...emptySearchResponse(
           "Search is having trouble right now. Please try again or simplify the request.",
+        ),
+        error: "SEARCH_ROUTE_FAILED",
         user_message:
           "Search is having trouble right now. Please try again or simplify the request.",
         internal_message:
           process.env.NODE_ENV === "development" ? message : undefined,
-        restaurants: [],
-        activities: [],
-        matched_locations: [],
-        matchedLocations: [],
-        pairs: [],
-        cards: [],
-        render_mode: "empty",
-        renderMode: "empty",
-        card_counts: {
-          restaurants: 0,
-          activities: 0,
-          matched_locations: 0,
-          pairs: 0,
-        },
-        cardCounts: {
-          restaurants: 0,
-          activities: 0,
-          matched_locations: 0,
-          pairs: 0,
-        },
       },
       { status: 200 },
     );
