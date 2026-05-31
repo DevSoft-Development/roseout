@@ -147,7 +147,12 @@ function sanitizeLlmIntent(value: unknown) {
     },
 
     occasion: typeof value.occasion === "string" ? value.occasion : undefined,
-    vibe: typeof value.vibe === "string" ? value.vibe : undefined,
+    vibe:
+      typeof value.vibe === "string"
+        ? [value.vibe]
+        : Array.isArray(value.vibe)
+          ? safeStringArray(value.vibe)
+          : undefined,
     budget: typeof value.budget === "string" ? value.budget : undefined,
     timeContext:
       typeof value.timeContext === "string" ? value.timeContext : undefined,
@@ -170,6 +175,17 @@ function mergeLlmWithBaseline(
   return {
     ...baseline,
     ...normalizedLlm,
+
+    vibe: [
+      ...new Set([
+        ...(Array.isArray(baseline.vibe) ? baseline.vibe : []),
+        ...(Array.isArray(normalizedLlm.vibe)
+          ? normalizedLlm.vibe
+          : typeof (normalizedLlm as any).vibe === "string"
+            ? [(normalizedLlm as any).vibe]
+            : []),
+      ]),
+    ],
 
     restaurantIntent: {
       ...baseline.restaurantIntent,

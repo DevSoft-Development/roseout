@@ -1,3 +1,5 @@
+import { runEnterpriseSearch } from "@/lib/search/enterprise";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -6,8 +8,6 @@ export async function GET(request: Request) {
   const q = url.searchParams.get("q") || "steak dinner";
 
   try {
-    const { runEnterpriseSearch } = await import("@/lib/search/enterprise");
-
     const result = await runEnterpriseSearch(q, {
       useLLM: true,
       body: { input: q },
