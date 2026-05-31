@@ -29,6 +29,21 @@ function toBoundedNumber(
   return Math.min(Math.max(Math.trunc(numeric), min), max);
 }
 
+function getOsmLimitCap(categoryGroup: string) {
+  if (categoryGroup === "parks") return 10;
+  if (categoryGroup === "all") return 10;
+  return 100;
+}
+
+function normalizeOsmCategoryGroup(categoryGroup: unknown) {
+  if (typeof categoryGroup !== "string" || !categoryGroup.trim()) {
+    return "nightlife";
+  }
+
+  const trimmed = categoryGroup.trim();
+  return trimmed === "activities" ? "bowling" : trimmed;
+}
+
 function jsonError(error: unknown, status = 500) {
   const message =
     error instanceof Error
@@ -55,10 +70,15 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
 
-    const requestedLimit = Number(body.limit || 25);
+    const categoryGroup = normalizeOsmCategoryGroup(body.categoryGroup);
+    const maxLimit = getOsmLimitCap(categoryGroup);
+    const requestedLimit = Math.min(
+      Math.max(Number(body.limit || 25), 1),
+      maxLimit,
+    );
     const limit = Number.isFinite(requestedLimit)
-      ? Math.min(Math.max(requestedLimit, 1), 100)
-      : 25;
+      ? requestedLimit
+      : Math.min(25, maxLimit);
     const offset = toBoundedNumber(body.offset, 0, 0, Number.MAX_SAFE_INTEGER);
     const filterIndex = toBoundedNumber(
       body.filterIndex,
@@ -66,10 +86,6 @@ export async function POST(request: NextRequest) {
       0,
       Number.MAX_SAFE_INTEGER,
     );
-    const categoryGroup =
-      typeof body.categoryGroup === "string" && body.categoryGroup.trim()
-        ? body.categoryGroup.trim()
-        : "nightlife";
 
     const result = await importOsmActivities({
       limit,
@@ -80,6 +96,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...result,
+      maxLimit,
       success: true,
     });
   } catch (error) {

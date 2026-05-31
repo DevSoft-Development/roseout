@@ -5,7 +5,6 @@ import {
   uniqueLower,
   type StagedLocationInput,
 } from "@/lib/location-growth/shared";
-import { calculateStagingQuality } from "@/lib/location-growth/stagingQuality";
 
 export const OVERPASS_USER_AGENT =
   process.env.OVERPASS_USER_AGENT ||
@@ -14,7 +13,6 @@ export const OVERPASS_USER_AGENT =
 export const OVERPASS_ENDPOINTS = [
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.osm.ch/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
 ];
 export const NYC_BBOX = {
   south: 40.477399,
@@ -34,8 +32,12 @@ type OsmCategoryGroup =
   | "all"
   | "nightlife"
   | "culture"
-  | "activities"
-  | "dessert";
+  | "bowling"
+  | "karaoke"
+  | "mini_golf"
+  | "parks"
+  | "dessert"
+  | "cafes";
 
 export type OsmFilter = {
   label: string;
@@ -58,33 +60,33 @@ const OSM_CATEGORY_FILTERS: Record<OsmCategoryGroup, OsmFilter[]> = {
     { label: "Cinemas", tagKey: "amenity", tagValue: "cinema" },
     { label: "Arts centres", tagKey: "amenity", tagValue: "arts_centre" },
   ],
-  activities: [
+  bowling: [
     { label: "Bowling alleys", tagKey: "amenity", tagValue: "bowling_alley" },
     { label: "Bowling sport", tagKey: "sport", tagValue: "bowling" },
-    { label: "Mini golf", tagKey: "leisure", tagValue: "miniature_golf" },
-    { label: "Parks", tagKey: "leisure", tagValue: "park" },
-    { label: "Karaoke", tagKey: "amenity", tagValue: "karaoke_box" },
-    {
-      label: "Community centres",
-      tagKey: "amenity",
-      tagValue: "community_centre",
-    },
   ],
+  karaoke: [{ label: "Karaoke", tagKey: "amenity", tagValue: "karaoke_box" }],
+  mini_golf: [
+    { label: "Mini golf", tagKey: "leisure", tagValue: "miniature_golf" },
+  ],
+  parks: [{ label: "Parks", tagKey: "leisure", tagValue: "park" }],
   dessert: [
     { label: "Ice cream shops", tagKey: "shop", tagValue: "ice_cream" },
     { label: "Pastry shops", tagKey: "shop", tagValue: "pastry" },
     { label: "Bakeries", tagKey: "shop", tagValue: "bakery" },
     { label: "Chocolate shops", tagKey: "shop", tagValue: "chocolate" },
-    { label: "Cafes", tagKey: "amenity", tagValue: "cafe" },
   ],
+  cafes: [{ label: "Cafes", tagKey: "amenity", tagValue: "cafe" }],
   all: [],
 };
 
 OSM_CATEGORY_FILTERS.all = [
   ...OSM_CATEGORY_FILTERS.nightlife,
   ...OSM_CATEGORY_FILTERS.culture,
-  ...OSM_CATEGORY_FILTERS.activities,
+  ...OSM_CATEGORY_FILTERS.bowling,
+  ...OSM_CATEGORY_FILTERS.karaoke,
+  ...OSM_CATEGORY_FILTERS.mini_golf,
   ...OSM_CATEGORY_FILTERS.dessert,
+  ...OSM_CATEGORY_FILTERS.cafes,
 ];
 
 type OsmElement = {
@@ -104,16 +106,28 @@ function objectUrl(type: string, id: number | string) {
   return `https://www.openstreetmap.org/${type}/${id}`;
 }
 
-function getCategoryFilters(categoryGroup: string) {
-  const safeGroup = (
-    ["nightlife", "culture", "activities", "dessert", "all"].includes(
-      categoryGroup,
-    )
-      ? categoryGroup
-      : "all"
-  ) as OsmCategoryGroup;
+function normalizeCategoryGroup(categoryGroup: string): OsmCategoryGroup {
+  if (categoryGroup === "activities") return "bowling";
 
-  return OSM_CATEGORY_FILTERS[safeGroup];
+  const allowedGroups: OsmCategoryGroup[] = [
+    "nightlife",
+    "culture",
+    "bowling",
+    "karaoke",
+    "mini_golf",
+    "parks",
+    "dessert",
+    "cafes",
+    "all",
+  ];
+
+  return allowedGroups.includes(categoryGroup as OsmCategoryGroup)
+    ? (categoryGroup as OsmCategoryGroup)
+    : "nightlife";
+}
+
+function getCategoryFilters(categoryGroup: string) {
+  return OSM_CATEGORY_FILTERS[normalizeCategoryGroup(categoryGroup)];
 }
 
 export function buildSingleFilterQuery({
@@ -130,6 +144,23 @@ export function buildSingleFilterQuery({
   node["${filter.tagKey}"="${filter.tagValue}"](${box});
   way["${filter.tagKey}"="${filter.tagValue}"](${box});
   relation["${filter.tagKey}"="${filter.tagValue}"](${box});
+);
+out tags center;`;
+}
+
+export function buildParkFilterQuery({
+  bbox = NYC_BBOX,
+  filter,
+}: {
+  bbox?: typeof NYC_BBOX;
+  filter: OsmFilter;
+}) {
+  const box = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+
+  return `[out:json][timeout:20];
+(
+  node["${filter.tagKey}"="${filter.tagValue}"](${box});
+  way["${filter.tagKey}"="${filter.tagValue}"](${box});
 );
 out tags center;`;
 }
@@ -155,7 +186,10 @@ function mapElement(element: OsmElement): StagedLocationInput | null {
 
   const lat = element.lat ?? element.center?.lat ?? null;
   const lon = element.lon ?? element.center?.lon ?? null;
-  const mapped = activityTagsForOsm(tags);
+  const mapped =
+    tags.leisure === "park"
+      ? { activity_type: "park", primary_category: "Park" }
+      : activityTagsForOsm(tags);
   const address =
     [tags["addr:housenumber"], tags["addr:street"]]
       .map(clean)
@@ -213,6 +247,8 @@ function mapElement(element: OsmElement): StagedLocationInput | null {
       tags.shop,
     ]),
     search_keywords: keywords,
+    curation_tier: tags.leisure === "park" ? "standard" : undefined,
+    date_score: tags.leisure === "park" ? 45 : undefined,
     description: `${name} is a ${mapped.primary_category.toLowerCase()} option in ${city}.`,
     raw_payload: element,
   };
@@ -357,19 +393,21 @@ async function fetchOverpassForQuery({
           ? "OSM Overpass request timed out after 20 seconds"
           : errorMessage(error),
       });
-
-      if (timedOut) {
-        throw new Error(
-          "OSM Overpass request timed out after 20 seconds. Try limit 10 or another category group.",
-        );
-      }
     } finally {
       clearTimeout(timeout);
     }
   }
 
+  const allTimedOut = attemptedEndpoints.every((attempt) =>
+    attempt.error?.toLowerCase().includes("timed out"),
+  );
+
   throw new Error(
-    `All Overpass endpoints rejected or timed out for ${filter.label} (${filter.tagKey}=${filter.tagValue}) using ${bboxUsed}. Attempts: ${attemptedEndpoints
+    `${
+      allTimedOut
+        ? "Public OSM servers timed out. Try a smaller limit or retry later."
+        : `All Overpass endpoints rejected or timed out for ${filter.label} (${filter.tagKey}=${filter.tagValue}) using ${bboxUsed}.`
+    } Attempts: ${attemptedEndpoints
       .map(
         (attempt) =>
           `${attempt.endpoint}: ${attempt.status ? `${attempt.status} ` : ""}${
@@ -383,45 +421,15 @@ async function fetchOverpassForQuery({
 async function fetchOverpassElements(
   filter: OsmFilter,
 ): Promise<OverpassResult> {
-  const nycResult = await fetchOverpassForQuery({
+  return fetchOverpassForQuery({
     filter,
-    query: buildSingleFilterQuery({ filter, bbox: NYC_BBOX }),
+    query:
+      filter.tagKey === "leisure" && filter.tagValue === "park"
+        ? buildParkFilterQuery({ filter, bbox: NYC_BBOX })
+        : buildSingleFilterQuery({ filter, bbox: NYC_BBOX }),
     bboxUsed: "nyc",
     queryMode: "nwr_nyc",
   });
-  if (nycResult.elements.length > 0) return nycResult;
-
-  const metroResult = await fetchOverpassForQuery({
-    filter,
-    query: buildSingleFilterQuery({ filter, bbox: NYC_METRO_BBOX }),
-    bboxUsed: "nyc_metro",
-    queryMode: "nwr_nyc_metro",
-  });
-  if (metroResult.elements.length > 0) {
-    return {
-      ...metroResult,
-      attemptedEndpoints: [
-        ...nycResult.attemptedEndpoints,
-        ...metroResult.attemptedEndpoints,
-      ],
-    };
-  }
-
-  const nodeOnlyResult = await fetchOverpassForQuery({
-    filter,
-    query: buildNodeOnlyFilterQuery({ filter, bbox: NYC_METRO_BBOX }),
-    bboxUsed: "nyc_metro",
-    queryMode: "node_only_nyc_metro",
-  });
-
-  return {
-    ...nodeOnlyResult,
-    attemptedEndpoints: [
-      ...nycResult.attemptedEndpoints,
-      ...metroResult.attemptedEndpoints,
-      ...nodeOnlyResult.attemptedEndpoints,
-    ],
-  };
 }
 
 async function createOsmBatch(metadata: Record<string, unknown>) {
@@ -460,13 +468,7 @@ export async function importOsmActivities({
   const safeOffset = Number.isFinite(numericOffset)
     ? Math.max(Math.trunc(numericOffset), 0)
     : 0;
-  const safeCategoryGroup = (
-    ["nightlife", "culture", "activities", "dessert", "all"].includes(
-      categoryGroup,
-    )
-      ? categoryGroup
-      : "nightlife"
-  ) as OsmCategoryGroup;
+  const safeCategoryGroup = normalizeCategoryGroup(categoryGroup);
   const filters = getCategoryFilters(safeCategoryGroup);
   const startFilterIndex = Number.isFinite(numericFilterIndex)
     ? Math.max(Math.trunc(numericFilterIndex), 0)
@@ -612,8 +614,9 @@ export async function importOsmActivities({
 
         const stagedForUpsert = staged.map((item) => ({
           ...item,
-          ...calculateStagingQuality(item),
           import_status: "staged",
+          quality_status: "unchecked",
+          quality_score: null,
           duplicate_status: "unchecked",
           duplicate_score: 0,
           matched_location_id: null,
@@ -621,12 +624,8 @@ export async function importOsmActivities({
           updated_at: new Date().toISOString(),
         }));
 
-        const publishReadyCount = stagedForUpsert.filter(
-          (item) => item.quality_status === "publish_ready",
-        ).length;
-        const rejectedCount = stagedForUpsert.filter(
-          (item) => item.quality_status === "reject",
-        ).length;
+        const publishReadyCount = 0;
+        const rejectedCount = 0;
 
         const { error } = await supabaseAdmin
           .from("location_import_staging")
@@ -689,14 +688,16 @@ export async function importOsmActivities({
           skippedFilters,
           bboxUsed: overpass.bboxUsed,
           queryMode: overpass.queryMode,
-          message: "OSM records staged. Run Dedupe Chunk next.",
+          message:
+            "OSM records staged. Run Score Staged Chunk next, then Run Dedupe Chunk.",
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (
           !lastError.message.includes(
             "All Overpass endpoints rejected or timed out",
-          )
+          ) &&
+          !lastError.message.includes("Public OSM servers timed out")
         ) {
           throw lastError;
         }

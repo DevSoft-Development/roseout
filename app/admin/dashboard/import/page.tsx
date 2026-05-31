@@ -232,6 +232,30 @@ const ratingOptions = [
 
 const NYC_OFFSET_STORAGE_KEY = "theouthaven_nyc_import_offset";
 const DEFAULT_OSM_CATEGORY_GROUP = "nightlife";
+const OSM_CATEGORY_GROUPS = [
+  "nightlife",
+  "culture",
+  "bowling",
+  "karaoke",
+  "mini_golf",
+  "dessert",
+  "cafes",
+  "parks",
+  "all",
+];
+
+function normalizeOsmCategoryGroup(group: string) {
+  return group === "activities"
+    ? "bowling"
+    : group || DEFAULT_OSM_CATEGORY_GROUP;
+}
+
+function getOsmLimitCap(group: string) {
+  const normalizedGroup = normalizeOsmCategoryGroup(group);
+  if (normalizedGroup === "parks") return 10;
+  if (normalizedGroup === "all") return 10;
+  return 100;
+}
 
 function getOsmCursorKey(group: string) {
   return `theouthaven_osm_import_cursor_${group || "all"}`;
@@ -242,37 +266,57 @@ function getLegacyOsmOffsetKey(group: string) {
 }
 
 function readSavedOsmCursor(group: string) {
-  const cursorText = window.localStorage.getItem(getOsmCursorKey(group));
+  const normalizedGroup = normalizeOsmCategoryGroup(group);
+  const cursorText = window.localStorage.getItem(
+    getOsmCursorKey(normalizedGroup),
+  );
   if (cursorText) {
     try {
       const cursor = JSON.parse(cursorText) as {
+        categoryGroup?: unknown;
         filterIndex?: unknown;
         offset?: unknown;
+        exhausted?: unknown;
       };
       return {
+        categoryGroup: String(cursor.categoryGroup || normalizedGroup),
         filterIndex: String(Number(cursor.filterIndex) || 0),
         offset: String(Number(cursor.offset) || 0),
+        exhausted: Boolean(cursor.exhausted),
       };
     } catch {
-      window.localStorage.removeItem(getOsmCursorKey(group));
+      window.localStorage.removeItem(getOsmCursorKey(normalizedGroup));
     }
   }
 
   const legacyOffset = window.localStorage.getItem(
-    getLegacyOsmOffsetKey(group),
+    getLegacyOsmOffsetKey(normalizedGroup),
   );
-  return { filterIndex: "0", offset: legacyOffset || "0" };
+  return {
+    categoryGroup: normalizedGroup,
+    filterIndex: "0",
+    offset: legacyOffset || "0",
+    exhausted: false,
+  };
 }
 
-function saveOsmCursor(group: string, filterIndex: string, offset: string) {
+function saveOsmCursor(
+  group: string,
+  filterIndex: string,
+  offset: string,
+  exhausted = false,
+) {
+  const normalizedGroup = normalizeOsmCategoryGroup(group);
   window.localStorage.setItem(
-    getOsmCursorKey(group),
+    getOsmCursorKey(normalizedGroup),
     JSON.stringify({
+      categoryGroup: normalizedGroup,
       filterIndex: Number(filterIndex) || 0,
       offset: Number(offset) || 0,
+      exhausted,
     }),
   );
-  window.localStorage.setItem(getLegacyOsmOffsetKey(group), offset);
+  window.localStorage.setItem(getLegacyOsmOffsetKey(normalizedGroup), offset);
 }
 
 const queryCountOptions = [
@@ -602,8 +646,9 @@ export default function ImportPage() {
 
   const getSafeOsmLimit = () => {
     const limit = Number(osmLimit || 25);
-    if (!Number.isFinite(limit)) return 25;
-    return Math.min(Math.max(Math.trunc(limit), 1), 100);
+    const maxLimit = getOsmLimitCap(osmCategoryGroup);
+    if (!Number.isFinite(limit)) return Math.min(25, maxLimit);
+    return Math.min(Math.max(Math.trunc(limit), 1), maxLimit);
   };
 
   const getSafeOsmOffset = () => {
@@ -622,7 +667,7 @@ export default function ImportPage() {
         limit,
         offset,
         filterIndex: Number(osmFilterIndex) || 0,
-        categoryGroup: osmCategoryGroup || "nightlife",
+        categoryGroup: normalizeOsmCategoryGroup(osmCategoryGroup),
       },
     );
 
@@ -650,19 +695,27 @@ export default function ImportPage() {
       if (Number.isFinite(nextOffset)) setOsmOffset(String(nextOffset));
       if (Number.isFinite(nextFilterIndex) && Number.isFinite(nextOffset)) {
         saveOsmCursor(
-          osmCategoryGroup,
+          normalizeOsmCategoryGroup(osmCategoryGroup),
           String(nextFilterIndex),
           String(nextOffset),
+          data.hasMore === false,
         );
       }
     }
   };
 
   const handleOsmCategoryGroupChange = (nextGroup: string) => {
-    setOsmCategoryGroup(nextGroup);
-    const saved = readSavedOsmCursor(nextGroup);
+    const normalizedGroup = normalizeOsmCategoryGroup(nextGroup);
+    setOsmCategoryGroup(normalizedGroup);
+    const saved = readSavedOsmCursor(normalizedGroup);
     setOsmOffset(saved.offset);
     setOsmFilterIndex(saved.filterIndex);
+    const maxLimit = getOsmLimitCap(normalizedGroup);
+    setOsmLimit((currentLimit) => {
+      const numericLimit = Number(currentLimit || 25);
+      if (!Number.isFinite(numericLimit)) return String(Math.min(25, maxLimit));
+      return String(Math.min(Math.max(Math.trunc(numericLimit), 1), maxLimit));
+    });
   };
 
   const resetOsmOffset = () => {
@@ -680,11 +733,9 @@ export default function ImportPage() {
       "Reset all OSM cursors to filter 0 / offset 0?",
     );
     if (!confirmed) return;
-    ["nightlife", "culture", "activities", "dessert", "all"].forEach(
-      (group) => {
-        saveOsmCursor(group, "0", "0");
-      },
-    );
+    OSM_CATEGORY_GROUPS.forEach((group) => {
+      saveOsmCursor(group, "0", "0");
+    });
     setOsmOffset("0");
     setOsmFilterIndex("0");
   };
@@ -1408,8 +1459,8 @@ function LocationGrowthPanel(props: {
 
         <ActionCard
           title="Import OSM Activities"
-          description="Stage date-friendly activities from OpenStreetMap. OSM import uses a cursor (filter index + offset); NYC import uses only an offset."
-          note="OSM runs through public Overpass servers. Start with 25. Larger batches can time out on Vercel."
+          description="OSM imports use public map servers, so smaller category-specific batches are more reliable. Start with nightlife, culture, bowling, karaoke, dessert, or cafes. Parks and All are slower and should use a limit of 5–10."
+          note="OSM import only stages records. Run Score Staged Chunk, Run Dedupe Chunk, and Publish Ready Chunk manually afterward."
           button="Import OSM Batch"
           secondaryButton="Import Next OSM Batch"
           tertiaryButton="Reset OSM Cursor"
@@ -1425,7 +1476,7 @@ function LocationGrowthPanel(props: {
             value={props.osmLimit}
             onChange={props.setOsmLimit}
             min={1}
-            max={100}
+            max={getOsmLimitCap(props.osmCategoryGroup)}
           />
           <NumberField
             label="Cursor offset"
@@ -1454,12 +1505,20 @@ function LocationGrowthPanel(props: {
                 options={[
                   { label: "Nightlife", value: "nightlife" },
                   { label: "Culture", value: "culture" },
-                  { label: "Activities", value: "activities" },
+                  { label: "Bowling", value: "bowling" },
+                  { label: "Karaoke", value: "karaoke" },
+                  { label: "Mini golf", value: "mini_golf" },
                   { label: "Dessert", value: "dessert" },
-                  { label: "All", value: "all" },
+                  { label: "Cafes", value: "cafes" },
+                  { label: "Parks", value: "parks" },
+                  { label: "All (advanced)", value: "all" },
                 ]}
               />
               <ReadOnlyField label="Region" value="NYC" />
+              <p className="sm:col-span-2 rounded-2xl border border-amber-300/15 bg-amber-500/10 p-3 text-xs leading-5 text-amber-100">
+                Parks can be large and may timeout. Use limit 5–10. All runs
+                through smaller groups over time. Do not use while testing.
+              </p>
               <button
                 type="button"
                 onClick={props.onResetAllOsmCursors}
@@ -2325,28 +2384,24 @@ function ResultBanner({
     "scope",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
-  const isAllOverpassFailure =
+  const isOsmTimeout =
     !ok &&
-    errorText
-      .toLowerCase()
-      .includes("all overpass endpoints rejected or timed out");
+    (errorText.toLowerCase().includes("timeout") ||
+      errorText
+        .toLowerCase()
+        .includes("all overpass endpoints rejected or timed out"));
   return (
     <div
       className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}
     >
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
-      {isAllOverpassFailure ? (
+      {isOsmTimeout ? (
         <p className="mt-2 font-bold">
-          All Overpass endpoints rejected or timed out. Try another category
-          group or wait a few minutes.
-        </p>
-      ) : null}
-      {!isAllOverpassFailure &&
-      !ok &&
-      errorText.toLowerCase().includes("timeout") ? (
-        <p className="mt-2 font-bold">
-          OSM timed out. Try limit 10 or a smaller category group.
+          {String(result.categoryGroup) === "parks" ||
+          String(result.categoryGroup) === "all"
+            ? "That OSM category is large. Try limit 5 or choose a smaller category like bowling, karaoke, dessert, or culture."
+            : "Public OSM servers timed out. Try a smaller limit or retry later."}
         </p>
       ) : null}
       {result.batchId && ok ? (
@@ -2356,8 +2411,8 @@ function ResultBanner({
       ) : null}
       {ok && typeof result.message === "string" ? (
         <p className="mt-2 font-bold">
-          {result.message === "OSM records staged. Run Dedupe Chunk next."
-            ? "OSM records staged. Next step: Run Score Chunk, then Run Dedupe Chunk."
+          {String(result.message).startsWith("OSM records staged.")
+            ? "OSM records staged. Next step: Run Score Staged Chunk, then Run Dedupe Chunk."
             : result.message}
         </p>
       ) : null}
