@@ -142,7 +142,7 @@ export async function POST(request: Request) {
     const { runEnterpriseSearch } = await import("../../../lib/search/enterprise");
     const result = await runEnterpriseSearch(cleanInput, {
       body,
-      useLLM: true,
+      useLLM: false,
     });
 
     const cards = [
@@ -196,6 +196,7 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : String(error);
 
     console.error("[api/generate] search failed", {
+      input: typeof request !== "undefined" ? "request_received" : "unknown",
       message,
       stack: error instanceof Error ? error.stack : null,
     });
