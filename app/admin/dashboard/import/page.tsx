@@ -210,6 +210,8 @@ const ratingOptions = [
   { label: "3.8+ stars", value: "3.8" },
 ];
 
+const NYC_OFFSET_STORAGE_KEY = "roseout:admin-import:nyc-offset";
+
 const queryCountOptions = [
   { label: "1 query", value: "1" },
   { label: "2 queries", value: "2" },
@@ -245,7 +247,7 @@ export default function ImportPage() {
   const [minRating, setMinRating] = useState("4");
   const [queryCount, setQueryCount] = useState("2");
   const [googleMode, setGoogleMode] = useState("direct");
-  const [nycLimit, setNycLimit] = useState("100");
+  const [nycLimit, setNycLimit] = useState("500");
   const [nycOffset, setNycOffset] = useState("0");
   const [osmLimit, setOsmLimit] = useState("1000");
   const [dedupeBatchId, setDedupeBatchId] = useState("");
@@ -259,6 +261,19 @@ export default function ImportPage() {
   useEffect(() => {
     document.title = "Import Center | TheOutHaven Admin";
   }, []);
+
+  useEffect(() => {
+    const savedOffset = window.localStorage.getItem(NYC_OFFSET_STORAGE_KEY);
+    if (savedOffset !== null) {
+      // Persisted pagination should restore the previous NYC import cursor.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNycOffset(savedOffset);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(NYC_OFFSET_STORAGE_KEY, nycOffset);
+  }, [nycOffset]);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -467,6 +482,41 @@ export default function ImportPage() {
     await loadDuplicates(duplicateBatchId);
   };
 
+  const getSafeNycLimit = () => {
+    const limit = Number(nycLimit);
+    if (!Number.isFinite(limit)) return 500;
+    return Math.min(Math.max(Math.trunc(limit), 1), 1000);
+  };
+
+  const getSafeNycOffset = () => {
+    const offset = Number(nycOffset);
+    if (!Number.isFinite(offset)) return 0;
+    return Math.max(Math.trunc(offset), 0);
+  };
+
+  const runNycImport = async () => {
+    const limit = getSafeNycLimit();
+    const offset = getSafeNycOffset();
+    const data = await postAction(
+      "nyc",
+      "/api/admin/location-growth/import-nyc-restaurants",
+      {
+        limit,
+        offset,
+      },
+    );
+
+    if (data && data.success !== false) {
+      const nextOffset =
+        data?.nextOffset !== undefined && data.nextOffset !== null
+          ? Number(data.nextOffset)
+          : offset + limit;
+      if (Number.isFinite(nextOffset)) {
+        setNycOffset(String(nextOffset));
+      }
+    }
+  };
+
   const runCleanupBatch = async () => {
     const data = await postAction("cleanup", "/api/admin/cleanup-locations", {
       table: "locations",
@@ -600,12 +650,8 @@ export default function ImportPage() {
             cleanupOffset={cleanupOffset}
             setCleanupOffset={setCleanupOffset}
             onCleanup={runCleanupBatch}
-            onImportNyc={() =>
-              postAction("nyc", "/api/admin/location-growth/import-nyc-restaurants", {
-                limit: Number(nycLimit) || 100,
-                offset: Number(nycOffset) || 0,
-              })
-            }
+            onImportNyc={runNycImport}
+            onImportNycNext={runNycImport}
             onImportOsm={() =>
               postAction("osm", "/api/admin/location-growth/import-osm-activities", {
                 limit: Number(osmLimit) || 1000,
@@ -921,6 +967,7 @@ function LocationGrowthPanel(props: {
   setCleanupOffset: (value: string) => void;
   onCleanup: () => void;
   onImportNyc: () => void;
+  onImportNycNext: () => void;
   onImportOsm: () => void;
   onDedupe: (batchId?: string) => void;
   onPublish: () => void;
@@ -970,11 +1017,14 @@ function LocationGrowthPanel(props: {
         <ActionCard
           title="Import NYC Open Data Restaurants"
           description="Stage NYC restaurant records from NYC Open Data. Records do not go live until they pass dedupe and quality checks."
-          button="Import NYC Restaurants"
+          note="Recommended: Start with 100 while testing. Use 500 once imports are working. Max 1000."
+          button="Import NYC Batch"
+          secondaryButton="Import Next Batch"
           running={props.runningAction === "nyc"}
           onClick={props.onImportNyc}
+          onSecondaryClick={props.onImportNycNext}
         >
-          <NumberField label="Limit" value={props.nycLimit} onChange={props.setNycLimit} />
+          <NumberField label="Limit" value={props.nycLimit} onChange={props.setNycLimit} min={1} max={1000} />
           <NumberField label="Offset" value={props.nycOffset} onChange={props.setNycOffset} />
         </ActionCard>
 
@@ -1229,13 +1279,25 @@ function QrToolsPanel({ summary, limit, setLimit, running, onGenerate }: {
   );
 }
 
-function ActionCard({ title, description, note, button, running, onClick, children }: {
+function ActionCard({
+  title,
+  description,
+  note,
+  button,
+  secondaryButton,
+  running,
+  onClick,
+  onSecondaryClick,
+  children,
+}: {
   title: string;
   description: string;
   note?: string;
   button: string;
+  secondaryButton?: string;
   running: boolean;
   onClick: () => void;
+  onSecondaryClick?: () => void;
   children?: ReactNode;
 }) {
   return (
@@ -1244,9 +1306,16 @@ function ActionCard({ title, description, note, button, running, onClick, childr
       <p className="mt-2 text-sm leading-6 text-zinc-400">{description}</p>
       {note ? <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] text-rose-300">{note}</p> : null}
       {children ? <div className="mt-5 grid gap-4 sm:grid-cols-2">{children}</div> : null}
-      <button type="button" onClick={onClick} disabled={running} className="mt-5 rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
-        {running ? "Running..." : button}
-      </button>
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button type="button" onClick={onClick} disabled={running} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
+          {running ? "Running..." : button}
+        </button>
+        {secondaryButton && onSecondaryClick ? (
+          <button type="button" onClick={onSecondaryClick} disabled={running} className="rounded-full border border-white/10 px-6 py-3 text-sm font-black text-zinc-200 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500">
+            {running ? "Running..." : secondaryButton}
+          </button>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -1271,11 +1340,11 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function NumberField({ label, value, onChange, min = 0, max }: { label: string; value: string; onChange: (value: string) => void; min?: number; max?: number }) {
   return (
     <label className="block">
       <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">{label}</span>
-      <input type="number" min="0" value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400" />
+      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400" />
     </label>
   );
 }
