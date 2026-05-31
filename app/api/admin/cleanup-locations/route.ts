@@ -10,13 +10,18 @@ export const maxDuration = 300;
 const MAX_LIMIT = 500;
 
 async function authorize(request: NextRequest) {
-  if (process.env.NODE_ENV === "development") return null;
+  const importSecret = process.env.IMPORT_SECRET;
+
   if (
-    process.env.IMPORT_SECRET &&
-    request.headers.get("x-internal-import-secret") === process.env.IMPORT_SECRET
+    importSecret &&
+    request.headers.get("x-internal-import-secret") === importSecret
   ) {
     return null;
   }
+
+  // Browser-triggered cleanup relies on the signed-in admin session. In
+  // development, IMPORT_SECRET may be omitted, but normal users must still be
+  // blocked by admin API authorization.
   const { error } = await requireAdminApiRole(["admin", "superadmin"]);
   return error;
 }
