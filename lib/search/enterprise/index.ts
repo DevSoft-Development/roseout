@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin } from "../../supabaseAdmin";
 import type { EnterpriseLocation, EnterpriseSearchResult, SearchIntent } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
 import { activitySearchTerms, restaurantSearchTerms } from "./normalize-intent";
