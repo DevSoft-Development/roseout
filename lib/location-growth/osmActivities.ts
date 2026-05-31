@@ -5,7 +5,11 @@ import {
   type StagedLocationInput,
 } from "@/lib/location-growth/shared";
 
-const OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter";
+const OVERPASS_ENDPOINTS = [
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.osm.ch/api/interpreter",
+];
 const NYC_BBOX = {
   south: 40.4774,
   west: -74.2591,
@@ -20,63 +24,41 @@ type OsmCategoryGroup =
   | "activities"
   | "dessert";
 
-const OSM_CATEGORY_FILTERS: Record<OsmCategoryGroup, string[]> = {
+type OsmFilter = {
+  label: string;
+  tagKey: string;
+  tagValue: string;
+};
+
+const OSM_CATEGORY_FILTERS: Record<OsmCategoryGroup, OsmFilter[]> = {
   nightlife: [
-    'node["amenity"="bar"]',
-    'way["amenity"="bar"]',
-    'relation["amenity"="bar"]',
-    'node["amenity"="pub"]',
-    'way["amenity"="pub"]',
-    'relation["amenity"="pub"]',
-    'node["amenity"="biergarten"]',
-    'way["amenity"="biergarten"]',
-    'node["amenity"="nightclub"]',
-    'way["amenity"="nightclub"]',
-    'relation["amenity"="nightclub"]',
+    { label: "Bars", tagKey: "amenity", tagValue: "bar" },
+    { label: "Pubs", tagKey: "amenity", tagValue: "pub" },
+    { label: "Biergartens", tagKey: "amenity", tagValue: "biergarten" },
+    { label: "Nightclubs", tagKey: "amenity", tagValue: "nightclub" },
   ],
   culture: [
-    'node["tourism"="museum"]',
-    'way["tourism"="museum"]',
-    'relation["tourism"="museum"]',
-    'node["tourism"="gallery"]',
-    'way["tourism"="gallery"]',
-    'node["tourism"="attraction"]',
-    'way["tourism"="attraction"]',
-    'relation["tourism"="attraction"]',
-    'node["amenity"="theatre"]',
-    'way["amenity"="theatre"]',
-    'relation["amenity"="theatre"]',
-    'node["amenity"="cinema"]',
-    'way["amenity"="cinema"]',
-    'node["amenity"="arts_centre"]',
-    'way["amenity"="arts_centre"]',
+    { label: "Museums", tagKey: "tourism", tagValue: "museum" },
+    { label: "Galleries", tagKey: "tourism", tagValue: "gallery" },
+    { label: "Attractions", tagKey: "tourism", tagValue: "attraction" },
+    { label: "Theaters", tagKey: "amenity", tagValue: "theatre" },
+    { label: "Cinemas", tagKey: "amenity", tagValue: "cinema" },
+    { label: "Arts centres", tagKey: "amenity", tagValue: "arts_centre" },
   ],
   activities: [
-    'node["amenity"="bowling_alley"]',
-    'way["amenity"="bowling_alley"]',
-    'node["sport"="bowling"]',
-    'way["sport"="bowling"]',
-    'node["leisure"="miniature_golf"]',
-    'way["leisure"="miniature_golf"]',
-    'node["leisure"="park"]',
-    'way["leisure"="park"]',
-    'relation["leisure"="park"]',
-    'node["amenity"="karaoke_box"]',
-    'way["amenity"="karaoke_box"]',
-    'node["amenity"="community_centre"]',
-    'way["amenity"="community_centre"]',
+    { label: "Bowling alleys", tagKey: "amenity", tagValue: "bowling_alley" },
+    { label: "Bowling sport", tagKey: "sport", tagValue: "bowling" },
+    { label: "Mini golf", tagKey: "leisure", tagValue: "miniature_golf" },
+    { label: "Parks", tagKey: "leisure", tagValue: "park" },
+    { label: "Karaoke", tagKey: "amenity", tagValue: "karaoke_box" },
+    { label: "Community centres", tagKey: "amenity", tagValue: "community_centre" },
   ],
   dessert: [
-    'node["shop"="ice_cream"]',
-    'way["shop"="ice_cream"]',
-    'node["shop"="pastry"]',
-    'way["shop"="pastry"]',
-    'node["shop"="bakery"]',
-    'way["shop"="bakery"]',
-    'node["shop"="chocolate"]',
-    'way["shop"="chocolate"]',
-    'node["amenity"="cafe"]',
-    'way["amenity"="cafe"]',
+    { label: "Ice cream shops", tagKey: "shop", tagValue: "ice_cream" },
+    { label: "Pastry shops", tagKey: "shop", tagValue: "pastry" },
+    { label: "Bakeries", tagKey: "shop", tagValue: "bakery" },
+    { label: "Chocolate shops", tagKey: "shop", tagValue: "chocolate" },
+    { label: "Cafes", tagKey: "amenity", tagValue: "cafe" },
   ],
   all: [],
 };
@@ -117,25 +99,25 @@ function getCategoryFilters(categoryGroup: string) {
   return OSM_CATEGORY_FILTERS[safeGroup];
 }
 
-function buildQuery({
+function buildSingleFilterQuery({
   bbox = NYC_BBOX,
-  categoryGroup = "all",
+  filter,
+  overpassLimit,
 }: {
   bbox?: typeof NYC_BBOX;
-  categoryGroup?: string;
+  filter: OsmFilter;
+  overpassLimit: number;
 }) {
-  const box = `(${bbox.south},${bbox.west},${bbox.north},${bbox.east})`;
-  const filters = getCategoryFilters(categoryGroup);
+  const box = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+  const safeLimit = Math.min(Math.max(Number(overpassLimit || 100), 1), 500);
 
-  const filterLines = filters.map((filter) => `${filter}${box};`).join("\n");
-
-  return `
-[out:json][timeout:45];
+  return `[out:json][timeout:25];
 (
-${filterLines}
+  node["${filter.tagKey}"="${filter.tagValue}"](${box});
+  way["${filter.tagKey}"="${filter.tagValue}"](${box});
+  relation["${filter.tagKey}"="${filter.tagValue}"](${box});
 );
-out center tags;
-`;
+out center qt ${safeLimit};`;
 }
 
 function mapElement(element: OsmElement): StagedLocationInput | null {
@@ -237,69 +219,126 @@ async function markBatchFailed(batchId: string | null, error: unknown) {
     .eq("id", batchId);
 }
 
-async function fetchOverpassElements(categoryGroup: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 65000);
-  const query = buildQuery({ categoryGroup });
+type OverpassAttempt = {
+  endpoint: string;
+  ok: boolean;
+  status?: number;
+  error?: string;
+};
 
-  try {
-    const response = await fetch(OVERPASS_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({ data: query }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
+type OverpassResult = {
+  elements: OsmElement[];
+  overpassEndpoint: string;
+  attemptedEndpoints: OverpassAttempt[];
+};
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      console.error("[OSM Overpass query]", query);
-      throw new Error(
-        `OSM Overpass import failed: HTTP ${response.status} ${response.statusText}${
-          errorText ? ` - ${errorText.slice(0, 500)}` : ""
-        }`,
-      );
-    }
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchOverpassElements(
+  filter: OsmFilter,
+  overpassLimit: number,
+): Promise<OverpassResult> {
+  const query = buildSingleFilterQuery({ filter, overpassLimit });
+  const attemptedEndpoints: OverpassAttempt[] = [];
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 35000);
 
     try {
-      const payload = await response.json();
-      return Array.isArray(payload.elements)
-        ? (payload.elements as OsmElement[])
-        : [];
-    } catch {
-      throw new Error("OSM Overpass returned invalid JSON");
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({ data: query }).toString(),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        attemptedEndpoints.push({
+          endpoint,
+          ok: false,
+          status: response.status,
+          error: `HTTP ${response.status} ${response.statusText}${
+            errorText ? ` - ${errorText.slice(0, 500)}` : ""
+          }`,
+        });
+        continue;
+      }
+
+      try {
+        const payload = await response.json();
+        if (!Array.isArray(payload.elements)) {
+          attemptedEndpoints.push({
+            endpoint,
+            ok: false,
+            error: "Invalid Overpass JSON: elements array missing",
+          });
+          continue;
+        }
+
+        attemptedEndpoints.push({ endpoint, ok: true, status: response.status });
+        return {
+          elements: payload.elements as OsmElement[],
+          overpassEndpoint: endpoint,
+          attemptedEndpoints,
+        };
+      } catch (error) {
+        attemptedEndpoints.push({
+          endpoint,
+          ok: false,
+          error: `Invalid Overpass JSON: ${errorMessage(error)}`,
+        });
+      }
+    } catch (error) {
+      attemptedEndpoints.push({
+        endpoint,
+        ok: false,
+        error:
+          error instanceof Error && error.name === "AbortError"
+            ? "Request timed out"
+            : errorMessage(error),
+      });
+    } finally {
+      clearTimeout(timeout);
     }
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(
-        categoryGroup === "all"
-          ? "OSM Overpass request timed out for the broad All query. Try Nightlife, Culture, Activities, or Dessert separately."
-          : "OSM Overpass request timed out. Try a smaller limit or retry later.",
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw new Error(
+    `All Overpass endpoints rejected or timed out for ${filter.label} (${filter.tagKey}=${filter.tagValue}). Attempts: ${attemptedEndpoints
+      .map(
+        (attempt) =>
+          `${attempt.endpoint}: ${attempt.status ? `${attempt.status} ` : ""}${
+            attempt.error || "failed"
+          }`,
+      )
+      .join(" | ")}`,
+  );
 }
 
 export async function importOsmActivities({
-  limit = 250,
+  limit = 50,
   offset = 0,
-  categoryGroup = "all",
+  categoryGroup = "nightlife",
+  filterIndex = 0,
 }: {
   limit?: number;
   offset?: number;
   categoryGroup?: string;
+  filterIndex?: number;
 }) {
-  const numericLimit = Number(limit || 250);
+  const numericLimit = Number(limit || 50);
   const numericOffset = Number(offset || 0);
+  const numericFilterIndex = Number(filterIndex || 0);
   const cappedLimit = Number.isFinite(numericLimit)
-    ? Math.min(Math.max(Math.trunc(numericLimit), 1), 1000)
-    : 250;
+    ? Math.min(Math.max(Math.trunc(numericLimit), 1), 250)
+    : 50;
   const safeOffset = Number.isFinite(numericOffset)
     ? Math.max(Math.trunc(numericOffset), 0)
     : 0;
@@ -308,9 +347,19 @@ export async function importOsmActivities({
       categoryGroup,
     )
       ? categoryGroup
-      : "all"
+      : "nightlife"
   ) as OsmCategoryGroup;
-  const nextOffset = safeOffset + cappedLimit;
+  const filters = getCategoryFilters(safeCategoryGroup);
+  const startFilterIndex = Number.isFinite(numericFilterIndex)
+    ? Math.min(Math.max(Math.trunc(numericFilterIndex), 0), filters.length - 1)
+    : 0;
+  const initialOverpassLimit = Math.min(safeOffset + cappedLimit + 25, 500);
+  const skippedFilters: Array<{
+    filterIndex: number;
+    filterLabel: string;
+    filterTag: string;
+    error: string;
+  }> = [];
   let batchId: string | null = null;
 
   try {
@@ -323,8 +372,9 @@ export async function importOsmActivities({
         metadata: {
           limit: cappedLimit,
           offset: safeOffset,
-          nextOffset,
+          filterIndex: startFilterIndex,
           categoryGroup: safeCategoryGroup,
+          overpassLimit: initialOverpassLimit,
           bbox: "nyc",
         },
       })
@@ -334,115 +384,176 @@ export async function importOsmActivities({
     if (batchError) throw batchError;
     batchId = batch.id as string;
 
-    const allElements = await fetchOverpassElements(safeCategoryGroup);
-    const sortedElements = [...allElements].sort((a, b) => {
-      const aKey = `${a.type}:${a.id}`;
-      const bKey = `${b.type}:${b.id}`;
-      return aKey.localeCompare(bKey);
-    });
-    const selectedElements = sortedElements.slice(safeOffset, nextOffset);
+    let lastError: Error | null = null;
 
-    if (
-      selectedElements.length === 0 &&
-      allElements.length > 0 &&
-      safeOffset >= allElements.length
+    for (
+      let currentFilterIndex = startFilterIndex;
+      currentFilterIndex < filters.length;
+      currentFilterIndex += 1
     ) {
-      const message =
-        "No more OSM records found for this category and region. Reset offset or choose another category group.";
-      const { error: updateError } = await supabaseAdmin
-        .from("location_import_batches")
-        .update({
-          status: "completed_empty",
-          total_seen: allElements.length,
-          total_staged: 0,
-          total_duplicates: 0,
-          metadata: {
-            limit: cappedLimit,
-            offset: safeOffset,
-            nextOffset,
-            categoryGroup: safeCategoryGroup,
-            message,
-            bbox: "nyc",
-          },
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", batchId);
-      if (updateError) throw updateError;
+      const filter = filters[currentFilterIndex];
+      const filterTag = `${filter.tagKey}=${filter.tagValue}`;
 
-      return {
-        success: true,
-        batchId,
-        seen: allElements.length,
-        mapped: 0,
-        staged: 0,
-        duplicatesRemoved: 0,
-        limit: cappedLimit,
-        offset: safeOffset,
-        nextOffset,
-        categoryGroup: safeCategoryGroup,
-        message,
-      };
-    }
+      try {
+        const effectiveOffset =
+          currentFilterIndex === startFilterIndex ? safeOffset : 0;
+        const overpassLimit = Math.min(effectiveOffset + cappedLimit + 25, 500);
+        const overpass = await fetchOverpassElements(filter, overpassLimit);
+        const sortedElements = [...overpass.elements].sort((a, b) => {
+          const aKey = `${a.type}:${a.id}`;
+          const bKey = `${b.type}:${b.id}`;
+          return aKey.localeCompare(bKey);
+        });
+        const selectedElements = sortedElements.slice(
+          effectiveOffset,
+          effectiveOffset + cappedLimit,
+        );
 
-    const mapped = selectedElements
-      .map(mapElement)
-      .filter((item): item is StagedLocationInput => Boolean(item))
-      .map((item) => ({
-        ...item,
-        batch_id: batchId,
-      }));
+        if (!selectedElements.length) {
+          skippedFilters.push({
+            filterIndex: currentFilterIndex,
+            filterLabel: filter.label,
+            filterTag,
+            error: sortedElements.length
+              ? `Filter exhausted at offset ${effectiveOffset}`
+              : "Filter returned no elements",
+          });
+          continue;
+        }
 
-    const staged = dedupeStagedLocationsForUpsert(mapped);
+        const hasMoreInFilter =
+          effectiveOffset + cappedLimit < sortedElements.length;
+        const nextCursor = hasMoreInFilter
+          ? {
+              filterIndex: currentFilterIndex,
+              offset: effectiveOffset + cappedLimit,
+            }
+          : currentFilterIndex + 1 < filters.length
+            ? { filterIndex: currentFilterIndex + 1, offset: 0 }
+            : null;
+        const hasMore = Boolean(nextCursor);
 
-    if (staged.length) {
-      const { error } = await supabaseAdmin
-        .from("location_import_staging")
-        .upsert(staged, { onConflict: "source,source_id" });
-      if (error)
-        throw new Error(`Failed to stage OSM activities: ${error.message}`);
-    }
+        const mapped = selectedElements
+          .map(mapElement)
+          .filter((item): item is StagedLocationInput => Boolean(item))
+          .map((item) => ({
+            ...item,
+            batch_id: batchId,
+          }));
 
-    await supabaseAdmin.rpc("oh_refresh_staging_quality", {
-      p_batch_id: batchId,
-    });
-    await supabaseAdmin.rpc("oh_find_staging_duplicates", {
-      p_batch_id: batchId,
-    });
+        const staged = dedupeStagedLocationsForUpsert(mapped);
 
-    const { error: updateError } = await supabaseAdmin
-      .from("location_import_batches")
-      .update({
-        status: "staged",
-        total_seen: allElements.length,
-        total_staged: staged.length,
-        total_duplicates: mapped.length - staged.length,
-        metadata: {
-          limit: cappedLimit,
-          offset: safeOffset,
-          nextOffset,
-          categoryGroup: safeCategoryGroup,
+        if (!staged.length) {
+          skippedFilters.push({
+            filterIndex: currentFilterIndex,
+            filterLabel: filter.label,
+            filterTag,
+            error: "Filter returned no stageable named records",
+          });
+          continue;
+        }
+
+        const { error } = await supabaseAdmin
+          .from("location_import_staging")
+          .upsert(staged, { onConflict: "source,source_id" });
+        if (error) {
+          throw new Error(`Failed to stage OSM activities: ${error.message}`);
+        }
+
+        await supabaseAdmin.rpc("oh_refresh_staging_quality", {
+          p_batch_id: batchId,
+        });
+
+        const { error: updateError } = await supabaseAdmin
+          .from("location_import_batches")
+          .update({
+            status: "staged",
+            total_seen: overpass.elements.length,
+            total_staged: staged.length,
+            total_duplicates: mapped.length - staged.length,
+            metadata: {
+              limit: cappedLimit,
+              offset: effectiveOffset,
+              categoryGroup: safeCategoryGroup,
+              filterIndex: currentFilterIndex,
+              filterLabel: filter.label,
+              filterTag,
+              overpassLimit,
+              overpassEndpoint: overpass.overpassEndpoint,
+              attemptedEndpoints: overpass.attemptedEndpoints,
+              nextCursor,
+              hasMore,
+              mapped: mapped.length,
+              duplicatesRemoved: mapped.length - staged.length,
+              skippedFilters,
+              bbox: "nyc",
+            },
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", batchId);
+
+        if (updateError) throw updateError;
+
+        return {
+          success: true,
+          batchId,
+          seen: overpass.elements.length,
           mapped: mapped.length,
+          staged: staged.length,
           duplicatesRemoved: mapped.length - staged.length,
-          bbox: "nyc",
-        },
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", batchId);
+          limit: cappedLimit,
+          categoryGroup: safeCategoryGroup,
+          filterIndex: currentFilterIndex,
+          filterLabel: filter.label,
+          filterTag,
+          offset: currentFilterIndex === startFilterIndex ? safeOffset : 0,
+          nextCursor,
+          hasMore,
+          overpassEndpoint: overpass.overpassEndpoint,
+          attemptedEndpoints: overpass.attemptedEndpoints,
+          skippedFilters,
+          message: skippedFilters.length
+            ? "Some OSM filters were skipped, but this batch imported successfully."
+            : undefined,
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        skippedFilters.push({
+          filterIndex: currentFilterIndex,
+          filterLabel: filter.label,
+          filterTag,
+          error: lastError.message,
+        });
 
-    if (updateError) throw updateError;
+        await supabaseAdmin
+          .from("location_import_batches")
+          .update({
+            metadata: {
+              limit: cappedLimit,
+              offset: currentFilterIndex === startFilterIndex ? safeOffset : 0,
+              categoryGroup: safeCategoryGroup,
+              filterIndex: currentFilterIndex,
+              filterLabel: filter.label,
+              filterTag,
+              overpassLimit:
+                currentFilterIndex === startFilterIndex
+                  ? initialOverpassLimit
+                  : Math.min(cappedLimit + 25, 500),
+              skippedFilters,
+              bbox: "nyc",
+            },
+          })
+          .eq("id", batchId);
+      }
+    }
 
-    return {
-      success: true,
-      batchId,
-      seen: allElements.length,
-      mapped: mapped.length,
-      staged: staged.length,
-      duplicatesRemoved: mapped.length - staged.length,
-      limit: cappedLimit,
-      offset: safeOffset,
-      nextOffset,
-      categoryGroup: safeCategoryGroup,
-    };
+    const failure = new Error(
+      `All Overpass filters failed or were exhausted for ${safeCategoryGroup}. All Overpass endpoints rejected or timed out. Filters tried: ${skippedFilters
+        .map((filter) => `${filter.filterLabel} (${filter.filterTag}): ${filter.error}`)
+        .join(" | ") || lastError?.message || "none"}`,
+    );
+    await markBatchFailed(batchId, failure);
+    throw failure;
   } catch (error) {
     await markBatchFailed(batchId, error);
     throw error;

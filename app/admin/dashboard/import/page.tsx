@@ -60,6 +60,7 @@ type LatestBatch = {
     limit?: unknown;
     offset?: unknown;
     nextOffset?: unknown;
+    filterIndex?: unknown;
     categoryGroup?: unknown;
   } | null;
   started_at?: string | null;
@@ -77,6 +78,7 @@ type GrowthSummary = {
   rejected?: number | null;
   enrichmentQueued?: number | null;
   remainingPublishReady?: number | null;
+  remainingUncheckedDedupe?: number | null;
   missingClaimCodes?: number | null;
   missingClaimQrs?: number | null;
   missingPublicQrs?: number | null;
@@ -271,8 +273,9 @@ export default function ImportPage() {
   const [googleMode, setGoogleMode] = useState("direct");
   const [nycLimit, setNycLimit] = useState("500");
   const [nycOffset, setNycOffset] = useState("0");
-  const [osmLimit, setOsmLimit] = useState("250");
+  const [osmLimit, setOsmLimit] = useState("50");
   const [osmOffset, setOsmOffset] = useState("0");
+  const [osmFilterIndex, setOsmFilterIndex] = useState("0");
   const [osmCategoryGroup, setOsmCategoryGroup] = useState(
     DEFAULT_OSM_CATEGORY_GROUP,
   );
@@ -281,6 +284,7 @@ export default function ImportPage() {
   const [dedupeScope, setDedupeScope] = useState("all");
   const [publishScope, setPublishScope] = useState("all");
   const [publishLimit, setPublishLimit] = useState("500");
+  const [dedupeLimit, setDedupeLimit] = useState("250");
   const [enrichLimit, setEnrichLimit] = useState("50");
   const [qrLimit, setQrLimit] = useState("100");
   const [cleanupOffset, setCleanupOffset] = useState("0");
@@ -304,7 +308,6 @@ export default function ImportPage() {
     if (savedOsmOffset !== null) {
       // Persisted app-managed OSM pagination should restore the previous cursor
       // for the default category group.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOsmOffset(savedOsmOffset);
     }
   }, []);
@@ -551,9 +554,9 @@ export default function ImportPage() {
 
 
   const getSafeOsmLimit = () => {
-    const limit = Number(osmLimit || 250);
-    if (!Number.isFinite(limit)) return 250;
-    return Math.min(Math.max(Math.trunc(limit), 1), 1000);
+    const limit = Number(osmLimit || 50);
+    if (!Number.isFinite(limit)) return 50;
+    return Math.min(Math.max(Math.trunc(limit), 1), 250);
   };
 
   const getSafeOsmOffset = () => {
@@ -571,15 +574,16 @@ export default function ImportPage() {
       {
         limit,
         offset,
-        categoryGroup: osmCategoryGroup || "all",
+        filterIndex: Number(osmFilterIndex) || 0,
+        categoryGroup: osmCategoryGroup || "nightlife",
       },
     );
 
     if (data && data.success !== false) {
-      const nextOffset =
-        data?.nextOffset !== undefined && data.nextOffset !== null
-          ? Number(data.nextOffset)
-          : offset + limit;
+      const cursor = data.nextCursor as { filterIndex?: unknown; offset?: unknown } | null | undefined;
+      const nextFilterIndex = cursor?.filterIndex !== undefined ? Number(cursor.filterIndex) : Number(osmFilterIndex) || 0;
+      const nextOffset = cursor?.offset !== undefined ? Number(cursor.offset) : offset + limit;
+      if (Number.isFinite(nextFilterIndex)) setOsmFilterIndex(String(nextFilterIndex));
       if (Number.isFinite(nextOffset)) {
         const key = getOsmOffsetKey(osmCategoryGroup);
         window.localStorage.setItem(key, String(nextOffset));
@@ -593,16 +597,18 @@ export default function ImportPage() {
     const key = getOsmOffsetKey(nextGroup);
     const saved = window.localStorage.getItem(key);
     setOsmOffset(saved || "0");
+    setOsmFilterIndex("0");
   };
 
   const resetOsmOffset = () => {
     const confirmed = window.confirm(
-      `Reset OSM offset for ${osmCategoryGroup} to 0?`,
+      `Reset OSM cursor for ${osmCategoryGroup} to filter 0 / offset 0?`,
     );
     if (!confirmed) return;
     const key = getOsmOffsetKey(osmCategoryGroup);
     window.localStorage.setItem(key, "0");
     setOsmOffset("0");
+    setOsmFilterIndex("0");
   };
 
   const runCleanupBatch = async () => {
@@ -747,6 +753,8 @@ export default function ImportPage() {
             osmOffset={osmOffset}
             setOsmOffset={setOsmOffset}
             osmCategoryGroup={osmCategoryGroup}
+            osmFilterIndex={osmFilterIndex}
+            setOsmFilterIndex={setOsmFilterIndex}
             setOsmCategoryGroup={handleOsmCategoryGroupChange}
             dedupeScope={dedupeScope}
             setDedupeScope={setDedupeScope}
@@ -757,6 +765,8 @@ export default function ImportPage() {
             publishBatchId={publishBatchId}
             setPublishBatchId={setPublishBatchId}
             publishLimit={publishLimit}
+            dedupeLimit={dedupeLimit}
+            setDedupeLimit={setDedupeLimit}
             setPublishLimit={setPublishLimit}
             enrichLimit={enrichLimit}
             setEnrichLimit={setEnrichLimit}
@@ -770,9 +780,10 @@ export default function ImportPage() {
             onResetOsmOffset={resetOsmOffset}
             onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
+                all: dedupeScope !== "batch",
                 batchId:
                   dedupeScope === "batch" ? dedupeBatchId || undefined : undefined,
-                mode: "staging",
+                limit: Math.min(Math.max(Number(dedupeLimit || 250), 1), 500),
               })
             }
             onPublish={() => {
@@ -1085,6 +1096,8 @@ function LocationGrowthPanel(props: {
   osmOffset: string;
   setOsmOffset: (value: string) => void;
   osmCategoryGroup: string;
+  osmFilterIndex: string;
+  setOsmFilterIndex: (value: string) => void;
   setOsmCategoryGroup: (value: string) => void;
   dedupeScope: string;
   setDedupeScope: (value: string) => void;
@@ -1095,6 +1108,8 @@ function LocationGrowthPanel(props: {
   publishBatchId: string;
   setPublishBatchId: (value: string) => void;
   publishLimit: string;
+  dedupeLimit: string;
+  setDedupeLimit: (value: string) => void;
   setPublishLimit: (value: string) => void;
   enrichLimit: string;
   setEnrichLimit: (value: string) => void;
@@ -1116,6 +1131,7 @@ function LocationGrowthPanel(props: {
     ["Staged", props.summary?.staged],
     ["Publish Ready", props.summary?.publishReady],
     ["Possible Duplicates", props.summary?.possibleDuplicates],
+    ["Remaining Dedupe", props.summary?.remainingUncheckedDedupe],
     ["Rejected", props.summary?.rejected],
     ["Enrichment Queued", props.summary?.enrichmentQueued],
   ];
@@ -1167,18 +1183,19 @@ function LocationGrowthPanel(props: {
 
         <ActionCard
           title="Import OSM Activities"
-          description="Stage date-friendly activities from OpenStreetMap. OSM uses a saved cursor/offset so you can import the next batch without pulling the same records."
-          note="Start with Nightlife or Culture. Use All only after smaller groups work because Overpass may reject or time out broad queries."
+          description="Stage date-friendly activities from OpenStreetMap. OSM import uses a cursor (filter index + offset); NYC import uses only an offset."
+          note="Start with 50. OSM uses public Overpass servers, so smaller batches are more reliable."
           button="Import OSM Batch"
           secondaryButton="Import Next OSM Batch"
-          tertiaryButton="Reset OSM Offset"
+          tertiaryButton="Reset OSM Cursor"
           running={props.runningAction === "osm"}
           onClick={props.onImportOsm}
           onSecondaryClick={props.onImportOsmNext}
           onTertiaryClick={props.onResetOsmOffset}
         >
-          <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} min={1} max={1000} />
-          <NumberField label="Offset" value={props.osmOffset} onChange={props.setOsmOffset} />
+          <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} min={1} max={250} />
+          <NumberField label="Cursor offset" value={props.osmOffset} onChange={props.setOsmOffset} />
+          <NumberField label="Cursor filter index" value={props.osmFilterIndex} onChange={props.setOsmFilterIndex} min={0} />
           <details className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
             <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
               Advanced OSM options
@@ -1202,11 +1219,13 @@ function LocationGrowthPanel(props: {
         </ActionCard>
 
         <ActionCard
-          title="Run Strict Dedupe"
-          description="Find exact duplicates and possible duplicates. Run All checks every staged record; Specific batch checks one import batch."
-          button={props.dedupeScope === "batch" ? "Run Selected Batch Dedupe" : "Run Dedupe for All"}
+          title="Run Chunked Dedupe"
+          description="Dedupe runs in safe chunks to avoid database timeouts. Keep clicking Run Next Dedupe Chunk until remaining unchecked is 0. Dedupe does not use offset."
+          button="Run Dedupe Chunk"
+          secondaryButton="Run Next Dedupe Chunk"
           running={props.runningAction === "dedupe"}
           onClick={props.onDedupe}
+          onSecondaryClick={props.onDedupe}
         >
           <SelectField
             label="Scope"
@@ -1217,17 +1236,19 @@ function LocationGrowthPanel(props: {
               { label: "Specific batch", value: "batch" },
             ]}
           />
+          <NumberField label="Limit" value={props.dedupeLimit} onChange={props.setDedupeLimit} min={1} max={500} />
           {props.dedupeScope === "batch" ? (
             <TextField label="Batch ID" value={props.dedupeBatchId} onChange={props.setDedupeBatchId} placeholder="Paste a batch ID" />
           ) : (
             <ReadOnlyField label="Batch ID" value="Not required for all staged records" />
           )}
+          <ReadOnlyField label="Remaining unchecked" value={String(getNumber(props.summary?.remainingUncheckedDedupe))} />
         </ActionCard>
 
         <ActionCard
           title="Publish Ready Records"
-          description="Publish clean, unique, high-quality staged records into the existing live locations table. Publish All processes the next safe chunk only, so you do not need to remember a batch ID."
-          button={props.publishScope === "batch" ? "Publish Selected Batch" : "Publish All Ready"}
+          description="Publish clean, unique, high-quality staged records into the existing live locations table. Publish runs a chunk and does not use offset."
+          button={props.publishScope === "batch" ? "Publish Selected Batch Chunk" : "Publish All Ready Chunk"}
           running={props.runningAction === "publish"}
           onClick={props.onPublish}
         >
@@ -1240,7 +1261,7 @@ function LocationGrowthPanel(props: {
               { label: "Specific batch", value: "batch" },
             ]}
           />
-          <NumberField label="Limit" value={props.publishLimit} onChange={props.setPublishLimit} min={1} max={1000} />
+          <NumberField label="Limit" value={props.publishLimit} onChange={props.setPublishLimit} min={1} max={500} />
           {props.publishScope === "batch" ? (
             <TextField label="Batch ID" value={props.publishBatchId} onChange={props.setPublishBatchId} placeholder="Paste a batch ID" />
           ) : (
@@ -1602,6 +1623,10 @@ function ResultBanner({
     "limit",
     "offset",
     "nextOffset",
+    "filterIndex",
+    "filterLabel",
+    "filterTag",
+    "overpassEndpoint",
     "seen",
     "mapped",
     "staged",
@@ -1610,22 +1635,25 @@ function ResultBanner({
     "inserted",
     "markedPublished",
     "remainingPublishReady",
+    "remainingUnchecked",
+    "processed",
+    "duplicate",
+    "possibleDuplicate",
+    "unique",
+    "hasMore",
     "scope",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
   const isAllOverpassFailure =
     !ok &&
-    String(result.categoryGroup || "").toLowerCase() === "all" &&
-    (errorText.includes("HTTP 406") ||
-      errorText.toLowerCase().includes("timeout"));
+    errorText.toLowerCase().includes("all overpass endpoints rejected or timed out");
   return (
     <div className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
       {isAllOverpassFailure ? (
         <p className="mt-2 font-bold">
-          Overpass rejected the broad All query. Try Nightlife, Culture,
-          Activities, or Dessert separately.
+          All Overpass endpoints rejected or timed out. Try another category group or wait a few minutes.
         </p>
       ) : null}
       {!isAllOverpassFailure && !ok && errorText.toLowerCase().includes("timeout") ? (
@@ -1636,6 +1664,9 @@ function ResultBanner({
       {result.batchId && ok ? (
         <p className="mt-2 font-bold">Batch created: {String(result.batchId)}</p>
       ) : null}
+      {ok && result.hasMore === true ? (
+        <p className="mt-2 font-bold">More records remain. Run the next chunk.</p>
+      ) : null}
       {hasBatchMetrics ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {[
@@ -1644,6 +1675,10 @@ function ResultBanner({
             ["Limit", result.limit],
             ["Offset", result.offset],
             ["Next offset", result.nextOffset],
+            ["Filter index", result.filterIndex],
+            ["Filter", result.filterLabel],
+            ["Filter tag", result.filterTag],
+            ["Overpass", result.overpassEndpoint],
             ["Category", result.categoryGroup],
             ["Seen", result.seen],
             ["Mapped", result.mapped],
@@ -1652,6 +1687,12 @@ function ResultBanner({
             ["Inserted", result.inserted],
             ["Marked published", result.markedPublished],
             ["Remaining ready", result.remainingPublishReady],
+            ["Processed", result.processed],
+            ["Duplicate", result.duplicate],
+            ["Possible duplicate", result.possibleDuplicate],
+            ["Unique", result.unique],
+            ["Remaining unchecked", result.remainingUnchecked],
+            ["Has more", result.hasMore],
           ]
             .filter(([, value]) => value !== undefined && value !== null)
             .map(([label, value]) => (
