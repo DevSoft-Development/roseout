@@ -14,79 +14,112 @@ const NYC_BBOX = {
 };
 
 type OsmCategoryGroup =
-  | "all"
   | "nightlife"
   | "culture"
   | "activities"
-  | "dessert";
+  | "dessert"
+  | "all";
 
-const OSM_CATEGORY_FILTERS: Record<OsmCategoryGroup, string[]> = {
-  nightlife: [
-    'node["amenity"="bar"]',
-    'way["amenity"="bar"]',
-    'relation["amenity"="bar"]',
-    'node["amenity"="pub"]',
-    'way["amenity"="pub"]',
-    'relation["amenity"="pub"]',
-    'node["amenity"="biergarten"]',
-    'way["amenity"="biergarten"]',
-    'node["amenity"="nightclub"]',
-    'way["amenity"="nightclub"]',
-    'relation["amenity"="nightclub"]',
-  ],
-  culture: [
-    'node["tourism"="museum"]',
-    'way["tourism"="museum"]',
-    'relation["tourism"="museum"]',
-    'node["tourism"="gallery"]',
-    'way["tourism"="gallery"]',
-    'node["tourism"="attraction"]',
-    'way["tourism"="attraction"]',
-    'relation["tourism"="attraction"]',
-    'node["amenity"="theatre"]',
-    'way["amenity"="theatre"]',
-    'relation["amenity"="theatre"]',
-    'node["amenity"="cinema"]',
-    'way["amenity"="cinema"]',
-    'node["amenity"="arts_centre"]',
-    'way["amenity"="arts_centre"]',
-  ],
-  activities: [
-    'node["amenity"="bowling_alley"]',
-    'way["amenity"="bowling_alley"]',
-    'node["sport"="bowling"]',
-    'way["sport"="bowling"]',
-    'node["leisure"="miniature_golf"]',
-    'way["leisure"="miniature_golf"]',
-    'node["leisure"="park"]',
-    'way["leisure"="park"]',
-    'relation["leisure"="park"]',
-    'node["amenity"="karaoke_box"]',
-    'way["amenity"="karaoke_box"]',
-    'node["amenity"="community_centre"]',
-    'way["amenity"="community_centre"]',
-  ],
-  dessert: [
-    'node["shop"="ice_cream"]',
-    'way["shop"="ice_cream"]',
-    'node["shop"="pastry"]',
-    'way["shop"="pastry"]',
-    'node["shop"="bakery"]',
-    'way["shop"="bakery"]',
-    'node["shop"="chocolate"]',
-    'way["shop"="chocolate"]',
-    'node["amenity"="cafe"]',
-    'way["amenity"="cafe"]',
-  ],
-  all: [],
+type OsmFilter = {
+  group: OsmCategoryGroup;
+  label: string;
+  tagKey: string;
+  tagValue: string;
 };
 
-OSM_CATEGORY_FILTERS.all = [
-  ...OSM_CATEGORY_FILTERS.nightlife,
-  ...OSM_CATEGORY_FILTERS.culture,
-  ...OSM_CATEGORY_FILTERS.activities,
-  ...OSM_CATEGORY_FILTERS.dessert,
+type OsmCursor = {
+  categoryGroup?: string;
+  filterIndex?: number;
+  offset?: number;
+};
+
+const OSM_FILTERS: OsmFilter[] = [
+  { group: "nightlife", label: "Bars", tagKey: "amenity", tagValue: "bar" },
+  { group: "nightlife", label: "Pubs", tagKey: "amenity", tagValue: "pub" },
+  {
+    group: "nightlife",
+    label: "Nightclubs",
+    tagKey: "amenity",
+    tagValue: "nightclub",
+  },
+  {
+    group: "nightlife",
+    label: "Biergartens",
+    tagKey: "amenity",
+    tagValue: "biergarten",
+  },
+  { group: "culture", label: "Museums", tagKey: "tourism", tagValue: "museum" },
+  { group: "culture", label: "Galleries", tagKey: "tourism", tagValue: "gallery" },
+  {
+    group: "culture",
+    label: "Attractions",
+    tagKey: "tourism",
+    tagValue: "attraction",
+  },
+  { group: "culture", label: "Theaters", tagKey: "amenity", tagValue: "theatre" },
+  { group: "culture", label: "Cinemas", tagKey: "amenity", tagValue: "cinema" },
+  {
+    group: "culture",
+    label: "Arts Centres",
+    tagKey: "amenity",
+    tagValue: "arts_centre",
+  },
+  {
+    group: "activities",
+    label: "Bowling Alleys",
+    tagKey: "amenity",
+    tagValue: "bowling_alley",
+  },
+  { group: "activities", label: "Bowling", tagKey: "sport", tagValue: "bowling" },
+  {
+    group: "activities",
+    label: "Mini Golf",
+    tagKey: "leisure",
+    tagValue: "miniature_golf",
+  },
+  { group: "activities", label: "Parks", tagKey: "leisure", tagValue: "park" },
+  {
+    group: "activities",
+    label: "Karaoke",
+    tagKey: "amenity",
+    tagValue: "karaoke_box",
+  },
+  {
+    group: "activities",
+    label: "Community Centres",
+    tagKey: "amenity",
+    tagValue: "community_centre",
+  },
+  { group: "dessert", label: "Ice Cream", tagKey: "shop", tagValue: "ice_cream" },
+  { group: "dessert", label: "Pastry Shops", tagKey: "shop", tagValue: "pastry" },
+  { group: "dessert", label: "Bakeries", tagKey: "shop", tagValue: "bakery" },
+  {
+    group: "dessert",
+    label: "Chocolate Shops",
+    tagKey: "shop",
+    tagValue: "chocolate",
+  },
+  { group: "dessert", label: "Cafes", tagKey: "amenity", tagValue: "cafe" },
 ];
+
+function getFiltersForGroup(categoryGroup: string): OsmFilter[] {
+  if (categoryGroup === "all") return OSM_FILTERS;
+
+  const validGroups = ["nightlife", "culture", "activities", "dessert"];
+  const safeGroup = validGroups.includes(categoryGroup)
+    ? categoryGroup
+    : "nightlife";
+
+  return OSM_FILTERS.filter((filter) => filter.group === safeGroup);
+}
+
+function getSafeCategoryGroup(categoryGroup: string) {
+  return (["nightlife", "culture", "activities", "dessert", "all"].includes(
+    categoryGroup,
+  )
+    ? categoryGroup
+    : "nightlife") as OsmCategoryGroup;
+}
 
 type OsmElement = {
   id: number | string;
@@ -105,36 +138,21 @@ function objectUrl(type: string, id: number | string) {
   return `https://www.openstreetmap.org/${type}/${id}`;
 }
 
-function getCategoryFilters(categoryGroup: string) {
-  const safeGroup = (
-    ["nightlife", "culture", "activities", "dessert", "all"].includes(
-      categoryGroup,
-    )
-      ? categoryGroup
-      : "all"
-  ) as OsmCategoryGroup;
-
-  return OSM_CATEGORY_FILTERS[safeGroup];
-}
-
-function buildQuery({
+function buildSingleFilterQuery({
   bbox = NYC_BBOX,
-  categoryGroup = "all",
+  filter,
+  overpassLimit,
 }: {
   bbox?: typeof NYC_BBOX;
-  categoryGroup?: string;
+  filter: OsmFilter;
+  overpassLimit: number;
 }) {
   const box = `(${bbox.south},${bbox.west},${bbox.north},${bbox.east})`;
-  const filters = getCategoryFilters(categoryGroup);
-
-  const filterLines = filters.map((filter) => `${filter}${box};`).join("\n");
 
   return `
-[out:json][timeout:45];
-(
-${filterLines}
-);
-out center tags;
+[out:json][timeout:25];
+nwr["${filter.tagKey}"="${filter.tagValue}"]${box};
+out center ${overpassLimit};
 `;
 }
 
@@ -237,83 +255,98 @@ async function markBatchFailed(batchId: string | null, error: unknown) {
     .eq("id", batchId);
 }
 
-async function fetchOverpassElements(categoryGroup: string) {
+async function fetchOverpassElements(query: string) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 65000);
-  const query = buildQuery({ categoryGroup });
+  const timeout = setTimeout(() => controller.abort(), 45000);
 
   try {
     const response = await fetch(OVERPASS_ENDPOINT, {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "Content-Type": "text/plain;charset=UTF-8",
         Accept: "application/json",
+        "User-Agent": "TheOutHaven Location Importer",
       },
-      body: new URLSearchParams({ data: query }),
+      body: query,
       cache: "no-store",
       signal: controller.signal,
     });
 
+    const responseText = await response.text();
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      console.error("[OSM Overpass query]", query);
       throw new Error(
         `OSM Overpass import failed: HTTP ${response.status} ${response.statusText}${
-          errorText ? ` - ${errorText.slice(0, 500)}` : ""
+          responseText ? ` - ${responseText.slice(0, 700)}` : ""
         }`,
       );
     }
 
+    let json: { elements?: unknown };
     try {
-      const payload = await response.json();
-      return Array.isArray(payload.elements)
-        ? (payload.elements as OsmElement[])
-        : [];
+      json = JSON.parse(responseText) as { elements?: unknown };
     } catch {
-      throw new Error("OSM Overpass returned invalid JSON");
+      throw new Error(
+        `OSM Overpass returned invalid JSON: ${responseText.slice(0, 500)}`,
+      );
     }
+
+    if (!Array.isArray(json.elements)) {
+      throw new Error("OSM Overpass response did not include elements array.");
+    }
+
+    return json.elements as OsmElement[];
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(
-        categoryGroup === "all"
-          ? "OSM Overpass request timed out for the broad All query. Try Nightlife, Culture, Activities, or Dessert separately."
-          : "OSM Overpass request timed out. Try a smaller limit or retry later.",
+        "OSM Overpass request timed out. Try a smaller limit or a different category group.",
       );
     }
+
     throw error;
   } finally {
     clearTimeout(timeout);
   }
 }
 
+function normalizeCursor(
+  cursor: OsmCursor | null,
+  categoryGroup: OsmCategoryGroup,
+) {
+  return {
+    categoryGroup,
+    filterIndex: Math.max(Number(cursor?.filterIndex || 0), 0),
+    offset: Math.max(Number(cursor?.offset || 0), 0),
+  };
+}
+
 export async function importOsmActivities({
   limit = 250,
-  offset = 0,
-  categoryGroup = "all",
+  cursor = null,
+  categoryGroup = "nightlife",
 }: {
   limit?: number;
-  offset?: number;
+  cursor?: OsmCursor | null;
   categoryGroup?: string;
 }) {
   const numericLimit = Number(limit || 250);
-  const numericOffset = Number(offset || 0);
   const cappedLimit = Number.isFinite(numericLimit)
     ? Math.min(Math.max(Math.trunc(numericLimit), 1), 1000)
     : 250;
-  const safeOffset = Number.isFinite(numericOffset)
-    ? Math.max(Math.trunc(numericOffset), 0)
-    : 0;
-  const safeCategoryGroup = (
-    ["nightlife", "culture", "activities", "dessert", "all"].includes(
-      categoryGroup,
-    )
-      ? categoryGroup
-      : "all"
-  ) as OsmCategoryGroup;
-  const nextOffset = safeOffset + cappedLimit;
+  const cursorCategoryGroup =
+    typeof cursor?.categoryGroup === "string" && cursor.categoryGroup.trim()
+      ? cursor.categoryGroup.trim()
+      : categoryGroup;
+  const safeCategoryGroup = getSafeCategoryGroup(cursorCategoryGroup);
+  const filters = getFiltersForGroup(safeCategoryGroup);
+  const normalizedCursor = normalizeCursor(cursor, safeCategoryGroup);
+  let filterIndex = Math.min(normalizedCursor.filterIndex, filters.length - 1);
+  let offset = normalizedCursor.offset;
   let batchId: string | null = null;
+  let selectedFilter = filters[filterIndex];
 
   try {
+    const filterTag = `${selectedFilter.tagKey}=${selectedFilter.tagValue}`;
     const { data: batch, error: batchError } = await supabaseAdmin
       .from("location_import_batches")
       .insert({
@@ -322,9 +355,12 @@ export async function importOsmActivities({
         status: "running",
         metadata: {
           limit: cappedLimit,
-          offset: safeOffset,
-          nextOffset,
           categoryGroup: safeCategoryGroup,
+          cursor,
+          filterIndex,
+          filterLabel: selectedFilter.label,
+          filterTag,
+          offset,
           bbox: "nyc",
         },
       })
@@ -334,33 +370,74 @@ export async function importOsmActivities({
     if (batchError) throw batchError;
     batchId = batch.id as string;
 
-    const allElements = await fetchOverpassElements(safeCategoryGroup);
-    const sortedElements = [...allElements].sort((a, b) => {
-      const aKey = `${a.type}:${a.id}`;
-      const bKey = `${b.type}:${b.id}`;
-      return aKey.localeCompare(bKey);
-    });
-    const selectedElements = sortedElements.slice(safeOffset, nextOffset);
+    let sortedElements: OsmElement[] = [];
+    let selectedElements: OsmElement[] = [];
+    let nextCursor: OsmCursor | null = null;
 
-    if (
-      selectedElements.length === 0 &&
-      allElements.length > 0 &&
-      safeOffset >= allElements.length
-    ) {
-      const message =
-        "No more OSM records found for this category and region. Reset offset or choose another category group.";
+    while (selectedElements.length === 0 && selectedFilter) {
+      const overpassLimit = Math.min(
+        Math.max(offset + cappedLimit + 50, cappedLimit),
+        1000,
+      );
+      const query = buildSingleFilterQuery({
+        bbox: NYC_BBOX,
+        filter: selectedFilter,
+        overpassLimit,
+      });
+      const allElements = await fetchOverpassElements(query);
+      sortedElements = [...allElements].sort((a, b) => {
+        const aKey = `${a.type}:${a.id}`;
+        const bKey = `${b.type}:${b.id}`;
+        return aKey.localeCompare(bKey);
+      });
+      selectedElements = sortedElements.slice(offset, offset + cappedLimit);
+
+      if (offset + cappedLimit < sortedElements.length) {
+        nextCursor = {
+          categoryGroup: safeCategoryGroup,
+          filterIndex,
+          offset: offset + cappedLimit,
+        };
+      } else if (filterIndex + 1 < filters.length) {
+        nextCursor = {
+          categoryGroup: safeCategoryGroup,
+          filterIndex: filterIndex + 1,
+          offset: 0,
+        };
+      } else {
+        nextCursor = null;
+      }
+
+      if (selectedElements.length > 0 || !nextCursor) {
+        break;
+      }
+
+      filterIndex = Number(nextCursor.filterIndex || 0);
+      offset = Number(nextCursor.offset || 0);
+      selectedFilter = filters[filterIndex];
+    }
+
+    const activeFilterTag = `${selectedFilter.tagKey}=${selectedFilter.tagValue}`;
+
+    if (selectedElements.length === 0 && !nextCursor) {
+      const message = "No more OSM records found for this category.";
       const { error: updateError } = await supabaseAdmin
         .from("location_import_batches")
         .update({
           status: "completed_empty",
-          total_seen: allElements.length,
+          total_seen: 0,
           total_staged: 0,
           total_duplicates: 0,
           metadata: {
             limit: cappedLimit,
-            offset: safeOffset,
-            nextOffset,
             categoryGroup: safeCategoryGroup,
+            cursor,
+            filterIndex,
+            filterLabel: selectedFilter.label,
+            filterTag: activeFilterTag,
+            offset,
+            nextCursor: null,
+            hasMore: false,
             message,
             bbox: "nyc",
           },
@@ -370,16 +447,19 @@ export async function importOsmActivities({
       if (updateError) throw updateError;
 
       return {
-        success: true,
         batchId,
-        seen: allElements.length,
+        seen: 0,
         mapped: 0,
         staged: 0,
         duplicatesRemoved: 0,
         limit: cappedLimit,
-        offset: safeOffset,
-        nextOffset,
         categoryGroup: safeCategoryGroup,
+        filterIndex,
+        filterLabel: selectedFilter.label,
+        filterTag: activeFilterTag,
+        offset,
+        nextCursor: null,
+        hasMore: false,
         message,
       };
     }
@@ -413,14 +493,19 @@ export async function importOsmActivities({
       .from("location_import_batches")
       .update({
         status: "staged",
-        total_seen: allElements.length,
+        total_seen: sortedElements.length,
         total_staged: staged.length,
         total_duplicates: mapped.length - staged.length,
         metadata: {
           limit: cappedLimit,
-          offset: safeOffset,
-          nextOffset,
           categoryGroup: safeCategoryGroup,
+          cursor,
+          filterIndex,
+          filterLabel: selectedFilter.label,
+          filterTag: activeFilterTag,
+          offset,
+          nextCursor,
+          hasMore: Boolean(nextCursor),
           mapped: mapped.length,
           duplicatesRemoved: mapped.length - staged.length,
           bbox: "nyc",
@@ -432,16 +517,19 @@ export async function importOsmActivities({
     if (updateError) throw updateError;
 
     return {
-      success: true,
       batchId,
-      seen: allElements.length,
+      seen: sortedElements.length,
       mapped: mapped.length,
       staged: staged.length,
       duplicatesRemoved: mapped.length - staged.length,
       limit: cappedLimit,
-      offset: safeOffset,
-      nextOffset,
       categoryGroup: safeCategoryGroup,
+      filterIndex,
+      filterLabel: selectedFilter.label,
+      filterTag: activeFilterTag,
+      offset,
+      nextCursor,
+      hasMore: Boolean(nextCursor),
     };
   } catch (error) {
     await markBatchFailed(batchId, error);

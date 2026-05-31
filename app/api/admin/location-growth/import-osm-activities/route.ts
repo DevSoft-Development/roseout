@@ -29,6 +29,42 @@ function toBoundedNumber(
   return Math.min(Math.max(Math.trunc(numeric), min), max);
 }
 
+function getCategoryGroup(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "nightlife";
+}
+
+function getCursor(body: Record<string, unknown>, categoryGroup: string) {
+  const cursor = body.cursor;
+
+  if (cursor && typeof cursor === "object" && !Array.isArray(cursor)) {
+    const cursorRecord = cursor as Record<string, unknown>;
+    return {
+      categoryGroup: getCategoryGroup(cursorRecord.categoryGroup ?? categoryGroup),
+      filterIndex: toBoundedNumber(
+        cursorRecord.filterIndex,
+        0,
+        0,
+        Number.MAX_SAFE_INTEGER,
+      ),
+      offset: toBoundedNumber(cursorRecord.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+    };
+  }
+
+  if (body.offset !== undefined) {
+    return {
+      categoryGroup,
+      filterIndex: 0,
+      offset: toBoundedNumber(body.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+    };
+  }
+
+  return {
+    categoryGroup,
+    filterIndex: 0,
+    offset: 0,
+  };
+}
+
 function jsonError(error: unknown, status = 500) {
   const message =
     error instanceof Error
@@ -53,18 +89,18 @@ export async function POST(request: NextRequest) {
     const auth = await authorize(request);
     if (auth) return auth;
 
-    const body = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
 
     const limit = toBoundedNumber(body.limit, 250, 1, 1000);
-    const offset = toBoundedNumber(body.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const categoryGroup =
-      typeof body.categoryGroup === "string" && body.categoryGroup.trim()
-        ? body.categoryGroup.trim()
-        : "all";
+    const categoryGroup = getCategoryGroup(body.categoryGroup);
+    const cursor = getCursor(body, categoryGroup);
 
     const result = await importOsmActivities({
       limit,
-      offset,
+      cursor,
       categoryGroup,
     });
 
@@ -76,9 +112,14 @@ export async function POST(request: NextRequest) {
       staged: result.staged,
       duplicatesRemoved: result.duplicatesRemoved,
       limit: result.limit,
-      offset: result.offset,
-      nextOffset: result.nextOffset,
       categoryGroup: result.categoryGroup,
+      filterIndex: result.filterIndex,
+      filterLabel: result.filterLabel,
+      filterTag: result.filterTag,
+      offset: result.offset,
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore,
+      message: result.message,
     });
   } catch (error) {
     return jsonError(error);
