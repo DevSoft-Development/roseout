@@ -1,0 +1,6 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { generateMissingLocationQrs } from "@/lib/qr/locationQr";
+export const runtime = "nodejs"; export const dynamic = "force-dynamic"; export const maxDuration = 300;
+async function authorize() { if (process.env.NODE_ENV === "development") return null; const { error } = await requireAdminApiRole(["admin", "superadmin"]); return error; }
+export async function POST(request: NextRequest) { const auth = await authorize(); if (auth) return auth; const body = await request.json().catch(() => ({})); const result = await generateMissingLocationQrs(body.limit || 100); return NextResponse.json({ success: true, ...result }); }

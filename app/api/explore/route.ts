@@ -53,6 +53,12 @@ export async function GET(request: NextRequest) {
     .from("locations")
     .select(CARD_FIELDS, { count: "planned" })
     .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .not("address", "is", null)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .not("primary_category", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true);
 

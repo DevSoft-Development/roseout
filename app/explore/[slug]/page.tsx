@@ -131,6 +131,12 @@ async function loadLandingLocations(page: (typeof LANDING_PAGES)[LandingSlug]) {
       "id,source_table,source_id,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,state,primary_category,primary_tag,cuisine,cuisine_type,food_type,activity_type,tags,vibe_tags,best_for_tags,google_types,atmosphere,best_for,date_style_tags,search_keywords,search_document,description,rating,review_count,theouthaven_score,popularity_score,is_featured,is_searchable,is_hidden,data_status,status"
     )
     .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .not("address", "is", null)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .not("primary_category", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')
