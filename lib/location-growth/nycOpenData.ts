@@ -14,7 +14,9 @@ const BORO_CITY: Record<string, string> = {
   "STATEN ISLAND": "Staten Island",
 };
 const NYC_SELECT_FIELDS =
-  "camis,dba,boro,building,street,zipcode,phone,cuisine_description,latitude,longitude,grade,score,record_date";
+  "camis,dba,boro,building,street,zipcode,phone,cuisine_description,latitude,longitude,max(record_date) as record_date";
+const NYC_GROUP_FIELDS =
+  "camis,dba,boro,building,street,zipcode,phone,cuisine_description,latitude,longitude";
 
 type NycRestaurantRow = Record<string, unknown> & {
   camis?: unknown;
@@ -84,6 +86,64 @@ async function markBatchFailed(batchId: string | null, error: unknown) {
   }
 }
 
+
+function getCompletenessScore(item: any) {
+  let score = 0;
+  if (item.name) score += 10;
+  if (item.address) score += 10;
+  if (item.city) score += 5;
+  if (item.state) score += 5;
+  if (item.zip_code) score += 5;
+  if (item.phone) score += 8;
+  if (item.latitude != null && item.longitude != null) score += 15;
+  if (item.primary_category) score += 8;
+  if (item.cuisine) score += 8;
+  if (item.raw_payload?.grade) score += 4;
+  if (item.raw_payload?.record_date) score += 4;
+  return score;
+}
+
+function getRecordTimestamp(item: any) {
+  const value = item.raw_payload?.record_date;
+  const timestamp = value ? Date.parse(value) : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function pickBetterStagedLocation(existing: any, incoming: any) {
+  const existingScore = getCompletenessScore(existing);
+  const incomingScore = getCompletenessScore(incoming);
+
+  if (incomingScore > existingScore) return incoming;
+  if (incomingScore < existingScore) return existing;
+
+  const existingTime = getRecordTimestamp(existing);
+  const incomingTime = getRecordTimestamp(incoming);
+
+  if (incomingTime > existingTime) return incoming;
+
+  return existing;
+}
+
+function dedupeStagedLocationsForUpsert<
+  T extends { source: string; source_id: string },
+>(items: T[]) {
+  const byKey = new Map<string, T>();
+
+  for (const item of items) {
+    const key = `${item.source}::${item.source_id}`;
+    const existing = byKey.get(key);
+
+    if (!existing) {
+      byKey.set(key, item);
+      continue;
+    }
+
+    byKey.set(key, pickBetterStagedLocation(existing, item) as T);
+  }
+
+  return Array.from(byKey.values());
+}
+
 function mapNycRow(row: NycRestaurantRow): StagedLocationInput | null {
   const name = clean(row.dba);
   const sourceId = clean(row.camis);
@@ -137,6 +197,7 @@ async function fetchNycRestaurants(cappedLimit: number, safeOffset: number) {
   url.searchParams.set("$limit", String(cappedLimit));
   url.searchParams.set("$offset", String(safeOffset));
   url.searchParams.set("$select", NYC_SELECT_FIELDS);
+  url.searchParams.set("$group", NYC_GROUP_FIELDS);
   url.searchParams.set(
     "$where",
     "dba IS NOT NULL AND building IS NOT NULL AND street IS NOT NULL",
@@ -212,10 +273,13 @@ export async function importNycRestaurants({
 
   try {
     const rows = await fetchNycRestaurants(cappedLimit, safeOffset);
-    const staged = rows
+    const mapped = rows
       .map(mapNycRow)
       .filter((item): item is StagedLocationInput => Boolean(item))
       .map((item) => ({ ...item, batch_id: batchId }));
+
+    const staged = dedupeStagedLocationsForUpsert(mapped);
+    const duplicatesRemoved = mapped.length - staged.length;
 
     if (staged.length) {
       const { error } = await supabaseAdmin
@@ -258,6 +322,12 @@ export async function importNycRestaurants({
         status: "staged",
         total_seen: rows.length || 0,
         total_staged: staged.length,
+        metadata: {
+          limit: cappedLimit,
+          offset: safeOffset,
+          mapped: mapped.length,
+          duplicatesRemoved,
+        },
         completed_at: new Date().toISOString(),
       })
       .eq("id", batchId);
@@ -268,7 +338,13 @@ export async function importNycRestaurants({
       );
     }
 
-    return { batchId, seen: rows.length || 0, staged: staged.length };
+    return {
+      batchId,
+      seen: rows.length,
+      mapped: mapped.length,
+      staged: staged.length,
+      duplicatesRemoved,
+    };
   } catch (error) {
     await markBatchFailed(batchId, error);
     throw error;
