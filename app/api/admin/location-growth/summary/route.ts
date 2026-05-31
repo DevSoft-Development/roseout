@@ -103,7 +103,7 @@ export async function GET(request: Request) {
   const { data: latestBatches } = await supabaseAdmin
     .from("location_import_batches")
     .select(
-      "id,source,source_label,status,total_seen,total_staged,total_duplicates,total_possible_duplicates,total_rejected,total_publish_ready,total_published,started_at,completed_at",
+      "id,source,source_label,status,total_seen,total_staged,total_duplicates,total_possible_duplicates,total_rejected,total_publish_ready,total_published,metadata,started_at,completed_at",
     )
     .order("started_at", { ascending: false })
     .limit(10);

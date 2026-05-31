@@ -54,6 +54,10 @@ type LatestBatch = {
   total_rejected?: number | null;
   total_publish_ready?: number | null;
   total_published?: number | null;
+  metadata?: {
+    mapped?: unknown;
+    duplicatesRemoved?: unknown;
+  } | null;
   started_at?: string | null;
   completed_at?: string | null;
 };
@@ -1057,7 +1061,9 @@ function ImportHistoryPanel({
                     "Source",
                     "Status",
                     "Seen",
+                    "Mapped",
                     "Staged",
+                    "Duplicates removed",
                     "Duplicates",
                     "Possible duplicates",
                     "Rejected",
@@ -1077,7 +1083,9 @@ function ImportHistoryPanel({
                     <td className="px-3 py-4 font-bold text-white">{batch.source_label || batch.source}</td>
                     <td className="px-3 py-4"><StatusPill status={batch.status || "pending"} /></td>
                     <td className="px-3 py-4">{getNumber(batch.total_seen)}</td>
+                    <td className="px-3 py-4">{getNumber(batch.metadata?.mapped)}</td>
                     <td className="px-3 py-4">{getNumber(batch.total_staged)}</td>
+                    <td className="px-3 py-4">{getNumber(batch.metadata?.duplicatesRemoved)}</td>
                     <td className="px-3 py-4">{getNumber(batch.total_duplicates)}</td>
                     <td className="px-3 py-4">{getNumber(batch.total_possible_duplicates)}</td>
                     <td className="px-3 py-4">{getNumber(batch.total_rejected)}</td>
@@ -1287,6 +1295,27 @@ function ResultBanner({ result }: { result: ActionResult }) {
     <div className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
+      {["seen", "mapped", "staged", "duplicatesRemoved"].some(
+        (key) => result[key] !== undefined,
+      ) ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          {[
+            ["Seen", result.seen],
+            ["Mapped", result.mapped],
+            ["Staged", result.staged],
+            ["Duplicates removed", result.duplicatesRemoved],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-2xl bg-black/25 p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">
+                {String(label)}
+              </p>
+              <p className="mt-1 text-xl font-black text-white">
+                {getNumber(value)}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-200">{JSON.stringify(result, null, 2)}</pre>
       {result.batchId ? (
         <button type="button" onClick={() => navigator.clipboard?.writeText(String(result.batchId))} className="mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Copy batch ID</button>
