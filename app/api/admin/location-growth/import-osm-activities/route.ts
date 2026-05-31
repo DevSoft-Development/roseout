@@ -55,7 +55,10 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
 
-    const limit = toBoundedNumber(body.limit, 50, 1, 250);
+    const requestedLimit = Number(body.limit || 25);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 100)
+      : 25;
     const offset = toBoundedNumber(body.offset, 0, 0, Number.MAX_SAFE_INTEGER);
     const filterIndex = toBoundedNumber(
       body.filterIndex,

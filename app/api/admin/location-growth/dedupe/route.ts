@@ -59,12 +59,6 @@ export async function POST(request: NextRequest) {
     const scope = body.all === true || !batchId ? "all" : "batch";
     const limit = toBoundedNumber(body.limit, 250, 1, 500);
 
-    if (scope === "batch") {
-      await supabaseAdmin.rpc("oh_refresh_staging_quality", {
-        p_batch_id: batchId,
-      });
-    }
-
     const result = await dedupeStagedLocationsChunk({
       batchId: scope === "batch" ? batchId : null,
       limit,

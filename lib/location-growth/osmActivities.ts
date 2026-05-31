@@ -4,6 +4,7 @@ import {
   uniqueLower,
   type StagedLocationInput,
 } from "@/lib/location-growth/shared";
+import { calculateStagingQuality } from "@/lib/location-growth/stagingQuality";
 
 export const OVERPASS_USER_AGENT =
   process.env.OVERPASS_USER_AGENT ||
@@ -123,7 +124,7 @@ export function buildSingleFilterQuery({
 }) {
   const box = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
 
-  return `[out:json][timeout:45];
+  return `[out:json][timeout:20];
 (
   node["${filter.tagKey}"="${filter.tagValue}"](${box});
   way["${filter.tagKey}"="${filter.tagValue}"](${box});
@@ -141,7 +142,7 @@ export function buildNodeOnlyFilterQuery({
 }) {
   const box = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
 
-  return `[out:json][timeout:45];
+  return `[out:json][timeout:20];
 node["${filter.tagKey}"="${filter.tagValue}"](${box});
 out tags;`;
 }
@@ -285,7 +286,7 @@ async function fetchOverpassForQuery({
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 50000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
     try {
       const response = await fetch(endpoint, {
@@ -347,14 +348,20 @@ async function fetchOverpassForQuery({
         });
       }
     } catch (error) {
+      const timedOut = error instanceof Error && error.name === "AbortError";
       attemptedEndpoints.push({
         endpoint,
         ok: false,
-        error:
-          error instanceof Error && error.name === "AbortError"
-            ? "Request timed out"
-            : errorMessage(error),
+        error: timedOut
+          ? "OSM Overpass request timed out after 20 seconds"
+          : errorMessage(error),
       });
+
+      if (timedOut) {
+        throw new Error(
+          "OSM Overpass request timed out after 20 seconds. Try limit 10 or another category group.",
+        );
+      }
     } finally {
       clearTimeout(timeout);
     }
@@ -435,7 +442,7 @@ async function createOsmBatch(metadata: Record<string, unknown>) {
 
 
 export async function importOsmActivities({
-  limit = 50,
+  limit = 25,
   offset = 0,
   categoryGroup = "nightlife",
   filterIndex = 0,
@@ -445,12 +452,12 @@ export async function importOsmActivities({
   categoryGroup?: string;
   filterIndex?: number;
 }) {
-  const numericLimit = Number(limit || 50);
+  const numericLimit = Number(limit || 25);
   const numericOffset = Number(offset || 0);
   const numericFilterIndex = Number(filterIndex || 0);
   const cappedLimit = Number.isFinite(numericLimit)
-    ? Math.min(Math.max(Math.trunc(numericLimit), 1), 250)
-    : 50;
+    ? Math.min(Math.max(Math.trunc(numericLimit), 1), 100)
+    : 25;
   const safeOffset = Number.isFinite(numericOffset)
     ? Math.max(Math.trunc(numericOffset), 0)
     : 0;
@@ -505,7 +512,7 @@ export async function importOsmActivities({
 
     for (
       let currentFilterIndex = startFilterIndex;
-      currentFilterIndex < filters.length;
+      currentFilterIndex < Math.min(filters.length, startFilterIndex + 1);
       currentFilterIndex += 1
     ) {
       const filter = filters[currentFilterIndex];
@@ -603,20 +610,30 @@ export async function importOsmActivities({
           batch_id: batchId,
         }));
 
+        const stagedForUpsert = staged.map((item) => ({
+          ...item,
+          ...calculateStagingQuality(item),
+          import_status: "staged",
+          duplicate_status: "unchecked",
+          duplicate_score: 0,
+          matched_location_id: null,
+          rejection_reason: null,
+          updated_at: new Date().toISOString(),
+        }));
+
+        const publishReadyCount = stagedForUpsert.filter(
+          (item) => item.quality_status === "publish_ready",
+        ).length;
+        const rejectedCount = stagedForUpsert.filter(
+          (item) => item.quality_status === "reject",
+        ).length;
+
         const { error } = await supabaseAdmin
           .from("location_import_staging")
-          .upsert(staged, { onConflict: "source,source_id" });
+          .upsert(stagedForUpsert, { onConflict: "source,source_id" });
         if (error) {
           throw new Error(`Failed to stage OSM activities: ${error.message}`);
         }
-
-        const { error: rpcError } = await supabaseAdmin.rpc(
-          "oh_refresh_staging_quality",
-          {
-            p_batch_id: batchId,
-          },
-        );
-        if (rpcError) throw rpcError;
 
         const { error: updateError } = await supabaseAdmin
           .from("location_import_batches")
@@ -625,6 +642,8 @@ export async function importOsmActivities({
             total_seen: overpass.elements.length,
             total_staged: staged.length,
             total_duplicates: mapped.length - staged.length,
+            total_rejected: rejectedCount,
+            total_publish_ready: publishReadyCount,
             metadata: {
               limit: cappedLimit,
               offset: effectiveOffset,
@@ -670,9 +689,7 @@ export async function importOsmActivities({
           skippedFilters,
           bboxUsed: overpass.bboxUsed,
           queryMode: overpass.queryMode,
-          message: skippedFilters.length
-            ? "Some OSM filters were skipped, but this batch imported successfully."
-            : undefined,
+          message: "OSM records staged. Run Dedupe Chunk next.",
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -752,7 +769,7 @@ export async function importOsmActivities({
       bboxUsed: lastBboxUsed,
       queryMode: lastQueryMode,
       message:
-        "No more OSM records found for this category and region. Reset the cursor or choose another category group.",
+        "No OSM records found for this cursor. Try resetting cursor or another category group.",
     };
 
     return result;

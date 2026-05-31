@@ -74,6 +74,7 @@ type GrowthSummary = {
   enrichmentQueued?: number | null;
   remainingPublishReady?: number | null;
   remainingUncheckedDedupe?: number | null;
+  needsScoring?: number | null;
   missingClaimCodes?: number | null;
   missingClaimQrs?: number | null;
   missingPublicQrs?: number | null;
@@ -305,7 +306,7 @@ export default function ImportPage() {
   const [googleMode, setGoogleMode] = useState("direct");
   const [nycLimit, setNycLimit] = useState("500");
   const [nycOffset, setNycOffset] = useState("0");
-  const [osmLimit, setOsmLimit] = useState("50");
+  const [osmLimit, setOsmLimit] = useState("25");
   const [osmOffset, setOsmOffset] = useState("0");
   const [osmFilterIndex, setOsmFilterIndex] = useState("0");
   const [osmCategoryGroup, setOsmCategoryGroup] = useState(
@@ -316,11 +317,14 @@ export default function ImportPage() {
   const [osmDebugBbox, setOsmDebugBbox] = useState("nyc_metro");
   const [osmDebugQueryMode, setOsmDebugQueryMode] = useState("node_only");
   const [dedupeBatchId, setDedupeBatchId] = useState("");
+  const [scoreBatchId, setScoreBatchId] = useState("");
   const [publishBatchId, setPublishBatchId] = useState("");
   const [dedupeScope, setDedupeScope] = useState("all");
+  const [scoreScope, setScoreScope] = useState("all");
   const [publishScope, setPublishScope] = useState("all");
   const [publishLimit, setPublishLimit] = useState("500");
   const [dedupeLimit, setDedupeLimit] = useState("250");
+  const [scoreLimit, setScoreLimit] = useState("250");
   const [enrichLimit, setEnrichLimit] = useState("50");
   const [qrLimit, setQrLimit] = useState("100");
   const [cleanupOffset, setCleanupOffset] = useState("0");
@@ -440,6 +444,7 @@ export default function ImportPage() {
       setActionResult(data);
       if (data.batchId) {
         setDedupeBatchId(String(data.batchId));
+        setScoreBatchId(String(data.batchId));
         setPublishBatchId(String(data.batchId));
         setDuplicateBatchId(String(data.batchId));
       }
@@ -590,9 +595,9 @@ export default function ImportPage() {
   };
 
   const getSafeOsmLimit = () => {
-    const limit = Number(osmLimit || 50);
-    if (!Number.isFinite(limit)) return 50;
-    return Math.min(Math.max(Math.trunc(limit), 1), 250);
+    const limit = Number(osmLimit || 25);
+    if (!Number.isFinite(limit)) return 25;
+    return Math.min(Math.max(Math.trunc(limit), 1), 100);
   };
 
   const getSafeOsmOffset = () => {
@@ -841,6 +846,12 @@ export default function ImportPage() {
             setDedupeScope={setDedupeScope}
             dedupeBatchId={dedupeBatchId}
             setDedupeBatchId={setDedupeBatchId}
+            scoreScope={scoreScope}
+            setScoreScope={setScoreScope}
+            scoreBatchId={scoreBatchId}
+            setScoreBatchId={setScoreBatchId}
+            scoreLimit={scoreLimit}
+            setScoreLimit={setScoreLimit}
             publishScope={publishScope}
             setPublishScope={setPublishScope}
             publishBatchId={publishBatchId}
@@ -869,6 +880,13 @@ export default function ImportPage() {
             osmDebugQueryMode={osmDebugQueryMode}
             setOsmDebugQueryMode={setOsmDebugQueryMode}
             onTestOsmQuery={testOsmQuery}
+            onScore={() =>
+              postAction("score", "/api/admin/location-growth/score-staged", {
+                batchId:
+                  scoreScope === "batch" ? scoreBatchId || undefined : undefined,
+                limit: Math.min(Math.max(Number(scoreLimit || 250), 1), 500),
+              })
+            }
             onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
                 all: dedupeScope !== "batch",
@@ -1244,6 +1262,12 @@ function LocationGrowthPanel(props: {
   setDedupeScope: (value: string) => void;
   dedupeBatchId: string;
   setDedupeBatchId: (value: string) => void;
+  scoreScope: string;
+  setScoreScope: (value: string) => void;
+  scoreBatchId: string;
+  setScoreBatchId: (value: string) => void;
+  scoreLimit: string;
+  setScoreLimit: (value: string) => void;
   publishScope: string;
   setPublishScope: (value: string) => void;
   publishBatchId: string;
@@ -1272,6 +1296,7 @@ function LocationGrowthPanel(props: {
   osmDebugQueryMode: string;
   setOsmDebugQueryMode: (value: string) => void;
   onTestOsmQuery: () => void;
+  onScore: () => void;
   onDedupe: () => void;
   onPublish: () => void;
   onEnrich: () => void;
@@ -1280,6 +1305,7 @@ function LocationGrowthPanel(props: {
     ["Live", props.summary?.liveLocations],
     ["Searchable", props.summary?.searchableLocations],
     ["Staged", props.summary?.staged],
+    ["Needs Scoring", props.summary?.needsScoring],
     ["Publish Ready", props.summary?.publishReady],
     ["Possible Duplicates", props.summary?.possibleDuplicates],
     ["Remaining Dedupe", props.summary?.remainingUncheckedDedupe],
@@ -1298,7 +1324,7 @@ function LocationGrowthPanel(props: {
           Stage, clean, dedupe, and publish new locations safely without
           disrupting live search or CRM data.
         </p>
-        <div className="mt-5 grid grid-flow-col auto-cols-[minmax(150px,1fr)] gap-3 overflow-x-auto pb-2 lg:grid-flow-row lg:grid-cols-7 lg:overflow-visible">
+        <div className="mt-5 grid grid-flow-col auto-cols-[minmax(150px,1fr)] gap-3 overflow-x-auto pb-2 lg:grid-flow-row lg:grid-cols-8 lg:overflow-visible">
           {summaryCards.map(([label, value]) => (
             <CompactStat
               key={String(label)}
@@ -1353,7 +1379,7 @@ function LocationGrowthPanel(props: {
         <ActionCard
           title="Import OSM Activities"
           description="Stage date-friendly activities from OpenStreetMap. OSM import uses a cursor (filter index + offset); NYC import uses only an offset."
-          note="Start with 50. OSM uses public Overpass servers, so smaller batches are more reliable."
+          note="OSM runs through public Overpass servers. Start with 25. Larger batches can time out on Vercel."
           button="Import OSM Batch"
           secondaryButton="Import Next OSM Batch"
           tertiaryButton="Reset OSM Cursor"
@@ -1369,7 +1395,7 @@ function LocationGrowthPanel(props: {
             value={props.osmLimit}
             onChange={props.setOsmLimit}
             min={1}
-            max={250}
+            max={100}
           />
           <NumberField
             label="Cursor offset"
@@ -1468,8 +1494,51 @@ function LocationGrowthPanel(props: {
         </ActionCard>
 
         <ActionCard
+          title="Score Staged Records"
+          description="Score only a safe chunk of staged records. Run this after import/staging and before dedupe so publish-ready records are identified without a full-table scoring job."
+          note="Workflow order: 1. Import / stage records 2. Score Staged Chunk 3. Run Dedupe Chunk 4. Publish Ready Chunk"
+          button="Score Staged Chunk"
+          running={props.runningAction === "score"}
+          onClick={props.onScore}
+        >
+          <SelectField
+            label="Scope"
+            value={props.scoreScope}
+            onChange={props.setScoreScope}
+            options={[
+              { label: "All staged records", value: "all" },
+              { label: "Specific batch", value: "batch" },
+            ]}
+          />
+          <NumberField
+            label="Limit"
+            value={props.scoreLimit}
+            onChange={props.setScoreLimit}
+            min={1}
+            max={500}
+          />
+          {props.scoreScope === "batch" ? (
+            <TextField
+              label="Batch ID"
+              value={props.scoreBatchId}
+              onChange={props.setScoreBatchId}
+              placeholder="Paste a batch ID"
+            />
+          ) : (
+            <ReadOnlyField
+              label="Batch ID"
+              value="Not required for all staged records"
+            />
+          )}
+          <ReadOnlyField
+            label="Needs scoring"
+            value={String(getNumber(props.summary?.needsScoring))}
+          />
+        </ActionCard>
+
+        <ActionCard
           title="Run Chunked Dedupe"
-          description="Dedupe runs in safe chunks to avoid database timeouts. Keep clicking Run Next Dedupe Chunk until remaining unchecked is 0. Dedupe does not use offset."
+          description="Dedupe runs in safe chunks after scoring. Keep clicking Run Next Dedupe Chunk until remaining unchecked is 0. Dedupe does not use offset."
           button="Run Dedupe Chunk"
           secondaryButton="Run Next Dedupe Chunk"
           running={props.runningAction === "dedupe"}
@@ -2189,6 +2258,9 @@ function ResultBanner({
     "remainingPublishReady",
     "remainingUnchecked",
     "processed",
+    "publishReady",
+    "review",
+    "rejected",
     "duplicate",
     "possibleDuplicate",
     "unique",
@@ -2217,7 +2289,7 @@ function ResultBanner({
       !ok &&
       errorText.toLowerCase().includes("timeout") ? (
         <p className="mt-2 font-bold">
-          OSM timed out. Try limit 100 or a smaller category group.
+          OSM timed out. Try limit 10 or a smaller category group.
         </p>
       ) : null}
       {result.batchId && ok ? (
@@ -2226,7 +2298,11 @@ function ResultBanner({
         </p>
       ) : null}
       {ok && typeof result.message === "string" ? (
-        <p className="mt-2 font-bold">{result.message}</p>
+        <p className="mt-2 font-bold">
+          {result.message === "OSM records staged. Run Dedupe Chunk next."
+            ? "OSM records staged. Next step: Run Score Chunk, then Run Dedupe Chunk."
+            : result.message}
+        </p>
       ) : null}
       {ok && result.hasMore === true ? (
         <p className="mt-2 font-bold">
@@ -2261,6 +2337,9 @@ function ResultBanner({
             ["Marked published", result.markedPublished],
             ["Remaining ready", result.remainingPublishReady],
             ["Processed", result.processed],
+            ["Publish ready", result.publishReady],
+            ["Review", result.review],
+            ["Rejected", result.rejected],
             ["Duplicate", result.duplicate],
             ["Possible duplicate", result.possibleDuplicate],
             ["Unique", result.unique],
