@@ -3,12 +3,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type TabId =
-  | "google"
-  | "growth"
-  | "history"
-  | "duplicates"
-  | "qr";
+type TabId = "google" | "growth" | "history" | "duplicates" | "qr";
 
 type ImportSectionMeta = {
   imported?: unknown;
@@ -105,7 +100,6 @@ type DuplicateMatch = {
   matchReasons?: string[] | null;
   decision?: string | null;
 };
-
 
 async function parseActionResponse(response: Response) {
   const responseText = await response.text();
@@ -232,8 +226,46 @@ const ratingOptions = [
 const NYC_OFFSET_STORAGE_KEY = "theouthaven_nyc_import_offset";
 const DEFAULT_OSM_CATEGORY_GROUP = "nightlife";
 
-function getOsmOffsetKey(group: string) {
+function getOsmCursorKey(group: string) {
+  return `theouthaven_osm_import_cursor_${group || "all"}`;
+}
+
+function getLegacyOsmOffsetKey(group: string) {
   return `theouthaven_osm_import_offset_${group || "all"}`;
+}
+
+function readSavedOsmCursor(group: string) {
+  const cursorText = window.localStorage.getItem(getOsmCursorKey(group));
+  if (cursorText) {
+    try {
+      const cursor = JSON.parse(cursorText) as {
+        filterIndex?: unknown;
+        offset?: unknown;
+      };
+      return {
+        filterIndex: String(Number(cursor.filterIndex) || 0),
+        offset: String(Number(cursor.offset) || 0),
+      };
+    } catch {
+      window.localStorage.removeItem(getOsmCursorKey(group));
+    }
+  }
+
+  const legacyOffset = window.localStorage.getItem(
+    getLegacyOsmOffsetKey(group),
+  );
+  return { filterIndex: "0", offset: legacyOffset || "0" };
+}
+
+function saveOsmCursor(group: string, filterIndex: string, offset: string) {
+  window.localStorage.setItem(
+    getOsmCursorKey(group),
+    JSON.stringify({
+      filterIndex: Number(filterIndex) || 0,
+      offset: Number(offset) || 0,
+    }),
+  );
+  window.localStorage.setItem(getLegacyOsmOffsetKey(group), offset);
 }
 
 const queryCountOptions = [
@@ -279,6 +311,9 @@ export default function ImportPage() {
   const [osmCategoryGroup, setOsmCategoryGroup] = useState(
     DEFAULT_OSM_CATEGORY_GROUP,
   );
+  const [osmDebugTagKey, setOsmDebugTagKey] = useState("amenity");
+  const [osmDebugTagValue, setOsmDebugTagValue] = useState("bar");
+  const [osmDebugBbox, setOsmDebugBbox] = useState("nyc");
   const [dedupeBatchId, setDedupeBatchId] = useState("");
   const [publishBatchId, setPublishBatchId] = useState("");
   const [dedupeScope, setDedupeScope] = useState("all");
@@ -302,14 +337,11 @@ export default function ImportPage() {
       setNycOffset(savedNycOffset);
     }
 
-    const savedOsmOffset = window.localStorage.getItem(
-      getOsmOffsetKey(DEFAULT_OSM_CATEGORY_GROUP),
-    );
-    if (savedOsmOffset !== null) {
-      // Persisted app-managed OSM pagination should restore the previous cursor
-      // for the default category group.
-      setOsmOffset(savedOsmOffset);
-    }
+    const savedOsmCursor = readSavedOsmCursor(DEFAULT_OSM_CATEGORY_GROUP);
+    // Persisted app-managed OSM pagination should restore the previous cursor
+    // for the default category group.
+    setOsmFilterIndex(savedOsmCursor.filterIndex);
+    setOsmOffset(savedOsmCursor.offset);
   }, []);
 
   useEffect(() => {
@@ -509,11 +541,15 @@ export default function ImportPage() {
     match: DuplicateMatch,
     decision: "duplicate" | "unique" | "reject",
   ) => {
-    await postAction("duplicate-decision", "/api/admin/location-growth/duplicates/decision", {
-      stagingId: match.stagingId,
-      existingLocationId: match.existingLocationId,
-      decision,
-    });
+    await postAction(
+      "duplicate-decision",
+      "/api/admin/location-growth/duplicates/decision",
+      {
+        stagingId: match.stagingId,
+        existingLocationId: match.existingLocationId,
+        decision,
+      },
+    );
     await loadDuplicates(duplicateBatchId);
   };
 
@@ -552,7 +588,6 @@ export default function ImportPage() {
     }
   };
 
-
   const getSafeOsmLimit = () => {
     const limit = Number(osmLimit || 50);
     if (!Number.isFinite(limit)) return 50;
@@ -580,24 +615,42 @@ export default function ImportPage() {
     );
 
     if (data && data.success !== false) {
-      const cursor = data.nextCursor as { filterIndex?: unknown; offset?: unknown } | null | undefined;
-      const nextFilterIndex = cursor?.filterIndex !== undefined ? Number(cursor.filterIndex) : Number(osmFilterIndex) || 0;
-      const nextOffset = cursor?.offset !== undefined ? Number(cursor.offset) : offset + limit;
-      if (Number.isFinite(nextFilterIndex)) setOsmFilterIndex(String(nextFilterIndex));
-      if (Number.isFinite(nextOffset)) {
-        const key = getOsmOffsetKey(osmCategoryGroup);
-        window.localStorage.setItem(key, String(nextOffset));
-        setOsmOffset(String(nextOffset));
+      const cursor = data.nextCursor as
+        | { filterIndex?: unknown; offset?: unknown }
+        | null
+        | undefined;
+      const nextFilterIndex =
+        cursor?.filterIndex !== undefined
+          ? Number(cursor.filterIndex)
+          : data.filterIndex !== undefined
+            ? Number(data.filterIndex)
+            : Number(osmFilterIndex) || 0;
+      const nextOffset =
+        cursor?.offset !== undefined
+          ? Number(cursor.offset)
+          : data.offset !== undefined
+            ? Number(data.offset)
+            : data.hasMore === false
+              ? 0
+              : offset + limit;
+      if (Number.isFinite(nextFilterIndex))
+        setOsmFilterIndex(String(nextFilterIndex));
+      if (Number.isFinite(nextOffset)) setOsmOffset(String(nextOffset));
+      if (Number.isFinite(nextFilterIndex) && Number.isFinite(nextOffset)) {
+        saveOsmCursor(
+          osmCategoryGroup,
+          String(nextFilterIndex),
+          String(nextOffset),
+        );
       }
     }
   };
 
   const handleOsmCategoryGroupChange = (nextGroup: string) => {
     setOsmCategoryGroup(nextGroup);
-    const key = getOsmOffsetKey(nextGroup);
-    const saved = window.localStorage.getItem(key);
-    setOsmOffset(saved || "0");
-    setOsmFilterIndex("0");
+    const saved = readSavedOsmCursor(nextGroup);
+    setOsmOffset(saved.offset);
+    setOsmFilterIndex(saved.filterIndex);
   };
 
   const resetOsmOffset = () => {
@@ -605,11 +658,31 @@ export default function ImportPage() {
       `Reset OSM cursor for ${osmCategoryGroup} to filter 0 / offset 0?`,
     );
     if (!confirmed) return;
-    const key = getOsmOffsetKey(osmCategoryGroup);
-    window.localStorage.setItem(key, "0");
+    saveOsmCursor(osmCategoryGroup, "0", "0");
     setOsmOffset("0");
     setOsmFilterIndex("0");
   };
+
+  const resetAllOsmCursors = () => {
+    const confirmed = window.confirm(
+      "Reset all OSM cursors to filter 0 / offset 0?",
+    );
+    if (!confirmed) return;
+    ["nightlife", "culture", "activities", "dessert", "all"].forEach(
+      (group) => {
+        saveOsmCursor(group, "0", "0");
+      },
+    );
+    setOsmOffset("0");
+    setOsmFilterIndex("0");
+  };
+
+  const testOsmQuery = () =>
+    postAction("osm-test", "/api/admin/location-growth/test-osm", {
+      tagKey: osmDebugTagKey || "amenity",
+      tagValue: osmDebugTagValue || "bar",
+      bbox: osmDebugBbox || "nyc",
+    });
 
   const runCleanupBatch = async () => {
     const data = await postAction("cleanup", "/api/admin/cleanup-locations", {
@@ -651,7 +724,9 @@ export default function ImportPage() {
                 disabled={logsLoading || summaryLoading}
                 className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-zinc-200 transition hover:border-rose-300 hover:bg-white/10 disabled:opacity-50"
               >
-                {logsLoading || summaryLoading ? "Refreshing..." : "Refresh Data"}
+                {logsLoading || summaryLoading
+                  ? "Refreshing..."
+                  : "Refresh Data"}
               </button>
             </div>
           </div>
@@ -731,9 +806,13 @@ export default function ImportPage() {
               })
             }
             onLegacyCleanup={() =>
-              postAction("legacy-cleanup", "/api/admin/locations/cleanup-missing-address", {
-                limit: 100,
-              })
+              postAction(
+                "legacy-cleanup",
+                "/api/admin/locations/cleanup-missing-address",
+                {
+                  limit: 100,
+                },
+              )
             }
             runningAction={runningAction}
           />
@@ -778,11 +857,21 @@ export default function ImportPage() {
             onImportOsm={runOsmImport}
             onImportOsmNext={runOsmImport}
             onResetOsmOffset={resetOsmOffset}
+            onResetAllOsmCursors={resetAllOsmCursors}
+            osmDebugTagKey={osmDebugTagKey}
+            setOsmDebugTagKey={setOsmDebugTagKey}
+            osmDebugTagValue={osmDebugTagValue}
+            setOsmDebugTagValue={setOsmDebugTagValue}
+            osmDebugBbox={osmDebugBbox}
+            setOsmDebugBbox={setOsmDebugBbox}
+            onTestOsmQuery={testOsmQuery}
             onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
                 all: dedupeScope !== "batch",
                 batchId:
-                  dedupeScope === "batch" ? dedupeBatchId || undefined : undefined,
+                  dedupeScope === "batch"
+                    ? dedupeBatchId || undefined
+                    : undefined,
                 limit: Math.min(Math.max(Number(dedupeLimit || 250), 1), 500),
               })
             }
@@ -813,9 +902,13 @@ export default function ImportPage() {
               );
             }}
             onEnrich={() =>
-              postAction("enrich", "/api/admin/location-growth/enrich-high-value", {
-                limit: Number(enrichLimit) || 50,
-              })
+              postAction(
+                "enrich",
+                "/api/admin/location-growth/enrich-high-value",
+                {
+                  limit: Number(enrichLimit) || 50,
+                },
+              )
             }
           />
         ) : null}
@@ -917,7 +1010,13 @@ function GoogleImportPanel({
   running: boolean;
   progress: number;
   onRun: () => void;
-  totals: { imported: number; skipped: number; failed: number; found: number; errors: number };
+  totals: {
+    imported: number;
+    skipped: number;
+    failed: number;
+    found: number;
+    errors: number;
+  };
   logs: ImportLog[];
   lastLog?: ImportLog;
   loading: boolean;
@@ -953,7 +1052,9 @@ function GoogleImportPanel({
               disabled={Boolean(runningAction)}
               className="rounded-full border border-rose-400/40 px-5 py-3 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
             >
-              {runningAction === "phones" ? "Backfilling..." : "Backfill Missing Phones"}
+              {runningAction === "phones"
+                ? "Backfilling..."
+                : "Backfill Missing Phones"}
             </button>
             <button
               type="button"
@@ -961,7 +1062,9 @@ function GoogleImportPanel({
               disabled={Boolean(runningAction)}
               className="rounded-full border border-rose-400/40 px-5 py-3 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
             >
-              {runningAction === "cuisine" ? "Backfilling..." : "Backfill Cuisine Names"}
+              {runningAction === "cuisine"
+                ? "Backfilling..."
+                : "Backfill Cuisine Names"}
             </button>
             <button
               type="button"
@@ -969,17 +1072,44 @@ function GoogleImportPanel({
               disabled={Boolean(runningAction)}
               className="rounded-full border border-rose-400/40 px-5 py-3 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
             >
-              {runningAction === "legacy-cleanup" ? "Cleaning..." : "Clean Missing City/State/Zip"}
+              {runningAction === "legacy-cleanup"
+                ? "Cleaning..."
+                : "Clean Missing City/State/Zip"}
             </button>
           </div>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <SelectField label="Import" value={importType} onChange={setImportType} options={importTypeOptions} />
-          <SelectField label="Area" value={area} onChange={setArea} options={areaOptions} />
-          <SelectField label="Primary tag" value={primaryTag} onChange={setPrimaryTag} options={primaryTagOptions} />
-          <SelectField label="Rating" value={minRating} onChange={setMinRating} options={ratingOptions} />
-          <SelectField label="Queries to run" value={queryCount} onChange={setQueryCount} options={queryCountOptions} />
+          <SelectField
+            label="Import"
+            value={importType}
+            onChange={setImportType}
+            options={importTypeOptions}
+          />
+          <SelectField
+            label="Area"
+            value={area}
+            onChange={setArea}
+            options={areaOptions}
+          />
+          <SelectField
+            label="Primary tag"
+            value={primaryTag}
+            onChange={setPrimaryTag}
+            options={primaryTagOptions}
+          />
+          <SelectField
+            label="Rating"
+            value={minRating}
+            onChange={setMinRating}
+            options={ratingOptions}
+          />
+          <SelectField
+            label="Queries to run"
+            value={queryCount}
+            onChange={setQueryCount}
+            options={queryCountOptions}
+          />
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -1044,11 +1174,18 @@ function GoogleImportPanel({
             {logs.slice(0, 6).map((log) => {
               const meta = log.meta || {};
               return (
-                <div key={log.id} className="rounded-2xl border border-white/10 bg-black/30 p-5">
+                <div
+                  key={log.id}
+                  className="rounded-2xl border border-white/10 bg-black/30 p-5"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold">{log.job_name || "Google Import"}</p>
-                      <p className="text-sm text-zinc-500">{log.run_date || log.created_at}</p>
+                      <p className="font-semibold">
+                        {log.job_name || "Google Import"}
+                      </p>
+                      <p className="text-sm text-zinc-500">
+                        {log.run_date || log.created_at}
+                      </p>
                     </div>
                     <StatusPill status={log.error ? "error" : "success"} />
                   </div>
@@ -1121,6 +1258,14 @@ function LocationGrowthPanel(props: {
   onImportOsm: () => void;
   onImportOsmNext: () => void;
   onResetOsmOffset: () => void;
+  onResetAllOsmCursors: () => void;
+  osmDebugTagKey: string;
+  setOsmDebugTagKey: (value: string) => void;
+  osmDebugTagValue: string;
+  setOsmDebugTagValue: (value: string) => void;
+  osmDebugBbox: string;
+  setOsmDebugBbox: (value: string) => void;
+  onTestOsmQuery: () => void;
   onDedupe: () => void;
   onPublish: () => void;
   onEnrich: () => void;
@@ -1149,7 +1294,11 @@ function LocationGrowthPanel(props: {
         </p>
         <div className="mt-5 grid grid-flow-col auto-cols-[minmax(150px,1fr)] gap-3 overflow-x-auto pb-2 lg:grid-flow-row lg:grid-cols-7 lg:overflow-visible">
           {summaryCards.map(([label, value]) => (
-            <CompactStat key={String(label)} label={String(label)} value={props.loading ? "..." : getNumber(value)} />
+            <CompactStat
+              key={String(label)}
+              label={String(label)}
+              value={props.loading ? "..." : getNumber(value)}
+            />
           ))}
         </div>
       </section>
@@ -1163,7 +1312,11 @@ function LocationGrowthPanel(props: {
           running={props.runningAction === "cleanup"}
           onClick={props.onCleanup}
         >
-          <NumberField label="Offset" value={props.cleanupOffset} onChange={props.setCleanupOffset} />
+          <NumberField
+            label="Offset"
+            value={props.cleanupOffset}
+            onChange={props.setCleanupOffset}
+          />
           <ReadOnlyField label="Batch limit" value="500" />
         </ActionCard>
 
@@ -1177,8 +1330,18 @@ function LocationGrowthPanel(props: {
           onClick={props.onImportNyc}
           onSecondaryClick={props.onImportNycNext}
         >
-          <NumberField label="Limit" value={props.nycLimit} onChange={props.setNycLimit} min={1} max={1000} />
-          <NumberField label="Offset" value={props.nycOffset} onChange={props.setNycOffset} />
+          <NumberField
+            label="Limit"
+            value={props.nycLimit}
+            onChange={props.setNycLimit}
+            min={1}
+            max={1000}
+          />
+          <NumberField
+            label="Offset"
+            value={props.nycOffset}
+            onChange={props.setNycOffset}
+          />
         </ActionCard>
 
         <ActionCard
@@ -1188,14 +1351,35 @@ function LocationGrowthPanel(props: {
           button="Import OSM Batch"
           secondaryButton="Import Next OSM Batch"
           tertiaryButton="Reset OSM Cursor"
-          running={props.runningAction === "osm"}
+          running={
+            props.runningAction === "osm" || props.runningAction === "osm-test"
+          }
           onClick={props.onImportOsm}
           onSecondaryClick={props.onImportOsmNext}
           onTertiaryClick={props.onResetOsmOffset}
         >
-          <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} min={1} max={250} />
-          <NumberField label="Cursor offset" value={props.osmOffset} onChange={props.setOsmOffset} />
-          <NumberField label="Cursor filter index" value={props.osmFilterIndex} onChange={props.setOsmFilterIndex} min={0} />
+          <NumberField
+            label="Limit"
+            value={props.osmLimit}
+            onChange={props.setOsmLimit}
+            min={1}
+            max={250}
+          />
+          <NumberField
+            label="Cursor offset"
+            value={props.osmOffset}
+            onChange={props.setOsmOffset}
+          />
+          <NumberField
+            label="Cursor filter index"
+            value={props.osmFilterIndex}
+            onChange={props.setOsmFilterIndex}
+            min={0}
+          />
+          <ReadOnlyField
+            label="Current cursor"
+            value={`${props.osmCategoryGroup} / filter ${props.osmFilterIndex} / offset ${props.osmOffset}`}
+          />
           <details className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
             <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
               Advanced OSM options
@@ -1214,7 +1398,52 @@ function LocationGrowthPanel(props: {
                 ]}
               />
               <ReadOnlyField label="Region" value="NYC" />
+              <button
+                type="button"
+                onClick={props.onResetAllOsmCursors}
+                className="rounded-2xl border border-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 transition hover:border-amber-200 hover:bg-amber-500/10"
+              >
+                Reset All OSM Cursors
+              </button>
             </div>
+            <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
+                Test OSM Query
+              </summary>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <TextField
+                  label="Tag key"
+                  value={props.osmDebugTagKey}
+                  onChange={props.setOsmDebugTagKey}
+                  placeholder="amenity"
+                />
+                <TextField
+                  label="Tag value"
+                  value={props.osmDebugTagValue}
+                  onChange={props.setOsmDebugTagValue}
+                  placeholder="bar"
+                />
+                <SelectField
+                  label="Bbox"
+                  value={props.osmDebugBbox}
+                  onChange={props.setOsmDebugBbox}
+                  options={[
+                    { label: "NYC", value: "nyc" },
+                    { label: "NYC Metro", value: "nyc_metro" },
+                  ]}
+                />
+                <button
+                  type="button"
+                  onClick={props.onTestOsmQuery}
+                  disabled={props.runningAction === "osm-test"}
+                  className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700"
+                >
+                  {props.runningAction === "osm-test"
+                    ? "Testing..."
+                    : "Test OSM"}
+                </button>
+              </div>
+            </details>
           </details>
         </ActionCard>
 
@@ -1236,19 +1465,40 @@ function LocationGrowthPanel(props: {
               { label: "Specific batch", value: "batch" },
             ]}
           />
-          <NumberField label="Limit" value={props.dedupeLimit} onChange={props.setDedupeLimit} min={1} max={500} />
+          <NumberField
+            label="Limit"
+            value={props.dedupeLimit}
+            onChange={props.setDedupeLimit}
+            min={1}
+            max={500}
+          />
           {props.dedupeScope === "batch" ? (
-            <TextField label="Batch ID" value={props.dedupeBatchId} onChange={props.setDedupeBatchId} placeholder="Paste a batch ID" />
+            <TextField
+              label="Batch ID"
+              value={props.dedupeBatchId}
+              onChange={props.setDedupeBatchId}
+              placeholder="Paste a batch ID"
+            />
           ) : (
-            <ReadOnlyField label="Batch ID" value="Not required for all staged records" />
+            <ReadOnlyField
+              label="Batch ID"
+              value="Not required for all staged records"
+            />
           )}
-          <ReadOnlyField label="Remaining unchecked" value={String(getNumber(props.summary?.remainingUncheckedDedupe))} />
+          <ReadOnlyField
+            label="Remaining unchecked"
+            value={String(getNumber(props.summary?.remainingUncheckedDedupe))}
+          />
         </ActionCard>
 
         <ActionCard
           title="Publish Ready Records"
           description="Publish clean, unique, high-quality staged records into the existing live locations table. Publish runs a chunk and does not use offset."
-          button={props.publishScope === "batch" ? "Publish Selected Batch Chunk" : "Publish All Ready Chunk"}
+          button={
+            props.publishScope === "batch"
+              ? "Publish Selected Batch Chunk"
+              : "Publish All Ready Chunk"
+          }
           running={props.runningAction === "publish"}
           onClick={props.onPublish}
         >
@@ -1261,13 +1511,35 @@ function LocationGrowthPanel(props: {
               { label: "Specific batch", value: "batch" },
             ]}
           />
-          <NumberField label="Limit" value={props.publishLimit} onChange={props.setPublishLimit} min={1} max={500} />
+          <NumberField
+            label="Limit"
+            value={props.publishLimit}
+            onChange={props.setPublishLimit}
+            min={1}
+            max={500}
+          />
           {props.publishScope === "batch" ? (
-            <TextField label="Batch ID" value={props.publishBatchId} onChange={props.setPublishBatchId} placeholder="Paste a batch ID" />
+            <TextField
+              label="Batch ID"
+              value={props.publishBatchId}
+              onChange={props.setPublishBatchId}
+              placeholder="Paste a batch ID"
+            />
           ) : (
-            <ReadOnlyField label="Batch ID" value="Not required for Publish All" />
+            <ReadOnlyField
+              label="Batch ID"
+              value="Not required for Publish All"
+            />
           )}
-          <ReadOnlyField label="Remaining ready" value={String(getNumber(props.summary?.remainingPublishReady ?? props.summary?.publishReady))} />
+          <ReadOnlyField
+            label="Remaining ready"
+            value={String(
+              getNumber(
+                props.summary?.remainingPublishReady ??
+                  props.summary?.publishReady,
+              ),
+            )}
+          />
         </ActionCard>
 
         <ActionCard
@@ -1277,7 +1549,11 @@ function LocationGrowthPanel(props: {
           running={props.runningAction === "enrich"}
           onClick={props.onEnrich}
         >
-          <NumberField label="Limit" value={props.enrichLimit} onChange={props.setEnrichLimit} />
+          <NumberField
+            label="Limit"
+            value={props.enrichLimit}
+            onChange={props.setEnrichLimit}
+          />
         </ActionCard>
       </div>
     </div>
@@ -1310,9 +1586,14 @@ function ImportHistoryPanel({
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
         <h2 className="text-lg font-bold">Latest Import Batches</h2>
-        <p className="mt-1 text-sm text-zinc-500">Staged import health, publishing, and review actions. OSM offset is app-managed because Overpass does not provide true offset pagination.</p>
+        <p className="mt-1 text-sm text-zinc-500">
+          Staged import health, publishing, and review actions. OSM offset is
+          app-managed because Overpass does not provide true offset pagination.
+        </p>
         <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-zinc-400">
-          <summary className="cursor-pointer font-black uppercase tracking-[0.18em] text-zinc-300">Emergency SQL to find recent batch IDs</summary>
+          <summary className="cursor-pointer font-black uppercase tracking-[0.18em] text-zinc-300">
+            Emergency SQL to find recent batch IDs
+          </summary>
           <pre className="mt-3 overflow-auto whitespace-pre-wrap rounded-xl bg-black/30 p-3 text-zinc-300">{`select
   id,
   source,
@@ -1329,7 +1610,9 @@ order by started_at desc
 limit 20;`}</pre>
         </details>
         {loading ? <EmptyState text="Loading batches..." /> : null}
-        {!loading && batches.length === 0 ? <EmptyState text="No location growth batches yet." /> : null}
+        {!loading && batches.length === 0 ? (
+          <EmptyState text="No location growth batches yet." />
+        ) : null}
         {batches.length ? (
           <div className="mt-5 overflow-x-auto">
             <table className="min-w-[1100px] w-full text-left text-sm">
@@ -1351,46 +1634,101 @@ limit 20;`}</pre>
                     "Completed",
                     "Actions",
                   ].map((heading) => (
-                    <th key={heading} className="border-b border-white/10 px-3 py-3 font-black">{heading}</th>
+                    <th
+                      key={heading}
+                      className="border-b border-white/10 px-3 py-3 font-black"
+                    >
+                      {heading}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {batches.map((batch) => (
-                  <tr key={batch.id} className="border-b border-white/5 text-zinc-300">
+                  <tr
+                    key={batch.id}
+                    className="border-b border-white/5 text-zinc-300"
+                  >
                     <td className="px-3 py-4 font-bold text-white">
                       <div>{batch.source_label || batch.source}</div>
                       {batch.metadata ? (
                         <details className="mt-2 text-xs font-normal text-zinc-500">
-                          <summary className="cursor-pointer text-zinc-400">Metadata</summary>
+                          <summary className="cursor-pointer text-zinc-400">
+                            Metadata
+                          </summary>
                           <div className="mt-1 space-y-1">
-                            {batch.metadata.limit !== undefined ? <div>limit: {String(batch.metadata.limit)}</div> : null}
-                            {batch.metadata.offset !== undefined ? <div>offset: {String(batch.metadata.offset)}</div> : null}
-                            {batch.metadata.nextOffset !== undefined ? <div>nextOffset: {String(batch.metadata.nextOffset)}</div> : null}
-                            {batch.metadata.categoryGroup !== undefined ? <div>categoryGroup: {String(batch.metadata.categoryGroup)}</div> : null}
+                            {batch.metadata.limit !== undefined ? (
+                              <div>limit: {String(batch.metadata.limit)}</div>
+                            ) : null}
+                            {batch.metadata.offset !== undefined ? (
+                              <div>offset: {String(batch.metadata.offset)}</div>
+                            ) : null}
+                            {batch.metadata.nextOffset !== undefined ? (
+                              <div>
+                                nextOffset: {String(batch.metadata.nextOffset)}
+                              </div>
+                            ) : null}
+                            {batch.metadata.categoryGroup !== undefined ? (
+                              <div>
+                                categoryGroup:{" "}
+                                {String(batch.metadata.categoryGroup)}
+                              </div>
+                            ) : null}
                           </div>
                         </details>
                       ) : null}
                     </td>
-                    <td className="px-3 py-4"><StatusPill status={batch.status || "pending"} /></td>
+                    <td className="px-3 py-4">
+                      <StatusPill status={batch.status || "pending"} />
+                    </td>
                     <td className="px-3 py-4">{getNumber(batch.total_seen)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.metadata?.mapped)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.total_staged)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.metadata?.duplicatesRemoved)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.total_duplicates)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.total_possible_duplicates)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.total_rejected)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.total_publish_ready)}</td>
-                    <td className="px-3 py-4">{getNumber(batch.total_published)}</td>
-                    <td className="px-3 py-4">{formatDate(batch.started_at)}</td>
-                    <td className="px-3 py-4">{formatDate(batch.completed_at)}</td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.metadata?.mapped)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.total_staged)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.metadata?.duplicatesRemoved)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.total_duplicates)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.total_possible_duplicates)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.total_rejected)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.total_publish_ready)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {getNumber(batch.total_published)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {formatDate(batch.started_at)}
+                    </td>
+                    <td className="px-3 py-4">
+                      {formatDate(batch.completed_at)}
+                    </td>
                     <td className="px-3 py-4">
                       <div className="flex flex-wrap gap-2">
-                        <TinyButton onClick={() => onCopy(batch.id)}>Copy batch ID</TinyButton>
-                        <TinyButton onClick={() => onDedupe(batch.id)}>Use for Dedupe</TinyButton>
-                        <TinyButton onClick={() => onPublish(batch.id)}>Use for Publish</TinyButton>
-                        <TinyButton onClick={() => onViewStaged(batch.id)}>View staged</TinyButton>
-                        <TinyButton onClick={() => onViewDuplicates(batch.id)}>View duplicates</TinyButton>
+                        <TinyButton onClick={() => onCopy(batch.id)}>
+                          Copy batch ID
+                        </TinyButton>
+                        <TinyButton onClick={() => onDedupe(batch.id)}>
+                          Use for Dedupe
+                        </TinyButton>
+                        <TinyButton onClick={() => onPublish(batch.id)}>
+                          Use for Publish
+                        </TinyButton>
+                        <TinyButton onClick={() => onViewStaged(batch.id)}>
+                          View staged
+                        </TinyButton>
+                        <TinyButton onClick={() => onViewDuplicates(batch.id)}>
+                          View duplicates
+                        </TinyButton>
                       </div>
                     </td>
                   </tr>
@@ -1404,20 +1742,47 @@ limit 20;`}</pre>
       {stagedRecords.length ? (
         <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
           <h2 className="text-lg font-bold">Staged Records</h2>
-          <p className="mt-1 text-sm text-zinc-500">Showing latest rows for batch {stagingBatchId}.</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            Showing latest rows for batch {stagingBatchId}.
+          </p>
           <div className="mt-5 overflow-x-auto">
             <table className="min-w-[900px] w-full text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                <tr>{["Name", "Address", "City", "Category", "Score", "Quality", "Duplicate", "Import", "Reason"].map((h) => <th key={h} className="border-b border-white/10 px-3 py-3">{h}</th>)}</tr>
+                <tr>
+                  {[
+                    "Name",
+                    "Address",
+                    "City",
+                    "Category",
+                    "Score",
+                    "Quality",
+                    "Duplicate",
+                    "Import",
+                    "Reason",
+                  ].map((h) => (
+                    <th key={h} className="border-b border-white/10 px-3 py-3">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
               </thead>
               <tbody>
                 {stagedRecords.map((record) => (
-                  <tr key={record.id} className="border-b border-white/5 text-zinc-300">
-                    <td className="px-3 py-3 font-bold text-white">{record.name}</td>
+                  <tr
+                    key={record.id}
+                    className="border-b border-white/5 text-zinc-300"
+                  >
+                    <td className="px-3 py-3 font-bold text-white">
+                      {record.name}
+                    </td>
                     <td className="px-3 py-3">{record.address}</td>
-                    <td className="px-3 py-3">{[record.city, record.state].filter(Boolean).join(", ")}</td>
+                    <td className="px-3 py-3">
+                      {[record.city, record.state].filter(Boolean).join(", ")}
+                    </td>
                     <td className="px-3 py-3">{record.primary_category}</td>
-                    <td className="px-3 py-3">{getNumber(record.quality_score)}</td>
+                    <td className="px-3 py-3">
+                      {getNumber(record.quality_score)}
+                    </td>
                     <td className="px-3 py-3">{record.quality_status}</td>
                     <td className="px-3 py-3">{record.duplicate_status}</td>
                     <td className="px-3 py-3">{record.import_status}</td>
@@ -1433,53 +1798,107 @@ limit 20;`}</pre>
   );
 }
 
-function DuplicateReviewPanel({ batchId, setBatchId, matches, loading, onLoad, onDecision }: {
+function DuplicateReviewPanel({
+  batchId,
+  setBatchId,
+  matches,
+  loading,
+  onLoad,
+  onDecision,
+}: {
   batchId: string;
   setBatchId: (value: string) => void;
   matches: DuplicateMatch[];
   loading: boolean;
   onLoad: () => void;
-  onDecision: (match: DuplicateMatch, decision: "duplicate" | "unique" | "reject") => void;
+  onDecision: (
+    match: DuplicateMatch,
+    decision: "duplicate" | "unique" | "reject",
+  ) => void;
 }) {
   return (
     <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-lg font-bold">Duplicates & Review</h2>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">Review possible duplicates before publishing and decide whether staged rows should be marked duplicate, unique, or rejected.</p>
+          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+            Review possible duplicates before publishing and decide whether
+            staged rows should be marked duplicate, unique, or rejected.
+          </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-[280px_auto]">
-          <TextField label="Batch ID optional" value={batchId} onChange={setBatchId} placeholder="Filter by batch" />
-          <button type="button" onClick={onLoad} disabled={loading} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:bg-zinc-700">
+          <TextField
+            label="Batch ID optional"
+            value={batchId}
+            onChange={setBatchId}
+            placeholder="Filter by batch"
+          />
+          <button
+            type="button"
+            onClick={onLoad}
+            disabled={loading}
+            className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:bg-zinc-700"
+          >
             {loading ? "Loading..." : "Load Possible Duplicates"}
           </button>
         </div>
       </div>
-      {matches.length === 0 ? <div className="mt-5"><EmptyState text="No duplicate matches loaded." /></div> : null}
+      {matches.length === 0 ? (
+        <div className="mt-5">
+          <EmptyState text="No duplicate matches loaded." />
+        </div>
+      ) : null}
       <div className="mt-5 grid gap-4">
         {matches.map((match) => (
-          <div key={match.id} className="rounded-2xl border border-white/10 bg-black/30 p-5">
+          <div
+            key={match.id}
+            className="rounded-2xl border border-white/10 bg-black/30 p-5"
+          >
             <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-start">
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Staged</p>
-                <h3 className="mt-2 font-black text-white">{match.stagedName}</h3>
-                <p className="mt-1 text-sm text-zinc-400">{match.stagedAddress}</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  Staged
+                </p>
+                <h3 className="mt-2 font-black text-white">
+                  {match.stagedName}
+                </h3>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {match.stagedAddress}
+                </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Existing location</p>
-                <h3 className="mt-2 font-black text-white">{match.existingName}</h3>
-                <p className="mt-1 text-sm text-zinc-400">{match.existingAddress}</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  Existing location
+                </p>
+                <h3 className="mt-2 font-black text-white">
+                  {match.existingName}
+                </h3>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {match.existingAddress}
+                </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Score</p>
-                <p className="mt-2 text-3xl font-black text-rose-200">{getNumber(match.duplicateScore)}</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  Score
+                </p>
+                <p className="mt-2 text-3xl font-black text-rose-200">
+                  {getNumber(match.duplicateScore)}
+                </p>
               </div>
             </div>
-            <p className="mt-4 text-sm text-zinc-400">Match reasons: {(match.matchReasons || []).join(", ") || "—"}</p>
+            <p className="mt-4 text-sm text-zinc-400">
+              Match reasons: {(match.matchReasons || []).join(", ") || "—"}
+            </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <TinyButton onClick={() => onDecision(match, "duplicate")}>Mark as duplicate</TinyButton>
-              <TinyButton onClick={() => onDecision(match, "unique")}>Mark as unique</TinyButton>
-              <TinyButton onClick={() => onDecision(match, "reject")}>Reject</TinyButton>
+              <TinyButton onClick={() => onDecision(match, "duplicate")}>
+                Mark as duplicate
+              </TinyButton>
+              <TinyButton onClick={() => onDecision(match, "unique")}>
+                Mark as unique
+              </TinyButton>
+              <TinyButton onClick={() => onDecision(match, "reject")}>
+                Reject
+              </TinyButton>
             </div>
           </div>
         ))}
@@ -1488,7 +1907,13 @@ function DuplicateReviewPanel({ batchId, setBatchId, matches, loading, onLoad, o
   );
 }
 
-function QrToolsPanel({ summary, limit, setLimit, running, onGenerate }: {
+function QrToolsPanel({
+  summary,
+  limit,
+  setLimit,
+  running,
+  onGenerate,
+}: {
   summary: GrowthSummary | null;
   limit: string;
   setLimit: (value: string) => void;
@@ -1498,20 +1923,44 @@ function QrToolsPanel({ summary, limit, setLimit, running, onGenerate }: {
   return (
     <div className="space-y-6">
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/30">
-        <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">QR / Claim QR Tools</p>
-        <h2 className="mt-2 text-2xl font-black">Generate Missing QR / Claim QR Codes</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Create missing public QR codes and claim QR codes for clean live locations. Existing QR codes are not replaced.</p>
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
+          QR / Claim QR Tools
+        </p>
+        <h2 className="mt-2 text-2xl font-black">
+          Generate Missing QR / Claim QR Codes
+        </h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+          Create missing public QR codes and claim QR codes for clean live
+          locations. Existing QR codes are not replaced.
+        </p>
         {summary?.siteUrlConfigured === false ? (
-          <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">NEXT_PUBLIC_SITE_URL is missing. Configure it before bulk QR generation so claim URLs use the correct production domain.</div>
+          <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+            NEXT_PUBLIC_SITE_URL is missing. Configure it before bulk QR
+            generation so claim URLs use the correct production domain.
+          </div>
         ) : null}
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <CompactStat label="Missing claim codes" value={getNumber(summary?.missingClaimCodes)} />
-          <CompactStat label="Missing claim QR codes" value={getNumber(summary?.missingClaimQrs)} />
-          <CompactStat label="Missing public QR codes" value={getNumber(summary?.missingPublicQrs)} />
+          <CompactStat
+            label="Missing claim codes"
+            value={getNumber(summary?.missingClaimCodes)}
+          />
+          <CompactStat
+            label="Missing claim QR codes"
+            value={getNumber(summary?.missingClaimQrs)}
+          />
+          <CompactStat
+            label="Missing public QR codes"
+            value={getNumber(summary?.missingPublicQrs)}
+          />
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-[240px_auto] sm:items-end">
           <NumberField label="Limit" value={limit} onChange={setLimit} />
-          <button type="button" onClick={onGenerate} disabled={running} className="rounded-full bg-rose-600 px-7 py-4 text-sm font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={running}
+            className="rounded-full bg-rose-600 px-7 py-4 text-sm font-black text-white shadow-xl shadow-rose-950/50 transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
+          >
             {running ? "Generating..." : "Generate Missing QRs"}
           </button>
         </div>
@@ -1549,19 +1998,40 @@ function ActionCard({
     <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
       <h3 className="text-xl font-black">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-zinc-400">{description}</p>
-      {note ? <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] text-rose-300">{note}</p> : null}
-      {children ? <div className="mt-5 grid gap-4 sm:grid-cols-2">{children}</div> : null}
+      {note ? (
+        <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] text-rose-300">
+          {note}
+        </p>
+      ) : null}
+      {children ? (
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">{children}</div>
+      ) : null}
       <div className="mt-5 flex flex-wrap gap-3">
-        <button type="button" onClick={onClick} disabled={running} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={running}
+          className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
+        >
           {running ? "Running..." : button}
         </button>
         {secondaryButton && onSecondaryClick ? (
-          <button type="button" onClick={onSecondaryClick} disabled={running} className="rounded-full border border-white/10 px-6 py-3 text-sm font-black text-zinc-200 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500">
+          <button
+            type="button"
+            onClick={onSecondaryClick}
+            disabled={running}
+            className="rounded-full border border-white/10 px-6 py-3 text-sm font-black text-zinc-200 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+          >
             {running ? "Running..." : secondaryButton}
           </button>
         ) : null}
         {tertiaryButton && onTertiaryClick ? (
-          <button type="button" onClick={onTertiaryClick} disabled={running} className="rounded-full border border-amber-300/20 px-6 py-3 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500">
+          <button
+            type="button"
+            onClick={onTertiaryClick}
+            disabled={running}
+            className="rounded-full border border-amber-300/20 px-6 py-3 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+          >
             {tertiaryButton}
           </button>
         ) : null}
@@ -1570,31 +2040,89 @@ function ActionCard({
   );
 }
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { label: string; value: string }[] }) {
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+}) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400">
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </select>
     </label>
   );
 }
 
-function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition placeholder:text-zinc-700 focus:border-rose-400" />
+      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+        {label}
+      </span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition placeholder:text-zinc-700 focus:border-rose-400"
+      />
     </label>
   );
 }
 
-function NumberField({ label, value, onChange, min = 0, max }: { label: string; value: string; onChange: (value: string) => void; min?: number; max?: number }) {
+function NumberField({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  min?: number;
+  max?: number;
+}) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">{label}</span>
-      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400" />
+      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+        {label}
+      </span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400"
+      />
     </label>
   );
 }
@@ -1602,8 +2130,12 @@ function NumberField({ label, value, onChange, min = 0, max }: { label: string; 
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">{label}</span>
-      <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-black text-zinc-300">{value}</div>
+      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
+        {label}
+      </span>
+      <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-black text-zinc-300">
+        {value}
+      </div>
     </div>
   );
 }
@@ -1646,26 +2178,46 @@ function ResultBanner({
   const errorText = typeof result.error === "string" ? result.error : "";
   const isAllOverpassFailure =
     !ok &&
-    errorText.toLowerCase().includes("all overpass endpoints rejected or timed out");
+    errorText
+      .toLowerCase()
+      .includes("all overpass endpoints rejected or timed out");
   return (
-    <div className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
+    <div
+      className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}
+    >
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
       {isAllOverpassFailure ? (
         <p className="mt-2 font-bold">
-          All Overpass endpoints rejected or timed out. Try another category group or wait a few minutes.
+          All Overpass endpoints rejected or timed out. Try another category
+          group or wait a few minutes.
         </p>
       ) : null}
-      {!isAllOverpassFailure && !ok && errorText.toLowerCase().includes("timeout") ? (
+      {!isAllOverpassFailure &&
+      !ok &&
+      errorText.toLowerCase().includes("timeout") ? (
         <p className="mt-2 font-bold">
           OSM timed out. Try limit 100 or a smaller category group.
         </p>
       ) : null}
       {result.batchId && ok ? (
-        <p className="mt-2 font-bold">Batch created: {String(result.batchId)}</p>
+        <p className="mt-2 font-bold">
+          Batch created: {String(result.batchId)}
+        </p>
+      ) : null}
+      {ok && typeof result.message === "string" ? (
+        <p className="mt-2 font-bold">{result.message}</p>
       ) : null}
       {ok && result.hasMore === true ? (
-        <p className="mt-2 font-bold">More records remain. Run the next chunk.</p>
+        <p className="mt-2 font-bold">
+          More records remain. Run the next chunk.
+        </p>
+      ) : null}
+      {ok && result.hasMore === false && Number(result.staged || 0) === 0 ? (
+        <p className="mt-2 font-bold">
+          No more records found for this OSM category. Reset the cursor or
+          choose another category group.
+        </p>
       ) : null}
       {hasBatchMetrics ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-4 lg:grid-cols-6">
@@ -1679,6 +2231,7 @@ function ResultBanner({
             ["Filter", result.filterLabel],
             ["Filter tag", result.filterTag],
             ["Overpass", result.overpassEndpoint],
+            ["Bbox used", result.bboxUsed],
             ["Category", result.categoryGroup],
             ["Seen", result.seen],
             ["Mapped", result.mapped],
@@ -1701,21 +2254,45 @@ function ResultBanner({
                   {String(label)}
                 </p>
                 <p className="mt-1 break-all text-lg font-black text-white">
-                  {typeof value === "number" ? value.toLocaleString() : String(value)}
+                  {typeof value === "number"
+                    ? value.toLocaleString()
+                    : String(value)}
                 </p>
               </div>
             ))}
         </div>
       ) : null}
-      <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-200">{JSON.stringify(result, null, 2)}</pre>
+      <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-200">
+        {JSON.stringify(result, null, 2)}
+      </pre>
       {result.batchId ? (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" onClick={() => navigator.clipboard?.writeText(String(result.batchId))} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Copy batch ID</button>
+          <button
+            type="button"
+            onClick={() =>
+              navigator.clipboard?.writeText(String(result.batchId))
+            }
+            className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10"
+          >
+            Copy batch ID
+          </button>
           {onRunDedupe ? (
-            <button type="button" onClick={() => onRunDedupe(String(result.batchId))} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Run dedupe</button>
+            <button
+              type="button"
+              onClick={() => onRunDedupe(String(result.batchId))}
+              className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10"
+            >
+              Run dedupe
+            </button>
           ) : null}
           {onPublishBatch ? (
-            <button type="button" onClick={() => onPublishBatch(String(result.batchId))} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Publish this batch</button>
+            <button
+              type="button"
+              onClick={() => onPublishBatch(String(result.batchId))}
+              className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10"
+            >
+              Publish this batch
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -1726,52 +2303,107 @@ function ResultBanner({
 function ProgressBar({ progress }: { progress: number }) {
   return (
     <div className="mt-6 rounded-2xl border border-rose-400/20 bg-black/40 p-4">
-      <div className="mb-3 flex items-center justify-between text-sm"><span className="font-semibold text-rose-100">Import in progress</span><span className="font-bold text-rose-300">{progress}%</span></div>
-      <div className="h-3 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-rose-500 transition-all duration-500" style={{ width: `${progress}%` }} /></div>
+      <div className="mb-3 flex items-center justify-between text-sm">
+        <span className="font-semibold text-rose-100">Import in progress</span>
+        <span className="font-bold text-rose-300">{progress}%</span>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-rose-500 transition-all duration-500"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
     </div>
   );
 }
 
 function QualityPill({ text }: { text: string }) {
-  return <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">✓ {text}</span>;
+  return (
+    <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+      ✓ {text}
+    </span>
+  );
 }
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-black/30 p-5">
-      <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">{label}</p>
-      <p className="mt-3 text-3xl font-black">{typeof value === "number" ? value.toLocaleString() : value}</p>
+      <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-3 text-3xl font-black">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
     </div>
   );
 }
 
-function CompactStat({ label, value }: { label: string; value: string | number }) {
+function CompactStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{typeof value === "number" ? value.toLocaleString() : value}</p>
+      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black text-white">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
     </div>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-xs text-zinc-500">{label}</p><p className="mt-1 text-lg font-bold">{value}</p></div>
+    <div className="rounded-xl bg-white/[0.04] p-3">
+      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="mt-1 text-lg font-bold">{value}</p>
+    </div>
   );
 }
 
-function TinyButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return <button type="button" onClick={onClick} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-zinc-200 transition hover:border-rose-300 hover:bg-white/10 hover:text-white">{children}</button>;
+function TinyButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-zinc-200 transition hover:border-rose-300 hover:bg-white/10 hover:text-white"
+    >
+      {children}
+    </button>
+  );
 }
 
 function StatusPill({ status }: { status: string }) {
   const isBad = ["error", "failed", "rejected"].includes(status);
-  const isGood = ["success", "published", "staged", "completed"].includes(status);
-  return <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-black ${isBad ? "bg-red-500/10 text-red-300" : isGood ? "bg-emerald-500/10 text-emerald-300" : "bg-white/10 text-zinc-300"}`}>{status}</span>;
+  const isGood = ["success", "published", "staged", "completed"].includes(
+    status,
+  );
+  return (
+    <span
+      className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-black ${isBad ? "bg-red-500/10 text-red-300" : isGood ? "bg-emerald-500/10 text-emerald-300" : "bg-white/10 text-zinc-300"}`}
+    >
+      {status}
+    </span>
+  );
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-white/10 bg-black/30 p-8 text-center text-sm text-zinc-400">{text}</div>;
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-8 text-center text-sm text-zinc-400">
+      {text}
+    </div>
+  );
 }
 
 function formatDate(value?: string | null) {
