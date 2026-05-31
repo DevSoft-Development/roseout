@@ -18,8 +18,75 @@ type OsmCategoryGroup =
   | "nightlife"
   | "culture"
   | "activities"
-  | "dessert"
-  | string;
+  | "dessert";
+
+const OSM_CATEGORY_FILTERS: Record<OsmCategoryGroup, string[]> = {
+  nightlife: [
+    'node["amenity"="bar"]',
+    'way["amenity"="bar"]',
+    'relation["amenity"="bar"]',
+    'node["amenity"="pub"]',
+    'way["amenity"="pub"]',
+    'relation["amenity"="pub"]',
+    'node["amenity"="biergarten"]',
+    'way["amenity"="biergarten"]',
+    'node["amenity"="nightclub"]',
+    'way["amenity"="nightclub"]',
+    'relation["amenity"="nightclub"]',
+  ],
+  culture: [
+    'node["tourism"="museum"]',
+    'way["tourism"="museum"]',
+    'relation["tourism"="museum"]',
+    'node["tourism"="gallery"]',
+    'way["tourism"="gallery"]',
+    'node["tourism"="attraction"]',
+    'way["tourism"="attraction"]',
+    'relation["tourism"="attraction"]',
+    'node["amenity"="theatre"]',
+    'way["amenity"="theatre"]',
+    'relation["amenity"="theatre"]',
+    'node["amenity"="cinema"]',
+    'way["amenity"="cinema"]',
+    'node["amenity"="arts_centre"]',
+    'way["amenity"="arts_centre"]',
+  ],
+  activities: [
+    'node["amenity"="bowling_alley"]',
+    'way["amenity"="bowling_alley"]',
+    'node["sport"="bowling"]',
+    'way["sport"="bowling"]',
+    'node["leisure"="miniature_golf"]',
+    'way["leisure"="miniature_golf"]',
+    'node["leisure"="park"]',
+    'way["leisure"="park"]',
+    'relation["leisure"="park"]',
+    'node["amenity"="karaoke_box"]',
+    'way["amenity"="karaoke_box"]',
+    'node["amenity"="community_centre"]',
+    'way["amenity"="community_centre"]',
+  ],
+  dessert: [
+    'node["shop"="ice_cream"]',
+    'way["shop"="ice_cream"]',
+    'node["shop"="pastry"]',
+    'way["shop"="pastry"]',
+    'node["shop"="bakery"]',
+    'way["shop"="bakery"]',
+    'node["shop"="chocolate"]',
+    'way["shop"="chocolate"]',
+    'node["amenity"="cafe"]',
+    'way["amenity"="cafe"]',
+  ],
+  all: [],
+};
+
+OSM_CATEGORY_FILTERS.all = [
+  ...OSM_CATEGORY_FILTERS.nightlife,
+  ...OSM_CATEGORY_FILTERS.culture,
+  ...OSM_CATEGORY_FILTERS.activities,
+  ...OSM_CATEGORY_FILTERS.dessert,
+];
 
 type OsmElement = {
   id: number | string;
@@ -38,41 +105,16 @@ function objectUrl(type: string, id: number | string) {
   return `https://www.openstreetmap.org/${type}/${id}`;
 }
 
-function filtersForCategoryGroup(categoryGroup: string) {
-  const groups: Record<string, string[]> = {
-    nightlife: [
-      'nwr["amenity"~"^(bar|pub|biergarten|nightclub)$"]({bbox});',
-      'nwr["leisure"="dance"]({bbox});',
-    ],
-    culture: [
-      'nwr["tourism"~"^(museum|gallery|attraction|aquarium|zoo)$"]({bbox});',
-      'nwr["amenity"~"^(theatre|cinema|arts_centre)$"]({bbox});',
-    ],
-    activities: [
-      'nwr["leisure"~"^(bowling_alley|escape_game|miniature_golf|park|fitness_centre|sports_centre)$"]({bbox});',
-      'nwr["amenity"~"^(karaoke_box|community_centre)$"]({bbox});',
-    ],
-    dessert: [
-      'nwr["shop"~"^(ice_cream|pastry|bakery|chocolate|coffee)$"]({bbox});',
-      'nwr["amenity"="cafe"]({bbox});',
-    ],
-  };
+function getCategoryFilters(categoryGroup: string) {
+  const safeGroup = (
+    ["nightlife", "culture", "activities", "dessert", "all"].includes(
+      categoryGroup,
+    )
+      ? categoryGroup
+      : "all"
+  ) as OsmCategoryGroup;
 
-  if (categoryGroup === "all") {
-    return [
-      ...groups.nightlife,
-      ...groups.culture,
-      ...groups.activities,
-      ...groups.dessert,
-    ];
-  }
-
-  return groups[categoryGroup] || groups.all || [
-    ...groups.nightlife,
-    ...groups.culture,
-    ...groups.activities,
-    ...groups.dessert,
-  ];
+  return OSM_CATEGORY_FILTERS[safeGroup];
 }
 
 function buildQuery({
@@ -82,12 +124,18 @@ function buildQuery({
   bbox?: typeof NYC_BBOX;
   categoryGroup?: string;
 }) {
-  const bboxValue = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
-  const filters = filtersForCategoryGroup(categoryGroup)
-    .map((filter) => filter.replace("{bbox}", bboxValue))
-    .join("");
+  const box = `(${bbox.south},${bbox.west},${bbox.north},${bbox.east})`;
+  const filters = getCategoryFilters(categoryGroup);
 
-  return `[out:json][timeout:180];(${filters});out center tags;`;
+  const filterLines = filters.map((filter) => `${filter}${box};`).join("\n");
+
+  return `
+[out:json][timeout:45];
+(
+${filterLines}
+);
+out center tags;
+`;
 }
 
 function mapElement(element: OsmElement): StagedLocationInput | null {
@@ -105,7 +153,9 @@ function mapElement(element: OsmElement): StagedLocationInput | null {
       .join(" ") || null;
   const city = clean(tags["addr:city"]) || "New York";
   const sourceId = `${element.type}/${element.id}`;
-  const phone = clean(tags.phone || tags["contact:phone"] || tags["addr:phone"]);
+  const phone = clean(
+    tags.phone || tags["contact:phone"] || tags["addr:phone"],
+  );
   const website = clean(tags.website || tags["contact:website"] || tags.url);
   const keywords = uniqueLower([
     name,
@@ -190,6 +240,7 @@ async function markBatchFailed(batchId: string | null, error: unknown) {
 async function fetchOverpassElements(categoryGroup: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 65000);
+  const query = buildQuery({ categoryGroup });
 
   try {
     const response = await fetch(OVERPASS_ENDPOINT, {
@@ -198,20 +249,26 @@ async function fetchOverpassElements(categoryGroup: string) {
         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         Accept: "application/json",
       },
-      body: new URLSearchParams({ data: buildQuery({ categoryGroup }) }),
+      body: new URLSearchParams({ data: query }),
       cache: "no-store",
       signal: controller.signal,
     });
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error("[OSM Overpass query]", query);
       throw new Error(
-        `OSM Overpass import failed: HTTP ${response.status} ${response.statusText}`,
+        `OSM Overpass import failed: HTTP ${response.status} ${response.statusText}${
+          errorText ? ` - ${errorText.slice(0, 500)}` : ""
+        }`,
       );
     }
 
     try {
       const payload = await response.json();
-      return Array.isArray(payload.elements) ? (payload.elements as OsmElement[]) : [];
+      return Array.isArray(payload.elements)
+        ? (payload.elements as OsmElement[])
+        : [];
     } catch {
       throw new Error("OSM Overpass returned invalid JSON");
     }
@@ -219,7 +276,7 @@ async function fetchOverpassElements(categoryGroup: string) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(
         categoryGroup === "all"
-          ? "OSM Overpass request timed out. Try limit 100 or a smaller category group."
+          ? "OSM Overpass request timed out for the broad All query. Try Nightlife, Culture, Activities, or Dessert separately."
           : "OSM Overpass request timed out. Try a smaller limit or retry later.",
       );
     }
@@ -236,7 +293,7 @@ export async function importOsmActivities({
 }: {
   limit?: number;
   offset?: number;
-  categoryGroup?: OsmCategoryGroup;
+  categoryGroup?: string;
 }) {
   const numericLimit = Number(limit || 250);
   const numericOffset = Number(offset || 0);
@@ -246,7 +303,13 @@ export async function importOsmActivities({
   const safeOffset = Number.isFinite(numericOffset)
     ? Math.max(Math.trunc(numericOffset), 0)
     : 0;
-  const safeCategoryGroup = categoryGroup || "all";
+  const safeCategoryGroup = (
+    ["nightlife", "culture", "activities", "dessert", "all"].includes(
+      categoryGroup,
+    )
+      ? categoryGroup
+      : "all"
+  ) as OsmCategoryGroup;
   const nextOffset = safeOffset + cappedLimit;
   let batchId: string | null = null;
 
@@ -262,7 +325,7 @@ export async function importOsmActivities({
           offset: safeOffset,
           nextOffset,
           categoryGroup: safeCategoryGroup,
-          bbox: NYC_BBOX,
+          bbox: "nyc",
         },
       })
       .select("id")
@@ -299,7 +362,7 @@ export async function importOsmActivities({
             nextOffset,
             categoryGroup: safeCategoryGroup,
             message,
-            bbox: NYC_BBOX,
+            bbox: "nyc",
           },
           completed_at: new Date().toISOString(),
         })
@@ -307,6 +370,7 @@ export async function importOsmActivities({
       if (updateError) throw updateError;
 
       return {
+        success: true,
         batchId,
         seen: allElements.length,
         mapped: 0,
@@ -334,11 +398,16 @@ export async function importOsmActivities({
       const { error } = await supabaseAdmin
         .from("location_import_staging")
         .upsert(staged, { onConflict: "source,source_id" });
-      if (error) throw new Error(`Failed to stage OSM activities: ${error.message}`);
+      if (error)
+        throw new Error(`Failed to stage OSM activities: ${error.message}`);
     }
 
-    await supabaseAdmin.rpc("oh_refresh_staging_quality", { p_batch_id: batchId });
-    await supabaseAdmin.rpc("oh_find_staging_duplicates", { p_batch_id: batchId });
+    await supabaseAdmin.rpc("oh_refresh_staging_quality", {
+      p_batch_id: batchId,
+    });
+    await supabaseAdmin.rpc("oh_find_staging_duplicates", {
+      p_batch_id: batchId,
+    });
 
     const { error: updateError } = await supabaseAdmin
       .from("location_import_batches")
@@ -354,7 +423,7 @@ export async function importOsmActivities({
           categoryGroup: safeCategoryGroup,
           mapped: mapped.length,
           duplicatesRemoved: mapped.length - staged.length,
-          bbox: NYC_BBOX,
+          bbox: "nyc",
         },
         completed_at: new Date().toISOString(),
       })
@@ -363,6 +432,7 @@ export async function importOsmActivities({
     if (updateError) throw updateError;
 
     return {
+      success: true,
       batchId,
       seen: allElements.length,
       mapped: mapped.length,
