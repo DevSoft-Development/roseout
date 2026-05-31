@@ -9,8 +9,14 @@ export const maxDuration = 300;
 
 const MAX_LIMIT = 500;
 
-async function authorize() {
+async function authorize(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return null;
+  if (
+    process.env.IMPORT_SECRET &&
+    request.headers.get("x-internal-import-secret") === process.env.IMPORT_SECRET
+  ) {
+    return null;
+  }
   const { error } = await requireAdminApiRole(["admin", "superadmin"]);
   return error;
 }
@@ -38,7 +44,7 @@ async function cleanBatch(limit: number, offset: number) {
 }
 
 export async function GET(request: NextRequest) {
-  const authError = await authorize();
+  const authError = await authorize(request);
   if (authError) return authError;
   const params = request.nextUrl.searchParams;
   const table = params.get("table") || "locations";
@@ -55,7 +61,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authError = await authorize();
+  const authError = await authorize(request);
   if (authError) return authError;
   const body = await request.json().catch(() => ({}));
   const table = body.table || "locations";
