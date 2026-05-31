@@ -57,7 +57,12 @@ export async function POST(request: NextRequest) {
 
     const limit = toBoundedNumber(body.limit, 50, 1, 250);
     const offset = toBoundedNumber(body.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const filterIndex = toBoundedNumber(body.filterIndex, 0, 0, Number.MAX_SAFE_INTEGER);
+    const filterIndex = toBoundedNumber(
+      body.filterIndex,
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
     const categoryGroup =
       typeof body.categoryGroup === "string" && body.categoryGroup.trim()
         ? body.categoryGroup.trim()
@@ -71,24 +76,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
+      ...result,
       success: true,
-      batchId: result.batchId,
-      seen: result.seen,
-      mapped: result.mapped,
-      staged: result.staged,
-      duplicatesRemoved: result.duplicatesRemoved,
-      limit: result.limit,
-      offset: result.offset,
-      nextCursor: result.nextCursor,
-      hasMore: result.hasMore,
-      categoryGroup: result.categoryGroup,
-      filterIndex: result.filterIndex,
-      filterLabel: result.filterLabel,
-      filterTag: result.filterTag,
-      overpassEndpoint: result.overpassEndpoint,
-      attemptedEndpoints: result.attemptedEndpoints,
-      skippedFilters: result.skippedFilters,
-      message: result.message,
     });
   } catch (error) {
     return jsonError(error);
