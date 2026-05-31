@@ -196,9 +196,12 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : String(error);
 
     console.error("[api/generate] search failed", {
-      input: typeof request !== "undefined" ? "request_received" : "unknown",
       message,
       stack: error instanceof Error ? error.stack : null,
+      hint:
+        message.includes("not iterable") || message.includes("intent.vibe")
+          ? "Likely LLM intent shape regression. Check intent.vibe normalization."
+          : "Search route failed after parsing or ranking.",
     });
 
     return Response.json(
