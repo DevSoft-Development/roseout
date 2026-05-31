@@ -231,23 +231,14 @@ async function fetchNycRestaurants(cappedLimit: number, safeOffset: number) {
 }
 
 export async function importNycRestaurants({
-  limit = 100,
+  limit = 500,
   offset = 0,
 }: {
   limit?: number;
   offset?: number;
 }) {
-  const cappedLimit = Math.min(
-    Math.max(
-      Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 100,
-      1,
-    ),
-    1000,
-  );
-  const safeOffset = Math.max(
-    Number.isFinite(Number(offset)) ? Math.trunc(Number(offset)) : 0,
-    0,
-  );
+  const cappedLimit = Math.min(Math.max(Number(limit || 500), 1), 1000);
+  const safeOffset = Math.max(Number(offset || 0), 0);
   let batchId: string | null = null;
 
   await assertRequiredTablesExist();
@@ -344,6 +335,9 @@ export async function importNycRestaurants({
       mapped: mapped.length,
       staged: staged.length,
       duplicatesRemoved,
+      limit: cappedLimit,
+      offset: safeOffset,
+      nextOffset: safeOffset + cappedLimit,
     };
   } catch (error) {
     await markBatchFailed(batchId, error);
