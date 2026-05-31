@@ -142,7 +142,7 @@ export async function POST(request: Request) {
     const { runEnterpriseSearch } = await import("../../../lib/search/enterprise");
     const result = await runEnterpriseSearch(cleanInput, {
       body,
-      useLLM: false,
+      useLLM: true,
     });
 
     const cards = [
