@@ -30,7 +30,11 @@ export type SearchDebug = {
   exactNeighborhoodFilteredCount?: number;
   sameBoroughFallbackCount?: number;
   geoFilteredFinalCount?: number;
-  rejectedRecords?: Array<{ name: string; reason: string; domain?: string | null }>;
+  rejectedRecords?: Array<{
+    name: string;
+    reason: string;
+    domain?: string | null;
+  }>;
   restaurantTermsUsed?: string[];
   activityTermsUsed?: string[];
   geoUsed?: unknown;
@@ -41,12 +45,46 @@ export type SearchDebug = {
 const SEARCHED_TABLE = "locations";
 
 const GENERIC_RESTAURANT_TERMS = new Set([
-  "dinner", "lunch", "breakfast", "brunch", "restaurant", "restaurants", "food", "eat", "dining",
+  "dinner",
+  "lunch",
+  "breakfast",
+  "brunch",
+  "restaurant",
+  "restaurants",
+  "food",
+  "eat",
+  "dining",
 ]);
 
 const FOOD_SYNONYMS: Record<string, string[]> = {
-  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "tomahawk steak", "churrasco", "brazilian steakhouse"],
-  steakhouse: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "tomahawk steak", "churrasco", "brazilian steakhouse"],
+  steak: [
+    "steak",
+    "steakhouse",
+    "steak house",
+    "ribeye",
+    "porterhouse",
+    "filet",
+    "filet mignon",
+    "sirloin",
+    "tomahawk",
+    "tomahawk steak",
+    "churrasco",
+    "brazilian steakhouse",
+  ],
+  steakhouse: [
+    "steak",
+    "steakhouse",
+    "steak house",
+    "ribeye",
+    "porterhouse",
+    "filet",
+    "filet mignon",
+    "sirloin",
+    "tomahawk",
+    "tomahawk steak",
+    "churrasco",
+    "brazilian steakhouse",
+  ],
   seafood: ["seafood", "fish", "crab", "lobster", "shrimp", "oyster"],
   sushi: ["sushi", "sashimi", "omakase", "japanese"],
   pasta: ["pasta", "italian"],
@@ -62,30 +100,175 @@ const FOOD_SYNONYMS: Record<string, string[]> = {
   halal: ["halal"],
   fine_dining: ["fine dining", "upscale", "steakhouse"],
 };
-const STEAK_TERMS = ["steakhouse", "steak house", "steak", "american steakhouse", "brazilian steakhouse", "churrasco", "ribeye", "filet", "filet mignon", "porterhouse", "sirloin", "tomahawk", "tomahawk steak"];
+const STEAK_TERMS = [
+  "steakhouse",
+  "steak house",
+  "steak",
+  "american steakhouse",
+  "brazilian steakhouse",
+  "churrasco",
+  "ribeye",
+  "filet",
+  "filet mignon",
+  "porterhouse",
+  "sirloin",
+  "tomahawk",
+  "tomahawk steak",
+];
 
 const BOROUGH_NEIGHBORHOODS: Record<string, string[]> = {
-  queens: ["queens", "astoria", "flushing", "long island city", "lic", "jackson heights", "forest hills", "sunnyside", "elmhurst", "jamaica", "ridgewood", "woodside", "bayside", "corona", "fresh meadows", "rego park", "ozone park", "queens village", "springfield gardens", "rockaway"],
-  manhattan: ["manhattan", "harlem", "upper east side", "upper west side", "midtown", "chelsea", "soho", "lower east side", "east village", "west village", "tribeca", "financial district"],
-  bronx: ["bronx", "south bronx", "riverdale", "fordham", "pelham bay", "morris park"],
-  brooklyn: ["brooklyn", "williamsburg", "bushwick", "park slope", "dumbo", "bed stuy", "crown heights", "greenpoint", "flatbush", "downtown brooklyn"],
+  queens: [
+    "queens",
+    "astoria",
+    "flushing",
+    "long island city",
+    "lic",
+    "jackson heights",
+    "forest hills",
+    "sunnyside",
+    "elmhurst",
+    "jamaica",
+    "ridgewood",
+    "woodside",
+    "bayside",
+    "corona",
+    "fresh meadows",
+    "rego park",
+    "ozone park",
+    "queens village",
+    "springfield gardens",
+    "rockaway",
+  ],
+  manhattan: [
+    "manhattan",
+    "harlem",
+    "upper east side",
+    "upper west side",
+    "midtown",
+    "chelsea",
+    "soho",
+    "lower east side",
+    "east village",
+    "west village",
+    "tribeca",
+    "financial district",
+  ],
+  bronx: [
+    "bronx",
+    "south bronx",
+    "riverdale",
+    "fordham",
+    "pelham bay",
+    "morris park",
+  ],
+  brooklyn: [
+    "brooklyn",
+    "williamsburg",
+    "bushwick",
+    "park slope",
+    "dumbo",
+    "bed stuy",
+    "crown heights",
+    "greenpoint",
+    "flatbush",
+    "downtown brooklyn",
+  ],
   "staten island": ["staten island"],
 };
 
 const SAFE_REMOTE_TEXT_FIELDS = [
-  "name", "restaurant_name", "activity_name", "location_type", "source_table", "primary_category", "cuisine", "cuisine_type", "food_type", "activity_type", "primary_tag", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "search_document", "semantic_search_text",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "location_type",
+  "source_table",
+  "primary_category",
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "activity_type",
+  "primary_tag",
+  "description",
+  "address",
+  "neighborhood",
+  "borough",
+  "city",
+  "state",
+  "zip_code",
+  "search_document",
+  "semantic_search_text",
 ];
 
 const SEARCH_TEXT_FIELDS = [
-  "name", "restaurant_name", "activity_name", "location_type", "source_table", "primary_category", "cuisine", "cuisine_type", "food_type", "activity_type", "primary_tag", "description", "address", "neighborhood", "borough", "city", "state", "zip_code", "search_document", "semantic_search_text", "tags", "vibe_tags", "best_for_tags", "google_types", "search_keywords", "review_keywords", "semantic_tags", "intent_tags",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "location_type",
+  "source_table",
+  "primary_category",
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "activity_type",
+  "primary_tag",
+  "description",
+  "address",
+  "neighborhood",
+  "borough",
+  "city",
+  "state",
+  "zip_code",
+  "search_document",
+  "semantic_search_text",
+  "tags",
+  "vibe_tags",
+  "best_for_tags",
+  "google_types",
+  "search_keywords",
+  "review_keywords",
+  "semantic_tags",
+  "intent_tags",
 ];
 
 const MEAL_TERMS = [
-  "steak", "steakhouse", "seafood", "sushi", "italian", "mexican", "caribbean", "dinner", "brunch", "lunch", "restaurant", "food", "fine dining", "rooftop dinner", "date night dinner",
+  "steak",
+  "steakhouse",
+  "seafood",
+  "sushi",
+  "italian",
+  "mexican",
+  "caribbean",
+  "dinner",
+  "brunch",
+  "lunch",
+  "restaurant",
+  "food",
+  "fine dining",
+  "rooftop dinner",
+  "date night dinner",
 ];
 
 const ADD_ON_ACTIVITY_TERMS = [
-  "hookah", "hookah lounge", "lounge", "nightclub", "club", "karaoke", "bowling", "bowling alley", "lanes", "bowl", "arcade", "vr", "paint", "sip and paint", "paint and sip", "museum", "live music", "activity", "experience", "rooftop",
+  "hookah",
+  "hookah lounge",
+  "lounge",
+  "nightclub",
+  "club",
+  "karaoke",
+  "bowling",
+  "bowling alley",
+  "lanes",
+  "bowl",
+  "arcade",
+  "vr",
+  "paint",
+  "sip and paint",
+  "paint and sip",
+  "museum",
+  "live music",
+  "activity",
+  "experience",
+  "rooftop",
 ];
 
 function stringifySearchValue(value: unknown): string {
@@ -95,7 +278,8 @@ function stringifySearchValue(value: unknown): string {
 }
 
 const n = (v: unknown) => stringifySearchValue(v).toLowerCase().trim();
-const text = (record: Record<string, unknown>) => SEARCH_TEXT_FIELDS.map((f) => n(record[f])).join(" ");
+const text = (record: Record<string, unknown>) =>
+  SEARCH_TEXT_FIELDS.map((f) => n(record[f])).join(" ");
 
 function hasAnyToken(hay: string, tokens: string[]) {
   return tokens.some((token) => hay.includes(token));
@@ -103,24 +287,74 @@ function hasAnyToken(hay: string, tokens: string[]) {
 
 function locationText(location: Record<string, unknown>) {
   return [
-    location.source_table, location.location_type, location.type, location.category, location.primary_category, location.name, location.restaurant_name, location.activity_name, location.business_name, location.cuisine, location.cuisine_type, location.activity_type, location.description, ...(Array.isArray(location.tags) ? location.tags : []), ...(Array.isArray(location.vibes) ? location.vibes : []),
-  ].map((value) => stringifySearchValue(value)).filter(Boolean).join(" ").toLowerCase();
+    location.source_table,
+    location.location_type,
+    location.type,
+    location.category,
+    location.primary_category,
+    location.name,
+    location.restaurant_name,
+    location.activity_name,
+    location.business_name,
+    location.cuisine,
+    location.cuisine_type,
+    location.activity_type,
+    location.description,
+    ...(Array.isArray(location.tags) ? location.tags : []),
+    ...(Array.isArray(location.vibes) ? location.vibes : []),
+  ]
+    .map((value) => stringifySearchValue(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function isRestaurantRecord(location: Record<string, unknown>) {
   const hay = locationText(location);
   if (n(location.source_table) === "restaurants") return true;
   if (location.restaurant_name) return true;
-  if (location.cuisine || location.cuisine_type || location.food_type) return true;
+  if (location.cuisine || location.cuisine_type || location.food_type)
+    return true;
   return hasAnyToken(hay, [
-    "restaurant", "dining", "dinner", "brunch", "lunch", "food", "steakhouse", "seafood", "sushi", "italian", "mexican", "caribbean", "american", "cafe", "bakery", "dessert", "bar and grill", "grill", "bistro",
+    "restaurant",
+    "dining",
+    "dinner",
+    "brunch",
+    "lunch",
+    "food",
+    "steakhouse",
+    "seafood",
+    "sushi",
+    "italian",
+    "mexican",
+    "caribbean",
+    "american",
+    "cafe",
+    "bakery",
+    "dessert",
+    "bar and grill",
+    "grill",
+    "bistro",
   ]);
 }
 
 function isActivityOnlyRecord(location: Record<string, unknown>) {
   const hay = locationText(location);
   const hasActivitySignal = hasAnyToken(hay, [
-    "hookah", "lounge", "nightclub", "club", "karaoke", "bowling", "arcade", "vr", "paint", "sip and paint", "museum", "escape room", "activity", "experience",
+    "hookah",
+    "lounge",
+    "nightclub",
+    "club",
+    "karaoke",
+    "bowling",
+    "arcade",
+    "vr",
+    "paint",
+    "sip and paint",
+    "museum",
+    "escape room",
+    "activity",
+    "experience",
   ]);
   return hasActivitySignal && !isRestaurantRecord(location);
 }
@@ -142,22 +376,51 @@ function getActivityTermsFromQuery(query: string) {
   return ADD_ON_ACTIVITY_TERMS.filter((term) => q.includes(term));
 }
 function getRestaurantLaneTerms(intent: CanonicalSearchIntent) {
-  return [...new Set([
-    ...(intent.normalizedIntent?.restaurantTerms ?? []),
-    ...(intent.normalizedIntent?.cuisineTerms ?? []),
-    ...(intent.normalizedIntent?.mealTerms ?? []),
-    ...((intent.specificMealFoodIntents?.length ?? 0) > 0 ? intent.specificMealFoodIntents : intent.mealFoodIntents),
-    ...intent.cuisines,
-  ].map((term) => String(term ?? "").replaceAll("_", " ").toLowerCase()).filter(Boolean))];
+  return [
+    ...new Set(
+      [
+        ...(intent.normalizedIntent?.restaurantTerms ?? []),
+        ...(intent.normalizedIntent?.cuisineTerms ?? []),
+        ...(intent.normalizedIntent?.mealTerms ?? []),
+        ...((intent.specificMealFoodIntents?.length ?? 0) > 0
+          ? intent.specificMealFoodIntents
+          : intent.mealFoodIntents),
+        ...intent.cuisines,
+      ]
+        .map((term) =>
+          String(term ?? "")
+            .replaceAll("_", " ")
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  ];
 }
 function getActivityLaneTerms(intent: CanonicalSearchIntent) {
-  return [...new Set([...(intent.normalizedIntent?.activityTerms ?? []), ...intent.activityIntents]
-    .map((term) => String(term ?? "").replaceAll("_", " ").toLowerCase()).filter(Boolean))];
+  return [
+    ...new Set(
+      [
+        ...(intent.normalizedIntent?.activityTerms ?? []),
+        ...intent.activityIntents,
+      ]
+        .map((term) =>
+          String(term ?? "")
+            .replaceAll("_", " ")
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function hasRooftopRestaurantIntent(query: string) {
   const q = String(query ?? "").toLowerCase();
-  return q.includes("rooftop") && ["dinner", "restaurant", "dining", "brunch", "lunch", "food", "eat"].some((term) => q.includes(term));
+  return (
+    q.includes("rooftop") &&
+    ["dinner", "restaurant", "dining", "brunch", "lunch", "food", "eat"].some(
+      (term) => q.includes(term),
+    )
+  );
 }
 
 const ROOFTOP_RESTAURANT_MATCH_TERMS = [
@@ -179,50 +442,85 @@ function boroughMatches(record: Record<string, unknown>, boroughs: string[]) {
   return boroughs.some((requested) => {
     const b = n(requested);
     if (!b) return false;
-    return hay.includes(b) || (BOROUGH_NEIGHBORHOODS[b] ?? []).some((q) => hay.includes(q));
+    return (
+      hay.includes(b) ||
+      (BOROUGH_NEIGHBORHOODS[b] ?? []).some((q) => hay.includes(q))
+    );
   });
 }
 
 function matchesGeo(record: Record<string, unknown>, query: string) {
   const q = query.toLowerCase();
   const hay = [
-    record.borough, record.city, record.neighborhood, record.address, record.formatted_address, record.search_document, record.semantic_search_text, record.location,
-  ].map((value) => stringifySearchValue(value)).filter(Boolean).join(" ").toLowerCase();
+    record.borough,
+    record.city,
+    record.neighborhood,
+    record.address,
+    record.formatted_address,
+    record.search_document,
+    record.semantic_search_text,
+    record.location,
+  ]
+    .map((value) => stringifySearchValue(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 
-  const boroughList = ["queens", "brooklyn", "manhattan", "bronx", "staten island"];
+  const boroughList = [
+    "queens",
+    "brooklyn",
+    "manhattan",
+    "bronx",
+    "staten island",
+  ];
   const requestedBorough = boroughList.find((borough) => q.includes(borough));
   if (requestedBorough) {
     return (
       hay.includes(requestedBorough) ||
-      (BOROUGH_NEIGHBORHOODS[requestedBorough] ?? []).some((token) => hay.includes(token))
+      (BOROUGH_NEIGHBORHOODS[requestedBorough] ?? []).some((token) =>
+        hay.includes(token),
+      )
     );
   }
-  if (q.includes("astoria")) return hay.includes("astoria") || hay.includes("queens");
+  if (q.includes("astoria"))
+    return hay.includes("astoria") || hay.includes("queens");
   return true;
 }
 
-function restaurantIntentScore(location: Record<string, unknown>, query: string) {
+function restaurantIntentScore(
+  location: Record<string, unknown>,
+  query: string,
+) {
   const hay = locationText(location);
   const mealTerms = getMealTermsFromQuery(query);
   let points = 0;
   if (n(location.source_table) === "restaurants") points += 50;
   if (location.restaurant_name) points += 30;
-  if (location.cuisine || location.cuisine_type || location.food_type) points += 25;
+  if (location.cuisine || location.cuisine_type || location.food_type)
+    points += 25;
   for (const term of mealTerms) if (hay.includes(term)) points += 40;
   if (hay.includes("steakhouse")) points += 35;
   if (hay.includes("steak")) points += 30;
-  if (hay.includes("churrasco") || hay.includes("brazilian steakhouse")) points += 30;
-  if (hay.includes("grill") && STEAK_TERMS.some((term) => hay.includes(term))) points += 15;
+  if (hay.includes("churrasco") || hay.includes("brazilian steakhouse"))
+    points += 30;
+  if (hay.includes("grill") && STEAK_TERMS.some((term) => hay.includes(term)))
+    points += 15;
   if (hay.includes("dinner")) points += 20;
   if (hay.includes("restaurant")) points += 20;
   if (isActivityOnlyRecord(location)) points -= 100;
   return points;
 }
 
-function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[], query: string) {
+function filterRestaurantCandidatesForQuery(
+  locations: Record<string, unknown>[],
+  query: string,
+) {
   const mealIntent = hasMealIntent(query);
   const mealTerms = getMealTermsFromQuery(query);
-  const restaurantCandidates = locations.filter((location) => isRestaurantRecord(location) && !isActivityOnlyRecord(location));
+  const restaurantCandidates = locations.filter(
+    (location) =>
+      isRestaurantRecord(location) && !isActivityOnlyRecord(location),
+  );
   const rooftopIntent = hasRooftopRestaurantIntent(query);
 
   if (rooftopIntent) {
@@ -240,45 +538,89 @@ function filterRestaurantCandidatesForQuery(locations: Record<string, unknown>[]
     }
   }
 
-  if (!mealIntent) return { filtered: restaurantCandidates, strictCount: restaurantCandidates.length, fallbackCount: restaurantCandidates.length };
+  if (!mealIntent)
+    return {
+      filtered: restaurantCandidates,
+      strictCount: restaurantCandidates.length,
+      fallbackCount: restaurantCandidates.length,
+    };
   const strictMealMatches = restaurantCandidates.filter((location) => {
     const hay = locationText(location);
     return mealTerms.some((term) => hay.includes(term));
   });
-  const steakIntent = STEAK_TERMS.some((term) => query.toLowerCase().includes(term));
+  const steakIntent = STEAK_TERMS.some((term) =>
+    query.toLowerCase().includes(term),
+  );
   if (steakIntent) {
     const steakStrictMatches = restaurantCandidates.filter((location) => {
       const hay = locationText(location);
-      return STEAK_TERMS.some((term) => hay.includes(term)) || (hay.includes("grill") && hay.includes("steak"));
+      return (
+        STEAK_TERMS.some((term) => hay.includes(term)) ||
+        (hay.includes("grill") && hay.includes("steak"))
+      );
     });
     if (steakStrictMatches.length > 0) {
-      return { filtered: steakStrictMatches, strictCount: steakStrictMatches.length, fallbackCount: 0 };
+      return {
+        filtered: steakStrictMatches,
+        strictCount: steakStrictMatches.length,
+        fallbackCount: 0,
+      };
     }
   }
-  if (strictMealMatches.length > 0) return { filtered: strictMealMatches, strictCount: strictMealMatches.length, fallbackCount: 0 };
-  return { filtered: restaurantCandidates, strictCount: 0, fallbackCount: restaurantCandidates.length };
+  if (strictMealMatches.length > 0)
+    return {
+      filtered: strictMealMatches,
+      strictCount: strictMealMatches.length,
+      fallbackCount: 0,
+    };
+  return {
+    filtered: restaurantCandidates,
+    strictCount: 0,
+    fallbackCount: restaurantCandidates.length,
+  };
 }
 
 function activityTermMatches(hay: string, term: string) {
   const normalized = term.replaceAll("_", " ");
-  if (normalized === "bowling") return ["bowling", "bowling alley", "lanes", "bowl"].some((token) => hay.includes(token));
-  if (normalized === "paint and sip") return ["paint and sip", "sip and paint", "painting"].some((token) => hay.includes(token));
+  if (normalized === "bowling")
+    return ["bowling", "bowling alley", "lanes", "bowl"].some((token) =>
+      hay.includes(token),
+    );
+  if (normalized === "paint and sip")
+    return ["paint and sip", "sip and paint", "painting"].some((token) =>
+      hay.includes(token),
+    );
   return hay.includes(normalized);
 }
 
-function filterActivityCandidatesForTerms(locations: Record<string, unknown>[], activityTerms: string[]) {
-  const terms = activityTerms.map((term) => term.replaceAll("_", " ")).filter(Boolean);
+function filterActivityCandidatesForTerms(
+  locations: Record<string, unknown>[],
+  activityTerms: string[],
+) {
+  const terms = activityTerms
+    .map((term) => term.replaceAll("_", " "))
+    .filter(Boolean);
   return locations.filter((location) => {
     const hay = locationText(location);
-    return terms.length ? terms.some((term) => activityTermMatches(hay, term)) : true;
+    return terms.length
+      ? terms.some((term) => activityTermMatches(hay, term))
+      : true;
   });
 }
 
-function filterActivityCandidatesForQuery(locations: Record<string, unknown>[], query: string) {
-  return filterActivityCandidatesForTerms(locations, getActivityTermsFromQuery(query));
+function filterActivityCandidatesForQuery(
+  locations: Record<string, unknown>[],
+  query: string,
+) {
+  return filterActivityCandidatesForTerms(
+    locations,
+    getActivityTermsFromQuery(query),
+  );
 }
 
-export function inferRecordDomain(record: Record<string, unknown>): SearchDomain | null {
+export function inferRecordDomain(
+  record: Record<string, unknown>,
+): SearchDomain | null {
   const hay = text(record);
   const marker = n(
     record.location_type ??
@@ -289,11 +631,36 @@ export function inferRecordDomain(record: Record<string, unknown>): SearchDomain
       record.source_table,
   );
 
-  const restaurantTokens = ["restaurant", "restaurants", "food", "dining", "cuisine", "brunch", "lunch", "dinner", "breakfast", "cafe"];
-  const activityTokens = ["activity", "activities", "nightlife", "experience", "lounge", "bar", "club", "event", "things to do"];
+  const restaurantTokens = [
+    "restaurant",
+    "restaurants",
+    "food",
+    "dining",
+    "cuisine",
+    "brunch",
+    "lunch",
+    "dinner",
+    "breakfast",
+    "cafe",
+  ];
+  const activityTokens = [
+    "activity",
+    "activities",
+    "nightlife",
+    "experience",
+    "lounge",
+    "bar",
+    "club",
+    "event",
+    "things to do",
+  ];
 
-  const restaurantHit = hasAnyToken(marker, restaurantTokens) || hasAnyToken(hay, ["steak", "seafood", "brunch", "restaurant", "cuisine"]);
-  const activityHit = hasAnyToken(marker, activityTokens) || hasAnyToken(hay, ["hookah", "bowling", "paint", "karaoke", "nightlife"]);
+  const restaurantHit =
+    hasAnyToken(marker, restaurantTokens) ||
+    hasAnyToken(hay, ["steak", "seafood", "brunch", "restaurant", "cuisine"]);
+  const activityHit =
+    hasAnyToken(marker, activityTokens) ||
+    hasAnyToken(hay, ["hookah", "bowling", "paint", "karaoke", "nightlife"]);
 
   if (restaurantHit && !activityHit) return "restaurant";
   if (activityHit && !restaurantHit) return "activity";
@@ -306,40 +673,57 @@ function isDomainMatch(record: Record<string, unknown>, domain: SearchDomain) {
   const inferred = inferRecordDomain(record);
   if (inferred) return inferred === domain;
   const hay = text(record);
-  return domain === "restaurant" ? hasAnyToken(hay, ["food", "eat", "dining"]) : hasAnyToken(hay, ["activity", "nightlife", "experience"]);
+  return domain === "restaurant"
+    ? hasAnyToken(hay, ["food", "eat", "dining"])
+    : hasAnyToken(hay, ["activity", "nightlife", "experience"]);
 }
 
 function getSpecificFoodTerms(intent: CanonicalSearchIntent) {
   const normalized = intent.normalizedIntent;
-  const laneSpecific = [...(normalized?.cuisineTerms ?? []), ...(normalized?.restaurantTerms ?? [])]
-    .filter((term) => !GENERIC_RESTAURANT_TERMS.has(String(term).toLowerCase()));
+  const laneSpecific = [
+    ...(normalized?.cuisineTerms ?? []),
+    ...(normalized?.restaurantTerms ?? []),
+  ].filter((term) => !GENERIC_RESTAURANT_TERMS.has(String(term).toLowerCase()));
   if (laneSpecific.length > 0) return [...new Set(laneSpecific)];
   const specific = intent.specificMealFoodIntents ?? [];
   if (specific.length > 0) return specific;
 
-  return (intent.mealFoodIntents ?? []).filter((term) => !GENERIC_RESTAURANT_TERMS.has(String(term).toLowerCase()));
+  return (intent.mealFoodIntents ?? []).filter(
+    (term) => !GENERIC_RESTAURANT_TERMS.has(String(term).toLowerCase()),
+  );
 }
 
 function recordSearchText(record: Record<string, unknown>) {
   return text(record);
 }
 
-function matchesSpecificFoodIntent(record: Record<string, unknown>, terms: string[]) {
+function matchesSpecificFoodIntent(
+  record: Record<string, unknown>,
+  terms: string[],
+) {
   if (!terms.length) return true;
 
   const hay = recordSearchText(record);
 
   return terms.some((term) => {
-    const normalized = String(term ?? "").toLowerCase().replaceAll("_", " ").trim();
-    const synonyms = FOOD_SYNONYMS[normalized] ?? FOOD_SYNONYMS[normalized.replaceAll(" ", "_")] ?? [normalized];
-    return synonyms.some((synonym) => hay.includes(String(synonym).toLowerCase()));
+    const normalized = String(term ?? "")
+      .toLowerCase()
+      .replaceAll("_", " ")
+      .trim();
+    const synonyms = FOOD_SYNONYMS[normalized] ??
+      FOOD_SYNONYMS[normalized.replaceAll(" ", "_")] ?? [normalized];
+    return synonyms.some((synonym) =>
+      hay.includes(String(synonym).toLowerCase()),
+    );
   });
 }
 
 function softCategoryFilter(records: any[], terms: string[]) {
   if (!terms.length) return records;
   const normalized = terms.map((t) => n(t).replaceAll("_", " "));
-  const exact = records.filter((record) => normalized.some((term) => text(record).includes(term)));
+  const exact = records.filter((record) =>
+    normalized.some((term) => text(record).includes(term)),
+  );
   return exact.length > 0 ? exact : records;
 }
 
@@ -352,6 +736,8 @@ export async function queryLocations(searchText: string, limit = 120) {
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
@@ -361,8 +747,14 @@ export async function queryLocations(searchText: string, limit = 120) {
     .limit(limit);
 
   if (term.length > 0) {
-    const parts = term.split(/\s+/).map((p) => p.trim()).filter(Boolean).slice(0, 6);
-    const ors = parts.flatMap((p) => SAFE_REMOTE_TEXT_FIELDS.map((field) => `${field}.ilike.%${p}%`));
+    const parts = term
+      .split(/\s+/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    const ors = parts.flatMap((p) =>
+      SAFE_REMOTE_TEXT_FIELDS.map((field) => `${field}.ilike.%${p}%`),
+    );
     query = query.or(ors.join(","));
   }
 
@@ -393,6 +785,8 @@ export async function queryBroadLocations(limit = 500) {
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
@@ -418,7 +812,12 @@ export async function queryBroadLocations(limit = 500) {
   return { records: data ?? [], error: null };
 }
 
-async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain, searchText: string, fallback = false) {
+async function searchDomain(
+  intent: CanonicalSearchIntent,
+  domain: SearchDomain,
+  searchText: string,
+  fallback = false,
+) {
   const sourceErrors: string[] = [];
   const queryResult = await queryLocations(searchText);
   if (queryResult.error) sourceErrors.push(queryResult.error);
@@ -434,12 +833,29 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
     });
   }
 
-  const domainRecords = records.filter((record) => isDomainMatch(record, domain));
-  const geoIntent = intent.geoIntent ?? detectRequestedGeo(intent.rawQuery || searchText);
-  const intentQuery = `${searchText} ${(intent.locationIntent ?? []).join(" ")} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
-  const rejectedRecords: Array<{ name: string; reason: string; domain?: string | null }> = [];
-  const nameForDebug = (record: Record<string, unknown>) => String(record.name ?? record.restaurant_name ?? record.activity_name ?? record.business_name ?? "Unknown");
-  const geoFilteredByIntent = domainRecords.filter((record) => boroughMatches(record, intent.boroughs));
+  const domainRecords = records.filter((record) =>
+    isDomainMatch(record, domain),
+  );
+  const geoIntent =
+    intent.geoIntent ?? detectRequestedGeo(intent.rawQuery || searchText);
+  const intentQuery =
+    `${searchText} ${(intent.locationIntent ?? []).join(" ")} ${(intent.locations ?? []).join(" ")} ${(intent.boroughs ?? []).join(" ")}`.trim();
+  const rejectedRecords: Array<{
+    name: string;
+    reason: string;
+    domain?: string | null;
+  }> = [];
+  const nameForDebug = (record: Record<string, unknown>) =>
+    String(
+      record.name ??
+        record.restaurant_name ??
+        record.activity_name ??
+        record.business_name ??
+        "Unknown",
+    );
+  const geoFilteredByIntent = domainRecords.filter((record) =>
+    boroughMatches(record, intent.boroughs),
+  );
 
   const geoFilteredByQuery = geoIntent
     ? domainRecords.filter((record) => locationMatchesGeo(record, geoIntent))
@@ -447,12 +863,16 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
   const exactNeighborhoodFiltered =
     geoIntent?.geoType === "neighborhood" && geoIntent.neighborhood
-      ? domainRecords.filter((record) => isExactRequestedNeighborhoodMatch(record, geoIntent))
+      ? domainRecords.filter((record) =>
+          isExactRequestedNeighborhoodMatch(record, geoIntent),
+        )
       : [];
 
   const sameBoroughFallbackFiltered =
     geoIntent?.geoType === "neighborhood" && geoIntent.borough
-      ? domainRecords.filter((record) => isSameRequestedBoroughMatch(record, geoIntent))
+      ? domainRecords.filter((record) =>
+          isSameRequestedBoroughMatch(record, geoIntent),
+        )
       : [];
 
   const hasExplicitGeo =
@@ -464,7 +884,14 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
 
   const strictGeoRequired =
     hasExplicitGeo &&
-    ["borough", "neighborhood", "city", "county", "region", "area_group"].includes(String(geoIntent?.geoType ?? "borough"));
+    [
+      "borough",
+      "neighborhood",
+      "city",
+      "county",
+      "region",
+      "area_group",
+    ].includes(String(geoIntent?.geoType ?? "borough"));
 
   let geoFiltered: Record<string, unknown>[];
 
@@ -497,70 +924,174 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
           : domainRecords;
   }
 
-  if (strictGeoRequired && geoFiltered.length === 0 && domainRecords.length > 0) {
-    rejectedRecords.push(...domainRecords.slice(0, 20).map((record) => ({
-      name: nameForDebug(record),
-      reason: "strict_geo_removed_non_matching_location",
-      domain: inferRecordDomain(record),
-    })));
-  } else if ((geoIntent || intent.boroughs.length > 0) && geoFilteredByQuery.length === 0 && domainRecords.length > 0) {
-    rejectedRecords.push(...domainRecords.slice(0, 20).map((record) => ({
-      name: nameForDebug(record),
-      reason: "geo_softened_no_exact_location_match",
-      domain: inferRecordDomain(record),
-    })));
+  if (
+    strictGeoRequired &&
+    geoFiltered.length === 0 &&
+    domainRecords.length > 0
+  ) {
+    rejectedRecords.push(
+      ...domainRecords.slice(0, 20).map((record) => ({
+        name: nameForDebug(record),
+        reason: "strict_geo_removed_non_matching_location",
+        domain: inferRecordDomain(record),
+      })),
+    );
+  } else if (
+    (geoIntent || intent.boroughs.length > 0) &&
+    geoFilteredByQuery.length === 0 &&
+    domainRecords.length > 0
+  ) {
+    rejectedRecords.push(
+      ...domainRecords.slice(0, 20).map((record) => ({
+        name: nameForDebug(record),
+        reason: "geo_softened_no_exact_location_match",
+        domain: inferRecordDomain(record),
+      })),
+    );
   }
-  const terms = domain === "restaurant" ? getSpecificFoodTerms(intent) : getActivityLaneTerms(intent);
-  const restaurantLaneQuery = getRestaurantLaneTerms(intent).join(" ") || intent.restaurantSearchInput || searchText;
-  let categorized: Record<string, unknown>[] = domain === "restaurant" ? [] : softCategoryFilter(geoFiltered, terms);
+  const terms =
+    domain === "restaurant"
+      ? getSpecificFoodTerms(intent)
+      : getActivityLaneTerms(intent);
+  const restaurantLaneQuery =
+    getRestaurantLaneTerms(intent).join(" ") ||
+    intent.restaurantSearchInput ||
+    searchText;
+  let categorized: Record<string, unknown>[] =
+    domain === "restaurant" ? [] : softCategoryFilter(geoFiltered, terms);
   let strictRestaurantCount = 0;
   let fallbackRestaurantCount = 0;
   let restaurantCandidateCount = 0;
   let activityCandidateCount = 0;
 
   if (domain === "restaurant") {
-    const restaurantCandidates = domainRecords.filter((record) => isRestaurantRecord(record) && !isActivityOnlyRecord(record));
+    const restaurantCandidates = domainRecords.filter(
+      (record) => isRestaurantRecord(record) && !isActivityOnlyRecord(record),
+    );
     restaurantCandidateCount = restaurantCandidates.length;
     const strictFoodTerms = getSpecificFoodTerms(intent);
-    const hasSpecificCuisine = strictFoodTerms.length > 0 || intent.cuisines.length > 0 || Boolean(intent.requiredRestaurantCategory);
+    const hasSpecificCuisine =
+      strictFoodTerms.length > 0 ||
+      intent.cuisines.length > 0 ||
+      Boolean(intent.requiredRestaurantCategory);
     const hardCuisineMatches = hasSpecificCuisine
-      ? restaurantCandidates.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms.length ? strictFoodTerms : intent.cuisines) || scoreCuisineCategoryMatch(record, restaurantLaneQuery, true).score > 0)
+      ? restaurantCandidates.filter(
+          (record) =>
+            matchesSpecificFoodIntent(
+              record,
+              strictFoodTerms.length ? strictFoodTerms : intent.cuisines,
+            ) ||
+            scoreCuisineCategoryMatch(record, restaurantLaneQuery, true).score >
+              0,
+        )
       : [];
     strictRestaurantCount = hardCuisineMatches.length;
 
     if (geoIntent && hardCuisineMatches.length > 0) {
-      const hardCuisineGeoMatches = hardCuisineMatches.filter((record) => locationMatchesGeo(record, geoIntent));
-      const hardCuisineSource = hardCuisineGeoMatches.length > 0 ? hardCuisineGeoMatches : strictGeoRequired ? [] : hardCuisineMatches;
-      categorized = hardCuisineSource
-        .sort((a, b) => (scoreCuisineCategoryMatch(b, restaurantLaneQuery, true).score * 3 + scoreGeoMatch(b, geoIntent)) - (scoreCuisineCategoryMatch(a, restaurantLaneQuery, true).score * 3 + scoreGeoMatch(a, geoIntent)));
-      fallbackRestaurantCount = hardCuisineGeoMatches.length > 0 ? 0 : hardCuisineSource.length;
+      const hardCuisineGeoMatches = hardCuisineMatches.filter((record) =>
+        locationMatchesGeo(record, geoIntent),
+      );
+      const hardCuisineSource =
+        hardCuisineGeoMatches.length > 0
+          ? hardCuisineGeoMatches
+          : strictGeoRequired
+            ? []
+            : hardCuisineMatches;
+      categorized = hardCuisineSource.sort(
+        (a, b) =>
+          scoreCuisineCategoryMatch(b, restaurantLaneQuery, true).score * 3 +
+          scoreGeoMatch(b, geoIntent) -
+          (scoreCuisineCategoryMatch(a, restaurantLaneQuery, true).score * 3 +
+            scoreGeoMatch(a, geoIntent)),
+      );
+      fallbackRestaurantCount =
+        hardCuisineGeoMatches.length > 0 ? 0 : hardCuisineSource.length;
       if (strictGeoRequired && hardCuisineGeoMatches.length === 0) {
-        rejectedRecords.push(...hardCuisineMatches.slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: "strict_geo_removed_hard_cuisine_non_matching_location", domain: inferRecordDomain(record) })));
+        rejectedRecords.push(
+          ...hardCuisineMatches
+            .slice(0, 20)
+            .map((record) => ({
+              name: nameForDebug(record),
+              reason: "strict_geo_removed_hard_cuisine_non_matching_location",
+              domain: inferRecordDomain(record),
+            })),
+        );
       }
     } else {
-      const sourceForGeneric = (strictGeoRequired || geoIntent) ? geoFiltered : restaurantCandidates;
-      const filtered = filterRestaurantCandidatesForQuery(sourceForGeneric, intentQuery);
-      strictRestaurantCount = Math.max(strictRestaurantCount, filtered.strictCount);
+      const sourceForGeneric =
+        strictGeoRequired || geoIntent ? geoFiltered : restaurantCandidates;
+      const filtered = filterRestaurantCandidatesForQuery(
+        sourceForGeneric,
+        intentQuery,
+      );
+      strictRestaurantCount = Math.max(
+        strictRestaurantCount,
+        filtered.strictCount,
+      );
       fallbackRestaurantCount = filtered.fallbackCount;
-      categorized = filtered.filtered.sort((a, b) => restaurantIntentScore(b, intentQuery) - restaurantIntentScore(a, intentQuery));
+      categorized = filtered.filtered.sort(
+        (a, b) =>
+          restaurantIntentScore(b, intentQuery) -
+          restaurantIntentScore(a, intentQuery),
+      );
       if (strictFoodTerms.length > 0 && strictRestaurantCount > 0) {
-        const strictMatches = categorized.filter((record) => matchesSpecificFoodIntent(record, strictFoodTerms));
+        const strictMatches = categorized.filter((record) =>
+          matchesSpecificFoodIntent(record, strictFoodTerms),
+        );
         if (strictMatches.length > 0) {
-          rejectedRecords.push(...categorized.filter((record) => !matchesSpecificFoodIntent(record, strictFoodTerms)).slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: `missing_specific_food:${strictFoodTerms.join("|")}`, domain: inferRecordDomain(record) })));
+          rejectedRecords.push(
+            ...categorized
+              .filter(
+                (record) => !matchesSpecificFoodIntent(record, strictFoodTerms),
+              )
+              .slice(0, 20)
+              .map((record) => ({
+                name: nameForDebug(record),
+                reason: `missing_specific_food:${strictFoodTerms.join("|")}`,
+                domain: inferRecordDomain(record),
+              })),
+          );
           categorized = strictMatches;
         }
       }
     }
   } else {
     const activityLaneTerms = getActivityLaneTerms(intent);
-    activityCandidateCount = filterActivityCandidatesForTerms(geoFiltered, activityLaneTerms).length;
-    categorized = filterActivityCandidatesForTerms(geoFiltered, activityLaneTerms);
-    if (!hasAddOnActivityIntent(intentQuery)) categorized = softCategoryFilter(categorized, terms);
-    if (intent.needsRestaurant && intent.needsActivity && (intent.addOnIntent ?? []).length > 0) {
-      const addOn = (intent.addOnIntent ?? []).map((x) => x.replaceAll("_", " "));
-      const addOnMatches = categorized.filter((record) => addOn.some((term) => recordSearchText(record).includes(term)));
+    activityCandidateCount = filterActivityCandidatesForTerms(
+      geoFiltered,
+      activityLaneTerms,
+    ).length;
+    categorized = filterActivityCandidatesForTerms(
+      geoFiltered,
+      activityLaneTerms,
+    );
+    if (!hasAddOnActivityIntent(intentQuery))
+      categorized = softCategoryFilter(categorized, terms);
+    if (
+      intent.needsRestaurant &&
+      intent.needsActivity &&
+      (intent.addOnIntent ?? []).length > 0
+    ) {
+      const addOn = (intent.addOnIntent ?? []).map((x) =>
+        x.replaceAll("_", " "),
+      );
+      const addOnMatches = categorized.filter((record) =>
+        addOn.some((term) => recordSearchText(record).includes(term)),
+      );
       if (addOnMatches.length > 0) {
-        rejectedRecords.push(...categorized.filter((record) => !addOn.some((term) => recordSearchText(record).includes(term))).slice(0, 20).map((record) => ({ name: nameForDebug(record), reason: `missing_activity_add_on:${addOn.join("|")}`, domain: inferRecordDomain(record) })));
+        rejectedRecords.push(
+          ...categorized
+            .filter(
+              (record) =>
+                !addOn.some((term) => recordSearchText(record).includes(term)),
+            )
+            .slice(0, 20)
+            .map((record) => ({
+              name: nameForDebug(record),
+              reason: `missing_activity_add_on:${addOn.join("|")}`,
+              domain: inferRecordDomain(record),
+            })),
+        );
         categorized = addOnMatches;
       }
     }
@@ -613,19 +1144,38 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
       exactNeighborhoodFilteredCount: exactNeighborhoodFiltered.length,
       sameBoroughFallbackCount: sameBoroughFallbackFiltered.length,
       geoFilteredFinalCount: geoFiltered.length,
-      fallbackStage: domain === "restaurant" ? (strictRestaurantCount > 0 && geoIntent ? "hard_cuisine_then_geo" : fallbackRestaurantCount > 0 ? "generic_or_expanded" : "strict") : undefined,
+      fallbackStage:
+        domain === "restaurant"
+          ? strictRestaurantCount > 0 && geoIntent
+            ? "hard_cuisine_then_geo"
+            : fallbackRestaurantCount > 0
+              ? "generic_or_expanded"
+              : "strict"
+          : undefined,
       finalCardCount: categorized.length,
       top10: categorized.slice(0, 10).map((record) => {
-        const cuisineScore = scoreCuisineCategoryMatch(record, restaurantLaneQuery, true).score;
+        const cuisineScore = scoreCuisineCategoryMatch(
+          record,
+          restaurantLaneQuery,
+          true,
+        ).score;
         const geoScore = scoreGeoMatch(record, geoIntent);
-        const typeScore = isRestaurantRecord(record) && !isActivityOnlyRecord(record) ? 25 : 0;
+        const typeScore =
+          isRestaurantRecord(record) && !isActivityOnlyRecord(record) ? 25 : 0;
         return {
           name: record.name ?? record.restaurant_name ?? record.activity_name,
           cuisineScore,
           geoScore,
           typeScore,
           finalScore: cuisineScore * 3 + typeScore * 2 + geoScore,
-          reason: domain === "restaurant" ? (cuisineScore > 0 && geoScore > 0 ? "included:hard_cuisine_geo" : cuisineScore > 0 ? "included:cuisine_geo_expanded" : "included:generic_fallback") : "included:activity_match",
+          reason:
+            domain === "restaurant"
+              ? cuisineScore > 0 && geoScore > 0
+                ? "included:hard_cuisine_geo"
+                : cuisineScore > 0
+                  ? "included:cuisine_geo_expanded"
+                  : "included:generic_fallback"
+              : "included:activity_match",
         };
       }),
     });
@@ -634,8 +1184,18 @@ async function searchDomain(intent: CanonicalSearchIntent, domain: SearchDomain,
   return { records: categorized, debug };
 }
 
-export const searchRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", intent.restaurantSearchInput || intent.mealFoodIntents.join(" "));
-export const searchActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", intent.activitySearchInput || intent.activityIntents.join(" "));
+export const searchRestaurants = (intent: CanonicalSearchIntent) =>
+  searchDomain(
+    intent,
+    "restaurant",
+    intent.restaurantSearchInput || intent.mealFoodIntents.join(" "),
+  );
+export const searchActivities = (intent: CanonicalSearchIntent) =>
+  searchDomain(
+    intent,
+    "activity",
+    intent.activitySearchInput || intent.activityIntents.join(" "),
+  );
 function fallbackGeoTerms(intent: CanonicalSearchIntent) {
   return [
     ...intent.boroughs,
@@ -646,15 +1206,29 @@ function fallbackGeoTerms(intent: CanonicalSearchIntent) {
   ];
 }
 
-export const searchFallbackRestaurants = (intent: CanonicalSearchIntent) => searchDomain(intent, "restaurant", [
-  ...fallbackGeoTerms(intent),
-  "restaurant",
-  ...getRestaurantLaneTerms(intent),
-  ...(intent.normalizedIntent?.vibeTerms ?? intent.vibes).filter((term) => !getActivityLaneTerms(intent).includes(term)),
-].join(" "), true);
-export const searchFallbackActivities = (intent: CanonicalSearchIntent) => searchDomain(intent, "activity", [
-  ...fallbackGeoTerms(intent),
-  "activity",
-  ...(getActivityLaneTerms(intent).length ? [] : ["lounge", "nightlife"]),
-  ...getActivityLaneTerms(intent),
-].join(" "), true);
+export const searchFallbackRestaurants = (intent: CanonicalSearchIntent) =>
+  searchDomain(
+    intent,
+    "restaurant",
+    [
+      ...fallbackGeoTerms(intent),
+      "restaurant",
+      ...getRestaurantLaneTerms(intent),
+      ...(intent.normalizedIntent?.vibeTerms ?? intent.vibes).filter(
+        (term) => !getActivityLaneTerms(intent).includes(term),
+      ),
+    ].join(" "),
+    true,
+  );
+export const searchFallbackActivities = (intent: CanonicalSearchIntent) =>
+  searchDomain(
+    intent,
+    "activity",
+    [
+      ...fallbackGeoTerms(intent),
+      "activity",
+      ...(getActivityLaneTerms(intent).length ? [] : ["lounge", "nightlife"]),
+      ...getActivityLaneTerms(intent),
+    ].join(" "),
+    true,
+  );

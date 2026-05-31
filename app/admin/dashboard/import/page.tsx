@@ -78,6 +78,12 @@ type GrowthSummary = {
   missingClaimCodes?: number | null;
   missingClaimQrs?: number | null;
   missingPublicQrs?: number | null;
+  chains?: number | null;
+  utilityChains?: number | null;
+  missingPhotos?: number | null;
+  hasPhotos?: number | null;
+  needsPhoto?: number | null;
+  searchableWithPhotos?: number | null;
   siteUrlConfigured?: boolean;
   siteUrl?: string | null;
   latestBatches?: LatestBatch[];
@@ -883,7 +889,9 @@ export default function ImportPage() {
             onScore={() =>
               postAction("score", "/api/admin/location-growth/score-staged", {
                 batchId:
-                  scoreScope === "batch" ? scoreBatchId || undefined : undefined,
+                  scoreScope === "batch"
+                    ? scoreBatchId || undefined
+                    : undefined,
                 limit: Math.min(Math.max(Number(scoreLimit || 250), 1), 500),
               })
             }
@@ -932,6 +940,22 @@ export default function ImportPage() {
                 },
               )
             }
+            onClassifyChains={() =>
+              postAction(
+                "classify-chains",
+                "/api/admin/location-growth/classify-chains",
+                { limit: 500 },
+              )
+            }
+            onViewMissingPhotos={() => {
+              setStagingBatchId("");
+              setActiveTab("history");
+              setActionResult({
+                success: true,
+                message:
+                  "Use Import History/Staged Records filters or CRM to review records with quality_status=needs_photo or photo_status=missing_photo.",
+              });
+            }}
           />
         ) : null}
 
@@ -1300,6 +1324,8 @@ function LocationGrowthPanel(props: {
   onDedupe: () => void;
   onPublish: () => void;
   onEnrich: () => void;
+  onClassifyChains: () => void;
+  onViewMissingPhotos: () => void;
 }) {
   const summaryCards = [
     ["Live", props.summary?.liveLocations],
@@ -1311,6 +1337,10 @@ function LocationGrowthPanel(props: {
     ["Remaining Dedupe", props.summary?.remainingUncheckedDedupe],
     ["Rejected", props.summary?.rejected],
     ["Enrichment Queued", props.summary?.enrichmentQueued],
+    ["Missing photos", props.summary?.missingPhotos],
+    ["Has photos", props.summary?.hasPhotos],
+    ["Needs photo", props.summary?.needsPhoto],
+    ["Utility chains", props.summary?.utilityChains],
   ];
 
   return (
@@ -1628,6 +1658,33 @@ function LocationGrowthPanel(props: {
                   props.summary?.publishReady,
               ),
             )}
+          />
+        </ActionCard>
+
+        <ActionCard
+          title="Find Missing Photos"
+          description="Show imported or live locations that cannot appear in public search because they do not have a photo."
+          button="View Missing Photos"
+          running={false}
+          onClick={props.onViewMissingPhotos}
+        >
+          <ReadOnlyField
+            label="Needs photo before searchable"
+            value={String(getNumber(props.summary?.needsPhoto))}
+          />
+        </ActionCard>
+
+        <ActionCard
+          title="Classify Chains"
+          description="Detect common chain brands and mark them as utility so they do not dominate curated search."
+          button="Classify Chains"
+          running={props.runningAction === "classify-chains"}
+          onClick={props.onClassifyChains}
+        >
+          <ReadOnlyField label="Chunk limit" value="500" />
+          <ReadOnlyField
+            label="Utility chains"
+            value={String(getNumber(props.summary?.utilityChains))}
           />
         </ActionCard>
 

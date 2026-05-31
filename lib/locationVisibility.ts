@@ -15,6 +15,17 @@ export type PublicSearchVisibilityFields = LocationVisibilityFields & {
   latitude?: number | string | null;
   longitude?: number | string | null;
   main_image?: string | null;
+  image_url?: string | null;
+  photo_url?: string | null;
+  images?: string[] | null;
+  photos?: string[] | null;
+  gallery_images?: string[] | null;
+  gallery_image_urls?: string[] | null;
+  photo_urls?: string[] | null;
+  quality_status?: string | null;
+  duplicate_status?: string | null;
+  has_photos?: boolean | null;
+  photo_status?: string | null;
 };
 
 export function isPubliclyVisible(
@@ -53,7 +64,16 @@ export function hasRequiredPublicSearchFields(
 export function isPublicSearchVisible(
   location: PublicSearchVisibilityFields | null | undefined,
 ) {
-  return isPubliclyVisible(location);
+  return (
+    isPubliclyVisible(location) &&
+    location?.quality_status === "publish_ready" &&
+    location?.duplicate_status !== "duplicate" &&
+    location?.has_photos === true &&
+    location?.photo_status !== "missing_photo" &&
+    hasPublicField(location?.address) &&
+    hasPublicField(location?.latitude) &&
+    hasPublicField(location?.longitude)
+  );
 }
 
 export function getDataStatus(

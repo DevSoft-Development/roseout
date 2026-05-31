@@ -14,11 +14,16 @@ async function authorize(request: Request) {
   if (process.env.NODE_ENV === "development") return null;
   if (
     process.env.IMPORT_SECRET &&
-    request.headers.get("x-internal-import-secret") === process.env.IMPORT_SECRET
+    request.headers.get("x-internal-import-secret") ===
+      process.env.IMPORT_SECRET
   ) {
     return null;
   }
-  const { error } = await requireAdminApiRole(["admin", "superadmin", "editor"]);
+  const { error } = await requireAdminApiRole([
+    "admin",
+    "superadmin",
+    "editor",
+  ]);
   return error;
 }
 
@@ -59,13 +64,21 @@ export async function GET(request: Request) {
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,
+    chains,
+    utilityChains,
+    missingPhotos,
+    hasPhotos,
+    needsPhoto,
+    searchableWithPhotos,
   ] = await Promise.all([
     safeCount("locations"),
     safeCount("locations", (query) => query.eq("is_searchable", true)),
     safeCount("locations", (query) =>
       query.in("quality_status", ["needs_review", "review"]),
     ),
-    safeCount("locations", (query) => query.eq("duplicate_status", "duplicate")),
+    safeCount("locations", (query) =>
+      query.eq("duplicate_status", "duplicate"),
+    ),
     safeCount("location_import_staging", (query) =>
       query.eq("import_status", "staged"),
     ),
@@ -95,9 +108,7 @@ export async function GET(request: Request) {
         .eq("duplicate_status", "unique"),
     ),
     safeCount("location_import_staging", (query) =>
-      query
-        .eq("import_status", "staged")
-        .eq("duplicate_status", "unchecked"),
+      query.eq("import_status", "staged").eq("duplicate_status", "unchecked"),
     ),
     safeCount("location_import_staging", (query) =>
       query
@@ -117,6 +128,25 @@ export async function GET(request: Request) {
         .eq("is_searchable", true)
         .or("qr_code_data_url.is.null,qr_code_url.is.null"),
     ),
+    safeCount("locations", (query) => query.eq("is_chain", true)),
+    safeCount("locations", (query) =>
+      query.eq("is_chain", true).eq("curation_tier", "utility"),
+    ),
+    safeCount("locations", (query) =>
+      query.or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) => query.eq("has_photos", true)),
+    Promise.all([
+      safeCount("locations", (query) =>
+        query.eq("quality_status", "needs_photo"),
+      ),
+      safeCount("location_import_staging", (query) =>
+        query.eq("quality_status", "needs_photo"),
+      ),
+    ]).then(([live, staging]) => live + staging),
+    safeCount("locations", (query) =>
+      query.eq("is_searchable", true).eq("has_photos", true),
+    ),
   ]);
 
   const { data: latestBatches } = await supabaseAdmin
@@ -129,9 +159,9 @@ export async function GET(request: Request) {
 
   const siteUrlConfigured = Boolean(
     process.env.NEXT_PUBLIC_SITE_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.SITE_URL ||
-      process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.SITE_URL ||
+    process.env.APP_URL,
   );
 
   return NextResponse.json({
@@ -151,6 +181,12 @@ export async function GET(request: Request) {
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,
+    chains,
+    utilityChains,
+    missingPhotos,
+    hasPhotos,
+    needsPhoto,
+    searchableWithPhotos,
     siteUrlConfigured,
     siteUrl: getSiteUrl(),
     latestBatches: latestBatches || [],

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   activityTagsForOsm,
+  applySearchQualityFields,
   uniqueLower,
   type StagedLocationInput,
 } from "@/lib/location-growth/shared";
@@ -423,7 +424,6 @@ async function fetchOverpassElements(
   };
 }
 
-
 async function createOsmBatch(metadata: Record<string, unknown>) {
   const { data: batch, error } = await supabaseAdmin
     .from("location_import_batches")
@@ -439,7 +439,6 @@ async function createOsmBatch(metadata: Record<string, unknown>) {
   if (error) throw error;
   return batch.id as string;
 }
-
 
 export async function importOsmActivities({
   limit = 25,
@@ -573,8 +572,9 @@ export async function importOsmActivities({
           .map(mapElement)
           .filter((item): item is StagedLocationInput => Boolean(item));
 
-        const stagedWithoutBatch =
-          dedupeStagedLocationsForUpsert(mappedWithoutBatch);
+        const stagedWithoutBatch = dedupeStagedLocationsForUpsert(
+          mappedWithoutBatch.map(applySearchQualityFields),
+        );
 
         if (!stagedWithoutBatch.length) {
           skippedFilters.push({
