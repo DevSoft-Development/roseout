@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import Image from "next/image";
@@ -21,37 +20,47 @@ export default function TheOutHavenHeader() {
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
+
     handleScroll();
     window.addEventListener("scroll", handleScroll);
+
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
-  const isActive = (href: string) =>
-    pathname === href || (href !== "/" && pathname?.startsWith(href));
+  const isActive = (href: string) => {
+    return pathname === href || (href !== "/" && pathname?.startsWith(href));
+  };
+
+  const headerClass = [
+    "fixed left-0 right-0 top-0 z-50 border-b border-white/10 bg-black/95 text-white backdrop-blur-xl transition-all duration-300",
+    scrolled || menuOpen ? "shadow-lg shadow-black/40" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const innerClass = [
+    "mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6",
+    scrolled ? "h-16" : "h-20",
+  ].join(" ");
+
+  const logoClass = [
+    "relative flex shrink-0 overflow-hidden rounded-full ring-1 ring-white/15 transition-all duration-300",
+    scrolled ? "h-9 w-9" : "h-11 w-11",
+  ].join(" ");
 
   return (
-    <header
-      className={`fixed left-0 right-0 top-0 z-50 border-b border-white/10 bg-black/95 text-white backdrop-blur-xl transition-all duration-300 ${
-        scrolled || menuOpen ? "shadow-lg shadow-black/40" : ""
-      }`}
-    >
-      <div
-        className={`mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6 ${
-          scrolled ? "h-16" : "h-20"
-        }`}
-      >
+    <header className={headerClass}>
+      <div className={innerClass}>
         <Link
           href="/"
           className="flex min-w-0 items-center gap-3"
           aria-label="TheOutHaven home"
         >
-          <span
-            className={`relative flex shrink-0 overflow-hidden rounded-full ring-1 ring-white/15 transition-all duration-300 ${
-              scrolled ? "h-9 w-9" : "h-11 w-11"
-            }`}
-          >
+          <span className={logoClass}>
             <Image
               src="/toh-logo.png"
               alt="TheOutHaven logo"
@@ -91,19 +100,26 @@ export default function TheOutHavenHeader() {
         >
           <span className="relative h-5 w-5">
             <span
-              className={`absolute left-0 top-1 block h-[2px] w-5 rounded-full bg-current transition-all duration-300 ${
-                menuOpen ? "top-2 rotate-45" : ""
-              }`}
+              className={[
+                "absolute left-0 top-1 block h-[2px] w-5 rounded-full bg-current transition-all duration-300",
+                menuOpen ? "top-2 rotate-45" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
             />
             <span
-              className={`absolute left-0 top-2 block h-[2px] w-5 rounded-full bg-current transition-all duration-300 ${
-                menuOpen ? "opacity-0" : "opacity-100"
-              }`}
+              className={[
+                "absolute left-0 top-2 block h-[2px] w-5 rounded-full bg-current transition-all duration-300",
+                menuOpen ? "opacity-0" : "opacity-100",
+              ].join(" ")}
             />
             <span
-              className={`absolute left-0 top-3 block h-[2px] w-5 rounded-full bg-current transition-all duration-300 ${
-                menuOpen ? "top-2 -rotate-45" : ""
-              }`}
+              className={[
+                "absolute left-0 top-3 block h-[2px] w-5 rounded-full bg-current transition-all duration-300",
+                menuOpen ? "top-2 -rotate-45" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
             />
           </span>
         </button>
@@ -136,19 +152,20 @@ function NavLink({
   label: string;
   active: boolean;
 }) {
+  const linkClass = [
+    "relative text-sm font-black transition",
+    active ? "text-white" : "text-white/45 hover:text-white",
+  ].join(" ");
+
+  const underlineClass = [
+    "absolute -bottom-1 left-0 h-[2px] bg-[#e1062a] transition-all duration-300",
+    active ? "w-full" : "w-0",
+  ].join(" ");
+
   return (
-    <Link
-      href={href}
-      className={`relative text-sm font-black transition ${
-        active ? "text-white" : "text-white/45 hover:text-white"
-      }`}
-    >
+    <Link href={href} className={linkClass}>
       {label}
-      <span
-        className={`absolute -bottom-1 left-0 h-[2px] bg-[#e1062a] transition-all duration-300 ${
-          active ? "w-full" : "w-0"
-        }`}
-      />
+      <span className={underlineClass} />
     </Link>
   );
 }
@@ -164,17 +181,17 @@ function MobileMenuLink({
   active: boolean;
   featured?: boolean;
 }) {
+  const linkClass = [
+    "block rounded-2xl px-4 py-4 text-sm font-black transition",
+    featured
+      ? "bg-[#e1062a] text-white hover:bg-red-500"
+      : active
+        ? "bg-white text-black"
+        : "bg-white/[0.05] text-white/70 hover:bg-white hover:text-black",
+  ].join(" ");
+
   return (
-    <Link
-      href={href}
-      className={`block rounded-2xl px-4 py-4 text-sm font-black transition ${
-        featured
-          ? "bg-[#e1062a] text-white hover:bg-red-500"
-          : active
-            ? "bg-white text-black"
-            : "bg-white/[0.05] text-white/70 hover:bg-white hover:text-black"
-      }`}
-    >
+    <Link href={href} className={linkClass}>
       {label}
     </Link>
   );
