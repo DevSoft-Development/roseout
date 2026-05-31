@@ -19,15 +19,14 @@ function normalizeAdminRole(role: unknown): AdminRole | null {
   const normalized = String(role || "")
     .trim()
     .toLowerCase()
-    .replace(/_/g, "-");
+    .replace(/[_-]/g, "");
 
-  if (normalized === "superuser" || normalized === "super-admin") {
+  if (normalized === "superadmin" || normalized === "superuser") {
     return "superadmin";
   }
 
   if (
     normalized === "admin" ||
-    normalized === "superadmin" ||
     normalized === "editor" ||
     normalized === "viewer"
   ) {
@@ -69,12 +68,33 @@ async function findFallbackRole(userId: string) {
   return null;
 }
 
-async function ensureAdminUser(userId: string, role: AdminRole) {
-  if (role !== "admin" && role !== "superadmin") return;
+async function ensureAdminUser({
+  userId,
+  email,
+  fullName,
+  role,
+}: {
+  userId: string;
+  email: string | null | undefined;
+  fullName?: unknown;
+  role: AdminRole;
+}) {
+  if (!email) {
+    console.warn(
+      "Skipping admin_users backfill because authenticated user has no email",
+      {
+        userId,
+        role,
+      },
+    );
+    return;
+  }
 
   const { error } = await supabaseAdmin.from("admin_users").upsert(
     {
       user_id: userId,
+      email,
+      full_name: typeof fullName === "string" ? fullName : null,
       role,
     },
     { onConflict: "user_id" },
@@ -83,6 +103,7 @@ async function ensureAdminUser(userId: string, role: AdminRole) {
   if (error) {
     console.error("Failed to backfill admin_users role", {
       userId,
+      email,
       role,
       error: error.message,
     });
@@ -124,9 +145,9 @@ export async function requireAdminApiRole(allowedRoles: readonly string[]) {
     };
   }
 
-  const { data: adminUser, error: adminError } = await supabase
+  const { data: adminUser, error: adminError } = await supabaseAdmin
     .from("admin_users")
-    .select("user_id, role")
+    .select("user_id, email, full_name, role")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -137,19 +158,69 @@ export async function requireAdminApiRole(allowedRoles: readonly string[]) {
       error: null,
       adminUser: buildAdminUser({
         userId: adminUser.user_id,
-        email: user.email,
-        fullName: user.user_metadata?.full_name,
+        email: adminUser.email,
+        fullName: adminUser.full_name,
         role: adminUserRole,
       }),
       supabase,
     };
   }
 
+  if (!adminUser && user.email) {
+    const { data: adminUserByEmail } = await supabaseAdmin
+      .from("admin_users")
+      .select("user_id, email, full_name, role")
+      .eq("email", user.email)
+      .maybeSingle();
+
+    const adminUserByEmailRole = normalizeAdminRole(adminUserByEmail?.role);
+
+    if (
+      adminUserByEmail &&
+      adminUserByEmailRole &&
+      allowed.includes(adminUserByEmailRole)
+    ) {
+      if (adminUserByEmail.user_id !== user.id) {
+        const { error: updateError } = await supabaseAdmin
+          .from("admin_users")
+          .update({ user_id: user.id })
+          .eq("email", user.email);
+
+        if (updateError) {
+          console.error(
+            "Failed to refresh admin_users user_id from email lookup",
+            {
+              userId: user.id,
+              email: user.email,
+              error: updateError.message,
+            },
+          );
+        }
+      }
+
+      return {
+        error: null,
+        adminUser: buildAdminUser({
+          userId: user.id,
+          email: adminUserByEmail.email,
+          fullName: adminUserByEmail.full_name,
+          role: adminUserByEmailRole,
+        }),
+        supabase,
+      };
+    }
+  }
+
   if (!adminError && !adminUser) {
     const fallbackRole = await findFallbackRole(user.id);
 
     if (fallbackRole && allowed.includes(fallbackRole)) {
-      await ensureAdminUser(user.id, fallbackRole);
+      await ensureAdminUser({
+        userId: user.id,
+        email: user.email,
+        fullName: user.user_metadata?.full_name,
+        role: fallbackRole,
+      });
 
       return {
         error: null,

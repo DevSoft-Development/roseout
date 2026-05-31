@@ -99,7 +99,10 @@ type DuplicateMatch = {
 function getActionErrorMessage(status: number, data: ActionResult) {
   if (status === 401) return "You are not signed in as an admin.";
   if (status === 403) {
-    return "Your account is missing admin API access. Add this user to admin_users or refresh your admin role.";
+    return (
+      "Your account is signed in, but the API could not confirm your admin role. " +
+      "Check admin_users user_id/email/role or refresh your session."
+    );
   }
 
   return data.error || "Request failed";
