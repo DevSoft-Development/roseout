@@ -57,6 +57,10 @@ type LatestBatch = {
   metadata?: {
     mapped?: unknown;
     duplicatesRemoved?: unknown;
+    limit?: unknown;
+    offset?: unknown;
+    nextOffset?: unknown;
+    categoryGroup?: unknown;
   } | null;
   started_at?: string | null;
   completed_at?: string | null;
@@ -72,6 +76,7 @@ type GrowthSummary = {
   possibleDuplicates?: number | null;
   rejected?: number | null;
   enrichmentQueued?: number | null;
+  remainingPublishReady?: number | null;
   missingClaimCodes?: number | null;
   missingClaimQrs?: number | null;
   missingPublicQrs?: number | null;
@@ -100,16 +105,28 @@ type DuplicateMatch = {
 };
 
 
-function getActionErrorMessage(status: number, data: ActionResult) {
-  if (status === 401) return "You are not signed in as an admin.";
-  if (status === 403) {
-    return (
-      "Your account is signed in, but the API could not confirm your admin role. " +
-      "Check admin_users user_id/email/role or refresh your session."
+async function parseActionResponse(response: Response) {
+  const responseText = await response.text();
+
+  let data: ActionResult = {};
+  try {
+    data = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    data = {
+      success: false,
+      error: responseText || `Request failed with status ${response.status}`,
+    };
+  }
+
+  if (!response.ok || data.success === false) {
+    throw new Error(
+      data.error ||
+        (typeof data.message === "string" ? data.message : undefined) ||
+        `Request failed with status ${response.status}`,
     );
   }
 
-  return data.error || "Request failed";
+  return data;
 }
 
 type StagedRecord = {
@@ -210,7 +227,8 @@ const ratingOptions = [
   { label: "3.8+ stars", value: "3.8" },
 ];
 
-const NYC_OFFSET_STORAGE_KEY = "roseout:admin-import:nyc-offset";
+const NYC_OFFSET_STORAGE_KEY = "theouthaven_nyc_import_offset";
+const OSM_OFFSET_STORAGE_KEY = "theouthaven_osm_import_offset";
 
 const queryCountOptions = [
   { label: "1 query", value: "1" },
@@ -249,10 +267,14 @@ export default function ImportPage() {
   const [googleMode, setGoogleMode] = useState("direct");
   const [nycLimit, setNycLimit] = useState("500");
   const [nycOffset, setNycOffset] = useState("0");
-  const [osmLimit, setOsmLimit] = useState("1000");
+  const [osmLimit, setOsmLimit] = useState("250");
+  const [osmOffset, setOsmOffset] = useState("0");
+  const [osmCategoryGroup, setOsmCategoryGroup] = useState("all");
   const [dedupeBatchId, setDedupeBatchId] = useState("");
   const [publishBatchId, setPublishBatchId] = useState("");
-  const [publishLimit, setPublishLimit] = useState("250");
+  const [dedupeScope, setDedupeScope] = useState("all");
+  const [publishScope, setPublishScope] = useState("all");
+  const [publishLimit, setPublishLimit] = useState("500");
   const [enrichLimit, setEnrichLimit] = useState("50");
   const [qrLimit, setQrLimit] = useState("100");
   const [cleanupOffset, setCleanupOffset] = useState("0");
@@ -263,17 +285,28 @@ export default function ImportPage() {
   }, []);
 
   useEffect(() => {
-    const savedOffset = window.localStorage.getItem(NYC_OFFSET_STORAGE_KEY);
-    if (savedOffset !== null) {
+    const savedNycOffset = window.localStorage.getItem(NYC_OFFSET_STORAGE_KEY);
+    if (savedNycOffset !== null) {
       // Persisted pagination should restore the previous NYC import cursor.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setNycOffset(savedOffset);
+      setNycOffset(savedNycOffset);
+    }
+
+    const savedOsmOffset = window.localStorage.getItem(OSM_OFFSET_STORAGE_KEY);
+    if (savedOsmOffset) {
+      // Persisted app-managed OSM pagination should restore the previous cursor.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOsmOffset(savedOsmOffset);
     }
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem(NYC_OFFSET_STORAGE_KEY, nycOffset);
   }, [nycOffset]);
+
+  useEffect(() => {
+    window.localStorage.setItem(OSM_OFFSET_STORAGE_KEY, osmOffset);
+  }, [osmOffset]);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -362,17 +395,7 @@ export default function ImportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const text = await res.text();
-      let data: ActionResult = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        data = {
-          success: false,
-          error: text || `Request failed with status ${res.status}`,
-        };
-      }
-      if (!res.ok) throw new Error(getActionErrorMessage(res.status, data));
+      const data = await parseActionResponse(res);
       setActionResult(data);
       if (data.batchId) {
         setDedupeBatchId(String(data.batchId));
@@ -517,6 +540,53 @@ export default function ImportPage() {
     }
   };
 
+
+  const getSafeOsmLimit = () => {
+    const limit = Number(osmLimit || 250);
+    if (!Number.isFinite(limit)) return 250;
+    return Math.min(Math.max(Math.trunc(limit), 1), 1000);
+  };
+
+  const getSafeOsmOffset = () => {
+    const offset = Number(osmOffset || 0);
+    if (!Number.isFinite(offset)) return 0;
+    return Math.max(Math.trunc(offset), 0);
+  };
+
+  const runOsmImport = async () => {
+    const limit = getSafeOsmLimit();
+    const offset = getSafeOsmOffset();
+    const data = await postAction(
+      "osm",
+      "/api/admin/location-growth/import-osm-activities",
+      {
+        limit,
+        offset,
+        categoryGroup: osmCategoryGroup || "all",
+      },
+    );
+
+    if (data && data.success !== false) {
+      const nextOffset =
+        data?.nextOffset !== undefined && data.nextOffset !== null
+          ? Number(data.nextOffset)
+          : offset + limit;
+      if (Number.isFinite(nextOffset)) {
+        setOsmOffset(String(nextOffset));
+        window.localStorage.setItem(OSM_OFFSET_STORAGE_KEY, String(nextOffset));
+      }
+    }
+  };
+
+  const resetOsmOffset = () => {
+    const confirmed = window.confirm(
+      "Reset OSM import offset to 0? The next OSM import will start from the beginning again.",
+    );
+    if (!confirmed) return;
+    setOsmOffset("0");
+    window.localStorage.setItem(OSM_OFFSET_STORAGE_KEY, "0");
+  };
+
   const runCleanupBatch = async () => {
     const data = await postAction("cleanup", "/api/admin/cleanup-locations", {
       table: "locations",
@@ -582,7 +652,24 @@ export default function ImportPage() {
           </div>
         </nav>
 
-        {actionResult ? <ResultBanner result={actionResult} /> : null}
+        {actionResult ? (
+          <ResultBanner
+            result={actionResult}
+            onRunDedupe={(batchId) => {
+              setDedupeScope("batch");
+              setDedupeBatchId(batchId);
+              postAction("dedupe", "/api/admin/location-growth/dedupe", {
+                batchId,
+                mode: "staging",
+              });
+            }}
+            onPublishBatch={(batchId) => {
+              setPublishScope("batch");
+              setPublishBatchId(batchId);
+              setActiveTab("growth");
+            }}
+          />
+        ) : null}
 
         {activeTab === "google" ? (
           <GoogleImportPanel
@@ -639,8 +726,16 @@ export default function ImportPage() {
             setNycOffset={setNycOffset}
             osmLimit={osmLimit}
             setOsmLimit={setOsmLimit}
+            osmOffset={osmOffset}
+            setOsmOffset={setOsmOffset}
+            osmCategoryGroup={osmCategoryGroup}
+            setOsmCategoryGroup={setOsmCategoryGroup}
+            dedupeScope={dedupeScope}
+            setDedupeScope={setDedupeScope}
             dedupeBatchId={dedupeBatchId}
             setDedupeBatchId={setDedupeBatchId}
+            publishScope={publishScope}
+            setPublishScope={setPublishScope}
             publishBatchId={publishBatchId}
             setPublishBatchId={setPublishBatchId}
             publishLimit={publishLimit}
@@ -652,28 +747,42 @@ export default function ImportPage() {
             onCleanup={runCleanupBatch}
             onImportNyc={runNycImport}
             onImportNycNext={runNycImport}
-            onImportOsm={() =>
-              postAction("osm", "/api/admin/location-growth/import-osm-activities", {
-                limit: Number(osmLimit) || 1000,
-              })
-            }
-            onDedupe={(batchId) =>
+            onImportOsm={runOsmImport}
+            onImportOsmNext={runOsmImport}
+            onResetOsmOffset={resetOsmOffset}
+            onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
-                batchId: batchId || dedupeBatchId || undefined,
+                batchId:
+                  dedupeScope === "batch" ? dedupeBatchId || undefined : undefined,
                 mode: "staging",
               })
             }
-            onPublish={() =>
-              postAction(
+            onPublish={() => {
+              const limit = Math.min(
+                Math.max(Number(publishLimit || 500), 1),
+                1000,
+              );
+              const publishAll = publishScope !== "batch";
+              if (!publishAll && !publishBatchId.trim()) {
+                setActionResult({
+                  success: false,
+                  error: "Select a batch or switch scope to Publish All Ready.",
+                });
+                return null;
+              }
+              return postAction(
                 "publish",
                 "/api/admin/location-growth/publish",
-                { batchId: publishBatchId, limit: Number(publishLimit) || 250 },
+                publishAll
+                  ? { all: true, limit }
+                  : { batchId: publishBatchId, limit },
                 {
-                  confirm:
-                    "You are about to publish clean, unique records into the live locations table. CRM fields, existing QR codes, and claimed location data will not be overwritten.",
+                  confirm: publishAll
+                    ? `You are about to publish up to ${limit} clean, unique, publish-ready staged records into the live locations table. This will not overwrite CRM fields, claimed location data, or existing QR codes. Continue?`
+                    : `You are about to publish up to ${limit} clean, unique records from this batch. Continue?`,
                 },
-              )
-            }
+              );
+            }}
             onEnrich={() =>
               postAction("enrich", "/api/admin/location-growth/enrich-high-value", {
                 limit: Number(enrichLimit) || 50,
@@ -689,13 +798,13 @@ export default function ImportPage() {
             stagedRecords={stagedRecords}
             stagingBatchId={stagingBatchId}
             onCopy={(batchId) => navigator.clipboard?.writeText(batchId)}
-            onDedupe={(batchId) =>
-              postAction("dedupe", "/api/admin/location-growth/dedupe", {
-                batchId,
-                mode: "staging",
-              })
-            }
+            onDedupe={(batchId) => {
+              setDedupeScope("batch");
+              setDedupeBatchId(batchId);
+              setActiveTab("growth");
+            }}
             onPublish={(batchId) => {
+              setPublishScope("batch");
               setPublishBatchId(batchId);
               setActiveTab("growth");
             }}
@@ -955,8 +1064,16 @@ function LocationGrowthPanel(props: {
   setNycOffset: (value: string) => void;
   osmLimit: string;
   setOsmLimit: (value: string) => void;
+  osmOffset: string;
+  setOsmOffset: (value: string) => void;
+  osmCategoryGroup: string;
+  setOsmCategoryGroup: (value: string) => void;
+  dedupeScope: string;
+  setDedupeScope: (value: string) => void;
   dedupeBatchId: string;
   setDedupeBatchId: (value: string) => void;
+  publishScope: string;
+  setPublishScope: (value: string) => void;
   publishBatchId: string;
   setPublishBatchId: (value: string) => void;
   publishLimit: string;
@@ -969,7 +1086,9 @@ function LocationGrowthPanel(props: {
   onImportNyc: () => void;
   onImportNycNext: () => void;
   onImportOsm: () => void;
-  onDedupe: (batchId?: string) => void;
+  onImportOsmNext: () => void;
+  onResetOsmOffset: () => void;
+  onDedupe: () => void;
   onPublish: () => void;
   onEnrich: () => void;
 }) {
@@ -1030,33 +1149,86 @@ function LocationGrowthPanel(props: {
 
         <ActionCard
           title="Import OSM Activities"
-          description="Stage activities, nightlife, parks, museums, galleries, bowling, arcades, dessert spots, and date-friendly places from OpenStreetMap."
-          button="Import OSM Activities"
+          description="Stage date-friendly activities from OpenStreetMap. OSM uses a saved cursor/offset so you can import the next batch without pulling the same records."
+          note="OSM offset is app-managed because Overpass does not provide true offset pagination."
+          button="Import OSM Batch"
+          secondaryButton="Import Next OSM Batch"
+          tertiaryButton="Reset OSM Offset"
           running={props.runningAction === "osm"}
           onClick={props.onImportOsm}
+          onSecondaryClick={props.onImportOsmNext}
+          onTertiaryClick={props.onResetOsmOffset}
         >
-          <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} />
+          <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} min={1} max={1000} />
+          <NumberField label="Offset" value={props.osmOffset} onChange={props.setOsmOffset} />
+          <details className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
+            <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
+              Advanced OSM options
+            </summary>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <SelectField
+                label="Category group"
+                value={props.osmCategoryGroup}
+                onChange={props.setOsmCategoryGroup}
+                options={[
+                  { label: "All", value: "all" },
+                  { label: "Nightlife", value: "nightlife" },
+                  { label: "Culture", value: "culture" },
+                  { label: "Activities", value: "activities" },
+                  { label: "Dessert", value: "dessert" },
+                ]}
+              />
+              <ReadOnlyField label="Region" value="NYC" />
+            </div>
+          </details>
         </ActionCard>
 
         <ActionCard
           title="Run Strict Dedupe"
-          description="Find exact duplicates and possible duplicates before publishing records into the live location system."
-          button="Run Dedupe"
+          description="Find exact duplicates and possible duplicates. Run All checks every staged record; Specific batch checks one import batch."
+          button={props.dedupeScope === "batch" ? "Run Selected Batch Dedupe" : "Run Dedupe for All"}
           running={props.runningAction === "dedupe"}
-          onClick={() => props.onDedupe()}
+          onClick={props.onDedupe}
         >
-          <TextField label="Batch ID optional" value={props.dedupeBatchId} onChange={props.setDedupeBatchId} placeholder="Leave blank for all staged records" />
+          <SelectField
+            label="Scope"
+            value={props.dedupeScope}
+            onChange={props.setDedupeScope}
+            options={[
+              { label: "All staged records", value: "all" },
+              { label: "Specific batch", value: "batch" },
+            ]}
+          />
+          {props.dedupeScope === "batch" ? (
+            <TextField label="Batch ID" value={props.dedupeBatchId} onChange={props.setDedupeBatchId} placeholder="Paste a batch ID" />
+          ) : (
+            <ReadOnlyField label="Batch ID" value="Not required for all staged records" />
+          )}
         </ActionCard>
 
         <ActionCard
           title="Publish Ready Records"
-          description="Publish only clean, unique, high-quality records into the existing live locations table. Generates missing claim codes and QR codes after publishing without replacing existing QR fields."
-          button="Publish Ready Records"
+          description="Publish clean, unique, high-quality staged records into the existing live locations table. Publish All processes the next safe chunk only, so you do not need to remember a batch ID."
+          button={props.publishScope === "batch" ? "Publish Selected Batch" : "Publish All Ready"}
           running={props.runningAction === "publish"}
           onClick={props.onPublish}
         >
-          <TextField label="Batch ID required" value={props.publishBatchId} onChange={props.setPublishBatchId} placeholder="Paste a batch ID" />
-          <NumberField label="Limit" value={props.publishLimit} onChange={props.setPublishLimit} />
+          <SelectField
+            label="Scope"
+            value={props.publishScope}
+            onChange={props.setPublishScope}
+            options={[
+              { label: "All publish-ready staged records", value: "all" },
+              { label: "Specific batch", value: "batch" },
+            ]}
+          />
+          <NumberField label="Limit" value={props.publishLimit} onChange={props.setPublishLimit} min={1} max={1000} />
+          {props.publishScope === "batch" ? (
+            <TextField label="Batch ID" value={props.publishBatchId} onChange={props.setPublishBatchId} placeholder="Paste a batch ID" />
+          ) : (
+            <ReadOnlyField label="Batch ID" value="Not required for Publish All" />
+          )}
+          <ReadOnlyField label="Remaining ready" value={String(getNumber(props.summary?.remainingPublishReady ?? props.summary?.publishReady))} />
         </ActionCard>
 
         <ActionCard
@@ -1099,7 +1271,24 @@ function ImportHistoryPanel({
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
         <h2 className="text-lg font-bold">Latest Import Batches</h2>
-        <p className="mt-1 text-sm text-zinc-500">Staged import health, publishing, and review actions.</p>
+        <p className="mt-1 text-sm text-zinc-500">Staged import health, publishing, and review actions. OSM offset is app-managed because Overpass does not provide true offset pagination.</p>
+        <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-zinc-400">
+          <summary className="cursor-pointer font-black uppercase tracking-[0.18em] text-zinc-300">Emergency SQL to find recent batch IDs</summary>
+          <pre className="mt-3 overflow-auto whitespace-pre-wrap rounded-xl bg-black/30 p-3 text-zinc-300">{`select
+  id,
+  source,
+  source_label,
+  status,
+  total_seen,
+  total_staged,
+  total_publish_ready,
+  total_published,
+  started_at,
+  completed_at
+from public.location_import_batches
+order by started_at desc
+limit 20;`}</pre>
+        </details>
         {loading ? <EmptyState text="Loading batches..." /> : null}
         {!loading && batches.length === 0 ? <EmptyState text="No location growth batches yet." /> : null}
         {batches.length ? (
@@ -1130,7 +1319,20 @@ function ImportHistoryPanel({
               <tbody>
                 {batches.map((batch) => (
                   <tr key={batch.id} className="border-b border-white/5 text-zinc-300">
-                    <td className="px-3 py-4 font-bold text-white">{batch.source_label || batch.source}</td>
+                    <td className="px-3 py-4 font-bold text-white">
+                      <div>{batch.source_label || batch.source}</div>
+                      {batch.metadata ? (
+                        <details className="mt-2 text-xs font-normal text-zinc-500">
+                          <summary className="cursor-pointer text-zinc-400">Metadata</summary>
+                          <div className="mt-1 space-y-1">
+                            {batch.metadata.limit !== undefined ? <div>limit: {String(batch.metadata.limit)}</div> : null}
+                            {batch.metadata.offset !== undefined ? <div>offset: {String(batch.metadata.offset)}</div> : null}
+                            {batch.metadata.nextOffset !== undefined ? <div>nextOffset: {String(batch.metadata.nextOffset)}</div> : null}
+                            {batch.metadata.categoryGroup !== undefined ? <div>categoryGroup: {String(batch.metadata.categoryGroup)}</div> : null}
+                          </div>
+                        </details>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-4"><StatusPill status={batch.status || "pending"} /></td>
                     <td className="px-3 py-4">{getNumber(batch.total_seen)}</td>
                     <td className="px-3 py-4">{getNumber(batch.metadata?.mapped)}</td>
@@ -1146,8 +1348,8 @@ function ImportHistoryPanel({
                     <td className="px-3 py-4">
                       <div className="flex flex-wrap gap-2">
                         <TinyButton onClick={() => onCopy(batch.id)}>Copy batch ID</TinyButton>
-                        <TinyButton onClick={() => onDedupe(batch.id)}>Run dedupe</TinyButton>
-                        <TinyButton onClick={() => onPublish(batch.id)}>Publish ready</TinyButton>
+                        <TinyButton onClick={() => onDedupe(batch.id)}>Use for Dedupe</TinyButton>
+                        <TinyButton onClick={() => onPublish(batch.id)}>Use for Publish</TinyButton>
                         <TinyButton onClick={() => onViewStaged(batch.id)}>View staged</TinyButton>
                         <TinyButton onClick={() => onViewDuplicates(batch.id)}>View duplicates</TinyButton>
                       </div>
@@ -1285,9 +1487,11 @@ function ActionCard({
   note,
   button,
   secondaryButton,
+  tertiaryButton,
   running,
   onClick,
   onSecondaryClick,
+  onTertiaryClick,
   children,
 }: {
   title: string;
@@ -1295,9 +1499,11 @@ function ActionCard({
   note?: string;
   button: string;
   secondaryButton?: string;
+  tertiaryButton?: string;
   running: boolean;
   onClick: () => void;
   onSecondaryClick?: () => void;
+  onTertiaryClick?: () => void;
   children?: ReactNode;
 }) {
   return (
@@ -1313,6 +1519,11 @@ function ActionCard({
         {secondaryButton && onSecondaryClick ? (
           <button type="button" onClick={onSecondaryClick} disabled={running} className="rounded-full border border-white/10 px-6 py-3 text-sm font-black text-zinc-200 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500">
             {running ? "Running..." : secondaryButton}
+          </button>
+        ) : null}
+        {tertiaryButton && onTertiaryClick ? (
+          <button type="button" onClick={onTertiaryClick} disabled={running} className="rounded-full border border-amber-300/20 px-6 py-3 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500">
+            {tertiaryButton}
           </button>
         ) : null}
       </div>
@@ -1358,36 +1569,85 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ResultBanner({ result }: { result: ActionResult }) {
+function ResultBanner({
+  result,
+  onRunDedupe,
+  onPublishBatch,
+}: {
+  result: ActionResult;
+  onRunDedupe?: (batchId: string) => void;
+  onPublishBatch?: (batchId: string) => void;
+}) {
   const ok = result.success !== false && !result.error;
+  const hasBatchMetrics = [
+    "batchId",
+    "limit",
+    "offset",
+    "nextOffset",
+    "seen",
+    "mapped",
+    "staged",
+    "duplicatesRemoved",
+    "categoryGroup",
+    "inserted",
+    "markedPublished",
+    "remainingPublishReady",
+    "scope",
+  ].some((key) => result[key] !== undefined);
+  const errorText = typeof result.error === "string" ? result.error : "";
   return (
     <div className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}>
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
-      {["seen", "mapped", "staged", "duplicatesRemoved"].some(
-        (key) => result[key] !== undefined,
-      ) ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+      {!ok && errorText.toLowerCase().includes("timeout") ? (
+        <p className="mt-2 font-bold">
+          OSM timed out. Try limit 100 or a smaller category group.
+        </p>
+      ) : null}
+      {result.batchId && ok ? (
+        <p className="mt-2 font-bold">Batch created: {String(result.batchId)}</p>
+      ) : null}
+      {hasBatchMetrics ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {[
+            ["Batch ID", result.batchId],
+            ["Scope", result.scope],
+            ["Limit", result.limit],
+            ["Offset", result.offset],
+            ["Next offset", result.nextOffset],
+            ["Category", result.categoryGroup],
             ["Seen", result.seen],
             ["Mapped", result.mapped],
             ["Staged", result.staged],
             ["Duplicates removed", result.duplicatesRemoved],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="rounded-2xl bg-black/25 p-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">
-                {String(label)}
-              </p>
-              <p className="mt-1 text-xl font-black text-white">
-                {getNumber(value)}
-              </p>
-            </div>
-          ))}
+            ["Inserted", result.inserted],
+            ["Marked published", result.markedPublished],
+            ["Remaining ready", result.remainingPublishReady],
+          ]
+            .filter(([, value]) => value !== undefined && value !== null)
+            .map(([label, value]) => (
+              <div key={String(label)} className="rounded-2xl bg-black/25 p-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">
+                  {String(label)}
+                </p>
+                <p className="mt-1 break-all text-lg font-black text-white">
+                  {typeof value === "number" ? value.toLocaleString() : String(value)}
+                </p>
+              </div>
+            ))}
         </div>
       ) : null}
       <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-200">{JSON.stringify(result, null, 2)}</pre>
       {result.batchId ? (
-        <button type="button" onClick={() => navigator.clipboard?.writeText(String(result.batchId))} className="mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Copy batch ID</button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" onClick={() => navigator.clipboard?.writeText(String(result.batchId))} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Copy batch ID</button>
+          {onRunDedupe ? (
+            <button type="button" onClick={() => onRunDedupe(String(result.batchId))} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Run dedupe</button>
+          ) : null}
+          {onPublishBatch ? (
+            <button type="button" onClick={() => onPublishBatch(String(result.batchId))} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/10">Publish this batch</button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
