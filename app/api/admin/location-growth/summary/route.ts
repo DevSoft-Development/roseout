@@ -53,6 +53,7 @@ export async function GET(request: Request) {
     possibleDuplicates,
     rejected,
     enrichmentQueued,
+    remainingPublishReady,
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,
@@ -85,6 +86,16 @@ export async function GET(request: Request) {
         .in("enrichment_status", ["queued", "not_started", "failed"])
         .gte("quality_score", 80),
     ),
+    safeCount("location_import_staging", (query) =>
+      query
+        .eq("import_status", "staged")
+        .eq("quality_status", "publish_ready")
+        .eq("duplicate_status", "unique")
+        .not("address", "is", null)
+        .not("latitude", "is", null)
+        .not("longitude", "is", null)
+        .not("primary_category", "is", null),
+    ),
     safeCount("locations", (query) =>
       query.eq("is_searchable", true).is("claim_code", null),
     ),
@@ -106,7 +117,7 @@ export async function GET(request: Request) {
       "id,source,source_label,status,total_seen,total_staged,total_duplicates,total_possible_duplicates,total_rejected,total_publish_ready,total_published,metadata,started_at,completed_at",
     )
     .order("started_at", { ascending: false })
-    .limit(10);
+    .limit(20);
 
   const siteUrlConfigured = Boolean(
     process.env.NEXT_PUBLIC_SITE_URL ||
@@ -126,6 +137,7 @@ export async function GET(request: Request) {
     possibleDuplicates,
     rejected,
     enrichmentQueued,
+    remainingPublishReady,
     missingClaimCodes,
     missingClaimQrs,
     missingPublicQrs,
