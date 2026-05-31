@@ -42,6 +42,12 @@ async function loadExploreData() {
       "id,source_table,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,primary_category,cuisine,cuisine_type,activity_type,tags,vibe_tags,best_for_tags,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,is_featured,created_at,is_searchable,is_hidden,data_status"
     )
     .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .not("address", "is", null)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .not("primary_category", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
     .order("is_featured", { ascending: false, nullsFirst: false })

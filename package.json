@@ -24,7 +24,8 @@
     "test:e2e:required": "node scripts/run-e2e-required.mjs",
     "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run test:e2e:required",
     "production-check:live": "npm run typecheck && npm run lint && npm run build && PLAYWRIGHT_BASE_URL=https://theouthaven.com npm run test:e2e:required",
-    "test:search-quality": "rm -rf .tmp-test/search-quality && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/search-quality scripts/search-quality-regression.ts lib/search/enterprise/types.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/pairing.ts lib/search/enterprise/ranking.ts lib/search/enterprise/distance.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts && node .tmp-test/search-quality/scripts/search-quality-regression.js"
+    "test:search-quality": "rm -rf .tmp-test/search-quality && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/search-quality scripts/search-quality-regression.ts lib/search/enterprise/types.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/pairing.ts lib/search/enterprise/ranking.ts lib/search/enterprise/distance.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts && node .tmp-test/search-quality/scripts/search-quality-regression.js",
+    "location:growth": "node scripts/location-growth-runner.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
