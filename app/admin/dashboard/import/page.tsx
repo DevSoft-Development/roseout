@@ -95,6 +95,16 @@ type DuplicateMatch = {
   decision?: string | null;
 };
 
+
+function getActionErrorMessage(status: number, data: ActionResult) {
+  if (status === 401) return "You are not signed in as an admin.";
+  if (status === 403) {
+    return "Your account is missing admin API access. Add this user to admin_users or refresh your admin role.";
+  }
+
+  return data.error || "Request failed";
+}
+
 type StagedRecord = {
   id: string;
   source?: string | null;
@@ -330,8 +340,8 @@ export default function ImportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as ActionResult;
-      if (!res.ok) throw new Error(data.error || "Request failed");
+      const data = (await res.json().catch(() => ({}))) as ActionResult;
+      if (!res.ok) throw new Error(getActionErrorMessage(res.status, data));
       setActionResult(data);
       if (data.batchId) {
         setDedupeBatchId(String(data.batchId));
