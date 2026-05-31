@@ -178,6 +178,23 @@ const typingSearches = [
 const formatTypingPrompt = (prompt: string) => `${prompt}....`;
 const INITIAL_TYPING_PROMPT = formatTypingPrompt(typingSearches[0]);
 
+function cleanSearchErrorMessage(message: string) {
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("string did not match") ||
+    lower.includes("expected pattern") ||
+    lower.includes("invalid url") ||
+    lower.includes("unexpected token") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror")
+  ) {
+    return "Search is having trouble right now. Please try again or simplify the request.";
+  }
+
+  return message || "Search is having trouble right now. Please try again.";
+}
+
 const loadingLines = [
   "Matching your vibe...",
   "Checking food and activity signals...",
@@ -727,10 +744,29 @@ export default function CreatePage() {
         }),
       });
 
-      const data: ApiResponse & { error?: string } = await response.json();
+      const rawText = await response.text();
 
-      if (!response.ok) {
-        throw new Error(data.error || "TheOutHaven could not create results.");
+      let data: ApiResponse & {
+        error?: string;
+        user_message?: string;
+        internal_message?: string;
+      };
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        throw new Error(
+          "Search returned an invalid response. Please try again.",
+        );
+      }
+
+      if (!response.ok || data.error) {
+        throw new Error(
+          data.user_message ||
+            data.internal_message ||
+            data.reply ||
+            "TheOutHaven could not create results.",
+        );
       }
 
       const previousRestaurants = previousAssistant?.restaurants || [];
@@ -770,12 +806,27 @@ export default function CreatePage() {
         });
 
         if (retryResponse.ok) {
-          const retryData: ApiResponse & { error?: string } =
-            await retryResponse.json();
-          if (missingTarget === "restaurant") {
-            responseRestaurants = normalizeApiCards(retryData).restaurants || retryData.restaurants || responseRestaurants;
-          } else {
-            responseActivities = normalizeApiCards(retryData).activities || retryData.activities || responseActivities;
+          const retryRawText = await retryResponse.text();
+          let retryData: ApiResponse & { error?: string } = {};
+
+          try {
+            retryData = retryRawText ? JSON.parse(retryRawText) : {};
+          } catch {
+            retryData = {};
+          }
+
+          if (!retryData.error) {
+            if (missingTarget === "restaurant") {
+              responseRestaurants =
+                normalizeApiCards(retryData).restaurants ||
+                retryData.restaurants ||
+                responseRestaurants;
+            } else {
+              responseActivities =
+                normalizeApiCards(retryData).activities ||
+                retryData.activities ||
+                responseActivities;
+            }
           }
         }
       }
@@ -840,11 +891,12 @@ export default function CreatePage() {
         250,
       );
     } catch (err: unknown) {
-      setError(
+      const message =
         err instanceof Error
-          ? err.message
-          : "Something went wrong. Please try again.",
-      );
+          ? cleanSearchErrorMessage(err.message)
+          : "Search is having trouble right now. Please try again.";
+
+      setError(message);
     } finally {
       setLoading(false);
       setActiveAddOnTarget(null);
