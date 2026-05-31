@@ -241,7 +241,7 @@ export default function ImportPage() {
   const [minRating, setMinRating] = useState("4");
   const [queryCount, setQueryCount] = useState("2");
   const [googleMode, setGoogleMode] = useState("direct");
-  const [nycLimit, setNycLimit] = useState("1000");
+  const [nycLimit, setNycLimit] = useState("100");
   const [nycOffset, setNycOffset] = useState("0");
   const [osmLimit, setOsmLimit] = useState("1000");
   const [dedupeBatchId, setDedupeBatchId] = useState("");
@@ -343,7 +343,16 @@ export default function ImportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json().catch(() => ({}))) as ActionResult;
+      const text = await res.text();
+      let data: ActionResult = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {
+          success: false,
+          error: text || `Request failed with status ${res.status}`,
+        };
+      }
       if (!res.ok) throw new Error(getActionErrorMessage(res.status, data));
       setActionResult(data);
       if (data.batchId) {
@@ -589,7 +598,7 @@ export default function ImportPage() {
             onCleanup={runCleanupBatch}
             onImportNyc={() =>
               postAction("nyc", "/api/admin/location-growth/import-nyc-restaurants", {
-                limit: Number(nycLimit) || 1000,
+                limit: Number(nycLimit) || 100,
                 offset: Number(nycOffset) || 0,
               })
             }
