@@ -81,7 +81,7 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
   const q = String(params.q || "").trim();
   const filter = normalizeStatus(params.filter || "all");
   const page = Math.max(Number(params.page || 1), 1);
-  const pageSize = Math.min(Math.max(Number(params.pageSize || 100), 25), 250);
+  const pageSize = Math.min(Math.max(Number(params.pageSize || 50), 25), 100);
   const [pageData, summary] = await Promise.all([
     listBusinessCRMPage({ page, pageSize, query: q, filter }),
     getBusinessCRMSummary(),
@@ -143,13 +143,13 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
 
         <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
           {[
-            ["All Locations", "all", summary.total],
-            ["Upgrade Opportunities", "upgrade-opportunities", summary.upgradeOpportunitiesCount],
-            ["At Risk", "at-risk", summary.atRiskCount],
-            ["Pending Claims", "pending-claims", summary.pendingClaimsCount],
+            ["All", "all", summary.total],
             ["Owner Accounts", "owner-accounts", summary.claimed],
+            ["Upgrade Opportunities", "upgrade-opportunities", summary.upgradeOpportunitiesCount ?? summary.upgradeCandidates],
+            ["At Risk", "at-risk", summary.atRiskCount ?? summary.atRisk],
+            ["Pending Claims", "pending-claims", summary.pendingClaimsCount ?? summary.pendingClaims],
             ["Location Tasks", "location-tasks", summary.openTasks],
-            ["Follow-ups", "follow-ups", null],
+            ["Follow Ups", "follow-ups", null],
             ["QR Codes", "qr-codes", null],
           ].map(([label, value, count]) => {
             const next = new URLSearchParams();

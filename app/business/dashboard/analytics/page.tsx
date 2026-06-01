@@ -23,7 +23,7 @@ export default async function BusinessAnalyticsPage() {
     redirect("/login");
   }
 
-  let query = supabaseAdmin.from("locations").select("*").order(LOCATION_SAFE_ORDER_COLUMN, { ascending: false });
+  let query = supabaseAdmin.from("locations").select("id,name,restaurant_name,activity_name,city,state,plan,business_plan,subscription_plan,pricing_plan,tier,subscription_tier,subscription_status,plan_status,owner_user_id,owner_email,claimed_by_email").order(LOCATION_SAFE_ORDER_COLUMN, { ascending: false }).limit(100);
 
   if (impersonatedLocationId) {
     query = query.eq("id", impersonatedLocationId);
