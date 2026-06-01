@@ -19,6 +19,7 @@ export type RestaurantIntent = {
   vibeTerms: string[];
   featureTerms: string[];
   negativeTerms: string[];
+  alternativeGroups?: string[][];
 };
 
 export type ActivityIntent = {
@@ -27,6 +28,7 @@ export type ActivityIntent = {
   vibeTerms: string[];
   featureTerms: string[];
   negativeTerms: string[];
+  alternativeGroups?: string[][];
 };
 
 export type GeoIntent = {
