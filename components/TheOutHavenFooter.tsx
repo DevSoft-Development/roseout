@@ -26,9 +26,9 @@ export default function TheOutHavenFooter() {
           </Link>
 
           <p className="mt-5 max-w-md text-sm leading-7 text-white/45">
-            Plan date nights, birthday dinners, girls’ nights, restaurants,
-            activities, and full outings with a smarter way to decide where to
-            go next.
+            Plan restaurants, activities, lounges, brunch, birthdays, date
+            plans, weekend ideas, and local experiences with a smarter way to
+            decide where to go next.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
