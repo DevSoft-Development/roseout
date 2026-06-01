@@ -6,6 +6,8 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   editor: "Editor",
   ambassador: "Ambassador Team",
   experience: "Experience Team",
+  partner_ambassador: "Partner Ambassador",
+  experience_team: "Experience Team",
   viewer: "Viewer",
 };
 
@@ -20,6 +22,10 @@ export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
     "Sales and outreach access for assigned locations, claim links, pipeline updates, and upgrade opportunities.",
   experience:
     "Experience Team access for user questions, reservation issues, claims help, owner account assistance, and approved communications.",
+  partner_ambassador:
+    "Limited access to approved Partner Ambassador knowledge base resources.",
+  experience_team:
+    "Limited access to approved Experience Team knowledge base resources.",
   viewer: "Read-only access to approved dashboard areas.",
 };
 
@@ -29,25 +35,30 @@ export const ALL_ADMIN_ROLES = [
   "editor",
   "ambassador",
   "experience",
+  "partner_ambassador",
+  "experience_team",
   "viewer",
 ] as const satisfies readonly AdminRole[];
 
+const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "editor", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
+
 export const ADMIN_PAGE_ACCESS = {
   dashboard: ALL_ADMIN_ROLES,
-  analytics: ALL_ADMIN_ROLES,
+  knowledgeBase: ALL_ADMIN_ROLES,
+  analytics: LEGACY_DASHBOARD_ROLES,
 
-  locations: ALL_ADMIN_ROLES,
+  locations: LEGACY_DASHBOARD_ROLES,
   locationsCreate: ["superadmin", "admin"],
   locationsEdit: ["superadmin", "admin", "editor"],
   locationsDelete: ["superadmin"],
 
-  crm: ALL_ADMIN_ROLES,
+  crm: LEGACY_DASHBOARD_ROLES,
   crmEdit: ["superadmin", "admin", "editor"],
   crmSalesUpdate: ["superadmin", "admin", "ambassador"],
   crmExperienceUpdate: ["superadmin", "admin", "experience"],
   crmDelete: ["superadmin"],
 
-  businessCrm: ALL_ADMIN_ROLES,
+  businessCrm: LEGACY_DASHBOARD_ROLES,
   businessCrmEdit: ["superadmin", "admin", "editor"],
   businessCrmSalesUpdate: ["superadmin", "admin", "ambassador"],
   businessCrmExperienceUpdate: ["superadmin", "admin", "experience"],
@@ -66,9 +77,9 @@ export const ADMIN_PAGE_ACCESS = {
   ownerAccountsManage: ["superadmin", "admin"],
   ownerAccountsExperience: ["superadmin", "admin", "experience"],
 
-  reservations: ALL_ADMIN_ROLES,
+  reservations: LEGACY_DASHBOARD_ROLES,
   reservationsManage: ["superadmin", "admin", "experience"],
-  reservationsView: ALL_ADMIN_ROLES,
+  reservationsView: LEGACY_DASHBOARD_ROLES,
 
   reservationLayouts: ["superadmin", "admin", "editor"],
   reservationLayoutsEdit: ["superadmin", "admin", "editor"],
@@ -76,11 +87,11 @@ export const ADMIN_PAGE_ACCESS = {
   experienceInbox: ["superadmin", "admin", "experience", "viewer"],
   experienceInboxManage: ["superadmin", "admin", "experience"],
 
-  communication: ALL_ADMIN_ROLES,
+  communication: LEGACY_DASHBOARD_ROLES,
   communicationSend: ["superadmin", "admin"],
   communicationOneToOne: ["superadmin", "admin", "ambassador", "experience"],
 
-  emailTemplates: ALL_ADMIN_ROLES,
+  emailTemplates: LEGACY_DASHBOARD_ROLES,
   emailTemplatesEdit: ["superadmin", "admin", "editor"],
   emailTemplatesUse: ["superadmin", "admin", "ambassador", "experience"],
 
@@ -92,7 +103,7 @@ export const ADMIN_PAGE_ACCESS = {
   campaignsEdit: ["superadmin", "admin", "editor"],
   campaignsSend: ["superadmin", "admin"],
 
-  marketing: ALL_ADMIN_ROLES,
+  marketing: LEGACY_DASHBOARD_ROLES,
   marketingEdit: ["superadmin", "admin", "editor"],
   upgradeOpportunities: ["superadmin", "admin", "ambassador"],
 

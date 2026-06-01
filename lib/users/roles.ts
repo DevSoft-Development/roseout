@@ -8,6 +8,8 @@ export const USER_ROLES = [
   "superadmin",
   "ambassador",
   "experience",
+  "partner_ambassador",
+  "experience_team",
   "disabled",
 ] as const;
 
@@ -19,6 +21,8 @@ export type AdminRole =
   | "editor"
   | "ambassador"
   | "experience"
+  | "partner_ambassador"
+  | "experience_team"
   | "viewer";
 
 export const ADMIN_ROLES = [
@@ -27,6 +31,8 @@ export const ADMIN_ROLES = [
   "editor",
   "ambassador",
   "experience",
+  "partner_ambassador",
+  "experience_team",
   "viewer",
 ] as const satisfies readonly AdminRole[];
 
@@ -38,6 +44,8 @@ export const USER_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "editor", label: "Editor" },
   { value: "ambassador", label: "Ambassador Team" },
   { value: "experience", label: "Experience Team" },
+  { value: "partner_ambassador", label: "Partner Ambassador" },
+  { value: "experience_team", label: "Experience Team" },
   { value: "viewer", label: "Viewer" },
   { value: "reviewer", label: "Reviewer" },
   { value: "disabled", label: "Disabled" },
@@ -49,6 +57,8 @@ export const ADMIN_ROLE_OPTIONS: { value: AdminRole; label: string }[] = [
   { value: "editor", label: "Editor" },
   { value: "ambassador", label: "Ambassador Team" },
   { value: "experience", label: "Experience Team" },
+  { value: "partner_ambassador", label: "Partner Ambassador" },
+  { value: "experience_team", label: "Experience Team" },
   { value: "viewer", label: "Viewer" },
 ];
 
@@ -67,7 +77,8 @@ export function normalizeRole(role: string | null | undefined): AdminRole | User
     support: "experience",
     guest_care: "experience",
     guestcare: "experience",
-    experience_team: "experience",
+    experience_team: "experience_team",
+    partner_ambassador: "partner_ambassador",
   };
 
   const mapped = aliases[normalized] ?? normalized;
@@ -102,6 +113,10 @@ export function formatRoleLabel(role: string | null | undefined): string {
     case "ambassador":
       return "Ambassador Team";
     case "experience":
+      return "Experience Team";
+    case "partner_ambassador":
+      return "Partner Ambassador";
+    case "experience_team":
       return "Experience Team";
     case "viewer":
       return "Viewer";
