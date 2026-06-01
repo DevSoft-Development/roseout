@@ -6,83 +6,8 @@ import { explainRejection, filterActivityResults, filterRestaurantResults, rankA
 import { createPairingDebug, createSearchPairs } from "./pairing";
 import { createRpcDebug, recoverEnterpriseLane, searchEnterpriseLane } from "./rpc";
 import { productionSafeDebug } from "./debug";
+import { hasLocationImage } from "@/lib/locationImage";
 
-function firstImage(value: unknown): string | null {
-  if (!value) return null;
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const image = firstImage(item);
-      if (image) return image;
-    }
-    return null;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (
-      !trimmed ||
-      ["null", "undefined", "none", "n/a", "placeholder", "#", "?"].includes(
-        trimmed.toLowerCase(),
-      )
-    ) {
-      return null;
-    }
-
-    if (
-      trimmed.toLowerCase().includes("placeholder") ||
-      trimmed.toLowerCase().includes("/placeholder")
-    ) {
-      return null;
-    }
-
-    if (
-      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-      (trimmed.startsWith("{") && trimmed.endsWith("}"))
-    ) {
-      try {
-        return firstImage(JSON.parse(trimmed));
-      } catch {
-        return null;
-      }
-    }
-
-    return trimmed
-      .split(/[\n,]+/)
-      .map((item) => item.trim())
-      .find((item) => {
-        const lower = item.toLowerCase();
-        return (
-          item.length > 8 &&
-          !["null", "undefined", "none", "n/a", "placeholder", "#", "?"].includes(
-            lower,
-          ) &&
-          !lower.includes("placeholder")
-        );
-      }) || null;
-  }
-
-  if (typeof value === "object") {
-    const record = value as any;
-    return firstImage(record.url || record.src || record.image_url || record.main_image);
-  }
-
-  return null;
-}
-
-function hasUsableLivePhoto(location: EnterpriseLocation) {
-  return Boolean(
-    firstImage(location.image_url) ||
-      firstImage(location.main_image) ||
-      firstImage(location.images) ||
-      firstImage(location.gallery_images),
-  );
-}
-
-function filterLivePhotoResults(items: EnterpriseLocation[]) {
-  return items.filter(hasUsableLivePhoto);
-}
 
 function uniqueById(items: EnterpriseLocation[]) { const seen=new Set<string>(); return items.filter((item)=>{ const key=String(item.id ?? item.name ?? Math.random()); if (seen.has(key)) return false; seen.add(key); return true; }); }
 function hasPairConstraint(intent: SearchIntent) { return Boolean(intent.pairingPreference && intent.pairingPreference.distanceMode !== "any"); }
@@ -106,19 +31,16 @@ export async function runEnterpriseSearch(query: string, options?: { useLLM?: bo
   if (intent.needsRestaurant) { restaurantRaw = await searchEnterpriseLane(supabase,intent,"restaurant",debug); let filtered=filterRestaurantResults(restaurantRaw,intent); if (!filtered.length && restaurantSearchTerms(intent).length) { restaurantRaw=await recoverEnterpriseLane(supabase,intent,"restaurant",debug); filtered=filterRestaurantResults(restaurantRaw,intent); } }
   if (intent.needsActivity) { activityRaw = await searchEnterpriseLane(supabase,intent,"activity",debug); let filtered=filterActivityResults(activityRaw,intent); if (!filtered.length && activitySearchTerms(intent).length) { activityRaw=await recoverEnterpriseLane(supabase,intent,"activity",debug); filtered=filterActivityResults(activityRaw,intent); } }
   const restaurantRejectedReasons=restaurantRaw.map(r=>explainRejection(r,intent,"restaurant")).filter(Boolean); const activityRejectedReasons=activityRaw.map(r=>explainRejection(r,intent,"activity")).filter(Boolean);
-  const rankedRestaurants = rankRestaurantResults(uniqueById(restaurantRaw), intent);
-  const rankedActivities = rankActivityResults(uniqueById(activityRaw), intent);
+  const restaurantPhotoSafe = uniqueById(restaurantRaw).filter(hasLocationImage);
+  const activityPhotoSafe = uniqueById(activityRaw).filter(hasLocationImage);
 
-  const restaurants = filterLivePhotoResults(rankedRestaurants).slice(0, displayLimit);
-  const activities = filterLivePhotoResults(rankedActivities).slice(0, displayLimit);
+  const restaurants = rankRestaurantResults(restaurantPhotoSafe, intent).slice(0, displayLimit);
+  const activities = rankActivityResults(activityPhotoSafe, intent).slice(0, displayLimit);
 
   const pairingDebug = createPairingDebug();
 
   const pairs = intent.wantsPairing
-    ? createSearchPairs(restaurants, activities, intent, pairingDebug).filter(
-        (pair) =>
-          hasUsableLivePhoto(pair.restaurant) && hasUsableLivePhoto(pair.activity),
-      )
+    ? createSearchPairs(restaurants, activities, intent, pairingDebug)
     : [];
 
   const matched_locations = uniqueById([...restaurants, ...activities]).slice(

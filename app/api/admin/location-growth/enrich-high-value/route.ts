@@ -6,9 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 const GOOGLE_API_KEY =
-  process.env.GOOGLE_PLACES_API_KEY ||
-  process.env.GOOGLE_MAPS_API_KEY ||
-  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || "";
 async function authorize(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return null;
   if (
@@ -20,6 +18,75 @@ async function authorize(request: NextRequest) {
   const { error } = await requireAdminApiRole(["admin", "superadmin"]);
   return error;
 }
+
+async function uploadGooglePhotoToSupabase(
+  locationId: string,
+  photoReference: string,
+) {
+  if (!GOOGLE_API_KEY) {
+    throw new Error("Missing Google Places API key.");
+  }
+
+  const photoUrl = new URL("https://maps.googleapis.com/maps/api/place/photo");
+  photoUrl.searchParams.set("maxwidth", "1600");
+  photoUrl.searchParams.set("photo_reference", photoReference);
+  photoUrl.searchParams.set("key", GOOGLE_API_KEY);
+
+  const photoRes = await fetch(photoUrl, {
+    redirect: "follow",
+    cache: "no-store",
+  });
+
+  if (!photoRes.ok) {
+    throw new Error(`Google photo download failed: ${photoRes.status}`);
+  }
+
+  const contentType = photoRes.headers.get("content-type") || "image/jpeg";
+
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`Google photo returned invalid content type: ${contentType}`);
+  }
+
+  const arrayBuffer = await photoRes.arrayBuffer();
+
+  if (arrayBuffer.byteLength < 1024) {
+    throw new Error("Google photo was too small to be valid.");
+  }
+
+  const extension = contentType.includes("png")
+    ? "png"
+    : contentType.includes("webp")
+      ? "webp"
+      : "jpg";
+
+  const storagePath = `locations/${locationId}/primary-google.${extension}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from("location-images")
+    .upload(storagePath, Buffer.from(arrayBuffer), {
+      contentType,
+      upsert: true,
+      cacheControl: "31536000",
+    });
+
+  if (uploadError) {
+    throw new Error(`Supabase photo upload failed: ${uploadError.message}`);
+  }
+
+  const { data } = supabaseAdmin.storage
+    .from("location-images")
+    .getPublicUrl(storagePath);
+
+  if (!data.publicUrl) {
+    throw new Error("Supabase did not return a public URL for uploaded photo.");
+  }
+
+  return {
+    imageUrl: data.publicUrl,
+    storagePath,
+  };
+}
+
 function text(v: unknown) {
   return String(v || "").trim();
 }
@@ -76,7 +143,8 @@ export async function POST(request: NextRequest) {
     .select("*")
     .gte("quality_score", 75)
     .eq("duplicate_status", "unique")
-    .in("enrichment_status", ["queued", "not_started", "failed"])
+    .or("has_photos.eq.false,photo_status.eq.missing_photo,main_image.is.null,image_url.is.null")
+    .in("enrichment_status", ["queued", "not_started", "failed", "completed"])
     .order("has_photos", { ascending: true, nullsFirst: true })
     .order("enrichment_priority", { ascending: false })
     .order("rating", { ascending: false, nullsFirst: false })
@@ -117,36 +185,87 @@ export async function POST(request: NextRequest) {
         if (missing(row.longitude) && place.geometry?.location?.lng)
           updates.longitude = place.geometry.location.lng;
         const photoRef = place.photos?.[0]?.photo_reference;
-        if (missing(row.main_image) && photoRef)
-          updates.main_image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${encodeURIComponent(photoRef)}&key=${encodeURIComponent(GOOGLE_API_KEY || "")}`;
+
         if (photoRef) {
+          const uploaded = await uploadGooglePhotoToSupabase(row.id, photoRef);
+
+          updates.main_image = uploaded.imageUrl;
+          updates.image_url = uploaded.imageUrl;
+          updates.gallery_images = [uploaded.imageUrl];
           updates.has_photos = true;
           updates.photo_status = "google_photo";
+          updates.photo_source = "google_places";
+          updates.photo_storage_path = uploaded.storagePath;
+          updates.photo_backfilled_at = new Date().toISOString();
+          updates.photo_backfill_error = null;
         }
       }
       const recalculated = buildLocationCleanupUpdates({ ...row, ...updates });
-      Object.assign(
-        updates,
-        recalculated,
-        place?.photos?.[0]?.photo_reference
-          ? { has_photos: true, photo_status: "google_photo" }
-          : {},
-      );
+      Object.assign(updates, recalculated);
+
+      if (updates.main_image || updates.image_url) {
+        updates.has_photos = true;
+        updates.photo_status = "google_photo";
+        updates.photo_source = "google_places";
+        updates.photo_backfilled_at = new Date().toISOString();
+        updates.photo_backfill_error = null;
+
+        if (updates.quality_status === "needs_photo") {
+          updates.quality_status = "publish_ready";
+        }
+
+        if (updates.data_status === "needs_review") {
+          updates.data_status = "clean";
+        }
+
+        updates.is_searchable =
+          Number(updates.quality_score ?? row.quality_score ?? 0) >= 75 &&
+          Boolean(updates.address || row.address) &&
+          Boolean(updates.latitude ?? row.latitude) &&
+          Boolean(updates.longitude ?? row.longitude) &&
+          Boolean(updates.primary_category || row.primary_category);
+      }
       const { error: updateError } = await supabaseAdmin
         .from("locations")
         .update(updates)
         .eq("id", row.id);
       if (updateError) throw updateError;
+
+      if (updates.main_image || updates.image_url) {
+        await supabaseAdmin.from("location_photo_backfill_logs").insert({
+          location_id: row.id,
+          status: "success",
+          source: "google_places",
+          message: "Uploaded Google Places photo to Supabase Storage.",
+          photo_url: updates.main_image,
+          storage_path: updates.photo_storage_path,
+        });
+      }
+
       completed += 1;
     } catch (error) {
       failed += 1;
+
       await supabaseAdmin
         .from("locations")
         .update({
           enrichment_status: "failed",
+          photo_backfill_error:
+            error instanceof Error ? error.message : String(error),
           last_enriched_at: new Date().toISOString(),
+          photo_backfilled_at: new Date().toISOString(),
+          has_photos: false,
+          photo_status: "missing_photo",
+          is_searchable: false,
         })
         .eq("id", row.id);
+
+      await supabaseAdmin.from("location_photo_backfill_logs").insert({
+        location_id: row.id,
+        status: "failed",
+        source: "google_places",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return NextResponse.json({

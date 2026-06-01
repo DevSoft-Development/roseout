@@ -1,28 +1,9 @@
+import { hasLocationImage } from "@/lib/locationImage";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-function hasTextPhoto(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function hasArrayPhoto(value: unknown) {
-  return (
-    Array.isArray(value) &&
-    value.some((item) => hasTextPhoto(item) || Boolean(item))
-  );
-}
-
 export function hasLocationPhoto(row: any): boolean {
-  if (!row) return false;
-  return (
-    hasTextPhoto(row.main_image) ||
-    hasTextPhoto(row.image_url) ||
-    hasTextPhoto(row.photo_url) ||
-    hasArrayPhoto(row.photos) ||
-    hasArrayPhoto(row.images) ||
-    hasArrayPhoto(row.gallery_images) ||
-    hasArrayPhoto(row.gallery_image_urls) ||
-    hasArrayPhoto(row.photo_urls)
-  );
+  return hasLocationImage(row);
 }
 
 export function getPhotoStatus(row: any): string {
@@ -34,6 +15,7 @@ export function getPhotoStatus(row: any): string {
       row?.main_image_uploaded_by ??
       "",
   ).toLowerCase();
+
   const source = String(
     row?.photo_source ??
       row?.image_source ??
@@ -50,6 +32,7 @@ export function getPhotoStatus(row: any): string {
   ) {
     return "owner_photo";
   }
+
   if (
     row?.admin_photo ||
     row?.admin_uploaded_photo ||
@@ -57,14 +40,16 @@ export function getPhotoStatus(row: any): string {
   ) {
     return "admin_photo";
   }
+
   if (
     row?.google_photo ||
-    hasTextPhoto(row?.google_photo_url) ||
-    hasArrayPhoto(row?.google_photos) ||
+    row?.google_photo_url ||
+    row?.google_place_id ||
     source.includes("google")
   ) {
     return "google_photo";
   }
+
   if (
     row?.imported_photo ||
     source.includes("import") ||

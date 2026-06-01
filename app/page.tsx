@@ -4,7 +4,7 @@ import Image from "next/image";
 import RecoveryRedirect from "@/components/RecoveryRedirect";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
-import { getLocationImage } from "@/lib/locationImage";
+import { getLocationImage, hasLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 import { buildMetadata } from "@/lib/seo";
@@ -405,6 +405,8 @@ function buildFeaturedLocations(locations: HomeLocation[]) {
 }
 
 function PlaceCard({ location }: { location: HomeLocation }) {
+  if (!hasLocationImage(location)) return null;
+
   const tags = getCardChips(location);
   const reserveHref = location.external_reservation_url || location.reservation_url || location.website || null;
 
@@ -412,7 +414,7 @@ function PlaceCard({ location }: { location: HomeLocation }) {
     <article className="group flex h-full min-h-[352px] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/80 p-3 shadow-2xl shadow-black/30">
       <div className="relative h-44 w-full overflow-hidden rounded-2xl">
         <Image
-          src={getLocationImage(location)}
+          src={getLocationImage(location) || ""}
           alt={getLocationName(location)}
           loading="lazy"
           fill

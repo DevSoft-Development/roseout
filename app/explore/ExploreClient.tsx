@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { getLocationName } from "@/lib/locationName";
-import { getLocationImage } from "@/lib/locationImage";
+import { getLocationImage, hasLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 
@@ -151,7 +151,7 @@ export default function ExploreClient({
 
   const hasActiveSearch = Boolean(q.trim()) || selectedKind !== "all" || selectedArea !== "all";
   const displayLocations = useMemo(
-    () => (hasActiveSearch ? locations : initialLocations),
+    () => (hasActiveSearch ? locations : initialLocations).filter(hasLocationImage),
     [hasActiveSearch, initialLocations, locations],
   );
 
@@ -612,7 +612,7 @@ function LocationCard({ location }: { location: ExploreLocation }) {
     <article className="group overflow-hidden rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-3 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.065]">
       <div className="relative h-48 overflow-hidden rounded-[1.2rem] bg-white/[0.04]">
         <Image
-          src={getLocationImage(location)}
+          src={getLocationImage(location) || ""}
           alt={name}
           fill
           sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw"
