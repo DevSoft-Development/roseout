@@ -103,6 +103,8 @@ type ActionResult = Record<string, unknown> & {
   success?: boolean;
   error?: string;
   batchId?: string;
+  actionKey?: string;
+  actionLabel?: string;
 };
 
 type DuplicateMatch = {
@@ -161,6 +163,65 @@ type StagedRecord = {
 function getNumber(value: unknown) {
   const num = Number(value ?? 0);
   return Number.isFinite(num) ? num : 0;
+}
+
+function getActionLabel(key: string) {
+  const labels: Record<string, string> = {
+    google: "Google Import",
+    nyc: "NYC Import",
+    osm: "OSM Import",
+    "osm-test": "OSM Query Test",
+    pictures: "Fix Pictures",
+    database: "Database Cleanup",
+    cleanup: "Database Cleanup",
+    dedupe: "Dedupe",
+    duplicates: "Duplicate Review",
+    score: "Score Chunk",
+    publish: "Publish Chunk",
+    qr: "QR Generation",
+    phones: "Phone Backfill",
+    cuisine: "Cuisine Backfill",
+    "classify-chains": "Classify Chains",
+    "legacy-cleanup": "Legacy Cleanup",
+    staging: "Staged Records",
+    "duplicate-decision": "Duplicate Decision",
+  };
+
+  return labels[key] || key.replace(/-/g, " ");
+}
+
+function actionBelongsToTab(actionKey: unknown, activeTab: TabId) {
+  const key = String(actionKey || "");
+
+  const tabActions: Record<TabId, string[]> = {
+    google: ["google", "phones", "cuisine", "legacy-cleanup"],
+    nyc: ["nyc"],
+    osm: ["osm", "osm-test"],
+    pictures: ["pictures"],
+    database: ["database", "cleanup", "classify-chains", "phones", "cuisine"],
+    dedupe: ["dedupe", "duplicates", "duplicate-decision"],
+    publish: ["score", "publish"],
+    qr: ["qr"],
+    history: ["staging"],
+  };
+
+  if (!key) return true;
+  return tabActions[activeTab]?.includes(key) ?? false;
+}
+
+function isNoisyUtilityLog(log: ImportLog) {
+  const job = String(log.job_name || "").toLowerCase();
+
+  return [
+    "restaurant_cuisine_backfill",
+    "phone_backfill",
+    "review_count_backfill",
+    "cleanup_missing_address",
+  ].includes(job);
+}
+
+function getVisibleHistoryLogs(logs: ImportLog[]) {
+  return logs.filter((log) => !isNoisyUtilityLog(log)).slice(0, 12);
 }
 
 function clampPercent(value: number) {
@@ -366,77 +427,6 @@ function getHistoryProgress(logs: ImportLog[]) {
     doneLabel: total > 0 ? progressLabel(successful, total) : "No history",
     tone: failed > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
-}
-
-function getGrowthTabMeta(tab: Exclude<TabId, "google" | "qr" | "history">) {
-  const meta = {
-    nyc: {
-      kicker: "NYC Imports",
-      title: "NYC Open Data Restaurants",
-      description:
-        "Stage NYC restaurant records first. They will not go live until they are scored, deduped, and published.",
-    },
-    osm: {
-      kicker: "OSM / Activities",
-      title: "OSM Activity Imports",
-      description:
-        "Stage activity records from OSM, then move them through scoring, dedupe, and publish readiness.",
-    },
-    pictures: {
-      kicker: "Fix Pictures",
-      title: "Photo Repair & Backfill",
-      description:
-        "Track photo coverage and run safe repair tools for missing or unusable location pictures.",
-    },
-    database: {
-      kicker: "Fix Database",
-      title: "Database Cleanup & Health",
-      description:
-        "Normalize live records, watch review/duplicate debt, and keep the import pipeline healthy.",
-    },
-    dedupe: {
-      kicker: "Dedupe / Review",
-      title: "Duplicate Review Pipeline",
-      description:
-        "Check staged records against possible duplicates before anything can be published live.",
-    },
-    publish: {
-      kicker: "Publish",
-      title: "Publish Ready Records",
-      description:
-        "Move clean, unique, publish-ready staged records into the live locations table safely.",
-    },
-  } satisfies Record<Exclude<TabId, "google" | "qr" | "history">, {
-    kicker: string;
-    title: string;
-    description: string;
-  }>;
-
-  return meta[tab];
-}
-
-function getGrowthTabProgress(
-  tab: Exclude<TabId, "google" | "qr" | "history">,
-  summary: GrowthSummary | null,
-) {
-  if (tab === "nyc") return getNycProgress(summary);
-  if (tab === "osm") return getOsmProgress(summary);
-  if (tab === "pictures") return getPictureProgress(summary);
-  if (tab === "database") return getDatabaseProgress(summary);
-  if (tab === "dedupe") return getDedupeProgress(summary);
-  return getPublishProgress(summary);
-}
-
-function isGrowthTabRunning(
-  tab: Exclude<TabId, "google" | "qr" | "history">,
-  runningAction: string | null,
-) {
-  if (tab === "nyc") return runningAction === "nyc";
-  if (tab === "osm") return runningAction === "osm" || runningAction === "osm-test";
-  if (tab === "pictures") return runningAction === "pictures";
-  if (tab === "database") return runningAction === "database" || runningAction === "cleanup";
-  if (tab === "dedupe") return runningAction === "dedupe" || runningAction === "duplicates";
-  return runningAction === "publish" || runningAction === "score";
 }
 
 function getImported(meta: ImportMeta) {
@@ -667,14 +657,6 @@ function ImportPageContent() {
   const router = useRouter();
 
   const [activeTab, setActiveTabState] = useState<TabId>("google");
-
-  const setActiveTab = useCallback(
-    (tab: TabId) => {
-      setActiveTabState(tab);
-      router.replace(`/admin/dashboard/import?tab=${tab}`, { scroll: false });
-    },
-    [router],
-  );
   const [logs, setLogs] = useState<ImportLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [summary, setSummary] = useState<GrowthSummary | null>(null);
@@ -727,18 +709,29 @@ function ImportPageContent() {
     const tab = searchParams.get("tab") as TabId | "growth" | "duplicates" | null;
 
     if (tab && validTabs.includes(tab as TabId)) {
-      setActiveTabState(tab as TabId);
+      setActiveTabState((current) => {
+        const next = tab as TabId;
+        if (current !== next) {
+          setActionResult(null);
+          setProgress(0);
+        }
+        return next;
+      });
       return;
     }
 
     if (tab === "growth") {
       setActiveTabState("nyc");
+      setActionResult(null);
+      setProgress(0);
       router.replace("/admin/dashboard/import?tab=nyc", { scroll: false });
       return;
     }
 
     if (tab === "duplicates") {
       setActiveTabState("dedupe");
+      setActionResult(null);
+      setProgress(0);
       router.replace("/admin/dashboard/import?tab=dedupe", { scroll: false });
     }
   }, [router, searchParams]);
@@ -792,6 +785,20 @@ function ImportPageContent() {
       setSummaryLoading(false);
     }
   }, []);
+
+  const setActiveTab = useCallback(
+    (tab: TabId) => {
+      setActiveTabState(tab);
+      setActionResult(null);
+      setProgress(0);
+      router.replace(`/admin/dashboard/import?tab=${tab}`, { scroll: false });
+      fetchSummary();
+      if (tab === "google" || tab === "history") {
+        fetchLogs();
+      }
+    },
+    [fetchLogs, fetchSummary, router],
+  );
 
   useEffect(() => {
     // Initial data load is intentionally kicked off once the import center mounts.
@@ -860,7 +867,11 @@ function ImportPageContent() {
       });
       const data = await parseActionResponse(res);
       setProgress(100);
-      setActionResult(data);
+      setActionResult({
+        ...data,
+        actionKey: key,
+        actionLabel: getActionLabel(key),
+      });
       if (data.batchId) {
         setDedupeBatchId(String(data.batchId));
         setScoreBatchId(String(data.batchId));
@@ -874,6 +885,8 @@ function ImportPageContent() {
       setActionResult({
         success: false,
         error: message,
+        actionKey: key,
+        actionLabel: getActionLabel(key),
         ...(key === "osm" ? { categoryGroup: osmCategoryGroup } : {}),
       });
       return null;
@@ -888,6 +901,8 @@ function ImportPageContent() {
         success: false,
         error:
           "Safer staged Google import is ready for the import center UI, but the existing Google staging route is not available yet. Use direct mode for the current Google importer or bulk-growth staged sources for NYC/OSM.",
+        actionKey: "google",
+        actionLabel: getActionLabel("google"),
       });
       return;
     }
@@ -1193,26 +1208,7 @@ function ImportPageContent() {
           </div>
         </nav>
 
-        {runningAction ? (
-          <div className="mb-6 rounded-[1.5rem] border border-rose-300/20 bg-[#160B0D]/90 px-5 py-4 text-sm font-bold text-rose-100 shadow-xl shadow-black/30 ring-1 ring-rose-300/10">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                Running {runningAction.replace(/-/g, " ")}. Counts will refresh when the action finishes.
-              </span>
-              <span className="text-xs font-black uppercase tracking-[0.22em] text-rose-300">
-                {progress}%
-              </span>
-            </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-rose-500 transition-all duration-500"
-                style={{ width: `${clampPercent(progress)}%` }}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {actionResult ? (
+        {actionResult && actionBelongsToTab(actionResult.actionKey, activeTab) ? (
           <ResultBanner
             result={actionResult}
             onRunDedupe={(batchId) => {
@@ -1427,6 +1423,8 @@ function ImportPageContent() {
                 setActionResult({
                   success: false,
                   error: "Select a batch or switch scope to Publish All Ready.",
+                  actionKey: "publish",
+                  actionLabel: getActionLabel("publish"),
                 });
                 return null;
               }
@@ -1938,7 +1936,8 @@ function ImportHistoryPanel({
   onViewDuplicates: (batchId: string) => void;
 }) {
   const batches = summary?.latestBatches || [];
-  const historyProgress = getHistoryProgress(logs);
+  const visibleLogs = getVisibleHistoryLogs(logs);
+  const historyProgress = getHistoryProgress(visibleLogs);
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
@@ -2100,6 +2099,57 @@ limit 20;`}</pre>
             </table>
           </div>
         ) : null}
+      </section>
+
+      <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+        <h2 className="text-lg font-bold">Recent Import Runs</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Compact run history with technical details collapsed by default.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">
+          Utility backfills are hidden from this view to keep Import History focused. Use the technical logs/API logs for detailed utility runs.
+        </p>
+        {visibleLogs.length === 0 ? (
+          <div className="mt-5">
+            <EmptyState text="No focused import logs found." />
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {visibleLogs.map((log) => (
+              <div
+                key={log.id}
+                className="rounded-2xl border border-white/10 bg-black/25 p-4"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-black text-white">
+                      {log.job_name || "Import run"}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {log.run_date || log.created_at}
+                    </p>
+                  </div>
+                  <StatusPill status={log.error ? "error" : "success"} />
+                </div>
+
+                {log.error ? (
+                  <p className="mt-3 rounded-xl border border-rose-300/20 bg-rose-950/30 p-3 text-xs text-rose-100">
+                    {log.error}
+                  </p>
+                ) : null}
+
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
+                    Details
+                  </summary>
+                  <pre className="mt-3 max-h-48 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-300">
+                    {JSON.stringify(log.meta || {}, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {stagedRecords.length ? (
@@ -2527,6 +2577,12 @@ function ResultBanner({
   onPublishBatch?: (batchId: string) => void;
 }) {
   const ok = result.success !== false && !result.error;
+  const actionKey = typeof result.actionKey === "string" ? result.actionKey : "";
+  const actionLabel =
+    typeof result.actionLabel === "string" ? result.actionLabel : "Action";
+
+  const isOsmAction = actionKey === "osm" || actionKey === "osm-test";
+  const isScoreAction = actionKey === "score";
   const hasBatchMetrics = [
     "batchId",
     "limit",
@@ -2554,6 +2610,12 @@ function ResultBanner({
     "unique",
     "hasMore",
     "scope",
+    "updated",
+    "generatedClaimCodes",
+    "generatedClaimQrs",
+    "generatedPublicQrs",
+    "skippedAlreadyComplete",
+    "failed",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
   const isOsmTimeout =
@@ -2564,9 +2626,15 @@ function ResultBanner({
         .includes("all overpass endpoints rejected or timed out"));
   return (
     <div
-      className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-white/10 bg-white/[0.04] text-zinc-100" : "border-rose-300/20 bg-rose-500/10 text-rose-100"}`}
+      className={`mb-6 rounded-3xl border p-5 text-sm ${
+        ok
+          ? "border-rose-300/20 bg-rose-500/10 text-rose-100"
+          : "border-rose-300/25 bg-rose-950/30 text-rose-100"
+      }`}
     >
-      <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
+      <p className="font-black">
+        {ok ? `${actionLabel} completed` : `${actionLabel} failed`}
+      </p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
       {isOsmTimeout ? (
         <p className="mt-2 font-bold">
@@ -2584,7 +2652,7 @@ function ResultBanner({
       {ok && typeof result.message === "string" ? (
         <p className="mt-2 font-bold">
           {String(result.message).startsWith("OSM records staged.")
-            ? "OSM records staged. Next step: Run Score Staged Chunk, then Run Dedupe Chunk."
+            ? "OSM records staged. Next step: run Score Chunk, then run Dedupe Chunk."
             : result.message}
         </p>
       ) : null}
@@ -2593,10 +2661,22 @@ function ResultBanner({
           More records remain. Run the next chunk.
         </p>
       ) : null}
-      {ok && result.hasMore === false && Number(result.staged || 0) === 0 ? (
+      {ok &&
+      isOsmAction &&
+      result.hasMore === false &&
+      Number(result.staged || 0) === 0 ? (
         <p className="mt-2 font-bold">
-          No more records found for this OSM category. Reset the cursor or
-          choose another category group.
+          No more records found for this OSM category. Reset the cursor or choose another category group.
+        </p>
+      ) : null}
+      {ok && isScoreAction && Number(result.processed || 0) === 0 ? (
+        <p className="mt-2 font-bold">
+          No staged records need scoring right now. Import more records or switch to a specific batch that still has unchecked records.
+        </p>
+      ) : null}
+      {ok && isScoreAction && Number(result.processed || 0) > 0 ? (
+        <p className="mt-2 font-bold">
+          Score chunk finished. Next step: run dedupe, then publish ready records.
         </p>
       ) : null}
       {hasBatchMetrics ? (
@@ -2629,6 +2709,12 @@ function ResultBanner({
             ["Unique", result.unique],
             ["Remaining unchecked", result.remainingUnchecked],
             ["Has more", result.hasMore],
+            ["Updated", result.updated],
+            ["Generated claim codes", result.generatedClaimCodes],
+            ["Generated claim QRs", result.generatedClaimQrs],
+            ["Generated public QRs", result.generatedPublicQrs],
+            ["Skipped complete", result.skippedAlreadyComplete],
+            ["Failed", result.failed],
           ]
             .filter(([, value]) => value !== undefined && value !== null)
             .map(([label, value]) => (
@@ -2645,9 +2731,14 @@ function ResultBanner({
             ))}
         </div>
       ) : null}
-      <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-200">
-        {JSON.stringify(result, null, 2)}
-      </pre>
+      <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+        <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
+          View technical details
+        </summary>
+        <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-black/30 p-3 text-xs text-zinc-200">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      </details>
       {result.batchId ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <button
