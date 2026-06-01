@@ -2583,6 +2583,8 @@ function ResultBanner({
 
   const isOsmAction = actionKey === "osm" || actionKey === "osm-test";
   const isScoreAction = actionKey === "score";
+  const isClassifyChainsAction = actionKey === "classify-chains";
+  const isQrAction = actionKey === "qr";
   const hasBatchMetrics = [
     "batchId",
     "limit",
@@ -2602,6 +2604,11 @@ function ResultBanner({
     "remainingPublishReady",
     "remainingUnchecked",
     "processed",
+    "chainsFound",
+    "independentFound",
+    "remaining",
+    "live",
+    "staging",
     "publishReady",
     "review",
     "rejected",
@@ -2658,7 +2665,16 @@ function ResultBanner({
       ) : null}
       {ok && result.hasMore === true ? (
         <p className="mt-2 font-bold">
-          More records remain. Run the next chunk.
+          {isClassifyChainsAction
+            ? "More locations still need chain classification. Run Classify Chains again to continue."
+            : isQrAction
+              ? "More locations still need QR codes. Run QR Generation again to continue."
+              : "More records remain. Run the next chunk."}
+        </p>
+      ) : null}
+      {ok && isClassifyChainsAction && Number(result.remaining || 0) === 0 ? (
+        <p className="mt-2 font-bold">
+          Chain classification is complete. No unclassified records remain.
         </p>
       ) : null}
       {ok &&
@@ -2701,6 +2717,9 @@ function ResultBanner({
             ["Marked published", result.markedPublished],
             ["Remaining ready", result.remainingPublishReady],
             ["Processed", result.processed],
+            ["Chains found", result.chainsFound],
+            ["Independent", result.independentFound],
+            ["Remaining", result.remaining],
             ["Publish ready", result.publishReady],
             ["Review", result.review],
             ["Rejected", result.rejected],
