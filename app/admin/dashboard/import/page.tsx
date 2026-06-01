@@ -1,9 +1,19 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-type TabId = "google" | "growth" | "history" | "duplicates" | "qr";
+type TabId =
+  | "google"
+  | "nyc"
+  | "osm"
+  | "pictures"
+  | "database"
+  | "dedupe"
+  | "publish"
+  | "qr"
+  | "history";
 
 type ImportSectionMeta = {
   imported?: unknown;
@@ -151,6 +161,282 @@ type StagedRecord = {
 function getNumber(value: unknown) {
   const num = Number(value ?? 0);
   return Number.isFinite(num) ? num : 0;
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function percentFromParts(done: number, total: number) {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return clampPercent((done / total) * 100);
+}
+
+function progressLabel(done: number, total: number) {
+  return `${done.toLocaleString()} of ${total.toLocaleString()}`;
+}
+
+function getGoogleProgress({
+  running,
+  progress,
+  totals,
+}: {
+  running: boolean;
+  progress: number;
+  totals: {
+    imported: number;
+    skipped: number;
+    failed: number;
+    found: number;
+    errors: number;
+  };
+}) {
+  if (running) {
+    return {
+      percent: progress,
+      label: "Google import running",
+      detail: "Importing live Google results into TheOutHaven.",
+      doneLabel: `${progress}%`,
+      tone: "rose" as ProgressTone,
+    };
+  }
+
+  const completed = totals.imported + totals.skipped;
+  const total = Math.max(completed + totals.failed, totals.found, 0);
+
+  return {
+    percent: total > 0 ? percentFromParts(completed, total) : 0,
+    label: "Google import progress",
+    detail:
+      total > 0
+        ? `${completed.toLocaleString()} imported or skipped from ${total.toLocaleString()} found.`
+        : "No Google import results yet.",
+    doneLabel: total > 0 ? progressLabel(completed, total) : "Not started",
+    tone: "rose" as ProgressTone,
+  };
+}
+
+function getNycProgress(summary: GrowthSummary | null) {
+  const staged = getNumber(summary?.staged);
+  const publishReady = getNumber(summary?.publishReady);
+  const rejected = getNumber(summary?.rejected);
+  const duplicates = getNumber(summary?.duplicates);
+  const possible = getNumber(summary?.possibleDuplicates);
+  const completed = publishReady + rejected + duplicates;
+  const total = Math.max(staged + completed + possible, completed);
+
+  return {
+    percent: total > 0 ? percentFromParts(completed, total) : 0,
+    label: "NYC import pipeline",
+    detail:
+      total > 0
+        ? "Tracks staged NYC records moving through scoring, dedupe, rejection, and publish-ready states."
+        : "No staged NYC import records found yet.",
+    doneLabel: total > 0 ? progressLabel(completed, total) : "Not started",
+    tone: "rose" as ProgressTone,
+  };
+}
+
+function getOsmProgress(summary: GrowthSummary | null) {
+  const staged = getNumber(summary?.staged);
+  const needsScoring = getNumber(summary?.needsScoring);
+  const publishReady = getNumber(summary?.publishReady);
+  const rejected = getNumber(summary?.rejected);
+  const possible = getNumber(summary?.possibleDuplicates);
+  const completed = publishReady + rejected;
+  const total = Math.max(staged + needsScoring + possible + completed, completed);
+
+  return {
+    percent: total > 0 ? percentFromParts(completed, total) : 0,
+    label: "OSM activity import pipeline",
+    detail:
+      total > 0
+        ? "Tracks imported activity records through scoring, review, and publish readiness."
+        : "No staged OSM activity records found yet.",
+    doneLabel: total > 0 ? progressLabel(completed, total) : "Not started",
+    tone: "rose" as ProgressTone,
+  };
+}
+
+function getPictureProgress(summary: GrowthSummary | null) {
+  const hasPhotos = getNumber(summary?.hasPhotos);
+  const missingPhotos = getNumber(summary?.missingPhotos);
+  const total = hasPhotos + missingPhotos;
+
+  return {
+    percent: total > 0 ? percentFromParts(hasPhotos, total) : 0,
+    label: "Photo coverage",
+    detail:
+      total > 0
+        ? "Tracks locations with real usable photos versus missing-photo records."
+        : "No photo coverage data available yet.",
+    doneLabel: total > 0 ? progressLabel(hasPhotos, total) : "No data",
+    tone: missingPhotos > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+  };
+}
+
+function getDatabaseProgress(summary: GrowthSummary | null) {
+  const live = getNumber(summary?.liveLocations);
+  const needsReview = getNumber(summary?.needsReview);
+  const duplicates = getNumber(summary?.duplicates);
+  const issues = needsReview + duplicates;
+  const clean = Math.max(live - issues, 0);
+
+  return {
+    percent: live > 0 ? percentFromParts(clean, live) : 0,
+    label: "Database health",
+    detail:
+      live > 0
+        ? "Tracks clean live locations versus records needing review or duplicate cleanup."
+        : "No live location count available yet.",
+    doneLabel: live > 0 ? progressLabel(clean, live) : "No data",
+    tone: issues > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+  };
+}
+
+function getDedupeProgress(summary: GrowthSummary | null) {
+  const staged = getNumber(summary?.staged);
+  const remaining = getNumber(summary?.remainingUncheckedDedupe);
+  const checked = Math.max(staged - remaining, 0);
+
+  return {
+    percent: staged > 0 ? percentFromParts(checked, staged) : 0,
+    label: "Dedupe review progress",
+    detail:
+      staged > 0
+        ? "Tracks staged records that have been checked against possible duplicates."
+        : "No staged records available for dedupe.",
+    doneLabel: staged > 0 ? progressLabel(checked, staged) : "No data",
+    tone: remaining > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+  };
+}
+
+function getPublishProgress(summary: GrowthSummary | null) {
+  const publishReady = getNumber(summary?.publishReady);
+  const remainingReady = getNumber(summary?.remainingPublishReady ?? summary?.publishReady);
+  const publishedLatest = getNumber(summary?.latestBatches?.[0]?.total_published);
+  const completed = Math.max(publishReady - remainingReady, publishedLatest, 0);
+  const total = Math.max(publishReady, completed + remainingReady);
+
+  return {
+    percent: total > 0 ? percentFromParts(completed, total) : 0,
+    label: "Publish progress",
+    detail:
+      total > 0
+        ? "Tracks publish-ready records that have moved into live locations."
+        : "No publish-ready records available yet.",
+    doneLabel: total > 0 ? progressLabel(completed, total) : "No data",
+    tone: remainingReady > 0 ? ("rose" as ProgressTone) : ("emerald" as ProgressTone),
+  };
+}
+
+function getQrProgress(summary: GrowthSummary | null) {
+  const live = getNumber(summary?.liveLocations);
+  const missingClaimCodes = getNumber(summary?.missingClaimCodes);
+  const missingClaimQrs = getNumber(summary?.missingClaimQrs);
+  const missingPublicQrs = getNumber(summary?.missingPublicQrs);
+  const missingAny = Math.max(missingClaimCodes, missingClaimQrs, missingPublicQrs);
+  const complete = Math.max(live - missingAny, 0);
+
+  return {
+    percent: live > 0 ? percentFromParts(complete, live) : 0,
+    label: "QR completion",
+    detail:
+      live > 0
+        ? "Tracks locations with claim codes, claim QR codes, and public QR codes completed."
+        : "No live location count available yet.",
+    doneLabel: live > 0 ? progressLabel(complete, live) : "No data",
+    tone: missingAny > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+  };
+}
+
+function getHistoryProgress(logs: ImportLog[]) {
+  const total = logs.length;
+  const failed = logs.filter((log) => Boolean(log.error)).length;
+  const successful = Math.max(total - failed, 0);
+
+  return {
+    percent: total > 0 ? percentFromParts(successful, total) : 0,
+    label: "Import run health",
+    detail:
+      total > 0
+        ? "Tracks successful import runs versus import runs with errors."
+        : "No import history found yet.",
+    doneLabel: total > 0 ? progressLabel(successful, total) : "No history",
+    tone: failed > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+  };
+}
+
+function getGrowthTabMeta(tab: Exclude<TabId, "google" | "qr" | "history">) {
+  const meta = {
+    nyc: {
+      kicker: "NYC Imports",
+      title: "NYC Open Data Restaurants",
+      description:
+        "Stage NYC restaurant records first. They will not go live until they are scored, deduped, and published.",
+    },
+    osm: {
+      kicker: "OSM / Activities",
+      title: "OSM Activity Imports",
+      description:
+        "Stage activity records from OSM, then move them through scoring, dedupe, and publish readiness.",
+    },
+    pictures: {
+      kicker: "Fix Pictures",
+      title: "Photo Repair & Backfill",
+      description:
+        "Track photo coverage and run safe repair tools for missing or unusable location pictures.",
+    },
+    database: {
+      kicker: "Fix Database",
+      title: "Database Cleanup & Health",
+      description:
+        "Normalize live records, watch review/duplicate debt, and keep the import pipeline healthy.",
+    },
+    dedupe: {
+      kicker: "Dedupe / Review",
+      title: "Duplicate Review Pipeline",
+      description:
+        "Check staged records against possible duplicates before anything can be published live.",
+    },
+    publish: {
+      kicker: "Publish",
+      title: "Publish Ready Records",
+      description:
+        "Move clean, unique, publish-ready staged records into the live locations table safely.",
+    },
+  } satisfies Record<Exclude<TabId, "google" | "qr" | "history">, {
+    kicker: string;
+    title: string;
+    description: string;
+  }>;
+
+  return meta[tab];
+}
+
+function getGrowthTabProgress(
+  tab: Exclude<TabId, "google" | "qr" | "history">,
+  summary: GrowthSummary | null,
+) {
+  if (tab === "nyc") return getNycProgress(summary);
+  if (tab === "osm") return getOsmProgress(summary);
+  if (tab === "pictures") return getPictureProgress(summary);
+  if (tab === "database") return getDatabaseProgress(summary);
+  if (tab === "dedupe") return getDedupeProgress(summary);
+  return getPublishProgress(summary);
+}
+
+function isGrowthTabRunning(
+  tab: Exclude<TabId, "google" | "qr" | "history">,
+  runningAction: string | null,
+) {
+  if (tab === "nyc") return runningAction === "nyc";
+  if (tab === "osm") return runningAction === "osm" || runningAction === "osm-test";
+  if (tab === "pictures") return runningAction === "pictures";
+  if (tab === "database") return runningAction === "database" || runningAction === "cleanup";
+  if (tab === "dedupe") return runningAction === "dedupe" || runningAction === "duplicates";
+  return runningAction === "publish" || runningAction === "score";
 }
 
 function getImported(meta: ImportMeta) {
@@ -329,15 +615,66 @@ const queryCountOptions = [
 ];
 
 const tabs: Array<{ id: TabId; label: string }> = [
-  { id: "google", label: "Google Import" },
-  { id: "growth", label: "Location Growth" },
+  { id: "google", label: "Google Imports" },
+  { id: "nyc", label: "NYC Imports" },
+  { id: "osm", label: "OSM / Activities" },
+  { id: "pictures", label: "Fix Pictures" },
+  { id: "database", label: "Fix Database" },
+  { id: "dedupe", label: "Dedupe / Review" },
+  { id: "publish", label: "Publish" },
+  { id: "qr", label: "QR Codes" },
   { id: "history", label: "Import History" },
-  { id: "duplicates", label: "Duplicate Review" },
-  { id: "qr", label: "QR Tools" },
+];
+
+const validTabs: TabId[] = [
+  "google",
+  "nyc",
+  "osm",
+  "pictures",
+  "database",
+  "dedupe",
+  "publish",
+  "qr",
+  "history",
 ];
 
 export default function ImportPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("google");
+  return (
+    <Suspense fallback={<ImportPageShell />}>
+      <ImportPageContent />
+    </Suspense>
+  );
+}
+
+function ImportPageShell() {
+  return (
+    <main className="min-h-screen bg-[#090506] px-4 py-8 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 shadow-2xl shadow-black/40">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-rose-300">
+          TheOutHaven Admin
+        </p>
+        <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+          Import Center
+        </h1>
+        <p className="mt-3 text-sm text-zinc-400">Loading import tabs...</p>
+      </div>
+    </main>
+  );
+}
+
+function ImportPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const [activeTab, setActiveTabState] = useState<TabId>("google");
+
+  const setActiveTab = useCallback(
+    (tab: TabId) => {
+      setActiveTabState(tab);
+      router.replace(`/admin/dashboard/import?tab=${tab}`, { scroll: false });
+    },
+    [router],
+  );
   const [logs, setLogs] = useState<ImportLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [summary, setSummary] = useState<GrowthSummary | null>(null);
@@ -383,6 +720,24 @@ export default function ImportPage() {
   useEffect(() => {
     document.title = "Import Center | TheOutHaven Admin";
   }, []);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab") as TabId | "growth" | "duplicates" | null;
+
+    if (tab && validTabs.includes(tab as TabId)) {
+      setActiveTabState(tab as TabId);
+    }
+
+    if (tab === "growth") {
+      setActiveTabState("nyc");
+      router.replace("/admin/dashboard/import?tab=nyc", { scroll: false });
+    }
+
+    if (tab === "duplicates") {
+      setActiveTabState("dedupe");
+      router.replace("/admin/dashboard/import?tab=dedupe", { scroll: false });
+    }
+  }, [router, searchParams]);
 
   useEffect(() => {
     const savedNycOffset = window.localStorage.getItem(NYC_OFFSET_STORAGE_KEY);
@@ -442,16 +797,23 @@ export default function ImportPage() {
   }, [fetchLogs, fetchSummary]);
 
   useEffect(() => {
-    if (runningAction !== "google") {
-      // Progress is visual-only and should reset as soon as Google import stops.
+    if (!runningAction) {
+      // Progress is visual-only and resets once the active admin action stops.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setProgress(0);
       return;
     }
 
-    setProgress(15);
+    setProgress(12);
+
     const timer = window.setInterval(() => {
-      setProgress((previous) => (previous >= 92 ? previous : previous + 5));
+      setProgress((previous) => {
+        if (previous >= 92) return previous;
+        if (runningAction === "google") return previous + 5;
+        if (runningAction === "pictures") return previous + 4;
+        if (runningAction === "qr") return previous + 4;
+        return previous + 3;
+      });
     }, 700);
 
     return () => window.clearInterval(timer);
@@ -491,6 +853,7 @@ export default function ImportPage() {
         body: JSON.stringify(body),
       });
       const data = await parseActionResponse(res);
+      setProgress(100);
       setActionResult(data);
       if (data.batchId) {
         setDedupeBatchId(String(data.batchId));
@@ -523,7 +886,7 @@ export default function ImportPage() {
       return;
     }
 
-    const result = await postAction("google", "/api/admin/run-google-import", {
+    await postAction("google", "/api/admin/run-google-import", {
       type: importType,
       limit: 2,
       batch: primaryTag,
@@ -537,8 +900,6 @@ export default function ImportPage() {
       requireCuisineType: true,
       maxQueries: Number(queryCount),
     });
-
-    if (result?.success !== false) setProgress(100);
   };
 
   const loadStagedRecords = async (batchId: string) => {
@@ -582,7 +943,7 @@ export default function ImportPage() {
       if (!res.ok) throw new Error(data.error || "Could not load duplicates");
       setDuplicates(data.matches || []);
       setDuplicateBatchId(batchId);
-      setActiveTab("duplicates");
+      setActiveTab("dedupe");
     } catch (error) {
       setActionResult({
         success: false,
@@ -749,7 +1110,7 @@ export default function ImportPage() {
     });
 
   const runCleanupBatch = async () => {
-    const data = await postAction("cleanup", "/api/admin/cleanup-locations", {
+    const data = await postAction("database", "/api/admin/cleanup-locations", {
       table: "locations",
       limit: 500,
       offset: Number(cleanupOffset) || 0,
@@ -815,6 +1176,13 @@ export default function ImportPage() {
           </div>
         </nav>
 
+        {runningAction ? (
+          <div className="mb-6 rounded-3xl border border-rose-400/20 bg-rose-500/10 px-5 py-4 text-sm font-bold text-rose-100">
+            Running {runningAction.replace(/-/g, " ")}. This page will refresh
+            counts when the action finishes.
+          </div>
+        ) : null}
+
         {actionResult ? (
           <ResultBanner
             result={actionResult}
@@ -829,7 +1197,7 @@ export default function ImportPage() {
             onPublishBatch={(batchId) => {
               setPublishScope("batch");
               setPublishBatchId(batchId);
-              setActiveTab("growth");
+              setActiveTab("publish");
             }}
           />
         ) : null}
@@ -882,11 +1250,13 @@ export default function ImportPage() {
           />
         ) : null}
 
-        {activeTab === "growth" ? (
+        {["nyc", "osm", "pictures", "database", "dedupe", "publish"].includes(activeTab) ? (
           <LocationGrowthPanel
+            activeTab={activeTab as Exclude<TabId, "google" | "qr" | "history">}
             summary={summary}
             loading={summaryLoading}
             runningAction={runningAction}
+            progress={progress}
             nycLimit={nycLimit}
             setNycLimit={setNycLimit}
             nycOffset={nycOffset}
@@ -984,7 +1354,7 @@ export default function ImportPage() {
             }}
             onEnrich={() =>
               postAction(
-                "enrich",
+                "pictures",
                 "/api/admin/location-growth/enrich-high-value",
                 {
                   limit: Number(enrichLimit) || 50,
@@ -1013,26 +1383,28 @@ export default function ImportPage() {
         {activeTab === "history" ? (
           <ImportHistoryPanel
             summary={summary}
+            logs={logs}
             loading={summaryLoading}
+            progress={progress}
             stagedRecords={stagedRecords}
             stagingBatchId={stagingBatchId}
             onCopy={(batchId) => navigator.clipboard?.writeText(batchId)}
             onDedupe={(batchId) => {
               setDedupeScope("batch");
               setDedupeBatchId(batchId);
-              setActiveTab("growth");
+              setActiveTab("dedupe");
             }}
             onPublish={(batchId) => {
               setPublishScope("batch");
               setPublishBatchId(batchId);
-              setActiveTab("growth");
+              setActiveTab("publish");
             }}
             onViewStaged={loadStagedRecords}
             onViewDuplicates={(batchId) => loadDuplicates(batchId)}
           />
         ) : null}
 
-        {activeTab === "duplicates" ? (
+        {activeTab === "dedupe" ? (
           <DuplicateReviewPanel
             batchId={duplicateBatchId}
             setBatchId={setDuplicateBatchId}
@@ -1049,6 +1421,7 @@ export default function ImportPage() {
             limit={qrLimit}
             setLimit={setQrLimit}
             running={runningAction === "qr"}
+            progress={progress}
             onGenerate={() =>
               postAction(
                 "qr",
@@ -1056,7 +1429,7 @@ export default function ImportPage() {
                 { limit: Number(qrLimit) || 100 },
                 {
                   confirm:
-                    "Generate missing public and claim QR codes for clean live locations? Existing QR fields will not be replaced.",
+                    "Generate only missing public and claim QR codes? Existing QR fields will not be replaced.",
                 },
               )
             }
@@ -1176,6 +1549,15 @@ function GoogleImportPanel({
           </div>
         </div>
 
+        <TabProgressBar
+          {...getGoogleProgress({
+            running,
+            progress,
+            totals,
+          })}
+          running={running}
+        />
+
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <SelectField
             label="Import"
@@ -1243,8 +1625,6 @@ function GoogleImportPanel({
           <QualityPill text="Cuisine/activity type required" />
           <QualityPill text="Location required" />
         </div>
-
-        {running ? <ProgressBar progress={progress} /> : null}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -1318,9 +1698,11 @@ function GoogleImportPanel({
 }
 
 function LocationGrowthPanel(props: {
+  activeTab: Exclude<TabId, "google" | "qr" | "history">;
   summary: GrowthSummary | null;
   loading: boolean;
   runningAction: string | null;
+  progress: number;
   nycLimit: string;
   setNycLimit: (value: string) => void;
   nycOffset: string;
@@ -1393,18 +1775,38 @@ function LocationGrowthPanel(props: {
     ["Needs photo", props.summary?.needsPhoto],
     ["Utility chains", props.summary?.utilityChains],
   ];
+  const tabMeta = getGrowthTabMeta(props.activeTab);
+  const sectionProgress = getGrowthTabProgress(props.activeTab, props.summary);
+  const isRunning = isGrowthTabRunning(props.activeTab, props.runningAction);
 
   return (
     <div className="space-y-6">
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/30">
         <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
-          Location Growth Pipeline
+          {tabMeta.kicker}
         </p>
-        <h2 className="mt-2 text-2xl font-black">Location Growth Pipeline</h2>
+        <h2 className="mt-2 text-2xl font-black">{tabMeta.title}</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-          Stage, clean, dedupe, and publish new locations safely without
-          disrupting live search or CRM data.
+          {tabMeta.description}
         </p>
+        <TabProgressBar
+          {...sectionProgress}
+          percent={
+            isRunning
+              ? Math.max(sectionProgress.percent, props.progress)
+              : sectionProgress.percent
+          }
+          doneLabel={
+            isRunning ? `${props.progress}% running` : sectionProgress.doneLabel
+          }
+          running={isRunning}
+        />
+        {props.activeTab === "pictures" ? (
+          <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-500/10 p-4 text-xs leading-5 text-amber-100">
+            Picture tools only process records that need repair, migration, or
+            backfill. Already-good Supabase, owner, or admin photos are skipped.
+          </p>
+        ) : null}
         <div className="mt-5 grid grid-flow-col auto-cols-[minmax(150px,1fr)] gap-3 overflow-x-auto pb-2 lg:grid-flow-row lg:grid-cols-8 lg:overflow-visible">
           {summaryCards.map(([label, value]) => (
             <CompactStat
@@ -1422,7 +1824,7 @@ function LocationGrowthPanel(props: {
           description="Normalize the current live database before importing anything new. This updates quality scores, normalized names, addresses, phones, and search safety fields. It does not delete records or overwrite CRM-managed fields."
           note="Run this before importing new records."
           button="Run Cleanup"
-          running={props.runningAction === "cleanup"}
+          running={props.runningAction === "database" || props.runningAction === "cleanup"}
           onClick={props.onCleanup}
         >
           <NumberField
@@ -1751,7 +2153,7 @@ function LocationGrowthPanel(props: {
           title="Enrich High-Value Records"
           description="Only enrich strong searchable locations so Google/API spend is focused on records worth improving. Owner/admin updated fields are filled only when blank."
           button="Enrich High-Value Records"
-          running={props.runningAction === "enrich"}
+          running={props.runningAction === "pictures"}
           onClick={props.onEnrich}
         >
           <NumberField
@@ -1767,7 +2169,9 @@ function LocationGrowthPanel(props: {
 
 function ImportHistoryPanel({
   summary,
+  logs,
   loading,
+  progress,
   stagedRecords,
   stagingBatchId,
   onCopy,
@@ -1777,7 +2181,9 @@ function ImportHistoryPanel({
   onViewDuplicates,
 }: {
   summary: GrowthSummary | null;
+  logs: ImportLog[];
   loading: boolean;
+  progress: number;
   stagedRecords: StagedRecord[];
   stagingBatchId: string;
   onCopy: (batchId: string) => void;
@@ -1787,6 +2193,7 @@ function ImportHistoryPanel({
   onViewDuplicates: (batchId: string) => void;
 }) {
   const batches = summary?.latestBatches || [];
+  const historyProgress = getHistoryProgress(logs);
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
@@ -1795,6 +2202,12 @@ function ImportHistoryPanel({
           Staged import health, publishing, and review actions. OSM offset is
           app-managed because Overpass does not provide true offset pagination.
         </p>
+        <TabProgressBar
+          {...historyProgress}
+          percent={loading ? Math.max(historyProgress.percent, progress) : historyProgress.percent}
+          doneLabel={loading ? `${progress}% loading` : historyProgress.doneLabel}
+          running={loading}
+        />
         <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-zinc-400">
           <summary className="cursor-pointer font-black uppercase tracking-[0.18em] text-zinc-300">
             Emergency SQL to find recent batch IDs
@@ -2117,14 +2530,17 @@ function QrToolsPanel({
   limit,
   setLimit,
   running,
+  progress,
   onGenerate,
 }: {
   summary: GrowthSummary | null;
   limit: string;
   setLimit: (value: string) => void;
   running: boolean;
+  progress: number;
   onGenerate: () => void;
 }) {
+  const qrProgress = getQrProgress(summary);
   return (
     <div className="space-y-6">
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/30">
@@ -2137,6 +2553,17 @@ function QrToolsPanel({
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
           Create missing public QR codes and claim QR codes for clean live
           locations. Existing QR codes are not replaced.
+        </p>
+        <TabProgressBar
+          {...qrProgress}
+          percent={running ? Math.max(qrProgress.percent, progress) : qrProgress.percent}
+          doneLabel={running ? `${progress}% running` : qrProgress.doneLabel}
+          running={running}
+        />
+        <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-500/10 p-4 text-xs leading-5 text-amber-100">
+          QR generation only processes missing QR fields. Existing public QR
+          codes, claim QR codes, and claim codes are skipped and never
+          overwritten.
         </p>
         {summary?.siteUrlConfigured === false ? (
           <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
@@ -2511,20 +2938,102 @@ function ResultBanner({
   );
 }
 
-function ProgressBar({ progress }: { progress: number }) {
+type ProgressTone = "rose" | "amber" | "emerald" | "zinc";
+
+function getProgressToneClasses(tone: ProgressTone = "rose") {
+  if (tone === "amber") {
+    return {
+      border: "border-amber-300/20",
+      bg: "bg-amber-500",
+      text: "text-amber-100",
+      accent: "text-amber-300",
+      glow: "shadow-amber-950/30",
+    };
+  }
+
+  if (tone === "emerald") {
+    return {
+      border: "border-emerald-300/20",
+      bg: "bg-emerald-500",
+      text: "text-emerald-100",
+      accent: "text-emerald-300",
+      glow: "shadow-emerald-950/30",
+    };
+  }
+
+  if (tone === "zinc") {
+    return {
+      border: "border-white/10",
+      bg: "bg-zinc-400",
+      text: "text-zinc-100",
+      accent: "text-zinc-300",
+      glow: "shadow-black/30",
+    };
+  }
+
+  return {
+    border: "border-rose-400/20",
+    bg: "bg-rose-500",
+    text: "text-rose-100",
+    accent: "text-rose-300",
+    glow: "shadow-rose-950/30",
+  };
+}
+
+function TabProgressBar({
+  label,
+  detail,
+  percent,
+  doneLabel,
+  tone = "rose",
+  running = false,
+}: {
+  label: string;
+  detail: string;
+  percent: number;
+  doneLabel: string;
+  tone?: ProgressTone;
+  running?: boolean;
+}) {
+  const safePercent = clampPercent(percent);
+  const toneClasses = getProgressToneClasses(tone);
+
   return (
-    <div className="mt-6 rounded-2xl border border-rose-400/20 bg-black/40 p-4">
-      <div className="mb-3 flex items-center justify-between text-sm">
-        <span className="font-semibold text-rose-100">Import in progress</span>
-        <span className="font-bold text-rose-300">{progress}%</span>
+    <section
+      className={`mt-6 overflow-hidden rounded-3xl border ${toneClasses.border} bg-black/35 p-5 shadow-xl ${toneClasses.glow}`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={`text-sm font-black ${toneClasses.text}`}>{label}</p>
+            {running ? (
+              <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-white">
+                Running
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-400">
+            {detail}
+          </p>
+        </div>
+
+        <div className="text-left sm:text-right">
+          <p className={`text-2xl font-black ${toneClasses.accent}`}>
+            {safePercent}%
+          </p>
+          <p className="text-xs font-bold text-zinc-500">{doneLabel}</p>
+        </div>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-white/10">
+
+      <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
         <div
-          className="h-full rounded-full bg-rose-500 transition-all duration-500"
-          style={{ width: `${progress}%` }}
+          className={`h-full rounded-full ${toneClasses.bg} transition-all duration-700 ${
+            running ? "animate-pulse" : ""
+          }`}
+          style={{ width: `${safePercent}%` }}
         />
       </div>
-    </div>
+    </section>
   );
 }
 
