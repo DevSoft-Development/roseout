@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
 import { activitySearchTerms, restaurantSearchTerms } from "./normalize-intent";
+import { userAskedForPlaceOfWorship } from "./taxonomy";
 
 type RpcDebug = {
   rpcCalls: string[];
@@ -38,6 +39,7 @@ function termsFor(intent: SearchIntent, domain: SearchDomain) {
 
 function params(intent: SearchIntent, domain: SearchDomain, limit: number) {
   const terms = termsFor(intent, domain);
+  const allowPlacesOfWorship = userAskedForPlaceOfWorship(intent.rawQuery);
 
   return {
     p_search_terms: terms.length ? terms : [intent.rawQuery],
@@ -52,6 +54,7 @@ function params(intent: SearchIntent, domain: SearchDomain, limit: number) {
     p_longitude: intent.geo.longitude ?? null,
     p_radius_miles: intent.geo.radiusMiles ?? null,
     p_limit: limit,
+    p_allow_places_of_worship: allowPlacesOfWorship,
   };
 }
 
