@@ -1,0 +1,33 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import type { KnowledgeBaseArticle, KnowledgeBaseCategory } from "@/lib/knowledge-base/types";
+import { internalKbRoles, kbArticleTypes, kbStatuses, kbTemplateTypes, kbVisibilities, publicAudiences } from "@/lib/knowledge-base/constants";
+import { roleCanManageKb } from "@/lib/knowledge-base/access";
+
+function slugify(input: string) { return input.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+
+type Props = { categories: KnowledgeBaseCategory[]; role: string; article?: KnowledgeBaseArticle };
+export default function ArticleForm({ categories, role, article }: Props) {
+  const router = useRouter();
+  const manager = roleCanManageKb(role);
+  const [title, setTitle] = useState(article?.title ?? "");
+  const [slug, setSlug] = useState(article?.slug ?? "");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    category_id: article?.category_id ?? "", excerpt: article?.excerpt ?? "", content: article?.content ?? "", status: article?.status ?? "draft", visibility: article?.visibility ?? "internal", article_type: article?.article_type ?? "article", template_type: article?.template_type ?? "", tags: article?.tags.join(", ") ?? "", is_featured: article?.is_featured ?? false, ai_approved: article?.ai_approved ?? false,
+  });
+  const [roles, setRoles] = useState<string[]>(article?.allowed_roles ?? ["superadmin", "admin", "editor", "viewer"]);
+  const [audiences, setAudiences] = useState<string[]>(article?.public_audience ?? []);
+  const computedSlug = useMemo(() => slug || slugify(title), [slug, title]);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true);
+    const payload = { ...form, title, slug: computedSlug, allowed_roles: roles, public_audience: audiences, tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean), template_type: form.template_type || null };
+    const res = await fetch(article ? `/api/admin/knowledge-base/articles/${article.id}` : "/api/admin/knowledge-base/articles", { method: article ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({})); setSaving(false);
+    if (!res.ok) { alert(data.error || "Unable to save article"); return; }
+    router.push(`/admin/dashboard/knowledge-base/${data.article.slug}`); router.refresh();
+  }
+  return <form onSubmit={submit} className="space-y-5 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"><div className="grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-bold">Title<input value={title} onChange={(e) => { setTitle(e.target.value); if (!slug) setSlug(slugify(e.target.value)); }} required className="rounded-2xl border border-white/10 bg-black/30 p-3" /></label><label className="grid gap-2 text-sm font-bold">Slug<input value={computedSlug} onChange={(e) => setSlug(e.target.value)} required className="rounded-2xl border border-white/10 bg-black/30 p-3" /></label></div><div className="grid gap-4 md:grid-cols-4"><select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} className="rounded-2xl border border-white/10 bg-[#120b0a] p-3"><option value="">No category</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select><select value={form.status} disabled={!manager} onChange={(e) => setForm({ ...form, status: e.target.value as typeof form.status })} className="rounded-2xl border border-white/10 bg-[#120b0a] p-3">{kbStatuses.map((s) => <option key={s}>{s}</option>)}</select><select value={form.visibility} onChange={(e) => setForm({ ...form, visibility: e.target.value as typeof form.visibility })} className="rounded-2xl border border-white/10 bg-[#120b0a] p-3">{kbVisibilities.map((s) => <option key={s}>{s}</option>)}</select><select value={form.article_type} onChange={(e) => setForm({ ...form, article_type: e.target.value as typeof form.article_type })} className="rounded-2xl border border-white/10 bg-[#120b0a] p-3">{kbArticleTypes.map((s) => <option key={s}>{s}</option>)}</select></div><label className="grid gap-2 text-sm font-bold">Excerpt<textarea value={form.excerpt} onChange={(e) => setForm({ ...form, excerpt: e.target.value })} className="min-h-20 rounded-2xl border border-white/10 bg-black/30 p-3" /></label><label className="grid gap-2 text-sm font-bold">Content<textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} required className="min-h-80 rounded-2xl border border-white/10 bg-black/30 p-3 font-mono text-sm" /></label><div className="grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-bold">Template type<select value={form.template_type} onChange={(e) => setForm({ ...form, template_type: e.target.value })} className="rounded-2xl border border-white/10 bg-[#120b0a] p-3"><option value="">None</option>{kbTemplateTypes.map((s) => <option key={s}>{s}</option>)}</select></label><label className="grid gap-2 text-sm font-bold">Tags<input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} className="rounded-2xl border border-white/10 bg-black/30 p-3" /></label></div><fieldset className="grid gap-2"><legend className="text-sm font-black">Allowed roles</legend><div className="flex flex-wrap gap-3">{internalKbRoles.map((r) => <label key={r} className="rounded-full border border-white/10 px-3 py-2 text-sm"><input type="checkbox" checked={roles.includes(r)} onChange={(e) => setRoles(e.target.checked ? [...roles, r] : roles.filter((x) => x !== r))} /> {r}</label>)}</div></fieldset><fieldset className="grid gap-2"><legend className="text-sm font-black">Public audience</legend><div className="flex flex-wrap gap-3">{publicAudiences.map((r) => <label key={r} className="rounded-full border border-white/10 px-3 py-2 text-sm"><input type="checkbox" checked={audiences.includes(r)} onChange={(e) => setAudiences(e.target.checked ? [...audiences, r] : audiences.filter((x) => x !== r))} /> {r}</label>)}</div></fieldset><div className="flex flex-wrap gap-4"><label><input type="checkbox" checked={form.is_featured} onChange={(e) => setForm({ ...form, is_featured: e.target.checked })} /> Featured</label>{manager && <label><input type="checkbox" checked={form.ai_approved} onChange={(e) => setForm({ ...form, ai_approved: e.target.checked })} /> AI approved</label>}</div><button disabled={saving} className="rounded-full bg-amber-200 px-6 py-3 font-black text-[#32130f] disabled:opacity-60">{saving ? "Saving…" : article ? "Save changes" : "Create article"}</button></form>;
+}

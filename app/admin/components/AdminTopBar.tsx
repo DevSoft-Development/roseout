@@ -196,6 +196,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/email-templates",
           "/admin/dashboard/settings/promo-codes",
           "/admin/dashboard/seo-tools",
+          "/admin/dashboard/knowledge-base",
         ],
         sections: [
           {
@@ -206,6 +207,10 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               { label: "Reviews", href: "/admin/dashboard/reviews", visible: canAdmin(adminRole, "reviews") },
               { label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") },
               { label: "Communication", href: "/admin/dashboard/communication", visible: canAdmin(adminRole, "communication") },
+              { label: "Knowledge Base", href: "/admin/dashboard/knowledge-base", visible: canAdmin(adminRole, "knowledgeBase") },
+              { label: "KB Templates", href: "/admin/dashboard/knowledge-base/templates", visible: canAdmin(adminRole, "knowledgeBase") },
+              { label: "KB AI Assistant", href: "/admin/dashboard/knowledge-base/ai", visible: canAdmin(adminRole, "knowledgeBase") },
+              { label: "Public Help Center", href: "/help", visible: canAdmin(adminRole, "knowledgeBase"), external: true },
             ],
           },
           {
@@ -239,6 +244,8 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     items: [
       { label: "View Public Site", href: "/", visible: canView, external: true },
       { label: "Admin Dashboard", href: "/admin/dashboard", visible: canView, exact: true },
+      { label: "Knowledge Base", href: "/admin/dashboard/knowledge-base", visible: canAdmin(adminRole, "knowledgeBase") },
+      { label: "Help Center", href: "/help", visible: true, external: true },
     ],
   };
 
@@ -256,7 +263,11 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
 
   const profileSupport: NavSection = {
     label: "Experience",
-    items: [{ label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") }],
+    items: [
+      { label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") },
+      { label: "Knowledge Base", href: "/admin/dashboard/knowledge-base", visible: canAdmin(adminRole, "knowledgeBase") },
+      { label: "Help Center", href: "/help", visible: true, external: true },
+    ],
   };
 
   const isPathMatch = (href: string, exact?: boolean) => {
@@ -298,6 +309,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         "/admin/dashboard/email-templates",
         "/admin/dashboard/settings/promo-codes",
         "/admin/dashboard/seo-tools",
+        "/admin/dashboard/knowledge-base",
       ];
       return adminToolPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
     }
