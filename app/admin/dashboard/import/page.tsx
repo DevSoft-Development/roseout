@@ -272,7 +272,7 @@ function getPictureProgress(summary: GrowthSummary | null) {
         ? "Tracks locations with real usable photos versus missing-photo records."
         : "No photo coverage data available yet.",
     doneLabel: total > 0 ? progressLabel(hasPhotos, total) : "No data",
-    tone: missingPhotos > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+    tone: missingPhotos > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -291,7 +291,7 @@ function getDatabaseProgress(summary: GrowthSummary | null) {
         ? "Tracks clean live locations versus records needing review or duplicate cleanup."
         : "No live location count available yet.",
     doneLabel: live > 0 ? progressLabel(clean, live) : "No data",
-    tone: issues > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+    tone: issues > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -308,7 +308,7 @@ function getDedupeProgress(summary: GrowthSummary | null) {
         ? "Tracks staged records that have been checked against possible duplicates."
         : "No staged records available for dedupe.",
     doneLabel: staged > 0 ? progressLabel(checked, staged) : "No data",
-    tone: remaining > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+    tone: remaining > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -327,7 +327,7 @@ function getPublishProgress(summary: GrowthSummary | null) {
         ? "Tracks publish-ready records that have moved into live locations."
         : "No publish-ready records available yet.",
     doneLabel: total > 0 ? progressLabel(completed, total) : "No data",
-    tone: remainingReady > 0 ? ("rose" as ProgressTone) : ("emerald" as ProgressTone),
+    tone: remainingReady > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -347,7 +347,7 @@ function getQrProgress(summary: GrowthSummary | null) {
         ? "Tracks locations with claim codes, claim QR codes, and public QR codes completed."
         : "No live location count available yet.",
     doneLabel: live > 0 ? progressLabel(complete, live) : "No data",
-    tone: missingAny > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+    tone: missingAny > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -364,7 +364,7 @@ function getHistoryProgress(logs: ImportLog[]) {
         ? "Tracks successful import runs versus import runs with errors."
         : "No import history found yet.",
     doneLabel: total > 0 ? progressLabel(successful, total) : "No history",
-    tone: failed > 0 ? ("amber" as ProgressTone) : ("emerald" as ProgressTone),
+    tone: failed > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -712,7 +712,9 @@ function ImportPageContent() {
   const [publishLimit, setPublishLimit] = useState("500");
   const [dedupeLimit, setDedupeLimit] = useState("250");
   const [scoreLimit, setScoreLimit] = useState("250");
-  const [enrichLimit, setEnrichLimit] = useState("50");
+  const [photoFixLimit, setPhotoFixLimit] = useState("50");
+  const [photoBackfillLimit, setPhotoBackfillLimit] = useState("25");
+  const [dbFixLimit, setDbFixLimit] = useState("500");
   const [qrLimit, setQrLimit] = useState("100");
   const [cleanupOffset, setCleanupOffset] = useState("0");
   const [progress, setProgress] = useState(0);
@@ -726,11 +728,13 @@ function ImportPageContent() {
 
     if (tab && validTabs.includes(tab as TabId)) {
       setActiveTabState(tab as TabId);
+      return;
     }
 
     if (tab === "growth") {
       setActiveTabState("nyc");
       router.replace("/admin/dashboard/import?tab=nyc", { scroll: false });
+      return;
     }
 
     if (tab === "duplicates") {
@@ -804,17 +808,19 @@ function ImportPageContent() {
       return;
     }
 
-    setProgress(12);
+    setProgress(10);
 
     const timer = window.setInterval(() => {
       setProgress((previous) => {
-        if (previous >= 92) return previous;
+        if (previous >= 94) return previous;
         if (runningAction === "google") return previous + 5;
+        if (runningAction === "nyc") return previous + 4;
+        if (runningAction === "osm") return previous + 4;
         if (runningAction === "pictures") return previous + 4;
         if (runningAction === "qr") return previous + 4;
         return previous + 3;
       });
-    }, 700);
+    }, 650);
 
     return () => window.clearInterval(timer);
   }, [runningAction]);
@@ -1109,10 +1115,21 @@ function ImportPageContent() {
       queryMode: osmDebugQueryMode || "node_only",
     });
 
-  const runCleanupBatch = async () => {
+  const runPhotoMigration = (mode: string, limit = Number(photoFixLimit) || 50) =>
+    postAction("pictures", "/api/admin/location-growth/migrate-enriched-photos", {
+      mode,
+      limit: Math.min(Math.max(limit, 1), 250),
+    });
+
+  const runPhotoBackfill = () =>
+    postAction("pictures", "/api/admin/location-growth/enrich-high-value", {
+      limit: Math.min(Math.max(Number(photoBackfillLimit) || 25, 1), 100),
+    });
+
+  const runDatabaseFix = async () => {
     const data = await postAction("database", "/api/admin/cleanup-locations", {
       table: "locations",
-      limit: 500,
+      limit: Math.min(Math.max(Number(dbFixLimit) || 500, 1), 1000),
       offset: Number(cleanupOffset) || 0,
     });
     if (data?.nextOffset !== undefined && data.nextOffset !== null) {
@@ -1126,7 +1143,7 @@ function ImportPageContent() {
         <header className="mb-6 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035] shadow-2xl shadow-black/40">
           <div className="relative p-6 sm:p-8">
             <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-rose-600/20 blur-3xl" />
-            <div className="absolute bottom-0 left-0 h-44 w-44 rounded-full bg-red-900/20 blur-3xl" />
+            <div className="absolute bottom-0 left-0 h-44 w-44 rounded-full bg-rose-950/20 blur-3xl" />
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-rose-300">
@@ -1177,9 +1194,21 @@ function ImportPageContent() {
         </nav>
 
         {runningAction ? (
-          <div className="mb-6 rounded-3xl border border-rose-400/20 bg-rose-500/10 px-5 py-4 text-sm font-bold text-rose-100">
-            Running {runningAction.replace(/-/g, " ")}. This page will refresh
-            counts when the action finishes.
+          <div className="mb-6 rounded-[1.5rem] border border-rose-300/20 bg-[#160B0D]/90 px-5 py-4 text-sm font-bold text-rose-100 shadow-xl shadow-black/30 ring-1 ring-rose-300/10">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Running {runningAction.replace(/-/g, " ")}. Counts will refresh when the action finishes.
+              </span>
+              <span className="text-xs font-black uppercase tracking-[0.22em] text-rose-300">
+                {progress}%
+              </span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-rose-500 transition-all duration-500"
+                style={{ width: `${clampPercent(progress)}%` }}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -1250,17 +1279,25 @@ function ImportPageContent() {
           />
         ) : null}
 
-        {["nyc", "osm", "pictures", "database", "dedupe", "publish"].includes(activeTab) ? (
-          <LocationGrowthPanel
-            activeTab={activeTab as Exclude<TabId, "google" | "qr" | "history">}
+        {activeTab === "nyc" ? (
+          <NycImportsPanel
             summary={summary}
-            loading={summaryLoading}
             runningAction={runningAction}
             progress={progress}
             nycLimit={nycLimit}
             setNycLimit={setNycLimit}
             nycOffset={nycOffset}
             setNycOffset={setNycOffset}
+            onImportNyc={runNycImport}
+            onImportNycNext={runNycImport}
+          />
+        ) : null}
+
+        {activeTab === "osm" ? (
+          <OsmImportsPanel
+            summary={summary}
+            runningAction={runningAction}
+            progress={progress}
             osmLimit={osmLimit}
             setOsmLimit={setOsmLimit}
             osmOffset={osmOffset}
@@ -1269,31 +1306,6 @@ function ImportPageContent() {
             osmFilterIndex={osmFilterIndex}
             setOsmFilterIndex={setOsmFilterIndex}
             setOsmCategoryGroup={handleOsmCategoryGroupChange}
-            dedupeScope={dedupeScope}
-            setDedupeScope={setDedupeScope}
-            dedupeBatchId={dedupeBatchId}
-            setDedupeBatchId={setDedupeBatchId}
-            scoreScope={scoreScope}
-            setScoreScope={setScoreScope}
-            scoreBatchId={scoreBatchId}
-            setScoreBatchId={setScoreBatchId}
-            scoreLimit={scoreLimit}
-            setScoreLimit={setScoreLimit}
-            publishScope={publishScope}
-            setPublishScope={setPublishScope}
-            publishBatchId={publishBatchId}
-            setPublishBatchId={setPublishBatchId}
-            publishLimit={publishLimit}
-            dedupeLimit={dedupeLimit}
-            setDedupeLimit={setDedupeLimit}
-            setPublishLimit={setPublishLimit}
-            enrichLimit={enrichLimit}
-            setEnrichLimit={setEnrichLimit}
-            cleanupOffset={cleanupOffset}
-            setCleanupOffset={setCleanupOffset}
-            onCleanup={runCleanupBatch}
-            onImportNyc={runNycImport}
-            onImportNycNext={runNycImport}
             onImportOsm={runOsmImport}
             onImportOsmNext={runOsmImport}
             onResetOsmOffset={resetOsmOffset}
@@ -1307,31 +1319,110 @@ function ImportPageContent() {
             osmDebugQueryMode={osmDebugQueryMode}
             setOsmDebugQueryMode={setOsmDebugQueryMode}
             onTestOsmQuery={testOsmQuery}
-            onScore={() =>
-              postAction("score", "/api/admin/location-growth/score-staged", {
-                batchId:
-                  scoreScope === "batch"
-                    ? scoreBatchId || undefined
-                    : undefined,
-                limit: Math.min(Math.max(Number(scoreLimit || 250), 1), 500),
+          />
+        ) : null}
+
+        {activeTab === "pictures" ? (
+          <FixPicturesPanel
+            summary={summary}
+            runningAction={runningAction}
+            progress={progress}
+            photoFixLimit={photoFixLimit}
+            setPhotoFixLimit={setPhotoFixLimit}
+            photoBackfillLimit={photoBackfillLimit}
+            setPhotoBackfillLimit={setPhotoBackfillLimit}
+            onRepairBadPlaceholders={() => runPhotoMigration("repair_bad_placeholders")}
+            onMigrateGooglePhotos={() => runPhotoMigration("google_endpoint_to_storage")}
+            onRetryCompletedMissing={() => runPhotoMigration("repair_missing_completed")}
+            onBackfillMissingPhotos={runPhotoBackfill}
+          />
+        ) : null}
+
+        {activeTab === "database" ? (
+          <FixDatabasePanel
+            summary={summary}
+            runningAction={runningAction}
+            progress={progress}
+            cleanupOffset={cleanupOffset}
+            setCleanupOffset={setCleanupOffset}
+            dbFixLimit={dbFixLimit}
+            setDbFixLimit={setDbFixLimit}
+            onCleanup={runDatabaseFix}
+            onClassifyChains={() =>
+              postAction("classify-chains", "/api/admin/location-growth/classify-chains", {
+                limit: 500,
               })
             }
+            onBackfillPhones={() =>
+              postAction("phones", "/api/admin/backfill-review-counts", {
+                fields: ["phone"],
+                limit: 50,
+                minRating: 0,
+                minReviews: 0,
+              })
+            }
+            onBackfillCuisine={() =>
+              postAction("cuisine", "/api/admin/restaurants/backfill-cuisine", {
+                includeGeneric: true,
+                limit: 250,
+              })
+            }
+          />
+        ) : null}
+
+        {activeTab === "dedupe" ? (
+          <DedupePanel
+            summary={summary}
+            runningAction={runningAction}
+            progress={progress}
+            dedupeScope={dedupeScope}
+            setDedupeScope={setDedupeScope}
+            dedupeBatchId={dedupeBatchId}
+            setDedupeBatchId={setDedupeBatchId}
+            dedupeLimit={dedupeLimit}
+            setDedupeLimit={setDedupeLimit}
+            duplicateBatchId={duplicateBatchId}
+            setDuplicateBatchId={setDuplicateBatchId}
+            duplicates={duplicates}
             onDedupe={() =>
               postAction("dedupe", "/api/admin/location-growth/dedupe", {
                 all: dedupeScope !== "batch",
-                batchId:
-                  dedupeScope === "batch"
-                    ? dedupeBatchId || undefined
-                    : undefined,
+                batchId: dedupeScope === "batch" ? dedupeBatchId || undefined : undefined,
                 limit: Math.min(Math.max(Number(dedupeLimit || 250), 1), 500),
               })
             }
+            onLoadDuplicates={() => loadDuplicates()}
+            onDecision={decideDuplicate}
+          />
+        ) : null}
+
+        {activeTab === "publish" ? (
+          <PublishPanel
+            summary={summary}
+            runningAction={runningAction}
+            progress={progress}
+            scoreScope={scoreScope}
+            setScoreScope={setScoreScope}
+            scoreBatchId={scoreBatchId}
+            setScoreBatchId={setScoreBatchId}
+            scoreLimit={scoreLimit}
+            setScoreLimit={setScoreLimit}
+            publishScope={publishScope}
+            setPublishScope={setPublishScope}
+            publishBatchId={publishBatchId}
+            setPublishBatchId={setPublishBatchId}
+            publishLimit={publishLimit}
+            setPublishLimit={setPublishLimit}
+            onScore={() =>
+              postAction("score", "/api/admin/location-growth/score-staged", {
+                batchId: scoreScope === "batch" ? scoreBatchId || undefined : undefined,
+                limit: Math.min(Math.max(Number(scoreLimit || 250), 1), 500),
+              })
+            }
             onPublish={() => {
-              const limit = Math.min(
-                Math.max(Number(publishLimit || 500), 1),
-                1000,
-              );
+              const limit = Math.min(Math.max(Number(publishLimit || 500), 1), 1000);
               const publishAll = publishScope !== "batch";
+
               if (!publishAll && !publishBatchId.trim()) {
                 setActionResult({
                   success: false,
@@ -1339,43 +1430,17 @@ function ImportPageContent() {
                 });
                 return null;
               }
+
               return postAction(
                 "publish",
                 "/api/admin/location-growth/publish",
-                publishAll
-                  ? { all: true, limit }
-                  : { batchId: publishBatchId, limit },
+                publishAll ? { all: true, limit } : { batchId: publishBatchId, limit },
                 {
                   confirm: publishAll
-                    ? `You are about to publish up to ${limit} clean, unique, publish-ready staged records into the live locations table. This will not overwrite CRM fields, claimed location data, or existing QR codes. Continue?`
+                    ? `You are about to publish up to ${limit} clean, unique, publish-ready staged records into live locations. Existing CRM, claimed owner, reservation, and QR data will not be overwritten. Continue?`
                     : `You are about to publish up to ${limit} clean, unique records from this batch. Continue?`,
                 },
               );
-            }}
-            onEnrich={() =>
-              postAction(
-                "pictures",
-                "/api/admin/location-growth/enrich-high-value",
-                {
-                  limit: Number(enrichLimit) || 50,
-                },
-              )
-            }
-            onClassifyChains={() =>
-              postAction(
-                "classify-chains",
-                "/api/admin/location-growth/classify-chains",
-                { limit: 500 },
-              )
-            }
-            onViewMissingPhotos={() => {
-              setStagingBatchId("");
-              setActiveTab("history");
-              setActionResult({
-                success: true,
-                message:
-                  "Use Import History/Staged Records filters or CRM to review records with quality_status=needs_photo or photo_status=missing_photo.",
-              });
             }}
           />
         ) : null}
@@ -1401,17 +1466,6 @@ function ImportPageContent() {
             }}
             onViewStaged={loadStagedRecords}
             onViewDuplicates={(batchId) => loadDuplicates(batchId)}
-          />
-        ) : null}
-
-        {activeTab === "dedupe" ? (
-          <DuplicateReviewPanel
-            batchId={duplicateBatchId}
-            setBatchId={setDuplicateBatchId}
-            matches={duplicates}
-            loading={runningAction === "duplicates"}
-            onLoad={() => loadDuplicates()}
-            onDecision={decideDuplicate}
           />
         ) : null}
 
@@ -1549,7 +1603,7 @@ function GoogleImportPanel({
           </div>
         </div>
 
-        <TabProgressBar
+        <TabProcessBar
           {...getGoogleProgress({
             running,
             progress,
@@ -1612,7 +1666,7 @@ function GoogleImportPanel({
         </div>
 
         {googleMode === "direct" ? (
-          <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+          <div className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">
             Direct Google imports update live locations. Use staged import for
             bulk growth.
           </div>
@@ -1673,7 +1727,7 @@ function GoogleImportPanel({
                     <MiniStat label="Found" value={getFound(meta)} />
                   </div>
                   {log.error ? (
-                    <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">
+                    <div className="mt-4 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-sm text-rose-100">
                       {log.error}
                     </div>
                   ) : null}
@@ -1697,16 +1751,73 @@ function GoogleImportPanel({
   );
 }
 
-function LocationGrowthPanel(props: {
-  activeTab: Exclude<TabId, "google" | "qr" | "history">;
+function getRunningProgress({
+  basePercent,
+  running,
+  progress,
+}: {
+  basePercent: number;
+  running: boolean;
+  progress: number;
+}) {
+  if (!running) return clampPercent(basePercent);
+  return Math.max(clampPercent(basePercent), clampPercent(progress));
+}
+
+function NycImportsPanel({
+  summary,
+  runningAction,
+  progress,
+  nycLimit,
+  setNycLimit,
+  nycOffset,
+  setNycOffset,
+  onImportNyc,
+  onImportNycNext,
+}: {
   summary: GrowthSummary | null;
-  loading: boolean;
   runningAction: string | null;
   progress: number;
   nycLimit: string;
   setNycLimit: (value: string) => void;
   nycOffset: string;
   setNycOffset: (value: string) => void;
+  onImportNyc: () => void;
+  onImportNycNext: () => void;
+}) {
+  const sectionProgress = getNycProgress(summary);
+  const isRunning = runningAction === "nyc";
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">NYC Imports</p>
+        <h2 className="mt-2 text-2xl font-black text-white">NYC Open Data Restaurants</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Import NYC restaurant records into staging. They will not go live until they are scored, deduped, reviewed, and published.</p>
+        <TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-4">
+          <CompactStat label="Staged" value={getNumber(summary?.staged)} />
+          <CompactStat label="Needs Scoring" value={getNumber(summary?.needsScoring)} />
+          <CompactStat label="Publish Ready" value={getNumber(summary?.publishReady)} />
+          <CompactStat label="Rejected" value={getNumber(summary?.rejected)} />
+        </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-[220px_220px_auto] sm:items-end">
+          <NumberField label="Limit" value={nycLimit} onChange={setNycLimit} min={1} max={1000} />
+          <NumberField label="Offset" value={nycOffset} onChange={setNycOffset} min={0} />
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={onImportNyc} disabled={Boolean(runningAction)} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700">{isRunning ? "Importing..." : "Import NYC Batch"}</button>
+            <button type="button" onClick={onImportNycNext} disabled={Boolean(runningAction)} className="rounded-full border border-white/10 bg-white/[0.04] px-6 py-3 text-sm font-black text-zinc-200 transition hover:bg-white/10 disabled:opacity-50">Import Next NYC Batch</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OsmImportsPanel(props: {
+  summary: GrowthSummary | null;
+  runningAction: string | null;
+  progress: number;
   osmLimit: string;
   setOsmLimit: (value: string) => void;
   osmOffset: string;
@@ -1715,31 +1826,6 @@ function LocationGrowthPanel(props: {
   osmFilterIndex: string;
   setOsmFilterIndex: (value: string) => void;
   setOsmCategoryGroup: (value: string) => void;
-  dedupeScope: string;
-  setDedupeScope: (value: string) => void;
-  dedupeBatchId: string;
-  setDedupeBatchId: (value: string) => void;
-  scoreScope: string;
-  setScoreScope: (value: string) => void;
-  scoreBatchId: string;
-  setScoreBatchId: (value: string) => void;
-  scoreLimit: string;
-  setScoreLimit: (value: string) => void;
-  publishScope: string;
-  setPublishScope: (value: string) => void;
-  publishBatchId: string;
-  setPublishBatchId: (value: string) => void;
-  publishLimit: string;
-  dedupeLimit: string;
-  setDedupeLimit: (value: string) => void;
-  setPublishLimit: (value: string) => void;
-  enrichLimit: string;
-  setEnrichLimit: (value: string) => void;
-  cleanupOffset: string;
-  setCleanupOffset: (value: string) => void;
-  onCleanup: () => void;
-  onImportNyc: () => void;
-  onImportNycNext: () => void;
   onImportOsm: () => void;
   onImportOsmNext: () => void;
   onResetOsmOffset: () => void;
@@ -1753,418 +1839,77 @@ function LocationGrowthPanel(props: {
   osmDebugQueryMode: string;
   setOsmDebugQueryMode: (value: string) => void;
   onTestOsmQuery: () => void;
-  onScore: () => void;
-  onDedupe: () => void;
-  onPublish: () => void;
-  onEnrich: () => void;
-  onClassifyChains: () => void;
-  onViewMissingPhotos: () => void;
 }) {
-  const summaryCards = [
-    ["Live", props.summary?.liveLocations],
-    ["Searchable", props.summary?.searchableLocations],
-    ["Staged", props.summary?.staged],
-    ["Needs Scoring", props.summary?.needsScoring],
-    ["Publish Ready", props.summary?.publishReady],
-    ["Possible Duplicates", props.summary?.possibleDuplicates],
-    ["Remaining Dedupe", props.summary?.remainingUncheckedDedupe],
-    ["Rejected", props.summary?.rejected],
-    ["Enrichment Queued", props.summary?.enrichmentQueued],
-    ["Missing photos", props.summary?.missingPhotos],
-    ["Has photos", props.summary?.hasPhotos],
-    ["Needs photo", props.summary?.needsPhoto],
-    ["Utility chains", props.summary?.utilityChains],
-  ];
-  const tabMeta = getGrowthTabMeta(props.activeTab);
-  const sectionProgress = getGrowthTabProgress(props.activeTab, props.summary);
-  const isRunning = isGrowthTabRunning(props.activeTab, props.runningAction);
-
+  const sectionProgress = getOsmProgress(props.summary);
+  const isRunning = props.runningAction === "osm" || props.runningAction === "osm-test";
   return (
     <div className="space-y-6">
-      <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/30">
-        <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
-          {tabMeta.kicker}
-        </p>
-        <h2 className="mt-2 text-2xl font-black">{tabMeta.title}</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-          {tabMeta.description}
-        </p>
-        <TabProgressBar
-          {...sectionProgress}
-          percent={
-            isRunning
-              ? Math.max(sectionProgress.percent, props.progress)
-              : sectionProgress.percent
-          }
-          doneLabel={
-            isRunning ? `${props.progress}% running` : sectionProgress.doneLabel
-          }
-          running={isRunning}
-        />
-        {props.activeTab === "pictures" ? (
-          <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-500/10 p-4 text-xs leading-5 text-amber-100">
-            Picture tools only process records that need repair, migration, or
-            backfill. Already-good Supabase, owner, or admin photos are skipped.
-          </p>
-        ) : null}
-        <div className="mt-5 grid grid-flow-col auto-cols-[minmax(150px,1fr)] gap-3 overflow-x-auto pb-2 lg:grid-flow-row lg:grid-cols-8 lg:overflow-visible">
-          {summaryCards.map(([label, value]) => (
-            <CompactStat
-              key={String(label)}
-              label={String(label)}
-              value={props.loading ? "..." : getNumber(value)}
-            />
-          ))}
+      <section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">OSM / Activities</p>
+        <h2 className="mt-2 text-2xl font-black text-white">Import Activity Locations</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Import activity locations from OSM using category-specific cursors so completed batches are not repeated.</p>
+        <TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress: props.progress })} doneLabel={isRunning ? `${props.progress}% running` : sectionProgress.doneLabel} running={isRunning} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-4">
+          <CompactStat label="Staged" value={getNumber(props.summary?.staged)} />
+          <CompactStat label="Needs Scoring" value={getNumber(props.summary?.needsScoring)} />
+          <CompactStat label="Possible Duplicates" value={getNumber(props.summary?.possibleDuplicates)} />
+          <CompactStat label="Publish Ready" value={getNumber(props.summary?.publishReady)} />
         </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SelectField label="Category group" value={props.osmCategoryGroup} onChange={props.setOsmCategoryGroup} options={[{ label: "Nightlife", value: "nightlife" }, { label: "Culture", value: "culture" }, { label: "Bowling", value: "bowling" }, { label: "Karaoke", value: "karaoke" }, { label: "Mini golf", value: "mini_golf" }, { label: "Dessert", value: "dessert" }, { label: "Cafes", value: "cafes" }, { label: "Parks", value: "parks" }, { label: "All advanced", value: "all" }]} />
+          <NumberField label="Limit" value={props.osmLimit} onChange={props.setOsmLimit} min={1} max={1000} />
+          <NumberField label="Cursor offset" value={props.osmOffset} onChange={props.setOsmOffset} min={0} />
+          <NumberField label="Cursor filter index" value={props.osmFilterIndex} onChange={props.setOsmFilterIndex} min={0} />
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button type="button" onClick={props.onImportOsm} disabled={Boolean(props.runningAction)} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-500 disabled:bg-zinc-700">{props.runningAction === "osm" ? "Importing..." : "Import OSM Batch"}</button>
+          <button type="button" onClick={props.onImportOsmNext} disabled={Boolean(props.runningAction)} className="rounded-full border border-white/10 bg-white/[0.04] px-6 py-3 text-sm font-black text-zinc-200 transition hover:bg-white/10 disabled:opacity-50">Import Next OSM Batch</button>
+          <button type="button" onClick={props.onResetOsmOffset} disabled={Boolean(props.runningAction)} className="rounded-full border border-rose-300/20 bg-rose-500/10 px-6 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-500/15 disabled:opacity-50">Reset This Cursor</button>
+          <button type="button" onClick={props.onResetAllOsmCursors} disabled={Boolean(props.runningAction)} className="rounded-full border border-white/10 bg-white/[0.04] px-6 py-3 text-sm font-black text-zinc-200 transition hover:bg-white/10 disabled:opacity-50">Reset All Cursors</button>
+        </div>
+        <details className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
+          <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">Test OSM Query</summary>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <TextField label="Tag key" value={props.osmDebugTagKey} onChange={props.setOsmDebugTagKey} placeholder="amenity" />
+            <TextField label="Tag value" value={props.osmDebugTagValue} onChange={props.setOsmDebugTagValue} placeholder="bar" />
+            <SelectField label="Bbox" value={props.osmDebugBbox} onChange={props.setOsmDebugBbox} options={[{ label: "NYC", value: "nyc" }, { label: "NYC Metro", value: "nyc_metro" }]} />
+            <SelectField label="Query mode" value={props.osmDebugQueryMode} onChange={props.setOsmDebugQueryMode} options={[{ label: "Node only", value: "node_only" }, { label: "N/W/R", value: "nwr" }]} />
+            <button type="button" onClick={props.onTestOsmQuery} disabled={props.runningAction === "osm-test"} className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:bg-zinc-700">{props.runningAction === "osm-test" ? "Testing..." : "Test OSM"}</button>
+          </div>
+        </details>
       </section>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <ActionCard
-          title="Clean Existing Locations"
-          description="Normalize the current live database before importing anything new. This updates quality scores, normalized names, addresses, phones, and search safety fields. It does not delete records or overwrite CRM-managed fields."
-          note="Run this before importing new records."
-          button="Run Cleanup"
-          running={props.runningAction === "database" || props.runningAction === "cleanup"}
-          onClick={props.onCleanup}
-        >
-          <NumberField
-            label="Offset"
-            value={props.cleanupOffset}
-            onChange={props.setCleanupOffset}
-          />
-          <ReadOnlyField label="Batch limit" value="500" />
-        </ActionCard>
-
-        <ActionCard
-          title="Import NYC Open Data Restaurants"
-          description="Stage NYC restaurant records from NYC Open Data. Records do not go live until they pass dedupe and quality checks."
-          note="Recommended: Start with 100 while testing. Use 500 once imports are working. Max 1000."
-          button="Import NYC Batch"
-          secondaryButton="Import Next Batch"
-          running={props.runningAction === "nyc"}
-          onClick={props.onImportNyc}
-          onSecondaryClick={props.onImportNycNext}
-        >
-          <NumberField
-            label="Limit"
-            value={props.nycLimit}
-            onChange={props.setNycLimit}
-            min={1}
-            max={1000}
-          />
-          <NumberField
-            label="Offset"
-            value={props.nycOffset}
-            onChange={props.setNycOffset}
-          />
-        </ActionCard>
-
-        <ActionCard
-          title="Import OSM Activities"
-          description="OSM imports use public map servers, so smaller category-specific batches are more reliable. Start with nightlife, culture, bowling, karaoke, dessert, or cafes. Parks and All are slower and should use a limit of 5–10."
-          note="OSM import only stages records. Run Score Staged Chunk, Run Dedupe Chunk, and Publish Ready Chunk manually afterward."
-          button="Import OSM Batch"
-          secondaryButton="Import Next OSM Batch"
-          tertiaryButton="Reset OSM Cursor"
-          running={
-            props.runningAction === "osm" || props.runningAction === "osm-test"
-          }
-          onClick={props.onImportOsm}
-          onSecondaryClick={props.onImportOsmNext}
-          onTertiaryClick={props.onResetOsmOffset}
-        >
-          <NumberField
-            label="Limit"
-            value={props.osmLimit}
-            onChange={props.setOsmLimit}
-            min={1}
-            max={getOsmLimitCap(props.osmCategoryGroup)}
-          />
-          <NumberField
-            label="Cursor offset"
-            value={props.osmOffset}
-            onChange={props.setOsmOffset}
-          />
-          <NumberField
-            label="Cursor filter index"
-            value={props.osmFilterIndex}
-            onChange={props.setOsmFilterIndex}
-            min={0}
-          />
-          <ReadOnlyField
-            label="Current cursor"
-            value={`${props.osmCategoryGroup} / filter ${props.osmFilterIndex} / offset ${props.osmOffset}`}
-          />
-          <details className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
-            <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
-              Advanced OSM options
-            </summary>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <SelectField
-                label="Category group"
-                value={props.osmCategoryGroup}
-                onChange={props.setOsmCategoryGroup}
-                options={[
-                  { label: "Nightlife", value: "nightlife" },
-                  { label: "Culture", value: "culture" },
-                  { label: "Bowling", value: "bowling" },
-                  { label: "Karaoke", value: "karaoke" },
-                  { label: "Mini golf", value: "mini_golf" },
-                  { label: "Dessert", value: "dessert" },
-                  { label: "Cafes", value: "cafes" },
-                  { label: "Parks", value: "parks" },
-                  { label: "All (advanced)", value: "all" },
-                ]}
-              />
-              <ReadOnlyField label="Region" value="NYC" />
-              <p className="sm:col-span-2 rounded-2xl border border-amber-300/15 bg-amber-500/10 p-3 text-xs leading-5 text-amber-100">
-                Parks can be large and may timeout. Use limit 5–10. All runs
-                through smaller groups over time. Do not use while testing.
-              </p>
-              <button
-                type="button"
-                onClick={props.onResetAllOsmCursors}
-                className="rounded-2xl border border-amber-300/20 px-4 py-3 text-sm font-black text-amber-100 transition hover:border-amber-200 hover:bg-amber-500/10"
-              >
-                Reset All OSM Cursors
-              </button>
-            </div>
-            <details className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.22em] text-zinc-400">
-                Test OSM Query
-              </summary>
-              <p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-3 text-xs leading-5 text-rose-100">
-                If OSM import returns zero, test amenity=bar with node-only NYC
-                Metro. If the test returns results but import does not, the
-                importer query/cursor is the problem.
-              </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <TextField
-                  label="Tag key"
-                  value={props.osmDebugTagKey}
-                  onChange={props.setOsmDebugTagKey}
-                  placeholder="amenity"
-                />
-                <TextField
-                  label="Tag value"
-                  value={props.osmDebugTagValue}
-                  onChange={props.setOsmDebugTagValue}
-                  placeholder="bar"
-                />
-                <SelectField
-                  label="Bbox"
-                  value={props.osmDebugBbox}
-                  onChange={props.setOsmDebugBbox}
-                  options={[
-                    { label: "NYC", value: "nyc" },
-                    { label: "NYC Metro", value: "nyc_metro" },
-                  ]}
-                />
-                <SelectField
-                  label="Query mode"
-                  value={props.osmDebugQueryMode}
-                  onChange={props.setOsmDebugQueryMode}
-                  options={[
-                    { label: "Node only", value: "node_only" },
-                    { label: "N/W/R", value: "nwr" },
-                  ]}
-                />
-                <button
-                  type="button"
-                  onClick={props.onTestOsmQuery}
-                  disabled={props.runningAction === "osm-test"}
-                  className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700"
-                >
-                  {props.runningAction === "osm-test"
-                    ? "Testing..."
-                    : "Test OSM"}
-                </button>
-              </div>
-            </details>
-          </details>
-        </ActionCard>
-
-        <ActionCard
-          title="Score Staged Records"
-          description="Score only a safe chunk of staged records. Run this after import/staging and before dedupe so publish-ready records are identified without a full-table scoring job."
-          note="Workflow order: 1. Import / stage records 2. Score Staged Chunk 3. Run Dedupe Chunk 4. Publish Ready Chunk"
-          button="Score Staged Chunk"
-          running={props.runningAction === "score"}
-          onClick={props.onScore}
-        >
-          <SelectField
-            label="Scope"
-            value={props.scoreScope}
-            onChange={props.setScoreScope}
-            options={[
-              { label: "All staged records", value: "all" },
-              { label: "Specific batch", value: "batch" },
-            ]}
-          />
-          <NumberField
-            label="Limit"
-            value={props.scoreLimit}
-            onChange={props.setScoreLimit}
-            min={1}
-            max={500}
-          />
-          {props.scoreScope === "batch" ? (
-            <TextField
-              label="Batch ID"
-              value={props.scoreBatchId}
-              onChange={props.setScoreBatchId}
-              placeholder="Paste a batch ID"
-            />
-          ) : (
-            <ReadOnlyField
-              label="Batch ID"
-              value="Not required for all staged records"
-            />
-          )}
-          <ReadOnlyField
-            label="Needs scoring"
-            value={String(getNumber(props.summary?.needsScoring))}
-          />
-        </ActionCard>
-
-        <ActionCard
-          title="Run Chunked Dedupe"
-          description="Dedupe runs in safe chunks after scoring. Keep clicking Run Next Dedupe Chunk until remaining unchecked is 0. Dedupe does not use offset."
-          button="Run Dedupe Chunk"
-          secondaryButton="Run Next Dedupe Chunk"
-          running={props.runningAction === "dedupe"}
-          onClick={props.onDedupe}
-          onSecondaryClick={props.onDedupe}
-        >
-          <SelectField
-            label="Scope"
-            value={props.dedupeScope}
-            onChange={props.setDedupeScope}
-            options={[
-              { label: "All staged records", value: "all" },
-              { label: "Specific batch", value: "batch" },
-            ]}
-          />
-          <NumberField
-            label="Limit"
-            value={props.dedupeLimit}
-            onChange={props.setDedupeLimit}
-            min={1}
-            max={500}
-          />
-          {props.dedupeScope === "batch" ? (
-            <TextField
-              label="Batch ID"
-              value={props.dedupeBatchId}
-              onChange={props.setDedupeBatchId}
-              placeholder="Paste a batch ID"
-            />
-          ) : (
-            <ReadOnlyField
-              label="Batch ID"
-              value="Not required for all staged records"
-            />
-          )}
-          <ReadOnlyField
-            label="Remaining unchecked"
-            value={String(getNumber(props.summary?.remainingUncheckedDedupe))}
-          />
-        </ActionCard>
-
-        <ActionCard
-          title="Publish Ready Records"
-          description="Publish clean, unique, high-quality staged records into the existing live locations table. Publish runs a chunk and does not use offset."
-          button={
-            props.publishScope === "batch"
-              ? "Publish Selected Batch Chunk"
-              : "Publish All Ready Chunk"
-          }
-          running={props.runningAction === "publish"}
-          onClick={props.onPublish}
-        >
-          <SelectField
-            label="Scope"
-            value={props.publishScope}
-            onChange={props.setPublishScope}
-            options={[
-              { label: "All publish-ready staged records", value: "all" },
-              { label: "Specific batch", value: "batch" },
-            ]}
-          />
-          <NumberField
-            label="Limit"
-            value={props.publishLimit}
-            onChange={props.setPublishLimit}
-            min={1}
-            max={500}
-          />
-          {props.publishScope === "batch" ? (
-            <TextField
-              label="Batch ID"
-              value={props.publishBatchId}
-              onChange={props.setPublishBatchId}
-              placeholder="Paste a batch ID"
-            />
-          ) : (
-            <ReadOnlyField
-              label="Batch ID"
-              value="Not required for Publish All"
-            />
-          )}
-          <ReadOnlyField
-            label="Remaining ready"
-            value={String(
-              getNumber(
-                props.summary?.remainingPublishReady ??
-                  props.summary?.publishReady,
-              ),
-            )}
-          />
-        </ActionCard>
-
-        <ActionCard
-          title="Find Missing Photos"
-          description="Show imported or live locations that cannot appear in public search because they do not have a photo."
-          button="View Missing Photos"
-          running={false}
-          onClick={props.onViewMissingPhotos}
-        >
-          <ReadOnlyField
-            label="Needs photo before searchable"
-            value={String(getNumber(props.summary?.needsPhoto))}
-          />
-        </ActionCard>
-
-        <ActionCard
-          title="Classify Chains"
-          description="Detect common chain brands and mark them as utility so they do not dominate curated search."
-          button="Classify Chains"
-          running={props.runningAction === "classify-chains"}
-          onClick={props.onClassifyChains}
-        >
-          <ReadOnlyField label="Chunk limit" value="500" />
-          <ReadOnlyField
-            label="Utility chains"
-            value={String(getNumber(props.summary?.utilityChains))}
-          />
-        </ActionCard>
-
-        <ActionCard
-          title="Enrich High-Value Records"
-          description="Only enrich strong searchable locations so Google/API spend is focused on records worth improving. Owner/admin updated fields are filled only when blank."
-          button="Enrich High-Value Records"
-          running={props.runningAction === "pictures"}
-          onClick={props.onEnrich}
-        >
-          <NumberField
-            label="Limit"
-            value={props.enrichLimit}
-            onChange={props.setEnrichLimit}
-          />
-        </ActionCard>
-      </div>
     </div>
   );
+}
+
+function FixPicturesPanel({ summary, runningAction, progress, photoFixLimit, setPhotoFixLimit, photoBackfillLimit, setPhotoBackfillLimit, onRepairBadPlaceholders, onMigrateGooglePhotos, onRetryCompletedMissing, onBackfillMissingPhotos }: { summary: GrowthSummary | null; runningAction: string | null; progress: number; photoFixLimit: string; setPhotoFixLimit: (value: string) => void; photoBackfillLimit: string; setPhotoBackfillLimit: (value: string) => void; onRepairBadPlaceholders: () => void; onMigrateGooglePhotos: () => void; onRetryCompletedMissing: () => void; onBackfillMissingPhotos: () => void; }) {
+  const sectionProgress = getPictureProgress(summary);
+  const isRunning = runningAction === "pictures";
+  const disabled = Boolean(runningAction);
+  return <div className="space-y-6"><section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30"><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Fix Pictures</p><h2 className="mt-2 text-2xl font-black text-white">Photo Backfill & Repair</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Repair fake image values, migrate existing Google photos into Supabase Storage, and backfill only locations still missing photos.</p><TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} /><p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-4 text-xs leading-5 text-rose-100">Picture tools only process records that need repair, migration, or backfill. Already-good Supabase, owner, or admin photos are skipped.</p><div className="mt-5 grid gap-3 sm:grid-cols-4"><CompactStat label="Missing Photos" value={getNumber(summary?.missingPhotos)} /><CompactStat label="Has Photos" value={getNumber(summary?.hasPhotos)} /><CompactStat label="Needs Photo" value={getNumber(summary?.needsPhoto)} /><CompactStat label="Searchable Photos" value={getNumber(summary?.searchableWithPhotos)} /></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><NumberField label="Repair / migration limit" value={photoFixLimit} onChange={setPhotoFixLimit} min={1} max={250} /><NumberField label="Backfill limit" value={photoBackfillLimit} onChange={setPhotoBackfillLimit} min={1} max={100} /></div><div className="mt-6 grid gap-4 lg:grid-cols-2"><ActionMiniCard title="Repair Bad Photo Values" description="Clears placeholder, no-image, missing, default-image, null, and broken values." button="Repair Bad Values" disabled={disabled} running={isRunning} onClick={onRepairBadPlaceholders} /><ActionMiniCard title="Migrate Google Photos" description="Copies existing Google Places photo endpoint URLs into Supabase Storage without re-enriching." button="Migrate Google Photos" disabled={disabled} running={isRunning} onClick={onMigrateGooglePhotos} /><ActionMiniCard title="Retry Completed Missing Photos" description="Queues completed records that still have no usable photo for another photo attempt." button="Retry Missing Photos" disabled={disabled} running={isRunning} onClick={onRetryCompletedMissing} /><ActionMiniCard title="Backfill Missing Photos" description="Calls Google only for records that still need a photo and saves successful images to location-images." button="Backfill Missing Photos" disabled={disabled} running={isRunning} onClick={onBackfillMissingPhotos} /></div></section></div>;
+}
+
+function FixDatabasePanel({ summary, runningAction, progress, cleanupOffset, setCleanupOffset, dbFixLimit, setDbFixLimit, onCleanup, onClassifyChains, onBackfillPhones, onBackfillCuisine }: { summary: GrowthSummary | null; runningAction: string | null; progress: number; cleanupOffset: string; setCleanupOffset: (value: string) => void; dbFixLimit: string; setDbFixLimit: (value: string) => void; onCleanup: () => void; onClassifyChains: () => void; onBackfillPhones: () => void; onBackfillCuisine: () => void; }) {
+  const sectionProgress = getDatabaseProgress(summary);
+  const isRunning = ["database", "classify-chains", "phones", "cuisine"].includes(String(runningAction));
+  const disabled = Boolean(runningAction);
+  return <div className="space-y-6"><section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30"><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Fix Database</p><h2 className="mt-2 text-2xl font-black text-white">Database Cleanup & Backfills</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Run safe chunked repairs for existing locations without overwriting claimed-owner, CRM, reservation, or manually managed fields.</p><TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} /><div className="mt-5 grid gap-3 sm:grid-cols-5"><CompactStat label="Live" value={getNumber(summary?.liveLocations)} /><CompactStat label="Needs Review" value={getNumber(summary?.needsReview)} /><CompactStat label="Duplicates" value={getNumber(summary?.duplicates)} /><CompactStat label="Chains" value={getNumber(summary?.chains)} /><CompactStat label="Utility Chains" value={getNumber(summary?.utilityChains)} /></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><NumberField label="Cleanup limit" value={dbFixLimit} onChange={setDbFixLimit} min={1} max={1000} /><NumberField label="Cleanup offset" value={cleanupOffset} onChange={setCleanupOffset} min={0} /></div><div className="mt-6 grid gap-4 lg:grid-cols-2"><ActionMiniCard title="Clean Existing Locations" description="Normalizes names, addresses, phones, quality scores, and search safety fields." button="Run Cleanup" disabled={disabled} running={runningAction === "database"} onClick={onCleanup} /><ActionMiniCard title="Classify Chains" description="Marks common chains correctly so they do not dominate curated results." button="Classify Chains" disabled={disabled} running={runningAction === "classify-chains"} onClick={onClassifyChains} /><ActionMiniCard title="Backfill Missing Phones" description="Fills missing phone fields where possible without overwriting managed fields." button="Backfill Phones" disabled={disabled} running={runningAction === "phones"} onClick={onBackfillPhones} /><ActionMiniCard title="Backfill Cuisine Names" description="Normalizes restaurant cuisine and category names." button="Backfill Cuisine" disabled={disabled} running={runningAction === "cuisine"} onClick={onBackfillCuisine} /></div></section></div>;
+}
+
+function DedupePanel({ summary, runningAction, progress, dedupeScope, setDedupeScope, dedupeBatchId, setDedupeBatchId, dedupeLimit, setDedupeLimit, duplicateBatchId, setDuplicateBatchId, duplicates, onDedupe, onLoadDuplicates, onDecision }: { summary: GrowthSummary | null; runningAction: string | null; progress: number; dedupeScope: string; setDedupeScope: (value: string) => void; dedupeBatchId: string; setDedupeBatchId: (value: string) => void; dedupeLimit: string; setDedupeLimit: (value: string) => void; duplicateBatchId: string; setDuplicateBatchId: (value: string) => void; duplicates: DuplicateMatch[]; onDedupe: () => void; onLoadDuplicates: () => void; onDecision: (match: DuplicateMatch, decision: "duplicate" | "unique" | "reject") => void; }) {
+  const sectionProgress = getDedupeProgress(summary);
+  const isRunning = runningAction === "dedupe" || runningAction === "duplicates";
+  return <div className="space-y-6"><section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30"><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Dedupe / Review</p><h2 className="mt-2 text-2xl font-black text-white">Dedupe Staged Imports</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Check staged imports against existing locations and review possible matches before publishing.</p><TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} /><div className="mt-5 grid gap-3 sm:grid-cols-4"><CompactStat label="Remaining Dedupe" value={getNumber(summary?.remainingUncheckedDedupe)} /><CompactStat label="Possible Duplicates" value={getNumber(summary?.possibleDuplicates)} /><CompactStat label="Duplicates" value={getNumber(summary?.duplicates)} /><CompactStat label="Rejected" value={getNumber(summary?.rejected)} /></div><div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><SelectField label="Scope" value={dedupeScope} onChange={setDedupeScope} options={[{ label: "All staged records", value: "all" }, { label: "Specific batch", value: "batch" }]} /><NumberField label="Limit" value={dedupeLimit} onChange={setDedupeLimit} min={1} max={500} />{dedupeScope === "batch" ? <TextField label="Batch ID" value={dedupeBatchId} onChange={setDedupeBatchId} placeholder="Paste batch ID" /> : <ReadOnlyField label="Batch ID" value="Not required" />}<button type="button" onClick={onDedupe} disabled={Boolean(runningAction)} className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:bg-zinc-700">{runningAction === "dedupe" ? "Running..." : "Run Dedupe Chunk"}</button></div></section><DuplicateReviewPanel batchId={duplicateBatchId} setBatchId={setDuplicateBatchId} matches={duplicates} loading={runningAction === "duplicates"} onLoad={onLoadDuplicates} onDecision={onDecision} /></div>;
+}
+
+function PublishPanel({ summary, runningAction, progress, scoreScope, setScoreScope, scoreBatchId, setScoreBatchId, scoreLimit, setScoreLimit, publishScope, setPublishScope, publishBatchId, setPublishBatchId, publishLimit, setPublishLimit, onScore, onPublish }: { summary: GrowthSummary | null; runningAction: string | null; progress: number; scoreScope: string; setScoreScope: (value: string) => void; scoreBatchId: string; setScoreBatchId: (value: string) => void; scoreLimit: string; setScoreLimit: (value: string) => void; publishScope: string; setPublishScope: (value: string) => void; publishBatchId: string; setPublishBatchId: (value: string) => void; publishLimit: string; setPublishLimit: (value: string) => void; onScore: () => void; onPublish: () => void; }) {
+  const sectionProgress = getPublishProgress(summary);
+  const isRunning = runningAction === "publish" || runningAction === "score";
+  return <div className="space-y-6"><section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30"><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Publish</p><h2 className="mt-2 text-2xl font-black text-white">Score & Publish Ready Records</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Score staged records first, then publish only clean, unique, high-quality records into live locations.</p><TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} /><div className="mt-5 grid gap-3 sm:grid-cols-4"><CompactStat label="Needs Scoring" value={getNumber(summary?.needsScoring)} /><CompactStat label="Publish Ready" value={getNumber(summary?.publishReady)} /><CompactStat label="Remaining Ready" value={getNumber(summary?.remainingPublishReady ?? summary?.publishReady)} /><CompactStat label="Published" value={getNumber(summary?.latestBatches?.[0]?.total_published)} /></div><div className="mt-6 grid gap-5 lg:grid-cols-2"><section className="rounded-3xl border border-white/10 bg-black/20 p-5"><h3 className="font-black text-white">Score Staged Records</h3><div className="mt-4 grid gap-4 sm:grid-cols-2"><SelectField label="Scope" value={scoreScope} onChange={setScoreScope} options={[{ label: "All staged records", value: "all" }, { label: "Specific batch", value: "batch" }]} /><NumberField label="Limit" value={scoreLimit} onChange={setScoreLimit} min={1} max={500} />{scoreScope === "batch" ? <TextField label="Batch ID" value={scoreBatchId} onChange={setScoreBatchId} placeholder="Paste batch ID" /> : <ReadOnlyField label="Batch ID" value="Not required" />}<button type="button" onClick={onScore} disabled={Boolean(runningAction)} className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:bg-zinc-700">{runningAction === "score" ? "Scoring..." : "Score Chunk"}</button></div></section><section className="rounded-3xl border border-white/10 bg-black/20 p-5"><h3 className="font-black text-white">Publish Ready Records</h3><div className="mt-4 grid gap-4 sm:grid-cols-2"><SelectField label="Scope" value={publishScope} onChange={setPublishScope} options={[{ label: "All publish-ready staged records", value: "all" }, { label: "Specific batch", value: "batch" }]} /><NumberField label="Limit" value={publishLimit} onChange={setPublishLimit} min={1} max={1000} />{publishScope === "batch" ? <TextField label="Batch ID" value={publishBatchId} onChange={setPublishBatchId} placeholder="Paste batch ID" /> : <ReadOnlyField label="Batch ID" value="Not required" />}<button type="button" onClick={onPublish} disabled={Boolean(runningAction)} className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:bg-zinc-700">{runningAction === "publish" ? "Publishing..." : "Publish Chunk"}</button></div></section></div></section></div>;
+}
+
+function ActionMiniCard({ title, description, button, disabled, running, onClick }: { title: string; description: string; button: string; disabled: boolean; running: boolean; onClick: () => void; }) {
+  return <section className="rounded-3xl border border-white/10 bg-black/20 p-5"><h3 className="font-black text-white">{title}</h3><p className="mt-2 text-sm leading-6 text-zinc-400">{description}</p><button type="button" onClick={onClick} disabled={disabled} className="mt-4 rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">{running ? "Running..." : button}</button></section>;
 }
 
 function ImportHistoryPanel({
@@ -2202,7 +1947,7 @@ function ImportHistoryPanel({
           Staged import health, publishing, and review actions. OSM offset is
           app-managed because Overpass does not provide true offset pagination.
         </p>
-        <TabProgressBar
+        <TabProcessBar
           {...historyProgress}
           percent={loading ? Math.max(historyProgress.percent, progress) : historyProgress.percent}
           doneLabel={loading ? `${progress}% loading` : historyProgress.doneLabel}
@@ -2554,19 +2299,19 @@ function QrToolsPanel({
           Create missing public QR codes and claim QR codes for clean live
           locations. Existing QR codes are not replaced.
         </p>
-        <TabProgressBar
+        <TabProcessBar
           {...qrProgress}
           percent={running ? Math.max(qrProgress.percent, progress) : qrProgress.percent}
           doneLabel={running ? `${progress}% running` : qrProgress.doneLabel}
           running={running}
         />
-        <p className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-500/10 p-4 text-xs leading-5 text-amber-100">
+        <p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-4 text-xs leading-5 text-rose-100">
           QR generation only processes missing QR fields. Existing public QR
           codes, claim QR codes, and claim codes are skipped and never
           overwritten.
         </p>
         {summary?.siteUrlConfigured === false ? (
-          <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
+          <div className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">
             NEXT_PUBLIC_SITE_URL is missing. Configure it before bulk QR
             generation so claim URLs use the correct production domain.
           </div>
@@ -2662,7 +2407,7 @@ function ActionCard({
             type="button"
             onClick={onTertiaryClick}
             disabled={running}
-            className="rounded-full border border-amber-300/20 px-6 py-3 text-sm font-black text-amber-100 transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+            className="rounded-full border border-rose-300/20 px-6 py-3 text-sm font-black text-rose-100 transition hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
           >
             {tertiaryButton}
           </button>
@@ -2819,7 +2564,7 @@ function ResultBanner({
         .includes("all overpass endpoints rejected or timed out"));
   return (
     <div
-      className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-red-300/20 bg-red-500/10 text-red-100"}`}
+      className={`mb-6 rounded-3xl border p-5 text-sm ${ok ? "border-white/10 bg-white/[0.04] text-zinc-100" : "border-rose-300/20 bg-rose-500/10 text-rose-100"}`}
     >
       <p className="font-black">{ok ? "Action completed" : "Action failed"}</p>
       {result.error ? <p className="mt-2">{result.error}</p> : null}
@@ -2938,49 +2683,33 @@ function ResultBanner({
   );
 }
 
-type ProgressTone = "rose" | "amber" | "emerald" | "zinc";
+type ProgressTone = "rose" | "zinc";
 
 function getProgressToneClasses(tone: ProgressTone = "rose") {
-  if (tone === "amber") {
-    return {
-      border: "border-amber-300/20",
-      bg: "bg-amber-500",
-      text: "text-amber-100",
-      accent: "text-amber-300",
-      glow: "shadow-amber-950/30",
-    };
-  }
-
-  if (tone === "emerald") {
-    return {
-      border: "border-emerald-300/20",
-      bg: "bg-emerald-500",
-      text: "text-emerald-100",
-      accent: "text-emerald-300",
-      glow: "shadow-emerald-950/30",
-    };
-  }
-
   if (tone === "zinc") {
     return {
       border: "border-white/10",
-      bg: "bg-zinc-400",
+      bg: "bg-zinc-300",
+      soft: "bg-white/[0.04]",
       text: "text-zinc-100",
       accent: "text-zinc-300",
+      ring: "ring-white/10",
       glow: "shadow-black/30",
     };
   }
 
   return {
-    border: "border-rose-400/20",
+    border: "border-rose-300/20",
     bg: "bg-rose-500",
+    soft: "bg-rose-500/10",
     text: "text-rose-100",
     accent: "text-rose-300",
+    ring: "ring-rose-300/20",
     glow: "shadow-rose-950/30",
   };
 }
 
-function TabProgressBar({
+function TabProcessBar({
   label,
   detail,
   percent,
@@ -3000,14 +2729,21 @@ function TabProgressBar({
 
   return (
     <section
-      className={`mt-6 overflow-hidden rounded-3xl border ${toneClasses.border} bg-black/35 p-5 shadow-xl ${toneClasses.glow}`}
+      className={`mt-6 overflow-hidden rounded-[1.75rem] border ${toneClasses.border} bg-[#10090A]/90 p-5 shadow-2xl ${toneClasses.glow} ring-1 ${toneClasses.ring}`}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className={`text-sm font-black ${toneClasses.text}`}>{label}</p>
+            <span
+              className={`inline-flex h-2.5 w-2.5 rounded-full ${toneClasses.bg} ${
+                running ? "animate-pulse" : ""
+              }`}
+            />
+            <p className={`text-sm font-black tracking-tight ${toneClasses.text}`}>
+              {label}
+            </p>
             {running ? (
-              <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-white">
+              <span className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-white">
                 Running
               </span>
             ) : null}
@@ -3017,29 +2753,51 @@ function TabProgressBar({
           </p>
         </div>
 
-        <div className="text-left sm:text-right">
-          <p className={`text-2xl font-black ${toneClasses.accent}`}>
+        <div className="text-left md:text-right">
+          <p className={`text-3xl font-black leading-none ${toneClasses.accent}`}>
             {safePercent}%
           </p>
-          <p className="text-xs font-bold text-zinc-500">{doneLabel}</p>
+          <p className="mt-1 text-xs font-bold text-zinc-500">{doneLabel}</p>
         </div>
       </div>
 
-      <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+      <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/[0.08]">
         <div
-          className={`h-full rounded-full ${toneClasses.bg} transition-all duration-700 ${
-            running ? "animate-pulse" : ""
-          }`}
+          className={`relative h-full rounded-full ${toneClasses.bg} transition-all duration-700 ease-out`}
           style={{ width: `${safePercent}%` }}
-        />
+        >
+          {running ? <span className="absolute inset-0 animate-pulse bg-white/25" /> : null}
+        </div>
       </div>
+
+      {running ? (
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <ProcessStep active label="Preparing" />
+          <ProcessStep active={safePercent >= 35} label="Processing" />
+          <ProcessStep active={safePercent >= 75} label="Saving changes" />
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function ProcessStep({ active, label }: { active: boolean; label: string }) {
+  return (
+    <div
+      className={`rounded-2xl border px-3 py-2 text-xs font-black ${
+        active
+          ? "border-rose-300/20 bg-rose-500/10 text-rose-100"
+          : "border-white/10 bg-white/[0.03] text-zinc-500"
+      }`}
+    >
+      {label}
+    </div>
   );
 }
 
 function QualityPill({ text }: { text: string }) {
   return (
-    <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+    <span className="rounded-full border border-rose-300/20 bg-rose-500/10 px-3 py-1 text-rose-100">
       ✓ {text}
     </span>
   );
@@ -3111,7 +2869,7 @@ function StatusPill({ status }: { status: string }) {
   );
   return (
     <span
-      className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-black ${isBad ? "bg-red-500/10 text-red-300" : isGood ? "bg-emerald-500/10 text-emerald-300" : "bg-white/10 text-zinc-300"}`}
+      className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-black ${isBad ? "bg-rose-500/10 text-rose-300" : isGood ? "bg-white/10 text-zinc-300" : "bg-white/10 text-zinc-300"}`}
     >
       {status}
     </span>
