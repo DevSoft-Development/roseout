@@ -1,4 +1,5 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   assignSupportTicket,
   getSupportTicket,
@@ -44,7 +45,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = await req.json();
-    const { error } = await requireAdminApiRole(["superadmin", "admin"]);
+    const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.experienceInboxManage);
 
     if (error) {
       return error;

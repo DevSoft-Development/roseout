@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-
-type AdminRole = "admin" | "superadmin" | "editor" | "viewer";
+import type { AdminRole } from "@/lib/users/roles";
+import { isAdminRole, normalizeRole } from "@/lib/users/roles";
 
 type FallbackRoleLookup = {
   table: string;
@@ -16,27 +16,12 @@ const FALLBACK_ROLE_LOOKUPS: readonly FallbackRoleLookup[] = [
 ];
 
 function normalizeAdminRole(role: unknown): AdminRole | null {
-  const normalized = String(role || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]/g, "");
-
-  if (normalized === "superadmin" || normalized === "superuser") {
-    return "superadmin";
-  }
-
-  if (
-    normalized === "admin" ||
-    normalized === "editor" ||
-    normalized === "viewer"
-  ) {
-    return normalized;
-  }
-
-  return null;
+  if (typeof role !== "string") return null;
+  const normalized = normalizeRole(role);
+  return isAdminRole(normalized) ? normalized : null;
 }
 
-function normalizeAllowedRoles(allowedRoles: readonly string[]) {
+function normalizeAllowedRoles(allowedRoles: readonly AdminRole[]) {
   return allowedRoles
     .map((role) => normalizeAdminRole(role))
     .filter((role): role is AdminRole => Boolean(role));
@@ -129,7 +114,7 @@ function buildAdminUser({
   };
 }
 
-export async function requireAdminApiRole(allowedRoles: readonly string[]) {
+export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
   const supabase = await createClient();
   const allowed = normalizeAllowedRoles(allowedRoles);
 

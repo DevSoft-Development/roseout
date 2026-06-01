@@ -4,8 +4,9 @@ import { sendSms } from "@/lib/sms/sendSms";
 import { SUPPORT_EMAIL_FROM } from "@/lib/support/ticketing";
 import { logEvent } from "@/lib/monitoring";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function POST(request: Request) {
-  const { error, supabase, adminUser } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error, supabase, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.communicationSend);
   if (error) return error;
   const body = await request.json();
 

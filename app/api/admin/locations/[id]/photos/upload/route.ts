@@ -1,6 +1,7 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const BUCKET = "location-images";
 const MAX_SIZE = 8 * 1024 * 1024;
 
@@ -14,7 +15,7 @@ function safeFilename(name: string) {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const { error, adminUser } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
   if (error) return error;
   const { id: locationId } = await context.params;
 

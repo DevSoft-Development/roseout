@@ -1,10 +1,11 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export default async function FeaturedOutingsPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.marketing);
   const [{ data: outings }, { data: locations }] = await Promise.all([
     supabaseAdmin.from("featured_outings").select("*").order("priority", { ascending: true }).limit(100),
     supabaseAdmin.from("locations").select("id,name,restaurant_name,activity_name,city,state,address,rating,category").limit(50),

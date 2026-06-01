@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ async function authorize(request: NextRequest) {
   ) {
     return null;
   }
-  const { error } = await requireAdminApiRole(["admin", "superadmin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
   return error;
 }
 

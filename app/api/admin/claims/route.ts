@@ -1,10 +1,11 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.claims);
   if (auth.error) return auth.error;
 
   try {

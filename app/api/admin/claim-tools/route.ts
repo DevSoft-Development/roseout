@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 function clean(value: unknown) {
@@ -70,7 +71,7 @@ function mapSource(row: Record<string, unknown>, table: "restaurants" | "activit
 }
 
 export async function GET(req: Request) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.claimTools);
   if (auth.error) return auth.error;
 
   const { searchParams } = new URL(req.url);

@@ -2,12 +2,13 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isAdminRole, isUserRole, normalizeRole } from "@/lib/users/roles";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 function cleanString(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireAdminApiRole(["superadmin", "admin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   if (error) return error;
 

@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-
-type AdminRole = "superadmin" | "admin" | "editor" | "viewer";
+import type { AdminRole } from "@/lib/users/roles";
+import { ADMIN_ROLE_LABELS, canAdmin, canAnyAdmin } from "@/lib/admin-permissions";
 
 type AdminTopBarProps = {
   adminName: string;
@@ -60,12 +60,7 @@ type NavGroup = {
   activePrefixes?: string[];
 };
 
-const roleLabels: Record<AdminRole, string> = {
-  superadmin: "Super Admin",
-  admin: "Admin",
-  editor: "Editor",
-  viewer: "Viewer",
-};
+const roleLabels = ADMIN_ROLE_LABELS;
 
 function searchResultHref(item: SearchResult) {
   if (item.type === "user") {
@@ -115,9 +110,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
   const searchRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
-  const canView = ["superadmin", "admin", "editor", "viewer"].includes(adminRole);
-  const canManagePlatform = ["superadmin", "admin"].includes(adminRole);
-  const canImpersonate = canManagePlatform;
+  const canView = canAdmin(adminRole, "dashboard");
+  const canManagePlatform = canAnyAdmin(adminRole, ["settings", "featureFlags", "logs", "adminUsers"]);
+  const canImpersonate = canAdmin(adminRole, "impersonation");
 
   const dashboardItem: NavItem = useMemo(
     () => ({ label: "Dashboard", href: "/admin/dashboard", visible: canView, exact: true }),
@@ -136,15 +131,15 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         ],
         activePrefixes: ["/admin/dashboard/crm", "/admin/dashboard/locations"],
         items: [
-          { label: "All Locations", href: "/admin/dashboard/crm", visible: canView },
-          { label: "Upgrade Opportunities", href: "/admin/dashboard/crm?filter=upgrade-opportunities", visible: canView },
-          { label: "At Risk Locations", href: "/admin/dashboard/crm?filter=at-risk", visible: canView },
-          { label: "Pending Claims", href: "/admin/dashboard/crm?filter=pending-claims", visible: canView },
-          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owner-accounts", visible: canView },
+          { label: "All Locations", href: "/admin/dashboard/crm", visible: canAdmin(adminRole, "crm") },
+          { label: "Upgrade Opportunities", href: "/admin/dashboard/crm?filter=upgrade-opportunities", visible: canAdmin(adminRole, "upgradeOpportunities") },
+          { label: "At Risk Locations", href: "/admin/dashboard/crm?filter=at-risk", visible: canAdmin(adminRole, "crm") },
+          { label: "Pending Claims", href: "/admin/dashboard/crm?filter=pending-claims", visible: canAdmin(adminRole, "claims") },
+          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owner-accounts", visible: canAdmin(adminRole, "ownerAccounts") },
           { label: "Location Tasks", href: "/admin/dashboard/crm?filter=location-tasks", visible: canView },
           { label: "Follow-ups", href: "/admin/dashboard/crm?filter=follow-ups", visible: canView },
           { label: "QR Codes", href: "/admin/dashboard/crm?filter=qr-codes", visible: canView },
-          { label: "Legacy Locations", href: "/admin/dashboard/locations", visible: canView },
+          { label: "Legacy Locations", href: "/admin/dashboard/locations", visible: canAdmin(adminRole, "locations") },
         ],
       },
       {
@@ -152,8 +147,8 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         activePaths: ["/admin/dashboard/reservation-opportunities"],
         activePrefixes: ["/admin/dashboard/reservations", "/admin/dashboard/reservation"],
         items: [
-          { label: "Reservations Overview", href: "/admin/dashboard/reservations", visible: canView },
-          { label: "Reservation Opportunities", href: "/admin/dashboard/reservation-opportunities", visible: canView },
+          { label: "Reservations Overview", href: "/admin/dashboard/reservations", visible: canAdmin(adminRole, "reservations") },
+          { label: "Reservation Opportunities", href: "/admin/dashboard/reservation-opportunities", visible: canAdmin(adminRole, "reservations") },
         ],
       },
       {
@@ -165,24 +160,24 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/plans",
         ],
         items: [
-          { label: "Owner Accounts", href: "/admin/dashboard/owner-accounts", visible: canView },
-          { label: "Businesses", href: "/admin/dashboard/businesses", visible: canView },
-          { label: "Billing", href: "/admin/dashboard/billing", visible: canView },
-          { label: "Plans", href: "/admin/dashboard/plans", visible: canView },
+          { label: "Owner Accounts", href: "/admin/dashboard/owner-accounts", visible: canAdmin(adminRole, "ownerAccounts") },
+          { label: "Businesses", href: "/admin/dashboard/businesses", visible: canAdmin(adminRole, "businessCrm") },
+          { label: "Billing", href: "/admin/dashboard/billing", visible: canAdmin(adminRole, "billing") },
+          { label: "Plans", href: "/admin/dashboard/plans", visible: canAdmin(adminRole, "billing") },
           {
             label: "Upgrade Opportunities",
             href: "/admin/dashboard/businesses/upgrade-opportunities",
-            visible: canView,
+            visible: canAdmin(adminRole, "upgradeOpportunities"),
           },
-          { label: "Churn Risk", href: "/admin/dashboard/businesses/churn-risk", visible: canView },
+          { label: "Churn Risk", href: "/admin/dashboard/businesses/churn-risk", visible: canAdmin(adminRole, "businessCrm") },
         ],
       },
       {
         label: "Platform Analytics",
         activePaths: ["/admin/dashboard/analytics", "/admin/search-qa"],
         items: [
-          { label: "Platform Analytics", href: "/admin/dashboard/analytics", visible: canView, exact: true },
-          { label: "Search QA", href: "/admin/search-qa", visible: canView },
+          { label: "Platform Analytics", href: "/admin/dashboard/analytics", visible: canAdmin(adminRole, "analytics"), exact: true },
+          { label: "Search QA", href: "/admin/search-qa", visible: canAdmin(adminRole, "seoTools") },
         ],
       },
       {
@@ -206,27 +201,27 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           {
             label: "Operations",
             items: [
-              { label: "Import", href: "/admin/dashboard/import", visible: canView },
-              { label: "Import History", href: "/admin/import-history", visible: canView },
-              { label: "Reviews", href: "/admin/dashboard/reviews", visible: canView },
-              { label: "Support", href: "/admin/dashboard/support", visible: canView },
-              { label: "Communication", href: "/admin/dashboard/communication", visible: canView },
+              { label: "Import", href: "/admin/dashboard/import", visible: canAdmin(adminRole, "import") },
+              { label: "Import History", href: "/admin/import-history", visible: canAdmin(adminRole, "import") },
+              { label: "Reviews", href: "/admin/dashboard/reviews", visible: canAdmin(adminRole, "reviews") },
+              { label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") },
+              { label: "Communication", href: "/admin/dashboard/communication", visible: canAdmin(adminRole, "communication") },
             ],
           },
           {
             label: "Marketing",
             items: [
-              { label: "Campaigns", href: "/admin/dashboard/campaigns", visible: canView },
-              { label: "SMS", href: "/admin/dashboard/sms", visible: canView },
-              { label: "Email Templates", href: "/admin/dashboard/email-templates", visible: canView },
-              { label: "Promo Codes", href: "/admin/dashboard/settings/promo-codes", visible: canView },
-              { label: "SEO Tools", href: "/admin/dashboard/seo-tools", visible: canView },
+              { label: "Campaigns", href: "/admin/dashboard/campaigns", visible: canAdmin(adminRole, "campaigns") },
+              { label: "SMS", href: "/admin/dashboard/sms", visible: canAdmin(adminRole, "sms") },
+              { label: "Email Templates", href: "/admin/dashboard/email-templates", visible: canAdmin(adminRole, "emailTemplates") },
+              { label: "Promo Codes", href: "/admin/dashboard/settings/promo-codes", visible: canAdmin(adminRole, "promoCodes") },
+              { label: "SEO Tools", href: "/admin/dashboard/seo-tools", visible: canAdmin(adminRole, "seoTools") },
             ],
           },
         ],
       },
     ],
-    [canView],
+    [adminRole, canView],
   );
 
   const visibleGroups = navGroups
@@ -260,8 +255,8 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
   };
 
   const profileSupport: NavSection = {
-    label: "Support",
-    items: [{ label: "Support Inbox", href: "/admin/dashboard/support", visible: canView }],
+    label: "Experience",
+    items: [{ label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") }],
   };
 
   const isPathMatch = (href: string, exact?: boolean) => {

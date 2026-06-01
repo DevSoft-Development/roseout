@@ -8,6 +8,7 @@ import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQrServ
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata: Metadata = {
   title: "Claim QR Codes | TheOutHaven Admin",
   description: "Print and audit claim QR codes for TheOutHaven locations.",
@@ -79,7 +80,7 @@ export default async function AdminClaimQrPrintPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.claimQrs);
 
   const params = await searchParams;
   const q = params.q?.trim() || "";

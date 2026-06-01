@@ -1,11 +1,12 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata = {
   title: "sms – Admin",
 };
 
 export default async function Page() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.sms);
 
   return (
     <main className="min-h-screen bg-[#090706] p-6 text-white">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -37,11 +38,7 @@ function hasSecretAuthorization(request: NextRequest) {
 async function requireCuisineBackfillAuthorization(request: NextRequest) {
   if (hasSecretAuthorization(request)) return null;
 
-  const { error } = await requireAdminApiRole([
-    "superadmin",
-    "admin",
-    "editor",
-  ]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.import);
 
   return error;
 }

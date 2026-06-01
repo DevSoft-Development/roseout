@@ -3,10 +3,11 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { getBusinessCRM, getUpgradeFlags } from "@/lib/admin-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export default async function BusinessDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.businessCrm);
   const { id } = await params;
   const business = await getBusinessCRM(id);
 

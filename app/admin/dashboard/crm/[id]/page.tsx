@@ -11,6 +11,7 @@ import ReservationsPanel from "./ReservationPanel";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 const tabs = [
@@ -73,7 +74,7 @@ async function safeUpdateLocation(locationId: string, updates: Record<string, an
 
 async function saveLocationProfile(formData: FormData) {
   "use server";
-  const admin = await requireAdminRole(["superadmin", "admin", "editor"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
   const locationId = String(formData.get("location_id") || "");
   if (!locationId) return;
 
@@ -116,7 +117,7 @@ async function saveLocationProfile(formData: FormData) {
 
 async function saveLocationPhotos(formData: FormData) {
   "use server";
-  const admin = await requireAdminRole(["superadmin", "admin", "editor"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
   const locationId = String(formData.get("location_id") || "");
   const mainImage = String(formData.get("main_image") || "").trim() || null;
   const gallery = dedupeUrls(String(formData.get("gallery_images") || "").split(/\n|,/));
@@ -130,7 +131,7 @@ async function saveLocationPhotos(formData: FormData) {
 
 async function savePlanBilling(formData: FormData) {
   "use server";
-  const admin = await requireAdminRole(["superadmin"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.billing);
   const locationId = String(formData.get("location_id") || "");
   const plan = String(formData.get("plan") || "free_discovery");
   const status = String(formData.get("plan_status") || "inactive");
@@ -149,7 +150,7 @@ async function savePlanBilling(formData: FormData) {
 
 async function saveLocationSettings(formData: FormData) {
   "use server";
-  const admin = await requireAdminRole(["superadmin", "admin", "editor"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.settings);
   const locationId = String(formData.get("location_id") || "");
   const crmStatus = String(formData.get("crm_status") || "Needs Outreach");
   const updates = { active: formData.get("active") === "true", status: formData.get("active") === "true" ? "active" : "inactive", is_searchable: formData.get("is_searchable") === "true", crm_priority: String(formData.get("crm_priority") || "normal"), priority_level: String(formData.get("crm_priority") || "normal"), follow_up_date: String(formData.get("follow_up_date") || "") || null, outreach_status: String(formData.get("outreach_status") || "none"), crm_status: crmStatus, internal_notes: String(formData.get("internal_notes") || "").trim() || null, updated_at: new Date().toISOString() };
@@ -162,7 +163,7 @@ async function saveLocationSettings(formData: FormData) {
 
 async function deleteLocationSuperadmin(formData: FormData) {
   "use server";
-  const admin = await requireAdminRole(["superadmin"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.locationsDelete);
   const locationId = String(formData.get("location_id") || "");
   const confirmation = String(formData.get("confirmation") || "");
   if (!locationId || confirmation !== "DELETE LOCATION") redirect(`/admin/dashboard/crm/${locationId}?tab=settings&delete_error=confirmation`);
@@ -183,7 +184,7 @@ async function deleteLocationSuperadmin(formData: FormData) {
 
 async function regenerateLocationClaimQr(formData: FormData) {
   "use server";
-  const admin = await requireAdminRole(["superadmin", "admin"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.claimQrsGenerate);
   const locationId = String(formData.get("location_id") || "");
   const qr = await createClaimQr("location");
   const error = await safeUpdateLocation(locationId, { ...qr, updated_at: new Date().toISOString() });
@@ -234,7 +235,7 @@ function ProfileForm({ business, canEdit }: { business: BusinessCRMRow; canEdit:
 }
 
 export default async function CRMDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
-  const admin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const { id } = await params;
   const query = await searchParams;
   const requestedTab = query.tab === "emails" ? "communication" : query.tab;
@@ -243,7 +244,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   if (!business) notFound();
   const related = await getLocationCrmRelatedData(business.id);
   const flags = getUpgradeFlags(business);
-  const canEdit = ["superadmin", "admin", "editor"].includes(admin.role);
+  const canEdit = canAdmin(admin.role, "crmEdit");
   const publicHref = business.location_type === "activities" ? `/activities/${business.id}` : `/restaurants/${business.id}`;
   const qualityScore = business.profile_quality_score || Math.round([business.name, business.address, business.city, business.phone, business.website, business.description].filter(Boolean).length / 6 * 100);
   const seoScore = business.seo_score || Math.round([business.name, business.description, business.category, business.city, business.is_searchable].filter(Boolean).length / 5 * 100);
@@ -263,7 +264,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
             <Link href={publicHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">View public page</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=claims`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open claims</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=qr`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print QR</Link>
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=support`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Add support note</Link>
+            <Link href={`/admin/dashboard/crm/${business.id}?tab=support`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Add Experience note</Link>
           </div>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -281,10 +282,10 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       </nav>
 
       {activeTab === "overview" ? <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Location command center</h2><p className="mt-2 text-sm leading-6 text-white/60">Owner, claim, plan, analytics, support, logs, and data quality context are consolidated here so admins do not need to jump across disconnected pages.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><StatCard label="Profile views 30d" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances 30d" value={fmt(business.search_appearances_30d)} /><StatCard label="Reserve intent 30d" value={fmt(business.reservation_completions_30d)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /></div></article>
-        <NextRecommendedActions business={business} flags={flags} isAdmin={["superadmin", "admin"].includes(admin.role)} />
-        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Recent activity</h2>{related.logs.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{related.logs.slice(0, 6).map((log: any) => <li key={log.id} className="rounded-2xl border border-white/10 bg-black/20 p-3"><b>{log.action || log.category}</b> · {log.message}<span className="block text-xs text-white/40">{formatDate(log.created_at)}</span></li>)}</ul> : <EmptyPanel title="No activity yet" text="CRM actions, profile edits, claim changes, QR activity, and support notes will appear here after admins perform them." />}</article>
-        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Open tasks & support</h2>{related.reminders.length || related.supportTickets.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{[...related.reminders, ...related.supportTickets].slice(0, 6).map((item: any) => <li key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">{item.title || item.subject || item.message || "CRM item"}<span className="block text-xs text-white/40">{item.reminder_status || item.status || "open"}</span></li>)}</ul> : <EmptyPanel title="No open tasks" text="Tasks, reminders, and support tickets tied to this location will appear here." />}</article>
+        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Location command center</h2><p className="mt-2 text-sm leading-6 text-white/60">Owner, claim, plan, analytics, Experience Inbox, logs, and data quality context are consolidated here so admins do not need to jump across disconnected pages.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><StatCard label="Profile views 30d" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances 30d" value={fmt(business.search_appearances_30d)} /><StatCard label="Reserve intent 30d" value={fmt(business.reservation_completions_30d)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /></div></article>
+        <NextRecommendedActions business={business} flags={flags} isAdmin={canAdmin(admin.role, "crmEdit")} />
+        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Recent activity</h2>{related.logs.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{related.logs.slice(0, 6).map((log: any) => <li key={log.id} className="rounded-2xl border border-white/10 bg-black/20 p-3"><b>{log.action || log.category}</b> · {log.message}<span className="block text-xs text-white/40">{formatDate(log.created_at)}</span></li>)}</ul> : <EmptyPanel title="No activity yet" text="CRM actions, profile edits, claim changes, QR activity, and Experience notes will appear here after admins perform them." />}</article>
+        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Open tasks & Experience Inbox</h2>{related.reminders.length || related.supportTickets.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{[...related.reminders, ...related.supportTickets].slice(0, 6).map((item: any) => <li key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">{item.title || item.subject || item.message || "CRM item"}<span className="block text-xs text-white/40">{item.reminder_status || item.status || "open"}</span></li>)}</ul> : <EmptyPanel title="No open tasks" text="Tasks, reminders, and Experience Inbox tickets tied to this location will appear here." />}</article>
       </section> : null}
 
       {activeTab === "profile" ? <ProfileForm business={business} canEdit={canEdit} /> : null}
@@ -292,12 +293,12 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "claims" ? <ClaimsPanel business={business} claims={related.claims} /> : null}
       {activeTab === "logs" ? <section className="space-y-4"><Panel title="Location logs" items={related.logs} empty="No admin activity has been recorded for this location yet." href="/admin/dashboard/logs" hrefLabel="Open platform logs" /></section> : null}
       {activeTab === "communication" ? <CommunicationPanel locationId={business.id} defaultEmail={business.owner_email} defaultPhone={business.phone} templates={related.templates} logs={related.communications} canSend={canEdit} /> : null}
-      {activeTab === "support" ? <Panel title="Support" items={related.supportTickets} empty="No support tickets have been opened for this location yet." href="/admin/dashboard/support" hrefLabel="Open support inbox" /> : null}
+      {activeTab === "support" ? <Panel title="Experience Inbox" items={related.supportTickets} empty="No Experience Inbox tickets have been opened for this location yet." href="/admin/dashboard/support" hrefLabel="Open Experience Inbox" /> : null}
       {activeTab === "photos" ? <PhotosPanelClient business={business} canEdit={canEdit} saveAction={saveLocationPhotos} /> : null}
       {activeTab === "reservations" ? <ReservationsPanel business={business} reservations={related.reservations || []} canSend={canEdit} /> : null}
       {activeTab === "owner" ? <OwnerPanel business={business} owners={related.owners} /> : null}
       {activeTab === "plan" ? <PlanBillingPanel business={business} canEdit={admin.role === "superadmin"} isSuperadmin={admin.role === "superadmin"} /> : null}
-      {activeTab === "qr" ? <QRCodePanel business={business} qrCodes={related.qrCodes} canRegenerate={["superadmin", "admin"].includes(admin.role)} /> : null}
+      {activeTab === "qr" ? <QRCodePanel business={business} qrCodes={related.qrCodes} canRegenerate={canAdmin(admin.role, "claimQrsGenerate")} /> : null}
       {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use the profile and settings tabs to improve location-level search visibility.`} /> : null}
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
     </div>

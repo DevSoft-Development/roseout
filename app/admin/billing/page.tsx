@@ -2,10 +2,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getLocationName } from "@/lib/locationName";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export default async function AdminBillingPage() {
-  await requireAdminRole(["superadmin", "admin"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.billing);
 
   const { data: locations } = await supabaseAdmin
     .from("locations")

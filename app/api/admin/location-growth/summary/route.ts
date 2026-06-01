@@ -3,6 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { getSiteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -19,11 +20,7 @@ async function authorize(request: Request) {
   ) {
     return null;
   }
-  const { error } = await requireAdminApiRole([
-    "admin",
-    "superadmin",
-    "editor",
-  ]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
   return error;
 }
 

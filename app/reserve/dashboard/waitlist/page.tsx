@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 type WaitlistRow = {
@@ -32,7 +33,7 @@ function formatSlot(date: string, time: string) {
 }
 
 export default async function ReservationWaitlistDashboardPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
 
   const { data: waitlist } = await supabaseAdmin
     .from("reservation_waitlist")

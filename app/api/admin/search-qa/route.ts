@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const SEARCH_QA_QUERIES = [
   "dinner and dessert",
   "dessert add-on",
@@ -116,7 +117,7 @@ async function runQuery(origin: string, query: string) {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.seoTools);
   if (error) return error;
 
   const origin = new URL(request.url).origin;

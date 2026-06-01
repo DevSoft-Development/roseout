@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -51,12 +52,7 @@ async function requireAuthorization(request: NextRequest) {
   )
     return null;
 
-  const { error } = await requireAdminApiRole([
-    "superadmin",
-    "admin",
-    "editor",
-    "viewer",
-  ]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reservations);
   if (!error) return null;
 
   return NextResponse.json(

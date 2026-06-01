@@ -10,6 +10,7 @@ import {
   type PendingCRMClaim,
 } from "@/lib/admin-crm";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 function fmt(n: number) {

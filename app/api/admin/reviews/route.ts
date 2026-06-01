@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 type AdminReview = {
   id: string;
   reviewerName: string | null;
@@ -27,7 +28,7 @@ const isMissingTableError = (message?: string | null) => {
 };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reviewsModerate);
   if (auth.error) return auth.error;
 
   try {
