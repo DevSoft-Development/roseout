@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function TheOutHavenFooter() {
@@ -9,9 +10,15 @@ export default function TheOutHavenFooter() {
       <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr]">
         {/* BRAND */}
         <div>
-          <Link href="/" className="inline-flex items-center gap-3 group">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e1062a] text-lg font-black text-white shadow-lg shadow-red-500/20 transition group-hover:scale-105">
-              R
+          <Link href="/" className="group inline-flex items-center gap-3">
+            <span className="relative flex h-10 w-10 overflow-hidden rounded-full ring-1 ring-white/15 transition group-hover:scale-105">
+              <Image
+                src="/toh_logo.png"
+                alt="TheOutHaven logo"
+                fill
+                sizes="40px"
+                className="object-contain"
+              />
             </span>
             <span className="text-2xl font-black tracking-tight">
               TheOutHaven
@@ -19,8 +26,9 @@ export default function TheOutHavenFooter() {
           </Link>
 
           <p className="mt-5 max-w-md text-sm leading-7 text-white/45">
-            AI-powered planning for date nights, birthdays, restaurants,
-            activities, and unforgettable outings.
+            Plan date nights, birthday dinners, girls’ nights, restaurants,
+            activities, and full outings with a smarter way to decide where to
+            go next.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -28,11 +36,11 @@ export default function TheOutHavenFooter() {
               href="/create"
               className="rounded-2xl bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500 hover:shadow-lg hover:shadow-red-500/20"
             >
-              Plan My Outing
+              Start Planning
             </Link>
 
             <Link
-              href="/location/apply"
+              href="/business"
               className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
             >
               For Businesses

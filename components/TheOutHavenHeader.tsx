@@ -6,10 +6,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const navItems = [
-  { href: "/", label: "Home" },
   { href: "/explore", label: "Explore" },
   { href: "/create", label: "Create Outing" },
-  { href: "/business", label: "Business" },
+  { href: "/business", label: "For Businesses" },
 ];
 
 export default function TheOutHavenHeader() {
@@ -72,9 +71,12 @@ export default function TheOutHavenHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-4 md:flex">
-          <Link href="/signup" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500">
+        <div className="hidden items-center gap-3 md:flex">
+          <Link href="/login" className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-black text-white transition hover:border-white/25 hover:bg-white hover:text-black">
             Sign In
+          </Link>
+          <Link href="/signup" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500">
+            Get Started
           </Link>
         </div>
 
@@ -102,8 +104,11 @@ export default function TheOutHavenHeader() {
               </Link>
             ))}
 
-            <Link href="/signup" className="block rounded-2xl bg-[#e1062a] px-4 py-4 text-sm font-black text-white transition hover:bg-red-500">
+            <Link href="/login" className="block rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">
               Sign In
+            </Link>
+            <Link href="/signup" className="block rounded-2xl bg-[#e1062a] px-4 py-4 text-sm font-black text-white transition hover:bg-red-500">
+              Get Started
             </Link>
           </div>
         </div>
