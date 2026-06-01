@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
     .gte("quality_score", 75)
     .eq("duplicate_status", "unique")
     .in("enrichment_status", ["queued", "not_started", "failed"])
+    .or("has_photos.eq.false,photo_status.eq.missing_photo,main_image.is.null,image_url.is.null")
     .order("has_photos", { ascending: true, nullsFirst: true })
     .order("enrichment_priority", { ascending: false })
     .order("rating", { ascending: false, nullsFirst: false })
