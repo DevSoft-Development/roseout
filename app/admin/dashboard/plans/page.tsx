@@ -1,11 +1,12 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata = {
   title: "plans – Admin",
 };
 
 export default async function Page() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.billing);
 
   return (
     <main className="min-h-screen bg-[#090706] p-6 text-white">

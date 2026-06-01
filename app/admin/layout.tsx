@@ -3,6 +3,7 @@ import AdminTopBar from "./components/AdminTopBar";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { noIndexRobots } from "@/lib/seo";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata: Metadata = {
   title: {
     default: "Admin Dashboard | TheOutHaven",
@@ -17,7 +18,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const admin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#090706] text-white">

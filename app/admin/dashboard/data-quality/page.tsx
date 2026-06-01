@@ -6,6 +6,7 @@ import CleanupActions from "./CleanupActions";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationName } from "@/lib/locationName";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   getDataStatus,
   getMissingFields,
@@ -464,7 +465,7 @@ export default async function AdminDataQualityPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.dataQuality);
 
   const params = await searchParams;
   const q = params.q?.trim() || "";

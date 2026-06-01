@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getLocationName } from "@/lib/locationName";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 function escapeSearch(value: string) {
@@ -10,12 +11,7 @@ function escapeSearch(value: string) {
 
 export async function GET(req: Request) {
   try {
-    const { error: authError, supabase } = await requireAdminApiRole([
-      "superadmin",
-      "admin",
-      "editor",
-      "viewer",
-    ]);
+    const { error: authError, supabase } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.dashboard);
     if (authError) return authError;
 
     const { searchParams } = new URL(req.url);

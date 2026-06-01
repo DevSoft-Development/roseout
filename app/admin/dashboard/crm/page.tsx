@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getBusinessCRMSummary, getClaimStatus, getDisplayCRMStatus, getUpgradeFlags, listBusinessCRMPage, normalizeStatus, type PendingCRMClaim } from "@/lib/admin-crm";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 function fmt(n: number) {
@@ -76,7 +77,7 @@ function PendingClaimsPanel({ claims }: { claims: PendingCRMClaim[] }) {
 }
 
 export default async function CRMPage({ searchParams }: { searchParams: Promise<{ q?: string; filter?: string; page?: string; pageSize?: string }> }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const params = await searchParams;
   const q = String(params.q || "").trim();
   const filter = normalizeStatus(params.filter || "all");
@@ -109,7 +110,7 @@ export default async function CRMPage({ searchParams }: { searchParams: Promise<
             <div>
               <h1 className="text-4xl font-black tracking-tight">TheOutHaven CRM</h1>
               <p className="mt-3 max-w-4xl text-sm leading-6 text-white/65">
-                Manage locations, owners, claims, reservations, analytics, QR codes, support, emails, SEO, and upgrade opportunities from one place.
+                Manage locations, owners, claims, reservations, analytics, QR codes, Experience Inbox, emails, SEO, and upgrade opportunities from one place.
               </p>
             </div>
             <form className="flex min-w-[280px] flex-col gap-2 sm:flex-row">

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function GET(req: Request) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.logs);
   if (auth.error) return auth.error;
 
   const sp = new URL(req.url).searchParams;

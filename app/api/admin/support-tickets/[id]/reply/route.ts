@@ -2,9 +2,10 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { sendSupportEmail } from "@/lib/email/sendSupportEmail";
 import { buildReplySubject, SUPPORT_EMAIL_FROM } from "@/lib/support/ticketing";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { error, supabase, adminUser } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error, supabase, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.experienceInboxManage);
   if (error) return error;
   const body = await request.json();
 

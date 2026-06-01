@@ -3,13 +3,14 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import ClaimToolsClient from "./ClaimToolsClient";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata: Metadata = {
   title: "Claim Tools",
   description: "Search claim codes, links, and QR codes.",
 };
 
 export default async function AdminClaimToolsPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.claimTools);
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white print:bg-white print:p-0">

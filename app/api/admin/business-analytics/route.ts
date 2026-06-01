@@ -3,8 +3,9 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { AnalyticsRange, buildAnalyticsSummary, buildBirdsEyeLocations, buildBoroughBreakdown, buildCategoryBreakdown, buildCityBreakdown, buildContactMethodBreakdown, buildConversionBreakdown, buildDailySeries, buildEventBreakdown, buildLocationRollups, buildMostSearchedCategories, buildPlanBreakdown, buildRecentActivity, buildSourceBreakdown, getRangeStart, normalizeCategory, type AnalyticsEventRow, type AnalyticsLocationRow, type OutingRow } from "@/lib/analytics/new-business-analytics";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function GET(request: NextRequest) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
   const { searchParams } = new URL(request.url); const range=(searchParams.get("range")||"30d") as AnalyticsRange; const from=getRangeStart(range); const q=(searchParams.get("q")||"").toLowerCase().trim(); const filtered=searchParams.get("filtered")==="1";
   const [{data:locations=[]},{data:events=[]},{data:outings=[]}] = await Promise.all([supabaseAdmin.from("locations").select("*").limit(1000), supabaseAdmin.from("analytics_events").select("*").gte("created_at", from || "1900-01-01"), supabaseAdmin.from("outings").select("*").gte("created_at", from || "1900-01-01")]);
   const allLoc=locations as AnalyticsLocationRow[]; const e=events as AnalyticsEventRow[]; const o=outings as OutingRow[];

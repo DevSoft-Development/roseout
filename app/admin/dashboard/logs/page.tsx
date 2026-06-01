@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { formatDate, formatNumber } from "@/lib/admin/formatters";
 import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platform Logs – Admin" };
 
@@ -19,7 +20,7 @@ function filterHref(key: string, value: string, current: Record<string, string |
 }
 
 export default async function LogsPage({ searchParams }: { searchParams: Promise<{ level?: string; category?: string; entity_type?: string; actor?: string; q?: string }> }) {
-  const admin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.logs);
   const params = await searchParams;
   let query = supabaseAdmin.from("admin_system_logs").select("*").order("created_at", { ascending: false });
   if (params.level && params.level !== "all") query = query.eq("level", params.level);

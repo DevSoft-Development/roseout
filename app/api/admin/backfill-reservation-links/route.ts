@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   detectReservationProvider,
   getGooglePlaceIdFromRow,
@@ -160,7 +161,7 @@ async function requireAuthorization(request: NextRequest) {
 
   if (authorized) return null;
 
-  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.import);
   if (!error) return null;
 
   if (!adminSecret) {

@@ -5,6 +5,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { formatRoleLabel, normalizeRole } from "@/lib/users/roles";
 import LoginAsUserButton from "./LoginAsUserButton";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
@@ -37,7 +38,7 @@ function adminSupabase() {
 }
 
 export default async function AdminUserDetailPage({ params }: PageProps) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin"]);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
   const canEditUser = currentAdmin.role === "superadmin";
 
   const { id } = await params;

@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { AnalyticsRange, buildAnalyticsSummary, buildDailySeries, buildFunnel, buildInsights, buildRecentActivity, getEventLocationId, getOutingLocationId, getRangeStart, type AnalyticsEventRow, type OutingRow } from "@/lib/analytics/new-business-analytics";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
   const { searchParams } = new URL(request.url);
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
   const range = (searchParams.get("range") || "30d") as AnalyticsRange;
   const admin = searchParams.get("admin") === "1";
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location_id" }, { status: 400 });
-  if (admin) await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  if (admin) await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
   else {
     const supabase = await createClient(); const { data:{user} } = await supabase.auth.getUser(); if (!user) return NextResponse.json({ success:false,error:"Unauthorized" },{status:401});
     const { data: loc } = await supabaseAdmin.from("locations").select("id,owner_user_id,owner_email,claimed_by_email,plan,is_pro").eq("id", locationId).maybeSingle();

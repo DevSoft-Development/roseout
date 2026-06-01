@@ -2,6 +2,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ensureClaimFields, syncClaimFieldsToLocations } from "@/lib/claimQrServer";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 type Table = "locations" | "restaurants" | "activities";
@@ -11,7 +12,7 @@ function isTable(value: unknown): value is Table {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.claimTools);
   if (auth.error) return auth.error;
 
   try {

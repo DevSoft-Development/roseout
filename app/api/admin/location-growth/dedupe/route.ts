@@ -3,6 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -15,7 +16,7 @@ async function authorize(request: NextRequest) {
   ) {
     return null;
   }
-  const { error } = await requireAdminApiRole(["admin", "superadmin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
   return error;
 }
 

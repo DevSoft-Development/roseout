@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { getLocationName } from "@/lib/locationName";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   ACTIVE_RESERVATION_STATUSES,
   LAYOUT_ITEM_STATUSES,
@@ -294,7 +295,7 @@ async function assertNoOverlap(reservationId: string, itemId: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reservationLayouts);
   if (auth.error) return auth.error;
 
   try {
@@ -369,7 +370,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reservationLayouts);
   if (auth.error) return auth.error;
 
   try {

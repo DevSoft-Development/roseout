@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const ADMIN_ANALYTICS_VERSION = "admin-analytics-dashboard-2026-05-12";
 
 type LocationMetric = LocationScoreFields & {
@@ -37,7 +38,7 @@ function percent(part: number, total: number) {
 }
 
 export default async function AdminAnalyticsPage() {
-  await requireAdminRole(["superadmin", "admin", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
 
   const [restaurantsResult, activitiesResult, recentEventsResult, reservationsResult] =
     await Promise.all([

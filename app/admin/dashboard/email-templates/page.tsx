@@ -2,10 +2,11 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { EMAIL_TEMPLATE_GROUPS, getEmailTemplate } from "@/lib/email/registry";
 import { resolveEmailSender } from "@/lib/email/brand";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata = { title: "Email Templates – Admin" };
 
 export default async function Page() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.emailTemplates);
   return (
     <main className="min-h-screen bg-[#090706] px-6 py-8 text-[#fff7f2]">
       <div className="mx-auto max-w-7xl space-y-8">

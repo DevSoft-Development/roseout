@@ -1,19 +1,20 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 
-export const MARKETING_ADMIN_ROLES = ["superadmin", "admin", "editor"] as const;
-export const MARKETING_VIEW_ROLES = ["superadmin", "admin", "editor", "viewer"] as const;
+export const MARKETING_ADMIN_ROLES = ADMIN_PAGE_ACCESS.marketingEdit;
+export const MARKETING_VIEW_ROLES = ADMIN_PAGE_ACCESS.marketing;
 
 export type CampaignStatus = "draft" | "scheduled" | "sent" | "failed";
 export type CampaignType = "social_post" | "email_blast" | "text_blast" | "all_channels";
 export type MarketingChannel = "email" | "sms" | "instagram" | "tiktok" | "youtube_shorts";
 
 export async function requireMarketingAdminApi() {
-  return requireAdminApiRole([...MARKETING_ADMIN_ROLES]);
+  return requireAdminApiRole(MARKETING_ADMIN_ROLES);
 }
 
 export async function requireMarketingViewerApi() {
-  return requireAdminApiRole([...MARKETING_VIEW_ROLES]);
+  return requireAdminApiRole(MARKETING_VIEW_ROLES);
 }
 
 export function nowIso() {

@@ -3,6 +3,7 @@ import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
@@ -28,8 +29,8 @@ export default async function Page({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.ownerAccounts);
+  const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
   const params = await searchParams;
   const q = String(params.q || "").trim();
 

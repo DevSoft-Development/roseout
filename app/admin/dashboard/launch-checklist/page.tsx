@@ -1,5 +1,6 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata = {
   title: "Launch Checklist – Admin",
   description: "Production launch readiness checklist for TheOutHaven.",
@@ -17,7 +18,7 @@ const checks = [
 ];
 
 export default async function LaunchChecklistPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.settings);
 
   return (
     <main className="min-h-screen bg-[#090706] p-6 text-white">

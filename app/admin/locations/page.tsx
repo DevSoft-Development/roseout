@@ -8,6 +8,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import { getIsClaimed, type LocationClaimFields } from "@/lib/locationClaim";
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import {
   getLocationScore,
   type LocationScoreFields,
@@ -166,8 +167,8 @@ export default async function AdminLocationsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.locations);
+  const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
 
   const params = await searchParams;
 

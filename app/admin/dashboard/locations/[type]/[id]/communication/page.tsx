@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 type LocationType = "restaurants" | "activities";
 
 async function getLocation(type: LocationType, id: string) {
@@ -12,7 +13,7 @@ async function getLocation(type: LocationType, id: string) {
 }
 
 export default async function AdminLocationSubPage({ params }: { params: Promise<{ type: string; id: string }> }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.communication);
   const { type, id } = await params;
   if (type !== "restaurants" && type !== "activities") notFound();
   const location = await getLocation(type, id);

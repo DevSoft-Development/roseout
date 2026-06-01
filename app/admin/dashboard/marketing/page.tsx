@@ -9,6 +9,7 @@ import { buildMarketingSocialPackage } from "@/lib/marketing/caption-templates";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
@@ -115,7 +116,7 @@ export default async function MarketingCenterPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.marketing);
   const params = await searchParams;
   const activeStatus = ["draft", "scheduled", "sent", "failed"].includes(params.status || "") ? params.status : "all";
   const copy = prefillCopy(params);

@@ -2,6 +2,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isAdminRole, normalizeRole } from "@/lib/users/roles";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 type AuthAdminUser = {
   id: string;
   email?: string | null;
@@ -22,7 +23,7 @@ function getAuthFullName(user: AuthAdminUser | null) {
 }
 
 export async function GET() {
-  const { error } = await requireAdminApiRole(["superadmin", "admin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   if (error) return error;
 
@@ -58,7 +59,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { error } = await requireAdminApiRole(["superadmin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   if (error) return error;
 
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const { error, adminUser } = await requireAdminApiRole(["superadmin"]);
+  const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   if (error) return error;
 
@@ -158,7 +159,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const { error, adminUser } = await requireAdminApiRole(["superadmin"]);
+  const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   if (error) return error;
 

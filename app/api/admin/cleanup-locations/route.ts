@@ -3,6 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildLocationCleanupUpdates } from "@/lib/location-growth/cleanExistingLocations";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,7 +23,7 @@ async function authorize(request: NextRequest) {
   // Browser-triggered cleanup relies on the signed-in admin session. In
   // development, IMPORT_SECRET may be omitted, but normal users must still be
   // blocked by admin API authorization.
-  const { error } = await requireAdminApiRole(["admin", "superadmin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.dataQuality);
   return error;
 }
 function numberParam(value: unknown, fallback: number) { const n = Number(value ?? fallback); return Number.isInteger(n) ? n : fallback; }
