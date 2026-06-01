@@ -143,93 +143,164 @@ export type BusinessCRMSummary = {
   openTasks: number;
   reservationIntent: number;
   searchAppearances: number;
+  followUps: number;
+  qrCodes: number;
 };
 
-const CRM_SELECT = `
-  id,
-  location_id,
-  name,
-  location_name,
-  restaurant_name,
-  activity_name,
-  address,
-  city,
-  borough,
-  neighborhood,
-  state,
-  zip,
-  zip_code,
-  phone,
-  website,
-  category,
-  primary_category,
-  cuisine,
-  cuisine_type,
-  status,
-  active,
-  is_searchable,
-  is_claimed,
-  claim_status,
-  owner_user_id,
-  owner_email,
-  owner_status,
-  plan,
-  plan_status,
-  subscription_plan,
-  subscription_status,
-  is_pro,
-  pipeline_stage,
-  outreach_status,
-  follow_up_date,
-  crm_priority,
-  last_contacted_at,
-  assigned_admin,
-  priority_level,
-  tags,
-  crm_status,
-  opportunity_score,
-  upgrade_score,
-  upgrade_probability,
-  engagement_score,
-  traffic_score,
-  conversion_score,
-  retention_score,
-  churn_risk_score,
-  churn_risk,
-  trending_score,
-  profile_quality_score,
-  seo_score,
-  reservation_readiness_score,
-  open_tasks,
-  open_support_tickets,
-  pending_claims,
-  qr_scans_30d,
-  call_clicks_30d,
-  website_clicks_30d,
-  reservation_completions_30d,
-  profile_views_30d,
-  search_appearances_30d,
-  saves_30d,
-  conversion_rate_30d,
-  reservation_url,
-  reservation_link,
-  booking_url,
-  external_reservation_url,
-  best_reservation_url,
-  image_url,
-  main_image,
-  claim_code,
-  claim_url,
-  claim_qr_url,
-  qr_link,
-  qr_code_data_url,
-  location_type,
-  created_at,
-  updated_at
-`;
-const CRM_SOURCE_TABLES = ["admin_crm_locations_view", "business_crm_snapshot", "locations"] as const;
-const CLAIM_SOURCE_TABLES = ["business_claims", "location_claim_requests", "owner_claims", "claim_requests"] as const;
-const PENDING_CLAIM_STATUSES = new Set(["pending", "pending-review", "submitted", "awaiting-review", "needs-review", "pending-claim"]);
+const CRM_SELECT = "*";
+
+type CRMSourceName =
+  | "admin_crm_locations_view"
+  | "business_crm_snapshot"
+  | "locations";
+
+export type CRMSourceConfig = {
+  name: CRMSourceName;
+  searchableFields: string[];
+  filterFields: string[];
+  orderFields: string[];
+};
+
+const ALL_CRM_SEARCH_FIELDS = [
+  "location_name",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "business_name",
+  "phone",
+  "phone_number",
+  "email",
+  "owner_email",
+  "claimed_email",
+  "claim_code",
+  "address",
+  "city",
+  "borough",
+  "state",
+  "zip_code",
+  "neighborhood",
+  "primary_category",
+  "category",
+  "cuisine",
+  "cuisine_type",
+  "location_type",
+];
+
+export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
+  {
+    name: "admin_crm_locations_view",
+    searchableFields: ALL_CRM_SEARCH_FIELDS,
+    filterFields: [
+      "owner_user_id",
+      "owner_email",
+      "is_claimed",
+      "open_tasks",
+      "follow_up_date",
+      "claim_qr_url",
+      "qr_link",
+      "qr_code_data_url",
+      "claim_code",
+      "claim_url",
+      "opportunity_score",
+      "upgrade_score",
+      "search_appearances_30d",
+      "profile_views_30d",
+      "reservation_completions_30d",
+      "crm_status",
+      "churn_risk_score",
+      "churn_risk",
+      "active",
+      "is_searchable",
+      "plan_status",
+      "subscription_status",
+    ],
+    orderFields: ["updated_at", "created_at", "name"],
+  },
+  {
+    name: "business_crm_snapshot",
+    searchableFields: ALL_CRM_SEARCH_FIELDS,
+    filterFields: [
+      "owner_user_id",
+      "owner_email",
+      "is_claimed",
+      "open_tasks",
+      "follow_up_date",
+      "claim_qr_url",
+      "qr_link",
+      "qr_code_data_url",
+      "claim_code",
+      "claim_url",
+      "opportunity_score",
+      "upgrade_score",
+      "search_appearances_30d",
+      "profile_views_30d",
+      "reservation_completions_30d",
+      "crm_status",
+      "churn_risk_score",
+      "churn_risk",
+      "active",
+      "is_searchable",
+      "plan_status",
+      "subscription_status",
+    ],
+    orderFields: ["updated_at", "created_at", "name"],
+  },
+  {
+    name: "locations",
+    searchableFields: [
+      "name",
+      "restaurant_name",
+      "activity_name",
+      "business_name",
+      "phone",
+      "phone_number",
+      "email",
+      "owner_email",
+      "claimed_email",
+      "claim_code",
+      "address",
+      "city",
+      "borough",
+      "state",
+      "zip_code",
+      "neighborhood",
+      "primary_category",
+      "category",
+      "cuisine",
+      "cuisine_type",
+      "location_type",
+    ],
+    filterFields: [
+      "owner_user_id",
+      "owner_email",
+      "is_claimed",
+      "claim_code",
+      "claim_url",
+      "claim_qr_url",
+      "qr_link",
+      "qr_code_data_url",
+      "active",
+      "is_searchable",
+    ],
+    orderFields: ["updated_at", "created_at", "name"],
+  },
+];
+
+const CRM_SOURCE_TABLES = CRM_SOURCE_CONFIGS.map((source) => source.name);
+const CLAIM_SOURCE_TABLES = [
+  "business_claims",
+  "location_claim_requests",
+  "owner_claims",
+  "claim_requests",
+] as const;
+const PENDING_CLAIM_STATUSES = new Set([
+  "pending",
+  "pending-review",
+  "submitted",
+  "awaiting-review",
+  "needs-review",
+  "pending-claim",
+]);
 
 function toNumber(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -241,11 +312,16 @@ function cleanStatus(value: unknown) {
 }
 
 export function normalizeStatus(value: unknown) {
-  return cleanStatus(value).toLowerCase().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+  return cleanStatus(value)
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-");
 }
 
 function titleizeStatus(value: unknown) {
-  return cleanStatus(value).replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return cleanStatus(value)
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function hasText(value: unknown) {
@@ -253,13 +329,23 @@ function hasText(value: unknown) {
 }
 
 function hasReservationLink(row: Partial<BusinessCRMRow>) {
-  return [row.reservation_url, row.reservation_link, row.booking_url, row.external_reservation_url, row.best_reservation_url].some(hasText);
+  return [
+    row.reservation_url,
+    row.reservation_link,
+    row.booking_url,
+    row.external_reservation_url,
+    row.best_reservation_url,
+  ].some(hasText);
 }
 
 function isFreeOrInactivePlan(row: Partial<BusinessCRMRow>) {
   const plan = normalizeStatus(row.plan ?? row.subscription_plan);
   const status = normalizeStatus(row.plan_status ?? row.subscription_status);
-  return !plan || ["free", "free-discovery", "inactive"].includes(plan) || ["inactive", "canceled", "cancelled"].includes(status);
+  return (
+    !plan ||
+    ["free", "free-discovery", "inactive"].includes(plan) ||
+    ["inactive", "canceled", "cancelled"].includes(status)
+  );
 }
 
 function isReservePlan(row: Partial<BusinessCRMRow>) {
@@ -268,7 +354,11 @@ function isReservePlan(row: Partial<BusinessCRMRow>) {
 }
 
 function isActiveOrSearchable(row: Partial<BusinessCRMRow>) {
-  return row.active !== false || row.is_searchable !== false || !["inactive", "hidden", "disabled"].includes(normalizeStatus(row.status));
+  return (
+    row.active !== false ||
+    row.is_searchable !== false ||
+    !["inactive", "hidden", "disabled"].includes(normalizeStatus(row.status))
+  );
 }
 
 function isOverdueDate(value?: string | null) {
@@ -281,7 +371,10 @@ function isOverdueDate(value?: string | null) {
 }
 
 function hasImage(row: Partial<BusinessCRMRow>) {
-  return [row.image_url, row.main_image].some(hasText) || Boolean(Array.isArray(row.images) && row.images.length);
+  return (
+    [row.image_url, row.main_image].some(hasText) ||
+    Boolean(Array.isArray(row.images) && row.images.length)
+  );
 }
 
 export function getClaimStatus(row: Partial<BusinessCRMRow>) {
@@ -301,21 +394,41 @@ export function getDisplayCRMStatus(row: Partial<BusinessCRMRow>) {
   const raw = cleanStatus(row.crm_status);
   const claim = getClaimStatus(row).toLowerCase();
   const normalized = normalizeStatus(raw);
-  if (!raw || normalized === "unclaimed" || normalized === normalizeStatus(claim)) return "Needs Outreach" as CRMStatus;
+  if (
+    !raw ||
+    normalized === "unclaimed" ||
+    normalized === normalizeStatus(claim)
+  )
+    return "Needs Outreach" as CRMStatus;
   if (normalized === "claimed") return "Active Free";
   if (normalized === "pro") return "Active Pro";
   if (normalized === "at-risk") return "At Risk";
-  if (normalized === "upgrade-opportunity" || normalized === "upgrade-opportunities") return "Upgrade Opportunity";
+  if (
+    normalized === "upgrade-opportunity" ||
+    normalized === "upgrade-opportunities"
+  )
+    return "Upgrade Opportunity";
   return titleizeStatus(raw) as CRMStatus;
 }
 
-function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
+export function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
   const base = {
     ...row,
     id: String(row.id ?? row.location_id ?? ""),
     location_id: row.location_id ?? row.id,
-    name: String(row.name ?? row.location_name ?? row.restaurant_name ?? row.activity_name ?? "Untitled Location"),
-    location_name: row.location_name ?? row.name ?? row.restaurant_name ?? row.activity_name ?? "Untitled Location",
+    name: String(
+      row.name ??
+        row.location_name ??
+        row.restaurant_name ??
+        row.activity_name ??
+        "Untitled Location",
+    ),
+    location_name:
+      row.location_name ??
+      row.name ??
+      row.restaurant_name ??
+      row.activity_name ??
+      "Untitled Location",
     city: row.city ?? "",
     borough: row.borough ?? row.neighborhood ?? row.city ?? "",
     state: row.state ?? "",
@@ -325,14 +438,38 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     cuisine: row.cuisine ?? row.cuisine_type ?? "",
     image_url: row.image_url ?? row.main_image ?? "",
     main_image: row.main_image ?? row.image_url ?? "",
-    reservation_url: row.best_reservation_url ?? row.reservation_url ?? row.reservation_link ?? row.booking_url ?? row.external_reservation_url ?? "",
-    plan: row.plan ?? row.subscription_plan ?? (row.is_pro ? "pro" : "free_discovery"),
-    plan_status: row.plan_status ?? row.subscription_status ?? (row.is_pro ? "active" : "inactive"),
-    is_claimed: Boolean(row.is_claimed || cleanStatus(row.claim_status).toLowerCase() === "claimed"),
-    is_searchable: row.is_searchable == null ? true : Boolean(row.is_searchable),
-    active: row.active == null ? row.status !== "inactive" : Boolean(row.active),
-    is_pro: Boolean(row.is_pro || row.plan === "pro" || row.subscription_plan === "pro"),
-    location_type: row.location_type === "activities" ? "activities" : row.location_type === "restaurants" ? "restaurants" : null,
+    reservation_url:
+      row.best_reservation_url ??
+      row.reservation_url ??
+      row.reservation_link ??
+      row.booking_url ??
+      row.external_reservation_url ??
+      "",
+    plan:
+      row.plan ??
+      row.subscription_plan ??
+      (row.is_pro ? "pro" : "free_discovery"),
+    plan_status:
+      row.plan_status ??
+      row.subscription_status ??
+      (row.is_pro ? "active" : "inactive"),
+    is_claimed: Boolean(
+      row.is_claimed ||
+      cleanStatus(row.claim_status).toLowerCase() === "claimed",
+    ),
+    is_searchable:
+      row.is_searchable == null ? true : Boolean(row.is_searchable),
+    active:
+      row.active == null ? row.status !== "inactive" : Boolean(row.active),
+    is_pro: Boolean(
+      row.is_pro || row.plan === "pro" || row.subscription_plan === "pro",
+    ),
+    location_type:
+      row.location_type === "activities"
+        ? "activities"
+        : row.location_type === "restaurants"
+          ? "restaurants"
+          : null,
     opportunity_score: toNumber(row.opportunity_score ?? row.upgrade_score),
     upgrade_score: toNumber(row.upgrade_score ?? row.opportunity_score),
     upgrade_probability: toNumber(row.upgrade_probability),
@@ -343,7 +480,9 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     churn_risk_score: toNumber(row.churn_risk_score ?? row.churn_risk),
     churn_risk: toNumber(row.churn_risk ?? row.churn_risk_score),
     trending_score: toNumber(row.trending_score ?? row.trend_score),
-    profile_quality_score: toNumber(row.profile_quality_score ?? row.quality_score),
+    profile_quality_score: toNumber(
+      row.profile_quality_score ?? row.quality_score,
+    ),
     seo_score: toNumber(row.seo_score),
     reservation_readiness_score: toNumber(row.reservation_readiness_score),
     open_tasks: toNumber(row.open_tasks),
@@ -358,15 +497,23 @@ function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     saves_30d: toNumber(row.saves_30d),
     conversion_rate_30d: toNumber(row.conversion_rate_30d),
   } as BusinessCRMRow;
-  return { ...base, claim_status: getClaimStatus(base), crm_status: getDisplayCRMStatus(base) };
+  return {
+    ...base,
+    claim_status: getClaimStatus(base),
+    crm_status: getDisplayCRMStatus(base),
+  };
 }
 
-function normalizeCRMRows(rows: Record<string, any>[] | null | undefined): BusinessCRMRow[] {
+function normalizeCRMRows(
+  rows: Record<string, any>[] | null | undefined,
+): BusinessCRMRow[] {
   return (rows ?? []).map((row) => normalizeCRMRow(row));
 }
 
 function rowMatchesSearch(row: Partial<BusinessCRMRow>, q?: string) {
-  const term = String(q || "").trim().toLowerCase();
+  const term = String(q || "")
+    .trim()
+    .toLowerCase();
   if (!term) return true;
   return [
     row.name,
@@ -381,13 +528,29 @@ function rowMatchesSearch(row: Partial<BusinessCRMRow>, q?: string) {
     (row as any).claimed_by_email,
     row.category,
     row.cuisine,
-  ].some((value) => String(value ?? "").toLowerCase().includes(term));
+  ].some((value) =>
+    String(value ?? "")
+      .toLowerCase()
+      .includes(term),
+  );
 }
 
 function claimMatchesSearch(claim: PendingCRMClaim, q?: string) {
-  const term = String(q || "").trim().toLowerCase();
+  const term = String(q || "")
+    .trim()
+    .toLowerCase();
   if (!term) return true;
-  return [claim.submitted_business_name, claim.claimant_name, claim.claimant_email, claim.claimant_phone, claim.status].some((value) => String(value ?? "").toLowerCase().includes(term));
+  return [
+    claim.submitted_business_name,
+    claim.claimant_name,
+    claim.claimant_email,
+    claim.claimant_phone,
+    claim.status,
+  ].some((value) =>
+    String(value ?? "")
+      .toLowerCase()
+      .includes(term),
+  );
 }
 
 export function isUpgradeOpportunity(row: Partial<BusinessCRMRow>) {
@@ -395,29 +558,35 @@ export function isUpgradeOpportunity(row: Partial<BusinessCRMRow>) {
   const crmStatus = normalizeStatus(row.crm_status);
   const claimStatus = normalizeStatus(row.claim_status);
   const claimedFree = claimStatus === "claimed" && isFreeOrInactivePlan(row);
-  return toNumber(row.search_appearances_30d) > 0
-    || toNumber(row.profile_views_30d) > 0
-    || toNumber(row.reservation_completions_30d) > 0
-    || !hasReservationLink(row)
-    || claimedFree
-    || crmStatus === "upgrade-opportunity"
-    || crmStatus === "upgrade-opportunities"
-    || toNumber((row as any).upgrade_score ?? row.opportunity_score) > 0;
+  return (
+    toNumber(row.search_appearances_30d) > 0 ||
+    toNumber(row.profile_views_30d) > 0 ||
+    toNumber(row.reservation_completions_30d) > 0 ||
+    !hasReservationLink(row) ||
+    claimedFree ||
+    crmStatus === "upgrade-opportunity" ||
+    crmStatus === "upgrade-opportunities" ||
+    toNumber((row as any).upgrade_score ?? row.opportunity_score) > 0
+  );
 }
 
 export function isAtRiskLocation(row: Partial<BusinessCRMRow>) {
   const crmStatus = normalizeStatus(row.crm_status);
-  const planStatus = normalizeStatus(row.plan_status ?? row.subscription_status);
-  return crmStatus === "at-risk"
-    || toNumber((row as any).churn_risk ?? row.churn_risk_score) > 0
-    || ["past-due", "canceled", "cancelled"].includes(planStatus)
-    || row.active === false
-    || row.is_searchable === false
-    || !hasImage(row)
-    || !hasText(row.phone)
-    || !hasText(row.website)
-    || (isReservePlan(row) && !hasReservationLink(row))
-    || isOverdueDate(row.follow_up_date);
+  const planStatus = normalizeStatus(
+    row.plan_status ?? row.subscription_status,
+  );
+  return (
+    crmStatus === "at-risk" ||
+    toNumber((row as any).churn_risk ?? row.churn_risk_score) > 0 ||
+    ["past-due", "canceled", "cancelled"].includes(planStatus) ||
+    row.active === false ||
+    row.is_searchable === false ||
+    !hasImage(row) ||
+    !hasText(row.phone) ||
+    !hasText(row.website) ||
+    (isReservePlan(row) && !hasReservationLink(row)) ||
+    isOverdueDate(row.follow_up_date)
+  );
 }
 
 function matchesBusinessFilter(row: BusinessCRMRow, filter?: string) {
@@ -437,7 +606,13 @@ function matchesBusinessFilter(row: BusinessCRMRow, filter?: string) {
       return Boolean(row.follow_up_date);
     case "qr-codes":
     case "qr":
-      return [row.claim_qr_url, row.qr_link, row.qr_code_data_url, row.claim_code, row.claim_url].some(hasText);
+      return [
+        row.claim_qr_url,
+        row.qr_link,
+        row.qr_code_data_url,
+        row.claim_code,
+        row.claim_url,
+      ].some(hasText);
     case "all":
     default:
       return true;
@@ -447,8 +622,19 @@ function matchesBusinessFilter(row: BusinessCRMRow, filter?: string) {
 function sortCRMRows(rows: BusinessCRMRow[], filter?: string) {
   const normalized = normalizeStatus(filter || "all");
   return [...rows].sort((a, b) => {
-    if (normalized === "at-risk") return (toNumber((b as any).churn_risk ?? b.churn_risk_score) - toNumber((a as any).churn_risk ?? a.churn_risk_score)) || String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
-    return (toNumber((b as any).upgrade_score ?? b.opportunity_score) - toNumber((a as any).upgrade_score ?? a.opportunity_score)) || String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+    if (normalized === "at-risk")
+      return (
+        toNumber((b as any).churn_risk ?? b.churn_risk_score) -
+          toNumber((a as any).churn_risk ?? a.churn_risk_score) ||
+        String(b.updated_at || "").localeCompare(String(a.updated_at || ""))
+      );
+    return (
+      toNumber((b as any).upgrade_score ?? b.opportunity_score) -
+        toNumber((a as any).upgrade_score ?? a.opportunity_score) ||
+      String(b.updated_at || b.created_at || "").localeCompare(
+        String(a.updated_at || a.created_at || ""),
+      )
+    );
   });
 }
 
@@ -459,157 +645,331 @@ type CRMPageOptions = {
   filter?: string;
 };
 
-function applyCRMSearch(queryBuilder: any, q?: string) {
-  const term = String(q || "").trim();
-  if (!term) return queryBuilder;
+type CRMRowsResult = {
+  rows: BusinessCRMRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  source: CRMSourceName | null;
+};
 
-  const escaped = term.replace(/[%_]/g, "\\$&");
-  const like = `%${escaped}%`;
+const VALID_PAGE_SIZES = new Set([25, 50, 100]);
 
-  return queryBuilder.or(
-    [
-      `name.ilike.${like}`,
-      `location_name.ilike.${like}`,
-      `restaurant_name.ilike.${like}`,
-      `activity_name.ilike.${like}`,
-      `address.ilike.${like}`,
-      `city.ilike.${like}`,
-      `borough.ilike.${like}`,
-      `neighborhood.ilike.${like}`,
-      `state.ilike.${like}`,
-      `owner_email.ilike.${like}`,
-      `category.ilike.${like}`,
-      `primary_category.ilike.${like}`,
-      `cuisine.ilike.${like}`,
-      `cuisine_type.ilike.${like}`,
-    ].join(","),
+function getSafePageSize(pageSize?: number) {
+  const parsed = Number(pageSize) || 25;
+  return VALID_PAGE_SIZES.has(parsed) ? parsed : 25;
+}
+
+function getSafePage(page?: number) {
+  return Math.max(Number(page) || 1, 1);
+}
+
+function escapePostgrestLike(value: string) {
+  return value.replace(/[%_]/g, "\\$&");
+}
+
+export function getCRMSourceConfig(sourceName: string): CRMSourceConfig {
+  return (
+    CRM_SOURCE_CONFIGS.find((source) => source.name === sourceName) ??
+    CRM_SOURCE_CONFIGS[CRM_SOURCE_CONFIGS.length - 1]
   );
 }
 
-function applyFastCRMFilter(queryBuilder: any, filter?: string) {
+export function buildCRMSearchFilterForSource(
+  source: CRMSourceConfig,
+  q?: string,
+) {
+  const term = String(q || "").trim();
+  if (!term) return "";
+  const like = `%${escapePostgrestLike(term)}%`;
+  return source.searchableFields
+    .map((field) => `${field}.ilike.${like}`)
+    .join(",");
+}
+
+function buildCRMViewFilterForSource(source: CRMSourceConfig, filter?: string) {
   const normalized = normalizeStatus(filter || "all");
+  const has = (field: string) => source.filterFields.includes(field);
+  const clauses: string[] = [];
 
   switch (normalized) {
     case "owner-accounts":
     case "owners":
-      return queryBuilder.or("owner_user_id.not.is.null,owner_email.not.is.null,is_claimed.eq.true");
-
+      if (has("owner_user_id")) clauses.push("owner_user_id.not.is.null");
+      if (has("owner_email")) clauses.push("owner_email.not.is.null");
+      if (has("is_claimed")) clauses.push("is_claimed.eq.true");
+      break;
     case "location-tasks":
     case "open-tasks":
-      return queryBuilder.gt("open_tasks", 0);
-
+      if (has("open_tasks")) clauses.push("open_tasks.gt.0");
+      break;
     case "follow-ups":
-      return queryBuilder.not("follow_up_date", "is", null);
-
+      if (has("follow_up_date")) clauses.push("follow_up_date.not.is.null");
+      break;
     case "qr-codes":
     case "qr":
-      return queryBuilder.or(
-        "claim_qr_url.not.is.null,qr_link.not.is.null,qr_code_data_url.not.is.null,claim_code.not.is.null,claim_url.not.is.null",
-      );
-
+      for (const field of [
+        "claim_qr_url",
+        "qr_link",
+        "qr_code_data_url",
+        "claim_code",
+        "claim_url",
+      ]) {
+        if (has(field)) clauses.push(`${field}.not.is.null`);
+      }
+      break;
     case "upgrade-opportunities":
     case "upgrade-opportunity":
-      return queryBuilder.or(
-        [
-          "opportunity_score.gt.0",
-          "upgrade_score.gt.0",
-          "search_appearances_30d.gt.0",
-          "profile_views_30d.gt.0",
-          "reservation_completions_30d.gt.0",
-          "crm_status.ilike.%upgrade%",
-        ].join(","),
-      );
-
+      for (const clause of [
+        ["opportunity_score", "opportunity_score.gt.0"],
+        ["upgrade_score", "upgrade_score.gt.0"],
+        ["search_appearances_30d", "search_appearances_30d.gt.0"],
+        ["profile_views_30d", "profile_views_30d.gt.0"],
+        ["reservation_completions_30d", "reservation_completions_30d.gt.0"],
+        ["crm_status", "crm_status.ilike.%upgrade%"],
+      ] as const) {
+        if (has(clause[0])) clauses.push(clause[1]);
+      }
+      break;
     case "at-risk":
-      return queryBuilder.or(
+      for (const clause of [
+        ["crm_status", "crm_status.ilike.%risk%"],
+        ["churn_risk_score", "churn_risk_score.gt.0"],
+        ["churn_risk", "churn_risk.gt.0"],
+        ["active", "active.eq.false"],
+        ["is_searchable", "is_searchable.eq.false"],
+        ["plan_status", "plan_status.in.(past-due,canceled,cancelled)"],
         [
-          "crm_status.ilike.%risk%",
-          "churn_risk_score.gt.0",
-          "churn_risk.gt.0",
-          "active.eq.false",
-          "is_searchable.eq.false",
-          "plan_status.in.(past-due,canceled,cancelled)",
+          "subscription_status",
           "subscription_status.in.(past-due,canceled,cancelled)",
-        ].join(","),
-      );
-
+        ],
+      ] as const) {
+        if (has(clause[0])) clauses.push(clause[1]);
+      }
+      break;
     case "all":
     default:
-      return queryBuilder;
-  }
-}
-
-function applyCRMOrdering(queryBuilder: any, filter?: string) {
-  const normalized = normalizeStatus(filter || "all");
-
-  if (normalized === "at-risk") {
-    return queryBuilder
-      .order("churn_risk_score", { ascending: false, nullsFirst: false })
-      .order("updated_at", { ascending: false, nullsFirst: false });
+      break;
   }
 
-  return queryBuilder
-    .order("upgrade_score", { ascending: false, nullsFirst: false })
-    .order("opportunity_score", { ascending: false, nullsFirst: false })
-    .order("updated_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false, nullsFirst: false });
+  return clauses.join(",");
 }
 
-async function fetchCRMPageFrom(table: string, options: CRMPageOptions) {
-  const safePageSize = Math.min(Math.max(Number(options.pageSize) || 50, 25), 100);
-  const safePage = Math.max(Number(options.page) || 1, 1);
+function applyCRMOrderingForSource(queryBuilder: any, source: CRMSourceConfig) {
+  let orderedQuery = queryBuilder;
+  if (source.orderFields.includes("updated_at")) {
+    orderedQuery = orderedQuery.order("updated_at", {
+      ascending: false,
+      nullsFirst: false,
+    });
+  }
+  if (source.orderFields.includes("created_at")) {
+    orderedQuery = orderedQuery.order("created_at", {
+      ascending: false,
+      nullsFirst: false,
+    });
+  }
+  if (source.orderFields.includes("name")) {
+    orderedQuery = orderedQuery.order("name", {
+      ascending: true,
+      nullsFirst: false,
+    });
+  }
+  return orderedQuery;
+}
+
+function missingColumnFromError(error: any) {
+  const message = String(error?.message || error?.details || "");
+  return (
+    message.match(/Could not find the '([^']+)' column/i)?.[1] ||
+    message.match(
+      /column [^.]*(?:\.|")?([a-zA-Z0-9_]+)(?:")? does not exist/i,
+    )?.[1] ||
+    null
+  );
+}
+
+export async function fetchCRMRowsFromSource(
+  sourceConfig: CRMSourceConfig,
+  options: CRMPageOptions,
+): Promise<CRMRowsResult> {
+  const safePageSize = getSafePageSize(options.pageSize);
+  const safePage = getSafePage(options.page);
   const from = (safePage - 1) * safePageSize;
   const to = from + safePageSize - 1;
+  let source = {
+    ...sourceConfig,
+    searchableFields: [...sourceConfig.searchableFields],
+    filterFields: [...sourceConfig.filterFields],
+    orderFields: [...sourceConfig.orderFields],
+  };
 
-  let queryBuilder = supabaseAdmin
-    .from(table)
-    .select(CRM_SELECT, { count: "exact" });
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    let queryBuilder = supabaseAdmin
+      .from(source.name)
+      .select(CRM_SELECT, { count: "exact" });
+    const searchFilter = buildCRMSearchFilterForSource(source, options.query);
+    const viewFilter = buildCRMViewFilterForSource(source, options.filter);
+    if (String(options.query || "").trim() && !searchFilter) {
+      return {
+        rows: [],
+        total: 0,
+        page: safePage,
+        pageSize: safePageSize,
+        totalPages: 1,
+        source: source.name,
+      };
+    }
+    if (normalizeStatus(options.filter || "all") !== "all" && !viewFilter) {
+      return {
+        rows: [],
+        total: 0,
+        page: safePage,
+        pageSize: safePageSize,
+        totalPages: 1,
+        source: source.name,
+      };
+    }
 
-  queryBuilder = applyCRMSearch(queryBuilder, options.query);
-  queryBuilder = applyFastCRMFilter(queryBuilder, options.filter);
-  queryBuilder = applyCRMOrdering(queryBuilder, options.filter);
-  queryBuilder = queryBuilder.range(from, to);
+    if (searchFilter) queryBuilder = queryBuilder.or(searchFilter);
+    if (viewFilter) queryBuilder = queryBuilder.or(viewFilter);
+    queryBuilder = applyCRMOrderingForSource(queryBuilder, source).range(
+      from,
+      to,
+    );
 
-  const { data, error, count } = await queryBuilder;
+    const { data, error, count } = await queryBuilder;
+    if (!error) {
+      const rows = normalizeCRMRows(data || []);
+      return {
+        rows,
+        total: count || 0,
+        page: safePage,
+        pageSize: safePageSize,
+        totalPages: Math.max(1, Math.ceil((count || 0) / safePageSize)),
+        source: source.name,
+      };
+    }
 
-  if (error) {
-    throw error;
+    const missingColumn = missingColumnFromError(error);
+    if (!missingColumn) throw error;
+
+    source = {
+      ...source,
+      searchableFields: source.searchableFields.filter(
+        (field) => field !== missingColumn,
+      ),
+      filterFields: source.filterFields.filter(
+        (field) => field !== missingColumn,
+      ),
+      orderFields: source.orderFields.filter(
+        (field) => field !== missingColumn,
+      ),
+    };
   }
 
-  return {
-    rows: normalizeCRMRows(data || []),
-    total: count || 0,
-    page: safePage,
-    pageSize: safePageSize,
-    totalPages: Math.max(1, Math.ceil((count || 0) / safePageSize)),
-  };
+  throw new Error(
+    `Unable to fetch CRM rows from ${sourceConfig.name} after removing missing columns.`,
+  );
 }
 
-async function fetchCRMPage(options: CRMPageOptions) {
-  for (const table of CRM_SOURCE_TABLES) {
+export async function fetchCRMRowsWithFallback(
+  options: CRMPageOptions,
+): Promise<CRMRowsResult> {
+  const safePageSize = getSafePageSize(options.pageSize);
+  const safePage = getSafePage(options.page);
+
+  for (const source of CRM_SOURCE_CONFIGS) {
     try {
-      return await fetchCRMPageFrom(table, options);
+      const result = await fetchCRMRowsFromSource(source, {
+        ...options,
+        page: safePage,
+        pageSize: safePageSize,
+      });
+      if (
+        result.rows.length > 0 ||
+        result.total > 0 ||
+        source.name === "locations"
+      )
+        return result;
+      console.warn(
+        `CRM source ${source.name} returned zero rows; trying next fallback source.`,
+      );
     } catch (error: any) {
-      console.error(`Failed to fetch ${table} CRM page`, error?.message || error);
+      console.error(
+        `Failed to fetch ${source.name} CRM page`,
+        error?.message || error,
+      );
     }
   }
 
-  const safePageSize = Math.min(Math.max(Number(options.pageSize) || 50, 25), 100);
-  const safePage = Math.max(Number(options.page) || 1, 1);
-
   return {
-    rows: [] as BusinessCRMRow[],
+    rows: [],
     total: 0,
     page: safePage,
     pageSize: safePageSize,
     totalPages: 1,
+    source: null,
   };
+}
+
+async function countCRMRowsFromSource(
+  sourceConfig: CRMSourceConfig,
+  filter?: string,
+) {
+  let source = {
+    ...sourceConfig,
+    searchableFields: [...sourceConfig.searchableFields],
+    filterFields: [...sourceConfig.filterFields],
+    orderFields: [...sourceConfig.orderFields],
+  };
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    let queryBuilder = supabaseAdmin
+      .from(source.name)
+      .select("id", { count: "exact", head: true });
+    const viewFilter = buildCRMViewFilterForSource(source, filter);
+    if (normalizeStatus(filter || "all") !== "all" && !viewFilter) return 0;
+    if (viewFilter) queryBuilder = queryBuilder.or(viewFilter);
+
+    const { count, error } = await queryBuilder;
+    if (!error) return count || 0;
+
+    const missingColumn = missingColumnFromError(error);
+    if (!missingColumn) throw error;
+    source = {
+      ...source,
+      filterFields: source.filterFields.filter(
+        (field) => field !== missingColumn,
+      ),
+    };
+  }
+
+  throw new Error(`Unable to count CRM rows from ${sourceConfig.name}.`);
+}
+
+async function countCRMRowsWithFallback(filter?: string) {
+  for (const source of CRM_SOURCE_CONFIGS) {
+    try {
+      const count = await countCRMRowsFromSource(source, filter);
+      if (count > 0 || source.name === "locations") return count;
+    } catch (error: any) {
+      console.error(
+        `CRM count source ${source.name} failed`,
+        error?.message || error,
+      );
+    }
+  }
+  return 0;
 }
 
 async function countFromLocations(builder: (q: any) => any) {
   try {
     const { count, error } = await builder(
-      supabaseAdmin.from("locations").select("id", { count: "exact", head: true }),
+      supabaseAdmin
+        .from("locations")
+        .select("id", { count: "exact", head: true }),
     );
 
     if (error) {
@@ -636,7 +996,10 @@ async function sumFromLocations(column: string) {
       return 0;
     }
 
-    return (data || []).reduce((sum: number, row: any) => sum + toNumber(row[column]), 0);
+    return (data || []).reduce(
+      (sum: number, row: any) => sum + toNumber(row[column]),
+      0,
+    );
   } catch (error) {
     console.error(`CRM sum query crashed for ${column}:`, error);
     return 0;
@@ -646,45 +1009,76 @@ async function sumFromLocations(column: string) {
 function normalizeClaim(row: any, sourceTable = "claims"): PendingCRMClaim {
   return {
     ...row,
-    id: String(row.id ?? `${sourceTable}-${row.location_id ?? row.email ?? row.claimant_email ?? row.created_at ?? "claim"}`),
+    id: String(
+      row.id ??
+        `${sourceTable}-${row.location_id ?? row.email ?? row.claimant_email ?? row.created_at ?? "claim"}`,
+    ),
     source_table: sourceTable,
-    location_id: row.location_id ?? row.business_id ?? row.location_uuid ?? null,
-    status: getClaimStatus({ claim_status: row.status ?? row.claim_status, is_claimed: false }),
-    claimant_name: row.claimant_name ?? row.owner_name ?? row.name ?? row.contact_name ?? row.full_name,
-    claimant_email: row.claimant_email ?? row.owner_email ?? row.email ?? row.contact_email,
-    claimant_phone: row.claimant_phone ?? row.owner_phone ?? row.phone ?? row.contact_phone,
-    submitted_business_name: row.submitted_business_name ?? row.business_name ?? row.location_name ?? row.restaurant_name ?? row.activity_name ?? row.name,
+    location_id:
+      row.location_id ?? row.business_id ?? row.location_uuid ?? null,
+    status: getClaimStatus({
+      claim_status: row.status ?? row.claim_status,
+      is_claimed: false,
+    }),
+    claimant_name:
+      row.claimant_name ??
+      row.owner_name ??
+      row.name ??
+      row.contact_name ??
+      row.full_name,
+    claimant_email:
+      row.claimant_email ?? row.owner_email ?? row.email ?? row.contact_email,
+    claimant_phone:
+      row.claimant_phone ?? row.owner_phone ?? row.phone ?? row.contact_phone,
+    submitted_business_name:
+      row.submitted_business_name ??
+      row.business_name ??
+      row.location_name ??
+      row.restaurant_name ??
+      row.activity_name ??
+      row.name,
     submitted_at: row.submitted_at ?? row.created_at ?? row.inserted_at,
     review_notes: row.review_notes ?? row.notes ?? row.admin_notes,
   };
 }
 
 async function fetchClaimRows(table: string) {
-  const ordered = await safeSelect(table, (q) => q.select("*").order("created_at", { ascending: false }).limit(1000));
+  const ordered = await safeSelect(table, (q) =>
+    q.select("*").order("created_at", { ascending: false }).limit(1000),
+  );
   if (ordered.length > 0) return ordered;
   return safeSelect(table, (q) => q.select("*").limit(1000));
 }
 
-export async function listPendingCRMClaims(query?: string): Promise<PendingCRMClaim[]> {
+export async function listPendingCRMClaims(
+  query?: string,
+): Promise<PendingCRMClaim[]> {
   const claims: PendingCRMClaim[] = [];
   const seen = new Set<string>();
   for (const table of CLAIM_SOURCE_TABLES) {
     const rows = await fetchClaimRows(table);
     for (const row of rows as any[]) {
       const claim = normalizeClaim(row, table);
-      if (!PENDING_CLAIM_STATUSES.has(normalizeStatus(row.status ?? row.claim_status ?? claim.status))) continue;
+      if (
+        !PENDING_CLAIM_STATUSES.has(
+          normalizeStatus(row.status ?? row.claim_status ?? claim.status),
+        )
+      )
+        continue;
       const key = `${claim.source_table}:${claim.id}`;
       if (seen.has(key) || !claimMatchesSearch(claim, query)) continue;
       seen.add(key);
       claims.push(claim);
     }
   }
-  return claims.sort((a, b) => String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")));
+  return claims.sort((a, b) =>
+    String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")),
+  );
 }
 
 export async function listBusinessCRMPage({
   page = 1,
-  pageSize = 50,
+  pageSize = 25,
   query,
   filter,
 }: {
@@ -693,10 +1087,12 @@ export async function listBusinessCRMPage({
   query?: string;
   filter?: string;
 }) {
-  const safePageSize = Math.min(Math.max(Number(pageSize) || 50, 25), 100);
-  const safePage = Math.max(Number(page) || 1, 1);
+  const safePageSize = getSafePageSize(pageSize);
+  const safePage = getSafePage(page);
   const from = (safePage - 1) * safePageSize;
-  const normalizedFilter = normalizeStatus(filter || "all") as BusinessCRMFilter;
+  const normalizedFilter = normalizeStatus(
+    filter || "all",
+  ) as BusinessCRMFilter;
 
   if (normalizedFilter === "pending-claims") {
     const claims = await listPendingCRMClaims(query);
@@ -711,7 +1107,7 @@ export async function listBusinessCRMPage({
     };
   }
 
-  const pageData = await fetchCRMPage({
+  const pageData = await fetchCRMRowsWithFallback({
     page: safePage,
     pageSize: safePageSize,
     query,
@@ -725,6 +1121,7 @@ export async function listBusinessCRMPage({
     page: pageData.page,
     pageSize: pageData.pageSize,
     totalPages: pageData.totalPages,
+    source: pageData.source,
   };
 }
 
@@ -746,39 +1143,20 @@ export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
     upgradeCandidates,
     atRisk,
     openTasks,
+    followUps,
+    qrCodes,
     reservationIntent,
     searchAppearances,
   ] = await Promise.all([
-    countFromLocations((q) => q),
+    countCRMRowsWithFallback("all"),
     countFromLocations((q) => q.eq("is_searchable", true)),
-    countFromLocations((q) => q.eq("is_claimed", true)),
+    countCRMRowsWithFallback("owner-accounts"),
     listPendingCRMClaims(),
-    countFromLocations((q) =>
-      q.or(
-        [
-          "opportunity_score.gt.0",
-          "upgrade_score.gt.0",
-          "search_appearances_30d.gt.0",
-          "profile_views_30d.gt.0",
-          "reservation_completions_30d.gt.0",
-          "crm_status.ilike.%upgrade%",
-        ].join(","),
-      ),
-    ),
-    countFromLocations((q) =>
-      q.or(
-        [
-          "crm_status.ilike.%risk%",
-          "churn_risk_score.gt.0",
-          "churn_risk.gt.0",
-          "active.eq.false",
-          "is_searchable.eq.false",
-          "plan_status.in.(past-due,canceled,cancelled)",
-          "subscription_status.in.(past-due,canceled,cancelled)",
-        ].join(","),
-      ),
-    ),
+    countCRMRowsWithFallback("upgrade-opportunities"),
+    countCRMRowsWithFallback("at-risk"),
     sumFromLocations("open_tasks"),
+    countCRMRowsWithFallback("follow-ups"),
+    countCRMRowsWithFallback("qr-codes"),
     sumFromLocations("reservation_completions_30d"),
     sumFromLocations("search_appearances_30d"),
   ]);
@@ -795,16 +1173,32 @@ export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
     atRisk,
     atRiskCount: atRisk,
     openTasks,
+    followUps,
+    qrCodes,
     reservationIntent,
     searchAppearances,
   };
 }
 
-
-export async function getBusinessCRM(id: string): Promise<BusinessCRMRow | null> {
-  for (const table of ["admin_crm_locations_view", "business_crm_snapshot", "locations"] as const) {
-    const { data, error } = await supabaseAdmin.from(table).select(CRM_SELECT).or(`id.eq.${id},location_id.eq.${id}`).maybeSingle();
-    if (!error && data) return normalizeCRMRow(data);
+export async function getBusinessCRM(
+  id: string,
+): Promise<BusinessCRMRow | null> {
+  for (const source of CRM_SOURCE_CONFIGS) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from(source.name)
+        .select(CRM_SELECT)
+        .or(`id.eq.${id},location_id.eq.${id}`)
+        .maybeSingle();
+      if (!error && data) return normalizeCRMRow(data);
+      if (error)
+        console.error(
+          `Optional CRM detail source ${source.name} unavailable`,
+          error.message,
+        );
+    } catch (error) {
+      console.error(`Optional CRM detail source ${source.name} failed`, error);
+    }
   }
   return null;
 }
@@ -824,27 +1218,157 @@ export async function safeSelect(table: string, builder: (query: any) => any) {
 }
 
 export async function getLocationCrmRelatedData(locationId: string) {
-  const [notes, reminders, businessComms, comms, logs, businessClaims, locationClaims, ownerClaims, supportTickets, qr1, qr2, qr3, qr4, owners1, owners2, owners3, planChanges, photoChanges, templates, reservations] = await Promise.all([
-    safeSelect("business_crm_notes", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("business_crm_reminders", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("business_communication_logs", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("communication_logs", (q) => q.select("*").eq("recipient_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("admin_system_logs", (q) => q.select("*").eq("entity_type", "location").eq("entity_id", locationId).order("created_at", { ascending: false }).limit(50)),
-    safeSelect("business_claims", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("location_claim_requests", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("owner_claims", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("support_tickets", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("location_claim_codes", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(10)),
-    safeSelect("claim_qr_codes", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(10)),
-    safeSelect("business_claim_codes", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(10)),
-    safeSelect("qr_claim_codes", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(10)),
-    safeSelect("location_owner_locations", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(10)),
-    safeSelect("profiles", (q) => q.select("*").eq("location_id", locationId).limit(10)),
-    safeSelect("users", (q) => q.select("*").eq("location_id", locationId).limit(10)),
-    safeSelect("location_plan_change_logs", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("location_photo_change_logs", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(25)),
-    safeSelect("communication_templates", (q) => q.select("*").order("created_at", { ascending: false }).limit(100)),
-    safeSelect("reservations", (q) => q.select("*").eq("location_id", locationId).order("created_at", { ascending: false }).limit(100)),
+  const [
+    notes,
+    reminders,
+    businessComms,
+    comms,
+    logs,
+    businessClaims,
+    locationClaims,
+    ownerClaims,
+    supportTickets,
+    qr1,
+    qr2,
+    qr3,
+    qr4,
+    owners1,
+    owners2,
+    owners3,
+    planChanges,
+    photoChanges,
+    templates,
+    reservations,
+  ] = await Promise.all([
+    safeSelect("business_crm_notes", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("business_crm_reminders", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("business_communication_logs", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("communication_logs", (q) =>
+      q
+        .select("*")
+        .eq("recipient_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("admin_system_logs", (q) =>
+      q
+        .select("*")
+        .eq("entity_type", "location")
+        .eq("entity_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ),
+    safeSelect("business_claims", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("location_claim_requests", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("owner_claims", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("support_tickets", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("location_claim_codes", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ),
+    safeSelect("claim_qr_codes", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ),
+    safeSelect("business_claim_codes", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ),
+    safeSelect("qr_claim_codes", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ),
+    safeSelect("location_owner_locations", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ),
+    safeSelect("profiles", (q) =>
+      q.select("*").eq("location_id", locationId).limit(10),
+    ),
+    safeSelect("users", (q) =>
+      q.select("*").eq("location_id", locationId).limit(10),
+    ),
+    safeSelect("location_plan_change_logs", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("location_photo_change_logs", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(25),
+    ),
+    safeSelect("communication_templates", (q) =>
+      q.select("*").order("created_at", { ascending: false }).limit(100),
+    ),
+    safeSelect("reservations", (q) =>
+      q
+        .select("*")
+        .eq("location_id", locationId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ),
   ]);
 
   return {
@@ -852,7 +1376,15 @@ export async function getLocationCrmRelatedData(locationId: string) {
     reminders,
     communications: [...businessComms, ...comms],
     logs,
-    claims: [...businessClaims.map((row: any) => normalizeClaim(row, "business_claims")), ...locationClaims.map((row: any) => normalizeClaim(row, "location_claim_requests")), ...ownerClaims.map((row: any) => normalizeClaim(row, "owner_claims"))],
+    claims: [
+      ...businessClaims.map((row: any) =>
+        normalizeClaim(row, "business_claims"),
+      ),
+      ...locationClaims.map((row: any) =>
+        normalizeClaim(row, "location_claim_requests"),
+      ),
+      ...ownerClaims.map((row: any) => normalizeClaim(row, "owner_claims")),
+    ],
     supportTickets,
     qrCodes: [...qr1, ...qr2, ...qr3, ...qr4],
     owners: [...owners1, ...owners2, ...owners3],
@@ -865,14 +1397,19 @@ export async function getLocationCrmRelatedData(locationId: string) {
 
 export function getUpgradeFlags(business: BusinessCRMRow): string[] {
   const flags: string[] = [];
-  if (!business.is_claimed && business.traffic_score >= 70) flags.push("High Traffic Free Account");
-  if (business.reservation_completions_30d >= 30) flags.push("High Reservation Activity");
+  if (!business.is_claimed && business.traffic_score >= 70)
+    flags.push("High Traffic Free Account");
+  if (business.reservation_completions_30d >= 30)
+    flags.push("High Reservation Activity");
   if (business.trending_score >= 65) flags.push("Trending Location");
   if (!business.reservation_url) flags.push("Missing Reservation Link");
-  if (business.search_appearances_30d >= 200) flags.push("Strong Search Visibility");
+  if (business.search_appearances_30d >= 200)
+    flags.push("Strong Search Visibility");
   if (business.saves_30d >= 20) flags.push("High Save Rate");
-  if (business.conversion_rate_30d <= 0.08 && business.traffic_score >= 60) flags.push("High Conversion Potential");
-  if (business.opportunity_score >= 75) flags.push("Candidate For Promoted Listings");
+  if (business.conversion_rate_30d <= 0.08 && business.traffic_score >= 60)
+    flags.push("High Conversion Potential");
+  if (business.opportunity_score >= 75)
+    flags.push("Candidate For Promoted Listings");
   if ((business.open_tasks || 0) > 0) flags.push("Open CRM Tasks");
   if ((business.pending_claims || 0) > 0) flags.push("Pending Claim");
   return flags;
@@ -893,11 +1430,18 @@ export function dedupeUrls(urls: unknown[]): string[] {
 export function normalizeImageArray(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) {
-    return dedupeUrls(value.flatMap((item) => {
-      if (typeof item === "string") return [item];
-      if (item && typeof item === "object") return [(item as any).url, (item as any).src, (item as any).href].filter(Boolean);
-      return [];
-    }));
+    return dedupeUrls(
+      value.flatMap((item) => {
+        if (typeof item === "string") return [item];
+        if (item && typeof item === "object")
+          return [
+            (item as any).url,
+            (item as any).src,
+            (item as any).href,
+          ].filter(Boolean);
+        return [];
+      }),
+    );
   }
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -911,11 +1455,19 @@ export function normalizeImageArray(value: unknown): string[] {
   return [];
 }
 
-export function getLocationMainImage(location: Partial<BusinessCRMRow> | Record<string, any>) {
-  return String((location as any).main_image || (location as any).image_url || "").trim() || null;
+export function getLocationMainImage(
+  location: Partial<BusinessCRMRow> | Record<string, any>,
+) {
+  return (
+    String(
+      (location as any).main_image || (location as any).image_url || "",
+    ).trim() || null
+  );
 }
 
-export function getLocationGalleryImages(location: Partial<BusinessCRMRow> | Record<string, any>) {
+export function getLocationGalleryImages(
+  location: Partial<BusinessCRMRow> | Record<string, any>,
+) {
   return dedupeUrls([
     ...normalizeImageArray((location as any).gallery_images),
     ...normalizeImageArray((location as any).gallery),
@@ -926,26 +1478,57 @@ export function getLocationGalleryImages(location: Partial<BusinessCRMRow> | Rec
 }
 
 function escapeAddressPart(value?: string | null) {
-  return String(value || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return String(value || "")
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function stripCityStateZipFromStreetAddress(address?: string | null, city?: string | null, state?: string | null, zip?: string | null) {
+export function stripCityStateZipFromStreetAddress(
+  address?: string | null,
+  city?: string | null,
+  state?: string | null,
+  zip?: string | null,
+) {
   let street = String(address || "").trim();
   const parts = [city, state, zip].map(escapeAddressPart).filter(Boolean);
   if (!street || parts.length === 0) return street;
 
-  const cityStateZip = [city, state, zip].map((part) => String(part || "").trim()).filter(Boolean).join("\\s*,?\\s*");
-  if (cityStateZip) street = street.replace(new RegExp(`\\s*,?\\s*${cityStateZip}\\s*$`, "i"), "");
-  for (const part of parts) street = street.replace(new RegExp(`\\s*,?\\s*${part}\\s*$`, "i"), "");
+  const cityStateZip = [city, state, zip]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join("\\s*,?\\s*");
+  if (cityStateZip)
+    street = street.replace(
+      new RegExp(`\\s*,?\\s*${cityStateZip}\\s*$`, "i"),
+      "",
+    );
+  for (const part of parts)
+    street = street.replace(new RegExp(`\\s*,?\\s*${part}\\s*$`, "i"), "");
   return street.replace(/\s*,\s*$/, "").trim();
 }
 
-export function formatFullAddress({ address, city, state, zip }: { address?: string | null; city?: string | null; state?: string | null; zip?: string | null }) {
+export function formatFullAddress({
+  address,
+  city,
+  state,
+  zip,
+}: {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}) {
   const street = stripCityStateZipFromStreetAddress(address, city, state, zip);
-  return [street, city, state, zip].map((part) => String(part || "").trim()).filter(Boolean).join(", ");
+  return [street, city, state, zip]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
-export async function safeUpdateLocationPhotos(locationId: string, payload: { mainImage?: string | null; galleryImages?: string[] }) {
+export async function safeUpdateLocationPhotos(
+  locationId: string,
+  payload: { mainImage?: string | null; galleryImages?: string[] },
+) {
   const mainImage = payload.mainImage ?? null;
   const galleryImages = dedupeUrls(payload.galleryImages || []);
   const updates: Record<string, any> = {
@@ -958,10 +1541,16 @@ export async function safeUpdateLocationPhotos(locationId: string, payload: { ma
     images: galleryImages,
     updated_at: new Date().toISOString(),
   };
-  const missingColumn = (message?: string) => /column .* does not exist|could not find .* column|schema cache/i.test(message || "");
+  const missingColumn = (message?: string) =>
+    /column .* does not exist|could not find .* column|schema cache/i.test(
+      message || "",
+    );
   const errors: string[] = [];
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const { error } = await supabaseAdmin.from("locations").update(updates).eq("id", locationId);
+    const { error } = await supabaseAdmin
+      .from("locations")
+      .update(updates)
+      .eq("id", locationId);
     if (!error) return null;
     errors.push(error.message);
     if (!missingColumn(error.message)) break;
@@ -969,7 +1558,15 @@ export async function safeUpdateLocationPhotos(locationId: string, payload: { ma
     const column = match?.[1] || match?.[2];
     if (column && updates[column] !== undefined) delete updates[column];
     else {
-      const optional = ["gallery", "photos", "image_gallery", "images", "gallery_images", "image_url", "main_image"].find((key) => updates[key] !== undefined);
+      const optional = [
+        "gallery",
+        "photos",
+        "image_gallery",
+        "images",
+        "gallery_images",
+        "image_url",
+        "main_image",
+      ].find((key) => updates[key] !== undefined);
       if (optional) delete updates[optional];
       else break;
     }
