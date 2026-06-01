@@ -90,13 +90,15 @@ export default async function MyReservationsPage() {
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     {items.map((reservation) => {
                       const location = locationMap.get(reservation.location_id) || ({} as LocationRow);
-                      const image = getLocationImage(location) || "/placeholder.jpg";
+                      const image = getLocationImage(location);
                       const directions = [location.address, location.city, location.state].filter(Boolean).join(", ");
                       return (
                         <article key={reservation.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] shadow-2xl">
-                          <div className="relative h-40 bg-white/10">
-                            <Image src={image} alt="" fill className="object-cover" sizes="(max-width: 768px) 100vw, 50vw" />
-                          </div>
+                          {image ? (
+                            <div className="relative h-40 bg-white/10">
+                              <Image src={image} alt="" fill className="object-cover" sizes="(max-width: 768px) 100vw, 50vw" />
+                            </div>
+                          ) : null}
                           <div className="p-5">
                             <div className="flex items-start justify-between gap-3">
                               <div>
