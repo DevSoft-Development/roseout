@@ -85,7 +85,7 @@ export default async function ReserveLocationPage({
           <div className="relative min-h-[360px] overflow-hidden bg-black">
             {getLocationImage(location) ? (
               <img
-                src={getLocationImage(location)}
+                src={getLocationImage(location)!}
                 alt={locationName}
                 className="h-[360px] w-full object-cover opacity-80"
               />

@@ -10,7 +10,7 @@ import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/locati
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
-import { getLocationImage } from "@/lib/locationImage";
+import { getLocationImage, hasLocationImage } from "@/lib/locationImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
@@ -857,14 +857,26 @@ export default function CreatePage() {
         }
       }
 
+      responseRestaurants = responseRestaurants.filter(hasLocationImage);
+      responseActivities = responseActivities.filter(hasLocationImage);
+
+      const photoSafePairs = responsePairs.filter((pair: any) => {
+        if (pair?.restaurant || pair?.activity) {
+          return hasLocationImage(pair.restaurant) && hasLocationImage(pair.activity);
+        }
+
+        return hasLocationImage(pair);
+      });
+      const photoSafeMatchedLocations = responseMatchedLocations.filter(hasLocationImage);
+
       const dedupedResults = dedupeSearchResults({
         restaurants:
           addOnTarget === "activity" && previousRestaurants.length
-            ? previousRestaurants
+            ? previousRestaurants.filter(hasLocationImage)
             : responseRestaurants,
         activities:
           addOnTarget === "restaurant" && previousActivities.length
-            ? previousActivities
+            ? previousActivities.filter(hasLocationImage)
             : responseActivities,
       });
 
@@ -883,8 +895,8 @@ export default function CreatePage() {
             : "Here are TheOutHaven results based on your outing request."),
         restaurants: dedupedResults.restaurants,
         activities: dedupedResults.activities,
-        pairs: responsePairs,
-        matched_locations: responseMatchedLocations,
+        pairs: photoSafePairs,
+        matched_locations: photoSafeMatchedLocations,
       };
       const hasRenderableCards =
         assistantMessage.restaurants?.length ||
@@ -1266,7 +1278,7 @@ export default function CreatePage() {
                                 key={restaurantId || restaurantIndex}
                                 index={restaurantIndex}
                                 type="restaurant"
-                                imageUrl={getLocationImage(restaurant)}
+                                imageUrl={getLocationImage(restaurant) || undefined}
                                 title={getLocationName(restaurant)}
                                 eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
@@ -1342,7 +1354,7 @@ export default function CreatePage() {
                                 key={activityId || activityIndex}
                                 index={activityIndex}
                                 type="activity"
-                                imageUrl={getLocationImage(activity)}
+                                imageUrl={getLocationImage(activity) || undefined}
                                 title={getLocationName(activity)}
                                 eyebrow={getPrimaryCategory(activity)}
                                 address={formatAddress(activity)}
@@ -2102,13 +2114,16 @@ function ResultCard({
   locationId?: string | null;
   analyticsMetadata?: LocationAnalyticsMetadata;
 }) {
+  const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
+
+  if (!imageUrl) return null;
+
   const whyPicked = getWhyPicked({
     primaryTag,
     reviewKeywords,
     reviewSnippet,
     type,
   });
-  const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
 
   return (
@@ -2357,10 +2372,10 @@ function getResultInstruction(resultOrder: ResultSectionKind[]) {
 }
 
 function normalizeApiCards(data: ApiResponse) {
-  const restaurants = Array.isArray(data.restaurants) ? data.restaurants : [];
-  const activities = Array.isArray(data.activities) ? data.activities : [];
-  const cards = Array.isArray(data.cards) ? data.cards : [];
-  const matched = Array.isArray(data.matched_locations) ? data.matched_locations : [];
+  const restaurants = Array.isArray(data.restaurants) ? data.restaurants.filter(hasLocationImage) : [];
+  const activities = Array.isArray(data.activities) ? data.activities.filter(hasLocationImage) : [];
+  const cards = Array.isArray(data.cards) ? data.cards.filter(hasLocationImage) : [];
+  const matched = Array.isArray(data.matched_locations) ? data.matched_locations.filter(hasLocationImage) : [];
 
   const fallbackCards = cards.length ? cards : matched;
   const mappedRestaurants = fallbackCards.filter((item: any) => getCardType(item) === "restaurant") as RestaurantCard[];

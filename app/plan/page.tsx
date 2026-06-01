@@ -676,9 +676,9 @@ function TimelineLocation({
       >
         <div className="flex min-w-0 gap-2.5 sm:gap-3">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white/[0.06] sm:h-16 sm:w-16">
-            {active && location ? (
+            {active && location && getLocationImage(location) ? (
               <Image
-                src={getLocationImage(location)}
+                src={getLocationImage(location)!}
                 alt={title}
                 fill
                 unoptimized
@@ -773,7 +773,7 @@ function PlanActionCard({
       <div className="relative h-[170px] bg-neutral-950">
         {getLocationImage(location) ? (
           <Image
-            src={getLocationImage(location)}
+            src={getLocationImage(location)!}
             alt={title}
             fill
             unoptimized

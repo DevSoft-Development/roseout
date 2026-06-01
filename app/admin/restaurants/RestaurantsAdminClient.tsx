@@ -270,7 +270,7 @@ export default function RestaurantsAdminClient({
                     <div className="h-32 w-full overflow-hidden rounded-2xl bg-[#f4e5d8] lg:w-32">
                       {getLocationImage(restaurant) ? (
                         <img
-                          src={getLocationImage(restaurant)}
+                          src={getLocationImage(restaurant)!}
                           alt={getLocationName(restaurant, "Restaurant")}
                           className="h-full w-full object-cover"
                         />
