@@ -132,7 +132,6 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/claims",
           "/admin/dashboard/claim-qrs",
           "/admin/dashboard/claim-tools",
-          "/admin/dashboard/import",
           "/admin/dashboard/data-quality",
         ],
         activePrefixes: ["/admin/dashboard/crm", "/admin/dashboard/locations"],
@@ -141,10 +140,10 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           { label: "Upgrade Opportunities", href: "/admin/dashboard/crm?filter=upgrade-opportunities", visible: canView },
           { label: "At Risk Locations", href: "/admin/dashboard/crm?filter=at-risk", visible: canView },
           { label: "Pending Claims", href: "/admin/dashboard/crm?filter=pending-claims", visible: canView },
-          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owners", visible: canView },
-          { label: "Location Tasks", href: "/admin/dashboard/crm?filter=open-tasks", visible: canView },
+          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owner-accounts", visible: canView },
+          { label: "Location Tasks", href: "/admin/dashboard/crm?filter=location-tasks", visible: canView },
           { label: "Follow-ups", href: "/admin/dashboard/crm?filter=follow-ups", visible: canView },
-          { label: "QR Codes", href: "/admin/dashboard/crm?filter=qr", visible: canView },
+          { label: "QR Codes", href: "/admin/dashboard/crm?filter=qr-codes", visible: canView },
           { label: "Legacy Locations", href: "/admin/dashboard/locations", visible: canView },
         ],
       },
@@ -191,6 +190,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         widthClass: "w-[360px] max-w-[calc(100vw-24px)]",
         align: "right",
         activePaths: [
+          "/admin/dashboard/import",
+          "/admin/dashboard/import-history",
+          "/admin/import-history",
           "/admin/dashboard/reviews",
           "/admin/dashboard/support",
           "/admin/dashboard/communication",
@@ -204,6 +206,8 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           {
             label: "Operations",
             items: [
+              { label: "Import", href: "/admin/dashboard/import", visible: canView },
+              { label: "Import History", href: "/admin/import-history", visible: canView },
               { label: "Reviews", href: "/admin/dashboard/reviews", visible: canView },
               { label: "Support", href: "/admin/dashboard/support", visible: canView },
               { label: "Communication", href: "/admin/dashboard/communication", visible: canView },
@@ -288,6 +292,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     }
     if (group.label === "Admin Tools") {
       const adminToolPaths = [
+        "/admin/dashboard/import",
+        "/admin/dashboard/import-history",
+        "/admin/import-history",
         "/admin/dashboard/reviews",
         "/admin/dashboard/support",
         "/admin/dashboard/communication",

@@ -14,7 +14,59 @@ export const dynamic = "force-dynamic";
 type LocationType = "restaurant" | "activity";
 
 
-const LOCATION_DASHBOARD_COLUMNS = "*";
+const LOCATION_DASHBOARD_COLUMNS = `
+  id,
+  location_type,
+  name,
+  restaurant_name,
+  activity_name,
+  address,
+  city,
+  state,
+  main_image,
+  image_url,
+  images,
+  is_claimed,
+  claimed,
+  claim_status,
+  claim_verification_status,
+  claimed_at,
+  claimed_by_email,
+  owner_user_id,
+  owner_name,
+  owner_email,
+  owner_phone,
+  phone,
+  website,
+  reservation_url,
+  external_reservation_url,
+  reservation_link,
+  plan,
+  subscription_plan,
+  is_pro,
+  view_count,
+  click_count,
+  call_count,
+  reservation_click_count,
+  external_reservation_click_count,
+  reservation_settings,
+  primary_category,
+  cuisine,
+  cuisine_type,
+  food_type,
+  activity_type,
+  primary_tag,
+  tags,
+  google_types,
+  active,
+  is_searchable,
+  status,
+  score,
+  quality_score,
+  location_score,
+  created_at,
+  updated_at
+`;
 
 type LocationItem = LocationClaimFields &
   LocationScoreFields &
@@ -111,7 +163,8 @@ export default async function DashboardPage() {
       .from("locations")
       .select(LOCATION_DASHBOARD_COLUMNS)
       .eq("owner_user_id", impersonatedUserId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(100);
 
     locations = (ownedLocations || []).map(toDashboardLocation);
     impersonationLabel = "Viewing as location owner";
@@ -119,7 +172,8 @@ export default async function DashboardPage() {
     const { data: allLocations } = await supabase
       .from("locations")
       .select(LOCATION_DASHBOARD_COLUMNS)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(100);
 
     locations = (allLocations || []).map(toDashboardLocation);
   } else if (user?.id && ownerAccess) {
@@ -130,7 +184,8 @@ export default async function DashboardPage() {
     let query = supabase
       .from("locations")
       .select(LOCATION_DASHBOARD_COLUMNS)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(100);
 
     if (!ownerAccess.isAdmin) {
       const ownerFilters = [

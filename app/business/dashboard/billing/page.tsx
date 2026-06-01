@@ -28,7 +28,8 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
     .from("locations")
     .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_end, trial_ends_at, stripe_customer_id, stripe_subscription_id, owner_user_id, owner_email, claimed_by_email")
     .or(`owner_user_id.eq.${user.id},owner_email.eq.${user.email || ""},claimed_by_email.eq.${user.email || ""}`)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(50);
 
   const ownedLocations = locations || [];
   const selected = ownedLocations.find((location: any) => location.id === params.location) || ownedLocations[0];
