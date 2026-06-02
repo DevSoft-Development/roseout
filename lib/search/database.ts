@@ -742,8 +742,14 @@ export async function queryLocations(searchText: string, limit = 120) {
     .not("latitude", "is", null)
     .not("longitude", "is", null)
     .not("primary_category", "is", null)
-    .neq("data_status", "hidden")
+    .eq("data_status", "clean")
     .not("is_hidden", "is", true)
+    .not("status", "in", '("closed","archived")')
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .limit(limit);
 
   if (term.length > 0) {
@@ -791,8 +797,14 @@ export async function queryBroadLocations(limit = 500) {
     .not("latitude", "is", null)
     .not("longitude", "is", null)
     .not("primary_category", "is", null)
-    .neq("data_status", "hidden")
+    .eq("data_status", "clean")
     .not("is_hidden", "is", true)
+    .not("status", "in", '("closed","archived")')
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .limit(limit);
 
   if (error) {

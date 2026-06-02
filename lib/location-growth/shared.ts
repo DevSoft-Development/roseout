@@ -50,6 +50,16 @@ export type StagedLocationInput = {
   is_chain?: boolean | null;
   has_photos?: boolean | null;
   photo_status?: string | null;
+  quality_status?: string | null;
+  data_status?: string | null;
+  is_searchable?: boolean | null;
+  is_low_level?: boolean | null;
+  low_level_reason?: string | null;
+  low_level_detected_at?: string | null;
+  low_level_source?: string | null;
+  public_visibility_tier?: string | null;
+  import_confidence?: string | null;
+  source_quality_status?: string | null;
   description?: string | null;
   raw_payload?: Record<string, any>;
 };

@@ -41,6 +41,11 @@ const CARD_FIELDS = [
   "photo_status",
   "is_hidden",
   "data_status",
+  "is_low_level",
+  "public_visibility_tier",
+  "curation_tier",
+  "source_quality_status",
+  "import_confidence",
 ].join(",");
 
 export async function GET(request: NextRequest) {
@@ -66,7 +71,13 @@ export async function GET(request: NextRequest) {
     .not("longitude", "is", null)
     .not("primary_category", "is", null)
     .eq("data_status", "clean")
-    .not("is_hidden", "is", true);
+    .not("is_hidden", "is", true)
+    .not("status", "in", '("closed","archived")')
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low");
 
   if (city) query = query.ilike("city", `%${city}%`);
   if (borough) query = query.ilike("borough", `%${borough}%`);

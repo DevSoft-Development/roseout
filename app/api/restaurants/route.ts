@@ -43,7 +43,12 @@ const PUBLIC_RESTAURANT_LOCATION_SELECT = `
   data_status,
   missing_fields,
   is_hidden,
-  status
+  status,
+  is_low_level,
+  public_visibility_tier,
+  curation_tier,
+  source_quality_status,
+  import_confidence
 `;
 
 export async function GET() {
@@ -59,6 +64,11 @@ export async function GET() {
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .order("theouthaven_score", { ascending: false, nullsFirst: false });
 
   if (error) {
@@ -66,6 +76,6 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    restaurants: (data || []).filter(isPublicSearchVisible),
+    restaurants: (data || []).filter((location) => isPublicSearchVisible(location)),
   });
 }

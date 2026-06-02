@@ -67,6 +67,9 @@ export async function GET(request: Request) {
     hasPhotos,
     needsPhoto,
     searchableWithPhotos,
+    lowLevelLocations,
+    lowLevelStaged,
+    nycUnverified,
   ] = await Promise.all([
     safeCount("locations"),
     safeCount("locations", (query) => query.eq("is_searchable", true)),
@@ -144,6 +147,9 @@ export async function GET(request: Request) {
     safeCount("locations", (query) =>
       query.eq("is_searchable", true).eq("has_photos", true),
     ),
+    safeCount("locations", (query) => query.eq("is_low_level", true)),
+    safeCount("location_import_staging", (query) => query.eq("is_low_level", true)),
+    safeCount("locations", (query) => query.eq("low_level_reason", "nyc_import_unverified")),
   ]);
 
   const { data: latestBatches } = await supabaseAdmin
@@ -184,6 +190,9 @@ export async function GET(request: Request) {
     hasPhotos,
     needsPhoto,
     searchableWithPhotos,
+    lowLevelLocations,
+    lowLevelStaged,
+    nycUnverified,
     siteUrlConfigured,
     siteUrl: getSiteUrl(),
     latestBatches: latestBatches || [],
