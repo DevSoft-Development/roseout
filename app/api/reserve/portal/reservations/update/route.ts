@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
+import { logAdminLocationAction } from "@/lib/admin/audit-log";
 
 const allowedStatuses = [
   "pending",
   "confirmed",
   "arrived",
+  "checked_in",
+  "seated",
+  "waitlisted",
   "declined",
   "cancelled",
   "completed",
@@ -36,7 +41,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const reservationId = cleanString(body.reservation_id);
-    const locationId = cleanString(body.location_id);
+    const adminLocationId = cleanString(body.adminLocationId || body.admin_location_id);
+    if (adminLocationId) {
+      const auth = await requireAdminLocationApiWrite();
+      if (auth.error) return auth.error;
+      body.__adminUser = auth.adminUser;
+    }
+
+    const locationId = adminLocationId || cleanString(body.location_id);
     const locationType = normalizeType(
       cleanString(body.location_type) || "restaurant"
     );
@@ -63,14 +75,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const beforeResult = adminLocationId
+      ? await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle()
+      : null;
+
     const updatePayload: Record<string, string> = {
       status,
       updated_at: new Date().toISOString(),
     };
 
-    if (status === "arrived") updatePayload.arrived_at = new Date().toISOString();
-    if (status === "completed") updatePayload.completed_at = new Date().toISOString();
-    if (status === "cancelled") updatePayload.customer_cancelled_at = new Date().toISOString();
+    const now = new Date().toISOString();
+    if (status === "arrived" || status === "checked_in") {
+      updatePayload.arrived_at = now;
+      updatePayload.checked_in_at = now;
+    }
+    if (status === "seated") updatePayload.seated_at = now;
+    if (status === "completed") updatePayload.completed_at = now;
+    if (status === "cancelled") {
+      updatePayload.customer_cancelled_at = now;
+      updatePayload.cancelled_at = now;
+    }
+    if (status === "no_show") updatePayload.no_show_at = now;
 
     const { data, error } = await supabaseAdmin
       .from("location_reservations")
@@ -83,6 +108,20 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (adminLocationId) {
+      await logAdminLocationAction({
+        adminUser: body.__adminUser,
+        locationId,
+        actionType: status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`,
+        targetType: "reservation",
+        targetId: reservationId,
+        beforeData: beforeResult?.data || null,
+        afterData: data,
+        metadata: { locationType },
+        request,
+      });
     }
 
     return NextResponse.json({

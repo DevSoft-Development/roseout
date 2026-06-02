@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
+import { logAdminLocationAction } from "@/lib/admin/audit-log";
 
 const allowedStatuses = [
   "pending",
   "confirmed",
   "checked_in",
   "arrived",
+  "seated",
   "waitlisted",
   "declined",
   "cancelled",
@@ -54,7 +57,14 @@ function dateKey(value: Date) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const locationId = cleanString(searchParams.get("locationId"));
+    const adminLocationId = cleanString(searchParams.get("adminLocationId"));
+    let adminUser: any = null;
+    if (adminLocationId) {
+      const auth = await requireAdminLocationApiRead();
+      if (auth.error) return auth.error;
+      adminUser = auth.adminUser;
+    }
+    const locationId = adminLocationId || cleanString(searchParams.get("locationId"));
     const locationType = normalizeType(cleanString(searchParams.get("type")));
     const status = normalizeStatus(cleanString(searchParams.get("status")));
     const filter = cleanString(searchParams.get("filter")).toLowerCase();
@@ -89,6 +99,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    if (adminLocationId) {
+      await logAdminLocationAction({
+        adminUser,
+        locationId,
+        actionType: "admin_location_reservations_view",
+        targetType: "location_reservations",
+        metadata: { filter, status, count: (data || []).length },
+        request,
+      });
+    }
+
     return NextResponse.json({ reservations: data || [] });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
@@ -100,7 +121,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const reservationId = cleanString(body.reservation_id);
-    const locationId = cleanString(body.location_id);
+    const adminLocationId = cleanString(body.adminLocationId || body.admin_location_id);
+    let adminUser: any = null;
+    if (adminLocationId) {
+      const auth = await requireAdminLocationApiWrite();
+      if (auth.error) return auth.error;
+      adminUser = auth.adminUser;
+    }
+    const locationId = adminLocationId || cleanString(body.location_id);
     const locationType = normalizeType(
       cleanString(body.location_type) || "restaurant"
     );
@@ -126,6 +154,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const beforeResult = adminLocationId
+      ? await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle()
+      : null;
 
     const updatePayload: ReservationUpdatePayload = {
       status,
@@ -157,6 +189,20 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (adminLocationId) {
+      await logAdminLocationAction({
+        adminUser,
+        locationId,
+        actionType: status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`,
+        targetType: "reservation",
+        targetId: reservationId,
+        beforeData: beforeResult?.data || null,
+        afterData: data,
+        metadata: { locationType },
+        request,
+      });
     }
 
     return NextResponse.json({
