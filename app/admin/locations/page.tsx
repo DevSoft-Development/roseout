@@ -707,7 +707,7 @@ export default async function AdminLocationsPage({
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
                         {getLocationImage(location) ? (
                           <img
-                            src={getLocationImage(location)}
+                            src={getLocationImage(location) || undefined}
                             alt={location.name || "TheOutHaven location"}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />

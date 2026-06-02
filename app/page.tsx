@@ -72,19 +72,19 @@ const occasionCards = [
     icon: "♡",
     title: "Date Night",
     description: "Dinner, atmosphere, and something memorable after.",
-    prompt: "romantic dinner and something fun after",
+    prompt: "romantic dinner and a lounge or relaxed experience after",
   },
   {
     icon: "✦",
     title: "Birthday Dinner",
     description: "Celebration-ready food with room for the next stop.",
-    prompt: "birthday dinner with a lounge or activity",
+    prompt: "birthday dinner with a lounge, rooftop, or fun activity after",
   },
   {
     icon: "✨",
     title: "Girls’ Night",
     description: "Social dinner, drinks, and the right energy.",
-    prompt: "girls night dinner and drinks",
+    prompt: "girls night dinner with cocktails, lounge, or drinks after",
   },
   {
     icon: "☀",
@@ -94,14 +94,14 @@ const occasionCards = [
   },
   {
     icon: "⌁",
-    title: "Rooftop Night",
-    description: "Views, drinks, dinner, and a more elevated mood.",
-    prompt: "rooftop dinner or drinks with a view",
+    title: "Rooftop Plans",
+    description: "Views, drinks, food, and a more elevated mood.",
+    prompt: "rooftop dinner or rooftop drinks with a view",
   },
   {
     icon: "◐",
     title: "Dinner + Hookah",
-    description: "Start with food, then keep the night relaxed nearby.",
+    description: "Start with food, then keep the plan relaxed nearby.",
     prompt: "steak dinner and hookah lounge nearby",
   },
   {
@@ -114,7 +114,7 @@ const occasionCards = [
     icon: "○",
     title: "Chill Weekend",
     description: "Casual food and a low-pressure plan for the weekend.",
-    prompt: "casual dinner and relaxed activity",
+    prompt: "casual dinner and relaxed lounge, dessert, games, or easy activity",
   },
 ];
 
@@ -144,7 +144,7 @@ const planningSteps = [
     copy: "TheOutHaven helps surface restaurants, lounges, activities, and experiences that fit the full plan.",
   },
   {
-    title: "Build the night",
+    title: "Build the plan",
     copy: "Save, book, call, visit, or share the next step without bouncing between endless tabs.",
   },
 ];
@@ -183,7 +183,7 @@ function HeroWithSearch() {
 
         <div className="space-y-5">
           <h1 className="max-w-4xl text-5xl font-black tracking-[-0.05em] text-white sm:text-7xl lg:text-8xl">
-            Plan the whole night, not just dinner.
+            Plan the whole outing, not just dinner.
           </h1>
           <p className="max-w-2xl text-lg leading-8 text-white/70 sm:text-xl">
             Find restaurants, lounges, rooftops, activities, and date-night
@@ -261,7 +261,7 @@ function OutingPreviewCard() {
       <div className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
       <div className="relative rounded-[1.5rem] border border-white/10 bg-black/35 p-5 backdrop-blur">
         <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff6b80]">
-          Sample outing
+          Sample Plan
         </p>
         <h2 className="mt-3 max-w-sm text-3xl font-black tracking-tight text-white sm:text-4xl">
           Dinner, then something worth staying out for
@@ -319,7 +319,7 @@ function PlanByOccasion() {
             <h3 className="relative mt-5 text-xl font-black">{card.title}</h3>
             <p className="relative mt-2 text-sm leading-6 text-white/68">{card.description}</p>
             <p className="relative mt-auto pt-5 text-xs font-black uppercase tracking-[0.16em] text-[#ff7285] transition group-hover:text-white">
-              Plan this night
+              Plan this outing
             </p>
           </Link>
         ))}
@@ -425,7 +425,7 @@ function AiPlanningCta() {
       </p>
       <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Not sure where to start?</h2>
       <p className="mt-3 max-w-3xl text-sm leading-7 text-white/70 sm:text-base">
-        Describe the night you want — the food, the area, the occasion, or the
+        Describe the outing you want — the food, the area, the occasion, or the
         thing you want to do after — and TheOutHaven will help turn it into a
         plan.
       </p>
@@ -578,7 +578,7 @@ function PlaceCard({ location }: { location: HomeLocation }) {
     <article className="group flex h-full min-h-[382px] flex-col overflow-hidden rounded-[1.6rem] border border-white/10 bg-zinc-950/80 p-3 shadow-2xl shadow-black/30 transition duration-300 hover:-translate-y-1 hover:border-white/20">
       <div className="relative h-44 w-full overflow-hidden rounded-[1.25rem] bg-white/[0.04]">
         <Image
-          src={getLocationImage(location)}
+          src={getLocationImage(location) || "/placeholder.jpg"}
           alt={getLocationName(location)}
           loading="lazy"
           fill
@@ -640,15 +640,8 @@ function createPromptHref(prompt: string) {
   return `/create?prompt=${encodeURIComponent(prompt)}`;
 }
 
-function occasionHref(title: string, prompt: string) {
-  const landingPages: Record<string, string> = {
-    "Date Night": "/explore/date-night",
-    "Brunch Plans": "/explore/brunch-spots",
-    "Rooftop Night": "/explore/rooftop-restaurants",
-    "Dinner + Hookah": "/explore/hookah-lounges",
-  };
-
-  return landingPages[title] || createPromptHref(prompt);
+function occasionHref(_title: string, prompt: string) {
+  return createPromptHref(prompt);
 }
 
 function areaHref(area: string) {
@@ -777,9 +770,7 @@ function isRestaurant(location: HomeLocation) {
 
 function hasUsableImage(location: HomeLocation) {
   return (
-    isUsableImageValue(location.main_image) ||
-    isUsableImageValue(location.image_url) ||
-    (Array.isArray(location.images) && location.images.some(isUsableImageValue))
+    Boolean(getLocationImage(location))
   );
 }
 
