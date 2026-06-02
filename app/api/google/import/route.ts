@@ -14,7 +14,9 @@ import {
   applyLowLevelPenalty,
   hasPublicPhoto,
   isLowLevelLocation,
+  isQualifiedWellnessActivity,
   isUnverifiedNycRestaurant,
+  isWellnessActivity,
   userExplicitlyAskedForLowLevel,
 } from "@/lib/search/lowLevel";
 
@@ -201,7 +203,7 @@ const ACTIVITY_INTENTS: Record<string, string[]> = {
   lounge: ["lounge"],
   rooftop: ["rooftop", "roof top", "skyline", "view"],
   live_music: ["live music", "jazz", "music venue"],
-  spa: ["spa", "massage", "wellness"],
+  spa: ["spa", "massage", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"],
   pool: ["pool", "billiards", "billiard"],
 };
 
@@ -1226,6 +1228,8 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     wantsCigar: canonical.activityIntents.includes("cigar"),
     wantsLounge: canonical.activityIntents.includes("lounge"),
     wantsNightclub: canonical.activityIntents.includes("nightclub"),
+    wantsSelfCare: hasSelfCareIntent(canonical.normalizedInput),
+    hasFoodFirstIntent: hasFoodFirstIntent(canonical.normalizedInput, canonical.foodIntents),
   };
 }
 
@@ -1303,6 +1307,49 @@ function scoreRestaurant(
   return clampScore(score);
 }
 
+const SELF_CARE_INTENT_TERMS = [
+  "self care",
+  "self-care",
+  "spa day",
+  "couples massage",
+  "couple massage",
+  "girls day",
+  "relaxing date",
+  "wellness",
+  "birthday prep",
+  "pampering",
+  "pamper",
+];
+const NON_WELLNESS_PRIORITY_TERMS = ["dinner", "rooftop", "hookah", "bowling", "arcade", "restaurant", "food", "dining"];
+
+function hasSelfCareIntent(input: string) {
+  const text = normalizeQuery(input);
+  return SELF_CARE_INTENT_TERMS.some((term) => text.includes(term));
+}
+
+function hasFoodFirstIntent(input: string, foodIntents: string[]) {
+  const text = normalizeQuery(input);
+  return foodIntents.length > 0 || /\b(dinner|restaurant|food|eat|dining|brunch|lunch|breakfast)\b/.test(text);
+}
+
+function wellnessActivityPriorityAdjustment(item: any, intent: ReturnType<typeof detectIntent>) {
+  if (!isWellnessActivity(item)) return 0;
+  if (intent.wantsSelfCare) return 180;
+
+  const nonWellnessActivityRequested = intent.activityIntents.some(
+    (activity) => activity !== "spa",
+  );
+  const nonWellnessPriority = NON_WELLNESS_PRIORITY_TERMS.some((term) =>
+    intent.text.includes(term),
+  );
+
+  if (intent.hasFoodFirstIntent || nonWellnessActivityRequested || nonWellnessPriority) {
+    return -220;
+  }
+
+  return 0;
+}
+
 function scoreActivity(
   item: any,
   input: string,
@@ -1343,6 +1390,7 @@ function scoreActivity(
   score += distanceBoost(item, intent.userLat, intent.userLng, intent.maxMiles);
   score += popularityBoost(item);
   score += curatedQualityBoost(item);
+  score += wellnessActivityPriorityAdjustment(item, intent);
 
   if (intent.wantsBirthday) {
     if (
@@ -1615,7 +1663,7 @@ export async function POST(req: Request) {
     const locations = normalizedLocations.filter((item: any) => {
       const lowLevel = isLowLevelLocation(item);
       const unverifiedNyc = isUnverifiedNycRestaurant(item);
-      if (!allowLowLevel && lowLevel) {
+      if (!allowLowLevel && lowLevel && !isQualifiedWellnessActivity(item)) {
         removedLowLevelCount += 1;
         const reason = item.low_level_reason || item.source_quality_status || item.public_visibility_tier || "detected_low_level";
         lowLevelReasons[reason] = (lowLevelReasons[reason] || 0) + 1;
@@ -1725,7 +1773,7 @@ export async function POST(req: Request) {
     }
 
     restaurants = allowLowLevel ? restaurants.filter((item: any) => isOperational(item) && hasBasicPublicAddress(item)) : restaurants.filter((item: any) => !isLowLevelLocation(item) && !isUnverifiedNycRestaurant(item));
-    activities = allowLowLevel ? activities.filter((item: any) => isOperational(item) && hasBasicPublicAddress(item)) : activities.filter((item: any) => !isLowLevelLocation(item) && !isUnverifiedNycRestaurant(item));
+    activities = allowLowLevel ? activities.filter((item: any) => isOperational(item) && hasBasicPublicAddress(item)) : activities.filter((item: any) => isQualifiedWellnessActivity(item) || (!isLowLevelLocation(item) && !isUnverifiedNycRestaurant(item)));
 
     const rankedRestaurants = restaurants
       .map((restaurant: any) => {
