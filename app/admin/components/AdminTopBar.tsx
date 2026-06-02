@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import type { AdminRole } from "@/lib/users/roles";
 import { ADMIN_ROLE_LABELS, canAdmin, canAnyAdmin } from "@/lib/admin-permissions";
+import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
 
 type AdminTopBarProps = {
   adminName: string;
@@ -609,6 +610,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
+          <div className="hidden min-w-[22rem] xl:block">
+            <AdminLocationSearch compact />
+          </div>
           <div className="relative" ref={searchRef}>
             <button
               type="button"
