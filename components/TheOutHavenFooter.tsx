@@ -45,6 +45,13 @@ export default function TheOutHavenFooter() {
             >
               For Businesses
             </Link>
+
+            <Link
+              href="/help"
+              className="rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 px-6 py-3 text-sm font-black text-rose-100 transition hover:border-[#e1062a]/50 hover:bg-[#e1062a] hover:text-white"
+            >
+              Get Help
+            </Link>
           </div>
         </div>
 
