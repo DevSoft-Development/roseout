@@ -11,6 +11,10 @@
     {
       "path": "/api/admin/semantic-nightly",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/nightly-photo-backfill",
+      "schedule": "15 4 * * *"
     }
   ]
 }

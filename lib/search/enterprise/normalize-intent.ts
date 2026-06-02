@@ -190,7 +190,12 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const activityAlternativeGroups = detectAlternativeGroupsForLane(query, "activity");
   const restaurantFood = food.filter((t) => t !== "rooftop" && t !== "lounge");
   const restaurantContext = meals.length > 0 || restaurantFood.length > 0 || /restaurant|dinner|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse/i.test(query);
-  const activityContext = acts.length > 0 || activityAlternativeGroups.length > 0 || /things to do|fun things|activity|then|with/i.test(query) || (/date night/i.test(query) && /walkable|walking distance|everything|outing|plan/i.test(query));
+  const activityContext =
+    acts.length > 0 ||
+    activityAlternativeGroups.length > 0 ||
+    /things to do|fun things|activity|then|with|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(query) ||
+    (/date night/i.test(query) &&
+      /walkable|walking distance|everything|outing|plan/i.test(query));
   const hookahOnly = acts.includes("hookah") && !/dinner|restaurant|food|eat|dining/i.test(query);
   const needsRestaurant = restaurantContext && !hookahOnly;
   const needsActivity = activityContext || hookahOnly;
@@ -330,8 +335,9 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   const hasActivity =
     merged.activityIntent.activityTerms.length > 0 ||
     (merged.activityIntent.alternativeGroups ?? []).length > 0 ||
-    /things to do|fun things|\bactivity\b/i.test(query) ||
-    (/date night/i.test(query) && /walkable|walking distance|everything|outing|plan/i.test(query));
+    /things to do|fun things|\bactivity\b|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(query) ||
+    (/date night/i.test(query) &&
+      /walkable|walking distance|everything|outing|plan/i.test(query));
   merged.needsRestaurant = hasRestaurant && !(/^\s*hookah\s+(in|near)/i.test(query));
   merged.needsActivity = hasActivity;
   merged.wantsPairing = merged.needsRestaurant && merged.needsActivity;

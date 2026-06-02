@@ -280,7 +280,7 @@ export default function LocationsDashboardClient({
                     <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white/10">
                       {getLocationImage(loc) ? (
                         <img
-                          src={getLocationImage(loc)}
+                          src={getLocationImage(loc) || undefined}
                           alt={loc.display_name}
                           className="h-full w-full object-cover"
                         />
@@ -348,7 +348,7 @@ export default function LocationsDashboardClient({
               <div className="relative h-[280px] bg-black sm:h-[360px]">
                 {getLocationImage(selected) ? (
                   <img
-                    src={getLocationImage(selected)}
+                    src={getLocationImage(selected) || undefined}
                     alt={selected.display_name}
                     className="h-full w-full object-cover"
                   />

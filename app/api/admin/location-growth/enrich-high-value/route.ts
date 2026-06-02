@@ -131,10 +131,46 @@ async function storeGooglePhoto(locationId: string | number, photoReference: str
 }
 
 export async function POST(request: NextRequest) {
+  const startedAtMs = Date.now();
+  const startedAt = new Date().toISOString();
+  const skipAdminImportEmail = request.headers.get("x-skip-admin-import-email") === "true";
+  const emailResult = {
+    sent: false,
+    provider: skipAdminImportEmail ? "skipped_cron_summary_email" : "manual_email_not_requested",
+    error: null,
+  };
+
   const auth = await authorize(request);
   if (auth) return auth;
   const body = await request.json().catch(() => ({}));
   const limit = Math.min(Math.max(Number(body.limit) || 50, 1), 100);
+
+  if (!GOOGLE_API_KEY) {
+    const finishedAt = new Date().toISOString();
+    return NextResponse.json({
+      success: false,
+      error: "Missing Google Places API key.",
+      found: 0,
+      processed: 0,
+      imported: 0,
+      updated: 0,
+      migrated: 0,
+      enriched: 0,
+      skipped: 0,
+      failed: 1,
+      needsPhoto: null,
+      publishReady: null,
+      review: null,
+      rejected: null,
+      hasMore: false,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      emailSent: emailResult.sent,
+      emailProvider: emailResult.provider,
+      emailError: emailResult.error,
+    }, { status: 500 });
+  }
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select("*")
@@ -148,7 +184,30 @@ export async function POST(request: NextRequest) {
     .order("quality_score", { ascending: false })
     .limit(limit);
   if (error) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    const finishedAt = new Date().toISOString();
+    return NextResponse.json({
+      success: false,
+      error: error.message,
+      found: 0,
+      processed: 0,
+      imported: 0,
+      updated: 0,
+      migrated: 0,
+      enriched: 0,
+      skipped: 0,
+      failed: 1,
+      needsPhoto: null,
+      publishReady: null,
+      review: null,
+      rejected: null,
+      hasMore: false,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      emailSent: emailResult.sent,
+      emailProvider: emailResult.provider,
+      emailError: emailResult.error,
+    }, { status: 500 });
   }
 
   let completed = 0;
@@ -212,11 +271,30 @@ export async function POST(request: NextRequest) {
         .eq("id", row.id);
     }
   }
+  const finishedAt = new Date().toISOString();
+
   return NextResponse.json({
     success: true,
+    found: data?.length || 0,
     processed: data?.length || 0,
     completed,
+    imported: 0,
+    updated: completed,
+    migrated: 0,
+    enriched: completed,
+    skipped: skippedAlreadyGood,
     skippedAlreadyGood,
     failed,
+    needsPhoto: failed,
+    publishReady: null,
+    review: null,
+    rejected: null,
+    hasMore: (data?.length || 0) >= limit,
+    startedAt,
+    finishedAt,
+    durationMs: Date.now() - startedAtMs,
+    emailSent: emailResult.sent,
+    emailProvider: emailResult.provider,
+    emailError: emailResult.error,
   });
 }

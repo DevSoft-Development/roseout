@@ -29,6 +29,42 @@ function fieldText(r: EnterpriseLocation, fields: string[]) {
     .replaceAll("-", " ");
 }
 
+function userExplicitlyAskedForTheater(intent: SearchIntent) {
+  const text = [
+    intent.rawQuery,
+    ...intent.activityIntent.activityTerms,
+    ...intent.activityIntent.categoryTerms,
+    ...intent.activityIntent.featureTerms,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /\b(theater|theatre|broadway|off-broadway|show|play|musical|cinema|movie|movies)\b/.test(
+    text,
+  );
+}
+
+function isTheaterRecord(r: EnterpriseLocation) {
+  const text = fieldText(r, [
+    "name",
+    "activity_name",
+    "primary_category",
+    "activity_type",
+    "google_types",
+    "tags",
+    "semantic_tags",
+    "intent_tags",
+    "description",
+    "search_document",
+    "semantic_search_text",
+  ]);
+
+  return /\b(theater|theatre|broadway|off-broadway|performing arts|cinema|movie theater)\b/.test(
+    text,
+  );
+}
+
 function explicitLocationType(r: EnterpriseLocation) {
   return String(
     r.location_type ??
@@ -282,6 +318,14 @@ export function explainRejection(
 
   if (shouldHidePlaceOfWorship(record, intent)) {
     return "place_of_worship_not_requested";
+  }
+
+  if (
+    domain === "activity" &&
+    isTheaterRecord(record) &&
+    !userExplicitlyAskedForTheater(intent)
+  ) {
+    return "theater_not_requested";
   }
 
   if (domain === "restaurant" && !isRestaurantLike(record))
