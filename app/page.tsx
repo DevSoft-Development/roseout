@@ -49,6 +49,18 @@ type HomeLocation = {
   saves_count: number | null;
   reservation_count: number | null;
   featured: boolean | null;
+  is_searchable?: boolean | null;
+  is_hidden?: boolean | null;
+  data_status?: string | null;
+  quality_status?: string | null;
+  duplicate_status?: string | null;
+  has_photos?: boolean | null;
+  photo_status?: string | null;
+  is_low_level?: boolean | null;
+  public_visibility_tier?: string | null;
+  curation_tier?: string | null;
+  source_quality_status?: string | null;
+  import_confidence?: string | null;
 };
 
 type HomepageSections = {
@@ -496,11 +508,20 @@ async function loadHomepageSections(): Promise<HomepageSections> {
   const { data } = await supabaseAdmin
     .from("locations")
     .select(
-      "id,type,source_table,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,is_searchable,is_hidden,data_status",
+      "id,type,source_table,name,restaurant_name,activity_name,business_name,main_image,image_url,images,city,borough,neighborhood,category,primary_category,cuisine,cuisine_type,activity_type,tags,vibes,website,reservation_url,external_reservation_url,rating,score,total_reviews,views_count,saves_count,reservation_count,featured,is_searchable,is_hidden,data_status,quality_status,duplicate_status,has_photos,photo_status,is_low_level,public_visibility_tier,curation_tier,source_quality_status,import_confidence",
     )
     .eq("is_searchable", true)
     .neq("is_hidden", true)
     .eq("data_status", "clean")
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .order("featured", { ascending: false })
     .order("score", { ascending: false })
     .limit(80);

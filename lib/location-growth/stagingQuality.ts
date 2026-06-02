@@ -9,6 +9,7 @@ import {
   cleanText,
   normalizePhone,
 } from "@/lib/location-growth/shared";
+import { isLowLevelLocation, isUnverifiedNycRestaurant } from "@/lib/search/lowLevel";
 
 type StageableRow = Record<string, unknown>;
 
@@ -47,6 +48,9 @@ export function calculateStagingQuality(row: StageableRow) {
   const photoStatus = getPhotoStatus(row);
   const name = row.name || row.restaurant_name || row.activity_name;
   const chain = detectChainBrand(String(name || ""));
+  const lowLevel = isLowLevelLocation({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
+  const unverifiedNyc = isUnverifiedNycRestaurant({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
+  const lowLevelReason = unverifiedNyc ? "nyc_import_unverified" : lowLevel ? "low_level_review" : null;
 
   return {
     normalized_name:
@@ -57,7 +61,7 @@ export function calculateStagingQuality(row: StageableRow) {
     normalized_phone: normalizePhone(row.phone),
     location_key: buildLocationKey(row),
     quality_score: qualityScore,
-    quality_status: qualityStatusForScore(qualityScore, hasPhotos),
+    quality_status: lowLevel || unverifiedNyc ? "low_level_review" : qualityStatusForScore(qualityScore, hasPhotos),
     has_photos: hasPhotos,
     photo_status: photoStatus,
     is_chain: chain.isChain,
@@ -67,7 +71,14 @@ export function calculateStagingQuality(row: StageableRow) {
       ? "utility"
       : String(row.curation_tier || "standard"),
     date_score: chain.isChain ? 20 : Number(row.date_score ?? 50),
-    search_boost: chain.isChain ? -25 : Number(row.search_boost ?? 0),
+    search_boost: lowLevel || unverifiedNyc ? -500 : chain.isChain ? -25 : Number(row.search_boost ?? 0),
+    is_low_level: lowLevel || unverifiedNyc,
+    low_level_reason: lowLevelReason,
+    low_level_detected_at: lowLevel || unverifiedNyc ? new Date().toISOString() : null,
+    low_level_source: lowLevel || unverifiedNyc ? "staging_quality" : null,
+    public_visibility_tier: lowLevel || unverifiedNyc ? "hidden" : String(row.public_visibility_tier || "standard"),
+    import_confidence: lowLevel || unverifiedNyc ? "low" : String(row.import_confidence || "unknown"),
+    source_quality_status: unverifiedNyc ? "imported_unverified" : lowLevel ? "low_level_review" : String(row.source_quality_status || "unknown"),
   };
 }
 

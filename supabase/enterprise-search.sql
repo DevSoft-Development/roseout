@@ -13,7 +13,8 @@ create or replace function public.enterprise_search_locations(
   p_longitude numeric default null,
   p_radius_miles numeric default null,
   p_limit int default 40,
-  p_allow_places_of_worship boolean default false
+  p_allow_places_of_worship boolean default false,
+  p_allow_low_level boolean default false
 ) returns table (
   id uuid, location_type text, restaurant_name text, activity_name text, name text, address text, city text, state text, zip_code text, neighborhood text, borough text, latitude numeric, longitude numeric, description text, cuisine text, cuisine_type text, activity_type text, primary_category text, tags text[], vibe_tags text[], best_for_tags text[], date_style_tags text[], search_keywords text[], google_types text[], semantic_tags text[], intent_tags text[], search_document text, semantic_search_text text, rating numeric, review_count integer, review_score numeric, quality_score numeric, popularity_score numeric, roseout_score numeric, theouthaven_score numeric, search_score numeric, recommendation_score numeric, analytics_score numeric, reservation_url text, reservation_link text, booking_url text, external_reservation_url text, website text, phone text, image_url text, main_image text, images jsonb, gallery_images jsonb, is_searchable boolean, is_hidden boolean, active boolean, status text, data_status text, deleted_at timestamptz, match_score numeric, term_score numeric, geo_score numeric, distance_score numeric, distance_miles numeric, domain_score numeric, quality_rank_score numeric
 ) language sql stable as $$
@@ -27,6 +28,13 @@ with candidates as (
     and coalesce(l.is_searchable,true) = true
     and coalesce(l.status,'') not in ('hidden','deleted','archived')
     and coalesce(l.data_status,'clean') not in ('hidden','deleted','archived')
+    and (p_allow_low_level = true or coalesce(l.is_low_level, false) = false)
+    and (p_allow_low_level = true or coalesce(l.public_visibility_tier, 'standard') not in ('low_level','hidden'))
+    and (p_allow_low_level = true or coalesce(l.curation_tier, 'standard') <> 'low_level')
+    and (p_allow_low_level = true or coalesce(l.source_quality_status, 'enriched') not in ('imported_unverified','generic_restaurant','needs_enrichment','low_level_review'))
+    and (p_allow_low_level = true or coalesce(l.import_confidence, 'unknown') <> 'low')
+    and (p_allow_low_level = true or coalesce(l.has_photos, false) = true)
+    and (p_allow_low_level = true or coalesce(l.photo_status, '') <> 'missing_photo')
     and (
       p_allow_places_of_worship = true
       or not (
@@ -163,7 +171,15 @@ with candidates as (
 ), final as (
   select s.*,
     case when distance_miles_calc is null then 0 when distance_miles_calc <= 1 then 35 when distance_miles_calc <= 3 then 25 when distance_miles_calc <= 5 then 15 when distance_miles_calc <= 8 then 5 when p_neighborhood is not null then -20 else -5 end as distance_score_calc,
-    coalesce(s.theouthaven_score,s.quality_score,s.roseout_score,0) + coalesce(s.rating,0)*2 + least(coalesce(s.review_count,0)::numeric/100,10) as quality_rank_score_calc
+    coalesce(s.theouthaven_score,s.quality_score,s.roseout_score,0)
+      + coalesce(s.rating,0)*2
+      + least(coalesce(s.review_count,0)::numeric/100,10)
+      + case when coalesce(s.public_visibility_tier,'standard') = 'premium' then 250 when coalesce(s.public_visibility_tier,'standard') = 'curated' then 200 else 0 end
+      + case when coalesce(s.curation_tier,'standard') = 'premium' then 250 when coalesce(s.curation_tier,'standard') in ('curated','date_worthy') then 200 else 0 end
+      + case when coalesce(s.has_photos,false) = true and coalesce(s.photo_status,'') <> 'missing_photo' then 75 else -800 end
+      + case when coalesce(s.is_low_level,false) = true then -1000 else 0 end
+      + case when coalesce(s.public_visibility_tier,'standard') in ('low_level','hidden') then -700 else 0 end
+      + case when coalesce(s.source_quality_status,'enriched') in ('imported_unverified','generic_restaurant') then -700 else 0 end as quality_rank_score_calc
   from scored s
 )
 select f.id, f.location_type, f.restaurant_name, f.activity_name, f.name, f.address, f.city, f.state, f.zip_code, f.neighborhood, f.borough, f.latitude, f.longitude, f.description, f.cuisine, f.cuisine_type, f.activity_type, f.primary_category, f.tags, f.vibe_tags, f.best_for_tags, f.date_style_tags, f.search_keywords, f.google_types, f.semantic_tags, f.intent_tags, f.search_document, f.semantic_search_text, f.rating, f.review_count, f.review_score, f.quality_score, f.popularity_score, f.roseout_score, f.theouthaven_score, null::numeric, f.recommendation_score, f.analytics_score, f.reservation_url, f.reservation_link, f.booking_url, f.external_reservation_url, f.website, f.phone, f.image_url, f.main_image, to_jsonb(f.images), to_jsonb(f.gallery_images), f.is_searchable, f.is_hidden, f.active, f.status, f.data_status, f.deleted_at,
@@ -205,7 +221,8 @@ create or replace function public.enterprise_search_recovery(
     p_longitude,
     p_radius_miles,
     p_limit,
-    p_allow_places_of_worship
+    p_allow_places_of_worship,
+    false
   );
 $$;
 

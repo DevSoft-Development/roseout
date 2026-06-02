@@ -4,6 +4,7 @@ import {
   getPhotoStatus,
   hasLocationPhoto,
 } from "@/lib/location-growth/photoDetection";
+import { isLowLevelLocation, isUnverifiedNycRestaurant } from "@/lib/search/lowLevel";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 // Supabase rows are intentionally dynamic because this project does not ship
@@ -29,7 +30,9 @@ function toLocationInsert(row: StagingRow) {
   const chain = detectChainBrand(
     String(row.name || row.restaurant_name || row.activity_name || ""),
   );
-  const publishReady = hasPhotos && row.quality_status === "publish_ready";
+  const lowLevel = isLowLevelLocation({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
+  const unverifiedNyc = isUnverifiedNycRestaurant({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
+  const publishReady = hasPhotos && row.quality_status === "publish_ready" && !lowLevel && !unverifiedNyc;
   return {
     location_type: row.location_type,
     name: row.name || row.restaurant_name || row.activity_name,
@@ -77,7 +80,14 @@ function toLocationInsert(row: StagingRow) {
     curation_tier: chain.isChain ? "utility" : row.curation_tier || "standard",
     date_score: chain.isChain ? 20 : (row.date_score ?? 50),
     search_boost: chain.isChain ? -25 : (row.search_boost ?? 0),
-    is_featured: chain.isChain ? false : row.is_featured,
+    is_featured: chain.isChain || lowLevel || unverifiedNyc ? false : row.is_featured,
+    is_low_level: lowLevel || unverifiedNyc,
+    low_level_reason: unverifiedNyc ? "nyc_import_unverified" : lowLevel ? row.low_level_reason || "low_level_review" : null,
+    low_level_detected_at: lowLevel || unverifiedNyc ? new Date().toISOString() : null,
+    low_level_source: lowLevel || unverifiedNyc ? "publish_guard" : null,
+    public_visibility_tier: lowLevel || unverifiedNyc ? "hidden" : row.public_visibility_tier || "standard",
+    import_confidence: lowLevel || unverifiedNyc ? "low" : row.import_confidence || "unknown",
+    source_quality_status: unverifiedNyc ? "imported_unverified" : lowLevel ? "low_level_review" : row.source_quality_status || "unknown",
     enrichment_status:
       Number(row.quality_score || 0) >= 85 ? "queued" : "not_started",
     enrichment_priority:
@@ -109,6 +119,10 @@ export async function publishReadyStagedLocations({
     .eq("import_status", "staged")
     .eq("quality_status", "publish_ready")
     .eq("duplicate_status", "unique")
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .not("address", "is", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
