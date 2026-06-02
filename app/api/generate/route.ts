@@ -1,4 +1,6 @@
 import { firstImage, getLocationImage } from "@/lib/locationImage";
+import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
+import { runEnterpriseSearch } from "@/lib/search/enterprise";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -140,12 +142,11 @@ export async function POST(request: Request) {
       nodeEnv: process.env.NODE_ENV,
     });
 
-    const { runEnterpriseSearch } = await import("../../../lib/search/enterprise");
     const betaAssignmentId = body?.betaAssignmentId || body?.beta_assignment_id || new URL(request.url).searchParams.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
     const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
     const usedCustomPrompt = body?.usedCustomPrompt === true || body?.usedCustomPrompt === "true" || new URL(request.url).searchParams.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
     const betaDebug = process.env.NODE_ENV !== "production" || Boolean(betaAssignmentId || betaTesterId || body?.betaDebug);
-    const result = await runEnterpriseSearch(cleanInput, {
+    const legacySearch = () => runEnterpriseSearch(cleanInput, {
       body,
       useLLM: true,
       source: "create",
@@ -157,6 +158,20 @@ export async function POST(request: Request) {
       usedCustomPrompt,
       betaDebug,
     });
+
+    const result: any = await runCreateSearchWithEdgeFallback(
+      {
+        ...body,
+        prompt: cleanInput,
+        limit: body?.limit ?? 12,
+        debug: betaDebug || Boolean(body?.debug),
+      },
+      {
+        accessToken: request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? null,
+        fallbackDisabled: body?.disableLegacyFallback === true,
+        legacySearch,
+      },
+    );
 
     const cards = [
       ...(result.restaurants || []),
@@ -200,7 +215,7 @@ export async function POST(request: Request) {
       JSON.stringify({
         route: "/api/generate",
         total_ms: Date.now() - startedAt,
-        cache_status: "enterprise-rpc",
+        cache_status: isEdgeCreateSearchEnabled() ? "edge-or-legacy-fallback" : "enterprise-rpc",
         result_count:
           (result.restaurants?.length || 0) +
           (result.activities?.length || 0) +
