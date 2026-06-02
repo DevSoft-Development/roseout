@@ -11,6 +11,8 @@ type ReservationEmailPayload = {
   reservation_id?: string;
 };
 
+type LooseRecord = Record<string, any>;
+
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -139,9 +141,9 @@ Deno.serve(async (req) => {
         {
           success: false,
           error: "Could not load reservation.",
-          details: reservationError.message,
-          code: reservationError.code,
-          hint: reservationError.hint,
+          details: reservationError.message || "No error message",
+          code: reservationError.code || null,
+          hint: reservationError.hint || null,
         },
         500,
       );
@@ -154,11 +156,13 @@ Deno.serve(async (req) => {
       );
     }
 
+    const reservationRecord = reservation as LooseRecord;
+
     const guestEmail =
-      reservation.guest_email ||
-      reservation.customer_email ||
-      reservation.email ||
-      reservation.contact_email;
+      reservationRecord.guest_email ||
+      reservationRecord.customer_email ||
+      reservationRecord.email ||
+      reservationRecord.contact_email;
 
     if (!guestEmail) {
       return jsonResponse(
@@ -167,8 +171,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    let location: Record<string, unknown> | null = null;
-    const locationId = reservation.location_id;
+    let location: LooseRecord | null = null;
+    const locationId = reservationRecord.location_id;
 
     if (locationId) {
       const { data: locationData, error: locationError } = await supabase
@@ -181,7 +185,7 @@ Deno.serve(async (req) => {
         console.warn("Location lookup failed, continuing with reservation data", locationError);
       }
 
-      location = locationData;
+      location = (locationData || null) as LooseRecord | null;
     }
 
     const locationName =
@@ -189,50 +193,50 @@ Deno.serve(async (req) => {
       location?.restaurant_name ||
       location?.activity_name ||
       location?.business_name ||
-      reservation.location_name ||
-      reservation.restaurant_name ||
-      reservation.activity_name ||
-      reservation.business_name ||
+      reservationRecord.location_name ||
+      reservationRecord.restaurant_name ||
+      reservationRecord.activity_name ||
+      reservationRecord.business_name ||
       "the location";
 
     const guestName =
-      reservation.guest_name ||
-      reservation.customer_name ||
-      reservation.name ||
+      reservationRecord.guest_name ||
+      reservationRecord.customer_name ||
+      reservationRecord.name ||
       "Guest";
 
     const reservationDate = formatDate(
-      reservation.reservation_date ||
-        reservation.date ||
-        reservation.booking_date,
+      reservationRecord.reservation_date ||
+        reservationRecord.date ||
+        reservationRecord.booking_date,
     );
 
     const reservationTime = formatTime(
-      reservation.reservation_time ||
-        reservation.time ||
-        reservation.booking_time,
+      reservationRecord.reservation_time ||
+        reservationRecord.time ||
+        reservationRecord.booking_time,
     );
 
     const partySize =
-      reservation.party_size ||
-      reservation.guests ||
-      reservation.guest_count ||
-      reservation.party_count ||
+      reservationRecord.party_size ||
+      reservationRecord.guests ||
+      reservationRecord.guest_count ||
+      reservationRecord.party_count ||
       "";
 
-    const status = reservation.status || "confirmed";
+    const status = reservationRecord.status || "confirmed";
 
     const confirmationCode =
-      reservation.confirmation_code ||
-      reservation.confirmation_number ||
-      reservation.claim_code ||
-      reservation.id;
+      reservationRecord.confirmation_code ||
+      reservationRecord.confirmation_number ||
+      reservationRecord.claim_code ||
+      reservationRecord.id;
 
     const addressParts = [
-      location?.address || reservation.address,
-      location?.city || reservation.city,
-      location?.state || reservation.state,
-      location?.zip_code || reservation.zip_code,
+      location?.address || reservationRecord.address,
+      location?.city || reservationRecord.city,
+      location?.state || reservationRecord.state,
+      location?.zip_code || reservationRecord.zip_code,
     ].filter(Boolean);
 
     const locationAddress = addressParts.join(", ");
@@ -316,10 +320,10 @@ Deno.serve(async (req) => {
               }
 
               ${
-                reservation.special_requests
+                reservationRecord.special_requests
                   ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#5d4a3f;">
                       <strong>Special Requests:</strong><br />
-                      ${escapeHtml(reservation.special_requests)}
+                      ${escapeHtml(reservationRecord.special_requests)}
                     </p>`
                   : ""
               }
@@ -390,13 +394,13 @@ Powered by TheOutHaven Reserve
       reservationId,
       to: guestEmail,
     });
-  } catch (error) {
-    console.error("reservation-confirmation-email error", error);
+  } catch (caughtError) {
+    console.error("reservation-confirmation-email error", caughtError);
 
     return jsonResponse(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: caughtError instanceof Error ? caughtError.message : "Unknown error",
       },
       500,
     );
