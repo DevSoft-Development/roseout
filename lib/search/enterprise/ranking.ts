@@ -10,6 +10,7 @@ import {
   PLACE_OF_WORSHIP_TERMS,
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
+import { isWellnessActivity } from "../lowLevel";
 
 function compactRecordText(r: EnterpriseLocation) {
   return textForRecord(r).replaceAll("_", " ").replaceAll("-", " ");
@@ -152,6 +153,9 @@ function isActivityLike(r: EnterpriseLocation) {
   ]);
 
   const fullText = compactRecordText(r);
+  const hasRestaurantOnlySignals = Boolean(r.restaurant_name || r.cuisine || r.cuisine_type) && !r.activity_name && !r.activity_type;
+
+  if (hasRestaurantOnlySignals) return false;
 
   return Boolean(
     r.activity_name ||
@@ -188,6 +192,50 @@ const UTILITY_TERMS = [
   "breakfast",
   "grab and go",
 ];
+const SELF_CARE_INTENT_TERMS = [
+  "self care",
+  "self-care",
+  "spa day",
+  "couples massage",
+  "couple massage",
+  "girls day",
+  "relaxing date",
+  "wellness",
+  "birthday prep",
+  "pampering",
+  "pamper",
+];
+const NON_WELLNESS_PRIORITY_TERMS = [
+  "dinner",
+  "restaurant",
+  "food",
+  "eat",
+  "dining",
+  "rooftop",
+  "hookah",
+  "bowling",
+  "arcade",
+];
+
+function userHasSelfCareIntent(intent: SearchIntent) {
+  const text = intentText(intent);
+  return SELF_CARE_INTENT_TERMS.some((term) => text.includes(term));
+}
+
+function isNonWellnessPriorityIntent(intent: SearchIntent) {
+  const text = intentText(intent);
+  return NON_WELLNESS_PRIORITY_TERMS.some((term) => text.includes(term));
+}
+
+function wellnessIntentAdjustment(r: EnterpriseLocation, intent: SearchIntent, domain: SearchDomain) {
+  if (domain !== "activity" || !isWellnessActivity(r)) return 0;
+
+  if (userHasSelfCareIntent(intent)) return 180;
+  if (isNonWellnessPriorityIntent(intent)) return -220;
+
+  return 0;
+}
+
 function intentText(intent: SearchIntent) {
   return [
     intent.rawQuery,
@@ -381,6 +429,7 @@ function relevance(
     (r.distance_score ?? 0) +
     quality -
     chainPenalty(r, intent) +
+    wellnessIntentAdjustment(r, intent, domain) +
     Number(r.search_boost ?? 0)
   );
 }

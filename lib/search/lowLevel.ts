@@ -110,6 +110,67 @@ export function hasStrongRestaurantQuality(item: any): boolean {
   return hasPublicPhoto(item) && rating >= 4 && reviewCount >= 25;
 }
 
+export const WELLNESS_ACTIVITY_TERMS = [
+  "spa",
+  "massage",
+  "wellness",
+  "head spa",
+  "float spa",
+  "yoga spa",
+  "recovery spa",
+];
+
+function isOperationalPublicRecord(item: any): boolean {
+  const status = lower(item?.status);
+  const dataStatus = lower(item?.data_status);
+  const duplicateStatus = lower(item?.duplicate_status);
+  const publicVisibilityTier = lower(item?.public_visibility_tier);
+
+  return (
+    item?.is_hidden !== true &&
+    publicVisibilityTier !== "hidden" &&
+    !["hidden", "deleted", "archived"].includes(dataStatus) &&
+    !["closed", "deleted", "archived", "hidden"].includes(status) &&
+    duplicateStatus !== "duplicate"
+  );
+}
+
+export function isWellnessActivity(item: any): boolean {
+  const text = combinedItemText(item);
+  const locationType = lower(item?.location_type);
+  const activityFields = normalizeSearchText([
+    item?.activity_name,
+    item?.activity_type,
+    item?.primary_category,
+    item?.category,
+    item?.tags,
+    item?.google_types,
+    item?.search_keywords,
+  ]);
+
+  const hasWellnessTerm = WELLNESS_ACTIVITY_TERMS.some((term) =>
+    text.includes(normalizeSearchText(term)),
+  );
+
+  if (!hasWellnessTerm) return false;
+
+  return (
+    locationType === "activity" ||
+    Boolean(item?.activity_name || item?.activity_type) ||
+    WELLNESS_ACTIVITY_TERMS.some((term) =>
+      activityFields.includes(normalizeSearchText(term)),
+    )
+  );
+}
+
+export function isQualifiedWellnessActivity(item: any): boolean {
+  return (
+    isWellnessActivity(item) &&
+    isOperationalPublicRecord(item) &&
+    hasStrongRestaurantQuality(item)
+  );
+}
+
 function combinedItemText(item: any): string {
   return normalizeSearchText([
     item?.name,
@@ -146,6 +207,7 @@ export function isUnverifiedNycRestaurant(item: any): boolean {
 
 export function isLowLevelLocation(item: any): boolean {
   if (!item) return false;
+  if (isQualifiedWellnessActivity(item)) return false;
   if (item.is_low_level === true) return true;
   if (lower(item.curation_tier) === "low_level") return true;
   if (["low_level", "hidden"].includes(lower(item.public_visibility_tier))) return true;

@@ -1,3 +1,4 @@
+import { isQualifiedWellnessActivity } from "@/lib/search/lowLevel";
 export type LocationVisibilityFields = {
   is_searchable?: boolean | null;
   data_status?: string | null;
@@ -96,11 +97,14 @@ export function isPublicSearchVisible(
   if (!hasPublicField(location?.address)) return false;
   if (!hasPublicField(location?.latitude)) return false;
   if (!hasPublicField(location?.longitude)) return false;
-  if (!allowLowLevel && location?.is_low_level === true) return false;
-  if (!allowLowLevel && ["low_level", "hidden"].includes(publicTier)) return false;
-  if (!allowLowLevel && curationTier === "low_level") return false;
-  if (!allowUnverifiedImports && ["imported_unverified", "generic_restaurant", "needs_enrichment"].includes(sourceQualityStatus)) return false;
-  if (!allowUnverifiedImports && importConfidence === "low") return false;
+  const qualifiedWellnessActivity = isQualifiedWellnessActivity(location);
+
+  if (!allowLowLevel && !qualifiedWellnessActivity && location?.is_low_level === true) return false;
+  if (!allowLowLevel && !qualifiedWellnessActivity && publicTier === "low_level") return false;
+  if (!allowLowLevel && publicTier === "hidden") return false;
+  if (!allowLowLevel && !qualifiedWellnessActivity && curationTier === "low_level") return false;
+  if (!allowUnverifiedImports && !qualifiedWellnessActivity && ["imported_unverified", "generic_restaurant", "needs_enrichment"].includes(sourceQualityStatus)) return false;
+  if (!allowUnverifiedImports && !qualifiedWellnessActivity && importConfidence === "low") return false;
 
   return true;
 }
