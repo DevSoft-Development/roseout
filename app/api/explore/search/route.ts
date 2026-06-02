@@ -16,7 +16,11 @@ export async function GET(request: NextRequest) {
   try {
     const query = buildExploreQuery(q, kind, area);
     const simple = Boolean(!q || /^[\w\s-]+$/.test(q));
-    const result = await runEnterpriseSearch(query, { useLLM: !simple && q.split(/\s+/).length > 3, displayLimit: 48 });
+    const betaAssignmentId = params.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
+    const betaTesterId = params.get("betaTesterId") || request.headers.get("x-beta-tester-id");
+    const usedCustomPrompt = params.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
+    const betaDebug = process.env.NODE_ENV !== "production" || params.get("betaDebug") === "true";
+    const result = await runEnterpriseSearch(query, { useLLM: !simple && q.split(/\s+/).length > 3, displayLimit: 48, source: "explore", route: "/api/explore/search", logPerformance: true, sessionId: request.cookies.get("toh_session")?.value || request.headers.get("x-session-id"), betaAssignmentId, betaTesterId, usedCustomPrompt, betaDebug });
     const mixedWithPairing = result.render_mode === "mixed_pairs" || result.render_mode === "partial_mixed";
     let exploreNote: string | undefined;
     let items = kind === "restaurants" || kind === "rooftops" ? result.restaurants : kind === "activities" || kind === "lounges" ? result.activities : mixedWithPairing && result.pairs.length ? [...result.pairs, ...result.restaurants, ...result.activities] : [...result.restaurants, ...result.activities];
@@ -26,7 +30,8 @@ export async function GET(request: NextRequest) {
     const total = items.length;
     const start = (page - 1) * perPage;
     items = items.slice(start, start + perPage);
-    return NextResponse.json({ success: true, items, restaurants: result.restaurants, activities: result.activities, pairs: result.pairs, note: exploreNote, total, debug: process.env.NODE_ENV !== "production" ? result.debug : undefined });
+    const perf = (result.debug as any)?.performance;
+    return NextResponse.json({ success: true, items, restaurants: result.restaurants, activities: result.activities, pairs: result.pairs, note: exploreNote, total, searchPerformance: betaDebug && perf ? { totalMs: perf.total_ms, speedStatus: perf.speed_status, resultCount: perf.result_count } : undefined, debug: betaDebug ? result.debug : undefined });
   } catch (error) {
     console.error("EXPLORE_SEARCH_ERROR", error);
     return NextResponse.json({ success: false, items: [], restaurants: [], activities: [], total: 0, error: error instanceof Error ? error.message : "Explore search failed" }, { status: 200 });

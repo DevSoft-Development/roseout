@@ -197,6 +197,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/logs",
           "/admin/dashboard/launch-checklist",
           "/admin/dashboard/knowledge-base",
+          "/admin/dashboard/beta",
         ],
         activePrefixes: ["/admin/dashboard/knowledge-base"],
         gridClass: "md:grid-cols-3",
@@ -208,6 +209,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               { label: "Reviews", href: "/admin/dashboard/reviews", visible: canAdmin(adminRole, "reviews") },
               { label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") },
               { label: "Knowledge Base", href: "/admin/dashboard/knowledge-base", visible: canAdmin(adminRole, "knowledgeBase"), activePrefixes: ["/admin/dashboard/knowledge-base"] },
+              { label: "Beta Testing", href: "/admin/dashboard/beta", visible: ["superadmin", "admin", "experience", "experience_team"].includes(String(adminRole)), activePrefixes: ["/admin/dashboard/beta"] },
             ],
           },
           {
@@ -311,6 +313,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         "/admin/dashboard/logs",
         "/admin/dashboard/launch-checklist",
         "/admin/dashboard/knowledge-base",
+        "/admin/dashboard/beta",
       ];
       return adminToolPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
     }
