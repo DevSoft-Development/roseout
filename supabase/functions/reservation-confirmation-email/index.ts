@@ -23,6 +23,7 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 
 function formatDate(value?: string | null) {
   if (!value) return "";
+
   try {
     const date = new Date(`${value}T00:00:00`);
     return new Intl.DateTimeFormat("en-US", {
@@ -38,6 +39,7 @@ function formatDate(value?: string | null) {
 
 function formatTime(value?: string | null) {
   if (!value) return "";
+
   try {
     const [hourRaw, minuteRaw] = value.split(":");
     const hour = Number(hourRaw);
@@ -96,12 +98,14 @@ Deno.serve(async (req) => {
       Deno.env.get("RESERVATION_EMAIL_FROM") ||
       "TheOutHaven Reserve <reservations@theouthaven.com>";
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error("Missing Supabase env vars", {
-        hasSupabaseUrl: Boolean(supabaseUrl),
-        hasServiceRoleKey: Boolean(serviceRoleKey),
-      });
+    console.log("reservation-confirmation-email debug", {
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasServiceRoleKey: Boolean(serviceRoleKey),
+      hasResendApiKey: Boolean(resendApiKey),
+      reservationId,
+    });
 
+    if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse(
         { success: false, error: "Reservation email service is not configured." },
         500,
@@ -109,8 +113,6 @@ Deno.serve(async (req) => {
     }
 
     if (!resendApiKey) {
-      console.error("Missing RESEND_API_KEY");
-
       return jsonResponse(
         { success: false, error: "Email provider is not configured." },
         500,
@@ -134,7 +136,13 @@ Deno.serve(async (req) => {
       console.error("Reservation lookup error", reservationError);
 
       return jsonResponse(
-        { success: false, error: "Could not load reservation." },
+        {
+          success: false,
+          error: "Could not load reservation.",
+          details: reservationError.message,
+          code: reservationError.code,
+          hint: reservationError.hint,
+        },
         500,
       );
     }
@@ -165,9 +173,7 @@ Deno.serve(async (req) => {
     if (locationId) {
       const { data: locationData, error: locationError } = await supabase
         .from("locations")
-        .select(
-          "id,name,restaurant_name,activity_name,business_name,address,city,state,zip_code,phone,email,image_url,website",
-        )
+        .select("id,name,restaurant_name,activity_name,business_name,address,city,state,zip_code,phone,email,image_url,website")
         .eq("id", locationId)
         .maybeSingle();
 
