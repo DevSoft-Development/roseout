@@ -18,20 +18,25 @@ type Result = {
   reservationAccess?: "free" | "pro" | string | null;
 };
 
-type Props = {
+type AdminLocationSearchProps = {
   compact?: boolean;
   className?: string;
+  autoFocus?: boolean;
+  onSelect?: () => void;
 };
 
 export default function AdminLocationSearch({
   compact = false,
   className = "",
-}: Props) {
+  autoFocus = false,
+  onSelect,
+}: AdminLocationSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const q = query.trim();
@@ -76,6 +81,8 @@ export default function AdminLocationSearch({
       >
         <Search className="h-4 w-4 text-rose-100/70" />
         <input
+          ref={inputRef}
+          autoFocus={autoFocus}
           value={query}
           onFocus={() => setOpen(true)}
           onChange={(event) => {
@@ -91,7 +98,15 @@ export default function AdminLocationSearch({
         />
       </div>
       {open && (
-        <div className="absolute left-0 right-0 z-[180] mt-2 max-h-[34rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#120d0b]/98 p-3 text-white shadow-[0_24px_80px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
+        <div
+          onClick={(event) => {
+            const target = event.target as HTMLElement;
+            if (target.closest("a[href]")) {
+              onSelect?.();
+            }
+          }}
+          className="absolute left-0 right-0 z-[180] mt-2 max-h-[34rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#120d0b]/98 p-3 text-white shadow-[0_24px_80px_rgba(0,0,0,0.65)] backdrop-blur-2xl"
+        >
           {query.trim().length < 2 && (
             <p className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-white/55">
               Type at least 2 characters to search locations.
