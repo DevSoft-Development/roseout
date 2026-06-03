@@ -1,135 +1,152 @@
-import { handleOptions } from "../_shared/cors.ts";
-import { ok, serverError, unauthorized } from "../_shared/response.ts";
-import { requireCronSecret } from "../_shared/auth.ts";
-import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
-import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
-const DEMO_TABLES = [
-  "team_proofs",
-  "ambassador_social_outreach",
-  "ambassador_site_visits",
-  "team_follow_ups",
-  "team_work_activities",
-  "team_work_sessions",
-  "crm_demo_session_locations",
-] as const;
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
-type ResetError = { sessionId: string; table: string; message: string };
-type DeletedCounts = Record<(typeof DEMO_TABLES)[number], number>;
-
-function isMissingTableError(error: { code?: string; message?: string } | null): boolean {
-  const message = String(error?.message ?? "").toLowerCase();
-  return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("does not exist");
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
 }
 
-function emptyDeletedCounts(): DeletedCounts {
-  return Object.fromEntries(DEMO_TABLES.map((table) => [table, 0])) as DeletedCounts;
-}
+function isAuthorized(req: Request) {
+  const expected = Deno.env.get("CRON_SECRET");
+  const provided = req.headers.get("x-cron-secret");
 
-async function safeDeleteByDemoSession(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  table: (typeof DEMO_TABLES)[number],
-  demoSessionId: string,
-): Promise<{ deleted: number; error?: ResetError }> {
-  let query = supabase.from(table).delete({ count: "exact" }).eq("demo_session_id", demoSessionId);
-  if (table === "team_work_sessions") {
-    query = query.eq("is_demo", true);
+  if (!expected) {
+    return false;
   }
 
-  const { count, error } = await query;
-  if (!error) return { deleted: count ?? 0 };
-  if (isMissingTableError(error)) return { deleted: 0 };
-  return { deleted: 0, error: { sessionId: demoSessionId, table, message: error.message } };
-}
-
-async function insertResetLogIfPresent(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  values: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await supabase.from("crm_demo_reset_logs").insert(values);
-  if (error && !isMissingTableError(error)) throw error;
+  return provided === expected;
 }
 
 Deno.serve(async (req) => {
-  const options = handleOptions(req);
-  if (options) return options;
-  if (req.method !== "POST") return ok({ success: false, message: "POST is required." }, { status: 405 });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
-  const timer = startTimer();
-  const supabase = createSupabaseAdminClient();
-  const started = new Date().toISOString();
-  const errors: ResetError[] = [];
-  const deletedCounts = emptyDeletedCounts();
+  if (req.method !== "POST") {
+    return jsonResponse({ success: false, error: "Method not allowed" }, 405);
+  }
+
+  if (!isAuthorized(req)) {
+    return jsonResponse({ success: false, error: "Unauthorized cron request" }, 401);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonResponse({ success: false, error: "Missing Supabase environment variables" }, 500);
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const startedAt = new Date().toISOString();
+  const summary = {
+    success: true,
+    source: "nightly-demo-reset",
+    startedAt,
+    finishedAt: null as string | null,
+    sessionsFound: 0,
+    sessionsReset: 0,
+    errors: [] as string[],
+  };
 
   try {
-    requireCronSecret(req);
-
-    const { data: expired, error: expiredError } = await supabase
+    const { data: sessions, error: sessionsError } = await supabase
       .from("crm_demo_sessions")
       .select("id")
       .eq("status", "active")
       .lte("expires_at", new Date().toISOString());
-    if (expiredError) throw expiredError;
 
-    const sessionIds = (expired ?? []).map((row: { id: string }) => row.id);
-    let sessionsReset = 0;
+    if (sessionsError) {
+      throw sessionsError;
+    }
 
-    for (const sessionId of sessionIds) {
-      for (const table of DEMO_TABLES) {
-        const result = await safeDeleteByDemoSession(supabase, table, sessionId);
-        deletedCounts[table] += result.deleted;
-        if (result.error) errors.push(result.error);
+    const expiredSessions = sessions ?? [];
+    summary.sessionsFound = expiredSessions.length;
+
+    for (const session of expiredSessions) {
+      const demoSessionId = session.id;
+
+      const deleteSteps = [
+        supabase.from("team_proofs").delete().eq("demo_session_id", demoSessionId),
+        supabase.from("ambassador_social_outreach").delete().eq("demo_session_id", demoSessionId),
+        supabase.from("ambassador_site_visits").delete().eq("demo_session_id", demoSessionId),
+        supabase.from("team_follow_ups").delete().eq("demo_session_id", demoSessionId),
+        supabase.from("team_work_activities").delete().eq("demo_session_id", demoSessionId),
+        supabase.from("team_work_sessions").delete().eq("demo_session_id", demoSessionId).eq("is_demo", true),
+        supabase.from("crm_demo_session_locations").delete().eq("demo_session_id", demoSessionId),
+      ];
+
+      for (const step of deleteSteps) {
+        const { error } = await step;
+        if (error) {
+          summary.errors.push(`Session ${demoSessionId}: ${error.message}`);
+        }
       }
 
       const { error: updateError } = await supabase
         .from("crm_demo_sessions")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
-        .eq("id", sessionId);
+        .update({
+          status: "expired",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", demoSessionId);
 
       if (updateError) {
-        errors.push({ sessionId, table: "crm_demo_sessions", message: updateError.message });
+        summary.errors.push(`Session ${demoSessionId} update failed: ${updateError.message}`);
       } else {
-        sessionsReset += 1;
+        summary.sessionsReset += 1;
       }
     }
 
-    const status = errors.length ? "partial" : "success";
-    await insertResetLogIfPresent(supabase, {
-      reset_type: "nightly_expired_sessions",
-      status,
-      sessions_deleted: sessionsReset,
-      records_deleted: deletedCounts,
-      error_message: errors.length ? JSON.stringify(errors) : null,
-      started_at: started,
-      finished_at: new Date().toISOString(),
+    summary.finishedAt = new Date().toISOString();
+
+    await supabase.from("crm_demo_reset_logs").insert({
+      reset_type: "nightly",
+      status: summary.errors.length ? "partial_success" : "success",
+      sessions_deleted: summary.sessionsReset,
+      records_deleted: {
+        sessionsFound: summary.sessionsFound,
+        sessionsReset: summary.sessionsReset,
+      },
+      error_message: summary.errors.length ? summary.errors.join("; ") : null,
+      started_at: startedAt,
+      finished_at: summary.finishedAt,
     });
 
-    await logEdgeFunctionRun(supabase, {
-      function_name: "nightly-demo-reset",
-      status,
-      source: "cron",
-      duration_ms: timer(),
-      output_summary: { sessionsFound: sessionIds.length, sessionsReset, errors: errors.length, deletedCounts },
-    });
-
-    return ok({
-      success: errors.length === 0,
-      sessionsFound: sessionIds.length,
-      sessionsReset,
-      errors,
-      deletedCounts,
-      safety: "Only demo/session-scoped tables were touched; public.locations and public.crm_demo_locations were not deleted.",
-    });
+    return jsonResponse(summary);
   } catch (error) {
-    const message = safeError(error);
-    await logEdgeFunctionRun(supabase, {
-      function_name: "nightly-demo-reset",
-      status: "error",
-      source: "cron",
-      duration_ms: timer(),
-      error_message: message,
-    });
-    if (message.startsWith("FORBIDDEN:")) return unauthorized(message.replace("FORBIDDEN: ", ""));
-    return serverError("nightly-demo-reset failed", message);
+    summary.finishedAt = new Date().toISOString();
+    summary.success = false;
+    summary.errors.push(error instanceof Error ? error.message : String(error));
+
+    try {
+      await supabase.from("crm_demo_reset_logs").insert({
+        reset_type: "nightly",
+        status: "failed",
+        sessions_deleted: summary.sessionsReset,
+        records_deleted: {
+          sessionsFound: summary.sessionsFound,
+          sessionsReset: summary.sessionsReset,
+        },
+        error_message: summary.errors.join("; "),
+        started_at: startedAt,
+        finished_at: summary.finishedAt,
+      });
+    } catch {
+      // Ignore reset-log insert failure.
+    }
+
+    return jsonResponse(summary, 500);
   }
 });

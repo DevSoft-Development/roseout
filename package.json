@@ -30,7 +30,9 @@
     "test:search-route-live": "node scripts/test-search-route.mjs",
     "test:llm-intent": "node scripts/test-llm-intent.mjs",
     "validate:low-level": "tsx scripts/validate-low-level-cleanup.ts",
-    "test:search": "npm run qa:search"
+    "test:search": "npm run qa:search",
+    "test:pairing-distance": "vitest run lib/search/enterprise/__tests__/pairing.test.ts lib/search/enterprise/__tests__/distance-labels.test.ts",
+    "test:enterprise-search": "vitest run lib/search/enterprise/__tests__"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

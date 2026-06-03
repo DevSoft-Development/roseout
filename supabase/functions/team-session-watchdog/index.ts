@@ -1,80 +1,103 @@
-import { handleOptions } from "../_shared/cors.ts";
-import { ok, serverError, unauthorized } from "../_shared/response.ts";
-import { requireCronSecret } from "../_shared/auth.ts";
-import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
-import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
-const MAX_OPEN_HOURS = 12;
-const WATCHDOG_NOTE = "Session was open longer than 12 hours and needs admin correction.";
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
-type SessionRow = { id: string; admin_notes: string | null };
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
 
-function appendAdminNote(existing: string | null): string {
-  if (!existing) return WATCHDOG_NOTE;
-  if (existing.includes(WATCHDOG_NOTE)) return existing;
-  return `${existing}\n${WATCHDOG_NOTE}`;
+function isAuthorized(req: Request) {
+  const expected = Deno.env.get("CRON_SECRET");
+  const provided = req.headers.get("x-cron-secret");
+
+  if (!expected) {
+    return false;
+  }
+
+  return provided === expected;
 }
 
 Deno.serve(async (req) => {
-  const options = handleOptions(req);
-  if (options) return options;
-  if (req.method !== "POST") return ok({ success: false, message: "POST is required." }, { status: 405 });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
-  const timer = startTimer();
-  const supabase = createSupabaseAdminClient();
+  if (req.method !== "POST") {
+    return jsonResponse({ success: false, error: "Method not allowed" }, 405);
+  }
+
+  if (!isAuthorized(req)) {
+    return jsonResponse({ success: false, error: "Unauthorized cron request" }, 401);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonResponse({ success: false, error: "Missing Supabase environment variables" }, 500);
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
   try {
-    requireCronSecret(req);
-
-    const threshold = new Date(Date.now() - MAX_OPEN_HOURS * 60 * 60 * 1000).toISOString();
     const { data: sessions, error: selectError } = await supabase
       .from("team_work_sessions")
-      .select("id, admin_notes")
+      .select("id, clock_in_at, admin_notes")
       .eq("status", "active")
-      .lt("clock_in_at", threshold);
-    if (selectError) throw selectError;
+      .lte("clock_in_at", cutoff);
 
-    const rows = (sessions ?? []) as SessionRow[];
+    if (selectError) {
+      throw selectError;
+    }
+
+    const openSessions = sessions ?? [];
     let flagged = 0;
 
-    for (const session of rows) {
-      const { error } = await supabase
+    for (const session of openSessions) {
+      const note = `Auto-flagged by session watchdog: session open longer than 12 hours at ${new Date().toISOString()}.`;
+      const adminNotes = session.admin_notes ? `${session.admin_notes}\n${note}` : note;
+
+      const { error: updateError } = await supabase
         .from("team_work_sessions")
         .update({
           status: "needs_correction",
           approval_status: "needs_correction",
-          admin_notes: appendAdminNote(session.admin_notes),
+          admin_notes: adminNotes,
           updated_at: new Date().toISOString(),
         })
         .eq("id", session.id);
-      if (error) throw error;
-      flagged += 1;
+
+      if (!updateError) {
+        flagged += 1;
+      }
     }
 
-    await logEdgeFunctionRun(supabase, {
-      function_name: "team-session-watchdog",
-      status: "success",
-      source: "cron",
-      duration_ms: timer(),
-      output_summary: { checked: rows.length, flagged },
-    });
-
-    return ok({
+    return jsonResponse({
       success: true,
-      checked: rows.length,
+      checked: openSessions.length,
       flagged,
-      note: "Clock-in/out is time-only. This watchdog does not require GPS and does not check support tickets for proof pictures.",
+      cutoff,
+      message: "Team session watchdog completed.",
     });
   } catch (error) {
-    const message = safeError(error);
-    await logEdgeFunctionRun(supabase, {
-      function_name: "team-session-watchdog",
-      status: "error",
-      source: "cron",
-      duration_ms: timer(),
-      error_message: message,
-    });
-    if (message.startsWith("FORBIDDEN:")) return unauthorized(message.replace("FORBIDDEN: ", ""));
-    return serverError("team-session-watchdog failed", message);
+    return jsonResponse(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      500,
+    );
   }
 });
