@@ -542,13 +542,14 @@ function buildFeaturedLocations(locations: HomeLocation[]) {
 
 function PlaceCard({ location }: { location: HomeLocation }) {
   const tags = getCardChips(location);
+  const imageSrc = getLocationImage(location) || "/toh_logo.png";
   const reserveHref = location.external_reservation_url || location.reservation_url || location.website || null;
 
   return (
     <article className="group flex h-full min-h-[382px] flex-col overflow-hidden rounded-[1.6rem] border border-white/10 bg-zinc-950/80 p-3 shadow-2xl shadow-black/30 transition duration-300 hover:-translate-y-1 hover:border-white/20">
       <div className="relative h-44 w-full overflow-hidden rounded-[1.25rem] bg-white/[0.04]">
         <Image
-          src={getLocationImage(location)}
+          src={imageSrc}
           alt={getLocationName(location)}
           loading="lazy"
           fill
