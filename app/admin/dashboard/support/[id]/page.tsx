@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketConversation from "@/components/support/SupportTicketConversation";
+import { SupportTicketWorkButtons } from "@/components/TeamToolsForms";
 import { getSupportTicket, getSupportTicketMessages } from "@/lib/support";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -62,6 +63,7 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
             Public ticket view
           </Link>
         </div>
+        <div className="mb-6"><SupportTicketWorkButtons ticketId={ticket.id} /></div>
         <SupportTicketConversation
           ticket={ticket}
           messages={messages}

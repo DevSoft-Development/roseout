@@ -189,6 +189,34 @@ export default function AdminTopBar({
         ],
       },
       {
+        label: "Team Tools",
+        activePrefixes: ["/admin/dashboard/team"],
+        widthClass: "w-[460px] max-w-[calc(100vw-24px)]",
+        gridClass: "md:grid-cols-2",
+        sections: [
+          {
+            label: "Work",
+            items: [
+              { label: "Overview", href: "/admin/dashboard/team", visible: canView, exact: true },
+              { label: "Team Members", href: "/admin/dashboard/team/members", visible: canManagePlatform },
+              { label: "Work Sessions", href: "/admin/dashboard/team/work-sessions", visible: canView },
+              { label: "Site Visit Check-Ins", href: "/admin/dashboard/team/site-visits", visible: canView },
+              { label: "Social Outreach", href: "/admin/dashboard/team/social-outreach", visible: canView },
+              { label: "Support Work", href: "/admin/dashboard/team/support-work", visible: canView },
+            ],
+          },
+          {
+            label: "Review + Payroll",
+            items: [
+              { label: "Demo / Training Mode", href: "/admin/dashboard/team/demo", visible: canView },
+              { label: "Payroll Export", href: "/admin/dashboard/team/payroll", visible: canView },
+              { label: "Performance", href: "/admin/dashboard/team/performance", visible: canView },
+              { label: "Proof Review", href: "/admin/dashboard/team/proof-review", visible: canView },
+            ],
+          },
+        ],
+      },
+      {
         label: "Reservations",
         activePaths: ["/admin/dashboard/reservation-opportunities"],
         activePrefixes: [
@@ -483,6 +511,9 @@ export default function AdminTopBar({
 
   const isGroupActive = (group: NavGroup) => {
     if (!pathname) return false;
+    if (group.label === "Team Tools") {
+      return pathname === "/admin/dashboard/team" || pathname.startsWith("/admin/dashboard/team/");
+    }
     if (group.label === "Reservations") {
       return (
         pathname === "/admin/dashboard/reservation-opportunities" ||
