@@ -18,3 +18,18 @@ verify_jwt = false
 
 [functions.beta-tester-reminders]
 verify_jwt = false
+
+[functions.export-team-payroll]
+verify_jwt = true
+
+[functions.nightly-demo-reset]
+verify_jwt = false
+
+[functions.team-session-watchdog]
+verify_jwt = false
+
+[functions.reverse-geocode]
+verify_jwt = true
+
+[functions.geocode-address]
+verify_jwt = true
