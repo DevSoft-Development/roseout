@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2021",
+    "moduleResolution": "node",
+    "noEmit": false,
+    "outDir": ".tmp-test/search-route",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": false,
+    "strict": false
+  },
+  "include": [
+    "scripts/search-route-regression.ts",
+    "app/api/generate/route.ts",
+    "lib/search/enterprise/**/*.ts",
+    "lib/search/**/*.ts",
+    "lib/supabaseAdmin.ts",
+    "lib/locationImage.ts"
+  ]
+}
