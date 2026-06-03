@@ -1,29 +1,34 @@
 import { handleOptions } from "../_shared/cors.ts";
-import { badRequest, ok, serverError } from "../_shared/response.ts";
+import { badRequest, forbidden, ok, serverError, unauthorized } from "../_shared/response.ts";
+import { getUserFromRequest } from "../_shared/auth.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
 
+const ADMIN_ROLES = new Set(["admin", "superadmin"]);
+
 type SessionRow = Record<string, any>;
 type CountSummary = {
-  supportTickets: number;
-  supportAnswered: number;
-  supportMarkedComplete: number;
-  supportResolved: number;
+  supportTicketsAnswered: number;
+  supportTicketsMarkedComplete: number;
+  supportTicketsResolved: number;
+  supportTicketsClosed: number;
+  supportTicketWorkMinutes: number;
   siteVisits: number;
   verifiedSiteVisits: number;
-  socialOutreach: number;
   socialMessagesSent: number;
+  socialRepliesReceived: number;
 };
 
 const EMPTY_COUNTS: CountSummary = {
-  supportTickets: 0,
-  supportAnswered: 0,
-  supportMarkedComplete: 0,
-  supportResolved: 0,
+  supportTicketsAnswered: 0,
+  supportTicketsMarkedComplete: 0,
+  supportTicketsResolved: 0,
+  supportTicketsClosed: 0,
+  supportTicketWorkMinutes: 0,
   siteVisits: 0,
   verifiedSiteVisits: 0,
-  socialOutreach: 0,
   socialMessagesSent: 0,
+  socialRepliesReceived: 0,
 };
 
 function csvEscape(value: unknown): string {
@@ -35,8 +40,12 @@ function csv(rows: unknown[][]): string {
   return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
 }
 
-function toEndOfDay(value: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59.999Z` : value;
+function addOneDayExclusive(value: string): string {
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value;
+  const date = new Date(base);
+  if (Number.isNaN(date.getTime())) return value;
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString();
 }
 
 function hours(minutes: unknown): number {
@@ -59,53 +68,74 @@ function increment(map: Map<string, CountSummary>, sessionId: string, changes: P
   map.set(sessionId, current);
 }
 
-async function loadSessionCounts(supabase: any, sessionIds: string[]): Promise<Map<string, CountSummary>> {
+function roleFromUserMetadata(user: { app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> }): string | null {
+  const role = user.app_metadata?.role ?? user.user_metadata?.role;
+  return role ? String(role).toLowerCase() : null;
+}
+
+async function roleFromTable(supabase: ReturnType<typeof createSupabaseAdminClient>, table: string, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.from(table).select("role").eq("user_id", userId).maybeSingle();
+    if (error || !data?.role) return null;
+    return String(data.role).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+async function requireAdminOrSuperadmin(req: Request, supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  const user = await getUserFromRequest(req, supabase);
+  if (!user) throw new Error("UNAUTHORIZED: valid user JWT required");
+
+  const metadataRole = roleFromUserMetadata(user);
+  if (metadataRole && ADMIN_ROLES.has(metadataRole)) return { user, role: metadataRole };
+
+  for (const table of ["profiles", "admin_users"]) {
+    const tableRole = await roleFromTable(supabase, table, user.id);
+    if (tableRole && ADMIN_ROLES.has(tableRole)) return { user, role: tableRole };
+  }
+
+  throw new Error("FORBIDDEN: admin or superadmin role required");
+}
+
+async function loadSessionCounts(supabase: ReturnType<typeof createSupabaseAdminClient>, sessionIds: string[]): Promise<Map<string, CountSummary>> {
   const counts = new Map<string, CountSummary>();
   if (!sessionIds.length) return counts;
 
-  const [{ data: supportActivities, error: supportError }, { data: siteVisits, error: siteError }, { data: socialOutreach, error: socialError }] = await Promise.all([
+  const [supportResult, siteResult, socialResult] = await Promise.all([
     supabase
       .from("team_work_activities")
-      .select("work_session_id,source_id,ticket_action")
+      .select("work_session_id,ticket_action,minutes_spent")
       .in("work_session_id", sessionIds)
-      .eq("activity_type", "support_ticket")
-      .eq("payroll_eligible", true),
+      .eq("activity_type", "support_ticket"),
     supabase
       .from("ambassador_site_visits")
       .select("work_session_id,location_verification_status")
       .in("work_session_id", sessionIds),
     supabase
       .from("ambassador_social_outreach")
-      .select("work_session_id,message_status")
+      .select("work_session_id,message_status,reply_status")
       .in("work_session_id", sessionIds),
   ]);
 
-  if (supportError) throw supportError;
-  if (siteError) throw siteError;
-  if (socialError) throw socialError;
+  if (supportResult.error) throw supportResult.error;
+  if (siteResult.error) throw siteResult.error;
+  if (socialResult.error) throw socialResult.error;
 
-  const ticketIdsBySession = new Map<string, Set<string>>();
-  for (const activity of supportActivities ?? []) {
+  for (const activity of supportResult.data ?? []) {
     const sessionId = activity.work_session_id;
     if (!sessionId) continue;
-    const action = String(activity.ticket_action ?? "");
-    if (activity.source_id) {
-      const ticketIds = ticketIdsBySession.get(sessionId) ?? new Set<string>();
-      ticketIds.add(activity.source_id);
-      ticketIdsBySession.set(sessionId, ticketIds);
-    }
+    const action = String(activity.ticket_action ?? "").toLowerCase();
     increment(counts, sessionId, {
-      supportAnswered: action === "answered" ? 1 : 0,
-      supportMarkedComplete: action === "marked_complete" ? 1 : 0,
-      supportResolved: action === "resolved" ? 1 : 0,
+      supportTicketsAnswered: action === "answered" ? 1 : 0,
+      supportTicketsMarkedComplete: action === "marked_complete" ? 1 : 0,
+      supportTicketsResolved: action === "resolved" ? 1 : 0,
+      supportTicketsClosed: action === "closed" ? 1 : 0,
+      supportTicketWorkMinutes: Number(activity.minutes_spent || 0),
     });
   }
 
-  for (const [sessionId, ticketIds] of ticketIdsBySession) {
-    increment(counts, sessionId, { supportTickets: ticketIds.size });
-  }
-
-  for (const visit of siteVisits ?? []) {
+  for (const visit of siteResult.data ?? []) {
     if (!visit.work_session_id) continue;
     increment(counts, visit.work_session_id, {
       siteVisits: 1,
@@ -113,11 +143,11 @@ async function loadSessionCounts(supabase: any, sessionIds: string[]): Promise<M
     });
   }
 
-  for (const outreach of socialOutreach ?? []) {
+  for (const outreach of socialResult.data ?? []) {
     if (!outreach.work_session_id) continue;
     increment(counts, outreach.work_session_id, {
-      socialOutreach: 1,
       socialMessagesSent: outreach.message_status === "sent" ? 1 : 0,
+      socialRepliesReceived: outreach.reply_status && outreach.reply_status !== "no_reply" ? 1 : 0,
     });
   }
 
@@ -141,14 +171,15 @@ function buildDetailCsv(sessions: SessionRow[], countMap: Map<string, CountSumma
     "hourly_rate",
     "gross_pay",
     "total_pay",
-    "support_ticket_count",
-    "support_answered_count",
-    "support_marked_complete_count",
-    "support_resolved_count",
-    "site_visit_count",
-    "verified_site_visit_count",
-    "social_outreach_count",
-    "social_messages_sent_count",
+    "support_tickets_answered",
+    "support_tickets_marked_complete",
+    "support_tickets_resolved",
+    "support_tickets_closed",
+    "support_ticket_work_minutes",
+    "site_visits",
+    "verified_site_visits",
+    "social_messages_sent",
+    "social_replies_received",
     "is_training",
     "is_demo",
     "user_notes",
@@ -177,14 +208,15 @@ function buildDetailCsv(sessions: SessionRow[], countMap: Map<string, CountSumma
         session.team_member_profiles?.hourly_rate ?? "",
         grossPay,
         totalPay,
-        counts.supportTickets,
-        counts.supportAnswered,
-        counts.supportMarkedComplete,
-        counts.supportResolved,
+        counts.supportTicketsAnswered,
+        counts.supportTicketsMarkedComplete,
+        counts.supportTicketsResolved,
+        counts.supportTicketsClosed,
+        counts.supportTicketWorkMinutes,
         counts.siteVisits,
         counts.verifiedSiteVisits,
-        counts.socialOutreach,
         counts.socialMessagesSent,
+        counts.socialRepliesReceived,
         session.is_training ?? false,
         session.is_demo ?? false,
         session.user_notes,
@@ -241,14 +273,15 @@ function buildSummaryCsv(sessions: SessionRow[], countMap: Map<string, CountSumm
       "hourly_rate",
       "gross_pay",
       "total_pay",
-      "support_ticket_count",
-      "support_answered_count",
-      "support_marked_complete_count",
-      "support_resolved_count",
-      "site_visit_count",
-      "verified_site_visit_count",
-      "social_outreach_count",
-      "social_messages_sent_count",
+      "support_tickets_answered",
+      "support_tickets_marked_complete",
+      "support_tickets_resolved",
+      "support_tickets_closed",
+      "support_ticket_work_minutes",
+      "site_visits",
+      "verified_site_visits",
+      "social_messages_sent",
+      "social_replies_received",
     ],
     ...Array.from(byMember.values()).map((row) => [
       row.teamMemberId,
@@ -262,14 +295,15 @@ function buildSummaryCsv(sessions: SessionRow[], countMap: Map<string, CountSumm
       row.hourlyRate,
       row.grossPay,
       row.totalPay,
-      row.supportTickets,
-      row.supportAnswered,
-      row.supportMarkedComplete,
-      row.supportResolved,
+      row.supportTicketsAnswered,
+      row.supportTicketsMarkedComplete,
+      row.supportTicketsResolved,
+      row.supportTicketsClosed,
+      row.supportTicketWorkMinutes,
       row.siteVisits,
       row.verifiedSiteVisits,
-      row.socialOutreach,
       row.socialMessagesSent,
+      row.socialRepliesReceived,
     ]),
   ]);
 }
@@ -283,9 +317,12 @@ Deno.serve(async (req) => {
   const supabase = createSupabaseAdminClient();
 
   try {
+    const { user, role } = await requireAdminOrSuperadmin(req, supabase);
     const body = await req.json().catch(() => ({}));
     const start = String(body.payPeriodStart ?? "").trim();
     const end = String(body.payPeriodEnd ?? "").trim();
+    const includeTraining = body.includeTraining === true;
+    const force = body.force === true;
     if (!start || !end) return badRequest("payPeriodStart and payPeriodEnd are required.");
 
     let query = supabase
@@ -293,11 +330,12 @@ Deno.serve(async (req) => {
       .select("*, team_member_profiles!inner(include_in_payroll,hourly_rate,team_type)")
       .eq("approval_status", "approved")
       .gte("clock_in_at", start)
-      .lte("clock_in_at", toEndOfDay(end))
-      .eq("team_member_profiles.include_in_payroll", true);
+      .lt("clock_in_at", addOneDayExclusive(end))
+      .eq("team_member_profiles.include_in_payroll", true)
+      .eq("is_demo", false);
 
-    if (!body.force) query = query.is("exported_at", null);
-    if (!body.includeTraining) query = query.eq("is_training", false).eq("is_demo", false);
+    if (!force) query = query.is("exported_at", null);
+    if (!includeTraining) query = query.eq("is_training", false);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -317,11 +355,12 @@ Deno.serve(async (req) => {
       .insert({
         pay_period_start: start,
         pay_period_end: end,
-        total_team_members: new Set(sessions.map((session) => session.team_member_id)).size,
+        exported_by: user.id,
+        total_team_members: new Set(sessions.map((session) => session.team_member_id ?? session.user_id)).size,
         total_approved_hours: totalMinutes / 60,
         total_paid_travel_hours: totalPaidTravelMinutes / 60,
         total_estimated_pay: totalPay,
-        notes: `Generated with detailed CSV metrics for ${sessions.length} sessions.`,
+        notes: `Generated by ${role} with CSV metrics for ${sessions.length} approved sessions.`,
       })
       .select("*")
       .single();
@@ -352,32 +391,38 @@ Deno.serve(async (req) => {
       if (sessionsError) throw sessionsError;
     }
 
-    const aggregateCounts = sessions.reduce((totals, session) => {
-      const counts = countsFor(countMap, session.id);
-      for (const key of Object.keys(EMPTY_COUNTS) as Array<keyof CountSummary>) {
-        totals[key] += counts[key];
-      }
-      return totals;
-    }, { ...EMPTY_COUNTS });
+    const totals = sessions.reduce(
+      (summary, session) => {
+        const counts = countsFor(countMap, session.id);
+        for (const key of Object.keys(EMPTY_COUNTS) as Array<keyof CountSummary>) {
+          summary[key] += counts[key];
+        }
+        return summary;
+      },
+      {
+        sessionCount: sessions.length,
+        teamMemberCount: new Set(sessions.map((session) => session.team_member_id ?? session.user_id)).size,
+        approvedHours: totalMinutes / 60,
+        paidTravelHours: totalPaidTravelMinutes / 60,
+        estimatedPay: totalPay,
+        ...EMPTY_COUNTS,
+      },
+    );
 
     await logEdgeFunctionRun(supabase, {
       function_name: "export-team-payroll",
       status: "success",
       source: "admin",
       duration_ms: timer(),
-      output_summary: { sessionCount: sessions.length, totalPay, ...aggregateCounts },
+      output_summary: { batchId: batch.id, ...totals },
     });
 
     return ok({
       success: true,
-      batch,
-      sessionCount: sessions.length,
-      totalApprovedHours: totalMinutes / 60,
-      totalPaidTravelHours: totalPaidTravelMinutes / 60,
-      totalEstimatedPay: totalPay,
-      counts: aggregateCounts,
+      batchId: batch.id,
       summaryCsv: buildSummaryCsv(sessions, countMap),
-      detailCsv: buildDetailCsv(sessions, countMap),
+      detailCsv: body.includeDetails === false ? null : buildDetailCsv(sessions, countMap),
+      totals,
     });
   } catch (error) {
     const message = safeError(error);
@@ -388,6 +433,8 @@ Deno.serve(async (req) => {
       duration_ms: timer(),
       error_message: message,
     });
+    if (message.startsWith("UNAUTHORIZED:")) return unauthorized(message.replace("UNAUTHORIZED: ", ""));
+    if (message.startsWith("FORBIDDEN:")) return forbidden(message.replace("FORBIDDEN: ", ""));
     return serverError("export-team-payroll failed", message);
   }
 });
