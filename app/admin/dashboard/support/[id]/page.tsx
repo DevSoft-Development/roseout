@@ -5,13 +5,14 @@ import SupportTicketConversation from "@/components/support/SupportTicketConvers
 import { getSupportTicket, getSupportTicketMessages } from "@/lib/support";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
 export default async function AdminSupportTicketPage({ params }: PageProps) {
-  const adminUser = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canManageTicket = ["superadmin", "admin"].includes(adminUser.role);
+  const adminUser = await requireAdminRole(ADMIN_PAGE_ACCESS.experienceInbox);
+  const canManageTicket = canAdmin(adminUser.role, "experienceInboxManage");
 
   const { id } = await params;
   const ticket = await getSupportTicket(id);
@@ -24,7 +25,7 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
         supabaseAdmin
           .from("admin_users")
           .select("user_id, role")
-          .in("role", ["superadmin", "admin", "editor", "viewer"]),
+          .in("role", ["superadmin", "admin", "editor", "ambassador", "experience", "viewer"]),
         supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
       ])
     : [{ data: [] }, { data: { users: [] } }];
@@ -55,7 +56,7 @@ export default async function AdminSupportTicketPage({ params }: PageProps) {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link href="/admin/dashboard/support" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">
-            ← Support inbox
+            ← Experience Inbox
           </Link>
           <Link href={`/support/tickets/${ticket.id}?key=${ticket.public_access_token}`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">
             Public ticket view

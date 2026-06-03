@@ -4,11 +4,12 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { getUpgradeFlags, listBusinessCRM } from "@/lib/admin-crm";
 import BusinessCommunicationSection from "@/components/admin/business/BusinessCommunicationSection";
 
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export default async function BusinessViewPage({ searchParams }: { searchParams: Promise<{ q?: string; locationId?: string }> }) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.businessCrm);
+  const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
   const params = await searchParams;
   const q = (params.q || "").trim().toLowerCase();
   const allBusinesses = await listBusinessCRM(500);

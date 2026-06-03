@@ -1,0 +1,22 @@
+project_id = "theouthaven"
+
+[functions.health-check]
+verify_jwt = false
+
+[functions.parse-search-intent]
+verify_jwt = true
+
+[functions.create-search]
+verify_jwt = true
+
+[functions.admin-crm-list]
+verify_jwt = true
+
+[functions.nightly-photo-backfill]
+verify_jwt = false
+
+[functions.admin-cron-digest-email]
+verify_jwt = false
+
+[functions.beta-tester-reminders]
+verify_jwt = false

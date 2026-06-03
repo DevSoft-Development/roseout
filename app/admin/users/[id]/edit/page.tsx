@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { formatRoleLabel, isAdminRole, isUserRole, normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 const ADMIN_USERS_BASE_PATH = "/admin/dashboard/users";
@@ -81,7 +82,7 @@ function getPasswordResetRedirectUrl() {
 async function updateUser(formData: FormData) {
   "use server";
 
-  await requireAdminRole(["superadmin"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   const userId = cleanString(formData.get("user_id"));
   const email = cleanString(formData.get("email")).toLowerCase();
@@ -160,7 +161,7 @@ async function updateUser(formData: FormData) {
 async function sendPasswordReset(formData: FormData) {
   "use server";
 
-  await requireAdminRole(["superadmin"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   const userId = cleanString(formData.get("user_id"));
 
@@ -257,7 +258,7 @@ function formatDate(value: string | null) {
 }
 
 export default async function EditAdminUserPage({ params, searchParams }: PageProps) {
-  await requireAdminRole(["superadmin"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   const { id } = await params;
   const { error, message } = await searchParams;

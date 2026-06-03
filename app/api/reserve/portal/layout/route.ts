@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
+import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { getLocationName } from "@/lib/locationName";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   ACTIVE_RESERVATION_STATUSES,
   LAYOUT_ITEM_STATUSES,
@@ -294,12 +297,19 @@ async function assertNoOverlap(reservationId: string, itemId: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reservationLayouts);
   if (auth.error) return auth.error;
 
   try {
     const { searchParams } = new URL(request.url);
-    const locationId = cleanString(searchParams.get("locationId"));
+    const adminLocationId = cleanString(searchParams.get("adminLocationId"));
+    let adminUser: any = auth.adminUser;
+    if (adminLocationId) {
+      const adminAuth = await requireAdminLocationApiRead();
+      if (adminAuth.error) return adminAuth.error;
+      adminUser = adminAuth.adminUser;
+    }
+    const locationId = adminLocationId || cleanString(searchParams.get("locationId"));
     const locationType = normalizeReservationType(searchParams.get("type"));
     const selectedDate = cleanString(searchParams.get("date")) || dateKey(new Date());
     const page = Math.max(1, Number(searchParams.get("page") || 1));
@@ -339,6 +349,17 @@ export async function GET(request: NextRequest) {
     if (reservationsResult.error) return NextResponse.json({ error: reservationsResult.error.message }, { status: 500 });
     if (locationsResult.error) return NextResponse.json({ error: locationsResult.error.message }, { status: 500 });
 
+    if (adminLocationId) {
+      await logAdminLocationAction({
+        adminUser,
+        locationId,
+        actionType: "admin_location_layout_view",
+        targetType: "layout_items",
+        metadata: { selectedDate },
+        request,
+      });
+    }
+
     return NextResponse.json({
       date: selectedDate,
       items: itemsResult.data || [],
@@ -369,11 +390,19 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reservationLayouts);
   if (auth.error) return auth.error;
 
   try {
     const body = await request.json();
+    const adminLocationId = cleanString(body.adminLocationId || body.admin_location_id);
+    let adminUser: any = auth.adminUser;
+    if (adminLocationId) {
+      const adminAuth = await requireAdminLocationApiWrite();
+      if (adminAuth.error) return adminAuth.error;
+      adminUser = adminAuth.adminUser;
+      body.location_id = adminLocationId;
+    }
     const action = cleanString(body.action);
 
     if (["create_layout_item", "duplicate_layout_item"].includes(action)) {
@@ -385,6 +414,9 @@ export async function PATCH(request: NextRequest) {
         layout_y: Number(source.layout_y || source.y_position || 0) + (action === "duplicate_layout_item" ? 1 : 0),
       });
       await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
+      if (adminLocationId) {
+        await logAdminLocationAction({ adminUser, locationId: adminLocationId, actionType: action === "create_layout_item" ? "layout_resource_create" : "layout_resource_update", targetType: "layout_item", targetId: item.id, afterData: item, request });
+      }
       return NextResponse.json({ success: true, item });
     }
 
@@ -393,6 +425,9 @@ export async function PATCH(request: NextRequest) {
       if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
       await deleteLayoutItem(id);
       await logStaffActivity({ action, details: { itemId: id } });
+      if (adminLocationId) {
+        await logAdminLocationAction({ adminUser, locationId: adminLocationId, actionType: "layout_resource_delete", targetType: "layout_item", targetId: id, metadata: { softDelete: true }, request });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -418,6 +453,9 @@ export async function PATCH(request: NextRequest) {
         notes: cleanString(body.notes) || null,
       });
       await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
+      if (adminLocationId) {
+        await logAdminLocationAction({ adminUser, locationId: adminLocationId, actionType: action === "update_item_status" ? "layout_resource_status_update" : "layout_resource_update", targetType: "layout_item", targetId: item.id, afterData: item, request });
+      }
       return NextResponse.json({ success: true, item });
     }
 

@@ -9,6 +9,16 @@ import {
   getSmartMatchVersion,
 } from "@/lib/theouthavenSmartMatchEngine";
 import { parseSearchIntent as parseCanonicalSearchIntent } from "@/lib/searchIntent";
+import { isPublicSearchVisible as sharedIsPublicSearchVisible } from "@/lib/locationVisibility";
+import {
+  applyLowLevelPenalty,
+  hasPublicPhoto,
+  isLowLevelLocation,
+  isQualifiedWellnessActivity,
+  isUnverifiedNycRestaurant,
+  isWellnessActivity,
+  userExplicitlyAskedForLowLevel,
+} from "@/lib/search/lowLevel";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -17,10 +27,10 @@ const openai = new OpenAI({
 const AI_MODEL = "gpt-4o-mini";
 
 const RESTAURANT_SEARCH_COLUMNS =
-  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at";
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at, quality_status, duplicate_status, has_photos, photo_status, is_low_level, low_level_reason, low_level_detected_at, low_level_source, public_visibility_tier, import_confidence, source_quality_status, curation_tier, main_image, image_url, source, source_table, import_source";
 
 const ACTIVITY_SEARCH_COLUMNS =
-  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at";
+  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at, quality_status, duplicate_status, has_photos, photo_status, is_low_level, low_level_reason, low_level_detected_at, low_level_source, public_visibility_tier, import_confidence, source_quality_status, curation_tier, main_image, image_url, source, source_table, import_source";
 
 const CACHE_HOURS = 6;
 
@@ -137,7 +147,11 @@ const FOOD_INTENTS: Record<string, string[]> = {
   seafood: ["seafood", "fish", "lobster", "crab", "shrimp"],
   italian: ["italian", "pasta"],
   mexican: ["mexican", "taco", "tacos"],
-  asian: ["asian", "sushi", "ramen", "thai", "chinese", "japanese", "korean"],
+  chinese: ["chinese", "szechuan", "sichuan", "cantonese", "dim sum", "hot pot"],
+  japanese: ["japanese", "sushi", "ramen", "izakaya"],
+  korean: ["korean", "kbbq", "korean bbq"],
+  thai: ["thai"],
+  asian: ["asian", "pan asian", "asian fusion"],
   caribbean: ["caribbean", "jamaican"],
   soul_food: ["soul food"],
   african: ["african"],
@@ -189,7 +203,7 @@ const ACTIVITY_INTENTS: Record<string, string[]> = {
   lounge: ["lounge"],
   rooftop: ["rooftop", "roof top", "skyline", "view"],
   live_music: ["live music", "jazz", "music venue"],
-  spa: ["spa", "massage", "wellness"],
+  spa: ["spa", "massage", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"],
   pool: ["pool", "billiards", "billiard"],
 };
 
@@ -258,6 +272,11 @@ type SearchDiagnostics = {
   stage: string;
   notes: string[];
   errors: string[];
+  removedLowLevelCount?: number;
+  removedUnverifiedNycCount?: number;
+  allowLowLevel?: boolean;
+  lowLevelAllowedBecauseUserAsked?: boolean;
+  lowLevelReasons?: Record<string, number>;
 };
 
 function createSearchDiagnostics(): SearchDiagnostics {
@@ -427,16 +446,61 @@ function hasRequiredPublicFields(item: any) {
   ].every(hasPublicField);
 }
 
-function isPublicSearchVisible(item: any) {
-  const status = String(item?.status || "").toLowerCase();
+function isPublicSearchVisible(item: any, allowLowLevel = false) {
+  return sharedIsPublicSearchVisible(item, {
+    allowLowLevel,
+    allowUnverifiedImports: allowLowLevel,
+  });
+}
 
-  return (
-    item?.is_searchable === true &&
-    item?.data_status === "clean" &&
-    item?.is_hidden !== true &&
-    status !== "closed" &&
-    status !== "archived"
-  );
+function hasBasicPublicAddress(item: any) {
+  return [item.address, item.city, item.state, item.latitude, item.longitude].every(hasPublicField);
+}
+
+function isOperational(item: any) {
+  const status = String(item?.status || "").toLowerCase();
+  return status !== "closed" && status !== "archived" && item?.duplicate_status !== "duplicate";
+}
+
+function curatedQualityBoost(item: any) {
+  let score = 0;
+  const publicTier = String(item?.public_visibility_tier || "").toLowerCase();
+  const curationTier = String(item?.curation_tier || "").toLowerCase();
+  const rating = Number(item?.rating || 0);
+  const reviewCount = Number(item?.review_count || 0);
+
+  if (publicTier === "premium") score += 250;
+  if (publicTier === "curated") score += 200;
+  if (curationTier === "premium") score += 250;
+  if (curationTier === "date_worthy") score += 200;
+  if (curationTier === "curated") score += 200;
+  if (hasPublicPhoto(item)) score += 75;
+  if (rating >= 4.3) score += 50;
+  if (reviewCount >= 100) score += 50;
+
+  return score;
+}
+
+function isChineseRestaurant(item: any) {
+  const searchable = itemText(item);
+  return ["chinese", "szechuan", "sichuan", "cantonese", "dim sum", "hot pot"].some((term) => searchable.includes(term));
+}
+
+function applyPostRankingDiversity(items: any[], input: string) {
+  const allowLowLevel = userExplicitlyAskedForLowLevel(input);
+  const asksChinese = normalizeQuery(input).split(" ").some((word) => ["chinese", "szechuan", "sichuan", "cantonese"].includes(word)) || normalizeQuery(input).includes("dim sum") || normalizeQuery(input).includes("hot pot");
+  let chineseCount = 0;
+
+  return items.filter((item) => {
+    if (!allowLowLevel && isLowLevelLocation(item)) return false;
+    if (!allowLowLevel && isUnverifiedNycRestaurant(item)) return false;
+    if (!allowLowLevel && !hasPublicPhoto(item)) return false;
+    if (!asksChinese && isChineseRestaurant(item)) {
+      chineseCount += 1;
+      if (chineseCount > 2) return false;
+    }
+    return true;
+  });
 }
 
 function isRestaurantLocation(item: any) {
@@ -1164,6 +1228,8 @@ function detectIntent(input: string, body: any = {}, locations: any[] = []) {
     wantsCigar: canonical.activityIntents.includes("cigar"),
     wantsLounge: canonical.activityIntents.includes("lounge"),
     wantsNightclub: canonical.activityIntents.includes("nightclub"),
+    wantsSelfCare: hasSelfCareIntent(canonical.normalizedInput),
+    hasFoodFirstIntent: hasFoodFirstIntent(canonical.normalizedInput, canonical.foodIntents),
   };
 }
 
@@ -1188,6 +1254,7 @@ function scoreRestaurant(
   score += budgetBoost(item, intent.budget);
   score += distanceBoost(item, intent.userLat, intent.userLng, intent.maxMiles);
   score += popularityBoost(item);
+  score += curatedQualityBoost(item);
 
   if (intent.locations.length > 0) {
     const text = itemText(item);
@@ -1235,7 +1302,52 @@ function scoreRestaurant(
   score += clampScore(getSearchRankingScore(item)) * 0.4;
   score += clampScore(item.popularity_score || 0) * 0.1;
 
+  score = applyLowLevelPenalty(score, item, input);
+
   return clampScore(score);
+}
+
+const SELF_CARE_INTENT_TERMS = [
+  "self care",
+  "self-care",
+  "spa day",
+  "couples massage",
+  "couple massage",
+  "girls day",
+  "relaxing date",
+  "wellness",
+  "birthday prep",
+  "pampering",
+  "pamper",
+];
+const NON_WELLNESS_PRIORITY_TERMS = ["dinner", "rooftop", "hookah", "bowling", "arcade", "restaurant", "food", "dining"];
+
+function hasSelfCareIntent(input: string) {
+  const text = normalizeQuery(input);
+  return SELF_CARE_INTENT_TERMS.some((term) => text.includes(term));
+}
+
+function hasFoodFirstIntent(input: string, foodIntents: string[]) {
+  const text = normalizeQuery(input);
+  return foodIntents.length > 0 || /\b(dinner|restaurant|food|eat|dining|brunch|lunch|breakfast)\b/.test(text);
+}
+
+function wellnessActivityPriorityAdjustment(item: any, intent: ReturnType<typeof detectIntent>) {
+  if (!isWellnessActivity(item)) return 0;
+  if (intent.wantsSelfCare) return 180;
+
+  const nonWellnessActivityRequested = intent.activityIntents.some(
+    (activity) => activity !== "spa",
+  );
+  const nonWellnessPriority = NON_WELLNESS_PRIORITY_TERMS.some((term) =>
+    intent.text.includes(term),
+  );
+
+  if (intent.hasFoodFirstIntent || nonWellnessActivityRequested || nonWellnessPriority) {
+    return -220;
+  }
+
+  return 0;
 }
 
 function scoreActivity(
@@ -1277,6 +1389,8 @@ function scoreActivity(
   score += budgetBoost(item, intent.budget);
   score += distanceBoost(item, intent.userLat, intent.userLng, intent.maxMiles);
   score += popularityBoost(item);
+  score += curatedQualityBoost(item);
+  score += wellnessActivityPriorityAdjustment(item, intent);
 
   if (intent.wantsBirthday) {
     if (
@@ -1313,6 +1427,8 @@ function scoreActivity(
 
   score += clampScore(getSearchRankingScore(item)) * 0.4;
   score += clampScore(item.popularity_score || 0) * 0.1;
+
+  score = applyLowLevelPenalty(score, item, input);
 
   return clampScore(score);
 }
@@ -1519,11 +1635,19 @@ export async function POST(req: Request) {
 
     await logSearchQuery(input);
 
+    const allowLowLevel = userExplicitlyAskedForLowLevel(input);
+    diagnostics.allowLowLevel = allowLowLevel;
+    diagnostics.lowLevelAllowedBecauseUserAsked = allowLowLevel;
+
     const { data: locationsData, error: locationsError } = await supabase
       .from("locations")
       .select("*")
       .eq("is_searchable", true)
       .eq("data_status", "clean")
+      .eq("quality_status", "publish_ready")
+      .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+      .eq("has_photos", true)
+      .not("photo_status", "eq", "missing_photo")
       .not("is_hidden", "is", true)
       .not("status", "in", '("closed","archived")');
 
@@ -1531,9 +1655,31 @@ export async function POST(req: Request) {
       return Response.json({ error: locationsError.message }, { status: 500 });
     }
 
-    const locations = (locationsData || [])
-      .map(normalizeLocation)
-      .filter(isPublicSearchVisible);
+    const normalizedLocations = (locationsData || []).map(normalizeLocation);
+    const lowLevelReasons: Record<string, number> = {};
+    let removedLowLevelCount = 0;
+    let removedUnverifiedNycCount = 0;
+
+    const locations = normalizedLocations.filter((item: any) => {
+      const lowLevel = isLowLevelLocation(item);
+      const unverifiedNyc = isUnverifiedNycRestaurant(item);
+      if (!allowLowLevel && lowLevel && !isQualifiedWellnessActivity(item)) {
+        removedLowLevelCount += 1;
+        const reason = item.low_level_reason || item.source_quality_status || item.public_visibility_tier || "detected_low_level";
+        lowLevelReasons[reason] = (lowLevelReasons[reason] || 0) + 1;
+        return false;
+      }
+      if (!allowLowLevel && unverifiedNyc) {
+        removedUnverifiedNycCount += 1;
+        return false;
+      }
+      if (allowLowLevel) return isOperational(item) && hasBasicPublicAddress(item);
+      return isPublicSearchVisible(item, false);
+    });
+
+    diagnostics.removedLowLevelCount = removedLowLevelCount;
+    diagnostics.removedUnverifiedNycCount = removedUnverifiedNycCount;
+    diagnostics.lowLevelReasons = lowLevelReasons;
     const intent = detectIntent(input, body, locations);
 
     const cacheKey = normalizeQuery(
@@ -1626,6 +1772,9 @@ export async function POST(req: Request) {
       }
     }
 
+    restaurants = allowLowLevel ? restaurants.filter((item: any) => isOperational(item) && hasBasicPublicAddress(item)) : restaurants.filter((item: any) => !isLowLevelLocation(item) && !isUnverifiedNycRestaurant(item));
+    activities = allowLowLevel ? activities.filter((item: any) => isOperational(item) && hasBasicPublicAddress(item)) : activities.filter((item: any) => isQualifiedWellnessActivity(item) || (!isLowLevelLocation(item) && !isUnverifiedNycRestaurant(item)));
+
     const rankedRestaurants = restaurants
       .map((restaurant: any) => {
         const score = scoreRestaurant(restaurant, input, intent);
@@ -1638,6 +1787,8 @@ export async function POST(req: Request) {
         };
       })
       .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
+
+    const diverseRankedRestaurants = applyPostRankingDiversity(rankedRestaurants, input);
 
     const rankedActivities = activities
       .map((activity: any) => {
@@ -1652,26 +1803,28 @@ export async function POST(req: Request) {
       })
       .sort((a: any, b: any) => b.theouthaven_score - a.theouthaven_score);
 
+    const diverseRankedActivities = applyPostRankingDiversity(rankedActivities, input);
+
     const smartBalanced = balanceSmartMatches(
-      rankedRestaurants,
-      rankedActivities,
+      diverseRankedRestaurants,
+      diverseRankedActivities,
       smartIntent
     );
 
     if (
       intent.activityIntents.length > 0 &&
-      rankedActivities.length > 0 &&
+      diverseRankedActivities.length > 0 &&
       smartBalanced.activities.length === 0
     ) {
-      smartBalanced.activities = rankedActivities.slice(0, 2);
+      smartBalanced.activities = diverseRankedActivities.slice(0, 2);
     }
 
     if (
       intent.foodIntents.length > 0 &&
-      rankedRestaurants.length > 0 &&
+      diverseRankedRestaurants.length > 0 &&
       smartBalanced.restaurants.length === 0
     ) {
-      smartBalanced.restaurants = rankedRestaurants.slice(0, 2);
+      smartBalanced.restaurants = diverseRankedRestaurants.slice(0, 2);
     }
 
     const pairedResults =

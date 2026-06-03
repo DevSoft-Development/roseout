@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { sendBrandedEmail } from "@/lib/email/sender";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const secretOk = body.secret && (body.secret === process.env.CRON_SECRET || body.secret === process.env.ADMIN_DIGEST_SECRET);
   if (!secretOk) {
-    const auth = await requireAdminApiRole(["admin", "superadmin"]);
+    const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.dashboard);
     if (auth.error) return auth.error;
   }
   const type = body.type as DigestType;

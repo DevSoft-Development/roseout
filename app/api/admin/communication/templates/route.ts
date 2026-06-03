@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const DEFAULT_TEMPLATES = [
   { name: "Claim QR Code", channel: "email", subject: "Your TheOutHaven claim QR code", body: "Hi {{name}},\n\nHere is your claim QR code and instructions...", category: "claims", is_system: true },
   { name: "Welcome Business Owner", channel: "email", subject: "Welcome to TheOutHaven", body: "Hi {{name}},\n\nWelcome to TheOutHaven...", category: "onboarding", is_system: true },
@@ -16,7 +17,7 @@ const DEFAULT_TEMPLATES = [
 ] as const;
 
 export async function GET() {
-  const { error, supabase } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const { error, supabase } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.communication);
   if (error) return error;
 
   const { data, error: fetchError } = await supabase.from("communication_templates").select("*").order("created_at", { ascending: false });
@@ -32,7 +33,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error, supabase, adminUser } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error, supabase, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.communication);
   if (error) return error;
   const body = await request.json();
 

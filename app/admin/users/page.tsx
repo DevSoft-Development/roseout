@@ -5,6 +5,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { formatRoleLabel, isAdminRole, isUserRole, normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 const ADMIN_USERS_VERSION = "admin-users-refresh-2026-05-11";
@@ -82,6 +83,8 @@ function roleBadge(role?: string | null) {
 async function updateUserRole(formData: FormData) {
   "use server";
 
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
+
   const userId = String(formData.get("user_id") || "");
   const role = normalizeRole(String(formData.get("role") || "user"));
   const q = String(formData.get("q") || "");
@@ -120,6 +123,8 @@ async function updateUserRole(formData: FormData) {
 async function disableUser(formData: FormData) {
   "use server";
 
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
+
   const userId = String(formData.get("user_id") || "");
   const q = String(formData.get("q") || "");
   const currentRole = String(formData.get("current_role") || "all");
@@ -152,6 +157,8 @@ async function disableUser(formData: FormData) {
 async function deleteUser(formData: FormData) {
   "use server";
 
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
+
   const userId = String(formData.get("user_id") || "");
   const q = String(formData.get("q") || "");
   const currentRole = String(formData.get("current_role") || "all");
@@ -173,9 +180,9 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin"]);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
   const canEditUsers = currentAdmin.role === "superadmin";
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+  const canImpersonate = currentAdmin.role === "superadmin";
 
   const params = await searchParams;
 
@@ -265,7 +272,7 @@ export default async function AdminUsersPage({
 
   const totalUsers = fullUsers.length;
   const admins = fullUsers.filter(
-    (u) => ["admin", "superadmin"].includes(normalizeRole(u.role) || "")
+    (u) => isAdminRole(normalizeRole(u.role)) ? true : false
   ).length;
   const owners = fullUsers.filter((u) => normalizeRole(u.role) === "owner").length;
   const regularUsers = fullUsers.filter((u) => normalizeRole(u.role) === "user").length;

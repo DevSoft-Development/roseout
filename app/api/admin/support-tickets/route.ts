@@ -1,11 +1,12 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 function ticketNumber() {
   return `TOH-${Date.now().toString().slice(-8)}`;
 }
 
 export async function GET() {
-  const { error, supabase } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const { error, supabase } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.experienceInboxManage);
   if (error) return error;
   const { data, error: fetchError } = await supabase.from("support_tickets").select("*").order("last_message_at", { ascending: false }).limit(50);
   if (fetchError) return Response.json({ error: fetchError.message }, { status: 500 });
@@ -13,7 +14,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error, supabase } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error, supabase } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.experienceInboxManage);
   if (error) return error;
   const body = await request.json();
   const { data, error: insertError } = await supabase.from("support_tickets").insert({

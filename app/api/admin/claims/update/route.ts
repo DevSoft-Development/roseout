@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { supabase } from "@/lib/supabase";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   sendClaimApprovedEmail,
   sendClaimNeedsMoreInfoEmail,
@@ -19,7 +20,7 @@ function getJoinedValue<T extends Record<string, any>>(
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.claimsManage);
   if (auth.error) return auth.error;
 
   try {

@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { getAdminSaasAnalytics } from "@/lib/admin/analytics/getAdminSaasAnalytics";
 import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 function fmt(n: number) {
@@ -18,7 +19,7 @@ function Empty({ text }: { text: string }) {
 }
 
 export default async function AdminAnalyticsPage() {
-  const admin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
   const analytics = await getAdminSaasAnalytics();
   await logAdminEvent({ category: "analytics", action: "analytics_dashboard_viewed", message: "Platform analytics dashboard viewed", actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "platform", entity_id: "analytics" });
 
@@ -37,7 +38,7 @@ export default async function AdminAnalyticsPage() {
     phoneClicks: "Phone clicks 30d",
     websiteClicks: "Website clicks 30d",
     completedOutings: "Completed outings 30d",
-    supportTicketsOpen: "Support tickets open",
+    supportTicketsOpen: "Experience Inbox open",
     pendingClaims: "Pending claims",
     dataQualityIssues: "Data quality issues",
   };

@@ -2,10 +2,11 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export default async function UserEditPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  await requireAdminRole(["superadmin", "admin"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.adminUsers);
   const params = await searchParams;
   const q = (params.q || "").trim();
 

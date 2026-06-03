@@ -8,7 +8,7 @@ type RedirectResolutionInput = {
   intendedPath?: string | null;
 };
 
-const ADMIN_ROLES = new Set(["superadmin", "admin"]);
+const ADMIN_ROLES = new Set(["superadmin", "admin", "editor", "ambassador", "experience", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
 const BLOCKED_INTENDED_PATH_PREFIXES = [
   "/login",
@@ -20,8 +20,10 @@ const BLOCKED_INTENDED_PATH_PREFIXES = [
 
 function normalizeRole(value: string | null | undefined): string | null {
   if (!value) return null;
-  const role = value.trim().toLowerCase();
+  const role = value.trim().toLowerCase().replace(/\s+/g, "_");
   if (role === "superuser" || role === "super_admin") return "superadmin";
+  if (["sales", "sales_rep", "salesrep", "ambassador_team"].includes(role)) return "ambassador";
+  if (["support", "guest_care", "guestcare", "experience_team"].includes(role)) return "experience";
   return role;
 }
 

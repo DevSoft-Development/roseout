@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { normalizeRole, USER_ROLE_OPTIONS } from "@/lib/users/roles";
+import { ADMIN_ROLE_OPTIONS, normalizeRole } from "@/lib/users/roles";
 
 export default function AdminUsersClient() {
   const [email, setEmail] = useState("");
@@ -99,9 +99,7 @@ export default function AdminUsersClient() {
           onChange={(e) => setRole(e.target.value)}
           className="mt-2 w-full rounded-2xl border border-neutral-300 px-4 py-3 outline-none focus:border-yellow-500"
         >
-          {USER_ROLE_OPTIONS.filter((option) =>
-            ["viewer", "editor", "admin", "superadmin"].includes(option.value),
-          ).map((option) => (
+          {ADMIN_ROLE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

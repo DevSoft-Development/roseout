@@ -19,6 +19,10 @@ function slugify(value: unknown) {
     .replace(/^-+|-+$/g, "");
 }
 
+function hasTypedLocationPath(value: unknown) {
+  return /\/locations\/[^/]+\/[^/]+/.test(String(value || ""));
+}
+
 function generateClaimCode() {
   const raw = Array.from(
     crypto.randomBytes(CLAIM_CODE_LENGTH),
@@ -68,14 +72,34 @@ export async function ensureLocationQrFields(row: any) {
     ? await uniqueClaimCode(row.id)
     : normalizeClaimCode(String(row.claim_code));
 
-  const claimUrl = missing(row.claim_url)
-    ? `${site}${buildClaimUrlFromCode(claimCode)}`
-    : String(row.claim_url);
+  const generatedClaimUrl = `${site}${buildClaimUrlFromCode(claimCode)}`;
+  const claimUrl =
+    missing(row.claim_url) || String(row.claim_url).includes("roseout")
+      ? generatedClaimUrl
+      : String(row.claim_url);
 
   const slug = slugify(row.slug || row.name || row.restaurant_name || row.activity_name);
 
-  const publicLocationUrl = missing(row.public_location_url)
-    ? `${site}/locations/${slug || row.id}`
+  const rawType = String(
+    row.location_type ||
+      row.type ||
+      row.source_table ||
+      row.primary_category ||
+      "restaurants",
+  ).toLowerCase();
+
+  const locationType =
+    rawType.includes("activity") || rawType === "activities"
+      ? "activities"
+      : "restaurants";
+
+  const generatedPublicLocationUrl = `${site}/locations/${locationType}/${slug || row.id}`;
+  const publicLocationUrlNeedsRepair =
+    missing(row.public_location_url) ||
+    String(row.public_location_url).includes("roseout") ||
+    !hasTypedLocationPath(row.public_location_url);
+  const publicLocationUrl = publicLocationUrlNeedsRepair
+    ? generatedPublicLocationUrl
     : String(row.public_location_url);
 
   const updates: Record<string, string> = {};
@@ -84,15 +108,15 @@ export async function ensureLocationQrFields(row: any) {
     updates.claim_code = claimCode;
   }
 
-  if (missing(row.claim_url)) {
+  if (missing(row.claim_url) || String(row.claim_url).includes("roseout")) {
     updates.claim_url = claimUrl;
   }
 
-  if (missing(row.qr_link)) {
+  if (missing(row.qr_link) || String(row.qr_link).includes("roseout")) {
     updates.qr_link = claimUrl;
   }
 
-  if (missing(row.public_location_url)) {
+  if (publicLocationUrlNeedsRepair) {
     updates.public_location_url = publicLocationUrl;
   }
 
@@ -118,13 +142,30 @@ export async function ensureLocationQrFields(row: any) {
 }
 
 function hasCompleteQr(row: any) {
+  const badPublicUrl =
+    !missing(row.public_location_url) &&
+    (
+      String(row.public_location_url).includes("roseout") ||
+      !hasTypedLocationPath(row.public_location_url)
+    );
+
+  const badClaimUrl =
+    !missing(row.claim_url) && String(row.claim_url).includes("roseout");
+
+  const badQrLink =
+    !missing(row.qr_link) && String(row.qr_link).includes("roseout");
+
   return (
+    !badPublicUrl &&
+    !badClaimUrl &&
+    !badQrLink &&
     !missing(row.claim_code) &&
     !missing(row.claim_url) &&
     !missing(row.claim_qr_url) &&
     !missing(row.claim_qr_code_url) &&
     !missing(row.qr_code_data_url) &&
-    !missing(row.qr_code_url)
+    !missing(row.qr_code_url) &&
+    !missing(row.public_location_url)
   );
 }
 
@@ -143,6 +184,9 @@ export async function generateMissingLocationQrs(
         "name",
         "restaurant_name",
         "activity_name",
+        "location_type",
+        "type",
+        "source_table",
         "address",
         "latitude",
         "longitude",

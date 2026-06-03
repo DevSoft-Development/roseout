@@ -8,6 +8,7 @@ import { getLocationScore } from "@/lib/locationScore";
 import { getIsClaimed } from "@/lib/locationClaim";
 import { supabase } from "@/lib/supabase";
 
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 type LocationType = "restaurants" | "activities";
 type LocationRecord = Record<string, unknown> & { id: string; locationType: LocationType; restaurant_name?: string | null; activity_name?: string | null; claim_code?: string | null; claim_status?: string | null; rating?: number | null; view_count?: number | null; click_count?: number | null };
 
@@ -32,8 +33,8 @@ function AdminCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 export default async function AdminLocationCrmDetail({ params }: { params: Promise<{ type: string; id: string }> }) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.locations);
+  const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
   const { type, id } = await params;
   if (type !== "restaurants" && type !== "activities") notFound();
   const location = await getLocation(type, id);

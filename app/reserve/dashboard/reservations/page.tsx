@@ -15,6 +15,8 @@ import {
   X,
 } from "lucide-react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import AdminActingAsLocationBanner from "@/components/admin/AdminActingAsLocationBanner";
+import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
 import { supabase } from "@/lib/supabase";
 
 type ReservationStatus =
@@ -22,6 +24,7 @@ type ReservationStatus =
   | "confirmed"
   | "checked_in"
   | "arrived"
+  | "seated"
   | "waitlisted"
   | "declined"
   | "cancelled"
@@ -56,6 +59,7 @@ const statuses: ReservationStatus[] = [
   "confirmed",
   "checked_in",
   "arrived",
+  "seated",
   "completed",
   "waitlisted",
   "declined",
@@ -81,6 +85,7 @@ function statusLabel(status: string) {
     confirmed: "Ready",
     checked_in: "Guest Here",
     arrived: "Guest Here",
+    seated: "Seated",
     completed: "Finished",
     declined: "Closed",
     cancelled: "Closed",
@@ -142,7 +147,8 @@ export default function ReservePortalReservationsPage() {
 function ReservePortalReservationsContent() {
   const searchParams = useSearchParams();
 
-  const locationId = searchParams.get("locationId") || "";
+  const adminLocationId = searchParams.get("adminLocationId") || "";
+  const locationId = adminLocationId || searchParams.get("locationId") || "";
   const locationType = normalizeType(searchParams.get("type"));
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -152,6 +158,7 @@ function ReservePortalReservationsContent() {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState("");
   const [error, setError] = useState("");
+  const [adminSummary, setAdminSummary] = useState<any>(null);
 
   const filteredReservations = useMemo(() => {
     if (activeStatus === "all") return reservations;
@@ -195,6 +202,7 @@ function ReservePortalReservationsContent() {
       if (locationId) {
         reservationParams.set("locationId", locationId);
         reservationParams.set("type", locationType);
+        if (adminLocationId) reservationParams.set("adminLocationId", adminLocationId);
       }
 
       const filter = searchParams.get("filter");
@@ -248,6 +256,7 @@ function ReservePortalReservationsContent() {
           location_id: reservation.location_id,
           location_type: reservation.location_type,
           status,
+          adminLocationId: adminLocationId || undefined,
         }),
       });
 
@@ -276,7 +285,7 @@ function ReservePortalReservationsContent() {
 
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, locationType, searchParams]);
+  }, [locationId, locationType, adminLocationId, searchParams]);
 
   useEffect(() => {
     if (!locationId) return;
@@ -303,9 +312,50 @@ function ReservePortalReservationsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
+
+  useEffect(() => {
+    if (!adminLocationId) {
+      setAdminSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/admin/locations/${adminLocationId}/summary`)
+      .then((response) => response.json().then((data) => ({ response, data })))
+      .then(({ response, data }) => {
+        if (cancelled) return;
+        if (!response.ok) {
+          setError(data.error || "You do not have permission to access this location.");
+          setAdminSummary(null);
+          return;
+        }
+        setAdminSummary(data);
+        try {
+          localStorage.setItem("theouthaven_admin_selected_location_id", adminLocationId);
+        } catch {}
+      })
+      .catch(() => {
+        if (!cancelled) setError("Unable to load admin location context.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminLocationId]);
+
   return (
     <>
       <TheOutHavenHeader />
+
+      {adminLocationId && (
+        <AdminActingAsLocationBanner
+          locationId={adminLocationId}
+          locationName={adminSummary?.location?.name}
+          locationType={adminSummary?.location?.location_type}
+          plan={adminSummary?.location?.plan}
+          reservationAccess={adminSummary?.reservationAccess?.plan}
+        />
+      )}
 
       <main className="min-h-screen bg-black pt-24 text-white">
         <section className="relative overflow-hidden px-5 py-10 sm:px-8">
@@ -322,6 +372,13 @@ function ReservePortalReservationsContent() {
                 Back
               </Link>
 
+              {adminLocationId && (
+                <div className="min-w-[18rem] flex-1 md:max-w-lg">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Admin Location</p>
+                  <AdminLocationSearch compact />
+                </div>
+              )}
+
               <button
                 onClick={loadReservations}
                 className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-500"
@@ -333,16 +390,15 @@ function ReservePortalReservationsContent() {
 
             <div className="mt-8">
               <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-                TheOutHaven Reserve Portal
+Host View
               </p>
 
               <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">
-                Reservation Dashboard
+Host View
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">
-                Track incoming bookings, arrival quality, completed visits,
-                cancellations, and no-shows in realtime.
+                Manage today’s reservations, check-ins, seating, and live availability.
               </p>
             </div>
 

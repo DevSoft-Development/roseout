@@ -188,6 +188,16 @@ function mapNycRow(row: NycRestaurantRow): StagedLocationInput | null {
     tags: uniqueLower(["restaurant", cuisine, cuisineDescription]),
     search_keywords: keywords,
     description: `${name} is a ${String(cuisine).replace(/_/g, " ")} restaurant in ${city}.`,
+    is_searchable: false,
+    data_status: "needs_review",
+    quality_status: "imported_unverified",
+    is_low_level: true,
+    low_level_reason: "nyc_import_unverified",
+    low_level_detected_at: new Date().toISOString(),
+    low_level_source: "nyc_open_data_import",
+    public_visibility_tier: "hidden",
+    import_confidence: "low",
+    source_quality_status: "imported_unverified",
     raw_payload: row,
   };
 }

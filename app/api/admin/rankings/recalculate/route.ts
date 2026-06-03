@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 type RankingSignal = {
@@ -34,10 +35,7 @@ function getBadge(score: number, trendScore: number, conversionScore: number) {
 }
 
 export async function POST() {
-  const { error, supabase } = await requireAdminApiRole([
-    "superadmin",
-    "admin",
-  ]);
+  const { error, supabase } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.seoEdit);
 
   if (error) return error;
 

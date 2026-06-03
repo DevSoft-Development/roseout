@@ -1266,7 +1266,7 @@ export default function CreatePage() {
                                 key={restaurantId || restaurantIndex}
                                 index={restaurantIndex}
                                 type="restaurant"
-                                imageUrl={getLocationImage(restaurant)}
+                                imageUrl={getLocationImage(restaurant) || undefined}
                                 title={getLocationName(restaurant)}
                                 eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
@@ -1342,7 +1342,7 @@ export default function CreatePage() {
                                 key={activityId || activityIndex}
                                 index={activityIndex}
                                 type="activity"
-                                imageUrl={getLocationImage(activity)}
+                                imageUrl={getLocationImage(activity) || undefined}
                                 title={getLocationName(activity)}
                                 eyebrow={getPrimaryCategory(activity)}
                                 address={formatAddress(activity)}

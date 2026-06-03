@@ -3,6 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { getSiteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -19,11 +20,7 @@ async function authorize(request: Request) {
   ) {
     return null;
   }
-  const { error } = await requireAdminApiRole([
-    "admin",
-    "superadmin",
-    "editor",
-  ]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
   return error;
 }
 
@@ -70,6 +67,9 @@ export async function GET(request: Request) {
     hasPhotos,
     needsPhoto,
     searchableWithPhotos,
+    lowLevelLocations,
+    lowLevelStaged,
+    nycUnverified,
   ] = await Promise.all([
     safeCount("locations"),
     safeCount("locations", (query) => query.eq("is_searchable", true)),
@@ -147,6 +147,9 @@ export async function GET(request: Request) {
     safeCount("locations", (query) =>
       query.eq("is_searchable", true).eq("has_photos", true),
     ),
+    safeCount("locations", (query) => query.eq("is_low_level", true)),
+    safeCount("location_import_staging", (query) => query.eq("is_low_level", true)),
+    safeCount("locations", (query) => query.eq("low_level_reason", "nyc_import_unverified")),
   ]);
 
   const { data: latestBatches } = await supabaseAdmin
@@ -187,6 +190,9 @@ export async function GET(request: Request) {
     hasPhotos,
     needsPhoto,
     searchableWithPhotos,
+    lowLevelLocations,
+    lowLevelStaged,
+    nycUnverified,
     siteUrlConfigured,
     siteUrl: getSiteUrl(),
     latestBatches: latestBatches || [],

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -43,7 +44,7 @@ function isCronAuthorized(request: NextRequest) {
 
 async function authorizeAdminOrCron(request: NextRequest) {
   if (process.env.NODE_ENV === "development" || isCronAuthorized(request)) return null;
-  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.import);
   return error;
 }
 

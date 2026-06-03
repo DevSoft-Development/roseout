@@ -1,26 +1,21 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-
-type AdminRole = "admin" | "superadmin" | "editor" | "viewer";
+import type { AdminRole } from "@/lib/users/roles";
+import { isAdminRole, normalizeRole } from "@/lib/users/roles";
 
 function normalizeAdminRole(role: unknown): AdminRole | null {
-  const normalized =
-    role === "superuser" || role === "super_admin" ? "superadmin" : role;
-
-  if (
-    normalized === "admin" ||
-    normalized === "superadmin" ||
-    normalized === "editor" ||
-    normalized === "viewer"
-  ) {
-    return normalized;
-  }
-
-  return null;
+  if (typeof role !== "string") return null;
+  const normalized = normalizeRole(role);
+  return isAdminRole(normalized) ? normalized : null;
 }
 
-export async function getCurrentAdmin() {
+export async function getCurrentAdmin(): Promise<{
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  role: AdminRole;
+}> {
   const supabase = await createClient();
 
   const {
@@ -54,7 +49,7 @@ export async function getCurrentAdmin() {
   };
 }
 
-export async function requireAdminRole(allowedRoles: readonly string[]) {
+export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
   const adminUser = await getCurrentAdmin();
 
   if (!allowedRoles.includes(adminUser.role)) {

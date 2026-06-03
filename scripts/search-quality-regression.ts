@@ -3,6 +3,7 @@ import { createSearchPairs } from "../lib/search/enterprise/pairing";
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
 import { rankActivityResults, rankRestaurantResults } from "../lib/search/enterprise/ranking";
 import type { EnterpriseLocation } from "../lib/search/enterprise/types";
+import { isLowLevelLocation, isQualifiedWellnessActivity, LOW_LEVEL_TERMS } from "../lib/search/lowLevel";
 
 const records: EnterpriseLocation[] = [
   { id: "r1", name: "Astoria Prime", restaurant_name: "Astoria Prime", location_type: "restaurant", cuisine: "Steakhouse", neighborhood: "Astoria", borough: "Queens", city: "New York", state: "NY", latitude: 40.764, longitude: -73.923, rating: 4.7, search_document: "steakhouse steak dinner restaurant Astoria" },
@@ -24,6 +25,8 @@ const records: EnterpriseLocation[] = [
   { id: "a7", name: "Jersey City Rooftop Lounge", activity_name: "Jersey City Rooftop Lounge", location_type: "activity", activity_type: "Rooftop Lounge", city: "Jersey City", state: "NJ", latitude: 40.718, longitude: -74.043, search_document: "best rooftop lounge nightlife skyline" },
   { id: "a8", name: "Brooklyn Museum", activity_name: "Brooklyn Museum", location_type: "activity", activity_type: "Museum", borough: "Brooklyn", city: "New York", state: "NY", latitude: 40.671, longitude: -73.963, search_document: "museum art exhibit Brooklyn" },
   { id: "a9", name: "Coordinate-Free Bowling", activity_name: "Coordinate-Free Bowling", location_type: "activity", activity_type: "Bowling", neighborhood: "Astoria", borough: "Queens", city: "New York", state: "NY", search_document: "bowling lanes Astoria" },
+  { id: "a10", name: "Queens Head Spa", activity_name: "Queens Head Spa", location_type: "activity", activity_type: "Head Spa", primary_category: "Spa", neighborhood: "Astoria", borough: "Queens", city: "New York", state: "NY", latitude: 40.764, longitude: -73.920, rating: 4.8, review_count: 80, has_photos: true, main_image: "https://example.com/head-spa.jpg", public_visibility_tier: "low_level", curation_tier: "low_level", source_quality_status: "low_level_review", import_confidence: "low", search_document: "head spa massage wellness self care spa day Queens" },
+  { id: "a11", name: "Jersey City Rooftop Recovery Spa", activity_name: "Jersey City Rooftop Recovery Spa", location_type: "activity", activity_type: "Recovery Spa", primary_category: "Spa", city: "Jersey City", state: "NJ", latitude: 40.718, longitude: -74.044, rating: 4.9, review_count: 120, has_photos: true, main_image: "https://example.com/recovery-spa.jpg", search_document: "rooftop recovery spa wellness skyline" },
 ];
 function restaurants(q:string){ const i=normalizeIntent(q); return rankRestaurantResults(records,i); }
 function activities(q:string){ const i=normalizeIntent(q); return rankActivityResults(records,i); }
@@ -56,6 +59,12 @@ i=normalizeIntent("hookah in Astoria"); assert.equal(i.searchType,"activity"); a
 i=normalizeIntent("dinner with hookah in Queens"); assert(i.needsRestaurant&&i.needsActivity); assert.equal(activities(i.rawQuery)[0].id,"a6");
 
 i=normalizeIntent("best rooftop lounge in Jersey City"); assert.equal(i.searchType,"activity"); assert.equal(i.geo.city,"Jersey City"); assert.equal(i.geo.state,"NJ"); assert.equal(activities(i.rawQuery)[0].id,"a7");
+
+i=normalizeIntent("spa day for self-care in Queens"); assert.equal(i.searchType,"activity"); aa=activities(i.rawQuery); assert.equal(aa[0].id,"a10");
+
+i=normalizeIntent("bowling in Astoria"); assert.notEqual(activities(i.rawQuery)[0].id,"a10");
+
+const qualifiedSpa = records.find((record) => record.id === "a10"); assert(qualifiedSpa); assert(isQualifiedWellnessActivity(qualifiedSpa)); assert.equal(isLowLevelLocation(qualifiedSpa), false); for (const term of ["spa", "massage", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"]) assert(!LOW_LEVEL_TERMS.includes(term), `${term} must not be a low-level cleanup term`);
 
 i=normalizeIntent("romantic steakhouse in Stamford CT"); assert.equal(i.searchType,"restaurant"); assert.equal(i.geo.city,"Stamford"); assert.equal(i.geo.state,"CT"); assert.equal(restaurants(i.rawQuery)[0].id,"r9");
 

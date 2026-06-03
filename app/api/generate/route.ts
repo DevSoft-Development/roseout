@@ -1,3 +1,4 @@
+import { firstImage, getLocationImage } from "@/lib/locationImage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,8 @@ function normalizeCardTags(value: unknown): string[] {
 }
 
 function toCardRecord(item: any) {
+  const usableImage = getLocationImage(item);
+
   return {
     id: item?.id ?? item?.source_id ?? item?.place_id ?? null,
     name:
@@ -59,10 +62,8 @@ function toCardRecord(item: any) {
     city: item?.city ?? null,
     borough: item?.borough ?? null,
     neighborhood: item?.neighborhood ?? null,
-    image_url:
-      item?.image_url ??
-      item?.main_image ??
-      (Array.isArray(item?.images) ? item.images[0] : null),
+    image_url: usableImage,
+    main_image: usableImage,
     rating: item?.rating ?? null,
     price_level: item?.price_level ?? item?.price_range ?? null,
     phone_number: item?.phone_number ?? item?.phone ?? null,
@@ -140,22 +141,38 @@ export async function POST(request: Request) {
     });
 
     const { runEnterpriseSearch } = await import("../../../lib/search/enterprise");
+    const betaAssignmentId = body?.betaAssignmentId || body?.beta_assignment_id || new URL(request.url).searchParams.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
+    const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
+    const usedCustomPrompt = body?.usedCustomPrompt === true || body?.usedCustomPrompt === "true" || new URL(request.url).searchParams.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
+    const betaDebug = process.env.NODE_ENV !== "production" || Boolean(betaAssignmentId || betaTesterId || body?.betaDebug);
     const result = await runEnterpriseSearch(cleanInput, {
       body,
       useLLM: true,
+      source: "create",
+      route: "/api/generate",
+      logPerformance: true,
+      sessionId: request.headers.get("x-session-id") || null,
+      betaAssignmentId,
+      betaTesterId,
+      usedCustomPrompt,
+      betaDebug,
     });
 
     const cards = [
       ...(result.restaurants || []),
       ...(result.activities || []),
       ...(result.matched_locations || []),
-    ].map(toCardRecord);
+    ]
+      .map(toCardRecord)
+      .filter((card) => firstImage(card.main_image) || firstImage(card.image_url));
 
     const response = {
       ...result,
       cards,
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
+      searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
+      debug: betaDebug ? result.debug : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo

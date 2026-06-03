@@ -4,6 +4,7 @@ import MarketingSettingsForm from "@/components/marketing/MarketingSettingsForm"
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MarketingSettingsPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.settings);
 
   const { data } = await supabaseAdmin.from("marketing_settings").select("key,value");
   const initialSettings = Object.fromEntries((data || []).map((row) => [row.key, row.value]));

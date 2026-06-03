@@ -5,6 +5,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import ReserveLiveRefresh from "@/components/ReserveLiveRefresh";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata: Metadata = {
   title: "Reserve Dashboard | TheOutHaven Admin",
   description: "Internal reservation operations dashboard for TheOutHaven admins.",
@@ -110,7 +111,7 @@ function estimateCapacityNeeded(partySize: number | null | undefined) {
 }
 
 export default async function ReserveDashboardPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
 
   const now = new Date();
   const today = dateKey(now);

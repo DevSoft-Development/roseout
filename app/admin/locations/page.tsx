@@ -8,6 +8,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getPrimaryCategory } from "@/lib/locationFields";
 import { getIsClaimed, type LocationClaimFields } from "@/lib/locationClaim";
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import {
   getLocationScore,
   type LocationScoreFields,
@@ -35,6 +36,7 @@ type SearchParams = {
   claim?: string;
   page?: string;
   pageSize?: string;
+  review?: string;
 };
 
 type AdminLocation = LocationScoreFields &
@@ -69,6 +71,15 @@ type AdminLocation = LocationScoreFields &
     image_url?: string | null;
     images?: string[] | null;
     created_at: string | null;
+    quality_status?: string | null;
+    has_photos?: boolean | null;
+    photo_status?: string | null;
+    is_low_level?: boolean | null;
+    low_level_reason?: string | null;
+    public_visibility_tier?: string | null;
+    curation_tier?: string | null;
+    source_quality_status?: string | null;
+    import_confidence?: string | null;
   };
 
 type AdminRestaurantRow = Omit<
@@ -139,6 +150,7 @@ function buildQueryUrl({
   type,
   status,
   claim,
+  review = "all",
   page = 1,
   pageSize,
 }: {
@@ -146,6 +158,7 @@ function buildQueryUrl({
   type: string;
   status: string;
   claim: string;
+  review?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -155,6 +168,7 @@ function buildQueryUrl({
   if (type !== "all") params.set("type", type);
   if (status !== "all") params.set("status", status);
   if (claim !== "all") params.set("claim", claim);
+  if (review !== "all") params.set("review", review);
   params.set("page", String(page));
   if (pageSize) params.set("pageSize", String(pageSize));
 
@@ -166,8 +180,8 @@ export default async function AdminLocationsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.locations);
+  const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
 
   const params = await searchParams;
 
@@ -176,6 +190,7 @@ export default async function AdminLocationsPage({
   const type = params.type || "all";
   const status = params.status || "all";
   const claim = params.claim || "all";
+  const review = params.review || "all";
   const page = Math.max(1, Number(params.page || 1));
   const requestedPageSize = Number(params.pageSize || 100);
   const pageSize = PAGE_SIZE_OPTIONS.includes(requestedPageSize as (typeof PAGE_SIZE_OPTIONS)[number])
@@ -191,7 +206,7 @@ export default async function AdminLocationsPage({
   let restaurantsQuery = supabase
     .from("restaurants")
     .select(
-      "id, name, restaurant_name, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
+      "id, name, restaurant_name, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, primary_category, cuisine, cuisine_type, food_type, primary_tag, phone, google_place_id, claim_code, tags, google_types, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at, quality_status, has_photos, photo_status, is_low_level, low_level_reason, public_visibility_tier, curation_tier, source_quality_status, import_confidence",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
@@ -200,7 +215,7 @@ export default async function AdminLocationsPage({
   let activitiesQuery = supabase
     .from("activities")
     .select(
-      "id, name, activity_name, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at",
+      "id, name, activity_name, primary_category, activity_type, primary_tag, phone, google_place_id, claim_code, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, created_at, quality_status, has_photos, photo_status, is_low_level, low_level_reason, public_visibility_tier, curation_tier, source_quality_status, import_confidence",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
@@ -227,6 +242,26 @@ export default async function AdminLocationsPage({
     activitiesQuery = activitiesQuery.or(
       "is_claimed.eq.false,and(is_claimed.is.null,claimed.eq.false),and(is_claimed.is.null,claimed.is.null)",
     );
+  }
+
+  if (review === "low-level-hidden") {
+    restaurantsQuery = restaurantsQuery.eq("is_low_level", true);
+    activitiesQuery = activitiesQuery.eq("is_low_level", true);
+  }
+
+  if (review === "nyc-unverified") {
+    restaurantsQuery = restaurantsQuery.eq("low_level_reason", "nyc_import_unverified");
+    activitiesQuery = activitiesQuery.eq("low_level_reason", "nyc_import_unverified");
+  }
+
+  if (review === "missing-photos") {
+    restaurantsQuery = restaurantsQuery.or("has_photos.eq.false,photo_status.eq.missing_photo");
+    activitiesQuery = activitiesQuery.or("has_photos.eq.false,photo_status.eq.missing_photo");
+  }
+
+  if (review === "publish-ready") {
+    restaurantsQuery = restaurantsQuery.eq("quality_status", "publish_ready");
+    activitiesQuery = activitiesQuery.eq("quality_status", "publish_ready");
   }
 
   if (safeQ) {
@@ -292,6 +327,15 @@ export default async function AdminLocationsPage({
       image_url: item.image_url,
       images: item.images,
       created_at: item.created_at,
+      quality_status: item.quality_status,
+      has_photos: item.has_photos,
+      photo_status: item.photo_status,
+      is_low_level: item.is_low_level,
+      low_level_reason: item.low_level_reason,
+      public_visibility_tier: item.public_visibility_tier,
+      curation_tier: item.curation_tier,
+      source_quality_status: item.source_quality_status,
+      import_confidence: item.import_confidence,
     })) || [];
 
   const activityRows: AdminLocation[] =
@@ -331,6 +375,15 @@ export default async function AdminLocationsPage({
       image_url: item.image_url,
       images: item.images,
       created_at: item.created_at,
+      quality_status: item.quality_status,
+      has_photos: item.has_photos,
+      photo_status: item.photo_status,
+      is_low_level: item.is_low_level,
+      low_level_reason: item.low_level_reason,
+      public_visibility_tier: item.public_visibility_tier,
+      curation_tier: item.curation_tier,
+      source_quality_status: item.source_quality_status,
+      import_confidence: item.import_confidence,
     })) || [];
 
   const allLocations = [...restaurantRows, ...activityRows].sort((a, b) => {
@@ -399,6 +452,10 @@ export default async function AdminLocationsPage({
               >
                 Print Claim QRs
               </Link>
+              <Link href={buildQueryUrl({ q, type, status, claim, review: "low-level-hidden", page: 1, pageSize })} className="rounded-full border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-black text-red-100 hover:bg-red-500/25">Low-Level Hidden</Link>
+              <Link href={buildQueryUrl({ q, type, status, claim, review: "nyc-unverified", page: 1, pageSize })} className="rounded-full border border-amber-300/30 bg-amber-500/15 px-5 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/25">NYC Unverified</Link>
+              <Link href={buildQueryUrl({ q, type, status, claim, review: "missing-photos", page: 1, pageSize })} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">Missing Photos</Link>
+              <Link href={buildQueryUrl({ q, type, status, claim, review: "publish-ready", page: 1, pageSize })} className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-5 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/25">Publish Ready</Link>
               <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 backdrop-blur">
                 <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
                   Showing
@@ -650,7 +707,7 @@ export default async function AdminLocationsPage({
                       <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
                         {getLocationImage(location) ? (
                           <img
-                            src={getLocationImage(location)}
+                            src={getLocationImage(location) || undefined}
                             alt={location.name || "TheOutHaven location"}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />
@@ -726,6 +783,24 @@ export default async function AdminLocationsPage({
                           {location.is_hidden === true && (
                             <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
                               Hidden
+                            </span>
+                          )}
+
+                          {location.is_low_level === true && (
+                            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
+                              Low-Level: {location.low_level_reason || "review"}
+                            </span>
+                          )}
+
+                          {location.source_quality_status && (
+                            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-black uppercase text-blue-700">
+                              Source: {location.source_quality_status}
+                            </span>
+                          )}
+
+                          {location.public_visibility_tier && (
+                            <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/50">
+                              Tier: {location.public_visibility_tier}
                             </span>
                           )}
                         </div>

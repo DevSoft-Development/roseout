@@ -128,17 +128,24 @@ async function loadLandingLocations(page: (typeof LANDING_PAGES)[LandingSlug]) {
   let query = supabaseAdmin
     .from("locations")
     .select(
-      "id,source_table,source_id,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,state,primary_category,primary_tag,cuisine,cuisine_type,food_type,activity_type,tags,vibe_tags,best_for_tags,google_types,atmosphere,best_for,date_style_tags,search_keywords,search_document,description,rating,review_count,theouthaven_score,popularity_score,is_featured,is_searchable,is_hidden,data_status,status"
+      "id,source_table,source_id,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,state,primary_category,primary_tag,cuisine,cuisine_type,food_type,activity_type,tags,vibe_tags,best_for_tags,google_types,atmosphere,best_for,date_style_tags,search_keywords,search_document,description,rating,review_count,theouthaven_score,popularity_score,is_featured,is_searchable,is_hidden,data_status,status,quality_status,duplicate_status,has_photos,photo_status,is_low_level,public_visibility_tier,curation_tier,source_quality_status,import_confidence"
     )
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
     .not("primary_category", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .not("status", "in", '("closed","archived")')
     .limit(18);
 

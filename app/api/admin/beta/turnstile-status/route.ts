@@ -1,0 +1,5 @@
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isTurnstileEnabled, getTurnstileSiteKey } from "@/lib/security/turnstile";
+import { requireBetaAdmin, safeError } from "../_shared";
+export async function GET(){const a=await requireBetaAdmin(); if(a.error)return a.error; try{const since=new Date(Date.now()-24*60*60*1000).toISOString(); const {count}=await supabaseAdmin.from("turnstile_verification_logs").select("id",{count:"exact",head:true}).eq("success",false).gte("created_at",since); const {data:logs}=await supabaseAdmin.from("turnstile_verification_logs").select("id,source,action,hostname,success,error_codes,challenge_ts,created_at").order("created_at",{ascending:false}).limit(50); return NextResponse.json({success:true,status:{enabled:isTurnstileEnabled(),siteKeyConfigured:Boolean(getTurnstileSiteKey()),secretKeyConfigured:Boolean(process.env.TURNSTILE_SECRET_KEY),failuresLast24h:count||0,protectedForms:["Beta application","Anonymous feedback","Anonymous bug report"]},logs:logs||[]});}catch(e){console.error(e);return safeError();}}

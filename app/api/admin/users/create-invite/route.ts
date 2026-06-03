@@ -5,8 +5,9 @@ import { passwordSetupInviteTemplate } from "@/lib/email/templates/passwordSetup
 import { sendRenderedEmail } from "@/lib/email/sender";
 import { isAdminRole, isUserRole, normalizeRole } from "@/lib/users/roles";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function POST(request: Request) {
-  const { error, adminUser } = await requireAdminApiRole(["superadmin", "admin"]);
+  const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
   if (error) return error;
 
   const body = await request.json();

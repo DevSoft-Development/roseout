@@ -3,7 +3,9 @@ import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export const metadata = {
   title: "Owner Accounts – Admin",
@@ -22,16 +24,30 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export default async function Page() {
-  const currentAdmin = await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
-  const canImpersonate = ["superadmin", "admin"].includes(currentAdmin.role);
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const currentAdmin = await requireAdminRole(ADMIN_PAGE_ACCESS.ownerAccounts);
+  const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
+  const params = await searchParams;
+  const q = String(params.q || "").trim();
 
-  const { data: owners, error } = await supabaseAdmin
+  let ownersQuery = supabaseAdmin
     .from("users")
     .select("id,email,full_name,role,created_at")
     .in("role", ["owner", "business_owner", "location_owner"])
     .order("created_at", { ascending: false })
-    .limit(250);
+    .limit(q ? 100 : 50);
+
+  if (q) {
+    const escaped = q.replace(/[%_]/g, "\\$&");
+    const like = `%${escaped}%`;
+    ownersQuery = ownersQuery.or(`email.ilike.${like},full_name.ilike.${like}`);
+  }
+
+  const { data: owners, error } = await ownersQuery;
 
   const ownerAccounts = (owners || []) as OwnerAccount[];
 
@@ -43,6 +59,26 @@ export default async function Page() {
           <h1 className="mt-2 text-3xl font-black">Owner Accounts</h1>
           <p className="mt-2 text-sm text-white/60">Review connected location owners and securely start admin-only owner impersonation.</p>
         </section>
+
+        <form className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 sm:flex-row">
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Search owner name or email..."
+            className="min-h-11 flex-1 rounded-full border border-white/10 bg-black/30 px-4 text-sm font-semibold text-white outline-none placeholder:text-white/35"
+          />
+          <button className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white">
+            Search
+          </button>
+          {q ? (
+            <Link
+              href="/admin/dashboard/owner-accounts"
+              className="rounded-full border border-white/10 px-5 py-3 text-center text-sm font-black text-white/70 hover:bg-white/10"
+            >
+              Clear
+            </Link>
+          ) : null}
+        </form>
 
         {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">{error.message}</div>}
 

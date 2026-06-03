@@ -120,7 +120,7 @@ export const ACTIVITY_INTENTS: Record<string, string[]> = {
   comedy: ["comedy", "stand up", "stand-up"],
   escape_room: ["escape room", "escape"],
   mini_golf: ["mini golf", "minigolf", "miniature golf"],
-  spa: ["spa", "massage"],
+  spa: ["spa", "massage", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"],
   live_music: ["live music", "jazz", "concert", "music venue"],
   nightclub: ["nightclub", "night club", "club", "dance club"],
   lounge: ["lounge", "cocktail lounge", "hookah lounge", "music lounge"],

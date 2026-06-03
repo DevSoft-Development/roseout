@@ -1,7 +1,7 @@
 import type { ActivityIntent, EnterpriseLocation, RestaurantIntent } from "./types";
 
 const uniq = (items: string[]) => Array.from(new Set(items.map((x) => x.toLowerCase().trim()).filter(Boolean)));
-const includesPhrase = (query: string, phrase: string) => new RegExp(`(^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(query);
+export const includesPhrase = (query: string, phrase: string) => new RegExp(`(^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(query);
 
 export const MEAL_SYNONYMS: Record<string, string[]> = {
   breakfast: ["breakfast"], brunch: ["brunch", "eggs benedict", "pancakes", "waffles", "mimosa", "bottomless brunch", "breakfast"], lunch: ["lunch"], dinner: ["dinner", "restaurant", "dining"], "late night": ["late night"], dessert: ["dessert", "cake", "bakery", "pastries", "ice cream", "gelato", "sweets", "chocolate"], coffee: ["coffee", "cafe", "espresso", "latte", "cappuccino", "coffee shop"], drinks: ["drinks", "cocktails"], "happy hour": ["happy hour"], "date night": ["date night", "romantic"], "romantic dinner": ["romantic dinner", "romantic"], "quick bite": ["quick bite"], "casual dinner": ["casual dinner"], "fine dining": ["fine dining"], "group dinner": ["group dinner"], "birthday dinner": ["birthday dinner"], "girls night": ["girls night"], "business dinner": ["business dinner"]
@@ -19,7 +19,71 @@ export const FOOD_SYNONYMS: Record<string, string[]> = {
 };
 
 export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
-  bowling: ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"], karaoke: ["karaoke"], hookah: ["hookah", "hookah lounge"], "live music": ["live music", "concert", "jazz club", "open mic"], museum: ["museum", "exhibit", "exhibition", "cultural center"], lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"], comedy: ["comedy club"], "wine tasting": ["wine tasting"], brewery: ["brewery", "beer garden"], arcade: ["arcade", "games"], "mini golf": ["mini golf"], billiards: ["pool hall", "billiards"], darts: ["darts"], "axe throwing": ["axe throwing"], "escape room": ["escape room"], vr: ["vr", "virtual reality", "immersive experience"], trivia: ["trivia"], "board games": ["board games"], "paint and sip": ["paint and sip", "sip and paint"], pottery: ["pottery"], "cooking class": ["cooking class"], "dance class": ["dance class"], movies: ["movie theater", "cinema"], theater: ["theater", "broadway", "off-broadway"], gallery: ["art gallery", "gallery"], poetry: ["poetry"], bookstore: ["bookstore", "library event"], park: ["park", "waterfront", "pier", "beach", "boardwalk", "garden", "botanical garden", "zoo", "aquarium", "boat ride", "cruise", "rooftop view", "observation deck", "walking tour", "sightseeing"], spa: ["spa", "massage", "sauna", "wellness", "yoga", "fitness class"], sports: ["skating", "roller skating", "ice skating", "basketball", "golf", "driving range", "batting cages", "climbing", "rock climbing", "gym", "sports bar"], shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"]
+  bowling: ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"],
+  karaoke: ["karaoke"],
+  hookah: ["hookah", "hookah lounge"],
+  "live music": ["live music", "concert", "jazz club", "open mic"],
+  museum: ["museum", "exhibit", "exhibition", "cultural center"],
+  lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"],
+  drinks: [
+    "drinks",
+    "cocktails",
+    "cocktail bar",
+    "bar",
+    "wine bar",
+    "lounge",
+    "speakeasy",
+  ],
+  "girls night": [
+    "girls night",
+    "girls' night",
+    "cocktails",
+    "lounge",
+    "bar",
+    "wine bar",
+    "speakeasy",
+    "dancing",
+  ],
+  "relaxed activity": [
+    "relaxed activity",
+    "chill activity",
+    "easy activity",
+    "low key",
+    "low-key",
+    "lounge",
+    "dessert",
+    "coffee",
+    "board games",
+    "arcade",
+    "mini golf",
+    "bowling",
+    "gallery",
+  ],
+  comedy: ["comedy club"],
+  "wine tasting": ["wine tasting"],
+  brewery: ["brewery", "beer garden"],
+  arcade: ["arcade", "games"],
+  "mini golf": ["mini golf"],
+  billiards: ["pool hall", "billiards"],
+  darts: ["darts"],
+  "axe throwing": ["axe throwing"],
+  "escape room": ["escape room"],
+  vr: ["vr", "virtual reality", "immersive experience"],
+  trivia: ["trivia"],
+  "board games": ["board games"],
+  "paint and sip": ["paint and sip", "sip and paint"],
+  pottery: ["pottery"],
+  "cooking class": ["cooking class"],
+  "dance class": ["dance class"],
+  movies: ["movie theater", "cinema", "movie", "movies"],
+  theater: ["theater", "theatre", "broadway", "off-broadway", "show", "play", "musical"],
+  gallery: ["art gallery", "gallery"],
+  poetry: ["poetry"],
+  bookstore: ["bookstore", "library event"],
+  park: ["park", "waterfront", "pier", "beach", "boardwalk", "garden", "botanical garden", "zoo", "aquarium", "boat ride", "cruise", "rooftop view", "observation deck", "walking tour", "sightseeing"],
+  spa: ["spa", "massage", "sauna", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"],
+  sports: ["skating", "roller skating", "ice skating", "basketball", "golf", "driving range", "batting cages", "climbing", "rock climbing", "gym", "sports bar"],
+  shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"],
 };
 
 export const FOOD_TERMS = uniq(Object.values(FOOD_SYNONYMS).flat());
@@ -35,9 +99,59 @@ export function detectCuisineTerms(query: string) { return detectFoodTerms(query
 export function detectMealTerms(query: string) { return detectFromMap(query, MEAL_SYNONYMS); }
 export function detectActivityTerms(query: string) {
   const q = query.toLowerCase();
-  const terms = detectFromMap(query, ACTIVITY_SYNONYMS);
-  if (includesPhrase(q, "things to do") || includesPhrase(q, "fun things")) terms.push("things to do", "activity");
-  if (includesPhrase(q, "bowl") && /(lane|game|entertainment|alley|bowling|activity)/i.test(q)) terms.push("bowling");
+  const hasExplicitRelaxedActivity =
+    includesPhrase(q, "relaxed activity") ||
+    includesPhrase(q, "chill activity") ||
+    includesPhrase(q, "easy activity") ||
+    includesPhrase(q, "low key") ||
+    includesPhrase(q, "low-key");
+  const relaxedActivityTerms = new Set([
+    "relaxed activity",
+    "chill activity",
+    "easy activity",
+    "low key",
+    "low-key",
+  ]);
+  const terms = detectFromMap(query, ACTIVITY_SYNONYMS).filter(
+    (term) => hasExplicitRelaxedActivity || !relaxedActivityTerms.has(term),
+  );
+
+  if (includesPhrase(q, "things to do") || includesPhrase(q, "fun things")) {
+    terms.push("things to do", "activity");
+  }
+
+  if (hasExplicitRelaxedActivity) {
+    terms.push(
+      "relaxed activity",
+      "lounge",
+      "board games",
+      "arcade",
+      "mini golf",
+      "bowling",
+      "gallery",
+    );
+  }
+
+  if (includesPhrase(q, "girls night") || includesPhrase(q, "girls' night")) {
+    terms.push(
+      "girls night",
+      "drinks",
+      "cocktails",
+      "lounge",
+      "bar",
+      "wine bar",
+      "speakeasy",
+    );
+  }
+
+  if (includesPhrase(q, "drinks") || includesPhrase(q, "cocktails")) {
+    terms.push("drinks", "cocktails", "lounge", "bar", "wine bar", "speakeasy");
+  }
+
+  if (includesPhrase(q, "bowl") && /(lane|game|entertainment|alley|bowling|activity)/i.test(q)) {
+    terms.push("bowling");
+  }
+
   return uniq(terms);
 }
 export function expandFoodSynonyms(terms: string[]) { return uniq(terms.flatMap((term) => FOOD_SYNONYMS[term.toLowerCase()] ?? [term])); }
@@ -48,5 +162,126 @@ export function isSpecificActivityIntent(intent: ActivityIntent) { return intent
 export function textForRecord(record: EnterpriseLocation) { return [record.name, record.restaurant_name, record.activity_name, record.location_type, record.primary_category, record.cuisine, record.cuisine_type, record.activity_type, record.description, record.neighborhood, record.borough, record.city, record.state, record.search_document, record.semantic_search_text, record.tags, record.vibe_tags, record.best_for_tags, record.date_style_tags, record.search_keywords, record.google_types, record.semantic_tags, record.intent_tags].flat().join(" ").toLowerCase(); }
 export function termMatchesRecord(record: EnterpriseLocation, terms: string[]) { const text = textForRecord(record); return terms.some((term) => includesPhrase(text, term) || text.includes(term.toLowerCase())); }
 export function activityTermMatches(record: EnterpriseLocation, terms: string[]) { return termMatchesRecord(record, terms); }
-export const createEmptyRestaurantIntent = (): RestaurantIntent => ({ mealTerms: [], foodTerms: [], cuisineTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [] });
-export const createEmptyActivityIntent = (): ActivityIntent => ({ activityTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [] });
+export const PLACE_OF_WORSHIP_TERMS = [
+  "temple",
+  "hindu temple",
+  "church",
+  "chapel",
+  "cathedral",
+  "mosque",
+  "masjid",
+  "synagogue",
+  "shul",
+  "place of worship",
+  "religious organization",
+  "religious center",
+  "worship center",
+  "spiritual center",
+  "shrine",
+  "mission",
+  "ministry",
+  "parish",
+  "congregation",
+];
+
+export const NON_RESTAURANT_CATEGORY_TERMS = [
+  ...PLACE_OF_WORSHIP_TERMS,
+  "theater",
+  "theatre",
+  "performing arts",
+  "movie theater",
+  "cinema",
+  "museum",
+  "gallery",
+  "art gallery",
+  "park",
+  "garden",
+  "botanical garden",
+  "zoo",
+  "aquarium",
+  "bowling",
+  "bowling alley",
+  "arcade",
+  "escape room",
+  "karaoke",
+  "night club",
+  "dance club",
+  "club",
+  "event venue",
+  "auditorium",
+  "stadium",
+  "arena",
+  "library",
+  "bookstore",
+  "spa",
+  "gym",
+  "fitness",
+];
+
+export const RESTAURANT_CATEGORY_TERMS = [
+  "restaurant",
+  "restaurants",
+  "dining",
+  "food",
+  "eatery",
+  "cafe",
+  "coffee",
+  "bakery",
+  "brunch",
+  "breakfast",
+  "lunch",
+  "dinner",
+  "steakhouse",
+  "seafood",
+  "sushi",
+  "italian",
+  "mexican",
+  "caribbean",
+  "american",
+  "latin",
+  "mediterranean",
+  "french",
+  "spanish",
+  "indian restaurant",
+  "thai restaurant",
+  "chinese restaurant",
+  "japanese restaurant",
+  "korean restaurant",
+  "bar and grill",
+  "grill",
+  "bistro",
+  "tavern",
+  "gastropub",
+  "wine bar",
+  "cocktail bar",
+  "lounge restaurant",
+];
+
+export function hasAnyTerm(text: string, terms: string[]) {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+
+  return terms.some((term) => {
+    const t = term.toLowerCase();
+    return includesPhrase(normalized, t) || normalized.includes(t);
+  });
+}
+
+export function userAskedForPlaceOfWorship(query: string) {
+  const normalized = String(query || "").toLowerCase();
+
+  if (
+    /\b(dinner|restaurant|restaurants|dining|brunch|lunch|breakfast|food)\b/.test(normalized) &&
+    /\b(near|nearby|by|around|close to)\b/.test(normalized) &&
+    hasAnyTerm(normalized, PLACE_OF_WORSHIP_TERMS)
+  ) {
+    return false;
+  }
+
+  return hasAnyTerm(query, PLACE_OF_WORSHIP_TERMS);
+}
+
+export const createEmptyRestaurantIntent = (): RestaurantIntent => ({ mealTerms: [], foodTerms: [], cuisineTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [], alternativeGroups: [] });
+export const createEmptyActivityIntent = (): ActivityIntent => ({ activityTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [], alternativeGroups: [] });

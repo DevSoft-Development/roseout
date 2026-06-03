@@ -8,6 +8,7 @@ import { getLocationScore } from "@/lib/locationScore";
 import { listSupportTickets } from "@/lib/support";
 import { supabase } from "@/lib/supabase";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 type LocationType = "restaurants" | "activities";
 type LocationRecord = Record<string, unknown> & {
   id: string;
@@ -22,7 +23,7 @@ type LocationRecord = Record<string, unknown> & {
   owner_user_id?: string | null;
 };
 
-const tabs = ["Overview","Analytics","CRM","Reservations","Claim Access","Communication","Support","Data Quality","Promotions"];
+const tabs = ["Overview","Analytics","CRM","Reservations","Claim Access","Communication","Experience Inbox","Data Quality","Promotions"];
 
 const val = (input: unknown, fallback = "—") => {
   const text = String(input ?? "").trim();
@@ -55,7 +56,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 export default async function AdminLocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.locations);
   const { id } = await params;
   const location = await findLocation(id);
   if (!location) notFound();
@@ -117,7 +118,7 @@ export default async function AdminLocationDetailPage({ params }: { params: Prom
 
         <section id="communication"><BusinessCommunicationSection business={{ id: location.id, name, crm_status: communicationStatus }} /></section>
 
-        <Card id="support" title="Support"><div className="space-y-2">{tickets.length ? tickets.map((ticket)=><Link key={ticket.id} href={`/admin/dashboard/support/${ticket.id}`} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-3"><span>{ticket.subject}</span><span className="text-xs text-white/50">{ticket.status || "open"}</span></Link>) : <p className="rounded-2xl border border-dashed border-white/20 p-6 text-center text-white/50">No location-related tickets found.</p>}</div></Card>
+        <Card id="support" title="Experience Inbox"><div className="space-y-2">{tickets.length ? tickets.map((ticket)=><Link key={ticket.id} href={`/admin/dashboard/support/${ticket.id}`} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-3"><span>{ticket.subject}</span><span className="text-xs text-white/50">{ticket.status || "open"}</span></Link>) : <p className="rounded-2xl border border-dashed border-white/20 p-6 text-center text-white/50">No location-related tickets found.</p>}</div></Card>
 
         <Card id="data-quality" title="Data Quality"><div className="grid gap-3 md:grid-cols-2">{[[!location.semantic_search_text,"Missing semantic_search_text"],[intentTags.length === 0,"Missing intent_tags"],[!location.latitude || !location.longitude,"Missing coordinates"],[!reservationLink,"Missing reservation link"],[!location.phone || !location.website,"Missing phone/website"],[!location.city || !location.state,"Bad city/state"]].map(([bad,label]) => <div key={String(label)} className={`rounded-2xl border p-3 ${bad ? "border-rose-300/40 bg-rose-500/10" : "border-emerald-300/30 bg-emerald-500/10"}`}><p className="font-semibold text-white">{String(label)}</p><button type="button" className="mt-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">Repair</button></div>)}</div></Card>
 

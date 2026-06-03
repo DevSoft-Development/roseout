@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 type LocationType = "restaurants" | "activities";
@@ -29,7 +30,7 @@ async function logImpersonation(payload: Record<string, unknown>) {
 
 export async function POST(req: Request) {
   try {
-    const { error, adminUser } = await requireAdminApiRole(["superadmin", "admin"]);
+    const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.impersonation);
     if (error) return error;
 
     const body = await req.json();

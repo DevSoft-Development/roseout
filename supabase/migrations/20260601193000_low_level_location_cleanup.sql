@@ -1,0 +1,403 @@
+-- Low-level location cleanup for TheOutHaven.
+-- After deploying this migration, run:
+--   select public.oh_cleanup_low_level_locations();
+
+alter table if exists public.locations
+  add column if not exists source_table text,
+  add column if not exists source text,
+  add column if not exists category text,
+  add column if not exists is_low_level boolean default false,
+  add column if not exists low_level_reason text,
+  add column if not exists low_level_detected_at timestamptz,
+  add column if not exists low_level_source text,
+  add column if not exists public_visibility_tier text default 'standard',
+  add column if not exists import_confidence text default 'unknown',
+  add column if not exists source_quality_status text default 'unknown';
+
+update public.locations
+set public_visibility_tier = coalesce(nullif(public_visibility_tier, ''), 'standard'),
+    import_confidence = coalesce(nullif(import_confidence, ''), 'unknown'),
+    source_quality_status = coalesce(nullif(source_quality_status, ''), 'unknown')
+where public_visibility_tier is null
+   or public_visibility_tier = ''
+   or import_confidence is null
+   or import_confidence = ''
+   or source_quality_status is null
+   or source_quality_status = '';
+
+update public.locations set public_visibility_tier = 'standard'
+where public_visibility_tier not in ('premium','curated','standard','casual','low_level','hidden');
+update public.locations set import_confidence = 'unknown'
+where import_confidence not in ('high','medium','low','unknown');
+update public.locations set source_quality_status = 'unknown'
+where source_quality_status not in ('enriched','imported_unverified','generic_restaurant','needs_enrichment','low_level_review','unknown');
+
+do $$
+begin
+  if to_regclass('public.location_import_staging') is not null then
+    alter table public.location_import_staging
+      add column if not exists is_low_level boolean default false,
+      add column if not exists low_level_reason text,
+      add column if not exists low_level_detected_at timestamptz,
+      add column if not exists low_level_source text,
+      add column if not exists public_visibility_tier text default 'standard',
+      add column if not exists import_confidence text default 'unknown',
+      add column if not exists source_quality_status text default 'unknown';
+
+    update public.location_import_staging
+    set public_visibility_tier = coalesce(nullif(public_visibility_tier, ''), 'standard'),
+        import_confidence = coalesce(nullif(import_confidence, ''), 'unknown'),
+        source_quality_status = coalesce(nullif(source_quality_status, ''), 'unknown')
+    where public_visibility_tier is null
+       or public_visibility_tier = ''
+       or import_confidence is null
+       or import_confidence = ''
+       or source_quality_status is null
+       or source_quality_status = '';
+
+    update public.location_import_staging set public_visibility_tier = 'standard'
+    where public_visibility_tier not in ('premium','curated','standard','casual','low_level','hidden');
+    update public.location_import_staging set import_confidence = 'unknown'
+    where import_confidence not in ('high','medium','low','unknown');
+    update public.location_import_staging set source_quality_status = 'unknown'
+    where source_quality_status not in ('enriched','imported_unverified','generic_restaurant','needs_enrichment','low_level_review','unknown');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'locations_public_visibility_tier_check' and conrelid = 'public.locations'::regclass) then
+    alter table public.locations add constraint locations_public_visibility_tier_check check (public_visibility_tier in ('premium','curated','standard','casual','low_level','hidden'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'locations_import_confidence_check' and conrelid = 'public.locations'::regclass) then
+    alter table public.locations add constraint locations_import_confidence_check check (import_confidence in ('high','medium','low','unknown'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'locations_source_quality_status_check' and conrelid = 'public.locations'::regclass) then
+    alter table public.locations add constraint locations_source_quality_status_check check (source_quality_status in ('enriched','imported_unverified','generic_restaurant','needs_enrichment','low_level_review','unknown'));
+  end if;
+end $$;
+
+create or replace function public.oh_safe_lower_text(value text)
+returns text
+language sql
+immutable
+as $$
+  select trim(lower(coalesce(value, '')));
+$$;
+
+create or replace function public.oh_location_low_level_text(
+  p_name text,
+  p_restaurant_name text,
+  p_activity_name text,
+  p_location_type text,
+  p_primary_category text,
+  p_category text,
+  p_cuisine text,
+  p_cuisine_type text,
+  p_food_type text,
+  p_activity_type text,
+  p_description text,
+  p_search_document text,
+  p_tags text[],
+  p_google_types text[],
+  p_source_table text,
+  p_import_source text,
+  p_source text
+)
+returns text
+language sql
+immutable
+as $$
+  select public.oh_safe_lower_text(concat_ws(' ',
+    p_name, p_restaurant_name, p_activity_name, p_location_type, p_primary_category,
+    p_category, p_cuisine, p_cuisine_type, p_food_type, p_activity_type, p_description,
+    p_search_document, array_to_string(coalesce(p_tags, '{}'::text[]), ' '),
+    array_to_string(coalesce(p_google_types, '{}'::text[]), ' '), p_source_table,
+    p_import_source, p_source
+  ));
+$$;
+
+create or replace function public.oh_is_nyc_import_source(p_text text)
+returns boolean
+language sql
+immutable
+as $$
+  select public.oh_safe_lower_text(p_text) ~ '(nyc|open data|opendata|dohmh|\mdoh\M|inspection|restaurant inspection|nyc_open_data|nyc_restaurant|sidewalk|permits|public data)';
+$$;
+
+create or replace function public.oh_low_level_reason(
+  p_location_type text,
+  p_text text,
+  p_rating numeric,
+  p_review_count integer,
+  p_has_photos boolean,
+  p_photo_status text,
+  p_curation_tier text,
+  p_public_visibility_tier text,
+  p_source_text text
+)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  t text := public.oh_safe_lower_text(p_text);
+  lt text := public.oh_safe_lower_text(p_location_type);
+  tier text := public.oh_safe_lower_text(p_curation_tier);
+  vis text := public.oh_safe_lower_text(p_public_visibility_tier);
+  photo text := public.oh_safe_lower_text(p_photo_status);
+  source_text text := public.oh_safe_lower_text(p_source_text || ' ' || p_text);
+  protected boolean := tier in ('premium','curated','date_worthy','featured','high_value') or vis in ('premium','curated');
+  only_generic_restaurant boolean := lt = 'restaurant' and t ~ '(^|\s)restaurant(s)?(\s|$)' and t !~ '(cuisine|bar|grill|steak|seafood|sushi|ramen|thai|korean|japanese|italian|mexican|brunch|lounge|rooftop|date|curated|premium|featured|photo|reservation)';
+begin
+  if t ~ '(smoke shop|liquor store|pharmacy|gas station|laundromat|check cashing)' then return 'smoke_liquor_pharmacy_gas'; end if;
+  if t ~ '(grocery|convenience store|corner store|supermarket|mini market)' then return 'grocery_convenience'; end if;
+  if t ~ '(deli|delicatessen|bodega|\mmarket\M)' then return 'deli_bodega_market'; end if;
+  if t ~ '(food cart|food truck|halal cart)' then return 'food_cart_or_truck'; end if;
+  if t ~ '(fast food|quick service|counter service|buffet|pizza by the slice)' then return 'fast_food'; end if;
+  if t ~ '(takeout|take out|take-away|takeaway|carryout|delivery only|chinese takeout|\mexpress\M)' then return 'takeout_or_counter_service'; end if;
+  if public.oh_is_nyc_import_source(source_text) and lt = 'restaurant' and (p_has_photos is not true or p_rating is null or p_review_count is null or p_review_count < 25) then return 'nyc_import_unverified'; end if;
+  if only_generic_restaurant and (p_has_photos is not true or p_rating is null or p_review_count is null or p_review_count < 25) then return 'generic_restaurant_unverified'; end if;
+  if protected then return null; end if;
+  if p_has_photos is not true or photo = 'missing_photo' then return 'missing_photo'; end if;
+  if lt = 'restaurant' and (p_rating is null or p_rating < 4.0 or p_review_count is null or p_review_count < 25) then return 'weak_quality'; end if;
+  if t ~ '(parking|atm|bank|storage|warehouse|repair|auto shop)' then return 'low_experience_category'; end if;
+  return null;
+end;
+$$;
+
+create or replace function public.oh_is_low_level_location(
+  p_location_type text,
+  p_text text,
+  p_rating numeric,
+  p_review_count integer,
+  p_has_photos boolean,
+  p_photo_status text,
+  p_curation_tier text,
+  p_public_visibility_tier text,
+  p_source_text text
+)
+returns boolean
+language plpgsql
+immutable
+as $$
+declare
+  t text := public.oh_safe_lower_text(p_text);
+  lt text := public.oh_safe_lower_text(p_location_type);
+  tier text := public.oh_safe_lower_text(p_curation_tier);
+  vis text := public.oh_safe_lower_text(p_public_visibility_tier);
+  photo text := public.oh_safe_lower_text(p_photo_status);
+  source_text text := public.oh_safe_lower_text(p_source_text || ' ' || p_text);
+  protected boolean := tier in ('premium','curated','date_worthy','featured','high_value') or vis in ('premium','curated');
+  strong boolean := p_has_photos is true and coalesce(p_rating, 0) >= 4.0 and coalesce(p_review_count, 0) >= 25;
+begin
+  if protected and strong then return false; end if;
+  if t ~ '(takeout|take out|take-away|takeaway|carryout|delivery only|deli|delicatessen|bodega|grocery|\mmarket\M|mini market|supermarket|convenience store|corner store|food cart|food truck|halal cart|fast food|quick service|counter service|buffet|pizza by the slice|chinese takeout|\mexpress\M|smoke shop|liquor store|pharmacy|gas station|laundromat|check cashing)' then return true; end if;
+  if public.oh_is_nyc_import_source(source_text) and lt = 'restaurant' and (p_has_photos is not true or p_rating is null or p_review_count is null) and t !~ '(curated|premium|featured|date worthy|date_worthy)' then return true; end if;
+  if p_has_photos is not true or photo = 'missing_photo' then return true; end if;
+  if lt = 'restaurant' and (p_rating is null or p_rating < 4.0 or p_review_count is null or p_review_count < 25) then return true; end if;
+  return false;
+end;
+$$;
+
+create index if not exists locations_is_low_level_idx on public.locations(is_low_level);
+create index if not exists locations_public_visibility_tier_idx on public.locations(public_visibility_tier);
+create index if not exists locations_low_level_reason_idx on public.locations(low_level_reason);
+create index if not exists locations_source_quality_status_idx on public.locations(source_quality_status);
+create index if not exists locations_import_confidence_idx on public.locations(import_confidence);
+create index if not exists locations_public_search_visibility_idx on public.locations(is_searchable, data_status, is_hidden, is_low_level, public_visibility_tier);
+create index if not exists locations_photo_quality_idx on public.locations(has_photos, photo_status);
+create index if not exists locations_curation_tier_idx on public.locations(curation_tier);
+
+create or replace function public.oh_cleanup_low_level_locations()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  scanned integer := 0;
+  marked integer := 0;
+  hidden integer := 0;
+  nyc_count integer := 0;
+  generic_count integer := 0;
+  missing_photo_count integer := 0;
+  restaurant_count integer := 0;
+  activity_count integer := 0;
+  still_searchable integer := 0;
+begin
+  select count(*) into scanned from public.locations;
+
+  with evaluated as (
+    select l.id,
+      public.oh_location_low_level_text(l.name,l.restaurant_name,l.activity_name,l.location_type,l.primary_category,l.category,l.cuisine,l.cuisine_type,l.food_type,l.activity_type,l.description,l.search_document,l.tags,l.google_types,l.source_table,l.import_source,l.source) as low_text,
+      public.oh_safe_lower_text(concat_ws(' ', l.source_table, l.import_source, l.source)) as source_text,
+      l.*
+    from public.locations l
+  ), reasons as (
+    select e.id,
+      public.oh_low_level_reason(e.location_type, e.low_text, e.rating, e.review_count, e.has_photos, e.photo_status, e.curation_tier, e.public_visibility_tier, e.source_text) as reason,
+      e.location_type, e.low_text, e.source_text, e.has_photos, e.rating, e.review_count, e.curation_tier, e.public_visibility_tier
+    from evaluated e
+  ), low_rows as (
+    select * from reasons where public.oh_is_low_level_location(location_type, low_text, rating, review_count, has_photos, null, curation_tier, public_visibility_tier, source_text)
+  ), updated as (
+    update public.locations l
+    set is_low_level = true,
+        low_level_detected_at = coalesce(l.low_level_detected_at, now()),
+        low_level_source = case when r.reason = 'nyc_import_unverified' then 'nyc_import_cleanup' else 'auto_cleanup' end,
+        low_level_reason = coalesce(r.reason, 'unknown_low_level'),
+        public_visibility_tier = case when coalesce(l.public_visibility_tier,'standard') in ('premium','curated') then l.public_visibility_tier when coalesce(r.reason,'') in ('smoke_liquor_pharmacy_gas','grocery_convenience','deli_bodega_market','nyc_import_unverified') then 'hidden' else 'low_level' end,
+        curation_tier = case when coalesce(l.curation_tier,'standard') in ('premium','curated','date_worthy','featured','high_value') then l.curation_tier else 'low_level' end,
+        search_boost = least(coalesce(l.search_boost, 0), -500),
+        date_score = least(coalesce(l.date_score, 50), 15),
+        is_searchable = false,
+        is_hidden = case when coalesce(r.reason,'') in ('smoke_liquor_pharmacy_gas','grocery_convenience','deli_bodega_market','nyc_import_unverified') then true else l.is_hidden end,
+        data_status = case when coalesce(l.data_status,'clean') = 'clean' then 'needs_review' else l.data_status end,
+        quality_status = 'low_level_review',
+        source_quality_status = case when r.reason = 'nyc_import_unverified' then 'imported_unverified' else 'low_level_review' end,
+        import_confidence = case when r.reason = 'nyc_import_unverified' then 'low' else coalesce(l.import_confidence,'unknown') end
+    from low_rows r
+    where l.id = r.id
+    returning l.*
+  )
+  select count(*),
+         count(*) filter (where public_visibility_tier = 'hidden' or is_hidden is true),
+         count(*) filter (where low_level_reason = 'nyc_import_unverified'),
+         count(*) filter (where low_level_reason = 'generic_restaurant_unverified'),
+         count(*) filter (where low_level_reason = 'missing_photo'),
+         count(*) filter (where location_type = 'restaurant'),
+         count(*) filter (where location_type <> 'restaurant')
+  into marked, hidden, nyc_count, generic_count, missing_photo_count, restaurant_count, activity_count
+  from updated;
+
+  update public.locations l
+  set is_low_level = false,
+      low_level_reason = case when l.low_level_source in ('auto_cleanup','nyc_import_cleanup') then null else l.low_level_reason end,
+      public_visibility_tier = coalesce(nullif(l.public_visibility_tier,''), 'standard'),
+      source_quality_status = case
+        when l.has_photos is true and l.rating is not null and l.review_count is not null and coalesce(trim(l.address),'') <> '' and l.latitude is not null and l.longitude is not null then 'enriched'
+        else coalesce(l.source_quality_status, 'unknown')
+      end
+  where coalesce(l.is_low_level,false) = false
+    and coalesce(l.low_level_source,'') in ('auto_cleanup','nyc_import_cleanup');
+
+  select count(*) into still_searchable from public.locations where is_low_level is true and is_searchable is true;
+
+  return jsonb_build_object(
+    'total_scanned', scanned,
+    'marked_low_level', marked,
+    'hidden_low_level', hidden,
+    'nyc_import_unverified', nyc_count,
+    'generic_restaurant_unverified', generic_count,
+    'missing_photo_marked', missing_photo_count,
+    'restaurants_marked', restaurant_count,
+    'activities_marked', activity_count,
+    'still_searchable_low_level', still_searchable
+  );
+end;
+$$;
+
+create or replace function public.oh_restore_location_from_low_level(p_location_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec public.locations%rowtype;
+  has_required boolean;
+  next_searchable boolean;
+begin
+  select * into rec from public.locations where id = p_location_id for update;
+  if not found then
+    return jsonb_build_object('success', false, 'location_id', p_location_id, 'error', 'location_not_found');
+  end if;
+
+  has_required := rec.has_photos is true
+    and coalesce(rec.photo_status,'') <> 'missing_photo'
+    and coalesce(trim(rec.address),'') <> ''
+    and coalesce(trim(rec.city),'') <> ''
+    and coalesce(trim(rec.state),'') <> ''
+    and rec.latitude is not null
+    and rec.longitude is not null;
+
+  next_searchable := has_required
+    and coalesce(rec.status,'') not in ('closed','archived')
+    and coalesce(rec.duplicate_status,'') <> 'duplicate';
+
+  update public.locations
+  set is_low_level = false,
+      low_level_reason = null,
+      low_level_detected_at = null,
+      low_level_source = 'manual_restore',
+      public_visibility_tier = 'standard',
+      curation_tier = case when curation_tier = 'low_level' then 'standard' else curation_tier end,
+      is_hidden = false,
+      source_quality_status = case when has_required and rec.rating is not null and rec.review_count is not null then 'enriched' else coalesce(source_quality_status, 'needs_enrichment') end,
+      data_status = case when has_required then 'clean' else 'needs_review' end,
+      quality_status = case when has_required then 'publish_ready' else 'needs_review' end,
+      is_searchable = next_searchable
+  where id = p_location_id
+  returning * into rec;
+
+  return jsonb_build_object(
+    'success', true,
+    'location_id', p_location_id,
+    'is_searchable', rec.is_searchable,
+    'data_status', rec.data_status,
+    'quality_status', rec.quality_status,
+    'public_visibility_tier', rec.public_visibility_tier
+  );
+end;
+$$;
+
+-- Initial locations backfill.
+select public.oh_cleanup_low_level_locations();
+
+-- Staging backfill is guarded because some deployments may not have the table yet.
+do $$
+begin
+  if to_regclass('public.location_import_staging') is not null then
+    with evaluated as (
+      select s.id,
+        public.oh_location_low_level_text(s.name,s.restaurant_name,s.activity_name,s.location_type,s.primary_category,null,s.cuisine,s.cuisine_type,null,s.activity_type,s.description,null,s.tags,s.google_types,null,null,s.source) as low_text,
+        public.oh_safe_lower_text(s.source) as source_text,
+        s.*
+      from public.location_import_staging s
+    ), low_rows as (
+      select e.id,
+        public.oh_low_level_reason(e.location_type, e.low_text, e.rating, e.review_count, coalesce(e.has_photos, e.main_image is not null), e.photo_status, e.curation_tier, e.public_visibility_tier, e.source_text) as reason
+      from evaluated e
+      where public.oh_is_low_level_location(e.location_type, e.low_text, e.rating, e.review_count, coalesce(e.has_photos, e.main_image is not null), e.photo_status, e.curation_tier, e.public_visibility_tier, e.source_text)
+    )
+    update public.location_import_staging s
+    set is_low_level = true,
+        low_level_reason = coalesce(l.reason, 'unknown_low_level'),
+        low_level_detected_at = coalesce(s.low_level_detected_at, now()),
+        low_level_source = 'staging_cleanup',
+        public_visibility_tier = case when coalesce(l.reason,'') in ('smoke_liquor_pharmacy_gas','grocery_convenience','deli_bodega_market','nyc_import_unverified') then 'hidden' else 'low_level' end,
+        import_confidence = 'low',
+        source_quality_status = case when l.reason = 'nyc_import_unverified' then 'imported_unverified' else 'low_level_review' end,
+        quality_status = 'low_level_review',
+        import_status = case when coalesce(l.reason,'') in ('smoke_liquor_pharmacy_gas','grocery_convenience') then 'rejected' else 'needs_review' end
+    from low_rows l
+    where s.id = l.id;
+  end if;
+end $$;
+
+create or replace view public.admin_low_level_location_summary as
+select
+  count(*)::bigint as total_locations,
+  count(*) filter (where coalesce(is_low_level,false))::bigint as total_low_level,
+  count(*) filter (where coalesce(is_low_level,false) and location_type = 'restaurant')::bigint as low_level_restaurants,
+  count(*) filter (where coalesce(is_low_level,false) and location_type <> 'restaurant')::bigint as low_level_activities,
+  count(*) filter (where coalesce(is_low_level,false) and (coalesce(is_hidden,false) or public_visibility_tier = 'hidden'))::bigint as low_level_hidden,
+  count(*) filter (where coalesce(is_low_level,false) and coalesce(is_searchable,false))::bigint as low_level_searchable,
+  count(*) filter (where coalesce(is_low_level,false) and (has_photos is not true or photo_status = 'missing_photo'))::bigint as low_level_missing_photo,
+  count(*) filter (where low_level_reason = 'nyc_import_unverified')::bigint as nyc_import_unverified,
+  count(*) filter (where low_level_reason = 'generic_restaurant_unverified')::bigint as generic_restaurant_unverified,
+  coalesce((select jsonb_object_agg(reason, total) from (select coalesce(low_level_reason,'unknown') reason, count(*) total from public.locations where coalesce(is_low_level,false) group by 1 order by 1) x), '{}'::jsonb) as low_level_by_reason,
+  coalesce((select jsonb_object_agg(status, total) from (select coalesce(source_quality_status,'unknown') status, count(*) total from public.locations group by 1 order by 1) x), '{}'::jsonb) as source_quality_by_status,
+  coalesce((select jsonb_object_agg(tier, total) from (select coalesce(public_visibility_tier,'standard') tier, count(*) total from public.locations group by 1 order by 1) x), '{}'::jsonb) as public_visibility_by_tier
+from public.locations;

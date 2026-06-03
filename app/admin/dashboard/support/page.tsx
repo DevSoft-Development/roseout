@@ -4,9 +4,10 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import SupportTicketClient from "@/components/support/SupportTicketClient";
 import { listSupportTickets } from "@/lib/support";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const metadata: Metadata = {
-  title: "Support",
-  description: "Admin support inbox for customer messages, claims, reservations, and billing notes.",
+  title: "Experience Inbox",
+  description: "Admin Experience Inbox for customer messages, claims, reservations, and billing notes.",
 };
 
 const SUPPORT_DASHBOARD_VERSION = "support-dashboard-refresh-2026-05-12";
@@ -43,7 +44,7 @@ function statusClass(status: string | null | undefined) {
 }
 
 export default async function AdminSupportPage() {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.experienceInbox);
 
   const supportTickets = await listSupportTickets(75);
   const openTickets = supportTickets.filter((ticket) => isOpenStatus(ticket.status));
@@ -64,10 +65,10 @@ export default async function AdminSupportPage() {
           <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_360px] lg:items-end">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">
-                Admin Support
+                Experience Team
               </p>
               <h1 className="mt-3 text-4xl font-black tracking-tight">
-                Support tickets
+                Experience Inbox
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
                 The restored ticket center shows the current inbox, open-ticket
@@ -203,7 +204,7 @@ export default async function AdminSupportPage() {
 
             {supportTickets.length === 0 && (
               <div className="p-8 text-center text-sm font-bold text-white/45">
-                No support tickets yet.
+                No Experience Inbox tickets yet.
               </div>
             )}
           </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -141,11 +142,7 @@ async function logCleanupRun(meta: Record<string, unknown>, error?: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { error: authError } = await requireAdminApiRole([
-      "superadmin",
-      "admin",
-      "editor",
-    ]);
+    const { error: authError } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.dataQuality);
 
     if (authError) return authError;
 

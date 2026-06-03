@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
+import { applyPublicLocationFilters } from "@/lib/publicLocationFilters";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +27,11 @@ export async function GET(
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
     .single();
 
   if (error) {

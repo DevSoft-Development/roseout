@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -23,7 +24,7 @@ async function authorize(request: NextRequest) {
   ) {
     return null;
   }
-  const { error } = await requireAdminApiRole(["admin", "superadmin"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
   return error;
 }
 
@@ -100,6 +101,15 @@ function buildModeQuery(mode: MigrationMode, limit: number) {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAtMs = Date.now();
+  const startedAt = new Date().toISOString();
+  const skipAdminImportEmail = request.headers.get("x-skip-admin-import-email") === "true";
+  const emailResult = {
+    sent: false,
+    provider: skipAdminImportEmail ? "skipped_cron_summary_email" : "manual_email_not_requested",
+    error: null,
+  };
+
   const auth = await authorize(request);
   if (auth) return auth;
 
@@ -107,11 +117,59 @@ export async function POST(request: NextRequest) {
   const mode = String(body.mode || "") as MigrationMode;
   const limit = Math.min(Math.max(Number(body.limit) || 50, 1), 250);
   if (!["repair_bad_placeholders", "google_endpoint_to_storage", "repair_missing_completed"].includes(mode)) {
-    return NextResponse.json({ success: false, error: "Unsupported photo migration mode." }, { status: 400 });
+    const finishedAt = new Date().toISOString();
+    return NextResponse.json({
+      success: false,
+      error: "Unsupported photo migration mode.",
+      found: 0,
+      processed: 0,
+      imported: 0,
+      updated: 0,
+      migrated: 0,
+      enriched: 0,
+      skipped: 0,
+      failed: 1,
+      needsPhoto: null,
+      publishReady: null,
+      review: null,
+      rejected: null,
+      hasMore: false,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      emailSent: emailResult.sent,
+      emailProvider: emailResult.provider,
+      emailError: emailResult.error,
+    }, { status: 400 });
   }
 
   const { data, error } = await buildModeQuery(mode, limit);
-  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  if (error) {
+    const finishedAt = new Date().toISOString();
+    return NextResponse.json({
+      success: false,
+      error: error.message,
+      found: 0,
+      processed: 0,
+      imported: 0,
+      updated: 0,
+      migrated: 0,
+      enriched: 0,
+      skipped: 0,
+      failed: 1,
+      needsPhoto: null,
+      publishReady: null,
+      review: null,
+      rejected: null,
+      hasMore: false,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      emailSent: emailResult.sent,
+      emailProvider: emailResult.provider,
+      emailError: emailResult.error,
+    }, { status: 500 });
+  }
 
   let processed = 0;
   let repaired = 0;
@@ -193,13 +251,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const finishedAt = new Date().toISOString();
+
   return NextResponse.json({
     success: true,
     mode,
+    found: data?.length || 0,
     processed,
     repaired,
+    imported: 0,
+    updated: repaired,
     migrated,
+    enriched: 0,
     skipped,
     failed,
+    needsPhoto: mode === "repair_missing_completed" ? repaired : null,
+    publishReady: null,
+    review: null,
+    rejected: null,
+    hasMore: (data?.length || 0) >= limit,
+    startedAt,
+    finishedAt,
+    durationMs: Date.now() - startedAtMs,
+    emailSent: emailResult.sent,
+    emailProvider: emailResult.provider,
+    emailError: emailResult.error,
   });
 }

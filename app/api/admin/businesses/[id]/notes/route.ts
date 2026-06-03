@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor", "viewer"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.businessCrmSalesUpdate);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const { data, error: qErr } = await supabaseAdmin.from("business_crm_notes").select("*").eq("location_id", id).order("created_at", { ascending: false });
@@ -12,7 +13,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { error } = await requireAdminApiRole(["superadmin", "admin", "editor"]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.businessCrmSalesUpdate);
   if (error) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
   const body = await request.json().catch(() => ({}));

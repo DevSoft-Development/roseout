@@ -15,8 +15,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
-
-type AdminRole = "superadmin" | "admin" | "editor" | "viewer";
+import type { AdminRole } from "@/lib/users/roles";
+import { ADMIN_ROLE_LABELS, canAdmin, canAnyAdmin } from "@/lib/admin-permissions";
+import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
 
 type AdminTopBarProps = {
   adminName: string;
@@ -60,12 +61,7 @@ type NavGroup = {
   activePrefixes?: string[];
 };
 
-const roleLabels: Record<AdminRole, string> = {
-  superadmin: "Super Admin",
-  admin: "Admin",
-  editor: "Editor",
-  viewer: "Viewer",
-};
+const roleLabels = ADMIN_ROLE_LABELS;
 
 function searchResultHref(item: SearchResult) {
   if (item.type === "user") {
@@ -115,9 +111,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
   const searchRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
-  const canView = ["superadmin", "admin", "editor", "viewer"].includes(adminRole);
-  const canManagePlatform = ["superadmin", "admin"].includes(adminRole);
-  const canImpersonate = canManagePlatform;
+  const canView = canAdmin(adminRole, "dashboard");
+  const canManagePlatform = canAnyAdmin(adminRole, ["settings", "featureFlags", "logs", "adminUsers"]);
+  const canImpersonate = canAdmin(adminRole, "impersonation");
 
   const dashboardItem: NavItem = useMemo(
     () => ({ label: "Dashboard", href: "/admin/dashboard", visible: canView, exact: true }),
@@ -132,20 +128,19 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/claims",
           "/admin/dashboard/claim-qrs",
           "/admin/dashboard/claim-tools",
-          "/admin/dashboard/import",
           "/admin/dashboard/data-quality",
         ],
         activePrefixes: ["/admin/dashboard/crm", "/admin/dashboard/locations"],
         items: [
-          { label: "All Locations", href: "/admin/dashboard/crm", visible: canView },
-          { label: "Upgrade Opportunities", href: "/admin/dashboard/crm?filter=upgrade-opportunities", visible: canView },
-          { label: "At Risk Locations", href: "/admin/dashboard/crm?filter=at-risk", visible: canView },
-          { label: "Pending Claims", href: "/admin/dashboard/crm?filter=pending-claims", visible: canView },
-          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owners", visible: canView },
-          { label: "Location Tasks", href: "/admin/dashboard/crm?filter=open-tasks", visible: canView },
+          { label: "All Locations", href: "/admin/dashboard/crm", visible: canAdmin(adminRole, "crm") },
+          { label: "Upgrade Opportunities", href: "/admin/dashboard/crm?filter=upgrade-opportunities", visible: canAdmin(adminRole, "upgradeOpportunities") },
+          { label: "At Risk Locations", href: "/admin/dashboard/crm?filter=at-risk", visible: canAdmin(adminRole, "crm") },
+          { label: "Pending Claims", href: "/admin/dashboard/crm?filter=pending-claims", visible: canAdmin(adminRole, "claims") },
+          { label: "Owner Accounts", href: "/admin/dashboard/crm?filter=owner-accounts", visible: canAdmin(adminRole, "ownerAccounts") },
+          { label: "Location Tasks", href: "/admin/dashboard/crm?filter=location-tasks", visible: canView },
           { label: "Follow-ups", href: "/admin/dashboard/crm?filter=follow-ups", visible: canView },
-          { label: "QR Codes", href: "/admin/dashboard/crm?filter=qr", visible: canView },
-          { label: "Legacy Locations", href: "/admin/dashboard/locations", visible: canView },
+          { label: "QR Codes", href: "/admin/dashboard/crm?filter=qr-codes", visible: canView },
+          { label: "Legacy Locations", href: "/admin/dashboard/locations", visible: canAdmin(adminRole, "locations") },
         ],
       },
       {
@@ -153,8 +148,8 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         activePaths: ["/admin/dashboard/reservation-opportunities"],
         activePrefixes: ["/admin/dashboard/reservations", "/admin/dashboard/reservation"],
         items: [
-          { label: "Reservations Overview", href: "/admin/dashboard/reservations", visible: canView },
-          { label: "Reservation Opportunities", href: "/admin/dashboard/reservation-opportunities", visible: canView },
+          { label: "Reservations Overview", href: "/admin/dashboard/reservations", visible: canAdmin(adminRole, "reservations") },
+          { label: "Reservation Opportunities", href: "/admin/dashboard/reservation-opportunities", visible: canAdmin(adminRole, "reservations") },
         ],
       },
       {
@@ -166,63 +161,80 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
           "/admin/dashboard/plans",
         ],
         items: [
-          { label: "Owner Accounts", href: "/admin/dashboard/owner-accounts", visible: canView },
-          { label: "Businesses", href: "/admin/dashboard/businesses", visible: canView },
-          { label: "Billing", href: "/admin/dashboard/billing", visible: canView },
-          { label: "Plans", href: "/admin/dashboard/plans", visible: canView },
+          { label: "Owner Accounts", href: "/admin/dashboard/owner-accounts", visible: canAdmin(adminRole, "ownerAccounts") },
+          { label: "Businesses", href: "/admin/dashboard/businesses", visible: canAdmin(adminRole, "businessCrm") },
+          { label: "Billing", href: "/admin/dashboard/billing", visible: canAdmin(adminRole, "billing") },
+          { label: "Plans", href: "/admin/dashboard/plans", visible: canAdmin(adminRole, "billing") },
           {
             label: "Upgrade Opportunities",
             href: "/admin/dashboard/businesses/upgrade-opportunities",
-            visible: canView,
+            visible: canAdmin(adminRole, "upgradeOpportunities"),
           },
-          { label: "Churn Risk", href: "/admin/dashboard/businesses/churn-risk", visible: canView },
+          { label: "Churn Risk", href: "/admin/dashboard/businesses/churn-risk", visible: canAdmin(adminRole, "businessCrm") },
         ],
       },
       {
-        label: "Platform Analytics",
+        label: "Analytics",
         activePaths: ["/admin/dashboard/analytics", "/admin/search-qa"],
         items: [
-          { label: "Platform Analytics", href: "/admin/dashboard/analytics", visible: canView, exact: true },
-          { label: "Search QA", href: "/admin/search-qa", visible: canView },
+          { label: "Analytics", href: "/admin/dashboard/analytics", visible: canAdmin(adminRole, "analytics"), exact: true },
+          { label: "Search QA", href: "/admin/search-qa", visible: canAdmin(adminRole, "seoTools") },
         ],
       },
       {
         label: "Admin Tools",
-        widthClass: "w-[360px] max-w-[calc(100vw-24px)]",
+        widthClass: "w-[520px] max-w-[calc(100vw-24px)]",
         align: "right",
         activePaths: [
+          "/admin/dashboard/import",
           "/admin/dashboard/reviews",
           "/admin/dashboard/support",
           "/admin/dashboard/communication",
           "/admin/dashboard/campaigns",
-          "/admin/dashboard/sms",
-          "/admin/dashboard/email-templates",
           "/admin/dashboard/settings/promo-codes",
           "/admin/dashboard/seo-tools",
+          "/admin/dashboard/settings",
+          "/admin/dashboard/feature-flags",
+          "/admin/dashboard/logs",
+          "/admin/dashboard/launch-checklist",
+          "/admin/dashboard/knowledge-base",
+          "/admin/dashboard/beta",
         ],
+        activePrefixes: ["/admin/dashboard/knowledge-base"],
+        gridClass: "md:grid-cols-3",
         sections: [
           {
             label: "Operations",
             items: [
-              { label: "Reviews", href: "/admin/dashboard/reviews", visible: canView },
-              { label: "Support", href: "/admin/dashboard/support", visible: canView },
-              { label: "Communication", href: "/admin/dashboard/communication", visible: canView },
+              { label: "Import Center", href: "/admin/dashboard/import", visible: canAdmin(adminRole, "import") },
+              { label: "Reviews", href: "/admin/dashboard/reviews", visible: canAdmin(adminRole, "reviews") },
+              { label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") },
+              { label: "Knowledge Base", href: "/admin/dashboard/knowledge-base", visible: canAdmin(adminRole, "knowledgeBase"), activePrefixes: ["/admin/dashboard/knowledge-base"] },
+              { label: "Beta Testing", href: "/admin/dashboard/beta", visible: ["superadmin", "admin", "experience", "experience_team"].includes(String(adminRole)), activePrefixes: ["/admin/dashboard/beta"] },
             ],
           },
           {
             label: "Marketing",
             items: [
-              { label: "Campaigns", href: "/admin/dashboard/campaigns", visible: canView },
-              { label: "SMS", href: "/admin/dashboard/sms", visible: canView },
-              { label: "Email Templates", href: "/admin/dashboard/email-templates", visible: canView },
-              { label: "Promo Codes", href: "/admin/dashboard/settings/promo-codes", visible: canView },
-              { label: "SEO Tools", href: "/admin/dashboard/seo-tools", visible: canView },
+              { label: "Marketing Center", href: "/admin/dashboard/communication", visible: canAdmin(adminRole, "communication") },
+              { label: "Campaigns", href: "/admin/dashboard/campaigns", visible: canAdmin(adminRole, "campaigns") },
+              { label: "Promo Codes", href: "/admin/dashboard/settings/promo-codes", visible: canAdmin(adminRole, "promoCodes") },
+              { label: "SEO Tools", href: "/admin/dashboard/seo-tools", visible: canAdmin(adminRole, "seoTools") },
+            ],
+          },
+          {
+            label: "System",
+            items: [
+              { label: "Settings", href: "/admin/dashboard/settings", visible: canAdmin(adminRole, "settings") },
+              { label: "Feature Flags", href: "/admin/dashboard/feature-flags", visible: canAdmin(adminRole, "featureFlags") },
+              { label: "Logs", href: "/admin/dashboard/logs", visible: canAdmin(adminRole, "logs") },
+              { label: "Launch Checklist", href: "/admin/dashboard/launch-checklist", visible: canManagePlatform },
             ],
           },
         ],
       },
     ],
-    [canView],
+    [adminRole, canManagePlatform, canView],
   );
 
   const visibleGroups = navGroups
@@ -239,7 +251,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     label: "Quick actions",
     items: [
       { label: "View Public Site", href: "/", visible: canView, external: true },
-      { label: "Admin Dashboard", href: "/admin/dashboard", visible: canView, exact: true },
+      { label: "Knowledge Base", href: "/admin/dashboard/knowledge-base", visible: canAdmin(adminRole, "knowledgeBase") },
     ],
   };
 
@@ -256,8 +268,10 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
   };
 
   const profileSupport: NavSection = {
-    label: "Support",
-    items: [{ label: "Support Inbox", href: "/admin/dashboard/support", visible: canView }],
+    label: "Experience",
+    items: [
+      { label: "Experience Inbox", href: "/admin/dashboard/support", visible: canAdmin(adminRole, "experienceInbox") },
+    ],
   };
 
   const isPathMatch = (href: string, exact?: boolean) => {
@@ -288,14 +302,19 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     }
     if (group.label === "Admin Tools") {
       const adminToolPaths = [
+        "/admin/dashboard/import",
         "/admin/dashboard/reviews",
         "/admin/dashboard/support",
         "/admin/dashboard/communication",
         "/admin/dashboard/campaigns",
-        "/admin/dashboard/sms",
-        "/admin/dashboard/email-templates",
         "/admin/dashboard/settings/promo-codes",
         "/admin/dashboard/seo-tools",
+        "/admin/dashboard/settings",
+        "/admin/dashboard/feature-flags",
+        "/admin/dashboard/logs",
+        "/admin/dashboard/launch-checklist",
+        "/admin/dashboard/knowledge-base",
+        "/admin/dashboard/beta",
       ];
       return adminToolPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
     }
@@ -453,7 +472,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         className={cx(
           "mt-1 flex items-center justify-between rounded-2xl border px-3 py-2.5 text-sm font-semibold transition",
           itemActive
-            ? "border-rose-200/30 bg-gradient-to-r from-rose-900/40 to-amber-900/20 text-white shadow-[0_8px_24px_rgba(120,35,60,0.22)]"
+            ? "border-rose-200/30 bg-gradient-to-r from-rose-900/40 to-rose-950/20 text-white shadow-[0_8px_24px_rgba(120,35,60,0.22)]"
             : "border-transparent text-white/75 hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
         )}
       >
@@ -494,7 +513,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
     <header className="sticky top-0 z-[100] border-b border-white/10 bg-[#080504]/95 text-white shadow-[0_18px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
       <div className="mx-auto flex h-[72px] max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         <Link href="/admin/dashboard" onClick={closeMenus} className="group flex min-w-0 shrink-0 items-center gap-3">
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-rose-200/25 bg-gradient-to-br from-rose-200 via-rose-300 to-amber-200 text-[13px] font-black tracking-tight text-[#5b1022] shadow-[0_12px_35px_rgba(244,114,182,0.18)] lg:h-11 lg:w-11">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-rose-200/25 bg-gradient-to-br from-rose-200 via-rose-300 to-rose-200 text-[13px] font-black tracking-tight text-[#5b1022] shadow-[0_12px_35px_rgba(244,114,182,0.18)] lg:h-11 lg:w-11">
             TOH
             <span className="absolute inset-x-1 bottom-1 h-px bg-white/50" />
           </div>
@@ -519,7 +538,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               className={cx(
                 "inline-flex h-10 items-center rounded-full border px-3 text-sm font-semibold whitespace-nowrap transition-all duration-150 2xl:px-4",
                 dashboardActive
-                  ? "border-rose-200/35 bg-gradient-to-r from-rose-900/50 to-amber-900/30 text-rose-50 shadow-[0_10px_30px_rgba(120,35,60,0.28)]"
+                  ? "border-rose-200/35 bg-gradient-to-r from-rose-900/50 to-rose-950/30 text-rose-50 shadow-[0_10px_30px_rgba(120,35,60,0.28)]"
                   : "border-white/10 bg-white/[0.045] text-white/75 hover:border-rose-200/25 hover:bg-white/[0.07] hover:text-white",
               )}
             >
@@ -547,7 +566,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                   className={cx(
                     "inline-flex h-10 items-center gap-1 rounded-full border px-3 text-sm font-semibold whitespace-nowrap transition-all duration-150 2xl:px-4",
                     groupActive
-                      ? "border-rose-200/35 bg-gradient-to-r from-rose-900/50 to-amber-900/30 text-rose-50 shadow-[0_10px_30px_rgba(120,35,60,0.28)]"
+                      ? "border-rose-200/35 bg-gradient-to-r from-rose-900/50 to-rose-950/30 text-rose-50 shadow-[0_10px_30px_rgba(120,35,60,0.28)]"
                       : "border-white/10 bg-white/[0.045] text-white/75 hover:border-rose-200/25 hover:bg-white/[0.07] hover:text-white",
                   )}
                   aria-expanded={groupOpen}
@@ -591,6 +610,9 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
+          <div className="hidden min-w-[22rem] xl:block">
+            <AdminLocationSearch compact />
+          </div>
           <div className="relative" ref={searchRef}>
             <button
               type="button"
@@ -675,7 +697,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               className="inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.055] px-1.5 text-sm transition hover:border-rose-200/25 hover:bg-white/[0.08] sm:px-2.5"
               aria-expanded={profileOpen}
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-rose-200 to-amber-200 text-xs font-black text-[#5b1022]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-rose-200 to-rose-200 text-xs font-black text-[#5b1022]">
                 {initialsFromName(adminName)}
               </span>
               <span className="hidden max-w-28 truncate font-bold text-white/85 2xl:inline">{adminName}</span>
@@ -685,7 +707,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
               <div className="absolute right-0 z-[170] mt-3 max-h-[calc(100vh-90px)] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-2xl border border-white/10 bg-[#120d0b]/95 p-3 shadow-[0_24px_80px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
                 <div className="rounded-2xl border border-rose-200/15 bg-gradient-to-br from-white/[0.07] to-rose-950/20 p-4">
                   <div className="flex items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-200 to-amber-200 text-sm font-black text-[#5b1022]">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-200 to-rose-200 text-sm font-black text-[#5b1022]">
                       {initialsFromName(adminName)}
                     </span>
                     <div className="min-w-0">
@@ -696,7 +718,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                           <ShieldCheck className="h-3 w-3" />
                           {roleLabel}
                         </span>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/15 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-amber-50/80">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-rose-100/80">
                           <Sparkles className="h-3 w-3" />
                           Internal Console
                         </span>
@@ -798,7 +820,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                         <p className="truncate text-sm font-black text-white">{item.title}</p>
                         <p className="truncate text-xs text-white/55">{item.subtitle}</p>
                         <p className="truncate text-[11px] uppercase tracking-[0.14em] text-rose-100/50">{item.meta}</p>
-                        {item.type === "location" && !item.ownerUserId && <p className="mt-1 text-xs font-semibold text-amber-100/70">No owner connected</p>}
+                        {item.type === "location" && !item.ownerUserId && <p className="mt-1 text-xs font-semibold text-rose-100/70">No owner connected</p>}
                       </div>
                       <button
                         type="button"
@@ -877,7 +899,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
 
             <div className="rounded-3xl border border-white/10 bg-[#120d0b]/90 p-4">
               <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-200 to-amber-200 text-xs font-black text-[#5b1022]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-200 to-rose-200 text-xs font-black text-[#5b1022]">
                   {initialsFromName(adminName)}
                 </span>
                 <div className="min-w-0">
@@ -891,7 +913,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole }: AdminT
                     <ShieldCheck className="h-3 w-3" />
                     {roleLabel}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/15 bg-amber-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-amber-50/80">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-rose-100/80">
                     <Sparkles className="h-3 w-3" />
                     Internal Console
                   </span>

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { syncRestaurantToLocation } from "@/lib/sync-location";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -139,11 +140,7 @@ async function requireAuthorization(request: NextRequest) {
     return null;
   }
 
-  const { error } = await requireAdminApiRole([
-    "superadmin",
-    "admin",
-    "editor",
-  ]);
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
 
   return error;
 }

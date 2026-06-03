@@ -1,12 +1,13 @@
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 type SearchParams = { type?: string; q?: string };
 
 const safeNumber = (value: unknown) => (typeof value === "number" ? value : Number(value || 0));
 
 export default async function AdminReviewsPage({ searchParams }: { searchParams?: SearchParams }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  await requireAdminRole(ADMIN_PAGE_ACCESS.reviews);
   const type = searchParams?.type || "all";
   const q = (searchParams?.q || "").trim().toLowerCase();
 

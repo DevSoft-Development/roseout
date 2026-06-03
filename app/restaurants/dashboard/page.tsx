@@ -23,7 +23,7 @@ export default function RestaurantDashboardPage() {
 
     const { data, error } = await supabase
       .from("locations")
-      .select("*")
+      .select("id,email,owner_email,name,restaurant_name,address,city,state,zip_code,description,status,is_searchable,data_status,missing_fields,is_hidden")
       .eq("owner_user_id", userData.user.id)
       .eq("location_type", "restaurant")
       .single();
