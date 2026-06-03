@@ -127,7 +127,17 @@ type User = {
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
 };
-type SkippedPreviewItem = { id: unknown; name: string; reason: string };
+type SkippedPreviewItem = {
+  id: unknown;
+  name: string;
+  reason: string;
+  googleName?: string | null;
+  googleAddress?: string | null;
+  nameScore?: number;
+  localStreetNumber?: string | null;
+  googleStreetNumber?: string | null;
+  matchReason?: string;
+};
 type LocationPreviewItem = LocationRow & { eligibility_reasons: string[] };
 type GooglePhotoFoundResult = {
   found: true;
@@ -143,11 +153,22 @@ type UpdateLocationPhotoResult = {
   error?: PostgrestError | null;
   fallbackUsed?: boolean;
 };
+type GoogleMatchResult = {
+  ok: boolean;
+  reason: string;
+  nameScore: number;
+  localStreetNumber: string | null;
+  googleStreetNumber: string | null;
+};
 type UpdatedPreviewItem = {
   id: unknown;
   name: string;
   googleName: string | null;
   googleAddress: string | null;
+  nameScore: number;
+  matchScore: number;
+  localStreetNumber: string | null;
+  googleStreetNumber: string | null;
 };
 type LoadLocationsResult = {
   data: LocationRow[] | null;
@@ -344,6 +365,181 @@ function locationDisplayName(location: LocationRow): string {
   return String(
     location.name || location.restaurant_name || location.activity_name || "",
   );
+}
+
+function normalizeForMatch(value: unknown): string {
+  const text = String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+
+  const businessSuffixes = new Set([
+    "inc",
+    "incorporated",
+    "llc",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "ltd",
+    "limited",
+  ]);
+  return text
+    .split(" ")
+    .filter((word) => !businessSuffixes.has(word))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenSet(value: unknown): Set<string> {
+  const ignoredWords = new Set([
+    "the",
+    "and",
+    "of",
+    "restaurant",
+    "kitchen",
+    "cuisine",
+    "cafe",
+    "bar",
+    "grill",
+    "bakery",
+    "deli",
+    "pizza",
+    "inc",
+    "llc",
+  ]);
+  const normalized = normalizeForMatch(value);
+  if (!normalized) return new Set();
+  return new Set(
+    normalized
+      .split(" ")
+      .map((word) => word.trim())
+      .filter((word) => word.length > 2 && !ignoredWords.has(word)),
+  );
+}
+
+function tokenOverlapScore(a: unknown, b: unknown): number {
+  const aTokens = tokenSet(a);
+  const bTokens = tokenSet(b);
+  if (!aTokens.size || !bTokens.size) return 0;
+
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) overlap += 1;
+  }
+
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function extractStreetNumber(address: unknown): string | null {
+  const match = String(address ?? "").match(/\d+/);
+  return match?.[0] ?? null;
+}
+
+function hasStrongCityOrBoroughMatch(
+  location: LocationRow,
+  googleAddress: string | null,
+): boolean {
+  const googleText = normalizeForMatch(googleAddress);
+  if (!googleText) return false;
+
+  const localCity = normalizeForMatch(location.city);
+  if (localCity && googleText.includes(localCity)) return true;
+
+  const localAddress = normalizeForMatch(location.address);
+  const boroughs = [
+    "brooklyn",
+    "manhattan",
+    "queens",
+    "bronx",
+    "staten island",
+    "new york",
+  ];
+  return boroughs.some(
+    (borough) =>
+      (localCity === borough || localAddress.includes(borough)) &&
+      googleText.includes(borough),
+  );
+}
+
+function isLikelyGoogleMatch(
+  location: LocationRow,
+  googleResult: GooglePhotoFoundResult,
+): GoogleMatchResult {
+  const localName = locationDisplayName(location);
+  const googleName = googleResult.googleName;
+  const localAddress = location.address;
+  const googleAddress = googleResult.googleAddress;
+  const nameScore = tokenOverlapScore(localName, googleName);
+  const localStreetNumber = extractStreetNumber(localAddress);
+  const googleStreetNumber = extractStreetNumber(googleAddress);
+  const streetNumberMatches = Boolean(
+    localStreetNumber &&
+      googleStreetNumber &&
+      localStreetNumber === googleStreetNumber,
+  );
+
+  if (
+    localStreetNumber &&
+    googleStreetNumber &&
+    localStreetNumber !== googleStreetNumber
+  ) {
+    if (
+      nameScore >= 0.9 &&
+      hasStrongCityOrBoroughMatch(location, googleAddress)
+    ) {
+      return {
+        ok: true,
+        reason: "street_number_mismatch_allowed_by_strong_name_city_match",
+        nameScore,
+        localStreetNumber,
+        googleStreetNumber,
+      };
+    }
+
+    return {
+      ok: false,
+      reason: "street_number_mismatch",
+      nameScore,
+      localStreetNumber,
+      googleStreetNumber,
+    };
+  }
+
+  if (nameScore < 0.35) {
+    return {
+      ok: false,
+      reason: "name_score_below_minimum",
+      nameScore,
+      localStreetNumber,
+      googleStreetNumber,
+    };
+  }
+
+  if (streetNumberMatches) {
+    return {
+      ok: nameScore >= 0.25,
+      reason: nameScore >= 0.25
+        ? "street_number_and_name_match"
+        : "street_number_match_name_score_too_low",
+      nameScore,
+      localStreetNumber,
+      googleStreetNumber,
+    };
+  }
+
+  return {
+    ok: nameScore >= 0.6,
+    reason: nameScore >= 0.6
+      ? "name_match_without_street_numbers"
+      : "missing_street_number_name_score_too_low",
+    nameScore,
+    localStreetNumber,
+    googleStreetNumber,
+  };
 }
 
 function isLikelyTheaterOrPerformance(location: LocationRow): boolean {
@@ -903,6 +1099,10 @@ Deno.serve(async (req) => {
           output_summary: {
             checked: 0,
             eligible: 0,
+            googleChecked: 0,
+            googleMatched: 0,
+            googleNoPhoto: 0,
+            googleRejected: 0,
             updated: 0,
             skipped: 0,
             failed: 0,
@@ -925,6 +1125,7 @@ Deno.serve(async (req) => {
         googleChecked: 0,
         googleMatched: 0,
         googleNoPhoto: 0,
+        googleRejected: 0,
         locationsPreview,
         skippedPreview,
         updatedPreview: [],
@@ -956,6 +1157,7 @@ Deno.serve(async (req) => {
         googleChecked: 0,
         googleMatched: 0,
         googleNoPhoto: 0,
+        googleRejected: 0,
         updated: 0,
         skipped: preLookupSkipped,
         failed: 0,
@@ -1023,6 +1225,7 @@ Deno.serve(async (req) => {
           googleChecked: 0,
           googleMatched: 0,
           googleNoPhoto: eligible,
+          googleRejected: 0,
           updated: 0,
           skipped,
           failed: 0,
@@ -1036,6 +1239,7 @@ Deno.serve(async (req) => {
         googleChecked: 0,
         googleMatched: 0,
         googleNoPhoto: eligible,
+        googleRejected: 0,
         updated: 0,
         skipped,
         failed: 0,
@@ -1064,6 +1268,7 @@ Deno.serve(async (req) => {
     let googleChecked = 0;
     let googleMatched = 0;
     let googleNoPhoto = 0;
+    let googleRejected = 0;
     const skippedByReason = { ...selection.skippedByReason };
     const updatedPreview: UpdatedPreviewItem[] = [];
 
@@ -1093,6 +1298,25 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        const match = isLikelyGoogleMatch(location, photo);
+        if (!match.ok) {
+          skipped += 1;
+          googleRejected += 1;
+          incrementReason(skippedByReason, "google_match_rejected");
+          if (skippedPreview.length < 10) {
+            skippedPreview.push({
+              ...makeSkippedPreview(location, "google_match_rejected"),
+              googleName: photo.googleName,
+              googleAddress: photo.googleAddress,
+              nameScore: match.nameScore,
+              localStreetNumber: match.localStreetNumber,
+              googleStreetNumber: match.googleStreetNumber,
+              matchReason: match.reason,
+            });
+          }
+          continue;
+        }
+
         const photoUrl = buildGooglePhotoUrl(photo.photoReference, googleKey);
         const updateResult = await updateLocationPhoto(
           supabase,
@@ -1110,6 +1334,10 @@ Deno.serve(async (req) => {
               name: locationDisplayName(location),
               googleName: photo.googleName,
               googleAddress: photo.googleAddress,
+              nameScore: match.nameScore,
+              matchScore: match.nameScore,
+              localStreetNumber: match.localStreetNumber,
+              googleStreetNumber: match.googleStreetNumber,
             });
           }
         } else {
@@ -1150,6 +1378,7 @@ Deno.serve(async (req) => {
         googleChecked,
         googleMatched,
         googleNoPhoto,
+        googleRejected,
         skippedByReason,
       },
     });
@@ -1164,6 +1393,7 @@ Deno.serve(async (req) => {
         googleChecked,
         googleMatched,
         googleNoPhoto,
+        googleRejected,
         updated,
         skipped,
         failed,
@@ -1176,6 +1406,7 @@ Deno.serve(async (req) => {
       googleChecked,
       googleMatched,
       googleNoPhoto,
+      googleRejected,
       updated,
       skipped,
       failed,
