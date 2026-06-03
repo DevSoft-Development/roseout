@@ -1,9 +1,4 @@
-import {
-  createClient,
-  type PostgrestError,
-  type SupabaseClient,
-  type User,
-} from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -120,9 +115,40 @@ const THEATER_OR_PERFORMANCE_TERMS = [
 ];
 
 type LocationRow = Record<string, unknown>;
+type SupabaseClient = ReturnType<typeof createClient>;
+type PostgrestError = {
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
+type User = {
+  id: string;
+  app_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, unknown>;
+};
 type SkippedPreviewItem = { id: unknown; name: string; reason: string };
 type LocationPreviewItem = LocationRow & { eligibility_reasons: string[] };
-type PhotoResult = { photoUrl?: string; skipped?: boolean; reason?: string };
+type GooglePhotoFoundResult = {
+  found: true;
+  placeId: string;
+  photoReference: string;
+  googleName: string | null;
+  googleAddress: string | null;
+};
+type GooglePhotoNotFoundResult = { found: false; reason: string };
+type GooglePhotoResult = GooglePhotoFoundResult | GooglePhotoNotFoundResult;
+type UpdateLocationPhotoResult = {
+  success: boolean;
+  error?: PostgrestError | null;
+  fallbackUsed?: boolean;
+};
+type UpdatedPreviewItem = {
+  id: unknown;
+  name: string;
+  googleName: string | null;
+  googleAddress: string | null;
+};
 type LoadLocationsResult = {
   data: LocationRow[] | null;
   error: PostgrestError | null;
@@ -574,34 +600,142 @@ function selectLocationsForRun(
   return { selected, skipped, skippedPreview, skippedByReason };
 }
 
-async function findPhoto(location: LocationRow): Promise<PhotoResult> {
-  const key = Deno.env.get("GOOGLE_PLACES_API_KEY");
-  if (!key) return { skipped: true, reason: "GOOGLE_PLACES_API_KEY missing" };
-  let placeId = String(location.place_id || location.google_place_id || "");
-  if (!placeId) {
-    const q = encodeURIComponent(
-      [
-        location.name || location.restaurant_name || location.activity_name,
-        location.address,
-        location.city,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${q}&inputtype=textquery&fields=place_id&key=${key}`,
-    );
-    placeId = (await res.json()).candidates?.[0]?.place_id;
-  }
-  if (!placeId) return { skipped: true, reason: "place_id not found" };
-  const details = await fetch(
-    `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=photos&key=${key}`,
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildGoogleSearchQuery(location: LocationRow): string {
+  return [
+    location.name || location.restaurant_name || location.activity_name,
+    location.address,
+    location.city,
+    location.state,
+    location.zip_code,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+async function findGooglePlacePhoto(
+  location: LocationRow,
+  googleKey: string,
+): Promise<GooglePhotoResult> {
+  const query = buildGoogleSearchQuery(location);
+  if (!query) return { found: false, reason: "empty_google_query" };
+
+  const url = new URL(
+    "https://maps.googleapis.com/maps/api/place/textsearch/json",
   );
-  const ref = (await details.json()).result?.photos?.[0]?.photo_reference;
-  if (!ref) return { skipped: true, reason: "photo reference not found" };
-  return {
-    photoUrl: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${encodeURIComponent(ref)}&key=${key}`,
+  url.searchParams.set("query", query);
+  url.searchParams.set("key", googleKey);
+
+  const response = await fetch(url);
+  if (!response.ok) return { found: false, reason: `http_${response.status}` };
+
+  const payload = await response.json();
+  const status = String(payload?.status ?? "UNKNOWN");
+
+  if (status === "ZERO_RESULTS") {
+    return { found: false, reason: "zero_results" };
+  }
+  if (status === "REQUEST_DENIED") {
+    throw new Error(
+      `Google Places request denied: ${String(
+        payload?.error_message ?? "No error message returned",
+      )}`,
+    );
+  }
+  if (status === "OVER_QUERY_LIMIT") {
+    return { found: false, reason: "over_query_limit" };
+  }
+  if (status !== "OK") {
+    return { found: false, reason: `google_status_${status}` };
+  }
+
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  for (const result of results) {
+    const placeId = String(result?.place_id ?? "").trim();
+    const photoReference = String(
+      result?.photos?.[0]?.photo_reference ?? "",
+    ).trim();
+    if (placeId && photoReference) {
+      return {
+        found: true,
+        placeId,
+        photoReference,
+        googleName: result?.name ? String(result.name) : null,
+        googleAddress: result?.formatted_address
+          ? String(result.formatted_address)
+          : null,
+      };
+    }
+  }
+
+  return { found: false, reason: "no_photo_reference" };
+}
+
+function buildGooglePhotoUrl(photoReference: string, googleKey: string): string {
+  const url = new URL("https://maps.googleapis.com/maps/api/place/photo");
+  url.searchParams.set("maxwidth", "1200");
+  url.searchParams.set("photo_reference", photoReference);
+  url.searchParams.set("key", googleKey);
+  return url.toString();
+}
+
+function isMissingColumnError(error: PostgrestError | null): boolean {
+  if (!error) return false;
+  const text = [error.message, error.details, error.hint, error.code]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return (
+    error.code === "PGRST204" ||
+    text.includes("column") ||
+    text.includes("schema cache") ||
+    text.includes("could not find")
+  );
+}
+
+async function updateLocationPhoto(
+  supabase: SupabaseClient,
+  location: LocationRow,
+  photoUrl: string,
+  placeId: string,
+): Promise<UpdateLocationPhotoResult> {
+  const preferredUpdate = {
+    image_url: photoUrl,
+    photo_url: photoUrl,
+    google_place_id: placeId,
+    has_photos: true,
+    photo_status: "has_photo",
+    updated_at: new Date().toISOString(),
   };
+
+  const preferredResult = await supabase
+    .from("locations")
+    .update(preferredUpdate)
+    .eq("id", location.id);
+
+  if (!preferredResult.error) return { success: true, fallbackUsed: false };
+  if (!isMissingColumnError(preferredResult.error)) {
+    return { success: false, error: preferredResult.error, fallbackUsed: false };
+  }
+
+  const minimalResult = await supabase
+    .from("locations")
+    .update({
+      image_url: photoUrl,
+      has_photos: true,
+      photo_status: "has_photo",
+    })
+    .eq("id", location.id);
+
+  if (minimalResult.error) {
+    return { success: false, error: minimalResult.error, fallbackUsed: true };
+  }
+
+  return { success: true, fallbackUsed: true };
 }
 
 async function loadMissingPhotoLocations(
@@ -785,7 +919,16 @@ Deno.serve(async (req) => {
         skippedByReason: {},
         eligiblePreviewCount: 0,
         skippedPreviewCount: 0,
-        message: "No missing-photo locations found.",
+        message: dryRun
+          ? "Dry run completed. No database updates were made."
+          : "Photo backfill completed.",
+        googleChecked: 0,
+        googleMatched: 0,
+        googleNoPhoto: 0,
+        locationsPreview,
+        skippedPreview,
+        updatedPreview: [],
+        debug: { locationsPreview, skippedPreview, updatedPreview: [] },
         ...(dryRun
           ? {
               dryRun,
@@ -797,7 +940,6 @@ Deno.serve(async (req) => {
               onlyPublishReady,
               locationsPreview,
               skippedPreview,
-              debug: debugDetails,
             }
           : {}),
       });
@@ -811,6 +953,9 @@ Deno.serve(async (req) => {
         success: true,
         checked,
         eligible: locations.length,
+        googleChecked: 0,
+        googleMatched: 0,
+        googleNoPhoto: 0,
         updated: 0,
         skipped: preLookupSkipped,
         failed: 0,
@@ -827,16 +972,103 @@ Deno.serve(async (req) => {
         locationsPreview,
         skippedPreview,
         wouldCheck: locations,
-        debug: debugDetails,
+        debug: {
+          ...debugDetails,
+          locationsPreview,
+          skippedPreview,
+          updatedPreview: [],
+        },
+        message: "Dry run completed. No database updates were made.",
+      });
+    }
+
+    const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
+    if (!googleKey) {
+      const missingKeySkippedByReason = { ...selection.skippedByReason };
+      for (const location of locations) {
+        incrementReason(missingKeySkippedByReason, "missing_google_places_key");
+        if (skippedPreview.length < 10) {
+          skippedPreview.push(
+            makeSkippedPreview(location, "missing_google_places_key"),
+          );
+        }
+      }
+
+      const skipped = preLookupSkipped + locations.length;
+      const eligible = locations.length;
+      await supabase.from("cron_job_runs").insert({
+        job_name: "nightly-photo-backfill",
+        status: "success",
+        finished_at: new Date().toISOString(),
+        duration_ms: timer(),
+        checked_count: checked,
+        success_count: 0,
+        skipped_count: skipped,
+        failed_count: 0,
+        success_rate: checked ? 0 : null,
+        metadata: {
+          ...optionMetadata,
+          skippedByReason: missingKeySkippedByReason,
+          googlePlacesAvailable: false,
+        },
+      });
+      await logEdgeFunctionRun(supabase, {
+        function_name: "nightly-photo-backfill",
+        status: "success",
+        source,
+        duration_ms: timer(),
+        output_summary: {
+          checked,
+          eligible,
+          googleChecked: 0,
+          googleMatched: 0,
+          googleNoPhoto: eligible,
+          updated: 0,
+          skipped,
+          failed: 0,
+        },
+      });
+
+      return ok({
+        success: true,
+        checked,
+        eligible,
+        googleChecked: 0,
+        googleMatched: 0,
+        googleNoPhoto: eligible,
+        updated: 0,
+        skipped,
+        failed: 0,
+        skippedByReason: missingKeySkippedByReason,
+        eligiblePreviewCount: locationsPreview.length,
+        skippedPreviewCount: skippedPreview.length,
+        dryRun,
+        skipChains,
+        includeChains,
+        includeTheaters,
+        includeLowPriority,
+        onlySearchable,
+        onlyPublishReady,
+        locationsPreview,
+        skippedPreview,
+        updatedPreview: [],
+        debug: { locationsPreview, skippedPreview, updatedPreview: [] },
+        googlePlacesAvailable: false,
+        message: "Photo backfill completed.",
       });
     }
 
     let updated = 0;
     let skipped = preLookupSkipped;
     let failed = 0;
+    let googleChecked = 0;
+    let googleMatched = 0;
+    let googleNoPhoto = 0;
     const skippedByReason = { ...selection.skippedByReason };
+    const updatedPreview: UpdatedPreviewItem[] = [];
 
-    for (const location of locations) {
+    for (let index = 0; index < locations.length; index++) {
+      const location = locations[index];
       try {
         if (hasValidPhoto(location)) {
           skipped++;
@@ -848,39 +1080,57 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const photo = await findPhoto(location);
-        if (photo.photoUrl) {
-          const { error: updateError } = await supabase
-            .from("locations")
-            .update({
-              image_url: photo.photoUrl,
-              photo_url: photo.photoUrl,
-              has_photos: true,
-              photo_status: "has_photo",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", location.id);
-          if (updateError) {
-            failed++;
-          } else {
-            updated++;
+        googleChecked += 1;
+        const photo = await findGooglePlacePhoto(location, googleKey);
+        if (index < locations.length - 1) await sleep(150);
+
+        if (!photo.found) {
+          skipped += 1;
+          googleNoPhoto += 1;
+          incrementReason(skippedByReason, photo.reason);
+          if (skippedPreview.length < 10)
+            skippedPreview.push(makeSkippedPreview(location, photo.reason));
+          continue;
+        }
+
+        const photoUrl = buildGooglePhotoUrl(photo.photoReference, googleKey);
+        const updateResult = await updateLocationPhoto(
+          supabase,
+          location,
+          photoUrl,
+          photo.placeId,
+        );
+
+        if (updateResult.success) {
+          updated += 1;
+          googleMatched += 1;
+          if (updatedPreview.length < 10) {
+            updatedPreview.push({
+              id: location.id ?? null,
+              name: locationDisplayName(location),
+              googleName: photo.googleName,
+              googleAddress: photo.googleAddress,
+            });
           }
         } else {
-          skipped++;
-          incrementReason(
-            skippedByReason,
-            photo.reason ?? "photo_lookup_skipped",
+          failed += 1;
+          incrementReason(skippedByReason, "update_failed");
+          console.warn(
+            "[nightly-photo-backfill] update failed",
+            location.id,
+            updateResult.error?.message,
           );
-          if (skippedPreview.length < 10)
-            skippedPreview.push(
-              makeSkippedPreview(
-                location,
-                photo.reason ?? "photo_lookup_skipped",
-              ),
-            );
         }
-      } catch {
-        failed++;
+      } catch (error) {
+        const errorMessage = safeError(error);
+        if (errorMessage.includes("Google Places request denied")) throw error;
+        failed += 1;
+        incrementReason(skippedByReason, "google_request_failed");
+        console.warn(
+          "[nightly-photo-backfill] google request failed",
+          location.id,
+          errorMessage,
+        );
       }
     }
 
@@ -895,19 +1145,37 @@ Deno.serve(async (req) => {
       skipped_count: skipped,
       failed_count: failed,
       success_rate: checked ? updated / checked : null,
-      metadata: optionMetadata,
+      metadata: {
+        ...optionMetadata,
+        googleChecked,
+        googleMatched,
+        googleNoPhoto,
+        skippedByReason,
+      },
     });
     await logEdgeFunctionRun(supabase, {
       function_name: "nightly-photo-backfill",
       status: "success",
       source,
       duration_ms: timer(),
-      output_summary: { checked, eligible, updated, skipped, failed },
+      output_summary: {
+        checked,
+        eligible,
+        googleChecked,
+        googleMatched,
+        googleNoPhoto,
+        updated,
+        skipped,
+        failed,
+      },
     });
     return ok({
       success: true,
       checked,
       eligible,
+      googleChecked,
+      googleMatched,
+      googleNoPhoto,
       updated,
       skipped,
       failed,
@@ -923,7 +1191,10 @@ Deno.serve(async (req) => {
       onlyPublishReady,
       locationsPreview,
       skippedPreview,
+      updatedPreview,
+      debug: { locationsPreview, skippedPreview, updatedPreview },
       googlePlacesAvailable: Boolean(Deno.env.get("GOOGLE_PLACES_API_KEY")),
+      message: "Photo backfill completed.",
     });
   } catch (error) {
     await logEdgeFunctionRun(supabase, {
