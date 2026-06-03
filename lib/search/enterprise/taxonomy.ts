@@ -37,12 +37,6 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   "girls night": [
     "girls night",
     "girls' night",
-    "cocktails",
-    "lounge",
-    "bar",
-    "wine bar",
-    "speakeasy",
-    "dancing",
   ],
   "relaxed activity": [
     "relaxed activity",
@@ -133,15 +127,13 @@ export function detectActivityTerms(query: string) {
   }
 
   if (includesPhrase(q, "girls night") || includesPhrase(q, "girls' night")) {
-    terms.push(
-      "girls night",
-      "drinks",
-      "cocktails",
-      "lounge",
-      "bar",
-      "wine bar",
-      "speakeasy",
-    );
+    terms.push("girls night");
+
+    if (/\b(nightlife|club|dancing|dance club|live dj|rooftop lounge|lounge|bar)\b/i.test(q)) {
+      terms.push(
+        ...["nightlife", "club", "dancing", "dance club", "live dj", "rooftop lounge", "lounge", "bar"].filter((term) => includesPhrase(q, term)),
+      );
+    }
   }
 
   if (includesPhrase(q, "drinks") || includesPhrase(q, "cocktails")) {

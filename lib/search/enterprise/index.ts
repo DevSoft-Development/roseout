@@ -156,7 +156,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     parsedIntent = intent;
     const debug=createRpcDebug(intent); const supabase=options?.supabase ?? supabaseAdmin; const displayLimit=options?.displayLimit ?? 12;
     let restaurantRaw: EnterpriseLocation[]=[]; let activityRaw: EnterpriseLocation[]=[];
-    if (intent.needsRestaurant) {
+    const searchRestaurantLane = async () => {
       const rpcStarted = Date.now();
       restaurantRaw = await searchEnterpriseLane(supabase,intent,"restaurant",debug);
       let filtered=filterRestaurantResults(restaurantRaw,intent);
@@ -166,8 +166,8 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         filtered=filterRestaurantResults(restaurantRaw,intent);
       }
       perf.restaurant_rpc_ms = Date.now() - rpcStarted;
-    }
-    if (intent.needsActivity) {
+    };
+    const searchActivityLane = async () => {
       const rpcStarted = Date.now();
       activityRaw = await searchEnterpriseLane(supabase,intent,"activity",debug);
       let filtered=filterActivityResults(activityRaw,intent);
@@ -177,6 +177,14 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         filtered=filterActivityResults(activityRaw,intent);
       }
       perf.activity_rpc_ms = Date.now() - rpcStarted;
+    };
+
+    if (intent.needsRestaurant && intent.needsActivity) {
+      await Promise.all([searchRestaurantLane(), searchActivityLane()]);
+    } else if (intent.needsRestaurant) {
+      await searchRestaurantLane();
+    } else if (intent.needsActivity) {
+      await searchActivityLane();
     }
     perf.rpc_ms = perf.restaurant_rpc_ms + perf.activity_rpc_ms;
     const restaurantRejectedReasons=restaurantRaw.map(r=>explainRejection(r,intent,"restaurant")).filter(Boolean); const activityRejectedReasons=activityRaw.map(r=>explainRejection(r,intent,"activity")).filter(Boolean); const restaurantRejectedSummary=rejectionSummary(restaurantRaw,intent,"restaurant"); const activityRejectedSummary=rejectionSummary(activityRaw,intent,"activity");

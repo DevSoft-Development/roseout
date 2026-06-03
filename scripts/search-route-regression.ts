@@ -29,7 +29,52 @@ function assertNoRawSystemError(value: unknown) {
   }
 }
 
+
+function createMockSupabase() {
+  const restaurant = {
+    id: "mock-restaurant",
+    name: "Mock Dinner & Drinks",
+    restaurant_name: "Mock Dinner & Drinks",
+    location_type: "restaurant",
+    primary_category: "restaurant",
+    cuisine: "american",
+    search_document: "restaurant dinner drinks cocktails girls night steak rooftop food dining menu",
+    semantic_search_text: "restaurant dinner drinks cocktails girls night steak rooftop food dining menu",
+    image_url: "https://example.com/restaurant.jpg",
+    latitude: 40.75,
+    longitude: -73.98,
+  };
+  const activity = {
+    id: "mock-activity",
+    name: "Mock Hookah Lounge",
+    activity_name: "Mock Hookah Lounge",
+    location_type: "activity",
+    primary_category: "hookah lounge nightlife activity",
+    activity_type: "hookah lounge",
+    search_document: "hookah lounge drinks cocktails activity nightlife",
+    semantic_search_text: "hookah lounge drinks cocktails activity nightlife",
+    image_url: "https://example.com/activity.jpg",
+    latitude: 40.751,
+    longitude: -73.981,
+  };
+  const calls: Array<{ name: string; params: any }> = [];
+
+  return {
+    calls,
+    client: {
+      rpc: async (name: string, params: any) => {
+        calls.push({ name, params });
+        if (params.p_domain === "restaurant") return { data: [restaurant], error: null };
+        if (params.p_domain === "activity") return { data: [activity], error: null };
+        return { data: [], error: null };
+      },
+    },
+  };
+}
+
 async function main() {
+  (globalThis as any).WebSocket = (await import("next/dist/compiled/ws")).default ?? (await import("next/dist/compiled/ws"));
+
   const steakDinner = normalizeIntent("steak dinner");
   assert.equal(steakDinner.needsRestaurant, true);
   assert.equal(steakDinner.needsActivity, false);
@@ -47,6 +92,34 @@ async function main() {
       () => normalizeIntent(`steak dinner ${connector} bowling in Astoria`),
       `${connector} connector crashed parser`,
     );
+  }
+
+
+  const { runEnterpriseSearch } = await import("../lib/search/enterprise/index");
+
+  for (const query of ["girls night dinner and drinks", "girls night dinner with cocktails"] as const) {
+    const mock = createMockSupabase();
+    const result = await runEnterpriseSearch(query, { supabase: mock.client, betaDebug: true, useLLM: false });
+    assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).needsRestaurant, true);
+    assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).needsActivity, false);
+    assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).wantsPairing, false);
+    assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant"], `${query} should skip activity RPC`);
+    assert.equal(result.renderMode, "restaurant_cards", `${query} render mode`);
+  }
+
+  {
+    const mock = createMockSupabase();
+    const result = await runEnterpriseSearch("girls night dinner and drinks after", { supabase: mock.client, betaDebug: true, useLLM: false });
+    assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).searchType, "mixed_outing");
+    assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
+    assert.equal(result.renderMode, "mixed_pairs");
+  }
+
+  {
+    const intent = normalizeIntent("steak dinner then hookah");
+    assert.equal(intent.searchType, "mixed_outing");
+    assert.equal(intent.needsRestaurant, true);
+    assert.equal(intent.needsActivity, true);
   }
 
   process.env.NEXT_PUBLIC_SUPABASE_URL = "not a valid supabase url";

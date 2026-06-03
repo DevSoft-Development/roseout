@@ -111,4 +111,55 @@ assert.equal(result.intent.pairingPreference?.requireWalkablePair, true);
 assert(result.pairs.every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 0.75));
 assert(result.pairs.every((p)=>!p.pairWarnings.includes("missing_coordinates") && p.isWalkable));
 
+
+function assertRestaurantOnlyDrinksQuery(query: string) {
+  const intent = normalizeIntent(query);
+  assert.equal(intent.needsRestaurant, true, `${query} should need restaurants`);
+  assert.equal(intent.needsActivity, false, `${query} should not need activities`);
+  assert.equal(intent.wantsPairing, false, `${query} should not request pairing`);
+  assert.equal(intent.primaryDomain, "restaurant", `${query} primary domain`);
+  assert.equal(intent.searchType, "restaurant", `${query} search type`);
+  assert.equal(activitySearchTerms(intent).length, 0, `${query} should not build activity terms`);
+  assert(restaurantSearchTerms(intent).includes("dinner") || restaurantSearchTerms(intent).includes("restaurant"), `${query} should keep restaurant terms`);
+}
+
+for (const query of [
+  "girls night dinner and drinks",
+  "girls night dinner with drinks",
+  "girls night dinner with cocktails",
+  "dinner and cocktails",
+  "dinner with cocktails",
+  "steak dinner and drinks",
+  "date night dinner and drinks",
+  "birthday dinner and cocktails",
+  "restaurant with drinks",
+  "rooftop dinner and drinks",
+]) {
+  assertRestaurantOnlyDrinksQuery(query);
+}
+
+for (const query of [
+  "girls night dinner and drinks after",
+  "girls night dinner then drinks",
+  "girls night dinner then lounge",
+  "dinner and bar after",
+  "dinner and cocktails after",
+  "steak dinner then hookah",
+  "dinner then dancing",
+  "dinner and activity nearby",
+  "dinner then things to do",
+]) {
+  const intent = normalizeIntent(query);
+  assert.equal(intent.needsRestaurant, true, `${query} should need restaurants`);
+  assert.equal(intent.needsActivity, true, `${query} should need activities`);
+  assert.equal(intent.wantsPairing, true, `${query} should request pairing`);
+  assert.equal(intent.searchType, "mixed_outing", `${query} search type`);
+  assert.equal(intent.primaryDomain, "mixed", `${query} primary domain`);
+}
+
+const girlsNightDinnerAndDrinks = normalizeIntent("girls night dinner and drinks");
+for (const forbidden of ["theater", "dancing", "nightlife", "club", "dance club", "live dj"]) {
+  assert(!activitySearchTerms(girlsNightDinnerAndDrinks).includes(forbidden), `girls night dinner and drinks must not include ${forbidden} as an activity term`);
+}
+
 console.log("search-quality-regression passed");
