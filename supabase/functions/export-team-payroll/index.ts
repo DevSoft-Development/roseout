@@ -1,62 +1,393 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleOptions } from "../_shared/cors.ts";
+import { badRequest, ok, serverError } from "../_shared/response.ts";
+import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
+import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
 
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
-const url = Deno.env.get("SUPABASE_URL")!;
-const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+type SessionRow = Record<string, any>;
+type CountSummary = {
+  supportTickets: number;
+  supportAnswered: number;
+  supportMarkedComplete: number;
+  supportResolved: number;
+  siteVisits: number;
+  verifiedSiteVisits: number;
+  socialOutreach: number;
+  socialMessagesSent: number;
+};
 
-function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } }); }
-function csvEscape(value: unknown) { const raw = value == null ? "" : String(value); return /[",\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw; }
+const EMPTY_COUNTS: CountSummary = {
+  supportTickets: 0,
+  supportAnswered: 0,
+  supportMarkedComplete: 0,
+  supportResolved: 0,
+  siteVisits: 0,
+  verifiedSiteVisits: 0,
+  socialOutreach: 0,
+  socialMessagesSent: 0,
+};
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  const name = new URL(import.meta.url).pathname.split("/").at(-2) || "";
+function csvEscape(value: unknown): string {
+  const raw = value == null ? "" : String(value);
+  return /[",\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw;
+}
+
+function csv(rows: unknown[][]): string {
+  return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function toEndOfDay(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59.999Z` : value;
+}
+
+function hours(minutes: unknown): number {
+  return Number(minutes || 0) / 60;
+}
+
+function payForSession(session: SessionRow): number {
+  return hours(session.total_minutes) * Number(session.team_member_profiles?.hourly_rate || 0);
+}
+
+function countsFor(map: Map<string, CountSummary>, sessionId: string): CountSummary {
+  return map.get(sessionId) ?? { ...EMPTY_COUNTS };
+}
+
+function increment(map: Map<string, CountSummary>, sessionId: string, changes: Partial<CountSummary>) {
+  const current = countsFor(map, sessionId);
+  for (const [key, value] of Object.entries(changes)) {
+    current[key as keyof CountSummary] += Number(value || 0);
+  }
+  map.set(sessionId, current);
+}
+
+async function loadSessionCounts(supabase: any, sessionIds: string[]): Promise<Map<string, CountSummary>> {
+  const counts = new Map<string, CountSummary>();
+  if (!sessionIds.length) return counts;
+
+  const [{ data: supportActivities, error: supportError }, { data: siteVisits, error: siteError }, { data: socialOutreach, error: socialError }] = await Promise.all([
+    supabase
+      .from("team_work_activities")
+      .select("work_session_id,source_id,ticket_action")
+      .in("work_session_id", sessionIds)
+      .eq("activity_type", "support_ticket")
+      .eq("payroll_eligible", true),
+    supabase
+      .from("ambassador_site_visits")
+      .select("work_session_id,location_verification_status")
+      .in("work_session_id", sessionIds),
+    supabase
+      .from("ambassador_social_outreach")
+      .select("work_session_id,message_status")
+      .in("work_session_id", sessionIds),
+  ]);
+
+  if (supportError) throw supportError;
+  if (siteError) throw siteError;
+  if (socialError) throw socialError;
+
+  const ticketIdsBySession = new Map<string, Set<string>>();
+  for (const activity of supportActivities ?? []) {
+    const sessionId = activity.work_session_id;
+    if (!sessionId) continue;
+    const action = String(activity.ticket_action ?? "");
+    if (activity.source_id) {
+      const ticketIds = ticketIdsBySession.get(sessionId) ?? new Set<string>();
+      ticketIds.add(activity.source_id);
+      ticketIdsBySession.set(sessionId, ticketIds);
+    }
+    increment(counts, sessionId, {
+      supportAnswered: action === "answered" ? 1 : 0,
+      supportMarkedComplete: action === "marked_complete" ? 1 : 0,
+      supportResolved: action === "resolved" ? 1 : 0,
+    });
+  }
+
+  for (const [sessionId, ticketIds] of ticketIdsBySession) {
+    increment(counts, sessionId, { supportTickets: ticketIds.size });
+  }
+
+  for (const visit of siteVisits ?? []) {
+    if (!visit.work_session_id) continue;
+    increment(counts, visit.work_session_id, {
+      siteVisits: 1,
+      verifiedSiteVisits: visit.location_verification_status === "verified" ? 1 : 0,
+    });
+  }
+
+  for (const outreach of socialOutreach ?? []) {
+    if (!outreach.work_session_id) continue;
+    increment(counts, outreach.work_session_id, {
+      socialOutreach: 1,
+      socialMessagesSent: outreach.message_status === "sent" ? 1 : 0,
+    });
+  }
+
+  return counts;
+}
+
+function buildDetailCsv(sessions: SessionRow[], countMap: Map<string, CountSummary>): string {
+  const header = [
+    "work_session_id",
+    "team_member_id",
+    "user_id",
+    "team_type",
+    "work_type",
+    "clock_in_at",
+    "clock_out_at",
+    "approved_minutes",
+    "approved_hours",
+    "paid_travel_minutes",
+    "mileage",
+    "reimbursement_amount",
+    "hourly_rate",
+    "gross_pay",
+    "total_pay",
+    "support_ticket_count",
+    "support_answered_count",
+    "support_marked_complete_count",
+    "support_resolved_count",
+    "site_visit_count",
+    "verified_site_visit_count",
+    "social_outreach_count",
+    "social_messages_sent_count",
+    "is_training",
+    "is_demo",
+    "user_notes",
+    "admin_notes",
+  ];
+
+  return csv([
+    header,
+    ...sessions.map((session) => {
+      const counts = countsFor(countMap, session.id);
+      const grossPay = payForSession(session);
+      const totalPay = grossPay + Number(session.reimbursement_amount || 0);
+      return [
+        session.id,
+        session.team_member_id,
+        session.user_id,
+        session.team_member_profiles?.team_type ?? session.team_type,
+        session.work_type,
+        session.clock_in_at,
+        session.clock_out_at,
+        session.total_minutes || 0,
+        hours(session.total_minutes),
+        session.paid_travel_minutes || 0,
+        session.mileage || 0,
+        session.reimbursement_amount || 0,
+        session.team_member_profiles?.hourly_rate ?? "",
+        grossPay,
+        totalPay,
+        counts.supportTickets,
+        counts.supportAnswered,
+        counts.supportMarkedComplete,
+        counts.supportResolved,
+        counts.siteVisits,
+        counts.verifiedSiteVisits,
+        counts.socialOutreach,
+        counts.socialMessagesSent,
+        session.is_training ?? false,
+        session.is_demo ?? false,
+        session.user_notes,
+        session.admin_notes,
+      ];
+    }),
+  ]);
+}
+
+function buildSummaryCsv(sessions: SessionRow[], countMap: Map<string, CountSummary>): string {
+  const byMember = new Map<string, Record<string, any>>();
+
+  for (const session of sessions) {
+    const key = session.team_member_id ?? session.user_id;
+    const counts = countsFor(countMap, session.id);
+    const current = byMember.get(key) ?? {
+      teamMemberId: session.team_member_id,
+      userId: session.user_id,
+      teamType: session.team_member_profiles?.team_type ?? session.team_type,
+      sessionCount: 0,
+      approvedMinutes: 0,
+      paidTravelMinutes: 0,
+      mileage: 0,
+      reimbursements: 0,
+      hourlyRate: session.team_member_profiles?.hourly_rate ?? "",
+      grossPay: 0,
+      totalPay: 0,
+      ...EMPTY_COUNTS,
+    };
+
+    current.sessionCount += 1;
+    current.approvedMinutes += Number(session.total_minutes || 0);
+    current.paidTravelMinutes += Number(session.paid_travel_minutes || 0);
+    current.mileage += Number(session.mileage || 0);
+    current.reimbursements += Number(session.reimbursement_amount || 0);
+    current.grossPay += payForSession(session);
+    current.totalPay += payForSession(session) + Number(session.reimbursement_amount || 0);
+    for (const key of Object.keys(EMPTY_COUNTS) as Array<keyof CountSummary>) {
+      current[key] += counts[key];
+    }
+    byMember.set(key, current);
+  }
+
+  return csv([
+    [
+      "team_member_id",
+      "user_id",
+      "team_type",
+      "session_count",
+      "approved_hours",
+      "paid_travel_hours",
+      "mileage",
+      "reimbursement_amount",
+      "hourly_rate",
+      "gross_pay",
+      "total_pay",
+      "support_ticket_count",
+      "support_answered_count",
+      "support_marked_complete_count",
+      "support_resolved_count",
+      "site_visit_count",
+      "verified_site_visit_count",
+      "social_outreach_count",
+      "social_messages_sent_count",
+    ],
+    ...Array.from(byMember.values()).map((row) => [
+      row.teamMemberId,
+      row.userId,
+      row.teamType,
+      row.sessionCount,
+      row.approvedMinutes / 60,
+      row.paidTravelMinutes / 60,
+      row.mileage,
+      row.reimbursements,
+      row.hourlyRate,
+      row.grossPay,
+      row.totalPay,
+      row.supportTickets,
+      row.supportAnswered,
+      row.supportMarkedComplete,
+      row.supportResolved,
+      row.siteVisits,
+      row.verifiedSiteVisits,
+      row.socialOutreach,
+      row.socialMessagesSent,
+    ]),
+  ]);
+}
+
+Deno.serve(async (req) => {
+  const options = handleOptions(req);
+  if (options) return options;
+  if (req.method !== "POST") return badRequest("POST is required.");
+
+  const timer = startTimer();
+  const supabase = createSupabaseAdminClient();
+
   try {
-    if (name === "reverse-geocode" || name === "geocode-address") {
-      const body = await req.json();
-      const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
-      if (!key) return json({ provider: "manual_fallback", formattedAddress: body.address || `near ${body.lat}, ${body.lng}` });
-      const endpoint = name === "reverse-geocode"
-        ? `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(body.lat)},${encodeURIComponent(body.lng)}&key=${key}`
-        : `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(body.address)}&key=${key}`;
-      const response = await fetch(endpoint); const data = await response.json(); const first = data.results?.[0];
-      return json({ provider: "google", formattedAddress: first?.formatted_address || null, lat: first?.geometry?.location?.lat || null, lng: first?.geometry?.location?.lng || null, placeId: first?.place_id || null, placeName: first?.address_components?.[0]?.long_name || null });
+    const body = await req.json().catch(() => ({}));
+    const start = String(body.payPeriodStart ?? "").trim();
+    const end = String(body.payPeriodEnd ?? "").trim();
+    if (!start || !end) return badRequest("payPeriodStart and payPeriodEnd are required.");
+
+    let query = supabase
+      .from("team_work_sessions")
+      .select("*, team_member_profiles!inner(include_in_payroll,hourly_rate,team_type)")
+      .eq("approval_status", "approved")
+      .gte("clock_in_at", start)
+      .lte("clock_in_at", toEndOfDay(end))
+      .eq("team_member_profiles.include_in_payroll", true);
+
+    if (!body.force) query = query.is("exported_at", null);
+    if (!body.includeTraining) query = query.eq("is_training", false).eq("is_demo", false);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const sessions = (data ?? []) as SessionRow[];
+    const sessionIds = sessions.map((session) => session.id);
+    const countMap = await loadSessionCounts(supabase, sessionIds);
+    const totalMinutes = sessions.reduce((total, session) => total + Number(session.total_minutes || 0), 0);
+    const totalPaidTravelMinutes = sessions.reduce((total, session) => total + Number(session.paid_travel_minutes || 0), 0);
+    const totalPay = sessions.reduce(
+      (total, session) => total + payForSession(session) + Number(session.reimbursement_amount || 0),
+      0,
+    );
+
+    const { data: batch, error: batchError } = await supabase
+      .from("team_payroll_batches")
+      .insert({
+        pay_period_start: start,
+        pay_period_end: end,
+        total_team_members: new Set(sessions.map((session) => session.team_member_id)).size,
+        total_approved_hours: totalMinutes / 60,
+        total_paid_travel_hours: totalPaidTravelMinutes / 60,
+        total_estimated_pay: totalPay,
+        notes: `Generated with detailed CSV metrics for ${sessions.length} sessions.`,
+      })
+      .select("*")
+      .single();
+    if (batchError) throw batchError;
+
+    if (batch && sessions.length) {
+      const { error: itemsError } = await supabase.from("team_payroll_batch_items").insert(
+        sessions.map((session) => ({
+          payroll_batch_id: batch.id,
+          team_member_id: session.team_member_id,
+          user_id: session.user_id,
+          work_session_id: session.id,
+          approved_minutes: session.total_minutes || 0,
+          paid_travel_minutes: session.paid_travel_minutes || 0,
+          mileage: session.mileage || 0,
+          reimbursement_amount: session.reimbursement_amount || 0,
+          hourly_rate: session.team_member_profiles?.hourly_rate || null,
+          gross_pay: payForSession(session),
+          total_pay: payForSession(session) + Number(session.reimbursement_amount || 0),
+        })),
+      );
+      if (itemsError) throw itemsError;
+
+      const { error: sessionsError } = await supabase
+        .from("team_work_sessions")
+        .update({ payroll_batch_id: batch.id, exported_at: new Date().toISOString(), status: "exported" })
+        .in("id", sessionIds);
+      if (sessionsError) throw sessionsError;
     }
 
-    if (name === "nightly-demo-reset") {
-      const started = new Date().toISOString();
-      const { data: expired } = await supabase.from("crm_demo_sessions").select("id").eq("status", "active").lt("expires_at", new Date().toISOString());
-      const ids = (expired || []).map((row) => row.id);
-      for (const id of ids) await supabase.rpc("reset_demo_session", { p_demo_session_id: id });
-      await supabase.from("crm_demo_reset_logs").insert({ reset_type: "nightly_expired_sessions", status: "success", sessions_deleted: ids.length, records_deleted: { crm_demo_sessions: ids.length }, started_at: started, finished_at: new Date().toISOString() });
-      return json({ success: true, sessionsReset: ids.length });
-    }
+    const aggregateCounts = sessions.reduce((totals, session) => {
+      const counts = countsFor(countMap, session.id);
+      for (const key of Object.keys(EMPTY_COUNTS) as Array<keyof CountSummary>) {
+        totals[key] += counts[key];
+      }
+      return totals;
+    }, { ...EMPTY_COUNTS });
 
-    if (name === "team-session-watchdog") {
-      const threshold = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase.from("team_work_sessions").update({ status: "needs_correction", approval_status: "needs_correction", admin_notes: "Session was open longer than 12 hours.", updated_at: new Date().toISOString() }).eq("status", "active").lt("clock_in_at", threshold).select("id");
-      return json({ success: true, sessionsFlagged: data?.length || 0, note: "Support ticket sessions are not flagged for missing proof or location." });
-    }
+    await logEdgeFunctionRun(supabase, {
+      function_name: "export-team-payroll",
+      status: "success",
+      source: "admin",
+      duration_ms: timer(),
+      output_summary: { sessionCount: sessions.length, totalPay, ...aggregateCounts },
+    });
 
-    if (name === "export-team-payroll") {
-      const body = await req.json().catch(() => ({}));
-      const start = body.payPeriodStart; const end = body.payPeriodEnd;
-      if (!start || !end) return json({ error: "payPeriodStart and payPeriodEnd are required." }, 400);
-      let query = supabase.from("team_work_sessions").select("*, team_member_profiles!inner(include_in_payroll,hourly_rate,team_type)").eq("approval_status", "approved").gte("clock_in_at", start).lte("clock_in_at", `${end}T23:59:59.999Z`).eq("team_member_profiles.include_in_payroll", true);
-      if (!body.force) query = query.is("exported_at", null);
-      if (!body.includeTraining) query = query.eq("is_training", false).eq("is_demo", false);
-      const { data: sessions, error } = await query; if (error) throw error;
-      const ids = (sessions || []).map((s) => s.id);
-      const totalMinutes = (sessions || []).reduce((n, s) => n + Number(s.total_minutes || 0), 0);
-      const totalPay = (sessions || []).reduce((n, s) => n + (Number(s.total_minutes || 0) / 60) * Number(s.team_member_profiles?.hourly_rate || 0) + Number(s.reimbursement_amount || 0), 0);
-      const { data: batch } = await supabase.from("team_payroll_batches").insert({ pay_period_start: start, pay_period_end: end, total_team_members: new Set((sessions || []).map((s) => s.team_member_id)).size, total_approved_hours: totalMinutes / 60, total_paid_travel_hours: (sessions || []).reduce((n,s)=>n+Number(s.paid_travel_minutes||0),0)/60, total_estimated_pay: totalPay }).select("*").single();
-      if (batch) await supabase.from("team_payroll_batch_items").insert((sessions || []).map((s) => ({ payroll_batch_id: batch.id, team_member_id: s.team_member_id, user_id: s.user_id, work_session_id: s.id, approved_minutes: s.total_minutes || 0, paid_travel_minutes: s.paid_travel_minutes || 0, mileage: s.mileage || 0, reimbursement_amount: s.reimbursement_amount || 0, hourly_rate: s.team_member_profiles?.hourly_rate || null, gross_pay: (Number(s.total_minutes || 0) / 60) * Number(s.team_member_profiles?.hourly_rate || 0), total_pay: (Number(s.total_minutes || 0) / 60) * Number(s.team_member_profiles?.hourly_rate || 0) + Number(s.reimbursement_amount || 0) })));
-      if (ids.length && batch) await supabase.from("team_work_sessions").update({ payroll_batch_id: batch.id, exported_at: new Date().toISOString(), status: "exported" }).in("id", ids);
-      const summaryRows = [["team_member_id","team_type","approved_hours","hourly_rate","total_pay"], ...(sessions || []).map((s) => [s.team_member_id, s.team_member_profiles?.team_type, Number(s.total_minutes || 0)/60, s.team_member_profiles?.hourly_rate, (Number(s.total_minutes || 0)/60)*Number(s.team_member_profiles?.hourly_rate || 0)])];
-      return json({ success: true, batch, sessionCount: ids.length, summaryCsv: summaryRows.map((row) => row.map(csvEscape).join(",")).join("\n") });
-    }
-
-    return json({ error: "Unknown function." }, 404);
-  } catch (error) { return json({ error: error instanceof Error ? error.message : "Function failed." }, 500); }
+    return ok({
+      success: true,
+      batch,
+      sessionCount: sessions.length,
+      totalApprovedHours: totalMinutes / 60,
+      totalPaidTravelHours: totalPaidTravelMinutes / 60,
+      totalEstimatedPay: totalPay,
+      counts: aggregateCounts,
+      summaryCsv: buildSummaryCsv(sessions, countMap),
+      detailCsv: buildDetailCsv(sessions, countMap),
+    });
+  } catch (error) {
+    const message = safeError(error);
+    await logEdgeFunctionRun(supabase, {
+      function_name: "export-team-payroll",
+      status: "error",
+      source: "admin",
+      duration_ms: timer(),
+      error_message: message,
+    });
+    return serverError("export-team-payroll failed", message);
+  }
 });
