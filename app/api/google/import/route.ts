@@ -347,6 +347,11 @@ function itemText(item: any) {
     item.subcategory,
     item.types,
     item.business_status,
+    item.google_types,
+    item.tags,
+    item.search_document,
+    item.semantic_search_text,
+    item.search_keywords,
     item.atmosphere,
     item.lighting,
     item.noise_level,
@@ -407,24 +412,61 @@ function buildMatchedLocationResults(locations: any[], input: string) {
     .slice(0, 10);
 }
 
+
+const THEATER_CLASSIFICATION_TERMS = [
+  "theater",
+  "theatre",
+  "movie theater",
+  "movie theatre",
+  "movie_theater",
+  "cinema",
+  "performing arts",
+  "performing_arts",
+  "performing arts theater",
+  "performing arts theatre",
+  "concert hall",
+  "opera house",
+  "playhouse",
+  "amc theatres",
+  "regal cinemas",
+  "showtimes",
+  "box office",
+];
+
+function isTheaterLikeLocation(item: any) {
+  const searchable = itemText(item).replace(/[_-]+/g, " ");
+  return THEATER_CLASSIFICATION_TERMS.some((term) =>
+    searchable.includes(term.replace(/[_-]+/g, " "))
+  );
+}
+
 function normalizeLocation(item: any) {
   const name = getLocationName(item, "");
-  const type =
-    item.location_type ||
-    (item.activity_name || item.activity_type ? "activity" : "restaurant");
+  const theaterLike = isTheaterLikeLocation(item);
+  const type = theaterLike
+    ? "activity"
+    : item.location_type ||
+      (item.activity_name || item.activity_type ? "activity" : "restaurant");
+  const normalizedType = String(type).toLowerCase();
 
   return {
     ...item,
     name,
-    location_type: String(type).toLowerCase(),
-    restaurant_name:
-      String(type).toLowerCase() === "restaurant"
+    location_type: normalizedType,
+    restaurant_name: theaterLike
+      ? null
+      : normalizedType === "restaurant"
         ? item.restaurant_name || name
         : item.restaurant_name,
-    activity_name:
-      String(type).toLowerCase() !== "restaurant"
+    cuisine: theaterLike ? null : item.cuisine,
+    cuisine_type: theaterLike ? null : item.cuisine_type,
+    food_type: theaterLike ? null : item.food_type,
+    activity_name: theaterLike
+      ? item.activity_name || name
+      : normalizedType !== "restaurant"
         ? item.activity_name || name
         : item.activity_name,
+    activity_type: theaterLike ? item.activity_type || "theater" : item.activity_type,
   };
 }
 
@@ -504,10 +546,12 @@ function applyPostRankingDiversity(items: any[], input: string) {
 }
 
 function isRestaurantLocation(item: any) {
+  if (isTheaterLikeLocation(item)) return false;
   return String(item?.location_type || "").toLowerCase() === "restaurant";
 }
 
 function isActivityLocation(item: any) {
+  if (isTheaterLikeLocation(item)) return true;
   return String(item?.location_type || "").toLowerCase() !== "restaurant";
 }
 
@@ -885,6 +929,7 @@ function isCigarPlace(item: any) {
 }
 
 function matchesFoodIntent(item: any, foodIntent: string) {
+  if (isTheaterLikeLocation(item)) return false;
   if (foodIntent === "hookah") return isHookahPlace(item);
   if (foodIntent === "cigar") return isCigarPlace(item);
 
@@ -1238,6 +1283,7 @@ function scoreRestaurant(
   input: string,
   intent: ReturnType<typeof detectIntent>
 ) {
+  if (isTheaterLikeLocation(item)) return 0;
   let score = 0;
 
   score += locationNameMatchScore(item, input);
@@ -1721,9 +1767,9 @@ export async function POST(req: Request) {
       input
     );
 
-    let restaurants = sourceLocations.filter((item: any) =>
-      isRestaurantLocation(item)
-    );
+    let restaurants = sourceLocations
+      .filter((item: any) => isRestaurantLocation(item))
+      .filter((row: any) => !isTheaterLikeLocation(row));
 
     let activities = sourceLocations.filter((item: any) =>
       isActivityLocation(item)

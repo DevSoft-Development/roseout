@@ -58,8 +58,16 @@ export function fastParseSearchIntent(rawQuery: string, options: Record<string, 
   const mealTerms = matches(query, MEAL_TERMS);
   let foodTerms = matches(query, FOOD_TERMS);
   if (foodTerms.includes("steak")) foodTerms = Array.from(new Set([...foodTerms, ...STEAK_TERMS]));
-  const activityTerms = Object.entries(ACTIVITY_ALIASES).flatMap(([, aliases]) => matches(query, aliases).length ? aliases : []);
-  const activityCategory = Object.entries(ACTIVITY_ALIASES).filter(([, aliases]) => matches(query, aliases).length).map(([category]) => category);
+  const matchedActivityEntries = Object.entries(ACTIVITY_ALIASES)
+    .map(([category, aliases]) => ({
+      category,
+      aliases,
+      matched: matches(query, aliases),
+    }))
+    .filter((entry) => entry.matched.length > 0);
+  const activityTerms = Array.from(new Set(matchedActivityEntries.flatMap((entry) => entry.matched)));
+  const activityCategory = matchedActivityEntries.map((entry) => entry.category);
+  const activityFeatureTerms = Array.from(new Set([...activityTerms, ...activityCategory].filter(Boolean)));
   const geoKey = Object.keys(GEO).sort((a,b)=>b.length-a.length).find((key) => includesTerm(query, key));
   const connectors = ["with", "and", "after", "before", "then", "near", "nearby", "walking distance", "close by", "around"].filter((term) => includesTerm(query, term));
   const needsRestaurant = mealTerms.length > 0 || foodTerms.length > 0;
@@ -73,7 +81,7 @@ export function fastParseSearchIntent(rawQuery: string, options: Record<string, 
     needsRestaurant, needsActivity, wantsPairing,
     sequence: /after|then/.test(query) ? "restaurant_then_activity" : null,
     restaurantIntent: { mealTerms, foodTerms, cuisineTerms: foodTerms.filter((term) => !STEAK_TERMS.includes(term)), categoryTerms: [], vibeTerms: /girls night/.test(query) ? ["girls night"] : [], featureTerms: [], negativeTerms: [] },
-    activityIntent: { activityTerms, categoryTerms: activityCategory, vibeTerms: /relaxed/.test(query) ? ["relaxed"] : [], featureTerms: [], negativeTerms: [] },
+    activityIntent: { activityTerms, categoryTerms: activityCategory, vibeTerms: /relaxed/.test(query) ? ["relaxed"] : [], featureTerms: activityFeatureTerms, negativeTerms: [] },
     geo: geoKey ? GEO[geoKey] : { raw: options.area ?? null, radiusMiles: 5, geoStrictness: "default" },
     pairingPreference: { requiresPairing: wantsPairing, distanceMode: requiresWalk ? "walking" : "any", maxPairDistanceMiles: requiresWalk ? 1 : null, maxPairWalkingMinutes: requiresWalk ? 20 : null, requireWalkablePair: requiresWalk },
     partySize: null, vibe: /girls night/.test(query) ? ["girls night"] : [], strictness: confidence >= 0.9 ? "high" : "medium", parser_source: "fast_parser", confidence,

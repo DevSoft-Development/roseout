@@ -13,6 +13,50 @@ import { isLowLevelLocation, isUnverifiedNycRestaurant } from "@/lib/search/lowL
 
 type StageableRow = Record<string, unknown>;
 
+const THEATER_CLASSIFICATION_TERMS = [
+  "theater",
+  "theatre",
+  "cinema",
+  "movie theater",
+  "movie theatre",
+  "movie_theater",
+  "performing arts",
+  "performing_arts",
+  "performing arts theater",
+  "showtimes",
+  "box office",
+  "concert hall",
+  "opera house",
+  "playhouse",
+];
+
+function rowSearchText(row: StageableRow) {
+  const values = [
+    row.name,
+    row.restaurant_name,
+    row.activity_name,
+    row.location_type,
+    row.primary_category,
+    row.category,
+    row.activity_type,
+    row.description,
+    row.google_types,
+    row.tags,
+    row.search_keywords,
+  ];
+
+  return values
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+export function isTheaterLikeStagingRow(row: StageableRow) {
+  const text = rowSearchText(row);
+  return THEATER_CLASSIFICATION_TERMS.some((term) => text.includes(term));
+}
+
 export function normalizeLocationText(value: unknown) {
   return cleanText(value)
     .normalize("NFKD")
@@ -51,6 +95,7 @@ export function calculateStagingQuality(row: StageableRow) {
   const lowLevel = isLowLevelLocation({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const unverifiedNyc = isUnverifiedNycRestaurant({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const lowLevelReason = unverifiedNyc ? "nyc_import_unverified" : lowLevel ? "low_level_review" : null;
+  const theaterLike = isTheaterLikeStagingRow(row);
 
   return {
     normalized_name:
@@ -79,6 +124,14 @@ export function calculateStagingQuality(row: StageableRow) {
     public_visibility_tier: lowLevel || unverifiedNyc ? "hidden" : String(row.public_visibility_tier || "standard"),
     import_confidence: lowLevel || unverifiedNyc ? "low" : String(row.import_confidence || "unknown"),
     source_quality_status: unverifiedNyc ? "imported_unverified" : lowLevel ? "low_level_review" : String(row.source_quality_status || "unknown"),
+    ...(theaterLike
+      ? {
+          location_type: "activity",
+          restaurant_name: null,
+          activity_name: name || row.activity_name,
+          activity_type: row.activity_type || "theater",
+        }
+      : {}),
   };
 }
 
