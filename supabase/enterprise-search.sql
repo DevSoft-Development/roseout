@@ -79,6 +79,23 @@ with candidates as (
           or lower(coalesce(l.primary_category, '')) like '%gastropub%'
         )
         and not (
+          lower(coalesce(l.location_type, '')) like '%theater%'
+          or lower(coalesce(l.location_type, '')) like '%theatre%'
+          or lower(coalesce(l.location_type, '')) like '%cinema%'
+          or lower(coalesce(l.primary_category, '')) like '%theater%'
+          or lower(coalesce(l.primary_category, '')) like '%theatre%'
+          or lower(coalesce(l.primary_category, '')) like '%cinema%'
+          or lower(coalesce(l.primary_category, '')) like '%performing arts%'
+          or lower(coalesce(l.activity_type, '')) like '%theater%'
+          or lower(coalesce(l.activity_type, '')) like '%theatre%'
+          or lower(coalesce(l.activity_type, '')) like '%cinema%'
+          or lower(coalesce(l.name, '')) like '%theater%'
+          or lower(coalesce(l.name, '')) like '%theatre%'
+          or lower(coalesce(l.name, '')) like '%cinema%'
+          or lower(array_to_string(coalesce(l.google_types, '{}'::text[]), ' ')) like '%movie_theater%'
+          or lower(array_to_string(coalesce(l.google_types, '{}'::text[]), ' ')) like '%performing_arts%'
+        )
+        and not (
           l.restaurant_name is null
           and l.cuisine is null
           and l.cuisine_type is null
@@ -129,6 +146,15 @@ with candidates as (
   select c.*,
     (select coalesce(sum(case when lower(c.name) = lower(t) or lower(coalesce(c.restaurant_name,'')) = lower(t) or lower(coalesce(c.activity_name,'')) = lower(t) then 90 when lower(coalesce(c.primary_category,'')) like '%'||lower(t)||'%' or lower(coalesce(c.cuisine,'')) like '%'||lower(t)||'%' or lower(coalesce(c.cuisine_type,'')) like '%'||lower(t)||'%' or lower(coalesce(c.activity_type,'')) like '%'||lower(t)||'%' then 70 when c.haystack like '%'||lower(t)||'%' then 30 else 0 end),0) from unnest(coalesce(p_search_terms,array[]::text[])) t) as term_score_calc,
     case
+      when p_domain='restaurant' and (
+        c.haystack like '%theater%'
+        or c.haystack like '%theatre%'
+        or c.haystack like '%cinema%'
+        or c.haystack like '%movie theater%'
+        or c.haystack like '%movie_theater%'
+        or c.haystack like '%performing arts%'
+        or c.haystack like '%performing_arts%'
+      ) then -999
       when p_domain='restaurant' and (
         c.restaurant_name is not null
         or c.cuisine is not null
