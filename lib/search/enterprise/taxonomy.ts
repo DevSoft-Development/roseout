@@ -24,7 +24,8 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   hookah: ["hookah", "hookah lounge"],
   "live music": ["live music", "concert", "jazz club", "open mic"],
   museum: ["museum", "exhibit", "exhibition", "cultural center"],
-  lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"],
+  lounge: ["lounge", "bar", "cocktail bar", "rooftop lounge", "speakeasy"],
+  nightlife: ["nightlife", "night club", "club", "dance club", "dancing", "live dj", "dj"],
   drinks: [
     "drinks",
     "cocktails",
@@ -37,12 +38,6 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   "girls night": [
     "girls night",
     "girls' night",
-    "cocktails",
-    "lounge",
-    "bar",
-    "wine bar",
-    "speakeasy",
-    "dancing",
   ],
   "relaxed activity": [
     "relaxed activity",
@@ -133,19 +128,11 @@ export function detectActivityTerms(query: string) {
   }
 
   if (includesPhrase(q, "girls night") || includesPhrase(q, "girls' night")) {
-    terms.push(
-      "girls night",
-      "drinks",
-      "cocktails",
-      "lounge",
-      "bar",
-      "wine bar",
-      "speakeasy",
-    );
+    terms.push("girls night");
   }
 
   if (includesPhrase(q, "drinks") || includesPhrase(q, "cocktails")) {
-    terms.push("drinks", "cocktails", "lounge", "bar", "wine bar", "speakeasy");
+    terms.push("drinks", "cocktails");
   }
 
   if (includesPhrase(q, "bowl") && /(lane|game|entertainment|alley|bowling|activity)/i.test(q)) {

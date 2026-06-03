@@ -156,29 +156,47 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     parsedIntent = intent;
     const debug=createRpcDebug(intent); const supabase=options?.supabase ?? supabaseAdmin; const displayLimit=options?.displayLimit ?? 12;
     let restaurantRaw: EnterpriseLocation[]=[]; let activityRaw: EnterpriseLocation[]=[];
-    if (intent.needsRestaurant) {
+    const runRestaurantLane = async () => {
+      if (!intent.needsRestaurant) return { raw: [] as EnterpriseLocation[], usedFallback: false, elapsed: 0 };
+
       const rpcStarted = Date.now();
-      restaurantRaw = await searchEnterpriseLane(supabase,intent,"restaurant",debug);
-      let filtered=filterRestaurantResults(restaurantRaw,intent);
+      let raw = await searchEnterpriseLane(supabase,intent,"restaurant",debug);
+      let filtered=filterRestaurantResults(raw,intent);
+      let laneUsedFallback = false;
       if (!filtered.length && restaurantSearchTerms(intent).length) {
-        usedFallback = true;
-        restaurantRaw=await recoverEnterpriseLane(supabase,intent,"restaurant",debug);
-        filtered=filterRestaurantResults(restaurantRaw,intent);
+        laneUsedFallback = true;
+        raw=await recoverEnterpriseLane(supabase,intent,"restaurant",debug);
+        filtered=filterRestaurantResults(raw,intent);
       }
-      perf.restaurant_rpc_ms = Date.now() - rpcStarted;
-    }
-    if (intent.needsActivity) {
+
+      return { raw, usedFallback: laneUsedFallback, elapsed: Date.now() - rpcStarted };
+    };
+    const runActivityLane = async () => {
+      if (!intent.needsActivity) return { raw: [] as EnterpriseLocation[], usedFallback: false, elapsed: 0 };
+
       const rpcStarted = Date.now();
-      activityRaw = await searchEnterpriseLane(supabase,intent,"activity",debug);
-      let filtered=filterActivityResults(activityRaw,intent);
+      let raw = await searchEnterpriseLane(supabase,intent,"activity",debug);
+      let filtered=filterActivityResults(raw,intent);
+      let laneUsedFallback = false;
       if (!filtered.length && activitySearchTerms(intent).length) {
-        usedFallback = true;
-        activityRaw=await recoverEnterpriseLane(supabase,intent,"activity",debug);
-        filtered=filterActivityResults(activityRaw,intent);
+        laneUsedFallback = true;
+        raw=await recoverEnterpriseLane(supabase,intent,"activity",debug);
+        filtered=filterActivityResults(raw,intent);
       }
-      perf.activity_rpc_ms = Date.now() - rpcStarted;
-    }
-    perf.rpc_ms = perf.restaurant_rpc_ms + perf.activity_rpc_ms;
+
+      return { raw, usedFallback: laneUsedFallback, elapsed: Date.now() - rpcStarted };
+    };
+    const rpcStarted = Date.now();
+    const [restaurantLane, activityLane] = await Promise.all([
+      runRestaurantLane(),
+      runActivityLane(),
+    ]);
+    restaurantRaw = restaurantLane.raw;
+    activityRaw = activityLane.raw;
+    usedFallback = restaurantLane.usedFallback || activityLane.usedFallback;
+    perf.restaurant_rpc_ms = restaurantLane.elapsed;
+    perf.activity_rpc_ms = activityLane.elapsed;
+    perf.rpc_ms = Date.now() - rpcStarted;
     const restaurantRejectedReasons=restaurantRaw.map(r=>explainRejection(r,intent,"restaurant")).filter(Boolean); const activityRejectedReasons=activityRaw.map(r=>explainRejection(r,intent,"activity")).filter(Boolean); const restaurantRejectedSummary=rejectionSummary(restaurantRaw,intent,"restaurant"); const activityRejectedSummary=rejectionSummary(activityRaw,intent,"activity");
     const rankStarted = Date.now();
     const rankedRestaurants = rankRestaurantResults(uniqueById(restaurantRaw), intent);
