@@ -355,35 +355,117 @@ $$;
 -- Initial locations backfill.
 select public.oh_cleanup_low_level_locations();
 
+-- Ensure staging cleanup columns exist before running low-level cleanup.
+do $$
+begin
+if to_regclass('public.location_import_staging') is not null then
+alter table public.location_import_staging
+add column if not exists curation_tier text,
+add column if not exists public_visibility_tier text,
+add column if not exists is_low_level boolean default false,
+add column if not exists low_level_reason text,
+add column if not exists low_level_detected_at timestamptz,
+add column if not exists low_level_source text,
+add column if not exists import_confidence text,
+add column if not exists source_quality_status text,
+add column if not exists quality_status text,
+add column if not exists import_status text,
+add column if not exists has_photos boolean default false,
+add column if not exists photo_status text,
+add column if not exists main_image text;
+end if;
+end $$;
+
 -- Staging backfill is guarded because some deployments may not have the table yet.
 do $$
 begin
-  if to_regclass('public.location_import_staging') is not null then
-    with evaluated as (
-      select s.id,
-        public.oh_location_low_level_text(s.name,s.restaurant_name,s.activity_name,s.location_type,s.primary_category,null,s.cuisine,s.cuisine_type,null,s.activity_type,s.description,null,s.tags,s.google_types,null,null,s.source) as low_text,
-        public.oh_safe_lower_text(s.source) as source_text,
-        s.*
-      from public.location_import_staging s
-    ), low_rows as (
-      select e.id,
-        public.oh_low_level_reason(e.location_type, e.low_text, e.rating, e.review_count, coalesce(e.has_photos, e.main_image is not null), e.photo_status, e.curation_tier, e.public_visibility_tier, e.source_text) as reason
-      from evaluated e
-      where public.oh_is_low_level_location(e.location_type, e.low_text, e.rating, e.review_count, coalesce(e.has_photos, e.main_image is not null), e.photo_status, e.curation_tier, e.public_visibility_tier, e.source_text)
-    )
-    update public.location_import_staging s
-    set is_low_level = true,
-        low_level_reason = coalesce(l.reason, 'unknown_low_level'),
-        low_level_detected_at = coalesce(s.low_level_detected_at, now()),
-        low_level_source = 'staging_cleanup',
-        public_visibility_tier = case when coalesce(l.reason,'') in ('smoke_liquor_pharmacy_gas','grocery_convenience','deli_bodega_market','nyc_import_unverified') then 'hidden' else 'low_level' end,
-        import_confidence = 'low',
-        source_quality_status = case when l.reason = 'nyc_import_unverified' then 'imported_unverified' else 'low_level_review' end,
-        quality_status = 'low_level_review',
-        import_status = case when coalesce(l.reason,'') in ('smoke_liquor_pharmacy_gas','grocery_convenience') then 'rejected' else 'needs_review' end
-    from low_rows l
-    where s.id = l.id;
-  end if;
+if to_regclass('public.location_import_staging') is not null then
+with evaluated as (
+select
+s.*,
+public.oh_location_low_level_text(
+s.name,
+s.restaurant_name,
+s.activity_name,
+s.location_type,
+s.primary_category,
+null,
+s.cuisine,
+s.cuisine_type,
+null,
+s.activity_type,
+s.description,
+null,
+s.tags,
+s.google_types,
+null,
+null,
+s.source
+) as low_text,
+public.oh_safe_lower_text(s.source) as source_text
+from public.location_import_staging s
+),
+low_rows as (
+select
+e.id as staging_id,
+public.oh_low_level_reason(
+e.location_type,
+e.low_text,
+e.rating,
+e.review_count,
+coalesce(e.has_photos, e.main_image is not null),
+e.photo_status,
+e.curation_tier,
+e.public_visibility_tier,
+e.source_text
+) as reason
+from evaluated e
+where public.oh_is_low_level_location(
+e.location_type,
+e.low_text,
+e.rating,
+e.review_count,
+coalesce(e.has_photos, e.main_image is not null),
+e.photo_status,
+e.curation_tier,
+e.public_visibility_tier,
+e.source_text
+)
+)
+update public.location_import_staging s
+set
+is_low_level = true,
+low_level_reason = coalesce(l.reason, 'unknown_low_level'),
+low_level_detected_at = coalesce(s.low_level_detected_at, now()),
+low_level_source = 'staging_cleanup',
+public_visibility_tier = case
+when coalesce(l.reason, '') in (
+'smoke_liquor_pharmacy_gas',
+'grocery_convenience',
+'deli_bodega_market',
+'nyc_import_unverified'
+)
+then 'hidden'
+else 'low_level'
+end,
+import_confidence = 'low',
+source_quality_status = case
+when l.reason = 'nyc_import_unverified'
+then 'imported_unverified'
+else 'low_level_review'
+end,
+quality_status = 'low_level_review',
+import_status = case
+when coalesce(l.reason, '') in (
+'smoke_liquor_pharmacy_gas',
+'grocery_convenience'
+)
+then 'rejected'
+else 'needs_review'
+end
+from low_rows l
+where s.id = l.staging_id;
+end if;
 end $$;
 
 create or replace view public.admin_low_level_location_summary as

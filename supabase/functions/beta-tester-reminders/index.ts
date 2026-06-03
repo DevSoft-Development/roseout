@@ -1,53 +1,8 @@
 import { handleOptions } from "../_shared/cors.ts";
 import { ok, serverError } from "../_shared/response.ts";
-import { requireAdminOrCron } from "../_shared/auth.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
+import { requireAdminOrCron } from "../_shared/auth.ts";
 import { sendEmail } from "../_shared/email.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
-
-Deno.serve(async (req) => {
-  const options = handleOptions(req);
-  if (options) return options;
-  const elapsed = startTimer();
-  const functionName = "beta-tester-reminders";
-  let supabase: any = null;
-
-  try {
-    supabase = createSupabaseAdminClient();
-    const auth = await requireAdminOrCron(req, supabase);
-    if (auth.response) return auth.response;
-
-    const body = await req.json().catch(() => ({}));
-    const siteUrl = Deno.env.get("SITE_URL") ?? "https://theouthaven.com";
-    const limit = Math.min(Math.max(Number(body.limit ?? 100), 1), 500);
-
-    let testers: any[] = [];
-    let tableUsed = "beta_testers";
-    const result = await supabase.from("beta_testers").select("id,email,name,status").eq("status", "active").limit(limit);
-    if (result.error) {
-      tableUsed = "beta_applications";
-      const fallback = await supabase.from("beta_applications").select("id,email,name,status").in("status", ["approved", "active"]).limit(limit);
-      testers = fallback.data ?? [];
-    } else testers = result.data ?? [];
-
-    let sent = 0, skipped = 0, failed = 0;
-    for (const tester of testers) {
-      if (!tester.email) { skipped++; continue; }
-      const email = await sendEmail({
-        to: tester.email,
-        subject: "TheOutHaven beta test reminder",
-        text: `Please test TheOutHaven today: ${siteUrl}/create, ${siteUrl}/explore, and ${siteUrl}/feedback. Try a custom prompt and report anything confusing.`,
-        html: `<p>Please test TheOutHaven today.</p><ul><li><a href="${siteUrl}/create">/create</a></li><li><a href="${siteUrl}/explore">/explore</a></li><li><a href="${siteUrl}/feedback">/feedback</a></li></ul><p>Try a custom prompt and report anything confusing.</p>`,
-      });
-      if (email.sent) sent++; else if (email.skipped) skipped++; else failed++;
-    }
-
-    const summary = { tableUsed, checked: testers.length, sent, skipped, failed };
-    await supabase.from("cron_job_runs").insert({ job_name: functionName, status: failed ? "partial" : "success", checked_count: testers.length, success_count: sent, skipped_count: skipped, failed_count: failed, finished_at: new Date().toISOString(), duration_ms: elapsed(), metadata: summary });
-    await logEdgeFunctionRun(supabase, { function_name: functionName, status: "success", duration_ms: elapsed(), output_summary: summary });
-    return ok({ success: true, ...summary });
-  } catch (error) {
-    if (supabase) await logEdgeFunctionRun(supabase, { function_name: functionName, status: "error", duration_ms: elapsed(), error_message: safeError(error).message });
-    return serverError("beta-tester-reminders failed", safeError(error));
-  }
-});
+async function firstExisting(supabase:any){ for (const table of ["beta_testers", "beta_applications", "beta_assignments"]) { try { const { data, error } = await supabase.from(table).select("*").limit(200); if (!error && data) return { table, rows: data }; } catch {} } return { table: null, rows: [] }; }
+Deno.serve(async (req)=>{ const options=handleOptions(req); if(options)return options; const timer=startTimer(); const supabase=createSupabaseAdminClient(); try { const auth=await requireAdminOrCron(req,supabase); const found=await firstExisting(supabase); if(!found.table){ return ok({ success:true, skipped:true, reason:"No beta tester table found", sent:0, failed:0 }); } let sent=0, skipped=0, failed=0; for(const row of found.rows){ const email=row.email || row.user_email || row.tester_email; const active = row.active ?? row.status === "active" ?? true; if(!email || active === false){ skipped++; continue; } const html=`<h1>Keep testing TheOutHaven</h1><p>Please test at least 5 times this week.</p><ul><li><a href="/create">/create</a>: custom prompts, speed, restaurant + activity pairing</li><li><a href="/explore">/explore</a>: browse flows</li><li><a href="/feedback">/feedback</a>: report bugs</li><li><a href="/admin/dashboard/beta/search-lab">admin/beta/testing route</a></li></ul>`; try { const result:any=await sendEmail({ to: email, subject:"TheOutHaven beta testing reminder", html, text:"Please test custom prompts, search speed, restaurant + activity pairing, and report bugs. Links: /create /explore /feedback /admin/dashboard/beta/search-lab" }); if(result.sent) sent++; else skipped++; } catch { failed++; } } await supabase.from("cron_job_runs").insert({ job_name:"beta-tester-reminders", status: failed ? "partial" : "success", finished_at:new Date().toISOString(), duration_ms:timer(), checked_count:found.rows.length, success_count:sent, skipped_count:skipped, failed_count:failed, success_rate:found.rows.length ? sent / found.rows.length : null, metadata:{ table:found.table, source:auth.source } }); await logEdgeFunctionRun(supabase,{ function_name:"beta-tester-reminders", status:"success", source:auth.source, duration_ms:timer(), output_summary:{ table:found.table, sent, skipped, failed }}); return ok({ success:true, table:found.table, checked:found.rows.length, sent, skipped, failed }); } catch(error){ await logEdgeFunctionRun(supabase,{ function_name:"beta-tester-reminders", status:"error", error_message:safeError(error), duration_ms:timer() }); return serverError("beta-tester-reminders failed", safeError(error)); } });

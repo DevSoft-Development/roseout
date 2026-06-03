@@ -1,38 +1,22 @@
-# TheOutHaven Edge Functions Setup
+# TheOutHaven Supabase Edge Functions Setup
 
-This repo now includes a starter Supabase Edge Functions setup.
+## Required environment variables
 
-## Functions added
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `CRON_SECRET`
 
-- `health-check`
-- `parse-search-intent`
-- `create-search`
-- `nightly-photo-backfill`
-- `admin-cron-digest-email`
-- `beta-tester-reminders`
-- `admin-crm-list`
+## Optional environment variables
 
-## Required secrets
+- `OPENAI_API_KEY`
+- `SEARCH_LLM_MODEL`
+- `GOOGLE_PLACES_API_KEY`
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+- `ADMIN_EMAIL`
+- `NEXT_PUBLIC_USE_EDGE_CREATE_SEARCH`
 
-```bash
-supabase secrets set CRON_SECRET="replace-me"
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY="replace-me"
-```
-
-Supabase usually provides `SUPABASE_URL` automatically in hosted functions, but set it manually if local testing needs it.
-
-## Optional secrets
-
-```bash
-supabase secrets set OPENAI_API_KEY="replace-me"
-supabase secrets set GOOGLE_PLACES_API_KEY="replace-me"
-supabase secrets set RESEND_API_KEY="replace-me"
-supabase secrets set EMAIL_FROM="TheOutHaven <no-reply@theouthaven.com>"
-supabase secrets set ADMIN_EMAIL="admin@theouthaven.com"
-supabase secrets set SITE_URL="https://theouthaven.com"
-```
-
-## Deploy functions
+## Deploy commands
 
 ```bash
 supabase functions deploy health-check
@@ -44,87 +28,65 @@ supabase functions deploy beta-tester-reminders
 supabase functions deploy admin-crm-list
 ```
 
-## Test locally
+## Secrets commands
+
+```bash
+supabase secrets set CRON_SECRET="replace-me"
+supabase secrets set OPENAI_API_KEY="replace-me"
+supabase secrets set GOOGLE_PLACES_API_KEY="replace-me"
+supabase secrets set RESEND_API_KEY="replace-me"
+supabase secrets set EMAIL_FROM="TheOutHaven <no-reply@theouthaven.com>"
+supabase secrets set ADMIN_EMAIL="admin@theouthaven.com"
+```
+
+## Local serve commands
 
 ```bash
 supabase functions serve health-check
-curl -i http://127.0.0.1:54321/functions/v1/health-check
+supabase functions serve create-search
+supabase functions serve nightly-photo-backfill --no-verify-jwt
 ```
 
-## Test deployed health check
+## Enable Edge Create Search
+
+Set `NEXT_PUBLIC_USE_EDGE_CREATE_SEARCH=true` in the Next.js environment. When false or unset, `/api/generate` continues to use the legacy enterprise search flow. If the Edge Function fails, the route gracefully falls back to legacy search unless `disableLegacyFallback` is sent.
+
+## Curl examples
 
 ```bash
-curl -i https://YOUR_PROJECT_REF.supabase.co/functions/v1/health-check
+curl "$SUPABASE_URL/functions/v1/health-check"
 ```
-
-For your current project ref, this may be:
 
 ```bash
-curl -i https://hnhbzynoyrhjndefbwkh.supabase.co/functions/v1/health-check
+curl -X POST "$SUPABASE_URL/functions/v1/parse-search-intent" \
+  -H "Content-Type: application/json" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -d '{"prompt":"steak dinner with bowling in Astoria","debug":true}'
 ```
 
-## Test create-search
-
-This function has JWT verification enabled. Call it from the app using Supabase client auth, or temporarily serve locally while testing.
-
-Expected test query:
-
-```json
-{
-  "prompt": "steak dinner with bowling in Astoria",
-  "debug": true
-}
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/create-search" \
+  -H "Content-Type: application/json" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -d '{"prompt":"steak dinner with bowling in Astoria","limit":12,"debug":true}'
 ```
 
-Expected behavior:
-
-- Parser source should be `fast_parser` or `cache`.
-- `llm_used` should be false for this simple query.
-- Restaurant results should require steak/steakhouse matching.
-- Activity results should require bowling matching.
-- Theater results should be excluded.
-
-## Enable Edge Search in the app
-
-Add this to your frontend environment after testing:
-
-```env
-NEXT_PUBLIC_USE_EDGE_CREATE_SEARCH=true
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/nightly-photo-backfill" \
+  -H "Content-Type: application/json" \
+  -H "x-cron-secret: $CRON_SECRET" \
+  -d '{"source":"cron","batchSize":25,"dryRun":true}'
 ```
 
-The helper files are present at:
-
-- `lib/edge-functions.ts`
-- `lib/search/createSearch.ts`
-
-You still need to wire the helper into the exact current `/create` search flow if it is not already using a centralized search helper.
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/admin-cron-digest-email" \
+  -H "Content-Type: application/json" \
+  -H "x-cron-secret: $CRON_SECRET" \
+  -d '{"hours":24,"sendEmail":false}'
+```
 
 ## Cron setup
 
-See:
-
-```txt
-supabase/sql/setup-edge-function-crons.sql
-```
-
-Replace:
-
-- `YOUR_PROJECT_REF`
-- `YOUR_CRON_SECRET`
-
-Then run the SQL in Supabase SQL editor.
-
-## Migration
-
-Run the migration:
-
-```bash
-supabase db push
-```
-
-Or paste/run:
-
-```txt
-supabase/migrations/202606020001_edge_functions_foundation.sql
-```
-
+Run `supabase/sql/setup-edge-function-crons.sql` after replacing `YOUR_PROJECT_REF` and `YOUR_CRON_SECRET`. Prefer Supabase Vault for production secrets if available.

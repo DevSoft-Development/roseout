@@ -1,42 +1,8 @@
 import { handleOptions } from "../_shared/cors.ts";
-import { ok, serverError } from "../_shared/response.ts";
-import { requireAdmin } from "../_shared/auth.ts";
+import { badRequest, ok, serverError } from "../_shared/response.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
+import { requireAdmin } from "../_shared/auth.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
-
-Deno.serve(async (req) => {
-  const options = handleOptions(req);
-  if (options) return options;
-  const elapsed = startTimer();
-  const functionName = "admin-crm-list";
-  let supabase: any = null;
-
-  try {
-    supabase = createSupabaseAdminClient();
-    const auth = await requireAdmin(req, supabase);
-    if (auth.response) return auth.response;
-
-    const body = await req.json().catch(() => ({}));
-    const page = Math.max(Number(body.page ?? 1), 1);
-    const pageSize = Math.min(Math.max(Number(body.pageSize ?? 25), 1), 100);
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    const search = String(body.search ?? "").trim();
-
-    let query = supabase.from("locations").select("id,name,restaurant_name,activity_name,address,city,state,zip_code,email,phone,location_type,has_photos,photo_status,image_url,claim_status,created_at,updated_at", { count: "exact" }).range(from, to).order("updated_at", { ascending: false, nullsFirst: false });
-    if (search) {
-      const safe = search.replace(/[%_,]/g, " ").trim();
-      query = query.or(`name.ilike.%${safe}%,restaurant_name.ilike.%${safe}%,activity_name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%,address.ilike.%${safe}%,city.ilike.%${safe}%,zip_code.ilike.%${safe}%`);
-    }
-
-    const { data, error, count } = await query;
-    if (error) throw error;
-
-    const response = { success: true, rows: data ?? [], total: count ?? 0, page, pageSize, hasMore: from + (data?.length ?? 0) < (count ?? 0), timingMs: body.debug ? elapsed() : undefined };
-    await logEdgeFunctionRun(supabase, { function_name: functionName, status: "success", duration_ms: elapsed(), input_summary: { page, pageSize, search }, output_summary: { rows: data?.length ?? 0, total: count ?? 0 } });
-    return ok(response);
-  } catch (error) {
-    if (supabase) await logEdgeFunctionRun(supabase, { function_name: functionName, status: "error", duration_ms: elapsed(), error_message: safeError(error).message });
-    return serverError("admin-crm-list failed", safeError(error));
-  }
-});
+const SEARCH_COLUMNS = ["name", "restaurant_name", "activity_name", "email", "phone", "address", "city", "zip_code"];
+async function runQuery(supabase:any, page:number, pageSize:number, search:string, filters:any, useSearch=true){ let query = supabase.from("locations").select("*", { count: "exact" }); if (search && useSearch) query = query.or(SEARCH_COLUMNS.map((col)=>`${col}.ilike.%${search.replace(/[%*,]/g, "")}%`).join(",")); if (filters?.status) query = query.eq("status", filters.status); if (filters?.hasPhotos !== null && filters?.hasPhotos !== undefined) query = query.eq("has_photos", Boolean(filters.hasPhotos)); if (filters?.claimStatus) query = query.eq("claim_status", filters.claimStatus); if (filters?.locationType) query = query.eq("location_type", filters.locationType); const from=(page-1)*pageSize; return await query.order("updated_at", { ascending:false }).range(from, from + pageSize - 1); }
+Deno.serve(async(req)=>{ const options=handleOptions(req); if(options)return options; const timer=startTimer(); const supabase=createSupabaseAdminClient(); try { const admin=await requireAdmin(req,supabase); const body=await req.json().catch(()=>({})); const page=Math.max(Number(body.page ?? 1),1); const pageSize=Math.min(Math.max(Number(body.pageSize ?? 25),1),100); const search=String(body.search ?? "").trim(); const filters=body.filters ?? {}; let result=await runQuery(supabase,page,pageSize,search,filters,true); let defensiveFallback=false; if(result.error){ defensiveFallback=true; result=await runQuery(supabase,page,pageSize,"",filters,false); } if(result.error) return badRequest("Unable to query locations", result.error.message); const rows=result.data ?? []; const total=result.count ?? rows.length; const response={ rows, total, page, pageSize, hasMore: page * pageSize < total, debug: body.debug ? { durationMs: timer(), defensiveFallback, searchApplied: Boolean(search && !defensiveFallback) } : undefined }; await logEdgeFunctionRun(supabase,{ function_name:"admin-crm-list", status:"success", user_id:admin.user.id, duration_ms:timer(), input_summary:{ page,pageSize,search: Boolean(search), filters }, output_summary:{ total, rows: rows.length, defensiveFallback } }); return ok(response); } catch(error){ await logEdgeFunctionRun(supabase,{ function_name:"admin-crm-list", status:"error", error_message:safeError(error), duration_ms:timer() }); return serverError("admin-crm-list failed", safeError(error)); } });
