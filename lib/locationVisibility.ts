@@ -29,6 +29,8 @@ export type PublicSearchVisibilityFields = LocationVisibilityFields & {
   photo_status?: string | null;
   is_low_level?: boolean | null;
   public_visibility_tier?: string | null;
+  is_demo?: boolean | null;
+  training_only?: boolean | null;
   curation_tier?: string | null;
   low_level_reason?: string | null;
   import_confidence?: string | null;
@@ -101,7 +103,8 @@ export function isPublicSearchVisible(
 
   if (!allowLowLevel && !qualifiedWellnessActivity && location?.is_low_level === true) return false;
   if (!allowLowLevel && !qualifiedWellnessActivity && publicTier === "low_level") return false;
-  if (!allowLowLevel && publicTier === "hidden") return false;
+  if (["internal", "pending_review", "hidden", "rejected"].includes(publicTier)) return false;
+  if (location?.is_demo === true || location?.training_only === true) return false;
   if (!allowLowLevel && !qualifiedWellnessActivity && curationTier === "low_level") return false;
   if (!allowUnverifiedImports && !qualifiedWellnessActivity && ["imported_unverified", "generic_restaurant", "needs_enrichment"].includes(sourceQualityStatus)) return false;
   if (!allowUnverifiedImports && !qualifiedWellnessActivity && importConfidence === "low") return false;

@@ -25,7 +25,9 @@ export function applyPublicLocationFilters(query: any) {
     .not("is_hidden", "is", true)
     .not("status", "in", '("closed","archived")')
     .or("is_low_level.is.null,is_low_level.eq.false")
-    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("public_visibility_tier", "in", '("low_level","internal","pending_review","hidden","rejected")')
+    .not("is_demo", "is", true)
+    .not("training_only", "is", true)
     .not("curation_tier", "eq", "low_level")
     .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
     .not("import_confidence", "eq", "low");
@@ -43,7 +45,9 @@ export function isPublicLocationRecord(item: any) {
     status !== "closed" &&
     status !== "archived" &&
     item?.is_low_level !== true &&
-    !["low_level", "hidden"].includes(String(item?.public_visibility_tier || "").toLowerCase()) &&
+    !["low_level", "internal", "pending_review", "hidden", "rejected"].includes(String(item?.public_visibility_tier || "").toLowerCase()) &&
+    item?.is_demo !== true &&
+    item?.training_only !== true &&
     String(item?.curation_tier || "").toLowerCase() !== "low_level" &&
     !["imported_unverified", "generic_restaurant", "needs_enrichment", "low_level_review"].includes(String(item?.source_quality_status || "").toLowerCase()) &&
     String(item?.import_confidence || "").toLowerCase() !== "low" &&
