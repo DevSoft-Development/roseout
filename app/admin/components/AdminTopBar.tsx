@@ -21,7 +21,7 @@ import {
   canAdmin,
   canAnyAdmin,
 } from "@/lib/admin-permissions";
-import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
+import AdminSearchModal from "@/components/admin/AdminSearchModal";
 
 type AdminTopBarProps = {
   adminName: string;
@@ -91,6 +91,7 @@ export default function AdminTopBar({
   const pathname = usePathname();
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [adminSearchOpen, setAdminSearchOpen] = useState(false);
   const [openMobileGroups, setOpenMobileGroups] = useState<
     Record<string, boolean>
   >({});
@@ -608,6 +609,7 @@ export default function AdminTopBar({
         setMobileNavOpen(false);
         setOpenNavGroup(null);
         setImpersonationOpen(false);
+        setAdminSearchOpen(false);
       }
     };
 
@@ -624,6 +626,7 @@ export default function AdminTopBar({
     setMobileNavOpen(false);
     setOpenNavGroup(null);
     setImpersonationOpen(false);
+    setAdminSearchOpen(false);
   };
 
   const openImpersonation = (tab: "users" | "locations") => {
@@ -857,10 +860,15 @@ export default function AdminTopBar({
           })}
         </nav>
 
-        <div className="ml-auto flex min-w-0 shrink-0 items-center justify-end gap-2">
-          <div className="hidden w-[clamp(18rem,28vw,26rem)] min-w-0 xl:block">
-            <AdminLocationSearch compact className="w-full" />
-          </div>
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setAdminSearchOpen(true)}
+            className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/75 transition hover:border-rose-300/40 hover:bg-rose-500/10 hover:text-white xl:inline-flex"
+            aria-label="Open admin search"
+          >
+            <Search className="h-4 w-4" />
+          </button>
 
           <Link
             href="/"
@@ -976,6 +984,11 @@ export default function AdminTopBar({
           </div>
         </div>
       </div>
+
+      <AdminSearchModal
+        open={adminSearchOpen}
+        onClose={() => setAdminSearchOpen(false)}
+      />
 
       {impersonationOpen && canImpersonate && (
         <div
