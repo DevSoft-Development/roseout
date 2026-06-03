@@ -13,6 +13,54 @@ import { isLowLevelLocation, isUnverifiedNycRestaurant } from "@/lib/search/lowL
 
 type StageableRow = Record<string, unknown>;
 
+const THEATER_CLASSIFICATION_TERMS = [
+  "theater",
+  "theatre",
+  "cinema",
+  "movie theater",
+  "movie theatre",
+  "movie_theater",
+  "performing arts",
+  "performing_arts",
+  "playhouse",
+  "concert hall",
+  "opera house",
+];
+
+function toTextArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [String(value)];
+}
+
+function isTheaterLikeLocation(row: StageableRow) {
+  const googleTypes = toTextArray(row.google_types)
+    .map((value) => normalizeLocationText(value.replace(/_/g, " ")))
+    .join(" ");
+  const categoryText = [
+    row.location_type,
+    row.primary_category,
+    row.category,
+    row.activity_type,
+    row.name,
+    row.activity_name,
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeLocationText(String(value).replace(/_/g, " ")))
+    .join(" ");
+  const searchable = `${categoryText} ${googleTypes}`;
+
+  return THEATER_CLASSIFICATION_TERMS.some((term) =>
+    searchable.includes(term.replace(/_/g, " "))
+  );
+}
+
 export function normalizeLocationText(value: unknown) {
   return cleanText(value)
     .normalize("NFKD")
@@ -51,6 +99,7 @@ export function calculateStagingQuality(row: StageableRow) {
   const lowLevel = isLowLevelLocation({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const unverifiedNyc = isUnverifiedNycRestaurant({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const lowLevelReason = unverifiedNyc ? "nyc_import_unverified" : lowLevel ? "low_level_review" : null;
+  const theaterLike = isTheaterLikeLocation(row);
 
   return {
     normalized_name:
@@ -60,6 +109,17 @@ export function calculateStagingQuality(row: StageableRow) {
     normalized_address: normalizeLocationText(row.address) || null,
     normalized_phone: normalizePhone(row.phone),
     location_key: buildLocationKey(row),
+    ...(theaterLike
+      ? {
+          location_type: "activity",
+          activity_type: row.activity_type || "theater",
+          activity_name: row.activity_name || name || null,
+          restaurant_name: null,
+          cuisine: null,
+          cuisine_type: null,
+          food_type: null,
+        }
+      : {}),
     quality_score: qualityScore,
     quality_status: lowLevel || unverifiedNyc ? "low_level_review" : qualityStatusForScore(qualityScore, hasPhotos),
     has_photos: hasPhotos,

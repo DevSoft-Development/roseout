@@ -9,7 +9,9 @@ import { hasValidPhoto } from "../_shared/photos.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
 
 const STEAK_TERMS = ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib", "churrasco", "brazilian steakhouse"];
-const BAD_ACTIVITY = ["theater", "cinema", "movie", "show", "performance"];
+const THEATER_TERMS = ["theater", "theatre", "cinema", "movie theater", "movie theatre", "movie_theater", "movies", "showtimes", "box office", "performing arts", "performing_arts", "performance", "playhouse", "concert hall", "opera house"];
+const THEATER_INTENT_TERMS = [...THEATER_TERMS, "movie", "show"];
+const NIGHTLIFE_TERMS = ["cocktail", "cocktails", "drink", "drinks", "lounge", "rooftop bar", "wine bar", "speakeasy", "nightlife", "hookah", "bar"];
 const SEARCH_FIELDS = ["name", "restaurant_name", "activity_name", "cuisine", "cuisine_type", "food_type", "primary_category", "category", "tags", "description", "search_document", "google_types", "activity_type", "location_type"];
 function textOf(item: Record<string, unknown>) { return SEARCH_FIELDS.map((field) => Array.isArray(item[field]) ? (item[field] as unknown[]).join(" ") : item[field]).filter(Boolean).join(" ").toLowerCase(); }
 function hasAny(item: Record<string, unknown>, terms: string[]) { const hay = textOf(item); return terms.some((term) => hay.includes(term.toLowerCase())); }
@@ -47,19 +49,66 @@ async function parseIntent(supabase: any, rawQuery: string, body: any, perf: Rec
 
 async function rpcSearch(supabase: any, domain: string, searchTerms: string[], intent: any, limit: number, radius: number) {
   const geo = intent.geo ?? {};
-  const params = { search_terms: searchTerms, location_domain: domain, area: geo.raw ?? geo.neighborhood ?? geo.city ?? null, city_filter: geo.city ?? null, borough_filter: geo.borough ?? null, category_filter: null, cuisine_filter: null, activity_filter: null, lat: geo.latitude ?? null, lng: geo.longitude ?? null, radius_miles: radius, result_limit: limit * 4, require_photos: false };
+  const params = {
+    p_search_terms: searchTerms,
+    p_domain: domain,
+    p_neighborhood: geo.neighborhood ?? null,
+    p_borough: geo.borough ?? null,
+    p_city: geo.city ?? null,
+    p_county: geo.county ?? null,
+    p_region: geo.raw ?? null,
+    p_state: geo.state ?? null,
+    p_latitude: geo.latitude ?? null,
+    p_longitude: geo.longitude ?? null,
+    p_radius_miles: radius,
+    p_limit: limit * 4,
+    p_allow_places_of_worship: false,
+  };
   const { data, error } = await supabase.rpc("enterprise_search_locations", params);
   if (!error && Array.isArray(data)) return data;
   const query = supabase.from("locations").select("*").limit(limit * 8);
   return (await query).data ?? [];
 }
 
+function isTheaterLike(row: Record<string, unknown>) {
+  const hay = textOf(row).replace(/_/g, " ");
+  return THEATER_TERMS.some((term) => hay.includes(term.replace(/_/g, " ")));
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function includesPhrase(text: string, term: string) {
+  const normalizedText = text.toLowerCase().replace(/_/g, " ");
+  const normalizedTerm = escapeRegex(term.toLowerCase().replace(/_/g, " ")).replace(/ /g, "\\s+");
+  return new RegExp(`(^|\\s)${normalizedTerm}(\\s|$)`, "i").test(normalizedText);
+}
+
+function explicitlyAsksForTheater(intent: any) {
+  const rawQuery = String(intent.rawQuery ?? "");
+  const searchTerms = Array.from(new Set([...terms(intent, "restaurant"), ...terms(intent, "activity")])).map((term) => String(term).toLowerCase().replace(/_/g, " "));
+  return THEATER_INTENT_TERMS.some((term) => {
+    const normalized = term.replace(/_/g, " ");
+    return includesPhrase(rawQuery, normalized) || searchTerms.includes(normalized);
+  });
+}
+
+function hasNightlifeIntent(intent: any) {
+  const rawQuery = String(intent.rawQuery ?? "");
+  const searchTerms = Array.from(new Set([...terms(intent, "restaurant"), ...terms(intent, "activity")])).map((term) => String(term).toLowerCase().replace(/_/g, " "));
+  return NIGHTLIFE_TERMS.some((term) => includesPhrase(rawQuery, term) || searchTerms.includes(term));
+}
+
 function domainFilter(rows: Record<string, unknown>[], intent: any, domain: "restaurant" | "activity") {
   const searchTerms = terms(intent, domain);
   const hardTerms = domain === "restaurant" && searchTerms.some((term) => STEAK_TERMS.includes(String(term).toLowerCase())) ? STEAK_TERMS : domain === "activity" && searchTerms.some((term) => String(term).includes("bowling")) ? ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"] : searchTerms;
+  const allowTheater = explicitlyAsksForTheater(intent);
+  const blocksTheaterIntent = hasNightlifeIntent(intent) || !allowTheater;
   return rows.filter((row) => {
-    const hay = textOf(row);
-    if (domain === "activity" && BAD_ACTIVITY.some((term) => hay.includes(term)) && !searchTerms.some((term) => BAD_ACTIVITY.includes(String(term)))) return false;
+    const theaterLike = isTheaterLike(row);
+    if (domain === "restaurant" && theaterLike) return false;
+    if (domain === "activity" && theaterLike && blocksTheaterIntent) return false;
     return hardTerms.length ? hasAny(row, hardTerms) : true;
   }).sort((a,b)=>score(b, hardTerms)-score(a, hardTerms));
 }
@@ -98,7 +147,7 @@ Deno.serve(async (req) => {
     const limit = Math.min(Math.max(Number(body.limit ?? 12), 1), 50);
     const perf: Record<string, number> = {};
     const parsed = await parseIntent(supabase, rawQuery, body, perf);
-    const intent: any = parsed.intent;
+    const intent: any = { ...parsed.intent, rawQuery };
     const restaurantTerms = terms(intent, "restaurant");
     const activityTerms = terms(intent, "activity");
     const initialRadius = Number(intent.geo?.radiusMiles ?? 3);
@@ -124,7 +173,8 @@ Deno.serve(async (req) => {
     let activities = filteredActivities;
     perf.ranking_ms = Date.now() - rankingStarted;
     const photoStarted = Date.now();
-    if (!body.includeMissingPhotos) { restaurants = restaurants.filter(hasValidPhoto); activities = activities.filter(hasValidPhoto); }
+    restaurants = restaurants.filter(hasValidPhoto);
+    activities = activities.filter(hasValidPhoto);
     perf.photo_filter_ms = Date.now() - photoStarted;
     const pairDebug = { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, walkablePairsFound: 0 };
     const pairingStarted = Date.now();
