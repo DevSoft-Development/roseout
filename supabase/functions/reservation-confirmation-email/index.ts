@@ -6,8 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-<<<<<<< HEAD
-=======
 type ReservationEmailPayload = {
   reservationId?: string;
   reservation_id?: string;
@@ -15,7 +13,6 @@ type ReservationEmailPayload = {
 
 type LooseRecord = Record<string, any>;
 
->>>>>>> 62b07568ac9db33da882568ffc4086080fee38c3
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -26,8 +23,6 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
   });
 }
 
-<<<<<<< HEAD
-=======
 function formatDate(value?: string | null) {
   if (!value) return "";
 
@@ -75,57 +70,12 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
->>>>>>> 62b07568ac9db33da882568ffc4086080fee38c3
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
-<<<<<<< HEAD
-    return jsonResponse({ success: false, error: "Method not allowed" }, 405);
-  }
-
-  const payload = await req.json().catch(() => ({}));
-  const reservationId = payload.reservationId || payload.reservation_id;
-
-  if (!reservationId) {
-    return jsonResponse({ success: false, error: "reservationId is required" }, 400);
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(
-      { success: false, error: "Reservation email service is not configured." },
-      500,
-    );
-  }
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-
-  const { data: reservation, error } = await supabase
-    .from("location_reservations")
-    .select("id, guest_email, customer_email, email, status")
-    .eq("id", reservationId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Reservation lookup error", error);
-    return jsonResponse(
-      {
-        success: false,
-        error: "Could not load reservation.",
-        details: error?.message || reservationError?.message || "No error message",
-        code: error?.code || reservationError?.code || null,
-        hint: error?.hint || reservationError?.hint || null,
-=======
     return jsonResponse(
       { success: false, error: "Method not allowed" },
       405,
@@ -451,33 +401,8 @@ Powered by TheOutHaven Reserve
       {
         success: false,
         error: caughtError instanceof Error ? caughtError.message : "Unknown error",
->>>>>>> 62b07568ac9db33da882568ffc4086080fee38c3
       },
       500,
     );
   }
-<<<<<<< HEAD
-
-  if (!reservation) {
-    return jsonResponse({ success: false, error: "Reservation not found." }, 404);
-  }
-
-  const guestEmail =
-    reservation.guest_email ||
-    reservation.customer_email ||
-    reservation.email;
-
-  if (!guestEmail) {
-    return jsonResponse({ success: false, error: "Reservation has no guest email." }, 400);
-  }
-
-  return jsonResponse({
-    success: true,
-    message: "Reservation confirmation function is connected.",
-    reservationId,
-    guestEmail,
-    status: reservation.status,
-  });
-=======
->>>>>>> 62b07568ac9db33da882568ffc4086080fee38c3
 });
