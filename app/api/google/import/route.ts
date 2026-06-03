@@ -39,6 +39,20 @@ const OFF_TOPIC_REPLY =
 
 const LOCATION_NAME_MATCH_WEIGHT = 500;
 
+const THEATER_CLASSIFICATION_TERMS = [
+  "theater",
+  "theatre",
+  "cinema",
+  "movie theater",
+  "movie theatre",
+  "movie_theater",
+  "performing arts",
+  "performing_arts",
+  "playhouse",
+  "concert hall",
+  "opera house",
+];
+
 const FOOD_KEYWORDS = [
   "food",
   "eat",
@@ -407,8 +421,49 @@ function buildMatchedLocationResults(locations: any[], input: string) {
     .slice(0, 10);
 }
 
+
+function isTheaterLikeLocation(item: any) {
+  const googleTypes = toArray(item.google_types)
+    .map((value) => normalizeQuery(String(value).replace(/_/g, " ")))
+    .join(" ");
+  const categoryText = [
+    item.location_type,
+    item.primary_category,
+    item.category,
+    item.activity_type,
+    item.name,
+    item.activity_name,
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeQuery(String(value).replace(/_/g, " ")))
+    .join(" ");
+  const searchable = `${categoryText} ${googleTypes}`;
+
+  return THEATER_CLASSIFICATION_TERMS.some((term) =>
+    searchable.includes(term.replace(/_/g, " "))
+  );
+}
+
+function normalizeTheaterLocation(item: any, name: string) {
+  return {
+    ...item,
+    name,
+    location_type: "activity",
+    activity_type: item.activity_type || "theater",
+    activity_name: item.activity_name || name,
+    restaurant_name: null,
+    cuisine: null,
+    cuisine_type: null,
+    food_type: null,
+  };
+}
 function normalizeLocation(item: any) {
   const name = getLocationName(item, "");
+
+  if (isTheaterLikeLocation(item)) {
+    return normalizeTheaterLocation(item, name);
+  }
+
   const type =
     item.location_type ||
     (item.activity_name || item.activity_type ? "activity" : "restaurant");
