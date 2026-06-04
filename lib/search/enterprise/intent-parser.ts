@@ -1,8 +1,203 @@
 import OpenAI from "openai";
 import type { SearchIntent } from "./types";
 import { deterministicIntentFromQuery, normalizeIntent } from "./normalize-intent";
+import { detectActivityTerms, detectFoodTerms, detectMealTerms } from "./taxonomy";
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
+
+const FAST_PATH_CONNECTORS = [
+  "and",
+  "after",
+  "before",
+  "then",
+  "followed by",
+  "nearby",
+  "with",
+  "plus",
+];
+
+const FAST_PATH_RESTAURANT_SIGNAL_TERMS = [
+  "dinner",
+  "lunch",
+  "brunch",
+  "breakfast",
+  "restaurant",
+  "dining",
+  "steak",
+  "steakhouse",
+  "sushi",
+  "pasta",
+  "seafood",
+  "tacos",
+  "pizza",
+  "burgers",
+  "rooftop dinner",
+  "cocktails with dinner",
+];
+
+const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
+  "hookah lounge",
+  "hookah",
+  "shisha",
+  "karaoke",
+  "bowling",
+  "arcade",
+  "comedy show",
+  "comedy",
+  "museum",
+  "rooftop lounge",
+  "lounge",
+  "drinks",
+  "cocktails",
+  "bar",
+  "spa",
+  "live music",
+  "jazz",
+  "paint and sip",
+  "escape room",
+  "relaxed activity",
+];
+
+function includesFastPathPhrase(query: string, term: string) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(query);
+}
+
+function uniqueTerms(items: string[]) {
+  return Array.from(new Set(items.map((item) => item.toLowerCase().trim()).filter(Boolean)));
+}
+
+function detectFastPathConnector(query: string) {
+  return FAST_PATH_CONNECTORS.find((term) => includesFastPathPhrase(query, term)) ?? null;
+}
+
+function detectFastPathRestaurantSignals(query: string) {
+  const explicitSignals = FAST_PATH_RESTAURANT_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+  return uniqueTerms([
+    ...explicitSignals,
+    ...detectMealTerms(query),
+    ...detectFoodTerms(query),
+  ]);
+}
+
+function detectFastPathActivitySignals(query: string) {
+  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+  return uniqueTerms([
+    ...explicitSignals,
+    ...detectActivityTerms(query),
+  ]);
+}
+
+function detectFastPathActivityIntentTerms(query: string) {
+  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+
+  if (explicitSignals.includes("hookah lounge")) return ["hookah lounge"];
+  if (explicitSignals.includes("hookah")) return ["hookah"];
+  if (explicitSignals.includes("shisha")) return ["shisha"];
+  if (explicitSignals.includes("comedy show")) return ["comedy show"];
+  if (explicitSignals.includes("rooftop lounge")) return ["rooftop lounge"];
+
+  return uniqueTerms(detectActivityTerms(query));
+}
+
+function emptyGeoIntent() {
+  return {
+    raw: null,
+    aliases: [],
+    latitude: null,
+    longitude: null,
+    radiusMiles: null,
+    geoStrictness: "none" as const,
+    neighborhood: null,
+    city: null,
+    borough: null,
+    county: null,
+    region: null,
+    state: null,
+  };
+}
+
+function createEnterpriseIntentFastPathResult(rawQuery: string) {
+  const query = rawQuery.toLowerCase().trim();
+  const connector = detectFastPathConnector(query);
+
+  if (!connector) {
+    return { intent: null, reason: "missing_pairing_connector" };
+  }
+
+  const restaurantSignals = detectFastPathRestaurantSignals(query);
+  const activitySignals = detectFastPathActivitySignals(query);
+
+  if (!restaurantSignals.length) {
+    return { intent: null, reason: "missing_restaurant_signal" };
+  }
+
+  if (!activitySignals.length) {
+    return { intent: null, reason: "missing_activity_signal" };
+  }
+
+  const mealTerms = detectMealTerms(query);
+  const foodTerms = detectFoodTerms(query);
+  const activityTerms = detectFastPathActivityIntentTerms(query);
+
+  if (!mealTerms.length && !foodTerms.length) {
+    return { intent: null, reason: "restaurant_signal_not_actionable" };
+  }
+
+  if (!activityTerms.length) {
+    return { intent: null, reason: "activity_signal_not_actionable" };
+  }
+
+  const intent: Partial<SearchIntent> = {
+    rawQuery,
+    searchType: "mixed_outing",
+    primaryDomain: "mixed",
+    needsRestaurant: true,
+    needsActivity: true,
+    wantsPairing: true,
+    restaurantIntent: {
+      mealTerms,
+      foodTerms,
+      cuisineTerms: [],
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    activityIntent: {
+      activityTerms,
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    pairingPreference: {
+      requiresPairing: true,
+      distanceMode: "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+    geo: emptyGeoIntent(),
+    vibe: [],
+    strictness: "high",
+  };
+
+  return {
+    intent,
+    reason: `matched connector "${connector}" with restaurant signals [${restaurantSignals.join(", ")}] and activity signals [${activitySignals.join(", ")}]`,
+  };
+}
+
+export function parseEnterpriseIntentFastPath(rawQuery: string): Partial<SearchIntent> | null {
+  return createEnterpriseIntentFastPathResult(rawQuery).intent;
+}
+
+export function getEnterpriseIntentFastPathReason(rawQuery: string): string | null {
+  return createEnterpriseIntentFastPathResult(rawQuery).reason;
+}
 
 function cleanEnvValue(value: string | undefined) {
   return value?.trim().replace(/^["']|["']$/g, "");
@@ -380,19 +575,42 @@ Return this JSON shape:
 
 export async function parseEnterpriseIntent(
   query: string,
-  options?: { useLLM?: boolean; body?: unknown },
+  options?: { useLLM?: boolean; useFastPath?: boolean; body?: unknown },
 ): Promise<{
   intent: SearchIntent;
   llmIntentRaw: unknown;
   llmError?: string;
+  intentParserSource: "fast_path" | "llm" | "deterministic";
+  fastPathMatched: boolean;
+  fastPathReason: string | null;
+  usedLlm: boolean;
 }> {
   const baseline = deterministicIntentFromQuery(query);
+  const useFastPath = options?.useFastPath !== false && options?.useLLM !== false;
+  const fastPathResult = useFastPath
+    ? createEnterpriseIntentFastPathResult(query)
+    : { intent: null, reason: "fast_path_disabled" };
+
+  if (fastPathResult.intent) {
+    return {
+      intent: normalizeIntent(query, fastPathResult.intent),
+      llmIntentRaw: null,
+      intentParserSource: "fast_path",
+      fastPathMatched: true,
+      fastPathReason: fastPathResult.reason,
+      usedLlm: false,
+    };
+  }
 
   if (options?.useLLM === false) {
     return {
       intent: baseline,
       llmIntentRaw: null,
       llmError: "LLM disabled for this request.",
+      intentParserSource: "deterministic",
+      fastPathMatched: false,
+      fastPathReason: fastPathResult.reason,
+      usedLlm: false,
     };
   }
 
@@ -403,6 +621,10 @@ export async function parseEnterpriseIntent(
       intent: baseline,
       llmIntentRaw: null,
       llmError: "OpenAI client unavailable. Using deterministic baseline.",
+      intentParserSource: "deterministic",
+      fastPathMatched: false,
+      fastPathReason: fastPathResult.reason,
+      usedLlm: false,
     };
   }
 
@@ -431,12 +653,20 @@ export async function parseEnterpriseIntent(
         intent: baseline,
         llmIntentRaw: rawText,
         llmError: "LLM returned invalid JSON. Used deterministic baseline.",
+        intentParserSource: "llm",
+        fastPathMatched: false,
+        fastPathReason: fastPathResult.reason,
+        usedLlm: true,
       };
     }
 
     return {
       intent: mergeLlmWithBaseline(query, baseline, parsed),
       llmIntentRaw: parsed,
+      intentParserSource: "llm",
+      fastPathMatched: false,
+      fastPathReason: fastPathResult.reason,
+      usedLlm: true,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -449,6 +679,10 @@ export async function parseEnterpriseIntent(
       intent: baseline,
       llmIntentRaw: null,
       llmError: message,
+      intentParserSource: "llm",
+      fastPathMatched: false,
+      fastPathReason: fastPathResult.reason,
+      usedLlm: true,
     };
   }
 }
