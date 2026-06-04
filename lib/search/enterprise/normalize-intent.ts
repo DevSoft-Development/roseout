@@ -10,7 +10,6 @@ import {
   detectMealTerms,
   expandActivitySynonyms,
   expandFoodSynonyms,
-  hasExplicitHookahIntent,
   FOOD_TERMS,
   MEAL_TERMS,
   PLACE_OF_WORSHIP_TERMS,
@@ -49,22 +48,31 @@ const RESTAURANT_SEARCH_TERM_BLOCKLIST = new Set([
 ].map((x) => x.toLowerCase()));
 
 
-const GENERIC_RESTAURANT_RPC_TERMS = new Set([
+export function normalizeTerm(term: string): string {
+  return term.trim().toLowerCase();
+}
+
+const GENERIC_RESTAURANT_TERMS = new Set([
   "dinner",
   "restaurant",
   "restaurants",
   "dining",
-  "brunch",
   "lunch",
+  "brunch",
   "breakfast",
-  "drinks",
-  "cocktails",
+  "meal",
+  "food",
+  "eat",
+  "eats",
 ]);
 
-const HOOKAH_RPC_TERMS = ["hookah", "hookah lounge", "shisha", "hookah bar"];
-const HOOKAH_COMPATIBLE_EXPLICIT_ACTIVITY_TERMS = [
+const HOOKAH_TERMS = ["hookah", "hookah lounge", "hookah bar", "shisha"];
+
+const BROAD_NIGHTLIFE_TERMS = new Set([
+  "lounge",
   "drinks",
   "cocktails",
+  "nightlife",
   "bar",
   "rooftop lounge",
   "club",
@@ -72,28 +80,22 @@ const HOOKAH_COMPATIBLE_EXPLICIT_ACTIVITY_TERMS = [
   "dancing",
   "live dj",
   "speakeasy",
-];
+]);
 
-function queryOutsideHookahPhrases(query: string) {
-  return query
+function rawQueryOutsideHookahPhrases(rawQuery: string): string {
+  return rawQuery
     .toLowerCase()
     .replace(/\bhookah\s+(?:lounge|bar)\b/gi, " ")
     .replace(/\b(?:hookah|shisha)\b/gi, " ");
 }
 
-function explicitHookahActivityRpcTerms(query: string) {
-  const qWithoutHookah = queryOutsideHookahPhrases(query);
-  const explicit = HOOKAH_COMPATIBLE_EXPLICIT_ACTIVITY_TERMS.filter((term) => phrase(qWithoutHookah, term));
+function rawQueryExplicitlyIncludes(rawQuery: string, term: string): boolean {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(rawQueryOutsideHookahPhrases(rawQuery));
+}
 
-  if (explicit.includes("drinks") && !explicit.includes("cocktails")) {
-    explicit.push("cocktails");
-  }
-
-  if (explicit.includes("cocktails") && !explicit.includes("drinks")) {
-    explicit.push("drinks");
-  }
-
-  return explicit;
+function hasHookahIntent(rawQuery: string): boolean {
+  return /\b(hookah|shisha|hookah lounge|hookah bar)\b/i.test(rawQuery);
 }
 
 const ACTIVITY_SEARCH_TERM_BLOCKLIST = new Set([
@@ -485,25 +487,34 @@ export function restaurantSearchTermsOriginal(intent: SearchIntent) {
   );
 }
 
-export function hasSpecificRestaurantFood(intent: SearchIntent): boolean {
-  return [
-    ...intent.restaurantIntent.foodTerms,
-    ...intent.restaurantIntent.cuisineTerms,
-    ...(intent.restaurantIntent.alternativeGroups ?? []).flat(),
-  ].some((term) => {
-    const normalized = term.toLowerCase();
-    return !GENERIC_RESTAURANT_RPC_TERMS.has(normalized) && !FEATURE_ONLY_FOOD_TERMS.has(normalized);
-  });
+export function hasSpecificRestaurantTerm(intent: SearchIntent): boolean {
+  const terms = [
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+    ...((intent.restaurantIntent?.alternativeGroups ?? []).flat?.() ?? []),
+  ].map(normalizeTerm);
+
+  return terms.some(
+    (term) =>
+      term &&
+      !GENERIC_RESTAURANT_TERMS.has(term) &&
+      !FEATURE_ONLY_FOOD_TERMS.has(term),
+  );
+}
+
+export function pruneRestaurantRpcTerms(intent: SearchIntent, terms: string[]): string[] {
+  const unique = Array.from(new Set(terms.map((t) => t.trim()).filter(Boolean)));
+
+  if (!hasSpecificRestaurantTerm(intent)) {
+    return unique;
+  }
+
+  return unique.filter((term) => !GENERIC_RESTAURANT_TERMS.has(normalizeTerm(term)));
 }
 
 export function restaurantSearchTerms(intent: SearchIntent) {
-  const original = restaurantSearchTermsOriginal(intent);
-
-  if (!hasSpecificRestaurantFood(intent)) {
-    return original;
-  }
-
-  return original.filter((term) => !GENERIC_RESTAURANT_RPC_TERMS.has(term.toLowerCase()));
+  return pruneRestaurantRpcTerms(intent, restaurantSearchTermsOriginal(intent));
 }
 
 export function activitySearchTermsOriginal(intent: SearchIntent) {
@@ -519,21 +530,39 @@ export function activitySearchTermsOriginal(intent: SearchIntent) {
   return cleanPlaceOfWorshipTerms(cleaned, intent.rawQuery);
 }
 
-export function activitySearchTerms(intent: SearchIntent) {
-  const original = activitySearchTermsOriginal(intent);
+export function pruneActivityRpcTerms(intent: SearchIntent, terms: string[]): string[] {
+  const rawQuery = intent.rawQuery ?? "";
+  const unique = Array.from(new Set(terms.map((t) => t.trim()).filter(Boolean)));
 
-  if (!hasExplicitHookahIntent(intent.rawQuery)) {
-    return original;
+  if (!hasHookahIntent(rawQuery)) {
+    return unique;
   }
 
-  const explicit = explicitHookahActivityRpcTerms(intent.rawQuery);
+  const output = [...HOOKAH_TERMS];
 
+  for (const term of unique) {
+    const normalized = normalizeTerm(term);
+
+    if (HOOKAH_TERMS.includes(normalized)) {
+      continue;
+    }
+
+    if (BROAD_NIGHTLIFE_TERMS.has(normalized)) {
+      if (rawQueryExplicitlyIncludes(rawQuery, normalized)) {
+        output.push(term);
+      }
+      continue;
+    }
+
+    output.push(term);
+  }
+
+  return Array.from(new Set(output));
+}
+
+export function activitySearchTerms(intent: SearchIntent) {
   return cleanPlaceOfWorshipTerms(
-    uniq([
-      ...HOOKAH_RPC_TERMS,
-      ...explicit,
-      ...original.filter((term) => HOOKAH_RPC_TERMS.includes(term.toLowerCase())),
-    ]),
+    pruneActivityRpcTerms(intent, activitySearchTermsOriginal(intent)),
     intent.rawQuery,
   );
 }
