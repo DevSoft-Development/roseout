@@ -103,6 +103,55 @@ function hasHookahIntent(rawQuery: string): boolean {
   return /\b(hookah|shisha|hookah lounge|hookah bar)\b/i.test(rawQuery);
 }
 
+export function hasRelaxedActivityIntent(rawQuery: string): boolean {
+  return /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity)\b/i.test(rawQuery);
+}
+
+export const HARD_NIGHTLIFE_TERMS = new Set([
+  "nightlife",
+  "bar",
+  "rooftop lounge",
+  "club",
+  "dance club",
+  "dancing",
+  "live dj",
+  "dj",
+  "speakeasy",
+  "cocktails",
+  "drinks",
+]);
+
+const RELAXED_ACTIVITY_DEFAULT_TERMS = ["museum", "park", "walk", "coffee", "dessert"];
+
+const RELAXED_ACTIVITY_ALLOWED_TERMS = new Set([
+  "relaxed activity",
+  "relaxing activity",
+  "chill activity",
+  "easy activity",
+  "low key",
+  "low-key",
+  "laid back",
+  "laid-back",
+  "casual activity",
+  "lounge",
+  "board games",
+  "arcade",
+  "mini golf",
+  "bowling",
+  "gallery",
+  "art gallery",
+  "museum",
+  "park",
+  "walk",
+  "coffee",
+  "dessert",
+  "games",
+  "bowling alley",
+  "bowling lounge",
+  "bowling lanes",
+  "lanes",
+]);
+
 const ACTIVITY_SEARCH_TERM_BLOCKLIST = new Set([
   "dinner",
   "birthday dinner",
@@ -565,9 +614,41 @@ export function pruneActivityRpcTerms(intent: SearchIntent, terms: string[]): st
   return Array.from(new Set(output));
 }
 
+export function pruneRelaxedActivityTerms(intent: SearchIntent, terms: string[]): string[] {
+  const rawQuery = intent.rawQuery ?? "";
+  const unique = Array.from(new Set(terms.map((t) => t.trim()).filter(Boolean)));
+
+  if (!hasRelaxedActivityIntent(rawQuery)) {
+    return unique;
+  }
+
+  const output: string[] = [];
+
+  for (const term of unique) {
+    const normalized = normalizeTerm(term);
+
+    if (HARD_NIGHTLIFE_TERMS.has(normalized)) {
+      if (rawQueryExplicitlyIncludes(rawQuery, normalized)) {
+        output.push(term);
+      }
+      continue;
+    }
+
+    if (RELAXED_ACTIVITY_ALLOWED_TERMS.has(normalized)) {
+      output.push(term);
+      continue;
+    }
+
+    output.push(term);
+  }
+
+  return Array.from(new Set([...output, ...RELAXED_ACTIVITY_DEFAULT_TERMS]));
+}
+
 export function activitySearchTerms(intent: SearchIntent) {
-  return cleanPlaceOfWorshipTerms(
-    pruneActivityRpcTerms(intent, activitySearchTermsOriginal(intent)),
-    intent.rawQuery,
-  );
+  const activityTermsOriginal = activitySearchTermsOriginal(intent);
+  const activityTermsAfterHookah = pruneActivityRpcTerms(intent, activityTermsOriginal);
+  const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterHookah);
+
+  return cleanPlaceOfWorshipTerms(activityTermsPruned, intent.rawQuery);
 }

@@ -1,6 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
-import { activitySearchTerms, activitySearchTermsOriginal, restaurantSearchTerms, restaurantSearchTermsOriginal } from "./normalize-intent";
+import {
+  activitySearchTerms,
+  activitySearchTermsOriginal,
+  hasRelaxedActivityIntent,
+  pruneActivityRpcTerms,
+  pruneRelaxedActivityTerms,
+  restaurantSearchTerms,
+  restaurantSearchTermsOriginal,
+} from "./normalize-intent";
 import { userAskedForPlaceOfWorship } from "./taxonomy";
 
 type RpcDebug = {
@@ -12,6 +20,8 @@ type RpcDebug = {
   activityRpcTermsOriginal?: string[];
   restaurantRpcTermsPruned?: string[];
   activityRpcTermsPruned?: string[];
+  relaxedActivityPruningApplied?: boolean;
+  activityTermsRemovedForRelaxedIntent?: string[];
   restaurantRpcCount?: number;
   activityRpcCount?: number;
   restaurantRecoveryUsed?: boolean;
@@ -103,9 +113,18 @@ export async function searchEnterpriseLane(
     }
 
     if (domain === "activity" && debug) {
+      const activityTermsOriginal = activitySearchTermsOriginal(intent);
+      const activityTermsAfterHookah = pruneActivityRpcTerms(intent, activityTermsOriginal);
+      const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterHookah);
+      const prunedNormalized = new Set(activityTermsPruned.map((term) => term.toLowerCase()));
+
       debug.activityRpcTerms = p.p_search_terms;
-      debug.activityRpcTermsOriginal = originalTermsFor(intent, domain);
+      debug.activityRpcTermsOriginal = activityTermsOriginal;
       debug.activityRpcTermsPruned = p.p_search_terms;
+      debug.relaxedActivityPruningApplied = hasRelaxedActivityIntent(intent.rawQuery);
+      debug.activityTermsRemovedForRelaxedIntent = hasRelaxedActivityIntent(intent.rawQuery)
+        ? activityTermsAfterHookah.filter((term) => !prunedNormalized.has(term.toLowerCase()))
+        : [];
     }
 
     const { data, error } = await supabase.rpc("enterprise_search_locations", p);
@@ -198,6 +217,8 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     rpcCalls: [],
     restaurantRecoveryUsed: false,
     activityRecoveryUsed: false,
+    relaxedActivityPruningApplied: hasRelaxedActivityIntent(intent.rawQuery),
+    activityTermsRemovedForRelaxedIntent: [],
     geoLatitude: intent.geo.latitude ?? null,
     geoLongitude: intent.geo.longitude ?? null,
     radiusMiles: intent.geo.radiusMiles ?? null,
