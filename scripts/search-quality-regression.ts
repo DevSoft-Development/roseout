@@ -366,16 +366,25 @@ assert.equal(
 
 assert.equal(
   formatDistanceFromRestaurant({
-    pair: { walkingDurationMinutes: 8, pairDistanceMiles: 0.4 },
+    pair: { walkingDurationMinutes: null, pairDistanceMiles: 0.4 },
     restaurantName: "The Modern",
     pairingPreference: { distanceMode: "walking", maxPairWalkingMinutes: 30 },
   }),
   "8 min walk from The Modern",
-  "walking queries should prefer safe walking minutes",
+  "walking queries should estimate walking minutes from miles when route minutes are missing",
 );
 assert.equal(
   formatDistanceFromRestaurant({
-    pair: { walkingDurationMinutes: 8, pairDistanceMiles: 0.4 },
+    pair: { walkingDurationMinutes: 6, pairDistanceMiles: 0.4 },
+    restaurantName: "The Modern",
+    pairingPreference: { distanceMode: "walking", maxPairWalkingMinutes: 30 },
+  }),
+  "6 min walk from The Modern",
+  "walking queries should prefer safe Google walking minutes",
+);
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: null, pairDistanceMiles: 0.4 },
     restaurantName: "The Modern",
     pairingPreference: { distanceMode: "any", maxPairWalkingMinutes: null, requireWalkablePair: false },
   }),
@@ -384,12 +393,38 @@ assert.equal(
 );
 assert.equal(
   formatDistanceFromRestaurant({
-    pair: { walkingDurationMinutes: 288, pairDistanceMiles: 2.4 },
-    restaurantName: "Fogo de Chão Brazilian Steakhouse",
+    pair: { walkingDurationMinutes: 288, pairDistanceMiles: 0.4 },
+    restaurantName: "The Modern",
     pairingPreference: { distanceMode: "walking" },
   }),
-  "2.4 mi from Fogo de Chão Brazilian Steakhouse",
-  "unsafe walking durations should fall back to miles",
+  "8 min walk from The Modern",
+  "unsafe walking durations should fall back to estimated walking minutes in walking mode",
+);
+
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: 288 },
+    restaurantName: "The Modern",
+    pairingPreference: { distanceMode: "walking" },
+  }),
+  "Distance unavailable",
+  "unsafe walking durations without miles should be unavailable",
+);
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: null, pairDistanceMiles: 0.15 },
+    restaurantName: "Restaurant Name",
+    pairingPreference: { distanceMode: "walking" },
+  }),
+  "3 min walk from Restaurant Name",
+);
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: null, pairDistanceMiles: 0.73 },
+    restaurantName: "Restaurant Name",
+    pairingPreference: { distanceMode: "walking" },
+  }),
+  "15 min walk from Restaurant Name",
 );
 assert(!formatDistanceFromRestaurant({
   pair: { walkingDurationMinutes: 18, pairDistanceMiles: 0.6 },
