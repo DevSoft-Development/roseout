@@ -10,11 +10,12 @@ import {
   buildGoogleDirectionsUrl,
   buildGooglePlaceDirectionsUrl,
 } from "@/lib/googleDirections";
-import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
+import { toDisplayLabel } from "@/lib/displayLabel";
+import { formatDistanceFromRestaurant } from "@/lib/search/enterprise/distance";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import {
   getExternalReservationUrl,
@@ -102,7 +103,6 @@ type CampaignLocationResponse = {
 };
 
 const PLAN_KEY = "theouthaven_plan";
-const WALKING_MINUTES_PER_MILE = 20;
 const PLAN_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
   source_page: "/plan",
   source_section: "outing_card",
@@ -955,17 +955,9 @@ function formatAddress(item: {
 }
 
 function titleCase(value?: string | null) {
-  if (!value) return "";
-
-  return value
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  return toDisplayLabel(value || "");
 }
+
 
 function getLocationCoordinates(item: PlanLocation | null) {
   if (!item) return null;
@@ -1018,33 +1010,6 @@ function distanceBetweenLocations(
   );
 }
 
-function walkingMinutesFromMiles(distanceMiles: number | null) {
-  if (distanceMiles === null || !Number.isFinite(distanceMiles)) return null;
-
-  return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
-}
-
-function normalizeRouteMinutes(value: unknown) {
-  const minutes = Number(value);
-  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) return null;
-  return Math.round(minutes);
-}
-
-function getRawWalkingMinutes(location: PlanLocation | null) {
-  const raw =
-    location?.walkingDurationMinutes ??
-    location?.googleWalkingDurationMinutes ??
-    location?.routeDurationMinutes ??
-    location?.walking_route_minutes ??
-    location?.pair_walking_minutes;
-  const minutes = Number(raw);
-  return Number.isFinite(minutes) ? minutes : null;
-}
-
-function getSafeWalkingMinutes(location: PlanLocation | null) {
-  return normalizeRouteMinutes(getRawWalkingMinutes(location));
-}
-
 function buildFlowText(
   restaurant: PlanLocation | null,
   activity: PlanLocation | null,
@@ -1060,18 +1025,21 @@ function buildFlowText(
   const activityName = getLocationName(activity, "activity");
 
   if (distance !== null) {
-    if (distancePreference === "walking") {
-      if (isCrossAreaWalkingPair(restaurant, activity)) {
-        return `Not walkable between ${restaurantName || "dinner"} and ${
-          activityName || "activity"
-        }`;
-      }
+    if (restaurantName) {
+      const label = formatDistanceFromRestaurant({
+        pair: {
+          ...activity,
+          pairDistanceMiles: distance,
+          pair_distance_miles: activity.pair_distance_miles,
+        },
+        restaurantName,
+        pairingPreference:
+          distancePreference === "walking"
+            ? { distanceMode: "walking", requireWalkablePair: true }
+            : { distanceMode: "any", requireWalkablePair: false },
+      });
 
-      const safeWalkingMinutes = getSafeWalkingMinutes(activity);
-
-      if (safeWalkingMinutes != null && restaurantName) {
-        return `${safeWalkingMinutes} min walk from ${restaurantName}`;
-      }
+      if (label !== "Distance unavailable") return label;
     }
 
     return `${distance} mi between ${restaurantName || "dinner"} and ${

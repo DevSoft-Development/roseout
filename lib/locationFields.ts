@@ -1,3 +1,5 @@
+import { toDisplayLabel } from "./displayLabel";
+
 export type LocationCategoryFields = {
   primary_category?: string | null;
   cuisine?: string | null;
@@ -15,22 +17,20 @@ export type LocationCategoryFields = {
 };
 
 export function getPrimaryCategory(location: any) {
-  return (
+  const raw =
     location?.primary_category ||
     location?.cuisine ||
     location?.cuisine_type ||
     location?.activity_type ||
     location?.primary_tag ||
-    "Experience"
-  );
+    "Experience";
+
+  return toDisplayLabel(raw) || "Experience";
 }
 
 export function getCuisine(location: any) {
-  return (
-    location?.cuisine ||
-    location?.cuisine_type ||
-    null
-  );
+  const raw = location?.cuisine || location?.cuisine_type || null;
+  return raw ? toDisplayLabel(raw) : null;
 }
 
 function normalizeTags(value: unknown) {

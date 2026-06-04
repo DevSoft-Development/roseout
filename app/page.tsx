@@ -7,6 +7,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
+import { toDisplayLabel } from "@/lib/displayLabel";
 import { buildMetadata } from "@/lib/seo";
 
 export const revalidate = 300;
@@ -643,7 +644,7 @@ function normalizeLabel(value: unknown): string {
         return "";
       }
     }
-    return trimmed.replace(/-/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+    return toDisplayLabel(trimmed);
   }
   return String(value).trim();
 }

@@ -12,10 +12,11 @@ import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
+import { toDisplayLabel } from "@/lib/displayLabel";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
-import { cleanDistanceLabel, isSafeWalkingLabel } from "@/lib/search/enterprise/distance";
+import { cleanDistanceLabel, formatDistanceFromRestaurant, isSafeWalkingLabel } from "@/lib/search/enterprise/distance";
 
 type RestaurantCard = LocationScoreFields &
   LocationVisibilityFields & {
@@ -167,7 +168,6 @@ type UserLocation = {
 
 const LOCATION_KEY = "theouthaven_user_location";
 const RESULT_CARD_UI_VERSION = "results-card-clean-v2";
-const WALKING_MINUTES_PER_MILE = 20;
 const CREATE_RESULTS_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
   source_page: "/create",
   source_section: "search_results",
@@ -2294,7 +2294,7 @@ function normalizeLabel(value: unknown): string {
     const labelMap: Record<string, string> = { "theouthaven-friendly outing": "TheOutHaven Pick", "date-night": "Date Night", "group-outing": "Group Outing", "group-outings": "Group Outing" };
     const lower = cleaned.toLowerCase();
     if (labelMap[lower]) return labelMap[lower];
-    return cleaned.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+    return toDisplayLabel(cleaned);
   }
   return String(value).trim();
 }
@@ -2410,27 +2410,13 @@ function buildSelectedPlanText(
 }
 
 function titleCase(value: string) {
-  return value
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  return toDisplayLabel(value);
 }
 
-function toArray(value: unknown): string[] {
+function toArray(value?: string[] | string | null): string[] {
   if (!value) return [];
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return [];
+  if (Array.isArray(value)) return value.map((item) => normalizeLabel(item)).filter(Boolean);
+  return normalizeLabels(value);
 }
 
 function getWhyPicked({
@@ -2627,19 +2613,13 @@ function distanceBetweenLocations(
   );
 }
 
-function walkingMinutesFromMiles(distanceMiles: number | null) {
-  if (distanceMiles === null || !Number.isFinite(distanceMiles)) return null;
-
-  return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
-}
-
 function formatPairDistanceMiles(distanceMiles: number) {
   return distanceMiles.toFixed(1);
 }
 
 function normalizeRouteMinutes(value: unknown) {
   const minutes = Number(value);
-  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) return null;
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes >= 180) return null;
   return Math.round(minutes);
 }
 
@@ -2677,19 +2657,14 @@ function buildDistanceFromRestaurantLabel(
 
   if (distance === null) return undefined;
 
-  if (distancePreference === "walking") {
-    if (isCrossAreaWalkingPair(restaurant, activity)) {
-      return `Not walkable from ${getLocationName(restaurant)}`;
-    }
-
-    const safeWalkingMinutes = getSafeWalkingMinutes(activity);
-
-    return safeWalkingMinutes != null
-      ? `${safeWalkingMinutes} min walk from ${getLocationName(restaurant)}`
-      : `${formatPairDistanceMiles(distance)} mi from ${getLocationName(restaurant)}`;
-  }
-
-  return `${formatPairDistanceMiles(distance)} mi from ${getLocationName(restaurant)}`;
+  return formatDistanceFromRestaurant({
+    pair: { ...activity, pairDistanceMiles: distance, pair_distance_miles: activity.pair_distance_miles },
+    restaurantName: getLocationName(restaurant),
+    pairingPreference:
+      distancePreference === "walking"
+        ? { distanceMode: "walking", requireWalkablePair: true }
+        : { distanceMode: "any", requireWalkablePair: false },
+  });
 }
 
 function buildDistanceText(
