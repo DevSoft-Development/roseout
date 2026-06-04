@@ -19,11 +19,12 @@ const rotating: Record<string, string[]> = {
   superadmin: ["/admin/dashboard/beta", "/admin/dashboard/beta?tab=search-speed", "/admin/dashboard/beta/search-lab", "/admin/dashboard/import", "/admin/dashboard/logs"],
 };
 export function getDefaultBetaTaskLinks(testerType: string) { return rotating[testerType] ?? rotating.user; }
-export function getDefaultBetaPromptTasks(_testerType: string) { return ["Search quality test", "Search speed test", "Try your own search prompt", "Create plan flow test"]; }
+export function getDefaultBetaPromptTasks(_testerType: string) { return ["Search quality test", "Test group night search", "Search speed test", "Try your own search prompt", "Create plan flow test"]; }
 
 async function ensureDefaultTasks() {
   const defaults = [
     { title: "Search quality test", feature_area: "search_quality", tester_type: "user", priority: "high", test_url: "/create?betaTask=search-quality", prompt_mode: "either", predefined_prompt: "steak dinner with bowling in Astoria", allow_custom_prompt: true, custom_prompt_required: false, button_label: "Test Search Quality", estimated_minutes: 5, instructions: "Search for “steak dinner with bowling in Astoria,” or use your own similar outing prompt. Confirm that results show the right restaurants and activity options near the requested area. Report unrelated results, wrong categories, missing activity results, or anything confusing." },
+    { title: "Test group night search", description: "Check if TheOutHaven understands a group social outing search.", feature_area: "search_quality", tester_type: "user", priority: "high", test_url: "/create?prompt=group%20dinner%20and%20drinks", prompt_mode: "either", predefined_prompt: "group dinner and drinks", allow_custom_prompt: true, custom_prompt_required: false, button_label: "Test group dinner and drinks", estimated_minutes: 5, instructions: "Confirm the results match a group dinner or social outing. Results should not be mostly theaters unless the prompt clearly asks for entertainment. Report mismatched categories." },
     { title: "Search speed test", feature_area: "search_speed", tester_type: "user", priority: "high", test_url: "/create?betaTask=search-speed", prompt_mode: "either", predefined_prompt: "casual dinner and relaxed activity", allow_custom_prompt: true, custom_prompt_required: false, button_label: "Test Search Speed", estimated_minutes: 5, instructions: "Search for “casual dinner and relaxed activity,” or enter your own prompt. Check if results load quickly, if the page freezes, or if an error appears. Submit feedback if the search feels slow." },
     { title: "Try your own search prompt", feature_area: "natural_search", tester_type: "user", priority: "high", test_url: "/create?betaTask=custom-prompt", prompt_mode: "custom", predefined_prompt: null, allow_custom_prompt: true, custom_prompt_required: true, button_label: "Test My Prompt", estimated_minutes: 5, instructions: "Type a real search you would naturally use on TheOutHaven. After the search, tell us if the results were accurate and fast." },
     { title: "Location page and photo test", feature_area: "location_page", tester_type: "user", priority: "medium", test_url: "/locations?betaTask=location-photo-test", prompt_mode: "predefined", allow_custom_prompt: false, button_label: "Test Location Pages", estimated_minutes: 5, instructions: "Open 2–3 location pages. Check that photos show correctly, addresses are not duplicated, categories look clean, and the page feels premium." },
@@ -32,7 +33,8 @@ async function ensureDefaultTasks() {
   ];
   for (const task of defaults) {
     const { data } = await supabaseAdmin.from("beta_tasks").select("id").eq("title", task.title).maybeSingle();
-    if (!data) await supabaseAdmin.from("beta_tasks").insert({ ...task, status: "active" });
+    if (data) await supabaseAdmin.from("beta_tasks").update({ ...task, status: "active", updated_at: new Date().toISOString() }).eq("id", data.id);
+    else await supabaseAdmin.from("beta_tasks").insert({ ...task, status: "active" });
   }
 }
 

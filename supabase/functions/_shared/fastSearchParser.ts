@@ -85,10 +85,10 @@ export function fastParseSearchIntent(rawQuery: string, options: Record<string, 
     primaryDomain: wantsPairing ? "mixed" : needsRestaurant ? "restaurant" : needsActivity ? "activity" : "unknown",
     needsRestaurant, needsActivity, wantsPairing,
     sequence: /after|then/.test(query) ? "restaurant_then_activity" : null,
-    restaurantIntent: { mealTerms, foodTerms, cuisineTerms: foodTerms.filter((term) => !STEAK_TERMS.includes(term)), categoryTerms: [], vibeTerms: /girls night/.test(query) ? ["girls night"] : [], featureTerms: [], negativeTerms: [] },
-    activityIntent: { activityTerms, categoryTerms: activityCategory, vibeTerms: [ ...(/girls night/.test(query) ? ["girls night"] : []), ...(/relaxed/.test(query) ? ["relaxed"] : []) ], featureTerms: [], negativeTerms: [] },
+    restaurantIntent: { mealTerms, foodTerms, cuisineTerms: foodTerms.filter((term) => !STEAK_TERMS.includes(term)), categoryTerms: [], vibeTerms: /group night/.test(query) ? ["group night"] : [], featureTerms: [], negativeTerms: [] },
+    activityIntent: { activityTerms, categoryTerms: activityCategory, vibeTerms: [ ...(/group night/.test(query) ? ["group night"] : []), ...(/relaxed/.test(query) ? ["relaxed"] : []) ], featureTerms: [], negativeTerms: [] },
     geo: geoKey ? GEO[geoKey] : { raw: options.area ?? null, radiusMiles: 5, geoStrictness: "default" },
     pairingPreference: { requiresPairing: wantsPairing, distanceMode: requiresWalk ? "walking" : "any", maxPairDistanceMiles: requiresWalk ? 1 : null, maxPairWalkingMinutes: requiresWalk ? 20 : null, requireWalkablePair: requiresWalk },
-    partySize: null, vibe: /girls night/.test(query) ? ["girls night"] : [], strictness: confidence >= 0.9 ? "high" : "medium", parser_source: "fast_parser", confidence,
+    partySize: null, vibe: /group night/.test(query) ? ["group night"] : [], strictness: confidence >= 0.9 ? "high" : "medium", parser_source: "fast_parser", confidence,
   });
 }

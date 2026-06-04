@@ -38,8 +38,8 @@ function createMockSupabase() {
     location_type: "restaurant",
     primary_category: "restaurant",
     cuisine: "american",
-    search_document: "restaurant dinner drinks cocktails girls night steak rooftop food dining menu",
-    semantic_search_text: "restaurant dinner drinks cocktails girls night steak rooftop food dining menu",
+    search_document: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
+    semantic_search_text: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
     image_url: "https://example.com/restaurant.jpg",
     latitude: 40.75,
     longitude: -73.98,
@@ -97,7 +97,7 @@ async function main() {
 
   const { runEnterpriseSearch } = await import("../lib/search/enterprise/index");
 
-  for (const query of ["girls night dinner and drinks", "girls night dinner with cocktails"] as const) {
+  for (const query of ["group dinner and drinks", "group dinner with cocktails"] as const) {
     const mock = createMockSupabase();
     const result = await runEnterpriseSearch(query, { supabase: mock.client, betaDebug: true, useLLM: false });
     assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).needsRestaurant, true);
@@ -109,7 +109,7 @@ async function main() {
 
   {
     const mock = createMockSupabase();
-    const result = await runEnterpriseSearch("girls night dinner and drinks after", { supabase: mock.client, betaDebug: true, useLLM: false });
+    const result = await runEnterpriseSearch("group dinner and drinks after", { supabase: mock.client, betaDebug: true, useLLM: false });
     assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).searchType, "mixed_outing");
     assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
     assert.equal(result.renderMode, "mixed_pairs");

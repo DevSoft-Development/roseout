@@ -98,7 +98,7 @@ function hasExplicitActivityRequest(rawQuery: string): boolean {
 
 function drinksAreRestaurantFeatureOnly(rawQuery: string): boolean {
   const q = rawQuery.toLowerCase();
-  const hasMeal = /\b(dinner|brunch|lunch|breakfast|meal|restaurant|steak|seafood|sushi|italian|mexican|birthday dinner|date night|girls night)\b/i.test(q);
+  const hasMeal = /\b(dinner|brunch|lunch|breakfast|meal|restaurant|steak|seafood|sushi|italian|mexican|birthday dinner|date night|group night)\b/i.test(q);
   const hasDrink = /\b(drinks|cocktails|margaritas|wine|bar menu)\b/i.test(q);
   return hasMeal && hasDrink && !hasSecondStopConnector(q) && !hasExplicitActivityRequest(q);
 }
@@ -106,8 +106,7 @@ function drinksAreRestaurantFeatureOnly(rawQuery: string): boolean {
 const RESTAURANT_DRINK_FEATURE_TERMS = ["drinks", "cocktails", "margaritas", "wine", "bar menu"];
 const RESTAURANT_ALLOWED_ACTIVITY_CROSS_TERMS = new Set([
   ...RESTAURANT_DRINK_FEATURE_TERMS,
-  "girls night",
-  "girls' night",
+  "group night",
 ].map((x) => x.toLowerCase()));
 
 function stripRestaurantCrossTerms(terms: string[]) {
@@ -229,7 +228,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const activityContext =
     acts.length > 0 ||
     activityAlternativeGroups.length > 0 ||
-    /things to do|fun things|activity|then|with|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(query) ||
+    /things to do|fun things|activity|then|with|after|before|drinks|cocktails|group night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(query) ||
     (/date night/i.test(query) &&
       /walkable|walking distance|everything|outing|plan/i.test(query));
   const hookahOnly = acts.includes("hookah") && !/dinner|restaurant|food|eat|dining/i.test(query);
@@ -380,7 +379,7 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   const hasActivity =
     merged.activityIntent.activityTerms.length > 0 ||
     (merged.activityIntent.alternativeGroups ?? []).length > 0 ||
-    /things to do|fun things|\bactivity\b|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(query) ||
+    /things to do|fun things|\bactivity\b|after|before|drinks|cocktails|group night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(query) ||
     (/date night/i.test(query) &&
       /walkable|walking distance|everything|outing|plan/i.test(query));
   merged.needsRestaurant = hasRestaurant && !(/^\s*hookah\s+(in|near)/i.test(query));

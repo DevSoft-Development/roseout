@@ -3,7 +3,7 @@
 1. `steak dinner with bowling in Astoria`
    - Expected: `mixed_outing`, restaurant + activity, steak/steakhouse restaurants, bowling activities, no theaters, `parser_source` fast_parser or cache, `llm_used=false`.
 
-2. `girls night dinner with cocktails`
+2. `group dinner with cocktails`
    - Expected: restaurant + drinks/lounge/cocktails, no theater unless specifically requested.
 
 3. `steak dinner and hookah lounge after`

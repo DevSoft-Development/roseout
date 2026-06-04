@@ -129,7 +129,7 @@ Allowed values:
 
 Rules:
 - keywords must include 5 to 15 useful short phrases.
-- occasion_fit should include real use cases like first date, anniversary, birthday, girls night, double date, casual dinner, family outing, special occasion, brunch, drinks, late night, group outing.
+- occasion_fit should include real use cases like first date, anniversary, birthday, group night, double date, casual dinner, family outing, special occasion, brunch, drinks, late night, group outing.
 - best_for should explain who this place is best for.
 - avoid_if should explain who may not enjoy it.
 - score_boost must be from -10 to 10.

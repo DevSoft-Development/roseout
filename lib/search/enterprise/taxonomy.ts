@@ -4,7 +4,7 @@ const uniq = (items: string[]) => Array.from(new Set(items.map((x) => x.toLowerC
 export const includesPhrase = (query: string, phrase: string) => new RegExp(`(^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(query);
 
 export const MEAL_SYNONYMS: Record<string, string[]> = {
-  breakfast: ["breakfast"], brunch: ["brunch", "eggs benedict", "pancakes", "waffles", "mimosa", "bottomless brunch", "breakfast"], lunch: ["lunch"], dinner: ["dinner", "restaurant", "dining"], "late night": ["late night"], dessert: ["dessert", "cake", "bakery", "pastries", "ice cream", "gelato", "sweets", "chocolate"], coffee: ["coffee", "cafe", "espresso", "latte", "cappuccino", "coffee shop"], drinks: ["drinks", "cocktails"], "happy hour": ["happy hour"], "date night": ["date night", "romantic"], "romantic dinner": ["romantic dinner", "romantic"], "quick bite": ["quick bite"], "casual dinner": ["casual dinner"], "fine dining": ["fine dining"], "group dinner": ["group dinner"], "birthday dinner": ["birthday dinner"], "girls night": ["girls night"], "business dinner": ["business dinner"]
+  breakfast: ["breakfast"], brunch: ["brunch", "eggs benedict", "pancakes", "waffles", "mimosa", "bottomless brunch", "breakfast"], lunch: ["lunch"], dinner: ["dinner", "restaurant", "dining"], "late night": ["late night"], dessert: ["dessert", "cake", "bakery", "pastries", "ice cream", "gelato", "sweets", "chocolate"], coffee: ["coffee", "cafe", "espresso", "latte", "cappuccino", "coffee shop"], drinks: ["drinks", "cocktails"], "happy hour": ["happy hour"], "date night": ["date night", "romantic"], "romantic dinner": ["romantic dinner", "romantic"], "quick bite": ["quick bite"], "casual dinner": ["casual dinner"], "fine dining": ["fine dining"], "group dinner": ["group dinner"], "birthday dinner": ["birthday dinner"], "group night": ["group night"], "business dinner": ["business dinner"]
 };
 
 export const FOOD_SYNONYMS: Record<string, string[]> = {
@@ -34,9 +34,8 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
     "lounge",
     "speakeasy",
   ],
-  "girls night": [
-    "girls night",
-    "girls' night",
+  "group night": [
+    "group night",
   ],
   "relaxed activity": [
     "relaxed activity",
@@ -126,8 +125,8 @@ export function detectActivityTerms(query: string) {
     );
   }
 
-  if (includesPhrase(q, "girls night") || includesPhrase(q, "girls' night")) {
-    terms.push("girls night");
+  if (includesPhrase(q, "group night") || includesPhrase(q, "group night")) {
+    terms.push("group night");
 
     if (/\b(nightlife|club|dancing|dance club|live dj|rooftop lounge|lounge|bar)\b/i.test(q)) {
       terms.push(

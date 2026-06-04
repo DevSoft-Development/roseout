@@ -70,9 +70,9 @@ const occasionCards = [
   },
   {
     icon: "✨",
-    title: "Girls’ Plans",
+    title: "Friends’ Plans",
     description: "Social spots, drinks, and the right energy.",
-    prompt: "girls outing with drinks and activities",
+    prompt: "friends’ night out with drinks and activities",
   },
   {
     icon: "☀",

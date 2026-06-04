@@ -3,7 +3,7 @@ import type { VenueCandidate } from "@/lib/recommendation-engine";
 export type ConciergeOccasion =
   | "romantic outing"
   | "birthday outing"
-  | "girls night"
+  | "group night"
   | "group dinner"
   | "luxury night"
   | "family outing"
@@ -24,7 +24,7 @@ export type ConciergePlan = {
 const DEFAULT_TIMING: Record<ConciergeOccasion, string> = {
   "romantic outing": "7:00 PM dinner, 9:00 PM activity",
   "birthday outing": "6:30 PM dinner, 8:30 PM celebration",
-  "girls night": "7:30 PM dinner, 10:00 PM nightlife",
+  "group night": "7:30 PM dinner, 10:00 PM nightlife",
   "group dinner": "6:45 PM table, 8:45 PM activity",
   "luxury night": "8:00 PM tasting, 10:00 PM lounge",
   "family outing": "5:30 PM dinner, 7:00 PM activity",
