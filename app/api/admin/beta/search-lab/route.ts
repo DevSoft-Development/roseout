@@ -3,4 +3,75 @@ import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { getSearchSpeedStatus } from "@/lib/search/performance";
 import { requireBetaAdmin, safeError } from "../_shared";
-export async function POST(req:NextRequest){const a=await requireBetaAdmin(); if(a.error)return a.error; try{const b=await req.json(); const query=String(b.query||"").trim(); if(!query)return safeError("query required",400); const legacySearch=()=>runEnterpriseSearch(query,{useLLM:true,source:"admin_search_lab",route:"/api/admin/beta/search-lab",logPerformance:true,betaDebug:true,betaAssignmentId:b.betaAssignmentId??null,betaTesterId:b.betaTesterId??null,usedCustomPrompt:!!b.usedCustomPrompt}); const result=await runCreateSearchWithEdgeFallback({prompt:query,debug:true,force_llm:b.force_llm===true,limit:12},{accessToken:req.headers.get("Authorization")?.replace(/^Bearer\s+/i,"")??null,legacySearch}); const perf=(result.debug as any)?.performance||{}; return NextResponse.json({success:true,reply:result.reply,restaurants:(result.restaurants as any[])?.length||0,activities:(result.activities as any[])?.length||0,pairs:(result.pairs as any[])?.length||0,cards:[...((result.restaurants as any[])||[]),...((result.activities as any[])||[])],source:(result as any).source || (isEdgeCreateSearchEnabled()?"edge":"legacy"),parser_source:(result.debug as any)?.parser_source,cache_hit:(result.debug as any)?.cache_hit,llm_used:(result.debug as any)?.llm_used,total_ms:perf.total_ms,speed_status:perf.speed_status,parsedIntent:(result.debug as any)?.normalizedIntent || (result as any).normalizedIntent,performance:perf,rejectedReasons:{restaurants:(result.debug as any)?.restaurantRejectedSummary,activities:(result.debug as any)?.activityRejectedSummary},speedStatus:perf.speed_status || getSearchSpeedStatus({totalMs:perf.total_ms,success:true}),missingPhotoResultsRemoved:true,fallbackUsed:Boolean((result.debug as any)?.restaurantRecoveryUsed||(result.debug as any)?.activityRecoveryUsed||(result.debug as any)?.edge_error),customPrompt:!!b.usedCustomPrompt,debug:result.debug});}catch(e){console.error(e);return safeError("Search Lab failed");}}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireBetaAdmin();
+  if (auth.error) return auth.error;
+
+  try {
+    const body = await req.json();
+    const query = String(body.query || "").trim();
+
+    if (!query) return safeError("query required", 400);
+
+    const legacySearch = () =>
+      runEnterpriseSearch(query, {
+        useLLM: true,
+        source: "admin_search_lab",
+        route: "/api/admin/beta/search-lab",
+        logPerformance: true,
+        betaDebug: true,
+        betaAssignmentId: body.betaAssignmentId ?? null,
+        betaTesterId: body.betaTesterId ?? null,
+        usedCustomPrompt: !!body.usedCustomPrompt,
+      });
+
+    const result = await runCreateSearchWithEdgeFallback(
+      {
+        prompt: query,
+        debug: true,
+        force_llm: body.force_llm === true,
+        limit: 12,
+      },
+      {
+        accessToken: req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? null,
+        legacySearch,
+      },
+    );
+    const debug = result.debug as any;
+    const perf = debug?.performance || {};
+
+    return NextResponse.json({
+      success: true,
+      reply: result.reply,
+      restaurants: (result.restaurants as any[])?.length || 0,
+      activities: (result.activities as any[])?.length || 0,
+      pairs: (result.pairs as any[])?.length || 0,
+      cards: [...((result.restaurants as any[]) || []), ...((result.activities as any[]) || [])],
+      source: (result as any).source || (isEdgeCreateSearchEnabled() ? "edge" : "legacy"),
+      parser_source: debug?.parser_source,
+      cache_hit: debug?.cache_hit,
+      llm_used: debug?.llm_used,
+      total_ms: perf.total_ms,
+      speed_status: perf.speed_status,
+      parsedIntent: debug?.normalizedIntent || (result as any).normalizedIntent,
+      performance: perf,
+      rejectedReasons: {
+        restaurants: debug?.restaurantRejectedSummary,
+        activities: debug?.activityRejectedSummary,
+      },
+      restaurantRpcTermsOriginal: debug?.restaurantRpcTermsOriginal,
+      restaurantRpcTermsPruned: debug?.restaurantRpcTermsPruned,
+      activityRpcTermsOriginal: debug?.activityRpcTermsOriginal,
+      activityRpcTermsPruned: debug?.activityRpcTermsPruned,
+      speedStatus: perf.speed_status || getSearchSpeedStatus({ totalMs: perf.total_ms, success: true }),
+      missingPhotoResultsRemoved: true,
+      fallbackUsed: Boolean(debug?.restaurantRecoveryUsed || debug?.activityRecoveryUsed || debug?.edge_error),
+      customPrompt: !!body.usedCustomPrompt,
+      debug: result.debug,
+    });
+  } catch (error) {
+    console.error(error);
+    return safeError("Search Lab failed");
+  }
+}

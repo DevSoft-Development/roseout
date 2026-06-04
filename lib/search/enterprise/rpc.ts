@@ -71,6 +71,13 @@ function params(intent: SearchIntent, domain: SearchDomain, limit: number) {
   };
 }
 
+function locationParams(intent: SearchIntent, domain: SearchDomain, limit: number) {
+  return {
+    ...params(intent, domain, limit),
+    p_allow_low_level: false,
+  };
+}
+
 function addDebugError(debug: RpcDebug | undefined, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   debug?.errors.push(message);
@@ -85,7 +92,7 @@ export async function searchEnterpriseLane(
 ) {
   try {
     const laneLimit = intent.strictness === "high" ? 24 : 40;
-    const p = params(intent, domain, laneLimit);
+    const p = locationParams(intent, domain, laneLimit);
 
     debug?.rpcCalls.push(`enterprise_search_locations:${domain}`);
 

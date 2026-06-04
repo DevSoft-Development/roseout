@@ -328,16 +328,16 @@ export function explainRejection(
     return "place_of_worship_not_requested";
   }
 
+  if (domain === "activity" && userAskedForHookah(intent) && !isHookahRecord(record)) {
+    return "missing_hookah_signal";
+  }
+
   if (
     domain === "activity" &&
     isTheaterRecord(record) &&
     !userExplicitlyAskedForTheater(intent)
   ) {
     return "theater_not_requested";
-  }
-
-  if (domain === "activity" && userAskedForHookah(intent) && !isHookahRecord(record)) {
-    return "missing_hookah_signal";
   }
 
   if (domain === "restaurant" && !isRestaurantLike(record))
