@@ -124,9 +124,9 @@ function assertRestaurantOnlyDrinksQuery(query: string) {
 }
 
 for (const query of [
-  "girls night dinner and drinks",
-  "girls night dinner with drinks",
-  "girls night dinner with cocktails",
+  "group dinner and drinks",
+  "group dinner with drinks",
+  "group dinner with cocktails",
   "dinner and cocktails",
   "dinner with cocktails",
   "steak dinner and drinks",
@@ -139,9 +139,9 @@ for (const query of [
 }
 
 for (const query of [
-  "girls night dinner and drinks after",
-  "girls night dinner then drinks",
-  "girls night dinner then lounge",
+  "group dinner and drinks after",
+  "group dinner then drinks",
+  "group dinner then lounge",
   "dinner and bar after",
   "dinner and cocktails after",
   "steak dinner then hookah",
@@ -157,9 +157,9 @@ for (const query of [
   assert.equal(intent.primaryDomain, "mixed", `${query} primary domain`);
 }
 
-const girlsNightDinnerAndDrinks = normalizeIntent("girls night dinner and drinks");
+const groupDinnerAndDrinks = normalizeIntent("group dinner and drinks");
 for (const forbidden of ["theater", "dancing", "nightlife", "club", "dance club", "live dj"]) {
-  assert(!activitySearchTerms(girlsNightDinnerAndDrinks).includes(forbidden), `girls night dinner and drinks must not include ${forbidden} as an activity term`);
+  assert(!activitySearchTerms(groupDinnerAndDrinks).includes(forbidden), `group dinner and drinks must not include ${forbidden} as an activity term`);
 }
 
 console.log("search-quality-regression passed");

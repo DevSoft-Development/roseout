@@ -118,7 +118,7 @@ const SPECIALTY_QUERIES: Record<string, string[]> = {
   birthday: [
     "birthday activity",
     "group outing",
-    "girls night activity",
+    "group night activity",
     "double date activity",
     "fun date night",
     "interactive experience",
@@ -358,7 +358,7 @@ function inferActivityType(textInput: string) {
 
   if (
     text.includes("birthday") ||
-    text.includes("girls night") ||
+    text.includes("group night") ||
     text.includes("group outing") ||
     text.includes("party venue")
   ) {
@@ -409,7 +409,7 @@ function buildSearchKeywords(place: any, query: string) {
   if (text.includes("mini golf")) keywords.push("mini golf", "date night", "games");
   if (text.includes("go kart")) keywords.push("go kart", "racing", "fun");
   if (text.includes("virtual reality") || text.includes("vr ")) keywords.push("vr", "virtual reality", "immersive");
-  if (text.includes("paint and sip")) keywords.push("paint and sip", "creative", "girls night");
+  if (text.includes("paint and sip")) keywords.push("paint and sip", "creative", "group night");
   if (text.includes("pottery")) keywords.push("pottery", "creative");
   if (text.includes("candle")) keywords.push("candle making", "creative");
   if (text.includes("perfume")) keywords.push("perfume making", "creative");
@@ -474,7 +474,7 @@ function buildDateStyleTags(place: any, query: string) {
     text.includes("cooking") ||
     text.includes("dance")
   ) {
-    tags.push("creative", "girls-night", "interactive");
+    tags.push("creative", "group-night", "interactive");
   }
 
   if (
@@ -501,7 +501,7 @@ function buildDateStyleTags(place: any, query: string) {
 
   if (
     text.includes("birthday") ||
-    text.includes("girls night") ||
+    text.includes("group night") ||
     text.includes("group outing") ||
     text.includes("party")
   ) {

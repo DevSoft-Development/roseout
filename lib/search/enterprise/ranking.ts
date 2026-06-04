@@ -213,7 +213,7 @@ const CURATED_TERMS = [
   "cocktails",
   "lounge",
   "fine dining",
-  "girls night",
+  "group night",
   "dinner date",
   "experience",
 ];
