@@ -1,12 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
-import { activitySearchTerms, restaurantSearchTerms } from "./normalize-intent";
+import { activitySearchTerms, activitySearchTermsOriginal, restaurantSearchTerms, restaurantSearchTermsOriginal } from "./normalize-intent";
 import { userAskedForPlaceOfWorship } from "./taxonomy";
 
 type RpcDebug = {
   rpcCalls: string[];
+  // RPC-safe terms after deterministic pruning.
   restaurantRpcTerms?: string[];
   activityRpcTerms?: string[];
+  restaurantRpcTermsOriginal?: string[];
+  activityRpcTermsOriginal?: string[];
+  restaurantRpcTermsPruned?: string[];
+  activityRpcTermsPruned?: string[];
   restaurantRpcCount?: number;
   activityRpcCount?: number;
   restaurantRecoveryUsed?: boolean;
@@ -35,6 +40,14 @@ function termsFor(intent: SearchIntent, domain: SearchDomain) {
     : domain === "activity"
       ? activitySearchTerms(intent)
       : [...restaurantSearchTerms(intent), ...activitySearchTerms(intent)];
+}
+
+function originalTermsFor(intent: SearchIntent, domain: SearchDomain) {
+  return domain === "restaurant"
+    ? restaurantSearchTermsOriginal(intent)
+    : domain === "activity"
+      ? activitySearchTermsOriginal(intent)
+      : [...restaurantSearchTermsOriginal(intent), ...activitySearchTermsOriginal(intent)];
 }
 
 function params(intent: SearchIntent, domain: SearchDomain, limit: number) {
@@ -71,16 +84,21 @@ export async function searchEnterpriseLane(
   debug?: RpcDebug,
 ) {
   try {
-    const p = params(intent, domain, 40);
+    const laneLimit = intent.strictness === "high" ? 24 : 40;
+    const p = params(intent, domain, laneLimit);
 
     debug?.rpcCalls.push(`enterprise_search_locations:${domain}`);
 
     if (domain === "restaurant" && debug) {
       debug.restaurantRpcTerms = p.p_search_terms;
+      debug.restaurantRpcTermsOriginal = originalTermsFor(intent, domain);
+      debug.restaurantRpcTermsPruned = p.p_search_terms;
     }
 
     if (domain === "activity" && debug) {
       debug.activityRpcTerms = p.p_search_terms;
+      debug.activityRpcTermsOriginal = originalTermsFor(intent, domain);
+      debug.activityRpcTermsPruned = p.p_search_terms;
     }
 
     const { data, error } = await supabase.rpc("enterprise_search_locations", p);

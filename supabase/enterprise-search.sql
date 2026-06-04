@@ -115,8 +115,19 @@ with candidates as (
           or lower(coalesce(l.primary_category, '')) like '%hookah%'
           or lower(coalesce(l.primary_category, '')) like '%bowling%'
           or lower(coalesce(l.primary_category, '')) like '%museum%'
-          or lower(coalesce(l.primary_category, '')) like '%theater%'
-          or lower(coalesce(l.primary_category, '')) like '%theatre%'
+          or (
+            exists (
+              select 1
+              from unnest(coalesce(p_search_terms,array[]::text[])) t
+              where lower(t) in ('theater','theatre','movie theater','cinema','movie','movies','show','broadway')
+            )
+            and (
+              lower(coalesce(l.primary_category, '')) like '%theater%'
+              or lower(coalesce(l.primary_category, '')) like '%theatre%'
+              or lower(coalesce(l.primary_category, '')) like '%movie theater%'
+              or lower(coalesce(l.primary_category, '')) like '%cinema%'
+            )
+          )
           or lower(coalesce(l.primary_category, '')) like '%arcade%'
           or lower(coalesce(l.primary_category, '')) like '%karaoke%'
           or lower(coalesce(l.primary_category, '')) like '%gallery%'
@@ -154,8 +165,19 @@ with candidates as (
         or lower(coalesce(c.primary_category,'')) like '%hookah%'
         or lower(coalesce(c.primary_category,'')) like '%bowling%'
         or lower(coalesce(c.primary_category,'')) like '%museum%'
-        or lower(coalesce(c.primary_category,'')) like '%theater%'
-        or lower(coalesce(c.primary_category,'')) like '%theatre%'
+        or (
+          exists (
+            select 1
+            from unnest(coalesce(p_search_terms,array[]::text[])) t
+            where lower(t) in ('theater','theatre','movie theater','cinema','movie','movies','show','broadway')
+          )
+          and (
+            lower(coalesce(c.primary_category,'')) like '%theater%'
+            or lower(coalesce(c.primary_category,'')) like '%theatre%'
+            or lower(coalesce(c.primary_category,'')) like '%movie theater%'
+            or lower(coalesce(c.primary_category,'')) like '%cinema%'
+          )
+        )
         or lower(coalesce(c.primary_category,'')) like '%arcade%'
         or lower(coalesce(c.primary_category,'')) like '%karaoke%'
         or lower(coalesce(c.primary_category,'')) like '%gallery%'

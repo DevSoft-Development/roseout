@@ -21,7 +21,7 @@ export const FOOD_SYNONYMS: Record<string, string[]> = {
 export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   bowling: ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"],
   karaoke: ["karaoke"],
-  hookah: ["hookah", "hookah lounge"],
+  hookah: ["hookah", "hookah lounge", "hookah bar", "shisha"],
   "live music": ["live music", "concert", "jazz club", "open mic"],
   museum: ["museum", "exhibit", "exhibition", "cultural center"],
   lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"],
@@ -90,6 +90,35 @@ function detectFromMap(query: string, map: Record<string, string[]>) {
 export function detectFoodTerms(query: string) { return detectFromMap(query, FOOD_SYNONYMS); }
 export function detectCuisineTerms(query: string) { return detectFoodTerms(query).filter((t) => !["rooftop"].includes(t)); }
 export function detectMealTerms(query: string) { return detectFromMap(query, MEAL_SYNONYMS); }
+export function hasExplicitHookahIntent(query: string): boolean {
+  return /\b(hookah|shisha|hookah lounge|hookah bar)\b/i.test(query);
+}
+
+const HOOKAH_FOCUSED_ACTIVITY_TERMS = ["hookah", "hookah lounge", "shisha", "hookah bar"];
+const HOOKAH_PRUNED_BROAD_ACTIVITY_TERMS = ["nightlife", "bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy", "drinks", "cocktails"];
+
+function queryOutsideHookahPhrases(query: string) {
+  return query
+    .toLowerCase()
+    .replace(/\bhookah\s+(?:lounge|bar)\b/gi, " ")
+    .replace(/\b(?:hookah|shisha)\b/gi, " ");
+}
+
+function explicitHookahCompatibleActivityTerms(query: string) {
+  const qWithoutHookah = queryOutsideHookahPhrases(query);
+  const terms = HOOKAH_PRUNED_BROAD_ACTIVITY_TERMS.filter((term) => includesPhrase(qWithoutHookah, term));
+
+  if (terms.includes("drinks") && !terms.includes("cocktails")) {
+    terms.push("cocktails");
+  }
+
+  if (terms.includes("cocktails") && !terms.includes("drinks")) {
+    terms.push("drinks");
+  }
+
+  return terms;
+}
+
 export function detectActivityTerms(query: string) {
   const q = query.toLowerCase();
   const hasExplicitRelaxedActivity =
@@ -141,6 +170,13 @@ export function detectActivityTerms(query: string) {
 
   if (includesPhrase(q, "bowl") && /(lane|game|entertainment|alley|bowling|activity)/i.test(q)) {
     terms.push("bowling");
+  }
+
+  if (hasExplicitHookahIntent(query)) {
+    return uniq([
+      ...HOOKAH_FOCUSED_ACTIVITY_TERMS,
+      ...explicitHookahCompatibleActivityTerms(query),
+    ]);
   }
 
   return uniq(terms);

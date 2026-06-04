@@ -120,7 +120,12 @@ function assertRestaurantOnlyDrinksQuery(query: string) {
   assert.equal(intent.primaryDomain, "restaurant", `${query} primary domain`);
   assert.equal(intent.searchType, "restaurant", `${query} search type`);
   assert.equal(activitySearchTerms(intent).length, 0, `${query} should not build activity terms`);
-  assert(restaurantSearchTerms(intent).includes("dinner") || restaurantSearchTerms(intent).includes("restaurant"), `${query} should keep restaurant terms`);
+  if (/\b(steak|sushi|seafood|italian|mexican)\b/i.test(query)) {
+    assert(restaurantSearchTerms(intent).some((term) => ["steak", "sushi", "seafood", "italian", "mexican"].includes(term)), `${query} should keep specific restaurant terms`);
+    assert(!restaurantSearchTerms(intent).includes("dinner"), `${query} should prune generic meal terms when specific food exists`);
+  } else {
+    assert(restaurantSearchTerms(intent).includes("dinner") || restaurantSearchTerms(intent).includes("restaurant"), `${query} should keep restaurant terms`);
+  }
 }
 
 for (const query of [
