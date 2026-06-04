@@ -141,6 +141,10 @@ export type EnterprisePair = {
   distance_miles: number | null;
   pairDistanceMiles: number | null;
   pairWalkingMinutes: number | null;
+  walkingDurationMinutes?: number | null;
+  googleWalkingDurationMinutes?: number | null;
+  routeDurationMinutes?: number | null;
+  walking_route_minutes?: number | null;
   pairDistanceLabel: string;
   pairWarnings: string[];
   isWalkable: boolean;

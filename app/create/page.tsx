@@ -53,6 +53,10 @@ type RestaurantCard = LocationScoreFields &
     distance_miles?: number | null;
     pair_distance_miles?: number | null;
     pair_walking_minutes?: number | null;
+    walkingDurationMinutes?: number | null;
+    googleWalkingDurationMinutes?: number | null;
+    routeDurationMinutes?: number | null;
+    walking_route_minutes?: number | null;
     pair_walking_label?: string | null;
   };
 
@@ -95,6 +99,10 @@ type ActivityCard = LocationScoreFields &
     distance_miles?: number | null;
     pair_distance_miles?: number | null;
     pair_walking_minutes?: number | null;
+    walkingDurationMinutes?: number | null;
+    googleWalkingDurationMinutes?: number | null;
+    routeDurationMinutes?: number | null;
+    walking_route_minutes?: number | null;
     pair_walking_label?: string | null;
   };
 
@@ -1334,7 +1342,8 @@ export default function CreatePage() {
                               : undefined;
                             const shouldLinkWalkingDirections = Boolean(
                               latestDistancePreference === "walking" &&
-                              walkingDirectionsUrl,
+                              walkingDirectionsUrl &&
+                              isSafeWalkingLabel(distanceFromRestaurantLabel),
                             );
 
                             return (
@@ -2625,6 +2634,31 @@ function formatPairDistanceMiles(distanceMiles: number) {
   return distanceMiles.toFixed(1);
 }
 
+function normalizeRouteMinutes(value: unknown) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) return null;
+  return minutes;
+}
+
+function getRawWalkingMinutes(location: RestaurantCard | ActivityCard | null) {
+  const raw =
+    location?.walkingDurationMinutes ??
+    location?.googleWalkingDurationMinutes ??
+    location?.routeDurationMinutes ??
+    location?.walking_route_minutes ??
+    location?.pair_walking_minutes;
+  const minutes = Number(raw);
+  return Number.isFinite(minutes) ? minutes : null;
+}
+
+function getSafeWalkingMinutes(location: RestaurantCard | ActivityCard | null) {
+  return normalizeRouteMinutes(getRawWalkingMinutes(location));
+}
+
+function isSafeWalkingLabel(label: string | undefined) {
+  return Boolean(label && /\bmin walk\b/i.test(label));
+}
+
 function queryRequestsWalkingDistance(input: string) {
   return /\b(walk|walking|walkable|walks)\b/i.test(input);
 }
@@ -2648,12 +2682,11 @@ function buildDistanceFromRestaurantLabel(
       return `Not walkable from ${getLocationName(restaurant)}`;
     }
 
-    const walkingMinutes =
-      activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
+    const safeWalkingMinutes = getSafeWalkingMinutes(activity);
 
-    return walkingMinutes
-      ? `${walkingMinutes} min walk from ${getLocationName(restaurant)}`
-      : undefined;
+    return safeWalkingMinutes != null
+      ? `${safeWalkingMinutes} min walk from ${getLocationName(restaurant)}`
+      : `${formatPairDistanceMiles(distance)} miles from ${getLocationName(restaurant)}`;
   }
 
   return `${formatPairDistanceMiles(distance)} miles from ${getLocationName(restaurant)}`;
@@ -2676,11 +2709,10 @@ function buildDistanceText(
           return `Not walkable between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
         }
 
-        const walkingMinutes =
-          activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
+        const safeWalkingMinutes = getSafeWalkingMinutes(activity);
 
-        if (walkingMinutes) {
-          return `${walkingMinutes} min walk between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
+        if (safeWalkingMinutes != null) {
+          return `${safeWalkingMinutes} min walk between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
         }
       }
 

@@ -12,6 +12,106 @@ export function getRecordDistanceMiles(a: EnterpriseLocation, b: EnterpriseLocat
 export function getPairDistanceMiles(restaurant: EnterpriseLocation, activity: EnterpriseLocation) { const d=getRecordDistanceMiles(restaurant,activity); return d==null?null:Number(d.toFixed(2)); }
 export function estimateWalkingMinutes(distanceMiles: number) { return Math.round((distanceMiles / 3.0) * 60); }
 
+export function normalizeRouteMinutes(value: unknown): number | null {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return null;
+  if (minutes <= 0) return null;
+  if (minutes > 180) return null;
+  return minutes;
+}
+
+export function isExtremeWalkingRoute(value: unknown): boolean {
+  const minutes = Number(value);
+  return Number.isFinite(minutes) && minutes > 180;
+}
+
+export function getRawWalkingMinutes(pair: any): number | null {
+  const raw =
+    pair?.walkingDurationMinutes ??
+    pair?.googleWalkingDurationMinutes ??
+    pair?.routeDurationMinutes ??
+    pair?.walking_route_minutes ??
+    pair?.activity?.walkingDurationMinutes ??
+    pair?.activity?.googleWalkingDurationMinutes ??
+    pair?.activity?.routeDurationMinutes ??
+    pair?.activity?.walking_route_minutes;
+
+  const minutes = Number(raw);
+  return Number.isFinite(minutes) ? minutes : null;
+}
+
+export function getSafeWalkingMinutes(pair: any): number | null {
+  return normalizeRouteMinutes(getRawWalkingMinutes(pair));
+}
+
+export function shouldRejectPairForWalkingRoute(
+  pair: any,
+  pairingPreference: PairingPreference | null | undefined,
+): { reject: boolean; reason: string | null } {
+  const mode = pairingPreference?.distanceMode;
+  const requiresWalkable =
+    mode === "walking" ||
+    mode === "short_walk" ||
+    pairingPreference?.requireWalkablePair === true;
+
+  if (!requiresWalkable) {
+    return { reject: false, reason: null };
+  }
+
+  const rawMinutes = getRawWalkingMinutes(pair);
+
+  if (rawMinutes == null) {
+    return { reject: false, reason: null };
+  }
+
+  if (isExtremeWalkingRoute(rawMinutes)) {
+    return { reject: true, reason: "extreme_walking_route_duration" };
+  }
+
+  const safeMinutes = normalizeRouteMinutes(rawMinutes);
+
+  if (safeMinutes == null) {
+    return { reject: false, reason: null };
+  }
+
+  const maxMinutes = Number(pairingPreference?.maxPairWalkingMinutes);
+
+  if (Number.isFinite(maxMinutes) && safeMinutes > maxMinutes) {
+    return { reject: true, reason: "walking_route_exceeds_requested_minutes" };
+  }
+
+  return { reject: false, reason: null };
+}
+
+export function buildSafePairDistanceLabel({
+  pair,
+  restaurantName,
+  pairDistanceMiles,
+  pairingPreference,
+}: {
+  pair: any;
+  restaurantName: string;
+  pairDistanceMiles: unknown;
+  pairingPreference?: PairingPreference | null;
+}) {
+  const safeWalkingMinutes = getSafeWalkingMinutes(pair);
+  const mode = pairingPreference?.distanceMode;
+
+  if (
+    safeWalkingMinutes != null &&
+    (mode === "walking" || mode === "short_walk" || safeWalkingMinutes <= 45)
+  ) {
+    return `${safeWalkingMinutes} min walk from ${restaurantName} • Google walking route`;
+  }
+
+  if (Number.isFinite(Number(pairDistanceMiles))) {
+    return `${Number(pairDistanceMiles).toFixed(1)} mi from ${restaurantName}`;
+  }
+
+  return "Distance unavailable";
+}
+
+
 export function isWalkablePair(restaurant: EnterpriseLocation, activity: EnterpriseLocation, preference?: PairingPreference | null): { isWalkable: boolean; warnings: string[]; pairDistanceMiles: number | null; pairWalkingMinutes: number | null } {
   const pref = preference ?? { requiresPairing: false, distanceMode: "any" as const, maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false };
   const warnings: string[] = [];

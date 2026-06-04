@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { createSearchPairs } from "../lib/search/enterprise/pairing";
+import { createPairingDebug, createSearchPairs } from "../lib/search/enterprise/pairing";
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
 import { rankActivityResults, rankRestaurantResults } from "../lib/search/enterprise/ranking";
 import type { EnterpriseLocation } from "../lib/search/enterprise/types";
+import { buildSafePairDistanceLabel } from "../lib/search/enterprise/distance";
 import { isLowLevelLocation, isQualifiedWellnessActivity, LOW_LEVEL_TERMS } from "../lib/search/lowLevel";
 
 const records: EnterpriseLocation[] = [
@@ -283,5 +284,40 @@ const geoPairs = createSearchPairs([geoRestaurant], geoActivities, geoIntent);
 assert.equal(geoPairs[0].activity.id, "ga");
 assert(geoPairs.findIndex((pair) => pair.activity.id === "gc") < geoPairs.findIndex((pair) => pair.activity.id === "gb"));
 assert.equal(geoPairs.at(-1)?.activity.id, "gd");
+
+
+const routeFilterDebug = createPairingDebug();
+const routeRestaurant: EnterpriseLocation = { id: "rr", name: "Route Steak", restaurant_name: "Route Steak", location_type: "restaurant", cuisine: "Steakhouse", city: "New York", state: "NY", latitude: 40, longitude: -73, image_url: "r.jpg", search_document: "steak steakhouse dinner" };
+const routeActivities: EnterpriseLocation[] = [
+  { id: "ra", name: "A", activity_name: "A", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.985, image_url: "a.jpg", walkingDurationMinutes: 18, search_document: "rooftop lounge drinks" },
+  { id: "rb", name: "B", activity_name: "B", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.974, image_url: "b.jpg", walkingDurationMinutes: 30, search_document: "rooftop lounge drinks" },
+  { id: "rc", name: "C", activity_name: "C", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.976, image_url: "c.jpg", walkingDurationMinutes: 31, search_document: "rooftop lounge drinks" },
+  { id: "rd", name: "D", activity_name: "D", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.989, image_url: "d.jpg", walkingDurationMinutes: 496, search_document: "rooftop lounge drinks" },
+];
+const routeFilteredPairs = createSearchPairs([routeRestaurant], routeActivities, distanceIntent, routeFilterDebug);
+assert.deepEqual(routeFilteredPairs.map((pair) => pair.activity.id), ["ra", "rb"], "30-minute walking route filter should include only 18- and 30-minute Google routes");
+assert.equal(routeFilterDebug.pairsRejectedForWalkingMinutes, 2);
+assert.equal(routeFilterDebug.extremeWalkingRoutesRejected, 1);
+assert(routeFilterDebug.rejectedPairs.some((pair) => pair.activityName === "C" && pair.reason === "walking_route_exceeds_requested_minutes"));
+assert(routeFilterDebug.rejectedPairs.some((pair) => pair.activityName === "D" && pair.walkingDurationMinutes === 496 && pair.reason === "extreme_walking_route_duration"));
+
+const noValidWalkDebug = createPairingDebug();
+const noValidPairs = createSearchPairs([routeRestaurant], routeActivities.slice(2), distanceIntent, noValidWalkDebug);
+assert.equal(routeActivities.slice(2).length, 2, "rooftop activities can exist before pairing");
+assert.equal(noValidPairs.length, 0, "walking pairing should have zero valid pairs when all rooftop activities exceed the route limit");
+assert.equal(noValidWalkDebug.pairCandidatesEvaluated, 2);
+assert.equal(noValidWalkDebug.validPairCountBeforeRender, 0);
+
+const extremeWalkingLabel = buildSafePairDistanceLabel({
+  pair: { walkingDurationMinutes: 496 },
+  restaurantName: "Fogo de Chão Brazilian Steakhouse",
+  pairDistanceMiles: 0.6,
+  pairingPreference: { requiresPairing: true, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
+});
+assert(!extremeWalkingLabel.includes("496 min walk"), "extreme walking routes should never render as walking labels");
+assert.equal(extremeWalkingLabel, "0.6 mi from Fogo de Chão Brazilian Steakhouse");
+
+const sortedRoutePairs = createSearchPairs([routeRestaurant], [routeActivities[2], routeActivities[1], routeActivities[0]], distanceIntent);
+assert.deepEqual(sortedRoutePairs.map((pair) => pair.activity.id), ["ra", "rb"], "valid route pairs should sort nearest-first before lower-priority scoring");
 
 console.log("search-quality-regression passed");

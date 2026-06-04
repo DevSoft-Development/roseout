@@ -64,6 +64,10 @@ type PlanLocation = LocationScoreFields & {
   longitude?: number | string | null;
   pair_distance_miles?: number | null;
   pair_walking_minutes?: number | null;
+  walkingDurationMinutes?: number | null;
+  googleWalkingDurationMinutes?: number | null;
+  routeDurationMinutes?: number | null;
+  walking_route_minutes?: number | null;
   pair_walking_label?: string | null;
 };
 
@@ -1020,6 +1024,27 @@ function walkingMinutesFromMiles(distanceMiles: number | null) {
   return Math.max(1, Math.round(distanceMiles * WALKING_MINUTES_PER_MILE));
 }
 
+function normalizeRouteMinutes(value: unknown) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) return null;
+  return minutes;
+}
+
+function getRawWalkingMinutes(location: PlanLocation | null) {
+  const raw =
+    location?.walkingDurationMinutes ??
+    location?.googleWalkingDurationMinutes ??
+    location?.routeDurationMinutes ??
+    location?.walking_route_minutes ??
+    location?.pair_walking_minutes;
+  const minutes = Number(raw);
+  return Number.isFinite(minutes) ? minutes : null;
+}
+
+function getSafeWalkingMinutes(location: PlanLocation | null) {
+  return normalizeRouteMinutes(getRawWalkingMinutes(location));
+}
+
 function buildFlowText(
   restaurant: PlanLocation | null,
   activity: PlanLocation | null,
@@ -1042,11 +1067,10 @@ function buildFlowText(
         }`;
       }
 
-      const walkingMinutes =
-        activity.pair_walking_minutes || walkingMinutesFromMiles(distance);
+      const safeWalkingMinutes = getSafeWalkingMinutes(activity);
 
-      if (walkingMinutes && restaurantName) {
-        return `${walkingMinutes} min walk from ${restaurantName}`;
+      if (safeWalkingMinutes != null && restaurantName) {
+        return `${safeWalkingMinutes} min walk from ${restaurantName}`;
       }
     }
 
