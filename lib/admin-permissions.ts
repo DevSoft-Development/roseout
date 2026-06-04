@@ -3,6 +3,7 @@ import type { AdminRole } from "@/lib/users/roles";
 export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   superadmin: "Superadmin",
   admin: "Admin",
+  manager: "Manager",
   editor: "Editor",
   ambassador: "Ambassador Team",
   experience: "Experience Team",
@@ -16,6 +17,8 @@ export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
     "Full platform access, ownership settings, billing, imports, users, and destructive actions.",
   admin:
     "Trusted operations access for locations, CRM, claims, reservations, Experience Team, marketing, and analytics.",
+  manager:
+    "Team operations access for dashboard, Team Tools, work sessions, reviews, and payroll workflows.",
   editor:
     "Content, location details, SEO, photos, templates, reviews, and marketing content.",
   ambassador:
@@ -32,6 +35,7 @@ export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
 export const ALL_ADMIN_ROLES = [
   "superadmin",
   "admin",
+  "manager",
   "editor",
   "ambassador",
   "experience",
@@ -40,7 +44,7 @@ export const ALL_ADMIN_ROLES = [
   "viewer",
 ] as const satisfies readonly AdminRole[];
 
-const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "editor", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
+const LEGACY_DASHBOARD_ROLES = ["superadmin", "admin", "manager", "editor", "ambassador", "experience", "viewer"] as const satisfies readonly AdminRole[];
 
 export const ADMIN_PAGE_ACCESS = {
   dashboard: ALL_ADMIN_ROLES,

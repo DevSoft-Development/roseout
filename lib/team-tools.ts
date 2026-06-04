@@ -159,3 +159,30 @@ export function csvEscape(value: unknown) {
   const raw = value == null ? "" : String(value);
   return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
 }
+
+export async function listPermittedWorkspaceLocations(profile: any, columns = "id,name,location_name,address,city,state,latitude,longitude", limit = 200) {
+  const directIds = Array.isArray(profile?.assigned_location_ids) ? profile.assigned_location_ids.filter(Boolean) : [];
+  if (directIds.length) {
+    const { data, error } = await supabaseAdmin.from("locations").select(columns).in("id", directIds).order("name").limit(limit);
+    if (!error) return data || [];
+  }
+
+  try {
+    const { data: assignments, error } = await supabaseAdmin
+      .from("team_location_assignments")
+      .select("location_id")
+      .eq("team_member_id", profile?.id)
+      .eq("status", "active")
+      .limit(limit);
+    if (!error && assignments?.length) {
+      const ids = assignments.map((assignment: any) => assignment.location_id).filter(Boolean);
+      const { data } = await supabaseAdmin.from("locations").select(columns).in("id", ids).order("name").limit(limit);
+      return data || [];
+    }
+  } catch {
+    // Some deployments do not have explicit assignment tables yet. Fall through to a capped list.
+  }
+
+  const { data } = await supabaseAdmin.from("locations").select(columns).order("name").limit(limit);
+  return data || [];
+}

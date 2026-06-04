@@ -3,12 +3,14 @@ type RedirectResolutionInput = {
   role?: string | null;
   profileRole?: string | null;
   profileAccountType?: string | null;
+  teamProfileTeamType?: string | null;
   isAdminUser?: boolean;
   isLocationOwner?: boolean;
   intendedPath?: string | null;
 };
 
-const ADMIN_ROLES = new Set(["superadmin", "admin", "editor", "ambassador", "experience", "viewer"]);
+const ADMIN_DASHBOARD_ROLES = new Set(["superadmin", "admin", "manager"]);
+const TEAM_WORKSPACE_ROLES = new Set(["ambassador", "experience", "experience_team", "sales_team", "support_team"]);
 const OWNER_ROLES = new Set(["owner", "business_owner", "location_owner", "restaurants"]);
 const BLOCKED_INTENDED_PATH_PREFIXES = [
   "/login",
@@ -23,7 +25,9 @@ function normalizeRole(value: string | null | undefined): string | null {
   const role = value.trim().toLowerCase().replace(/\s+/g, "_");
   if (role === "superuser" || role === "super_admin") return "superadmin";
   if (["sales", "sales_rep", "salesrep", "ambassador_team"].includes(role)) return "ambassador";
-  if (["support", "guest_care", "guestcare", "experience_team"].includes(role)) return "experience";
+  if (["support", "guest_care", "guestcare"].includes(role)) return "support_team";
+  if (["experience_team"].includes(role)) return "experience_team";
+  if (["manager", "team_manager"].includes(role)) return "manager";
   return role;
 }
 
@@ -61,7 +65,7 @@ export function sanitizeIntendedPath(path: string | null | undefined): string | 
 export function resolvePostLoginRedirect(input: RedirectResolutionInput): string {
   const adminRole = normalizeRole(input.adminRole);
 
-  if (input.isAdminUser || (adminRole && ADMIN_ROLES.has(adminRole))) {
+  if (input.isAdminUser || (adminRole && ADMIN_DASHBOARD_ROLES.has(adminRole))) {
     return "/admin/dashboard";
   }
 
@@ -69,14 +73,23 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
     input.role,
     input.profileRole,
     input.profileAccountType,
+    input.teamProfileTeamType,
   ].map(normalizeRole);
 
   const isAdminFromProfile = roleCandidates.some(
-    (role) => role && ADMIN_ROLES.has(role),
+    (role) => role && ADMIN_DASHBOARD_ROLES.has(role),
   );
 
   if (isAdminFromProfile) {
     return "/admin/dashboard";
+  }
+
+  const isTeamWorkspaceUser = roleCandidates.some(
+    (role) => role && TEAM_WORKSPACE_ROLES.has(role),
+  );
+
+  if (isTeamWorkspaceUser) {
+    return "/my-workspace";
   }
 
   const isOwner =

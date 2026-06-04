@@ -61,11 +61,13 @@ export async function resolveLoginDestination({
     usersTableResult,
     locationsResult,
     restaurantsResult,
+    teamProfileResult,
   ] = await Promise.all([
     safeMaybeSingle("user_profiles", "role, account_type", "id", user.id),
     safeMaybeSingle("users", "role, account_type", "id", user.id),
     safeLimitOne("locations", "owner_user_id", user.id),
     safeLimitOne("restaurants", "owner_user_id", user.id),
+    safeMaybeSingle("team_member_profiles", "team_type, status", "user_id", user.id),
   ]);
 
   const isLocationOwner =
@@ -83,6 +85,8 @@ export async function resolveLoginDestination({
       userProfileResult.data?.account_type ||
       usersTableResult.data?.account_type ||
       null,
+    teamProfileTeamType:
+      teamProfileResult.data?.status === "active" ? teamProfileResult.data?.team_type || null : null,
     isAdminUser: Boolean(adminRole),
     isLocationOwner,
     intendedPath: safeIntendedPath,
@@ -112,6 +116,9 @@ export async function resolveLoginDestination({
         : null,
       restaurantsError: restaurantsResult.error
         ? String(restaurantsResult.error)
+        : null,
+      teamProfileError: teamProfileResult.error
+        ? String(teamProfileResult.error)
         : null,
     },
   };
