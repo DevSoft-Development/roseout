@@ -45,6 +45,14 @@ function userExplicitlyAskedForTheater(intent: SearchIntent) {
   );
 }
 
+function userAskedForHookah(intent: SearchIntent): boolean {
+  return /\b(hookah|shisha|hookah lounge|hookah bar)\b/i.test(intent.rawQuery);
+}
+
+function isHookahRecord(record: EnterpriseLocation): boolean {
+  return /\b(hookah|shisha)\b/i.test(textForRecord(record));
+}
+
 function isTheaterRecord(r: EnterpriseLocation) {
   const text = fieldText(r, [
     "name",
@@ -326,6 +334,10 @@ export function explainRejection(
     !userExplicitlyAskedForTheater(intent)
   ) {
     return "theater_not_requested";
+  }
+
+  if (domain === "activity" && userAskedForHookah(intent) && !isHookahRecord(record)) {
+    return "missing_hookah_signal";
   }
 
   if (domain === "restaurant" && !isRestaurantLike(record))

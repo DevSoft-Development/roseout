@@ -10,6 +10,7 @@ import {
   detectMealTerms,
   expandActivitySynonyms,
   expandFoodSynonyms,
+  hasExplicitHookahIntent,
   FOOD_TERMS,
   MEAL_TERMS,
   PLACE_OF_WORSHIP_TERMS,
@@ -46,6 +47,54 @@ const RESTAURANT_SEARCH_TERM_BLOCKLIST = new Set([
   "hookah",
   ...PLACE_OF_WORSHIP_TERMS,
 ].map((x) => x.toLowerCase()));
+
+
+const GENERIC_RESTAURANT_RPC_TERMS = new Set([
+  "dinner",
+  "restaurant",
+  "restaurants",
+  "dining",
+  "brunch",
+  "lunch",
+  "breakfast",
+  "drinks",
+  "cocktails",
+]);
+
+const HOOKAH_RPC_TERMS = ["hookah", "hookah lounge", "shisha", "hookah bar"];
+const HOOKAH_COMPATIBLE_EXPLICIT_ACTIVITY_TERMS = [
+  "drinks",
+  "cocktails",
+  "bar",
+  "rooftop lounge",
+  "club",
+  "dance club",
+  "dancing",
+  "live dj",
+  "speakeasy",
+];
+
+function queryOutsideHookahPhrases(query: string) {
+  return query
+    .toLowerCase()
+    .replace(/\bhookah\s+(?:lounge|bar)\b/gi, " ")
+    .replace(/\b(?:hookah|shisha)\b/gi, " ");
+}
+
+function explicitHookahActivityRpcTerms(query: string) {
+  const qWithoutHookah = queryOutsideHookahPhrases(query);
+  const explicit = HOOKAH_COMPATIBLE_EXPLICIT_ACTIVITY_TERMS.filter((term) => phrase(qWithoutHookah, term));
+
+  if (explicit.includes("drinks") && !explicit.includes("cocktails")) {
+    explicit.push("cocktails");
+  }
+
+  if (explicit.includes("cocktails") && !explicit.includes("drinks")) {
+    explicit.push("drinks");
+  }
+
+  return explicit;
+}
 
 const ACTIVITY_SEARCH_TERM_BLOCKLIST = new Set([
   "dinner",
@@ -422,7 +471,7 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
         : [];
   return merged;
 }
-export function restaurantSearchTerms(intent: SearchIntent) {
+export function restaurantSearchTermsOriginal(intent: SearchIntent) {
   return stripBlockedTerms(
     uniq([
       ...intent.restaurantIntent.mealTerms,
@@ -436,7 +485,28 @@ export function restaurantSearchTerms(intent: SearchIntent) {
   );
 }
 
-export function activitySearchTerms(intent: SearchIntent) {
+export function hasSpecificRestaurantFood(intent: SearchIntent): boolean {
+  return [
+    ...intent.restaurantIntent.foodTerms,
+    ...intent.restaurantIntent.cuisineTerms,
+    ...(intent.restaurantIntent.alternativeGroups ?? []).flat(),
+  ].some((term) => {
+    const normalized = term.toLowerCase();
+    return !GENERIC_RESTAURANT_RPC_TERMS.has(normalized) && !FEATURE_ONLY_FOOD_TERMS.has(normalized);
+  });
+}
+
+export function restaurantSearchTerms(intent: SearchIntent) {
+  const original = restaurantSearchTermsOriginal(intent);
+
+  if (!hasSpecificRestaurantFood(intent)) {
+    return original;
+  }
+
+  return original.filter((term) => !GENERIC_RESTAURANT_RPC_TERMS.has(term.toLowerCase()));
+}
+
+export function activitySearchTermsOriginal(intent: SearchIntent) {
   const raw = uniq([
     ...intent.activityIntent.activityTerms,
     ...intent.activityIntent.categoryTerms,
@@ -447,4 +517,23 @@ export function activitySearchTerms(intent: SearchIntent) {
   const cleaned = stripBlockedTerms(raw, ACTIVITY_SEARCH_TERM_BLOCKLIST);
 
   return cleanPlaceOfWorshipTerms(cleaned, intent.rawQuery);
+}
+
+export function activitySearchTerms(intent: SearchIntent) {
+  const original = activitySearchTermsOriginal(intent);
+
+  if (!hasExplicitHookahIntent(intent.rawQuery)) {
+    return original;
+  }
+
+  const explicit = explicitHookahActivityRpcTerms(intent.rawQuery);
+
+  return cleanPlaceOfWorshipTerms(
+    uniq([
+      ...HOOKAH_RPC_TERMS,
+      ...explicit,
+      ...original.filter((term) => HOOKAH_RPC_TERMS.includes(term.toLowerCase())),
+    ]),
+    intent.rawQuery,
+  );
 }

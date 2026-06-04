@@ -93,6 +93,7 @@ const queries = [
 async function main() {
   const { runEnterpriseSearch } = await import("../lib/search/enterprise/index");
   const { normalizeIntent, restaurantSearchTerms, activitySearchTerms } = await import("../lib/search/enterprise/normalize-intent");
+  const { explainRejection } = await import("../lib/search/enterprise/ranking");
 
   for (const query of queries) {
     const result = await runEnterpriseSearch(query, { supabase: mockSupabase, useLLM: false, displayLimit: 20 });
@@ -121,8 +122,49 @@ async function main() {
 
   intent = normalizeIntent("steak dinner with bowling or karaoke after");
   assert(restaurantSearchTerms(intent).includes("steak"));
-  assert(restaurantSearchTerms(intent).includes("dinner"));
+  assert(!restaurantSearchTerms(intent).includes("dinner"));
   assert((intent.activityIntent.alternativeGroups ?? []).some((group) => group.includes("bowling") && group.includes("karaoke")));
+
+  intent = normalizeIntent("steak dinner and hookah lounge after");
+  assert.equal(intent.searchType, "mixed_outing");
+  assert.deepEqual(restaurantSearchTerms(intent), [
+    "steak",
+    "steakhouse",
+    "steak house",
+    "ribeye",
+    "porterhouse",
+    "filet",
+    "filet mignon",
+    "sirloin",
+    "tomahawk",
+    "prime rib",
+    "churrasco",
+    "brazilian steakhouse",
+  ]);
+  assert.deepEqual(activitySearchTerms(intent), ["hookah", "hookah lounge", "shisha", "hookah bar"]);
+  for (const broadTerm of ["club", "dance club", "live dj", "speakeasy", "rooftop lounge", "nightlife", "lounge"]) {
+    assert(!activitySearchTerms(intent).includes(broadTerm), `hookah search included broad term ${broadTerm}`);
+  }
+  assert.equal(explainRejection(records.find((record) => record.id === "a-lounge")!, intent, "activity"), "missing_hookah_signal");
+
+  intent = normalizeIntent("steak dinner and hookah lounge with drinks after");
+  assert(activitySearchTerms(intent).includes("drinks"));
+  assert(activitySearchTerms(intent).includes("cocktails"));
+  assert(!activitySearchTerms(intent).includes("lounge"));
+
+  intent = normalizeIntent("steak dinner and rooftop lounge after");
+  assert(activitySearchTerms(intent).includes("rooftop lounge"));
+  assert(activitySearchTerms(intent).includes("lounge"));
+  assert(activitySearchTerms(intent).includes("bar"));
+
+  intent = normalizeIntent("girls night dinner and drinks");
+  assert(!activitySearchTerms(intent).includes("theater"));
+  assert.equal(explainRejection(records.find((record) => record.id === "a-theater")!, intent, "activity"), "theater_not_requested");
+
+  intent = normalizeIntent("casual dinner and relaxed activity");
+  assert(activitySearchTerms(intent).includes("relaxed activity"));
+  assert(activitySearchTerms(intent).includes("board games"));
+  assert.equal(explainRejection(records.find((record) => record.id === "a-theater")!, intent, "activity"), "theater_not_requested");
 
   console.log("enterprise-search-quality passed");
 }
