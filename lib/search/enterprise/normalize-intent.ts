@@ -226,6 +226,48 @@ const CONNECTOR_TERMS = [
 ];
 
 
+
+function hasPairingConnectorForSecondStop(rawQuery: string): boolean {
+  return /\b(and|then|after|afterward|afterwards|next|later|plus|followed by|before)\b/i.test(rawQuery);
+}
+
+function hasRooftopDrinkSecondStop(rawQuery: string): boolean {
+  const q = String(rawQuery || "").toLowerCase();
+
+  const rooftopDrinkPhrase =
+    /\b(rooftop|roof top)\s+(drinks?|cocktails?|bar|lounge|nightlife)\b/i.test(q) ||
+    /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(q);
+
+  return rooftopDrinkPhrase && hasPairingConnectorForSecondStop(q);
+}
+
+function rooftopBelongsToActivityLane(rawQuery: string): boolean {
+  return hasRooftopDrinkSecondStop(rawQuery);
+}
+
+function addRooftopDrinkActivityTerms(terms: string[], rawQuery: string): string[] {
+  if (!rooftopBelongsToActivityLane(rawQuery)) return terms;
+
+  return uniq([
+    ...terms,
+    "rooftop",
+    "rooftop bar",
+    "rooftop lounge",
+    "rooftop drinks",
+    "rooftop cocktails",
+    "drinks",
+    "cocktails",
+    "bar",
+    "lounge",
+  ]);
+}
+
+function stripRooftopActivityLaneRestaurantTerms(terms: string[], rawQuery: string): string[] {
+  if (!rooftopBelongsToActivityLane(rawQuery)) return terms;
+
+  return terms.filter((term) => !ROOFTOP_ACTIVITY_LANE_RESTAURANT_TERMS.has(term.toLowerCase()));
+}
+
 function hasSecondStopConnector(rawQuery: string): boolean {
   return /\b(after|afterward|afterwards|then|next|later|nearby|near me after|second stop|another spot|things to do after|activity after|bar after|lounge after|club after|drinks after|cocktails after)\b/i.test(rawQuery);
 }
@@ -242,9 +284,26 @@ function drinksAreRestaurantFeatureOnly(rawQuery: string): boolean {
 }
 
 const RESTAURANT_DRINK_FEATURE_TERMS = ["drinks", "cocktails", "margaritas", "wine", "bar menu"];
+const ROOFTOP_ACTIVITY_LANE_RESTAURANT_TERMS = new Set([
+  "rooftop",
+  "roof top",
+  "terrace",
+  "patio",
+  "outdoor dining",
+  "skyline",
+  "city views",
+  "scenic views",
+  "view",
+  "views",
+  "roof deck",
+  "drinks",
+  "cocktails",
+]);
+
 const RESTAURANT_ALLOWED_ACTIVITY_CROSS_TERMS = new Set([
   ...RESTAURANT_DRINK_FEATURE_TERMS,
   "group night",
+  ...ROOFTOP_ACTIVITY_LANE_RESTAURANT_TERMS,
 ].map((x) => x.toLowerCase()));
 
 function stripRestaurantCrossTerms(terms: string[]) {
@@ -357,11 +416,11 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const food = detectFoodTerms(query);
   const cuisine = detectCuisineTerms(query);
   const meals = detectMealTerms(query);
-  const acts = stripDistanceTerms(detectActivityTerms(query));
+  const acts = stripDistanceTerms(addRooftopDrinkActivityTerms(detectActivityTerms(query), query));
   const geo = detectGeoIntent(query);
   const restaurantAlternativeGroups = detectAlternativeGroupsForLane(query, "restaurant");
   const activityAlternativeGroups = detectAlternativeGroupsForLane(query, "activity");
-  const restaurantFood = food.filter((t) => t !== "rooftop" && t !== "lounge");
+  const restaurantFood = stripRooftopActivityLaneRestaurantTerms(food, query).filter((t) => t !== "rooftop" && t !== "lounge");
   const restaurantContext = meals.length > 0 || restaurantFood.length > 0 || /restaurant|dinner|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse/i.test(query);
   const activityContext =
     acts.length > 0 ||
@@ -390,12 +449,13 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     pairingPreference: detectPairingPreference(query, mixed),
     restaurantIntent: {
       ...createEmptyRestaurantIntent(),
-      mealTerms: meals,
-      foodTerms: food,
-      cuisineTerms: cuisine,
+      mealTerms: stripRooftopActivityLaneRestaurantTerms(meals, query),
+      foodTerms: stripRooftopActivityLaneRestaurantTerms(food, query),
+      cuisineTerms: stripRooftopActivityLaneRestaurantTerms(cuisine, query),
       categoryTerms: /restaurant|dining/i.test(query) ? ["restaurant"] : [],
       featureTerms: uniq([
-        ...(food.includes("rooftop") || /rooftop|terrace|skyline|view/i.test(query)
+        ...(!rooftopBelongsToActivityLane(query) &&
+        (food.includes("rooftop") || /rooftop|terrace|skyline|view/i.test(query))
           ? ["rooftop"]
           : []),
         ...(restaurantFeatureOnlyDrinks ? detectRestaurantDrinkFeatureTerms(query) : []),
@@ -404,7 +464,9 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     },
     activityIntent: {
       ...createEmptyActivityIntent(),
-      activityTerms: restaurantFeatureOnlyDrinks ? [] : cleanPlaceOfWorshipTerms(acts, query),
+      activityTerms: restaurantFeatureOnlyDrinks
+        ? []
+        : cleanPlaceOfWorshipTerms(addRooftopDrinkActivityTerms(acts, query), query),
       categoryTerms: restaurantFeatureOnlyDrinks ? [] : /things to do/i.test(query) ? ["things to do"] : [],
       featureTerms: [],
       alternativeGroups: restaurantFeatureOnlyDrinks ? [] : activityAlternativeGroups,
@@ -426,7 +488,10 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   const food = uniq([...detectFoodTerms(query), ...(merged.restaurantIntent.foodTerms ?? [])]);
   const cuisine = uniq([...detectCuisineTerms(query), ...(merged.restaurantIntent.cuisineTerms ?? [])]);
   const meals = uniq([...detectMealTerms(query), ...(merged.restaurantIntent.mealTerms ?? [])]);
-  const acts = stripDistanceTerms(uniq([...detectActivityTerms(query), ...(merged.activityIntent.activityTerms ?? [])]));
+  const acts = addRooftopDrinkActivityTerms(
+    stripDistanceTerms(uniq([...detectActivityTerms(query), ...(merged.activityIntent.activityTerms ?? [])])),
+    query,
+  );
   const foodExpanded = expandFoodSynonyms(food);
   const actExpanded = stripDistanceTerms(expandActivitySynonyms(acts));
   const restaurantAlternativeGroups = mergeAlternativeGroups(
@@ -444,15 +509,15 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   merged.restaurantIntent = {
     ...merged.restaurantIntent,
     mealTerms: stripBlockedTerms(
-      stripRestaurantCrossTerms(uniq([...meals, ...expandFoodSynonyms(meals)])),
+      stripRestaurantCrossTerms(stripRooftopActivityLaneRestaurantTerms(uniq([...meals, ...expandFoodSynonyms(meals)]), query)),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     foodTerms: stripBlockedTerms(
-      stripRestaurantCrossTerms(foodExpanded),
+      stripRestaurantCrossTerms(stripRooftopActivityLaneRestaurantTerms(foodExpanded, query)),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     cuisineTerms: stripBlockedTerms(
-      stripRestaurantCrossTerms(cuisine),
+      stripRestaurantCrossTerms(stripRooftopActivityLaneRestaurantTerms(cuisine, query)),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     categoryTerms: stripBlockedTerms(
@@ -462,8 +527,12 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
     featureTerms: stripBlockedTerms(
       stripRestaurantCrossTerms(
         uniq([
-          ...(merged.restaurantIntent.featureTerms ?? []),
-          ...(food.includes("rooftop") ? ["rooftop", "terrace", "skyline", "view"] : []),
+          ...(rooftopBelongsToActivityLane(query)
+            ? (merged.restaurantIntent.featureTerms ?? []).filter((term) => !["rooftop", "terrace", "skyline", "view"].includes(term.toLowerCase()))
+            : (merged.restaurantIntent.featureTerms ?? [])),
+          ...(!rooftopBelongsToActivityLane(query) && food.includes("rooftop")
+            ? ["rooftop", "terrace", "skyline", "view"]
+            : []),
           ...(drinksAreRestaurantFeatureOnly(query) ? detectRestaurantDrinkFeatureTerms(query) : []),
         ]),
       ),
@@ -480,9 +549,12 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   merged.activityIntent = {
     ...merged.activityIntent,
     activityTerms: cleanPlaceOfWorshipTerms(
-      stripBlockedTerms(
-        stripDistanceTerms(stripCrossTerms(actExpanded, [...FOOD_TERMS, ...MEAL_TERMS])),
-        ACTIVITY_SEARCH_TERM_BLOCKLIST,
+      addRooftopDrinkActivityTerms(
+        stripBlockedTerms(
+          stripDistanceTerms(stripCrossTerms(actExpanded, [...FOOD_TERMS, ...MEAL_TERMS])),
+          ACTIVITY_SEARCH_TERM_BLOCKLIST,
+        ),
+        query,
       ),
       query,
     ),

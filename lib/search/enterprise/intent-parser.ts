@@ -45,7 +45,11 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "comedy show",
   "comedy",
   "museum",
+  "rooftop drinks",
+  "rooftop cocktails",
+  "rooftop bar",
   "rooftop lounge",
+  "rooftop",
   "lounge",
   "drinks",
   "cocktails",
@@ -80,8 +84,20 @@ function detectFastPathRestaurantSignals(query: string) {
   ]);
 }
 
+function hasRooftopDrinkActivityPhrase(query: string) {
+  return /\b(rooftop|roof top)\s+(drinks?|cocktails?|bar|lounge|nightlife)\b/i.test(query) ||
+    /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(query);
+}
+
+function isRooftopFastPathSignal(term: string) {
+  return term === "rooftop" || term.startsWith("rooftop ");
+}
+
 function detectFastPathActivitySignals(query: string) {
-  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+  const rooftopActivity = hasRooftopDrinkActivityPhrase(query);
+  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) =>
+    includesFastPathPhrase(query, term) && (rooftopActivity || !isRooftopFastPathSignal(term)),
+  );
   return uniqueTerms([
     ...explicitSignals,
     ...detectActivityTerms(query),
@@ -90,6 +106,21 @@ function detectFastPathActivitySignals(query: string) {
 
 function detectFastPathActivityIntentTerms(query: string) {
   const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+
+  if (hasRooftopDrinkActivityPhrase(query)) {
+    return uniqueTerms([
+      "rooftop",
+      "rooftop bar",
+      "rooftop lounge",
+      "rooftop drinks",
+      "rooftop cocktails",
+      "drinks",
+      "cocktails",
+      "bar",
+      "lounge",
+      ...detectActivityTerms(query),
+    ]);
+  }
 
   if (explicitSignals.includes("hookah lounge")) return ["hookah lounge"];
   if (explicitSignals.includes("hookah")) return ["hookah"];

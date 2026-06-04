@@ -216,8 +216,8 @@ function isActivityLike(r: EnterpriseLocation) {
     r.activity_name ||
       r.activity_type ||
       /\bactivity\b|\bactivities\b|\bexperience\b|\bentertainment\b|\bnightlife\b/.test(typeText) ||
-      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\barcade\b|\bmusic\b|\btheater\b|\btheatre\b|\bgallery\b|\bpark\b|\bescape room\b|\bclub\b|\bspa\b/.test(categoryText) ||
-      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\barcade\b|\blive music\b|\btheater\b|\btheatre\b|\bescape room\b/.test(fullText),
+      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\brooftop\b|\broof top\b|\brooftop bar\b|\brooftop lounge\b|\bcocktail bar\b|\bwine bar\b|\bbar\b|\bnightlife\b|\bspeakeasy\b|\barcade\b|\bmusic\b|\btheater\b|\btheatre\b|\bgallery\b|\bpark\b|\bescape room\b|\bclub\b|\bspa\b/.test(categoryText) ||
+      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\brooftop\b|\broof top\b|\brooftop bar\b|\brooftop lounge\b|\bcocktail bar\b|\bwine bar\b|\bbar\b|\bnightlife\b|\bspeakeasy\b|\bskyline\b|\barcade\b|\blive music\b|\btheater\b|\btheatre\b|\bescape room\b/.test(fullText),
   );
 }
 const CURATED_TERMS = [
