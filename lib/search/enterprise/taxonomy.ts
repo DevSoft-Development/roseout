@@ -39,10 +39,14 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   ],
   "relaxed activity": [
     "relaxed activity",
+    "relaxing activity",
     "chill activity",
     "easy activity",
     "low key",
     "low-key",
+    "laid back",
+    "laid-back",
+    "casual activity",
     "lounge",
     "dessert",
     "coffee",
@@ -123,16 +127,24 @@ export function detectActivityTerms(query: string) {
   const q = query.toLowerCase();
   const hasExplicitRelaxedActivity =
     includesPhrase(q, "relaxed activity") ||
+    includesPhrase(q, "relaxing activity") ||
     includesPhrase(q, "chill activity") ||
     includesPhrase(q, "easy activity") ||
     includesPhrase(q, "low key") ||
-    includesPhrase(q, "low-key");
+    includesPhrase(q, "low-key") ||
+    includesPhrase(q, "laid back") ||
+    includesPhrase(q, "laid-back") ||
+    includesPhrase(q, "casual activity");
   const relaxedActivityTerms = new Set([
     "relaxed activity",
+    "relaxing activity",
     "chill activity",
     "easy activity",
     "low key",
     "low-key",
+    "laid back",
+    "laid-back",
+    "casual activity",
   ]);
   const terms = detectFromMap(query, ACTIVITY_SYNONYMS).filter(
     (term) => hasExplicitRelaxedActivity || !relaxedActivityTerms.has(term),

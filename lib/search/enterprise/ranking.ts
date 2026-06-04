@@ -11,6 +11,7 @@ import {
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
 import { isWellnessActivity } from "../lowLevel";
+import { hasRelaxedActivityIntent } from "./normalize-intent";
 
 function compactRecordText(r: EnterpriseLocation) {
   return textForRecord(r).replaceAll("_", " ").replaceAll("-", " ");
@@ -51,6 +52,16 @@ function userAskedForHookah(intent: SearchIntent): boolean {
 
 function isHookahRecord(record: EnterpriseLocation): boolean {
   return /\b(hookah|shisha)\b/i.test(textForRecord(record));
+}
+
+function userAskedForHardNightlife(rawQuery: string): boolean {
+  return /\b(nightlife|bar|club|dance club|dancing|live dj|dj|speakeasy|cocktails|drinks|rooftop lounge)\b/i.test(rawQuery);
+}
+
+function isHardNightlifeRecord(record: EnterpriseLocation): boolean {
+  const text = textForRecord(record).toLowerCase();
+
+  return /\b(nightclub|dance club|club|live dj|dj|speakeasy)\b/i.test(text);
 }
 
 function isTheaterRecord(r: EnterpriseLocation) {
@@ -338,6 +349,15 @@ export function explainRejection(
     !userExplicitlyAskedForTheater(intent)
   ) {
     return "theater_not_requested";
+  }
+
+  if (
+    domain === "activity" &&
+    hasRelaxedActivityIntent(intent.rawQuery) &&
+    !userAskedForHardNightlife(intent.rawQuery) &&
+    isHardNightlifeRecord(record)
+  ) {
+    return "hard_nightlife_not_relaxed";
   }
 
   if (domain === "restaurant" && !isRestaurantLike(record))
