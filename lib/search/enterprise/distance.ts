@@ -28,10 +28,11 @@ export function getPairDistanceMiles(restaurantOrPair: EnterpriseLocation | any,
   if (miles < 0) return null;
   return miles;
 }
-export function estimateWalkingMinutes(distanceMiles: number) { return Math.round((distanceMiles / 3.0) * 60); }
-
 export const MAX_SAFE_WALKING_ROUTE_MINUTES = 180;
+export const WALKING_MINUTES_PER_MILE = 20;
 export const WALKING_ROUTE_LABEL_DISPLAY_MAX_MINUTES = 45;
+
+export function estimateWalkingMinutes(distanceMiles: number) { return Math.round(distanceMiles * WALKING_MINUTES_PER_MILE); }
 
 export function normalizeWalkingMinutes(value: unknown): number | null {
   const minutes = Number(value);
@@ -121,8 +122,25 @@ export function getRawWalkingMinutes(pair: any): number | null {
   return Number.isFinite(minutes) ? minutes : null;
 }
 
+export function estimateWalkingMinutesFromMiles(miles: unknown): number | null {
+  const distanceMiles = Number(miles);
+
+  if (!Number.isFinite(distanceMiles)) return null;
+  if (distanceMiles < 0) return null;
+
+  const estimatedMinutes = distanceMiles * WALKING_MINUTES_PER_MILE;
+
+  return normalizeWalkingMinutes(estimatedMinutes);
+}
+
 export function getSafeWalkingMinutes(pair: any): number | null {
-  return normalizeRouteMinutes(getRawWalkingMinutes(pair));
+  const routeMinutes = normalizeRouteMinutes(getRawWalkingMinutes(pair));
+
+  if (routeMinutes != null) {
+    return routeMinutes;
+  }
+
+  return estimateWalkingMinutesFromMiles(getPairDistanceMiles(pair));
 }
 
 export function shouldRejectPairForWalkingRoute(

@@ -2651,8 +2651,8 @@ function buildDistanceFromRestaurantLabel(
   if (!restaurant || !activity) return undefined;
 
   const distance =
-    distanceBetweenLocations(restaurant, activity) ??
     activity.pair_distance_miles ??
+    distanceBetweenLocations(restaurant, activity) ??
     null;
 
   if (distance === null) return undefined;
@@ -2674,8 +2674,8 @@ function buildDistanceText(
 ) {
   if (restaurant && activity) {
     const distance =
-      distanceBetweenLocations(restaurant, activity) ??
       activity.pair_distance_miles ??
+      distanceBetweenLocations(restaurant, activity) ??
       null;
 
     if (distance !== null) {
@@ -2684,10 +2684,18 @@ function buildDistanceText(
           return `Not walkable between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
         }
 
-        const safeWalkingMinutes = getSafeWalkingMinutes(activity);
+        const label = formatDistanceFromRestaurant({
+          pair: {
+            ...activity,
+            pairDistanceMiles: distance,
+            pair_distance_miles: activity.pair_distance_miles,
+          },
+          restaurantName: getLocationName(restaurant),
+          pairingPreference: { distanceMode: "walking", requireWalkablePair: true },
+        });
 
-        if (safeWalkingMinutes != null) {
-          return `${safeWalkingMinutes} min walk between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
+        if (label !== "Distance unavailable") {
+          return label.replace(" from ", " between ").replace(/$/, ` and ${getLocationName(activity)}`);
         }
       }
 

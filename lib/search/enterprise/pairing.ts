@@ -1,5 +1,5 @@
 import type { EnterpriseLocation, EnterprisePair, GeoIntent, PairDistanceMode, PairingPreference, SearchIntent } from "./types";
-import { estimateWalkingMinutes, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isWalkablePair, shouldRejectPairForWalkingRoute } from "./distance";
+import { estimateWalkingMinutes, estimateWalkingMinutesFromMiles, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isWalkablePair, normalizeWalkingMinutes, shouldRejectPairForWalkingRoute } from "./distance";
 import { scoreGeoMatch } from "./geo-taxonomy";
 
 const titleCase = (s: string) => s.split(/\s+/).filter(Boolean).map((w) => w[0]?.toUpperCase() + w.slice(1)).join(" ");
@@ -12,6 +12,9 @@ export type PairingDebug = {
   pairsRejectedForWalkingMinutes: number;
   extremeWalkingRoutesRejected: number;
   invalidWalkingRoutesHiddenFromDisplay: number;
+  walkingMinutesEstimatedFromMiles: number;
+  pairsWithGoogleWalkingMinutes: number;
+  pairsMissingGoogleWalkingMinutes: number;
   validPairCountBeforeRender: number;
   walkablePairsFound: number;
   rejectedPairs: Array<{
@@ -24,7 +27,7 @@ export type PairingDebug = {
     walkingDurationMinutes?: number | null;
   }>;
 };
-export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, validPairCountBeforeRender: 0, walkablePairsFound: 0, rejectedPairs: [] }; }
+export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, walkablePairsFound: 0, rejectedPairs: [] }; }
 
 function pairPreference(intent: SearchIntent): PairingPreference { return intent.pairingPreference ?? { requiresPairing: intent.wantsPairing, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
 function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) { if (distanceMiles == null) return 0; if (distanceMiles <= 0.25) return 50; if (distanceMiles <= 0.5) return 40; if (distanceMiles <= 0.75) return 30; if (distanceMiles <= 1.5 && (mode === "walking" || mode === "nearby")) return 15; if (distanceMiles <= 3 && mode === "same_area") return 5; return 0; }
@@ -182,6 +185,8 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
     const pairDistanceMiles = walkability.pairDistanceMiles;
     const pairSeed = { restaurant, activity, pairDistanceMiles, distance_miles: pairDistanceMiles };
     const rawWalkingMinutes = getRawWalkingMinutes(pairSeed);
+    const safeRouteWalkingMinutes = normalizeWalkingMinutes(rawWalkingMinutes);
+    const estimatedWalkingMinutes = estimateWalkingMinutesFromMiles(pairDistanceMiles);
     const safeWalkingMinutes = getSafeWalkingMinutes(pairSeed);
     const pairWalkingMinutes = safeWalkingMinutes ?? walkability.pairWalkingMinutes ?? (pairDistanceMiles == null ? null : estimateWalkingMinutes(pairDistanceMiles));
     const missingCoordinates = walkability.warnings.includes("missing_coordinates");
@@ -191,7 +196,13 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
       Number.isFinite(Number(pairDistanceMiles)) &&
       Number(pairDistanceMiles) > Number(maxDistance);
 
-    if (rawWalkingMinutes != null && safeWalkingMinutes == null) {
+    if (rawWalkingMinutes != null) {
+      debug.pairsWithGoogleWalkingMinutes += 1;
+    } else {
+      debug.pairsMissingGoogleWalkingMinutes += 1;
+    }
+
+    if (rawWalkingMinutes != null && safeRouteWalkingMinutes == null) {
       debug.invalidWalkingRoutesHiddenFromDisplay += 1;
     }
 
@@ -224,6 +235,9 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
     if (walkability.isWalkable && !missingCoordinates) debug.walkablePairsFound += 1;
     const pairWarnings = missingCoordinates && pref.requireWalkablePair ? [...walkability.warnings, "missing_coordinates_walkability_unverified"] : walkability.warnings;
     if (missingCoordinates) missingCoordinatePairsKept += 1;
+    if (safeRouteWalkingMinutes == null && estimatedWalkingMinutes != null) {
+      debug.walkingMinutesEstimatedFromMiles += 1;
+    }
     const pair: EnterprisePair = {
       restaurant,
       activity,

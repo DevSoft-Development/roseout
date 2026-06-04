@@ -1018,8 +1018,8 @@ function buildFlowText(
   if (!restaurant || !activity) return "Dinner → Activity";
 
   const distance =
-    distanceBetweenLocations(restaurant, activity) ??
     activity.pair_distance_miles ??
+    distanceBetweenLocations(restaurant, activity) ??
     null;
   const restaurantName = getLocationName(restaurant, "dinner");
   const activityName = getLocationName(activity, "activity");
