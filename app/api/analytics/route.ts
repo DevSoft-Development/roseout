@@ -18,6 +18,10 @@ function getCounter(eventType: string) {
   return null;
 }
 
+function isUuid(value: unknown) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -48,15 +52,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Log event (for history / analytics dashboard)
-    await supabaseAdmin.from("analytics_events").insert({
-      item_id: itemId,
-      item_type: itemType,
+    // ✅ Log event (for history / analytics dashboard). This is non-blocking so
+    // legacy counters keep working even when analytics schema changes.
+    const { error: analyticsInsertError } = await supabaseAdmin.from("analytics_events").insert({
+      event_name: `${itemType}_${eventType}`,
       event_type: eventType,
+      location_id: isUuid(itemId) ? itemId : null,
+      source_location_id: String(itemId),
       page_path: pagePath,
       referrer,
-      user_agent: userAgent,
+      source: "legacy_analytics_api",
+      metadata: {
+        item_id: itemId,
+        item_type: itemType,
+        user_agent: userAgent,
+      },
     });
+
+    if (analyticsInsertError) {
+      console.error("LEGACY_ANALYTICS_EVENT_INSERT_FAILED", analyticsInsertError.message);
+    }
 
     // ✅ Get current count
     const { data: item, error: fetchError } = await supabaseAdmin

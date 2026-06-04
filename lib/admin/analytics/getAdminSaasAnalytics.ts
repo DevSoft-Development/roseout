@@ -9,88 +9,301 @@ export type AdminSaasAnalytics = {
   unavailable: string[];
 };
 
-async function count(table: string, filter?: (query: any) => any) {
+type QueryBuilder = any;
+type AnalyticsEvent = {
+  id?: string | null;
+  event_name?: string | null;
+  event_type?: string | null;
+  query?: string | null;
+  normalized_query?: string | null;
+  result_count?: number | string | null;
+  conversion_step?: string | null;
+  location_id?: string | null;
+  source_location_id?: string | null;
+  user_id?: string | null;
+  anonymous_id?: string | null;
+  session_id?: string | null;
+  metadata?: Record<string, any> | null;
+  created_at?: string | null;
+};
+
+type DailyAnalytics = {
+  location_id?: string | null;
+  analytics_date?: string | null;
+  profile_views?: number | string | null;
+  search_appearances?: number | string | null;
+  reservation_starts?: number | string | null;
+  reservation_completions?: number | string | null;
+  phone_clicks?: number | string | null;
+  website_clicks?: number | string | null;
+  search_clicks?: number | string | null;
+  share_clicks?: number | string | null;
+};
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+function n(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function lower(value: unknown) {
+  return text(value).toLowerCase();
+}
+
+function hasAny(value: unknown, needles: string[]) {
+  const haystack = lower(value);
+  return needles.some((needle) => haystack.includes(needle));
+}
+
+function isMissingOptionalTable(error: any) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+  return code === "42P01" || message.includes("does not exist") || message.includes("could not find the table");
+}
+
+async function count(table: string, filter?: (query: QueryBuilder) => QueryBuilder) {
   let query = supabaseAdmin.from(table).select("*", { count: "exact", head: true });
   if (filter) query = filter(query);
   const { count: value, error } = await query;
   return { value: value || 0, error };
 }
 
+async function safeCount(label: string, unavailable: string[], table: string, filter?: (query: QueryBuilder) => QueryBuilder) {
+  const result = await count(table, filter);
+  if (result.error) unavailable.push(label);
+  return result.error ? 0 : result.value;
+}
+
+async function safeSelect(label: string, unavailable: string[], table: string, columns: string, configure?: (query: QueryBuilder) => QueryBuilder) {
+  let query = supabaseAdmin.from(table).select(columns);
+  if (configure) query = configure(query);
+  const { data, error } = await query;
+  if (error) {
+    unavailable.push(label);
+    if (!isMissingOptionalTable(error)) console.error(`ADMIN_ANALYTICS_${label.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_FAILED`, error.message || error);
+    return [];
+  }
+  return data || [];
+}
+
+function eventName(event: AnalyticsEvent) {
+  return `${event.event_name || ""} ${event.event_type || ""} ${event.conversion_step || ""}`.toLowerCase();
+}
+
+function isSearchEvent(event: AnalyticsEvent) {
+  const name = eventName(event);
+  return name.includes("search") || Boolean(searchLabel(event));
+}
+
+function metadataResultCount(metadata: Record<string, any> | null | undefined) {
+  if (!metadata) return null;
+  const value = metadata.result_count ?? metadata.resultCount ?? metadata.results_count ?? metadata.resultsCount ?? metadata.count ?? metadata.total_results ?? metadata.totalResults;
+  if (value === undefined || value === null || value === "") return null;
+  return n(value);
+}
+
+function resultCount(event: AnalyticsEvent) {
+  if (event.result_count !== undefined && event.result_count !== null && event.result_count !== "") return n(event.result_count);
+  return metadataResultCount(event.metadata);
+}
+
+function searchLabel(event: AnalyticsEvent) {
+  const metadata = event.metadata || {};
+  return text(event.query) || text(event.normalized_query) || text(metadata.query) || text(metadata.search) || text(metadata.search_query);
+}
+
+function isReservationEvent(event: AnalyticsEvent) {
+  const name = eventName(event);
+  return name.includes("reserve") || name.includes("reservation") || name.includes("booking");
+}
+
+function dailyTotals(rows: DailyAnalytics[]) {
+  return rows.reduce(
+    (acc, row) => {
+      acc.profileViews += n(row.profile_views);
+      acc.searchAppearances += n(row.search_appearances);
+      acc.reservationStarts += n(row.reservation_starts);
+      acc.reservationCompletions += n(row.reservation_completions);
+      acc.phoneClicks += n(row.phone_clicks);
+      acc.websiteClicks += n(row.website_clicks);
+      acc.searchClicks += n(row.search_clicks);
+      acc.shareClicks += n(row.share_clicks);
+      return acc;
+    },
+    { profileViews: 0, searchAppearances: 0, reservationStarts: 0, reservationCompletions: 0, phoneClicks: 0, websiteClicks: 0, searchClicks: 0, shareClicks: 0 },
+  );
+}
+
+function aggregateDailyByLocation(rows: DailyAnalytics[]) {
+  const map = new Map<string, any>();
+  for (const row of rows) {
+    const id = text(row.location_id);
+    if (!id) continue;
+    const current = map.get(id) || {
+      location_id: id,
+      profile_views_30d: 0,
+      search_appearances_30d: 0,
+      reservation_starts_30d: 0,
+      reservation_completions_30d: 0,
+      call_clicks_30d: 0,
+      website_clicks_30d: 0,
+      search_clicks_30d: 0,
+      saves_30d: 0,
+      conversion_rate_30d: 0,
+    };
+    current.profile_views_30d += n(row.profile_views);
+    current.search_appearances_30d += n(row.search_appearances);
+    current.reservation_starts_30d += n(row.reservation_starts);
+    current.reservation_completions_30d += n(row.reservation_completions);
+    current.call_clicks_30d += n(row.phone_clicks);
+    current.website_clicks_30d += n(row.website_clicks);
+    current.search_clicks_30d += n(row.search_clicks);
+    current.saves_30d += n(row.share_clicks);
+    current.conversion_rate_30d = current.profile_views_30d > 0 ? current.reservation_completions_30d / current.profile_views_30d : 0;
+    map.set(id, current);
+  }
+  return map;
+}
+
+function isProLocation(row: any) {
+  if (row?.is_pro === true) return true;
+  const plan = lower(row?.plan || row?.subscription_plan);
+  const status = lower(row?.plan_status || row?.subscription_status);
+  return plan.includes("pro") || status.includes("pro") || status.includes("active") || status.includes("paid");
+}
+
+function locationName(row: any) {
+  return row?.name || row?.location_name || row?.restaurant_name || row?.activity_name || "Untitled Location";
+}
+
+function opportunityScore(row: any) {
+  if (row?.opportunity_score !== undefined && row?.opportunity_score !== null) return n(row.opportunity_score);
+  const views = n(row.profile_views_30d);
+  const conversionRate = n(row.conversion_rate_30d);
+  const isPro = isProLocation(row);
+  const base = Math.min(views / 5, 70);
+  const lowConversionBoost = views >= 50 && conversionRate < 0.05 ? 20 : 0;
+  const unclaimedBoost = row?.is_claimed ? 0 : 10;
+  const proPenalty = isPro ? 35 : 0;
+  return Math.max(0, Math.round(base + lowConversionBoost + unclaimedBoost - proPenalty));
+}
+
 export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
   const unavailable: string[] = [];
-  const safeCount = async (label: string, table: string, filter?: (query: any) => any) => {
-    const result = await count(table, filter);
-    if (result.error) unavailable.push(label);
-    return result.error ? 0 : result.value;
-  };
+  const since = new Date(Date.now() - THIRTY_DAYS_MS).toISOString();
+  const sinceDate = since.slice(0, 10);
 
-  const [totalUsers, totalLocations, searchableLocations, claimedLocations, pendingClaims, openSupportTickets, logs, crm] = await Promise.all([
-    safeCount("users", "profiles"),
-    safeCount("locations", "locations"),
-    safeCount("searchable locations", "locations", (q) => q.eq("is_searchable", true)),
-    safeCount("claimed locations", "locations", (q) => q.eq("is_claimed", true)),
-    safeCount("pending claims", "business_claims", (q) => q.or("status.eq.pending,verification_status.eq.pending")),
-    safeCount("open support", "support_tickets", (q) => q.not("status", "in", "(closed,resolved)")),
-    supabaseAdmin.from("admin_system_logs").select("*").order("created_at", { ascending: false }).limit(10),
-    supabaseAdmin.from("admin_crm_locations_view").select("*").order("opportunity_score", { ascending: false }).limit(25),
+  const [profilesCount, userProfilesCount, newProfiles, newUserProfiles, totalLocations, pendingClaims, openSupportTickets] = await Promise.all([
+    safeCount("profiles", unavailable, "profiles"),
+    safeCount("user profiles", unavailable, "user_profiles"),
+    safeCount("new profiles", unavailable, "profiles", (q) => q.gte("created_at", since)),
+    safeCount("new user profiles", unavailable, "user_profiles", (q) => q.gte("created_at", since)),
+    safeCount("locations", unavailable, "locations"),
+    safeCount("pending claims", unavailable, "business_claims", (q) => q.or("status.eq.pending,verification_status.eq.pending")),
+    safeCount("open support", unavailable, "support_tickets", (q) => q.not("status", "in", "(closed,resolved)")),
   ]);
 
-  const analyticsEvents = await supabaseAdmin.from("analytics_events").select("event_name, metadata, created_at").gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()).limit(2000);
-  if (analyticsEvents.error) unavailable.push("analytics events");
+  const [events, legacySearchEvents, dailyRows, locations, reservationsRows, logs] = await Promise.all([
+    safeSelect("analytics events", unavailable, "analytics_events", "id,event_name,event_type,query,normalized_query,result_count,conversion_step,location_id,source_location_id,user_id,anonymous_id,session_id,metadata,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
+    safeSelect("legacy search events", unavailable, "search_events", "id,search_query,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
+    safeSelect("location daily analytics", unavailable, "location_daily_analytics", "location_id,analytics_date,profile_views,search_appearances,reservation_starts,reservation_completions,phone_clicks,website_clicks,search_clicks,share_clicks", (q) => q.gte("analytics_date", sinceDate).limit(10000)),
+    safeSelect("locations", unavailable, "locations", "*", (q) => q.limit(5000)),
+    safeSelect("location reservations", unavailable, "location_reservations", "id,created_at", (q) => q.gte("created_at", since).limit(10000)),
+    safeSelect("admin system logs", unavailable, "admin_system_logs", "*", (q) => q.order("created_at", { ascending: false }).limit(10)),
+  ]);
 
-  const events = analyticsEvents.error ? [] : analyticsEvents.data || [];
-  const totalSearches = events.filter((event: any) => String(event.event_name || "").includes("search")).length;
-  const noResultSearches = events.filter((event: any) => String(event.event_name || "").includes("no_result") || Number(event.metadata?.result_count || 1) === 0).length;
-  const phoneClicks = events.filter((event: any) => String(event.event_name || "").includes("phone") || String(event.event_name || "").includes("call")).length;
-  const websiteClicks = events.filter((event: any) => String(event.event_name || "").includes("website")).length;
-  const reservations = events.filter((event: any) => String(event.event_name || "").includes("reserve") || String(event.event_name || "").includes("reservation")).length;
-  const completedOutings = events.filter((event: any) => String(event.event_name || "").includes("outing_complete")).length;
+  const analyticsEvents = events as AnalyticsEvent[];
+  const dailyAnalyticsRows = dailyRows as DailyAnalytics[];
+  const daily = dailyTotals(dailyAnalyticsRows);
+  const dailyByLocation = aggregateDailyByLocation(dailyAnalyticsRows);
+
+  const activeIdentifiers = new Set<string>();
+  for (const event of analyticsEvents) {
+    const identifier = text(event.user_id) || text(event.anonymous_id) || text(event.session_id);
+    if (identifier) activeIdentifiers.add(identifier);
+  }
+
+  const analyticsSearchCount = analyticsEvents.filter(isSearchEvent).length;
+  const legacySearchCount = legacySearchEvents.length;
+  const totalSearches = Math.max(analyticsSearchCount, legacySearchCount);
+  const noResultSearches = analyticsEvents.filter((event) => isSearchEvent(event) && resultCount(event) === 0).length;
+  const analyticsReservations = analyticsEvents.filter(isReservationEvent).length;
+  const reservations = Math.max(analyticsReservations, reservationsRows.length, daily.reservationCompletions);
+  const phoneClicks = analyticsEvents.filter((event) => hasAny(eventName(event), ["phone", "call"])).length + daily.phoneClicks;
+  const websiteClicks = analyticsEvents.filter((event) => hasAny(eventName(event), ["website"])).length + daily.websiteClicks;
+  const completedOutings = analyticsEvents.filter((event) => hasAny(eventName(event), ["outing_complete", "outing completed", "completed_outing"])).length;
 
   const topSearchMap = new Map<string, number>();
-  for (const event of events) {
-    const label = String((event as any).metadata?.query || (event as any).metadata?.search || "").trim().toLowerCase();
+  for (const event of analyticsEvents) {
+    const label = searchLabel(event).toLowerCase();
+    if (label) topSearchMap.set(label, (topSearchMap.get(label) || 0) + 1);
+  }
+  for (const event of legacySearchEvents as any[]) {
+    const label = text(event.search_query).toLowerCase();
     if (label) topSearchMap.set(label, (topSearchMap.get(label) || 0) + 1);
   }
 
-  const crmRows = crm.error ? [] : crm.data || [];
-  if (crm.error) unavailable.push("CRM analytics view");
+  const locationRows = (locations as any[]).map((row) => {
+    const analytics = dailyByLocation.get(text(row.id)) || {};
+    const merged = {
+      ...row,
+      ...analytics,
+      id: row.id,
+      location_id: row.id,
+      name: locationName(row),
+      location_name: locationName(row),
+    };
+    return { ...merged, opportunity_score: opportunityScore(merged) };
+  });
+
+  const searchableLocations = locationRows.filter((row) => row.is_searchable === true).length;
+  const claimedLocations = locationRows.filter((row) => row.is_claimed === true || Boolean(row.claimed_by || row.owner_user_id || row.owner_email)).length;
+  const proLocations = locationRows.filter(isProLocation).length;
+  const dataQualityIssues = locationRows.filter((row) => row.is_searchable !== true || !text(row.description) || !text(row.phone)).length;
+  const openClaims = pendingClaims;
+  const openSupport = openSupportTickets;
 
   return {
     overview: {
-      totalUsers,
-      activeUsers: 0,
-      newUsers: 0,
-      totalLocations,
+      totalUsers: Math.max(profilesCount, userProfilesCount),
+      activeUsers: activeIdentifiers.size,
+      newUsers: Math.max(newProfiles, newUserProfiles),
+      totalLocations: totalLocations || locationRows.length,
       searchableLocations,
       claimedLocations,
-      unclaimedLocations: Math.max(totalLocations - claimedLocations, 0),
-      proLocations: crmRows.filter((row: any) => String(row.plan_status || "").toLowerCase().includes("pro")).length,
+      unclaimedLocations: Math.max((totalLocations || locationRows.length) - claimedLocations, 0),
+      proLocations,
       totalSearches,
       noResultSearches,
       reservations,
       phoneClicks,
       websiteClicks,
       completedOutings,
-      supportTicketsOpen: openSupportTickets,
+      supportTicketsOpen: openSupport,
       pendingClaims,
-      dataQualityIssues: crmRows.filter((row: any) => !row.is_searchable || !row.description || !row.phone).length,
+      dataQualityIssues,
     },
     search: {
-      topSearches: [...topSearchMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, value]) => ({ label, count: value })),
+      topSearches: [...topSearchMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([label, count]) => ({ label, count })),
       noResultSearches,
     },
     locations: {
-      top: [...crmRows].sort((a: any, b: any) => Number(b.profile_views_30d || 0) - Number(a.profile_views_30d || 0)).slice(0, 10),
-      upgradeOpportunities: crmRows.filter((row: any) => Number(row.opportunity_score || 0) >= 70).slice(0, 10),
-      highViewsLowConversions: crmRows.filter((row: any) => Number(row.profile_views_30d || 0) > 100 && Number(row.conversion_rate_30d || 0) < 0.05).slice(0, 10),
+      top: [...locationRows].sort((a, b) => n(b.profile_views_30d) - n(a.profile_views_30d)).slice(0, 10),
+      upgradeOpportunities: locationRows.filter((row) => opportunityScore(row) >= 70).sort((a, b) => opportunityScore(b) - opportunityScore(a)).slice(0, 10),
+      highViewsLowConversions: locationRows.filter((row) => n(row.profile_views_30d) > 100 && n(row.conversion_rate_30d) < 0.05).sort((a, b) => n(b.profile_views_30d) - n(a.profile_views_30d)).slice(0, 10),
     },
     operations: {
-      openClaims: pendingClaims,
-      openSupportTickets,
-      systemErrors: logs.error ? 0 : (logs.data || []).filter((log: any) => ["error", "critical"].includes(log.level)).length,
-      timeSensitiveActions: crmRows.filter((row: any) => row.follow_up_date).length,
+      openClaims,
+      openSupportTickets: openSupport,
+      systemErrors: (logs as any[]).filter((log) => ["error", "critical"].includes(lower(log.level))).length,
+      timeSensitiveActions: locationRows.filter((row) => Boolean(row.follow_up_date)).length,
     },
-    recentActivity: logs.error ? [] : logs.data || [],
-    unavailable,
+    recentActivity: logs,
+    unavailable: [...new Set(unavailable)],
   };
 }
