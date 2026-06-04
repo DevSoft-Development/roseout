@@ -11,6 +11,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const query = String(body.query || "").trim();
+    const queryFlag = req.nextUrl.searchParams.get("useFastPath");
+    const useFastPath = body.force_llm === true
+      ? false
+      : typeof body.useFastPath === "boolean"
+        ? body.useFastPath
+        : queryFlag === "false"
+          ? false
+          : true;
 
     if (!query) return safeError("query required", 400);
 
@@ -24,13 +32,15 @@ export async function POST(req: NextRequest) {
         betaAssignmentId: body.betaAssignmentId ?? null,
         betaTesterId: body.betaTesterId ?? null,
         usedCustomPrompt: !!body.usedCustomPrompt,
+        useFastPath,
       });
 
     const result = await runCreateSearchWithEdgeFallback(
       {
         prompt: query,
         debug: true,
-        force_llm: body.force_llm === true,
+        force_llm: body.force_llm === true || useFastPath === false,
+        useFastPath,
         limit: 12,
       },
       {
@@ -50,6 +60,10 @@ export async function POST(req: NextRequest) {
       cards: [...((result.restaurants as any[]) || []), ...((result.activities as any[]) || [])],
       source: (result as any).source || (isEdgeCreateSearchEnabled() ? "edge" : "legacy"),
       parser_source: debug?.parser_source,
+      intentParserSource: debug?.intentParserSource ?? debug?.parser_source,
+      fastPathMatched: Boolean(debug?.fastPathMatched ?? (debug?.parser_source === "fast_parser" || debug?.parser_source === "fast_path")),
+      fastPathReason: debug?.fastPathReason ?? null,
+      useFastPath,
       cache_hit: debug?.cache_hit,
       llm_used: debug?.llm_used,
       total_ms: perf.total_ms,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
+import { parseEnterpriseIntent, parseEnterpriseIntentFastPath } from "../lib/search/enterprise/intent-parser";
 
 const regressionQueries = [
   "steak dinner",
@@ -80,7 +81,7 @@ async function main() {
   assert.equal(steakDinner.needsActivity, false);
   assert.equal(steakDinner.wantsPairing, false);
   assert(restaurantSearchTerms(steakDinner).includes("steak"));
-  assert(restaurantSearchTerms(steakDinner).includes("dinner"));
+  assert(!restaurantSearchTerms(steakDinner).includes("dinner"));
   assert.deepEqual(activitySearchTerms(steakDinner), []);
 
   for (const query of regressionQueries) {
@@ -93,6 +94,22 @@ async function main() {
       `${connector} connector crashed parser`,
     );
   }
+
+  for (const query of ["steak dinner and hookah lounge after", "sushi dinner and karaoke after"] as const) {
+    const fastPathIntent = parseEnterpriseIntentFastPath(query);
+    assert(fastPathIntent, `${query} should match enterprise fast path`);
+    assert.equal(fastPathIntent.searchType, "mixed_outing");
+    assert.equal(fastPathIntent.needsRestaurant, true);
+    assert.equal(fastPathIntent.needsActivity, true);
+
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    assert.equal(parsed.intentParserSource, "fast_path", `${query} parser source`);
+    assert.equal(parsed.fastPathMatched, true, `${query} fast path flag`);
+    assert.equal(parsed.usedLlm, false, `${query} should skip LLM`);
+  }
+
+  assert.equal(parseEnterpriseIntentFastPath("tell me something romantic but not too expensive"), null);
+  assert.equal(parseEnterpriseIntentFastPath("things to do in queens"), null);
 
 
   const { runEnterpriseSearch } = await import("../lib/search/enterprise/index");
@@ -120,6 +137,29 @@ async function main() {
     assert.equal(intent.searchType, "mixed_outing");
     assert.equal(intent.needsRestaurant, true);
     assert.equal(intent.needsActivity, true);
+  }
+
+  {
+    const mock = createMockSupabase();
+    const result = await runEnterpriseSearch("steak dinner and hookah lounge after", { supabase: mock.client, betaDebug: true, useLLM: true });
+    assert.equal(result.debug?.intentParserSource, "fast_path");
+    assert.equal(result.debug?.fastPathMatched, true);
+    assert.equal((result.debug?.performance as any)?.llm_ms, 0);
+    assert.deepEqual(result.debug?.restaurantTerms, [
+      "steak",
+      "steakhouse",
+      "steak house",
+      "ribeye",
+      "porterhouse",
+      "filet",
+      "filet mignon",
+      "sirloin",
+      "tomahawk",
+      "prime rib",
+      "churrasco",
+      "brazilian steakhouse",
+    ]);
+    assert.deepEqual(result.debug?.activityTerms, ["hookah", "hookah lounge", "hookah bar", "shisha"]);
   }
 
   process.env.NEXT_PUBLIC_SUPABASE_URL = "not a valid supabase url";

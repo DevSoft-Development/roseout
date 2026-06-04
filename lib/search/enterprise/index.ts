@@ -132,6 +132,7 @@ type EnterpriseSearchOptions = {
   betaAssignmentId?: string | null;
   betaTesterId?: string | null;
   usedCustomPrompt?: boolean;
+  useFastPath?: boolean;
 };
 
 export async function runEnterpriseSearch(query: string, options?: EnterpriseSearchOptions): Promise<EnterpriseSearchResult> {
@@ -149,10 +150,24 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
   };
   let parsedIntent: SearchIntent | null = null;
   let usedFallback = false;
+  let usedLlm = false;
   try {
     const intentStart = Date.now();
-    const { intent, llmIntentRaw, llmError } = await parseEnterpriseIntent(query, { useLLM: options?.useLLM, body: options?.body });
-    if (options?.useLLM) perf.llm_ms = Date.now() - intentStart;
+    const {
+      intent,
+      llmIntentRaw,
+      llmError,
+      intentParserSource,
+      fastPathMatched,
+      fastPathReason,
+      usedLlm: parsedWithLlm,
+    } = await parseEnterpriseIntent(query, {
+      useLLM: options?.useLLM,
+      useFastPath: options?.useFastPath,
+      body: options?.body,
+    });
+    usedLlm = parsedWithLlm;
+    perf.llm_ms = usedLlm ? Date.now() - intentStart : intentParserSource === "fast_path" ? 0 : null;
     parsedIntent = intent;
     const debug=createRpcDebug(intent); const supabase=options?.supabase ?? supabaseAdmin; const displayLimit=options?.displayLimit ?? 12;
     let restaurantRaw: EnterpriseLocation[]=[]; let activityRaw: EnterpriseLocation[]=[];
@@ -217,8 +232,8 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     perf.total_ms = Date.now() - started;
     const locationArea = intent.geo.neighborhood ?? intent.geo.borough ?? intent.geo.city ?? intent.geo.county ?? intent.geo.raw ?? null;
     const speedStatus = getSearchSpeedStatus({ totalMs: perf.total_ms, success: true });
-    const performanceDebug = { ...perf, speed_status: speedStatus, result_count: matched_locations.length, restaurant_count: restaurants.length, activity_count: activities.length, pair_count: pairs.length, source: options?.source ?? "enterprise_search", route: options?.route ?? null, used_custom_prompt: Boolean(options?.usedCustomPrompt), beta_assignment_id: options?.betaAssignmentId ?? null, beta_tester_id: options?.betaTesterId ?? null };
-    const fullDebug={ search_system:"enterprise-search-v1", rawQuery:query, llmIntentRaw, normalizedIntent:intent, restaurantTerms:restaurantSearchTerms(intent), activityTerms:activitySearchTerms(intent), geo:intent.geo, ...debug, restaurantRejectedReasons, activityRejectedReasons, restaurantRejectedSummary, activityRejectedSummary, distanceScoringUsed:Boolean(intent.geo.latitude&&intent.geo.longitude), pairDistanceMiles:pairs.map(p=>p.pairDistanceMiles), pairingPreference:intent.pairingPreference, pairCandidatesEvaluated:pairingDebug.pairCandidatesEvaluated, pairsRejectedForDistance:pairingDebug.pairsRejectedForDistance, pairsRejectedForMissingCoordinates:pairingDebug.pairsRejectedForMissingCoordinates, rejectedPairs:pairingDebug.rejectedPairs, walkablePairsFound:pairingDebug.walkablePairsFound, maxPairDistanceMiles:intent.pairingPreference?.maxPairDistanceMiles ?? null, distanceMode:intent.pairingPreference?.distanceMode ?? "any", renderMode:render_mode, timingMs:perf.total_ms, performance: performanceDebug, restaurantRecoveryUsed: usedFallback && restaurantRaw.length > 0, activityRecoveryUsed: usedFallback && activityRaw.length > 0, llmError };
+    const performanceDebug = { ...perf, speed_status: speedStatus, result_count: matched_locations.length, restaurant_count: restaurants.length, activity_count: activities.length, pair_count: pairs.length, source: options?.source ?? "enterprise_search", route: options?.route ?? null, used_custom_prompt: Boolean(options?.usedCustomPrompt), intentParserSource, fastPathMatched, fastPathReason, beta_assignment_id: options?.betaAssignmentId ?? null, beta_tester_id: options?.betaTesterId ?? null };
+    const fullDebug={ search_system:"enterprise-search-v1", rawQuery:query, llmIntentRaw, intentParserSource, fastPathMatched, fastPathReason, normalizedIntent:intent, restaurantTerms:restaurantSearchTerms(intent), activityTerms:activitySearchTerms(intent), geo:intent.geo, ...debug, restaurantRejectedReasons, activityRejectedReasons, restaurantRejectedSummary, activityRejectedSummary, distanceScoringUsed:Boolean(intent.geo.latitude&&intent.geo.longitude), pairDistanceMiles:pairs.map(p=>p.pairDistanceMiles), pairingPreference:intent.pairingPreference, pairCandidatesEvaluated:pairingDebug.pairCandidatesEvaluated, pairsRejectedForDistance:pairingDebug.pairsRejectedForDistance, pairsRejectedForMissingCoordinates:pairingDebug.pairsRejectedForMissingCoordinates, rejectedPairs:pairingDebug.rejectedPairs, walkablePairsFound:pairingDebug.walkablePairsFound, maxPairDistanceMiles:intent.pairingPreference?.maxPairDistanceMiles ?? null, distanceMode:intent.pairingPreference?.distanceMode ?? "any", renderMode:render_mode, timingMs:perf.total_ms, performance: performanceDebug, restaurantRecoveryUsed: usedFallback && restaurantRaw.length > 0, activityRecoveryUsed: usedFallback && activityRaw.length > 0, llmError };
     if (options?.logPerformance) {
       void logSearchPerformance({
         userId: options.userId,
@@ -246,7 +261,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         restaurantCount: restaurants.length,
         activityCount: activities.length,
         pairCount: pairs.length,
-        usedLlm: Boolean(options.useLLM),
+        usedLlm,
         usedFallback,
         success: true,
         debug: options.betaDebug ? performanceDebug : null,
@@ -269,7 +284,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         startedAt,
         completedAt: new Date(),
         totalMs,
-        usedLlm: Boolean(options.useLLM),
+        usedLlm,
         success: false,
         errorMessage: error instanceof Error ? error.message : String(error),
       });

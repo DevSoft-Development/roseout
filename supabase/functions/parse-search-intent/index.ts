@@ -41,10 +41,11 @@ Deno.serve(async (req) => {
     }
     const fastIntent = fastParseSearchIntent(rawQuery, { area: body.area });
     let finalIntent = fastIntent;
-    let parserSource = "fast_parser";
+    let parserSource = "fast_path";
     let llmUsed = false;
     let llmMs = 0;
-    const forceLlm = body.force_llm === true || body.debug?.force_llm === true;
+    const useFastPath = body.useFastPath !== false;
+    const forceLlm = body.force_llm === true || body.debug?.force_llm === true || !useFastPath;
     const needsLlm = forceLlm || parserConfidence(fastIntent) < 0.75 || fastIntent.searchType === "unknown";
     if (needsLlm) {
       const controller = new AbortController();
@@ -63,10 +64,10 @@ Deno.serve(async (req) => {
         clearTimeout(timeout); llmMs = Date.now() - llmStarted;
       }
     } else {
-      await saveCachedIntent(supabase, rawQuery, finalIntent, "fast_parser");
+      await saveCachedIntent(supabase, rawQuery, finalIntent, "fast_path");
     }
-    await logEdgeFunctionRun(supabase, { function_name: "parse-search-intent", status: "success", user_id: user.id, input_summary: { rawQuery }, output_summary: { parserSource, llmUsed }, duration_ms: timer(), metadata: { llmMs } });
-    return ok({ success: true, rawQuery, normalizedIntent: finalIntent, parser_source: parserSource, cache_hit: false, llm_used: llmUsed, timingMs: timer(), debug: body.debug ? { ...cached, llm_ms: llmMs } : undefined });
+    await logEdgeFunctionRun(supabase, { function_name: "parse-search-intent", status: "success", user_id: user.id, input_summary: { rawQuery }, output_summary: { parserSource, llmUsed }, duration_ms: timer(), metadata: { llmMs, intentParserSource: parserSource, fastPathMatched: parserSource === "fast_path", fastPathReason: parserSource === "fast_path" ? "edge_fast_parser_confidence_threshold" : (useFastPath ? "llm_required" : "fast_path_disabled") } });
+    return ok({ success: true, rawQuery, normalizedIntent: finalIntent, parser_source: parserSource, cache_hit: false, llm_used: llmUsed, timingMs: timer(), debug: body.debug ? { ...cached, llm_ms: llmMs, intentParserSource: parserSource, fastPathMatched: parserSource === "fast_path", fastPathReason: parserSource === "fast_path" ? "edge_fast_parser_confidence_threshold" : (useFastPath ? "llm_required" : "fast_path_disabled") } : undefined });
   } catch (error) {
     if (supabase) await logEdgeFunctionRun(supabase, { function_name: "parse-search-intent", status: "error", error_message: safeError(error), duration_ms: timer() });
     return serverError("parse-search-intent failed", safeError(error));
