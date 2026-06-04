@@ -27,6 +27,8 @@ export async function POST(req: Request) {
       can_do_site_visits: Boolean(body.canDoSiteVisits),
       can_do_social_outreach: Boolean(body.canDoSocialOutreach),
       can_work_support_tickets: Boolean(body.canWorkSupportTickets),
+      can_send_claim_codes: Boolean(body.canSendClaimCodes),
+      can_send_owner_password_reset: Boolean(body.canSendOwnerPasswordReset),
       can_use_demo_mode: body.canUseDemoMode !== false,
       allowed_work_types: allowedWorkTypes,
       notes: body.notes || null,

@@ -81,6 +81,8 @@ export async function ensureTeamProfileForCurrentUser() {
     can_do_site_visits: ["superadmin", "ambassador"].includes(teamType),
     can_do_social_outreach: ["superadmin", "ambassador", "sales_team"].includes(teamType),
     can_work_support_tickets: ["superadmin", "experience_team", "support_team", "manager"].includes(teamType),
+    can_send_claim_codes: ["superadmin", "ambassador", "experience_team", "support_team", "manager"].includes(teamType),
+    can_send_owner_password_reset: ["superadmin", "experience_team", "support_team", "manager"].includes(teamType),
     can_use_demo_mode: true,
     allowed_work_types: [],
   };
