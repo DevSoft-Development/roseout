@@ -15,6 +15,7 @@ import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
+import { cleanDistanceLabel, isSafeWalkingLabel } from "@/lib/search/enterprise/distance";
 
 type RestaurantCard = LocationScoreFields &
   LocationVisibilityFields & {
@@ -2117,6 +2118,7 @@ function ResultCard({
     reviewSnippet,
     type,
   });
+  const cleanedDistanceLabel = cleanDistanceLabel(distanceLabel);
   const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
 
@@ -2157,7 +2159,7 @@ function ResultCard({
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 sm:bottom-3 sm:right-3 sm:gap-1.5">
-          {!distanceLabel && distance !== null && distance !== undefined ? (
+          {!cleanedDistanceLabel && distance !== null && distance !== undefined ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
               {distance} mi
             </span>
@@ -2196,19 +2198,20 @@ function ResultCard({
             </div>
           )}
 
-          {distanceLabel ? (
+          {cleanedDistanceLabel ? (
             distanceHref ? (
               <a
                 href={distanceHref}
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label={`Open walking directions for ${title}`}
                 className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/25 sm:text-[11px]"
               >
-                {distanceLabel} • Google walking route
+                {cleanedDistanceLabel}
               </a>
             ) : (
               <div className="mt-2 inline-flex w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[10px] font-black tracking-[0.01em] text-red-50 shadow-lg shadow-red-950/20 sm:text-[11px]">
-                {distanceLabel}
+                {cleanedDistanceLabel}
               </div>
             )
           ) : null}
@@ -2637,7 +2640,7 @@ function formatPairDistanceMiles(distanceMiles: number) {
 function normalizeRouteMinutes(value: unknown) {
   const minutes = Number(value);
   if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) return null;
-  return minutes;
+  return Math.round(minutes);
 }
 
 function getRawWalkingMinutes(location: RestaurantCard | ActivityCard | null) {
@@ -2655,9 +2658,6 @@ function getSafeWalkingMinutes(location: RestaurantCard | ActivityCard | null) {
   return normalizeRouteMinutes(getRawWalkingMinutes(location));
 }
 
-function isSafeWalkingLabel(label: string | undefined) {
-  return Boolean(label && /\bmin walk\b/i.test(label));
-}
 
 function queryRequestsWalkingDistance(input: string) {
   return /\b(walk|walking|walkable|walks)\b/i.test(input);
@@ -2686,10 +2686,10 @@ function buildDistanceFromRestaurantLabel(
 
     return safeWalkingMinutes != null
       ? `${safeWalkingMinutes} min walk from ${getLocationName(restaurant)}`
-      : `${formatPairDistanceMiles(distance)} miles from ${getLocationName(restaurant)}`;
+      : `${formatPairDistanceMiles(distance)} mi from ${getLocationName(restaurant)}`;
   }
 
-  return `${formatPairDistanceMiles(distance)} miles from ${getLocationName(restaurant)}`;
+  return `${formatPairDistanceMiles(distance)} mi from ${getLocationName(restaurant)}`;
 }
 
 function buildDistanceText(
@@ -2716,7 +2716,7 @@ function buildDistanceText(
         }
       }
 
-      return `${formatPairDistanceMiles(distance)} miles between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
+      return `${formatPairDistanceMiles(distance)} mi between ${getLocationName(restaurant)} and ${getLocationName(activity)}`;
     }
 
     if (restaurant.city && activity.city && restaurant.city === activity.city) {

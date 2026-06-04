@@ -1027,7 +1027,7 @@ function walkingMinutesFromMiles(distanceMiles: number | null) {
 function normalizeRouteMinutes(value: unknown) {
   const minutes = Number(value);
   if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) return null;
-  return minutes;
+  return Math.round(minutes);
 }
 
 function getRawWalkingMinutes(location: PlanLocation | null) {
@@ -1074,7 +1074,7 @@ function buildFlowText(
       }
     }
 
-    return `${distance} miles between ${restaurantName || "dinner"} and ${
+    return `${distance} mi between ${restaurantName || "dinner"} and ${
       activityName || "activity"
     }`;
   }

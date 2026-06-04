@@ -113,7 +113,19 @@ function replyFor(restaurants: EnterpriseLocation[], activities: EnterpriseLocat
     const constrained = hasPairConstraint(intent);
     const walkableWord = intent.pairingPreference?.distanceMode === "same_area" ? "same-area" : "walkable";
     if (pairs.length) return constrained ? `I found ${walkableWord} dinner + activity pairings near ${areaLabel(intent)}.` : "Found restaurant and activity options that match your outing.";
-    if (restaurants.length&&activities.length) return constrained ? "I found matching restaurants and activities, but none close enough to confidently call walking distance." : "Found restaurant and activity options, but I could not create a confident pair yet.";
+    if (restaurants.length&&activities.length) {
+      const maxWalkingMinutes = intent.pairingPreference?.maxPairWalkingMinutes;
+      if (
+        constrained &&
+        Number.isFinite(Number(maxWalkingMinutes)) &&
+        (intent.pairingPreference?.distanceMode === "walking" ||
+          intent.pairingPreference?.distanceMode === "short_walk" ||
+          intent.pairingPreference?.requireWalkablePair === true)
+      ) {
+        return `No valid pairs were found within a ${Number(maxWalkingMinutes)}-minute walk.`;
+      }
+      return constrained ? "I found matching restaurants and activities, but none close enough to confidently call walking distance." : "Found restaurant and activity options, but I could not create a confident pair yet.";
+    }
     if (restaurants.length) return constrained ? "I found restaurants, but no matching walkable activity nearby." : `I found restaurant options near ${areaLabel(intent)}, but I couldn’t find matching activities nearby yet.`;
     if (activities.length) return constrained ? "I found activities, but no matching walkable restaurant nearby." : `I found activity options near ${areaLabel(intent)}, but I couldn’t find matching restaurants nearby yet.`;
   }

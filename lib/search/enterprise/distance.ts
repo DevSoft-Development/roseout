@@ -12,17 +12,78 @@ export function getRecordDistanceMiles(a: EnterpriseLocation, b: EnterpriseLocat
 export function getPairDistanceMiles(restaurant: EnterpriseLocation, activity: EnterpriseLocation) { const d=getRecordDistanceMiles(restaurant,activity); return d==null?null:Number(d.toFixed(2)); }
 export function estimateWalkingMinutes(distanceMiles: number) { return Math.round((distanceMiles / 3.0) * 60); }
 
-export function normalizeRouteMinutes(value: unknown): number | null {
+export const MAX_SAFE_WALKING_ROUTE_MINUTES = 180;
+export const WALKING_ROUTE_LABEL_DISPLAY_MAX_MINUTES = 45;
+
+export function normalizeWalkingMinutes(value: unknown): number | null {
   const minutes = Number(value);
   if (!Number.isFinite(minutes)) return null;
   if (minutes <= 0) return null;
-  if (minutes > 180) return null;
+  if (minutes > MAX_SAFE_WALKING_ROUTE_MINUTES) return null;
+  return Math.round(minutes);
+}
+
+export function normalizeRouteMinutes(value: unknown): number | null {
+  return normalizeWalkingMinutes(value);
+}
+
+export function getWalkingMinutesFromLabel(label: string | undefined | null): number | null {
+  if (!label) return null;
+
+  const match = label.match(/\b(\d+(?:\.\d+)?)\s*min(?:ute)?s?\s+walk\b/i);
+  if (!match) return null;
+
+  const minutes = Number(match[1]);
+  if (!Number.isFinite(minutes)) return null;
+
   return minutes;
+}
+
+export function isSafeWalkingLabel(label: string | undefined | null): boolean {
+  const minutes = getWalkingMinutesFromLabel(label);
+  return normalizeWalkingMinutes(minutes) != null;
+}
+
+export function sanitizeWalkingDistanceLabel(label: string | undefined | null): string | undefined {
+  if (!label) return undefined;
+
+  const minutes = getWalkingMinutesFromLabel(label);
+
+  if (minutes != null) {
+    const safeMinutes = normalizeWalkingMinutes(minutes);
+
+    if (safeMinutes == null) {
+      return undefined;
+    }
+
+    return label.replace(/\b\d+(?:\.\d+)?\s*min(?:ute)?s?\s+walk\b/i, `${safeMinutes} min walk`);
+  }
+
+  return label;
+}
+
+export function cleanDistanceLabel(label: string | undefined | null): string | undefined {
+  if (!label) return undefined;
+
+  const cleaned = label
+    .replace(/\s*•\s*Google walking route\s*/gi, "")
+    .replace(/\s*Google walking route\s*/gi, "")
+    .replace(/\s*•\s*walking route\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const walkingMinutes = getWalkingMinutesFromLabel(cleaned);
+
+  if (walkingMinutes != null && normalizeWalkingMinutes(walkingMinutes) == null) {
+    return undefined;
+  }
+
+  return cleaned || undefined;
 }
 
 export function isExtremeWalkingRoute(value: unknown): boolean {
   const minutes = Number(value);
-  return Number.isFinite(minutes) && minutes > 180;
+  return Number.isFinite(minutes) && minutes > MAX_SAFE_WALKING_ROUTE_MINUTES;
 }
 
 export function getRawWalkingMinutes(pair: any): number | null {
@@ -99,9 +160,9 @@ export function buildSafePairDistanceLabel({
 
   if (
     safeWalkingMinutes != null &&
-    (mode === "walking" || mode === "short_walk" || safeWalkingMinutes <= 45)
+    (mode === "walking" || mode === "short_walk" || safeWalkingMinutes <= WALKING_ROUTE_LABEL_DISPLAY_MAX_MINUTES)
   ) {
-    return `${safeWalkingMinutes} min walk from ${restaurantName} • Google walking route`;
+    return cleanDistanceLabel(`${safeWalkingMinutes} min walk from ${restaurantName}`) ?? "Distance unavailable";
   }
 
   if (Number.isFinite(Number(pairDistanceMiles))) {
