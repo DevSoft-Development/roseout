@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { distanceMeters, ensureTeamProfileForCurrentUser, getActiveSession, siteVisitVerification } from "@/lib/team-tools";
+import { distanceMeters, ensureTeamProfileForCurrentUser, getActiveSession, isWorkspaceLocationPermitted, siteVisitVerification } from "@/lib/team-tools";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,9 @@ export async function POST(req: Request) {
     const zipCode = String(form.get("zipCode") || "").trim();
     const businessLat = Number(form.get("businessLatitude") || NaN);
     const businessLng = Number(form.get("businessLongitude") || NaN);
+    if (locationId && !(await isWorkspaceLocationPermitted(profile, locationId))) {
+      return Response.json({ error: "This location is not assigned or permitted for your workspace profile." }, { status: 403 });
+    }
     if (!locationId) {
       if (!locationName) return Response.json({ error: "Select an existing location or enter a business name." }, { status: 400 });
       const { data: created, error } = await supabaseAdmin.from("locations").insert({ name: locationName, location_name: locationName, location_type: String(form.get("locationType") || "restaurant"), category: String(form.get("category") || ""), address, city, state, zip_code: zipCode, phone: String(form.get("phone") || ""), website: String(form.get("website") || ""), instagram: String(form.get("instagram") || ""), facebook: String(form.get("facebook") || ""), tiktok: String(form.get("tiktok") || ""), latitude: Number.isFinite(businessLat) ? businessLat : null, longitude: Number.isFinite(businessLng) ? businessLng : null, geocoded_address: [address, city, state, zipCode].filter(Boolean).join(", ") || null, created_source: "ambassador_field_visit", created_by_team_member_id: profile.id, created_by_ambassador_id: profile.id, created_during_work_session_id: active.id, admin_review_status: "pending_review", public_visibility_tier: "internal", quality_status: "needs_review", is_searchable: false, is_demo: false, training_only: false }).select("id").single();

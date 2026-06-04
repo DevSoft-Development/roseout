@@ -17,6 +17,11 @@ export async function POST(req: Request) {
     const ticketId = String(body.ticketId || "");
     const ticket = await getSupportTicket(ticketId);
     if (!ticket) return Response.json({ error: "Existing support ticket not found." }, { status: 404 });
+    const assignedEmail = String(ticket.assigned_admin_email || "").trim().toLowerCase();
+    const userEmail = String(user.email || "").trim().toLowerCase();
+    if (["experience_team", "support_team"].includes(String(profile.team_type)) && (!assignedEmail || assignedEmail !== userEmail)) {
+      return Response.json({ error: "This support ticket is not assigned to your workspace profile." }, { status: 403 });
+    }
     const action = String(body.action || "start");
     if (action === "start") {
       const { data, error } = await supabaseAdmin.from("team_work_activities").insert({ team_member_id: profile.id, user_id: user.id, work_session_id: active.id, activity_type: "support_ticket", source_type: "support_ticket", source_id: ticket.id, started_at: new Date().toISOString(), status: "active", ticket_number: ticket.ticket_number, ticket_status_before: ticket.status }).select("*").single();
