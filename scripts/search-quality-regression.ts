@@ -162,6 +162,35 @@ for (const query of [
   assert.equal(intent.primaryDomain, "mixed", `${query} primary domain`);
 }
 
+
+function assertRooftopDrinkActivityQuery(query: string, expectedFood: string) {
+  const intent = normalizeIntent(query);
+  assert.equal(intent.searchType, "mixed_outing", `${query} search type`);
+  assert.equal(intent.needsRestaurant, true, `${query} should need restaurants`);
+  assert.equal(intent.needsActivity, true, `${query} should need activities`);
+  assert(
+    intent.restaurantIntent.foodTerms.includes(expectedFood) || intent.restaurantIntent.mealTerms.includes(expectedFood),
+    `${query} should keep ${expectedFood} in the restaurant lane`,
+  );
+  assert(!intent.restaurantIntent.featureTerms.includes("rooftop"), `${query} should not keep rooftop in restaurant feature terms`);
+  assert(
+    ["rooftop", "rooftop bar", "rooftop lounge", "rooftop drinks"].some((term) => intent.activityIntent.activityTerms.includes(term)),
+    `${query} should route rooftop to activity terms`,
+  );
+  assert(
+    intent.activityIntent.activityTerms.includes("drinks") || intent.activityIntent.activityTerms.includes("cocktails"),
+    `${query} should route drinks/cocktails to activity terms`,
+  );
+}
+
+assertRooftopDrinkActivityQuery("steak dinner and rooftop drinks after", "steak");
+assertRooftopDrinkActivityQuery("birthday dinner and rooftop cocktails after", "birthday dinner");
+
+const rooftopDinnerIntent = normalizeIntent("rooftop dinner");
+assert.equal(rooftopDinnerIntent.needsRestaurant, true, "rooftop dinner should need restaurants");
+assert(rooftopDinnerIntent.restaurantIntent.featureTerms.includes("rooftop"), "rooftop dinner should keep rooftop as a restaurant feature");
+assert.equal(rooftopDinnerIntent.needsActivity, false, "rooftop dinner should not force activity-only or pairing intent");
+
 const groupDinnerAndDrinks = normalizeIntent("group dinner and drinks");
 for (const forbidden of ["theater", "dancing", "nightlife", "club", "dance club", "live dj"]) {
   assert(!activitySearchTerms(groupDinnerAndDrinks).includes(forbidden), `group dinner and drinks must not include ${forbidden} as an activity term`);

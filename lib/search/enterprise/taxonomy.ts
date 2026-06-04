@@ -25,6 +25,23 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   "live music": ["live music", "concert", "jazz club", "open mic"],
   museum: ["museum", "exhibit", "exhibition", "cultural center"],
   lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"],
+  rooftop: [
+    "rooftop",
+    "roof top",
+    "rooftop bar",
+    "rooftop lounge",
+    "rooftop drinks",
+    "rooftop cocktails",
+    "terrace bar",
+    "terrace lounge",
+    "skyline bar",
+    "skyline lounge",
+    "city views",
+    "view",
+    "views",
+    "roof deck",
+    "outdoor bar",
+  ],
   drinks: [
     "drinks",
     "cocktails",
@@ -100,6 +117,23 @@ export function hasExplicitHookahIntent(query: string): boolean {
 
 const HOOKAH_FOCUSED_ACTIVITY_TERMS = ["hookah", "hookah lounge", "shisha", "hookah bar"];
 const HOOKAH_PRUNED_BROAD_ACTIVITY_TERMS = ["nightlife", "bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy", "drinks", "cocktails"];
+const ROOFTOP_ACTIVITY_TERMS = new Set([
+  "rooftop",
+  "roof top",
+  "rooftop bar",
+  "rooftop lounge",
+  "rooftop drinks",
+  "rooftop cocktails",
+  "terrace bar",
+  "terrace lounge",
+  "skyline bar",
+  "skyline lounge",
+  "city views",
+  "view",
+  "views",
+  "roof deck",
+  "outdoor bar",
+]);
 
 function queryOutsideHookahPhrases(query: string) {
   return query
@@ -146,8 +180,18 @@ export function detectActivityTerms(query: string) {
     "laid-back",
     "casual activity",
   ]);
+  const hasRooftop = includesPhrase(q, "rooftop") || includesPhrase(q, "roof top");
+  const hasDrinkOrNightlife =
+    includesPhrase(q, "drinks") ||
+    includesPhrase(q, "cocktails") ||
+    includesPhrase(q, "bar") ||
+    includesPhrase(q, "lounge") ||
+    includesPhrase(q, "nightlife");
+  const rooftopActivityContext = hasRooftop && hasDrinkOrNightlife;
   const terms = detectFromMap(query, ACTIVITY_SYNONYMS).filter(
-    (term) => hasExplicitRelaxedActivity || !relaxedActivityTerms.has(term),
+    (term) =>
+      (hasExplicitRelaxedActivity || !relaxedActivityTerms.has(term)) &&
+      (rooftopActivityContext || !ROOFTOP_ACTIVITY_TERMS.has(term)),
   );
 
   if (includesPhrase(q, "things to do") || includesPhrase(q, "fun things")) {
@@ -178,6 +222,20 @@ export function detectActivityTerms(query: string) {
 
   if (includesPhrase(q, "drinks") || includesPhrase(q, "cocktails")) {
     terms.push("drinks", "cocktails", "lounge", "bar", "wine bar", "speakeasy");
+  }
+
+  if (rooftopActivityContext) {
+    terms.push(
+      "rooftop",
+      "rooftop bar",
+      "rooftop lounge",
+      "rooftop drinks",
+      "rooftop cocktails",
+      "drinks",
+      "cocktails",
+      "bar",
+      "lounge",
+    );
   }
 
   if (includesPhrase(q, "bowl") && /(lane|game|entertainment|alley|bowling|activity)/i.test(q)) {
