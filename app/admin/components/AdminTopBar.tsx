@@ -191,19 +191,24 @@ export default function AdminTopBar({
       },
       {
         label: "Team Tools",
-        activePrefixes: ["/admin/dashboard/team", "/my-workspace"],
+        activePrefixes: ["/admin/dashboard/team", "/admin/dashboard/my-workspace"],
         widthClass: "w-[460px] max-w-[calc(100vw-24px)]",
         gridClass: "md:grid-cols-2",
         sections: [
           {
             label: "Work",
             items: [
+              { label: "My Workspace", href: "/admin/dashboard/my-workspace", visible: canView },
               { label: "Team Tools Overview", href: "/admin/dashboard/team", visible: canView, exact: true },
               { label: "Team Members", href: "/admin/dashboard/team/members", visible: canManagePlatform },
               { label: "Work Sessions", href: "/admin/dashboard/team/work-sessions", visible: canView },
+              { label: "Manager Review", href: "/admin/dashboard/team/review", visible: canView },
               { label: "Site Visit Check-Ins", href: "/admin/dashboard/team/site-visits", visible: canView },
               { label: "Social Outreach", href: "/admin/dashboard/team/social-outreach", visible: canView },
               { label: "Support Work", href: "/admin/dashboard/team/support-work", visible: canView },
+              { label: "Location Change Requests", href: "/admin/dashboard/team/location-change-requests", visible: canView },
+              { label: "Claim Code Audit", href: "/admin/dashboard/team/claim-code-audit", visible: canView },
+              { label: "Password Reset Audit", href: "/admin/dashboard/team/password-reset-audit", visible: canView },
             ],
           },
           {
@@ -213,7 +218,7 @@ export default function AdminTopBar({
               { label: "Payroll Export", href: "/admin/dashboard/team/payroll", visible: canView },
               { label: "Performance", href: "/admin/dashboard/team/performance", visible: canView },
               { label: "Proof Review", href: "/admin/dashboard/team/proof-review", visible: canView },
-              { label: "My Workspace", href: "/my-workspace", visible: canView },
+              { label: "Settings", href: "/admin/dashboard/team/settings", visible: canManagePlatform },
             ],
           },
         ],
