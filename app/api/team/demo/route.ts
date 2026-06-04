@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     if (!profile.can_use_demo_mode) return Response.json({ error: "Demo mode is not enabled for your team profile." }, { status: 403 });
     if (body.action === "reset") {
       await supabaseAdmin.rpc("reset_demo_session", { p_demo_session_id: body.sessionId });
-      revalidatePath("/team/demo");
+      revalidatePath("/my-workspace/demo");
       return Response.json({ success: true });
     }
     const { data, error } = await supabaseAdmin.rpc("create_demo_session_from_template", { p_master_demo_location_id: body.masterDemoLocationId, p_session_type: body.sessionType || "personal" });
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       if (fallbackError) throw error;
       return Response.json({ session: fallback });
     }
-    revalidatePath("/team/demo");
+    revalidatePath("/my-workspace/demo");
     return Response.json({ result: data?.[0] || data });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not update demo session." }, { status: 400 });

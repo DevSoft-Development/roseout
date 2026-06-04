@@ -31,7 +31,7 @@ export default function TeamWorkSessionClient({ profile, allowedWorkTypes, activ
   return <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
     <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5 shadow-2xl sm:p-7">
       <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">My Work Session</p>
-      <h1 className="mt-2 text-3xl font-black">Clock in / clock out</h1>
+      <h1 className="mt-2 text-3xl font-black">Clock In / Clock Out</h1>
       <p className="mt-3 text-sm font-bold leading-6 text-white/55">Clock-in/out is time tracking only. The browser will not ask for GPS, latitude/longitude, or a nearby address here.</p>
       <div className="mt-5 rounded-3xl border border-white/10 bg-black/35 p-4">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">Team profile</p>

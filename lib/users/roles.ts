@@ -5,6 +5,7 @@ export const USER_ROLES = [
   "editor",
   "reviewer",
   "admin",
+  "manager",
   "superadmin",
   "ambassador",
   "experience",
@@ -18,6 +19,7 @@ export type UserRole = (typeof USER_ROLES)[number];
 export type AdminRole =
   | "superadmin"
   | "admin"
+  | "manager"
   | "editor"
   | "ambassador"
   | "experience"
@@ -28,6 +30,7 @@ export type AdminRole =
 export const ADMIN_ROLES = [
   "superadmin",
   "admin",
+  "manager",
   "editor",
   "ambassador",
   "experience",
@@ -41,6 +44,7 @@ export const USER_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "owner", label: "Owner" },
   { value: "superadmin", label: "Superadmin" },
   { value: "admin", label: "Admin" },
+  { value: "manager", label: "Manager" },
   { value: "editor", label: "Editor" },
   { value: "ambassador", label: "Ambassador Team" },
   { value: "experience", label: "Experience Team" },
@@ -54,6 +58,7 @@ export const USER_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 export const ADMIN_ROLE_OPTIONS: { value: AdminRole; label: string }[] = [
   { value: "superadmin", label: "Superadmin" },
   { value: "admin", label: "Admin" },
+  { value: "manager", label: "Manager" },
   { value: "editor", label: "Editor" },
   { value: "ambassador", label: "Ambassador Team" },
   { value: "experience", label: "Experience Team" },
@@ -108,6 +113,8 @@ export function formatRoleLabel(role: string | null | undefined): string {
       return "Superadmin";
     case "admin":
       return "Admin";
+    case "manager":
+      return "Manager";
     case "editor":
       return "Editor";
     case "ambassador":

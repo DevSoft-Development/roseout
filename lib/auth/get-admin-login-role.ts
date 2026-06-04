@@ -3,13 +3,13 @@ type AuthUserLike = {
   email?: string | null;
 };
 
-export type AdminLoginRole = "admin" | "superadmin" | null;
+export type AdminLoginRole = "admin" | "superadmin" | "manager" | null;
 
 function normalizeAdminLoginRole(role: unknown): AdminLoginRole {
   const normalized =
     role === "superuser" || role === "super_admin" ? "superadmin" : role;
 
-  if (normalized === "admin" || normalized === "superadmin") {
+  if (normalized === "admin" || normalized === "superadmin" || normalized === "manager") {
     return normalized;
   }
 

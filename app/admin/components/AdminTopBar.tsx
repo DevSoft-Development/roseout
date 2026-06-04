@@ -198,7 +198,7 @@ export default function AdminTopBar({
           {
             label: "Work",
             items: [
-              { label: "Overview", href: "/admin/dashboard/team", visible: canView, exact: true },
+              { label: "Team Tools Overview", href: "/admin/dashboard/team", visible: canView, exact: true },
               { label: "Team Members", href: "/admin/dashboard/team/members", visible: canManagePlatform },
               { label: "Work Sessions", href: "/admin/dashboard/team/work-sessions", visible: canView },
               { label: "Site Visit Check-Ins", href: "/admin/dashboard/team/site-visits", visible: canView },
@@ -209,10 +209,11 @@ export default function AdminTopBar({
           {
             label: "Review + Payroll",
             items: [
-              { label: "Demo / Training Mode", href: "/admin/dashboard/team/demo", visible: canView },
+              { label: "Demo / Training", href: "/admin/dashboard/team/demo", visible: canView },
               { label: "Payroll Export", href: "/admin/dashboard/team/payroll", visible: canView },
               { label: "Performance", href: "/admin/dashboard/team/performance", visible: canView },
               { label: "Proof Review", href: "/admin/dashboard/team/proof-review", visible: canView },
+              { label: "My Workspace", href: "/my-workspace", visible: canView },
             ],
           },
         ],
