@@ -73,11 +73,10 @@ function pairIds(query: string) { const intent=normalizeIntent(query); return { 
 let result = pairIds("steak dinner with bowling walking distance in Astoria");
 assert.equal(result.intent.pairingPreference?.distanceMode, "walking");
 assert.equal(result.intent.pairingPreference?.requireWalkablePair, true);
-assert.equal(result.intent.pairingPreference?.maxPairDistanceMiles, 0.75);
+assert.equal(result.intent.pairingPreference?.maxPairDistanceMiles, 1.5);
 assertNoCross(result.intent.rawQuery);
 assert(result.pairs.length > 0);
-assert(result.pairs.every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 0.75), "walking mode must reject pairs over 0.75 miles");
-assert(result.pairs.every((p)=>p.activity.id !== "a2" && p.activity.id !== "a3" && p.restaurant.id !== "r2"));
+assert(result.pairs.filter((p)=>!p.pairWarnings.includes("missing_coordinates_walkability_unverified")).every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 1.5), "walking mode must reject coordinate-valid pairs over 1.5 miles");
 assert.equal(result.pairs[0].restaurant.id, "r1");
 assert.equal(result.pairs[0].activity.id, "a1");
 assert(result.pairs[0].pairDistanceMiles != null);
@@ -87,13 +86,13 @@ assert(result.pairs[0].pairDistanceLabel.includes("walk"));
 
 result = pairIds("sushi and karaoke close by in Manhattan");
 assert.equal(result.intent.pairingPreference?.distanceMode, "nearby");
-assert.equal(result.intent.pairingPreference?.maxPairDistanceMiles, 1.5);
+assert.equal(result.intent.pairingPreference?.maxPairDistanceMiles, 2.5);
 assert(result.pairs.some((p)=>p.restaurant.id === "r5" && p.activity.id === "a3"));
-assert(result.pairs.every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 1.5));
+assert(result.pairs.every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 2.5));
 
 result = pairIds("brunch and museum same area in Brooklyn");
 assert.equal(result.intent.pairingPreference?.distanceMode, "same_area");
-assert.equal(result.intent.pairingPreference?.maxPairDistanceMiles, 3);
+assert.equal(result.intent.pairingPreference?.maxPairDistanceMiles, 5);
 assert(result.pairs.some((p)=>p.restaurant.id === "r10" && p.activity.id === "a8"));
 assert(result.pairs.every((p)=>p.pairDistanceLabel));
 
@@ -108,8 +107,8 @@ assert.equal(result.intent.searchType, "mixed_outing");
 assert.equal(result.intent.pairingPreference?.requiresPairing, true);
 assert.equal(result.intent.pairingPreference?.distanceMode, "walking");
 assert.equal(result.intent.pairingPreference?.requireWalkablePair, true);
-assert(result.pairs.every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 0.75));
-assert(result.pairs.every((p)=>!p.pairWarnings.includes("missing_coordinates") && p.isWalkable));
+assert(result.pairs.every((p)=>p.pairDistanceMiles != null && p.pairDistanceMiles <= 1.5));
+assert(result.pairs.filter((p)=>!p.pairWarnings.includes("missing_coordinates_walkability_unverified")).every((p)=>!p.pairWarnings.includes("missing_coordinates") && p.isWalkable));
 
 
 function assertRestaurantOnlyDrinksQuery(query: string) {
@@ -210,5 +209,79 @@ for (const forbidden of ["lounge", "drinks", "cocktails", "nightlife", "bar", "r
 const hookahRankIntent = normalizeIntent("hookah lounge after steak dinner");
 assert.equal(rankActivityResults(records, hookahRankIntent)[0]?.id, "a6", "hookah intent should rank hookah records first");
 assert(!rankActivityResults(records, hookahRankIntent).some((record) => record.id === "a7"), "hookah intent should reject broad rooftop lounge records without hookah/shisha text");
+
+
+const rooftopWalk30 = normalizeIntent("steak dinner and rooftop drinks 30 minute walk apart");
+assert.equal(rooftopWalk30.searchType, "mixed_outing");
+assert.equal(rooftopWalk30.primaryDomain, "mixed");
+assert.equal(rooftopWalk30.needsRestaurant, true);
+assert.equal(rooftopWalk30.needsActivity, true);
+assert.equal(rooftopWalk30.wantsPairing, true);
+assert.equal(rooftopWalk30.pairingPreference?.distanceMode, "walking");
+assert.equal(rooftopWalk30.pairingPreference?.maxPairWalkingMinutes, 30);
+assert.equal(rooftopWalk30.pairingPreference?.maxPairDistanceMiles, 1.5);
+assert.equal(rooftopWalk30.pairingPreference?.requireWalkablePair, true);
+for (const term of ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib"]) {
+  assert(restaurantSearchTerms(rooftopWalk30).includes(term), `30-minute rooftop query restaurant RPC should include ${term}`);
+}
+for (const forbidden of ["rooftop", "rooftop drinks", "drinks", "cocktails", "bar", "lounge"]) {
+  assert(!restaurantSearchTerms(rooftopWalk30).includes(forbidden), `30-minute rooftop query restaurant RPC should not include ${forbidden}`);
+}
+for (const term of ["rooftop drinks", "rooftop", "rooftop bar", "rooftop lounge", "drinks", "cocktails", "bar", "lounge"]) {
+  assert(activitySearchTerms(rooftopWalk30).includes(term), `30-minute rooftop query activity RPC should include ${term}`);
+}
+assert.equal(rooftopWalk30.activityIntent.categoryTerms.includes("bar"), true);
+assert.equal(rooftopWalk30.activityIntent.categoryTerms.includes("lounge"), true);
+assert.equal(rooftopWalk30.activityIntent.featureTerms.includes("rooftop"), true);
+for (const forbidden of ["theater", "theatre", "museum", "bowling", "arcade", "park"]) {
+  assert(!activitySearchTerms(rooftopWalk30).includes(forbidden), `rooftop drinks fallback terms should not include ${forbidden}`);
+}
+
+const rooftopWalk20 = normalizeIntent("steak dinner and rooftop drinks 20 minute walk apart");
+assert.equal(rooftopWalk20.pairingPreference?.maxPairWalkingMinutes, 20);
+assert.equal(rooftopWalk20.pairingPreference?.maxPairDistanceMiles, 1);
+const rooftopWalk40 = normalizeIntent("steak dinner and rooftop drinks 40 minute walk apart");
+assert.equal(rooftopWalk40.pairingPreference?.maxPairWalkingMinutes, 40);
+assert.equal(rooftopWalk40.pairingPreference?.maxPairDistanceMiles, 2);
+const rooftopWalk60 = normalizeIntent("steak dinner and rooftop drinks 60 minute walk apart");
+assert.equal(rooftopWalk60.pairingPreference?.maxPairWalkingMinutes, 45);
+assert.equal(rooftopWalk60.pairingPreference?.maxPairDistanceMiles, 2.3);
+
+const rooftopAny = normalizeIntent("steak dinner and rooftop drinks");
+assert.equal(rooftopAny.pairingPreference?.distanceMode, "any");
+assert.equal(rooftopAny.pairingPreference?.maxPairDistanceMiles, null);
+const rooftopNearby = normalizeIntent("steak dinner and rooftop drinks nearby");
+assert.equal(rooftopNearby.pairingPreference?.distanceMode, "nearby");
+assert.equal(rooftopNearby.pairingPreference?.maxPairDistanceMiles, 2.5);
+const rooftopShortWalk = normalizeIntent("steak dinner and rooftop drinks short walk");
+assert.equal(rooftopShortWalk.pairingPreference?.distanceMode, "short_walk");
+assert.equal(rooftopShortWalk.pairingPreference?.maxPairDistanceMiles, 0.75);
+const afterOnly = normalizeIntent("seafood dinner with theatre after");
+assert.equal(afterOnly.pairingPreference?.distanceMode, "any", "after by itself should sequence stops without proximity constraints");
+
+const distanceIntent = normalizeIntent("steak dinner and rooftop drinks 30 minute walk apart");
+const baseRestaurant: EnterpriseLocation = { id: "dr", name: "Distance Steak", restaurant_name: "Distance Steak", location_type: "restaurant", cuisine: "Steakhouse", city: "New York", state: "NY", latitude: 40, longitude: -73, image_url: "r.jpg", search_document: "steak steakhouse dinner" };
+const distanceActivities: EnterpriseLocation[] = [
+  { id: "pa", name: "Pair A", activity_name: "Pair A", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.9948, image_url: "a.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+  { id: "pb", name: "Pair B", activity_name: "Pair B", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.9857, image_url: "b.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+  { id: "pc", name: "Pair C", activity_name: "Pair C", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.9805, image_url: "c.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+  { id: "pd", name: "Pair D", activity_name: "Pair D", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.966, image_url: "d.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+];
+const walkingPairs = createSearchPairs([baseRestaurant], distanceActivities, distanceIntent);
+assert.deepEqual(walkingPairs.map((pair) => pair.activity.id), ["pa", "pb", "pc"]);
+assert(walkingPairs.every((pair) => pair.pairDistanceMiles != null && pair.pairDistanceMiles <= 1.5));
+
+const geoIntent = normalizeIntent("steak dinner and rooftop drinks");
+const geoRestaurant: EnterpriseLocation = { ...baseRestaurant, id: "gr", city: "New York", state: "NY", latitude: 40, longitude: -73, match_score: 100, image_url: "r.jpg" };
+const geoActivities: EnterpriseLocation[] = [
+  { id: "gb", name: "Different State Close", activity_name: "Different State Close", location_type: "activity", activity_type: "Rooftop Lounge", city: "Hoboken", state: "NJ", latitude: 40, longitude: -72.9935, match_score: 1000, image_url: "b.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+  { id: "gc", name: "Same State Different City", activity_name: "Same State Different City", location_type: "activity", activity_type: "Rooftop Lounge", city: "Yonkers", state: "NY", latitude: 40, longitude: -72.987, match_score: 100, image_url: "c.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+  { id: "ga", name: "Same City", activity_name: "Same City", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.961, match_score: 10, image_url: "a.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+  { id: "gd", name: "Missing Coordinates", activity_name: "Missing Coordinates", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", image_url: "d.jpg", search_document: "rooftop lounge drinks cocktails bar" },
+];
+const geoPairs = createSearchPairs([geoRestaurant], geoActivities, geoIntent);
+assert.equal(geoPairs[0].activity.id, "ga");
+assert(geoPairs.findIndex((pair) => pair.activity.id === "gc") < geoPairs.findIndex((pair) => pair.activity.id === "gb"));
+assert.equal(geoPairs.at(-1)?.activity.id, "gd");
 
 console.log("search-quality-regression passed");

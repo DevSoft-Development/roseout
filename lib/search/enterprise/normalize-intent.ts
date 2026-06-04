@@ -268,6 +268,14 @@ function stripRooftopActivityLaneRestaurantTerms(terms: string[], rawQuery: stri
   return terms.filter((term) => !ROOFTOP_ACTIVITY_LANE_RESTAURANT_TERMS.has(term.toLowerCase()));
 }
 
+function rooftopDrinkActivityCategoryTerms(rawQuery: string): string[] {
+  return rooftopBelongsToActivityLane(rawQuery) ? ["bar", "lounge"] : [];
+}
+
+function rooftopDrinkActivityFeatureTerms(rawQuery: string): string[] {
+  return rooftopBelongsToActivityLane(rawQuery) ? ["rooftop", "cocktails", "drinks"] : [];
+}
+
 function hasSecondStopConnector(rawQuery: string): boolean {
   return /\b(after|afterward|afterwards|then|next|later|nearby|near me after|second stop|another spot|things to do after|activity after|bar after|lounge after|club after|drinks after|cocktails after)\b/i.test(rawQuery);
 }
@@ -277,6 +285,7 @@ function hasExplicitActivityRequest(rawQuery: string): boolean {
 }
 
 function drinksAreRestaurantFeatureOnly(rawQuery: string): boolean {
+  if (rooftopBelongsToActivityLane(rawQuery)) return false;
   const q = rawQuery.toLowerCase();
   const hasMeal = /\b(dinner|brunch|lunch|breakfast|meal|restaurant|steak|seafood|sushi|italian|mexican|birthday dinner|date night|group night)\b/i.test(q);
   const hasDrink = /\b(drinks|cocktails|margaritas|wine|bar menu)\b/i.test(q);
@@ -402,13 +411,61 @@ function mergeAlternativeGroups(...groups: Array<string[][] | undefined>) {
     .filter((group) => group.length >= 2);
 }
 
+export function normalizeQueryText(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function parseWalkingMinutes(rawQuery: string): number | null {
+  const query = normalizeQueryText(rawQuery);
+
+  const patterns = [
+    /(\d{1,2})\s*(minute|minutes|min|mins)\s*(walk|walking)/i,
+    /(walk|walking)\s*(\d{1,2})\s*(minute|minutes|min|mins)/i,
+    /within\s*(\d{1,2})\s*(minute|minutes|min|mins)\s*(walk|walking)/i,
+    /(\d{1,2})\s*(minute|minutes|min|mins)\s*apart/i,
+    /(\d{1,2})\s*(minute|minutes|min|mins)\s*away\s*(by\s*)?(walk|walking)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (!match) continue;
+
+    const numeric = match.find((part) => /^\d{1,2}$/.test(part));
+    if (!numeric) continue;
+
+    const minutes = Number(numeric);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      return Math.min(minutes, 45);
+    }
+  }
+
+  return null;
+}
+
+export function walkingMinutesToMiles(minutes: number): number {
+  return Math.round((minutes / 20) * 10) / 10;
+}
+
 export function detectPairingPreference(query: string, wantsPairing: boolean): PairingPreference {
-  const sameArea = ["same neighborhood", "same area", "in the area"].some((p) => phrase(query, p));
-  const walking = ["walking distance", "walkable", "short walk", "quick walk", "within walking distance", "can walk to", "no driving", "without driving", "same block", "around the corner"].some((p) => phrase(query, p)) || /\bwalking\b/i.test(query);
-  const nearby = ["nearby", "close by", "close together", "near each other"].some((p) => phrase(query, p));
-  if (walking) return { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: 0.75, maxPairWalkingMinutes: 15, requireWalkablePair: true };
-  if (nearby) return { requiresPairing: true, distanceMode: "nearby", maxPairDistanceMiles: 1.5, maxPairWalkingMinutes: 30, requireWalkablePair: true };
-  if (sameArea) return { requiresPairing: true, distanceMode: "same_area", maxPairDistanceMiles: 3, maxPairWalkingMinutes: null, requireWalkablePair: false };
+  const walkingMinutes = parseWalkingMinutes(query);
+
+  if (walkingMinutes != null) {
+    return { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: walkingMinutesToMiles(walkingMinutes), maxPairWalkingMinutes: walkingMinutes, requireWalkablePair: true };
+  }
+
+  const shortWalk = ["short walk", "quick walk", "very close walk", "easy walk", "just a few blocks", "few blocks away", "around the corner", "right nearby", "right near"].some((p) => phrase(query, p));
+  const walking = ["walking distance", "walkable", "no driving", "close enough to walk", "can walk to", "walk from dinner", "walk after dinner", "walking after dinner", "walking from restaurant", "within walking distance"].some((p) => phrase(query, p));
+  const nearby = ["close by", "nearby", "near each other", "close together", "close to each other", "not too far", "nearby activity", "nearby restaurant", "something close", "something near"].some((p) => phrase(query, p));
+  const sameArea = ["same area", "same neighborhood", "same part of town", "around there", "in the area", "in that area"].some((p) => phrase(query, p));
+
+  if (shortWalk) return { requiresPairing: true, distanceMode: "short_walk", maxPairDistanceMiles: 0.75, maxPairWalkingMinutes: 15, requireWalkablePair: true };
+  if (walking) return { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: 1.5, maxPairWalkingMinutes: 30, requireWalkablePair: true };
+  if (nearby) return { requiresPairing: true, distanceMode: "nearby", maxPairDistanceMiles: 2.5, maxPairWalkingMinutes: null, requireWalkablePair: false };
+  if (sameArea) return { requiresPairing: true, distanceMode: "same_area", maxPairDistanceMiles: 5, maxPairWalkingMinutes: null, requireWalkablePair: false };
   return { requiresPairing: wantsPairing, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false };
 }
 
@@ -467,8 +524,8 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
       activityTerms: restaurantFeatureOnlyDrinks
         ? []
         : cleanPlaceOfWorshipTerms(addRooftopDrinkActivityTerms(acts, query), query),
-      categoryTerms: restaurantFeatureOnlyDrinks ? [] : /things to do/i.test(query) ? ["things to do"] : [],
-      featureTerms: [],
+      categoryTerms: restaurantFeatureOnlyDrinks ? [] : uniq([...(/things to do/i.test(query) ? ["things to do"] : []), ...rooftopDrinkActivityCategoryTerms(query)]),
+      featureTerms: restaurantFeatureOnlyDrinks ? [] : rooftopDrinkActivityFeatureTerms(query),
       alternativeGroups: restaurantFeatureOnlyDrinks ? [] : activityAlternativeGroups,
     },
     geo,
@@ -560,14 +617,14 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
     ),
     categoryTerms: cleanPlaceOfWorshipTerms(
       stripBlockedTerms(
-        stripDistanceTerms(stripCrossTerms(uniq(merged.activityIntent.categoryTerms ?? []), [...FOOD_TERMS, ...MEAL_TERMS])),
+        stripDistanceTerms(stripCrossTerms(uniq([...(merged.activityIntent.categoryTerms ?? []), ...rooftopDrinkActivityCategoryTerms(query)]), [...FOOD_TERMS, ...MEAL_TERMS])),
         ACTIVITY_SEARCH_TERM_BLOCKLIST,
       ),
       query,
     ),
     vibeTerms: uniq(merged.activityIntent.vibeTerms ?? []),
     featureTerms: cleanPlaceOfWorshipTerms(
-      stripDistanceTerms(uniq(merged.activityIntent.featureTerms ?? [])),
+      stripDistanceTerms(uniq([...(merged.activityIntent.featureTerms ?? []), ...rooftopDrinkActivityFeatureTerms(query)])),
       query,
     ),
     negativeTerms: uniq(merged.activityIntent.negativeTerms ?? []),

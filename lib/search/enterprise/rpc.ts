@@ -31,6 +31,8 @@ type RpcDebug = {
   restaurantRecoveryUsed?: boolean;
   activityRecoveryUsed?: boolean;
   recoveryTerms?: string[];
+  activityRecoveryReason?: string | null;
+  activityRecoveryTermsTried?: string[][];
   geoLatitude?: number | null;
   geoLongitude?: number | null;
   radiusMiles?: number | null;
@@ -88,8 +90,8 @@ function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
   return intent.strictness === "high" ? 24 : 40;
 }
 
-function params(intent: SearchIntent, domain: SearchDomain, limit: number) {
-  const terms = termsFor(intent, domain);
+function params(intent: SearchIntent, domain: SearchDomain, limit: number, overrideTerms?: string[]) {
+  const terms = overrideTerms ?? termsFor(intent, domain);
   const allowPlacesOfWorship = userAskedForPlaceOfWorship(intent.rawQuery);
 
   return {
@@ -201,9 +203,10 @@ export async function recoverEnterpriseLane(
   intent: SearchIntent,
   domain: SearchDomain,
   debug?: RpcDebug,
+  overrideTerms?: string[],
 ) {
   try {
-    const p = params(intent, domain, 80);
+    const p = params(intent, domain, 80, overrideTerms);
 
     debug?.rpcCalls.push(`enterprise_search_recovery:${domain}`);
 
@@ -254,6 +257,8 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     activityTermsRemovedForRelaxedIntent: [],
     relaxedActivityRpcSlimmingApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedFromRpcForRelaxedIntent: [],
+    activityRecoveryReason: null,
+    activityRecoveryTermsTried: [],
     geoLatitude: intent.geo.latitude ?? null,
     geoLongitude: intent.geo.longitude ?? null,
     radiusMiles: intent.geo.radiusMiles ?? null,
