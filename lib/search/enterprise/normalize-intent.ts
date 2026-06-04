@@ -54,6 +54,7 @@ export function normalizeTerm(term: string): string {
 
 const GENERIC_RESTAURANT_TERMS = new Set([
   "dinner",
+  "casual dinner",
   "restaurant",
   "restaurants",
   "dining",
@@ -150,6 +151,38 @@ const RELAXED_ACTIVITY_ALLOWED_TERMS = new Set([
   "bowling lounge",
   "bowling lanes",
   "lanes",
+]);
+
+const RELAXED_ACTIVITY_RPC_KEEP = new Set([
+  "relaxed activity",
+  "relaxing activity",
+  "chill activity",
+  "low key",
+  "low-key",
+  "board games",
+  "arcade",
+  "mini golf",
+  "bowling",
+  "bowling alley",
+  "gallery",
+  "art gallery",
+  "museum",
+]);
+
+const RELAXED_ACTIVITY_RPC_DROP = new Set([
+  "easy activity",
+  "laid back",
+  "laid-back",
+  "casual activity",
+  "lounge",
+  "games",
+  "bowling lounge",
+  "bowling lanes",
+  "lanes",
+  "park",
+  "walk",
+  "coffee",
+  "dessert",
 ]);
 
 const ACTIVITY_SEARCH_TERM_BLOCKLIST = new Set([
@@ -557,6 +590,28 @@ export function hasSpecificRestaurantTerm(intent: SearchIntent): boolean {
   );
 }
 
+export function hasSpecificRestaurantFoodOrCuisine(intent: SearchIntent): boolean {
+  const genericRestaurantFoodTerms = new Set([
+    "dinner",
+    "casual dinner",
+    "restaurant",
+    "restaurants",
+    "dining",
+    "food",
+    "meal",
+    "lunch",
+    "brunch",
+    "breakfast",
+  ]);
+  const terms = [
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+  ].map((term) => term.trim().toLowerCase());
+
+  return terms.some((term) => term && !genericRestaurantFoodTerms.has(term));
+}
+
 export function pruneRestaurantRpcTerms(intent: SearchIntent, terms: string[]): string[] {
   const unique = Array.from(new Set(terms.map((t) => t.trim()).filter(Boolean)));
 
@@ -645,10 +700,60 @@ export function pruneRelaxedActivityTerms(intent: SearchIntent, terms: string[])
   return Array.from(new Set([...output, ...RELAXED_ACTIVITY_DEFAULT_TERMS]));
 }
 
-export function activitySearchTerms(intent: SearchIntent) {
+export function slimRelaxedActivityRpcTerms(
+  intent: SearchIntent,
+  terms: string[],
+): { terms: string[]; removed: string[] } {
+  const unique = Array.from(new Set(terms.map((term) => term.trim()).filter(Boolean)));
+
+  if (!hasRelaxedActivityIntent(intent.rawQuery ?? "")) {
+    return { terms: unique, removed: [] };
+  }
+
+  const kept: string[] = [];
+  const removed: string[] = [];
+
+  for (const term of unique) {
+    const normalized = normalizeTerm(term);
+
+    if (RELAXED_ACTIVITY_RPC_KEEP.has(normalized)) {
+      kept.push(term);
+      continue;
+    }
+
+    if (RELAXED_ACTIVITY_RPC_DROP.has(normalized)) {
+      removed.push(term);
+      continue;
+    }
+
+    removed.push(term);
+  }
+
+  const keptNormalized = new Set(kept.map(normalizeTerm));
+  const orderedKept = Array.from(RELAXED_ACTIVITY_RPC_KEEP).filter((term) =>
+    keptNormalized.has(term),
+  );
+
+  return {
+    terms: orderedKept,
+    removed: Array.from(new Set(removed)),
+  };
+}
+
+export function activityRpcTerms(
+  intent: SearchIntent,
+): { terms: string[]; removedForRelaxedIntent: string[] } {
   const activityTermsOriginal = activitySearchTermsOriginal(intent);
   const activityTermsAfterHookah = pruneActivityRpcTerms(intent, activityTermsOriginal);
   const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterHookah);
+  const slimmed = slimRelaxedActivityRpcTerms(intent, activityTermsPruned);
 
-  return cleanPlaceOfWorshipTerms(activityTermsPruned, intent.rawQuery);
+  return {
+    terms: cleanPlaceOfWorshipTerms(slimmed.terms, intent.rawQuery),
+    removedForRelaxedIntent: slimmed.removed,
+  };
+}
+
+export function activitySearchTerms(intent: SearchIntent) {
+  return activityRpcTerms(intent).terms;
 }

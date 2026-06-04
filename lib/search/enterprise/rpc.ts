@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
 import {
+  activityRpcTerms,
   activitySearchTerms,
   activitySearchTermsOriginal,
   hasRelaxedActivityIntent,
+  hasSpecificRestaurantFoodOrCuisine,
   pruneActivityRpcTerms,
   pruneRelaxedActivityTerms,
   restaurantSearchTerms,
@@ -22,6 +24,8 @@ type RpcDebug = {
   activityRpcTermsPruned?: string[];
   relaxedActivityPruningApplied?: boolean;
   activityTermsRemovedForRelaxedIntent?: string[];
+  relaxedActivityRpcSlimmingApplied?: boolean;
+  activityTermsRemovedFromRpcForRelaxedIntent?: string[];
   restaurantRpcCount?: number;
   activityRpcCount?: number;
   restaurantRecoveryUsed?: boolean;
@@ -58,6 +62,30 @@ function originalTermsFor(intent: SearchIntent, domain: SearchDomain) {
     : domain === "activity"
       ? activitySearchTermsOriginal(intent)
       : [...restaurantSearchTermsOriginal(intent), ...activitySearchTermsOriginal(intent)];
+}
+
+function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
+  if (domain === "restaurant") {
+    if (intent.strictness === "high") {
+      return hasSpecificRestaurantFoodOrCuisine(intent) ? 24 : 16;
+    }
+
+    return 40;
+  }
+
+  if (domain === "activity") {
+    if (hasRelaxedActivityIntent(intent.rawQuery ?? "")) {
+      return 16;
+    }
+
+    if (intent.strictness === "high") {
+      return 24;
+    }
+
+    return 40;
+  }
+
+  return intent.strictness === "high" ? 24 : 40;
 }
 
 function params(intent: SearchIntent, domain: SearchDomain, limit: number) {
@@ -101,8 +129,7 @@ export async function searchEnterpriseLane(
   debug?: RpcDebug,
 ) {
   try {
-    const laneLimit = intent.strictness === "high" ? 24 : 40;
-    const p = locationParams(intent, domain, laneLimit);
+    const p = locationParams(intent, domain, laneLimitFor(intent, domain));
 
     debug?.rpcCalls.push(`enterprise_search_locations:${domain}`);
 
@@ -116,14 +143,20 @@ export async function searchEnterpriseLane(
       const activityTermsOriginal = activitySearchTermsOriginal(intent);
       const activityTermsAfterHookah = pruneActivityRpcTerms(intent, activityTermsOriginal);
       const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterHookah);
+      const rpcTerms = activityRpcTerms(intent);
       const prunedNormalized = new Set(activityTermsPruned.map((term) => term.toLowerCase()));
+      const relaxedActivityIntent = hasRelaxedActivityIntent(intent.rawQuery);
 
       debug.activityRpcTerms = p.p_search_terms;
       debug.activityRpcTermsOriginal = activityTermsOriginal;
-      debug.activityRpcTermsPruned = p.p_search_terms;
-      debug.relaxedActivityPruningApplied = hasRelaxedActivityIntent(intent.rawQuery);
-      debug.activityTermsRemovedForRelaxedIntent = hasRelaxedActivityIntent(intent.rawQuery)
+      debug.activityRpcTermsPruned = rpcTerms.terms;
+      debug.relaxedActivityPruningApplied = relaxedActivityIntent;
+      debug.activityTermsRemovedForRelaxedIntent = relaxedActivityIntent
         ? activityTermsAfterHookah.filter((term) => !prunedNormalized.has(term.toLowerCase()))
+        : [];
+      debug.relaxedActivityRpcSlimmingApplied = relaxedActivityIntent;
+      debug.activityTermsRemovedFromRpcForRelaxedIntent = relaxedActivityIntent
+        ? rpcTerms.removedForRelaxedIntent
         : [];
     }
 
@@ -219,6 +252,8 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     activityRecoveryUsed: false,
     relaxedActivityPruningApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedForRelaxedIntent: [],
+    relaxedActivityRpcSlimmingApplied: hasRelaxedActivityIntent(intent.rawQuery),
+    activityTermsRemovedFromRpcForRelaxedIntent: [],
     geoLatitude: intent.geo.latitude ?? null,
     geoLongitude: intent.geo.longitude ?? null,
     radiusMiles: intent.geo.radiusMiles ?? null,
