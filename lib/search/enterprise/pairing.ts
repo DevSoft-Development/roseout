@@ -187,7 +187,6 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
     const missingCoordinates = walkability.warnings.includes("missing_coordinates");
     const maxDistance = pref.maxPairDistanceMiles;
     const rejectedByMiles =
-      safeWalkingMinutes == null &&
       maxDistance != null &&
       Number.isFinite(Number(pairDistanceMiles)) &&
       Number(pairDistanceMiles) > Number(maxDistance);

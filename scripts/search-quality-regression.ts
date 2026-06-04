@@ -3,7 +3,7 @@ import { createPairingDebug, createSearchPairs } from "../lib/search/enterprise/
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
 import { rankActivityResults, rankRestaurantResults } from "../lib/search/enterprise/ranking";
 import type { EnterpriseLocation } from "../lib/search/enterprise/types";
-import { buildSafePairDistanceLabel } from "../lib/search/enterprise/distance";
+import { buildSafePairDistanceLabel, cleanDistanceLabel, isSafeWalkingLabel } from "../lib/search/enterprise/distance";
 import { isLowLevelLocation, isQualifiedWellnessActivity, LOW_LEVEL_TERMS } from "../lib/search/lowLevel";
 
 const records: EnterpriseLocation[] = [
@@ -295,7 +295,7 @@ const routeActivities: EnterpriseLocation[] = [
   { id: "rd", name: "D", activity_name: "D", location_type: "activity", activity_type: "Rooftop Lounge", city: "New York", state: "NY", latitude: 40, longitude: -72.989, image_url: "d.jpg", walkingDurationMinutes: 496, search_document: "rooftop lounge drinks" },
 ];
 const routeFilteredPairs = createSearchPairs([routeRestaurant], routeActivities, distanceIntent, routeFilterDebug);
-assert.deepEqual(routeFilteredPairs.map((pair) => pair.activity.id), ["ra", "rb"], "30-minute walking route filter should include only 18- and 30-minute Google routes");
+assert.deepEqual(routeFilteredPairs.map((pair) => pair.activity.id), ["ra", "rb"], "30-minute walking route filter should include only 18- and 30-minute routes");
 assert.equal(routeFilterDebug.pairsRejectedForWalkingMinutes, 2);
 assert.equal(routeFilterDebug.extremeWalkingRoutesRejected, 1);
 assert(routeFilterDebug.rejectedPairs.some((pair) => pair.activityName === "C" && pair.reason === "walking_route_exceeds_requested_minutes"));
@@ -316,6 +316,51 @@ const extremeWalkingLabel = buildSafePairDistanceLabel({
 });
 assert(!extremeWalkingLabel.includes("496 min walk"), "extreme walking routes should never render as walking labels");
 assert.equal(extremeWalkingLabel, "0.6 mi from Fogo de Chão Brazilian Steakhouse");
+
+
+const googleRouteLabel = "18 min walk from Fogo de Chão Brazilian Steakhouse • Google walking route";
+assert.equal(
+  cleanDistanceLabel(googleRouteLabel),
+  "18 min walk from Fogo de Chão Brazilian Steakhouse",
+  "Google walking route wording should be removed from safe labels",
+);
+assert.equal(
+  buildSafePairDistanceLabel({
+    pair: { walkingDurationMinutes: 18 },
+    restaurantName: "Fogo de Chão Brazilian Steakhouse",
+    pairDistanceMiles: 0.6,
+    pairingPreference: { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: null, maxPairWalkingMinutes: 30, requireWalkablePair: true },
+  }),
+  "18 min walk from Fogo de Chão Brazilian Steakhouse",
+  "safe walking route labels should render without Google route wording",
+);
+
+const unsafe288Label = "288 min walk from Fogo de Chão Brazilian Steakhouse • Google walking route";
+assert.equal(cleanDistanceLabel(unsafe288Label), undefined, "288-minute walking labels should be hidden");
+assert.equal(isSafeWalkingLabel(unsafe288Label), false, "288-minute walking labels should not be considered safe");
+assert.equal(
+  buildSafePairDistanceLabel({
+    pair: { walkingDurationMinutes: 288 },
+    restaurantName: "Fogo de Chão Brazilian Steakhouse",
+    pairDistanceMiles: 2.4,
+    pairingPreference: { requiresPairing: true, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
+  }),
+  "2.4 mi from Fogo de Chão Brazilian Steakhouse",
+  "unsafe 288-minute walking labels should fall back to miles",
+);
+
+const unsafe496Label = "496 min walk from Fogo de Chão Brazilian Steakhouse • Google walking route";
+assert.equal(cleanDistanceLabel(unsafe496Label), undefined, "496-minute walking labels should be hidden");
+assert.equal(
+  buildSafePairDistanceLabel({
+    pair: { walkingDurationMinutes: 496 },
+    restaurantName: "Fogo de Chão Brazilian Steakhouse",
+    pairDistanceMiles: 2.4,
+    pairingPreference: { requiresPairing: true, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
+  }),
+  "2.4 mi from Fogo de Chão Brazilian Steakhouse",
+  "unsafe 496-minute walking labels should fall back to miles",
+);
 
 const sortedRoutePairs = createSearchPairs([routeRestaurant], [routeActivities[2], routeActivities[1], routeActivities[0]], distanceIntent);
 assert.deepEqual(sortedRoutePairs.map((pair) => pair.activity.id), ["ra", "rb"], "valid route pairs should sort nearest-first before lower-priority scoring");
