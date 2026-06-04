@@ -1,7 +1,7 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
 export type SearchType = "restaurant" | "activity" | "mixed_outing" | "any";
 export type GeoStrictness = "none" | "soft" | "medium" | "strict";
-export type PairDistanceMode = "walking" | "nearby" | "same_area" | "any";
+export type PairDistanceMode = "short_walk" | "walking" | "nearby" | "same_area" | "any";
 
 export type PairingPreference = {
   requiresPairing: boolean;

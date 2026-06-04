@@ -21,10 +21,11 @@ export function isWalkablePair(restaurant: EnterpriseLocation, activity: Enterpr
     warnings.push("missing_coordinates");
     return { isWalkable: !pref.requireWalkablePair, warnings, pairDistanceMiles, pairWalkingMinutes };
   }
-  if (pref.distanceMode === "walking") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 0.75), warnings, pairDistanceMiles, pairWalkingMinutes };
-  if (pref.distanceMode === "nearby") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 1.5), warnings, pairDistanceMiles, pairWalkingMinutes };
+  if (pref.distanceMode === "short_walk") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 0.75), warnings, pairDistanceMiles, pairWalkingMinutes };
+  if (pref.distanceMode === "walking") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 1.5), warnings, pairDistanceMiles, pairWalkingMinutes };
+  if (pref.distanceMode === "nearby") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 2.5), warnings, pairDistanceMiles, pairWalkingMinutes };
   if (pref.distanceMode === "same_area") {
-    const closeEnough = pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 3);
+    const closeEnough = pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 5);
     const sameArea = sameText(restaurant.neighborhood, activity.neighborhood) || sameText(restaurant.borough, activity.borough);
     return { isWalkable: closeEnough || sameArea, warnings, pairDistanceMiles, pairWalkingMinutes };
   }
