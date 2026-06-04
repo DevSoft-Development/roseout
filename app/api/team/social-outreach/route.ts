@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { ensureTeamProfileForCurrentUser, getActiveSession } from "@/lib/team-tools";
+import { ensureTeamProfileForCurrentUser, getActiveSession, isWorkspaceLocationPermitted } from "@/lib/team-tools";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,9 @@ export async function POST(req: Request) {
     const locationId = String(form.get("locationId") || "").trim();
     const platform = String(form.get("platform") || "").trim();
     if (!locationId || !platform) return Response.json({ error: "Location and platform are required." }, { status: 400 });
+    if (!(await isWorkspaceLocationPermitted(profile, locationId))) {
+      return Response.json({ error: "This location is not assigned or permitted for your workspace profile." }, { status: 403 });
+    }
     let socialProfileId = String(form.get("socialProfileId") || "").trim() || null;
     const handleOrUrl = String(form.get("handleOrUrl") || "").trim();
     if (!socialProfileId && handleOrUrl) {

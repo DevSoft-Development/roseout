@@ -160,6 +160,41 @@ export function csvEscape(value: unknown) {
   return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
 }
 
+
+export async function isWorkspaceLocationPermitted(profile: any, locationId: string) {
+  const cleanLocationId = String(locationId || "").trim();
+  if (!cleanLocationId) return false;
+
+  const directIds = Array.isArray(profile?.assigned_location_ids)
+    ? profile.assigned_location_ids.map((id: unknown) => String(id)).filter(Boolean)
+    : [];
+
+  if (directIds.length) return directIds.includes(cleanLocationId);
+
+  try {
+    const { data: assignments, error } = await supabaseAdmin
+      .from("team_location_assignments")
+      .select("location_id")
+      .eq("team_member_id", profile?.id)
+      .eq("status", "active")
+      .limit(1000);
+
+    if (!error && assignments?.length) {
+      return assignments.some((assignment: any) => String(assignment.location_id) === cleanLocationId);
+    }
+  } catch {
+    // Some deployments do not have explicit assignment tables yet. Fall through to checking the location exists.
+  }
+
+  const { data } = await supabaseAdmin
+    .from("locations")
+    .select("id")
+    .eq("id", cleanLocationId)
+    .maybeSingle();
+
+  return Boolean(data?.id);
+}
+
 export async function listPermittedWorkspaceLocations(profile: any, columns = "id,name,location_name,address,city,state,latitude,longitude", limit = 200) {
   const directIds = Array.isArray(profile?.assigned_location_ids) ? profile.assigned_location_ids.filter(Boolean) : [];
   if (directIds.length) {

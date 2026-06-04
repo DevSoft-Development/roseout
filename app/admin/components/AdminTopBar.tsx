@@ -191,7 +191,7 @@ export default function AdminTopBar({
       },
       {
         label: "Team Tools",
-        activePrefixes: ["/admin/dashboard/team"],
+        activePrefixes: ["/admin/dashboard/team", "/my-workspace"],
         widthClass: "w-[460px] max-w-[calc(100vw-24px)]",
         gridClass: "md:grid-cols-2",
         sections: [
