@@ -173,7 +173,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     perf.llm_ms = usedLlm ? Date.now() - intentStart : intentParserSource === "fast_path" ? 0 : null;
     parsedIntent = intent;
     const debug=createRpcDebug(intent); const supabase=options?.supabase ?? supabaseAdmin; const displayLimit=options?.displayLimit ?? 12;
-    let restaurantRaw: EnterpriseLocation[]=[]; let activityRaw: EnterpriseLocation[]=[];
+    let restaurantRaw: EnterpriseLocation[]=[]; let activityRaw: EnterpriseLocation[]=[]; let activityRpcCountBeforeRecovery = 0;
     const searchRestaurantLane = async () => {
       const rpcStarted = Date.now();
       restaurantRaw = await searchEnterpriseLane(supabase,intent,"restaurant",debug);
@@ -188,6 +188,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     const searchActivityLane = async () => {
       const rpcStarted = Date.now();
       activityRaw = await searchEnterpriseLane(supabase,intent,"activity",debug);
+      activityRpcCountBeforeRecovery = activityRaw.length;
       let filtered=filterActivityResults(activityRaw,intent);
       if (!filtered.length && activitySearchTerms(intent).length) {
         usedFallback = true;
@@ -253,14 +254,21 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       differentStatePairs: pairCityStates.filter((pair) => pair.restaurantState && pair.activityState && pair.restaurantState !== pair.activityState).length,
       missingCoordinatePairs: pairCityStates.filter((pair) => !pair.hasBothCoords).length,
     };
-    const noPairsReason = intent.wantsPairing && pairs.length === 0 && activities.length > 0 && restaurants.length > 0 && intent.pairingPreference?.distanceMode === "walking"
-      ? "no_pairs_within_walking_distance"
-      : null;
+    const noPairsReason =
+      intent.wantsPairing &&
+      pairs.length === 0 &&
+      activities.length > 0 &&
+      restaurants.length > 0 &&
+      (intent.pairingPreference?.distanceMode === "walking" ||
+        intent.pairingPreference?.distanceMode === "short_walk" ||
+        intent.pairingPreference?.requireWalkablePair === true)
+        ? "no_pairs_within_walking_distance"
+        : null;
     perf.total_ms = Date.now() - started;
     const locationArea = intent.geo.neighborhood ?? intent.geo.borough ?? intent.geo.city ?? intent.geo.county ?? intent.geo.raw ?? null;
     const speedStatus = getSearchSpeedStatus({ totalMs: perf.total_ms, success: true });
     const performanceDebug = { ...perf, speed_status: speedStatus, result_count: matched_locations.length, restaurant_count: restaurants.length, activity_count: activities.length, pair_count: pairs.length, source: options?.source ?? "enterprise_search", route: options?.route ?? null, used_custom_prompt: Boolean(options?.usedCustomPrompt), intentParserSource, fastPathMatched, fastPathReason, beta_assignment_id: options?.betaAssignmentId ?? null, beta_tester_id: options?.betaTesterId ?? null };
-    const fullDebug={ search_system:"enterprise-search-v1", rawQuery:query, llmIntentRaw, intentParserSource, fastPathMatched, fastPathReason, normalizedIntent:intent, restaurantTerms:restaurantSearchTerms(intent), activityTerms:activitySearchTerms(intent), geo:intent.geo, ...debug, restaurantRejectedReasons, activityRejectedReasons, restaurantRejectedSummary, activityRejectedSummary, distanceScoringUsed:Boolean(intent.geo.latitude&&intent.geo.longitude), pairDistanceMiles:pairs.map(p=>p.pairDistanceMiles), pairGeoPriorities, pairGeoSummary, renderedPairSort:{ primary:"geo_priority", secondary:"pair_distance_miles", tertiary:"combined_score" }, walkingPolicy:{ shortWalkMaxPairDistanceMiles:0.75, shortWalkMaxPairWalkingMinutes:15, walkingMaxPairDistanceMiles:1.5, walkingMaxPairWalkingMinutes:30, walkingMinutesToMilesBasis:"20_minutes_per_mile", explicitWalkingMinutesSupported:true, explicitWalkingMinutesMax:45, missingCoordinateFallback:true }, pairingPreference:intent.pairingPreference, pairCandidatesEvaluated:pairingDebug.pairCandidatesEvaluated, pairsRejectedForDistance:pairingDebug.pairsRejectedForDistance, pairsRejectedForMissingCoordinates:pairingDebug.pairsRejectedForMissingCoordinates, rejectedPairs:pairingDebug.rejectedPairs, walkablePairsFound:pairingDebug.walkablePairsFound, activityRpcCountBeforePairing:activities.length, noPairsReason, maxPairDistanceMiles:intent.pairingPreference?.maxPairDistanceMiles ?? null, maxPairWalkingMinutes:intent.pairingPreference?.maxPairWalkingMinutes ?? null, requireWalkablePair:intent.pairingPreference?.requireWalkablePair ?? false, distanceMode:intent.pairingPreference?.distanceMode ?? "any", renderMode:render_mode, timingMs:perf.total_ms, performance: performanceDebug, restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed), activityRecoveryUsed: Boolean(debug.activityRecoveryUsed), llmError };
+    const fullDebug={ search_system:"enterprise-search-v1", rawQuery:query, llmIntentRaw, intentParserSource, fastPathMatched, fastPathReason, normalizedIntent:intent, restaurantTerms:restaurantSearchTerms(intent), activityTerms:activitySearchTerms(intent), geo:intent.geo, ...debug, restaurantRejectedReasons, activityRejectedReasons, restaurantRejectedSummary, activityRejectedSummary, distanceScoringUsed:Boolean(intent.geo.latitude&&intent.geo.longitude), pairDistanceMiles:pairs.map(p=>p.pairDistanceMiles), pairGeoPriorities, pairGeoSummary, renderedPairSort:{ primary:"geo_priority", secondary:"pair_distance_miles", tertiary:"safe_walking_minutes", quaternary:"combined_score" }, walkingPolicy:{ shortWalkMaxPairDistanceMiles:0.75, shortWalkMaxPairWalkingMinutes:15, walkingMaxPairDistanceMiles:1.5, walkingMaxPairWalkingMinutes:30, walkingMinutesToMilesBasis:"20_minutes_per_mile", explicitWalkingMinutesSupported:true, explicitWalkingMinutesMax:45, missingCoordinateFallback:true, googleWalkingRouteAuthoritative:true, extremeWalkingRouteMinuteCutoff:180 }, pairingPreference:intent.pairingPreference, activityRpcCountBeforePairing:activities.length, activityRpcCountAfterRecovery:activityRaw.length, activityRpcCountBeforeRecovery:activityRpcCountBeforeRecovery, pairCandidatesEvaluated:pairingDebug.pairCandidatesEvaluated, validPairCountBeforeRender:pairingDebug.validPairCountBeforeRender, pair_count:pairs.length, pairsRejectedForDistance:pairingDebug.pairsRejectedForDistance, pairsRejectedForWalkingMinutes:pairingDebug.pairsRejectedForWalkingMinutes, extremeWalkingRoutesRejected:pairingDebug.extremeWalkingRoutesRejected, invalidWalkingRoutesHiddenFromDisplay:pairingDebug.invalidWalkingRoutesHiddenFromDisplay, pairsRejectedForMissingCoordinates:pairingDebug.pairsRejectedForMissingCoordinates, rejectedPairs:pairingDebug.rejectedPairs, walkablePairsFound:pairingDebug.walkablePairsFound, noPairsReason, maxPairDistanceMiles:intent.pairingPreference?.maxPairDistanceMiles ?? null, maxPairWalkingMinutes:intent.pairingPreference?.maxPairWalkingMinutes ?? null, requireWalkablePair:intent.pairingPreference?.requireWalkablePair ?? false, distanceMode:intent.pairingPreference?.distanceMode ?? "any", renderMode:render_mode, timingMs:perf.total_ms, performance: performanceDebug, restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed), activityRecoveryUsed: Boolean(debug.activityRecoveryUsed), llmError };
     if (options?.logPerformance) {
       void logSearchPerformance({
         userId: options.userId,
