@@ -9,6 +9,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
+import { toDisplayLabel } from "@/lib/displayLabel";
 
 export type ExploreLocation = {
   id: string;
@@ -875,10 +876,7 @@ function cleanLabel(value: unknown) {
     return "";
   }
 
-  return cleaned
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  return toDisplayLabel(cleaned);
 }
 
 function toList(value: unknown): string[] {

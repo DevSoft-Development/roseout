@@ -3,7 +3,8 @@ import { createPairingDebug, createSearchPairs } from "../lib/search/enterprise/
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
 import { rankActivityResults, rankRestaurantResults } from "../lib/search/enterprise/ranking";
 import type { EnterpriseLocation } from "../lib/search/enterprise/types";
-import { buildSafePairDistanceLabel, cleanDistanceLabel, isSafeWalkingLabel } from "../lib/search/enterprise/distance";
+import { buildSafePairDistanceLabel, cleanDistanceLabel, formatDistanceFromRestaurant, isSafeWalkingLabel } from "../lib/search/enterprise/distance";
+import { toDisplayLabel } from "../lib/displayLabel";
 import { isLowLevelLocation, isQualifiedWellnessActivity, LOW_LEVEL_TERMS } from "../lib/search/lowLevel";
 
 const records: EnterpriseLocation[] = [
@@ -361,6 +362,42 @@ assert.equal(
   "2.4 mi from Fogo de Chão Brazilian Steakhouse",
   "unsafe 496-minute walking labels should fall back to miles",
 );
+
+
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: 8, pairDistanceMiles: 0.4 },
+    restaurantName: "The Modern",
+    pairingPreference: { distanceMode: "walking", maxPairWalkingMinutes: 30 },
+  }),
+  "8 min walk from The Modern",
+  "walking queries should prefer safe walking minutes",
+);
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: 8, pairDistanceMiles: 0.4 },
+    restaurantName: "The Modern",
+    pairingPreference: { distanceMode: "any", maxPairWalkingMinutes: null, requireWalkablePair: false },
+  }),
+  "0.4 mi from The Modern",
+  "non-walking queries should prefer miles",
+);
+assert.equal(
+  formatDistanceFromRestaurant({
+    pair: { walkingDurationMinutes: 288, pairDistanceMiles: 2.4 },
+    restaurantName: "Fogo de Chão Brazilian Steakhouse",
+    pairingPreference: { distanceMode: "walking" },
+  }),
+  "2.4 mi from Fogo de Chão Brazilian Steakhouse",
+  "unsafe walking durations should fall back to miles",
+);
+assert(!formatDistanceFromRestaurant({
+  pair: { walkingDurationMinutes: 18, pairDistanceMiles: 0.6 },
+  restaurantName: "Fogo de Chão Brazilian Steakhouse",
+  pairingPreference: { distanceMode: "walking" },
+}).includes("Google walking route"));
+assert.equal(toDisplayLabel("Fine_dining"), "Fine Dining");
+assert.equal(toDisplayLabel("rooftop_bar"), "Rooftop Bar");
 
 const sortedRoutePairs = createSearchPairs([routeRestaurant], [routeActivities[2], routeActivities[1], routeActivities[0]], distanceIntent);
 assert.deepEqual(sortedRoutePairs.map((pair) => pair.activity.id), ["ra", "rb"], "valid route pairs should sort nearest-first before lower-priority scoring");
