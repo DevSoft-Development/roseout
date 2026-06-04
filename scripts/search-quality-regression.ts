@@ -167,4 +167,19 @@ for (const forbidden of ["theater", "dancing", "nightlife", "club", "dance club"
   assert(!activitySearchTerms(groupDinnerAndDrinks).includes(forbidden), `group dinner and drinks must not include ${forbidden} as an activity term`);
 }
 
+
+const expectedSteakRpcTerms = ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib", "churrasco", "brazilian steakhouse"];
+const steakHookahIntent = normalizeIntent("steak dinner and hookah lounge after");
+assert.deepEqual(restaurantSearchTerms(steakHookahIntent), expectedSteakRpcTerms, "steak dinner should send steak RPC terms without generic dinner");
+assert.deepEqual(activitySearchTerms(steakHookahIntent), ["hookah", "hookah lounge", "hookah bar", "shisha"], "hookah lounge should not expand into broad nightlife RPC terms");
+for (const forbidden of ["dinner", "restaurant", "restaurants", "dining", "lunch", "brunch", "breakfast", "meal", "food", "eat", "eats"]) {
+  assert(!restaurantSearchTerms(steakHookahIntent).includes(forbidden), `steak hookah restaurant RPC terms must not include ${forbidden}`);
+}
+for (const forbidden of ["lounge", "drinks", "cocktails", "nightlife", "bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"]) {
+  assert(!activitySearchTerms(steakHookahIntent).includes(forbidden), `steak hookah activity RPC terms must not include ${forbidden}`);
+}
+const hookahRankIntent = normalizeIntent("hookah lounge after steak dinner");
+assert.equal(rankActivityResults(records, hookahRankIntent)[0]?.id, "a6", "hookah intent should rank hookah records first");
+assert(!rankActivityResults(records, hookahRankIntent).some((record) => record.id === "a7"), "hookah intent should reject broad rooftop lounge records without hookah/shisha text");
+
 console.log("search-quality-regression passed");

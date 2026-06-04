@@ -12,11 +12,72 @@ const STEAK_TERMS = ["steak", "steakhouse", "steak house", "ribeye", "porterhous
 const THEATER_TERMS = ["theater", "theatre", "cinema", "movie theater", "movie theatre", "movie_theater", "movies", "showtimes", "box office", "performing arts", "performing_arts", "performance", "playhouse", "concert hall", "opera house"];
 const THEATER_INTENT_TERMS = [...THEATER_TERMS, "movie", "show"];
 const NIGHTLIFE_TERMS = ["cocktail", "cocktails", "drink", "drinks", "lounge", "rooftop bar", "wine bar", "speakeasy", "nightlife", "hookah", "bar"];
+const GENERIC_RESTAURANT_TERMS = new Set(["dinner", "restaurant", "restaurants", "dining", "lunch", "brunch", "breakfast", "meal", "food", "eat", "eats"]);
+const HOOKAH_TERMS = ["hookah", "hookah lounge", "hookah bar", "shisha"];
+const BROAD_NIGHTLIFE_TERMS = new Set(["lounge", "drinks", "drink", "cocktails", "cocktail", "cocktail bar", "wine bar", "nightlife", "bar", "rooftop bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"]);
 const SEARCH_FIELDS = ["name", "restaurant_name", "activity_name", "cuisine", "cuisine_type", "food_type", "primary_category", "category", "tags", "description", "search_document", "google_types", "activity_type", "location_type"];
 function textOf(item: Record<string, unknown>) { return SEARCH_FIELDS.map((field) => Array.isArray(item[field]) ? (item[field] as unknown[]).join(" ") : item[field]).filter(Boolean).join(" ").toLowerCase(); }
 function hasAny(item: Record<string, unknown>, terms: string[]) { const hay = textOf(item); return terms.some((term) => hay.includes(term.toLowerCase())); }
 function score(item: Record<string, unknown>, terms: string[]) { const hay = textOf(item); return terms.reduce((sum, term) => sum + (hay.includes(term) ? 10 : 0), 0) + Number(item.rating ?? 0); }
-function terms(intent: Record<string, any>, domain: "restaurant" | "activity") { return domain === "restaurant" ? Array.from(new Set([...(intent.restaurantIntent?.foodTerms ?? []), ...(intent.restaurantIntent?.cuisineTerms ?? []), ...(intent.restaurantIntent?.mealTerms ?? [])])) : Array.from(new Set([...(intent.activityIntent?.activityTerms ?? []), ...(intent.activityIntent?.categoryTerms ?? [])])); }
+function normalizeTerm(term: string) { return term.trim().toLowerCase(); }
+function uniqueTerms(items: unknown[]) { return Array.from(new Set(items.map((term) => String(term ?? "").trim()).filter(Boolean))); }
+function restaurantTermsOriginal(intent: Record<string, any>) {
+  return uniqueTerms([
+    ...(intent.restaurantIntent?.mealTerms ?? []),
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+    ...(intent.restaurantIntent?.featureTerms ?? []),
+    ...((intent.restaurantIntent?.alternativeGroups ?? []).flat?.() ?? []),
+  ]);
+}
+function activityTermsOriginal(intent: Record<string, any>) {
+  return uniqueTerms([
+    ...(intent.activityIntent?.activityTerms ?? []),
+    ...(intent.activityIntent?.categoryTerms ?? []),
+    ...(intent.activityIntent?.featureTerms ?? []),
+    ...((intent.activityIntent?.alternativeGroups ?? []).flat?.() ?? []),
+  ]);
+}
+function hasSpecificRestaurantTerm(intent: Record<string, any>) {
+  const terms = [
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+    ...((intent.restaurantIntent?.alternativeGroups ?? []).flat?.() ?? []),
+  ].map((term) => normalizeTerm(String(term ?? "")));
+  return terms.some((term) => term && !GENERIC_RESTAURANT_TERMS.has(term));
+}
+function pruneRestaurantRpcTerms(intent: Record<string, any>, searchTerms: string[]) {
+  const unique = uniqueTerms(searchTerms);
+  if (!hasSpecificRestaurantTerm(intent)) return unique;
+  return unique.filter((term) => !GENERIC_RESTAURANT_TERMS.has(normalizeTerm(term)));
+}
+function hasHookahIntent(rawQuery: string) { return /\b(hookah|shisha|hookah lounge|hookah bar)\b/i.test(rawQuery); }
+function rawQueryOutsideHookahPhrases(rawQuery: string) {
+  return rawQuery.toLowerCase().replace(/\bhookah\s+(?:lounge|bar)\b/gi, " ").replace(/\b(?:hookah|shisha)\b/gi, " ");
+}
+function rawQueryExplicitlyIncludes(rawQuery: string, term: string) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(rawQueryOutsideHookahPhrases(rawQuery));
+}
+function pruneActivityRpcTerms(intent: Record<string, any>, searchTerms: string[]) {
+  const rawQuery = String(intent.rawQuery ?? "");
+  const unique = uniqueTerms(searchTerms);
+  if (!hasHookahIntent(rawQuery)) return unique;
+  const output = [...HOOKAH_TERMS];
+  for (const term of unique) {
+    const normalized = normalizeTerm(term);
+    if (HOOKAH_TERMS.includes(normalized)) continue;
+    if (BROAD_NIGHTLIFE_TERMS.has(normalized)) {
+      if (rawQueryExplicitlyIncludes(rawQuery, normalized)) output.push(term);
+      continue;
+    }
+    output.push(term);
+  }
+  return uniqueTerms(output);
+}
+function terms(intent: Record<string, any>, domain: "restaurant" | "activity") { return domain === "restaurant" ? pruneRestaurantRpcTerms(intent, restaurantTermsOriginal(intent)) : pruneActivityRpcTerms(intent, activityTermsOriginal(intent)); }
 function speedStatus(ms: number) { return ms < 1000 ? "excellent" : ms < 2000 ? "good" : ms < 3500 ? "okay" : ms < 5000 ? "slow" : "critical"; }
 
 async function parseIntent(supabase: any, rawQuery: string, body: any, perf: Record<string, number>) {
@@ -61,8 +122,9 @@ async function rpcSearch(supabase: any, domain: string, searchTerms: string[], i
     p_latitude: geo.latitude ?? null,
     p_longitude: geo.longitude ?? null,
     p_radius_miles: radius,
-    p_limit: limit * 4,
+    p_limit: intent.strictness === "high" ? Math.min(limit * 4, 24) : limit * 4,
     p_allow_places_of_worship: false,
+    p_allow_low_level: false,
   };
   const { data, error } = await supabase.rpc("enterprise_search_locations", params);
   if (!error && Array.isArray(data)) return data;
@@ -100,6 +162,9 @@ function hasNightlifeIntent(intent: any) {
   return NIGHTLIFE_TERMS.some((term) => includesPhrase(rawQuery, term) || searchTerms.includes(term));
 }
 
+function userAskedForHookah(intent: any) { return hasHookahIntent(String(intent.rawQuery ?? "")); }
+function isHookahRow(row: Record<string, unknown>) { return /\b(hookah|shisha)\b/i.test(textOf(row)); }
+
 function domainFilter(rows: Record<string, unknown>[], intent: any, domain: "restaurant" | "activity") {
   const searchTerms = terms(intent, domain);
   const hardTerms = domain === "restaurant" && searchTerms.some((term) => STEAK_TERMS.includes(String(term).toLowerCase())) ? STEAK_TERMS : domain === "activity" && searchTerms.some((term) => String(term).includes("bowling")) ? ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"] : searchTerms;
@@ -108,6 +173,7 @@ function domainFilter(rows: Record<string, unknown>[], intent: any, domain: "res
   return rows.filter((row) => {
     const theaterLike = isTheaterLike(row);
     if (domain === "restaurant" && theaterLike) return false;
+    if (domain === "activity" && userAskedForHookah(intent) && !isHookahRow(row)) return false;
     if (domain === "activity" && theaterLike && blocksTheaterIntent) return false;
     return hardTerms.length ? hasAny(row, hardTerms) : true;
   }).sort((a,b)=>score(b, hardTerms)-score(a, hardTerms));
@@ -148,8 +214,10 @@ Deno.serve(async (req) => {
     const perf: Record<string, number> = {};
     const parsed = await parseIntent(supabase, rawQuery, body, perf);
     const intent: any = { ...parsed.intent, rawQuery };
-    const restaurantTerms = terms(intent, "restaurant");
-    const activityTerms = terms(intent, "activity");
+    const restaurantRpcTermsOriginal = restaurantTermsOriginal(intent);
+    const restaurantTerms = pruneRestaurantRpcTerms(intent, restaurantRpcTermsOriginal);
+    const activityRpcTermsOriginal = activityTermsOriginal(intent);
+    const activityTerms = pruneActivityRpcTerms(intent, activityRpcTermsOriginal);
     const initialRadius = Number(intent.geo?.radiusMiles ?? 3);
     let activityRadius = initialRadius;
     const parallelStarted = Date.now();
@@ -182,7 +250,7 @@ Deno.serve(async (req) => {
     perf.pairing_ms = Date.now() - pairingStarted;
     perf.total_ms = totalTimer();
     const performance = { ...perf, speed_status: speedStatus(perf.total_ms) };
-    const debug = { parser_source: parsed.parser_source, cache_hit: parsed.cache_hit, llm_used: parsed.llm_used, ...performance, restaurantTerms, activityTerms, activityGeoExpanded, activityInitialRadiusMiles: initialRadius, activityFinalRadiusMiles: activityRadius, activityExpansionReason: activityGeoExpanded ? "fewer than 5 strong activity matches" : null, pairCandidatesFound: restaurants.length * activities.length, pairsWithinRequestedDistance: pairs.length, ...pairDebug, performance };
+    const debug = { parser_source: parsed.parser_source, cache_hit: parsed.cache_hit, llm_used: parsed.llm_used, ...performance, restaurantTerms, activityTerms, restaurantRpcTerms: restaurantTerms, activityRpcTerms: activityTerms, restaurantRpcTermsOriginal, restaurantRpcTermsPruned: restaurantTerms, activityRpcTermsOriginal, activityRpcTermsPruned: activityTerms, activityGeoExpanded, activityInitialRadiusMiles: initialRadius, activityFinalRadiusMiles: activityRadius, activityExpansionReason: activityGeoExpanded ? "fewer than 5 strong activity matches" : null, pairCandidatesFound: restaurants.length * activities.length, pairsWithinRequestedDistance: pairs.length, ...pairDebug, performance };
     await logEdgeFunctionRun(supabase, { function_name: "create-search", status: "success", user_id: user.id, input_summary: { rawQuery }, output_summary: { restaurants: restaurants.length, activities: activities.length, pairs: pairs.length }, duration_ms: perf.total_ms, metadata: debug });
     return ok({ success: true, search_system: "edge-enterprise-search-v1", rawQuery, normalizedIntent: intent, restaurants: restaurants.slice(0, limit), activities: activities.slice(0, limit), pairs, renderMode: pairs.length ? "mixed_pairs" : restaurants.length && activities.length ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty", performance, debug });
   } catch (error) {
