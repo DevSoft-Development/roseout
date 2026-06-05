@@ -80,7 +80,141 @@ function safeSlice<T = unknown>(value: unknown, limit: number): T[] {
   return Array.isArray(value) ? value.slice(0, limit) : [];
 }
 
-function countFrom(result: any, debug: any, key: string, fallbackKeys: string[] = []) {
+function safeStringArray(value: unknown, limit = 24): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) =>
+      typeof item === "string" ? item.trim() : String(item ?? "").trim(),
+    )
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function numberOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function compactRecord<T extends Record<string, unknown>>(
+  record: T,
+): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
+const SEARCH_HEALTH_REJECTION_REASONS = [
+  "walking_route_exceeds_requested_minutes",
+  "pair_distance_exceeds_requested_max",
+  "missing_coordinates",
+  "extreme_walking_route_duration",
+  "wrong_domain",
+  "no_activity_match",
+  "no_restaurant_match",
+  "cross_state_low_priority",
+] as const;
+
+function canonicalRejectionReason(reason: unknown): string | null {
+  const normalized = String(reason ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return null;
+  if (
+    normalized === "distance" ||
+    normalized === "walking_limit_exceeded" ||
+    normalized === "pair_distance_exceeds_limit"
+  )
+    return "pair_distance_exceeds_requested_max";
+  if (
+    normalized === "walking_minutes_exceeds_limit" ||
+    normalized === "walking_minutes_exceeds_requested_max"
+  )
+    return "walking_route_exceeds_requested_minutes";
+  if (
+    normalized === "extreme_walking_route" ||
+    normalized === "extreme_walking_route_duration"
+  )
+    return "extreme_walking_route_duration";
+  if (
+    normalized === "missing_coordinates" ||
+    normalized === "distance_unavailable"
+  )
+    return "missing_coordinates";
+  if (normalized === "wrong_domain" || normalized === "domain_mismatch")
+    return "wrong_domain";
+  if (normalized === "no_activity_match") return "no_activity_match";
+  if (normalized === "no_restaurant_match") return "no_restaurant_match";
+  if (normalized === "cross_state_low_priority" || normalized === "cross_state")
+    return "cross_state_low_priority";
+  return SEARCH_HEALTH_REJECTION_REASONS.includes(normalized as any)
+    ? normalized
+    : null;
+}
+
+function incrementReason(
+  summary: Record<string, number>,
+  reason: string | null,
+  count = 1,
+) {
+  if (!reason || count <= 0) return;
+  summary[reason] = (summary[reason] ?? 0) + count;
+}
+
+function buildRejectionReasonSummary(debug: any) {
+  const summary: Record<string, number> = {};
+
+  for (const rejected of safeSlice<any>(debug?.rejectedPairs, 500)) {
+    incrementReason(summary, canonicalRejectionReason(rejected?.reason));
+  }
+
+  for (const [reason, count] of Object.entries(
+    debug?.walkingPairRejectReasons ?? {},
+  )) {
+    incrementReason(
+      summary,
+      canonicalRejectionReason(reason),
+      toInteger(count) ?? 0,
+    );
+  }
+
+  incrementReason(
+    summary,
+    "pair_distance_exceeds_requested_max",
+    toInteger(debug?.pairsRejectedForDistance) ?? 0,
+  );
+  incrementReason(
+    summary,
+    "missing_coordinates",
+    toInteger(debug?.pairsRejectedForMissingCoordinates) ?? 0,
+  );
+  incrementReason(
+    summary,
+    "extreme_walking_route_duration",
+    toInteger(debug?.extremeWalkingRoutesRejected) ?? 0,
+  );
+
+  const restaurantNoMatch =
+    toInteger(debug?.restaurantRejectedSummary?.no_restaurant_match) ?? 0;
+  const activityNoMatch =
+    toInteger(debug?.activityRejectedSummary?.no_activity_match) ?? 0;
+  incrementReason(summary, "no_restaurant_match", restaurantNoMatch);
+  incrementReason(summary, "no_activity_match", activityNoMatch);
+
+  return SEARCH_HEALTH_REJECTION_REASONS.reduce<Record<string, number>>(
+    (acc, reason) => {
+      acc[reason] = summary[reason] ?? 0;
+      return acc;
+    },
+    {},
+  );
+}
+
+function countFrom(
+  result: any,
+  debug: any,
+  key: string,
+  fallbackKeys: string[] = [],
+) {
   const keys = [key, ...fallbackKeys];
   for (const candidate of keys) {
     const value = debug?.[candidate] ?? result?.[candidate];
@@ -94,7 +228,11 @@ function arrayCount(value: unknown): number | null {
   return Array.isArray(value) ? value.length : null;
 }
 
-function inferRestaurantCount(args: LoggerArgs, result: any, debug: any): number {
+function inferRestaurantCount(
+  args: LoggerArgs,
+  result: any,
+  debug: any,
+): number {
   return (
     toInteger(args.restaurant_count) ??
     countFrom(result, debug, "restaurant_count", ["restaurantCount"]) ??
@@ -130,14 +268,23 @@ function inferPairCount(args: LoggerArgs, result: any, debug: any): number {
 function normalizeJsonValue(value: unknown): unknown {
   if (value == null) return value;
   try {
-    return JSON.parse(JSON.stringify(value, (key, item) => {
-      const lowerKey = String(key).toLowerCase();
-      if (lowerKey.includes("token") || lowerKey.includes("secret") || lowerKey.includes("apikey") || lowerKey.includes("api_key") || lowerKey === "authorization") {
-        return "[redacted]";
-      }
-      if (typeof item === "string" && item.length > 2000) return `${item.slice(0, 2000)}…`;
-      return item;
-    }));
+    return JSON.parse(
+      JSON.stringify(value, (key, item) => {
+        const lowerKey = String(key).toLowerCase();
+        if (
+          lowerKey.includes("token") ||
+          lowerKey.includes("secret") ||
+          lowerKey.includes("apikey") ||
+          lowerKey.includes("api_key") ||
+          lowerKey === "authorization"
+        ) {
+          return "[redacted]";
+        }
+        if (typeof item === "string" && item.length > 2000)
+          return `${item.slice(0, 2000)}…`;
+        return item;
+      }),
+    );
   } catch {
     return String(value);
   }
@@ -150,8 +297,10 @@ function getIntent(args: LoggerArgs, result: any, debug: any) {
 function needsRestaurantForSearch(args: LoggerArgs, result: any, debug: any) {
   const intent = getIntent(args, result, debug);
   if (typeof args.needsRestaurant === "boolean") return args.needsRestaurant;
-  if (typeof intent?.needsRestaurant === "boolean") return intent.needsRestaurant;
-  if (typeof intent?.needs_restaurant === "boolean") return intent.needs_restaurant;
+  if (typeof intent?.needsRestaurant === "boolean")
+    return intent.needsRestaurant;
+  if (typeof intent?.needs_restaurant === "boolean")
+    return intent.needs_restaurant;
   return true;
 }
 
@@ -169,32 +318,64 @@ function wantsPairingForSearch(args: LoggerArgs, result: any, debug: any) {
   return (
     intent?.wantsPairing === true ||
     intent?.wants_pairing === true ||
-    ["mixed_pairs", "partial_mixed"].includes(String(result?.render_mode ?? result?.renderMode ?? debug?.renderMode ?? ""))
+    ["mixed_pairs", "partial_mixed"].includes(
+      String(
+        result?.render_mode ?? result?.renderMode ?? debug?.renderMode ?? "",
+      ),
+    )
   );
 }
 
-function inferNoResultsReason(args: LoggerArgs, restaurantCount: number, activityCount: number) {
+function inferNoResultsReason(
+  args: LoggerArgs,
+  restaurantCount: number,
+  activityCount: number,
+) {
   const result = args.result ?? {};
   const debug = args.debug ?? result.debug ?? {};
-  if (args.noResultsReason || args.no_results_reason) return args.noResultsReason ?? args.no_results_reason ?? null;
+  if (args.noResultsReason || args.no_results_reason)
+    return args.noResultsReason ?? args.no_results_reason ?? null;
   if (debug?.noResultsReason) return String(debug.noResultsReason);
   if (debug?.no_results_reason) return String(debug.no_results_reason);
-  if (result?.diagnostics?.no_results_reason) return String(result.diagnostics.no_results_reason);
-  if (restaurantCount === 0 && activityCount === 0 && needsRestaurantForSearch(args, result, debug) && needsActivityForSearch(args, result, debug)) return "no_restaurant_or_activity_results";
-  if (restaurantCount === 0 && needsRestaurantForSearch(args, result, debug)) return "no_restaurant_results";
-  if (activityCount === 0 && needsActivityForSearch(args, result, debug)) return "no_activity_results";
+  if (result?.diagnostics?.no_results_reason)
+    return String(result.diagnostics.no_results_reason);
+  if (
+    restaurantCount === 0 &&
+    activityCount === 0 &&
+    needsRestaurantForSearch(args, result, debug) &&
+    needsActivityForSearch(args, result, debug)
+  )
+    return "no_restaurant_or_activity_results";
+  if (restaurantCount === 0 && needsRestaurantForSearch(args, result, debug))
+    return "no_restaurant_results";
+  if (activityCount === 0 && needsActivityForSearch(args, result, debug))
+    return "no_activity_results";
   return null;
 }
 
 function walkingMode(value: unknown) {
-  return ["walking", "short_walk", "walk"].includes(String(value ?? "").toLowerCase());
+  return ["walking", "short_walk", "walk"].includes(
+    String(value ?? "").toLowerCase(),
+  );
 }
 
 function getIssueCounters(args: LoggerArgs, debug: any) {
   return {
-    extremeWalkingRoutesRejected: toInteger(args.extremeWalkingRoutesRejected ?? debug?.extremeWalkingRoutesRejected) ?? 0,
-    invalidWalkingRoutesHiddenFromDisplay: toInteger(args.invalidWalkingRoutesHiddenFromDisplay ?? debug?.invalidWalkingRoutesHiddenFromDisplay) ?? 0,
-    suppressedLowQualityPairCount: toInteger(args.suppressedLowQualityPairCount ?? debug?.suppressedLowQualityPairCount) ?? 0,
+    extremeWalkingRoutesRejected:
+      toInteger(
+        args.extremeWalkingRoutesRejected ??
+          debug?.extremeWalkingRoutesRejected,
+      ) ?? 0,
+    invalidWalkingRoutesHiddenFromDisplay:
+      toInteger(
+        args.invalidWalkingRoutesHiddenFromDisplay ??
+          debug?.invalidWalkingRoutesHiddenFromDisplay,
+      ) ?? 0,
+    suppressedLowQualityPairCount:
+      toInteger(
+        args.suppressedLowQualityPairCount ??
+          debug?.suppressedLowQualityPairCount,
+      ) ?? 0,
   };
 }
 
@@ -203,29 +384,173 @@ function getRouteDebug(debug: any) {
 }
 
 export function buildSearchHealthDebug(result: any, debug: any) {
-  const normalizedIntent = debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
+  const normalizedIntent =
+    debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
   const performance = debug?.performance ?? result?.searchPerformance ?? null;
+  const restaurantIntent =
+    normalizedIntent?.restaurantIntent ??
+    normalizedIntent?.restaurant_intent ??
+    {};
+  const activityIntent =
+    normalizedIntent?.activityIntent ?? normalizedIntent?.activity_intent ?? {};
+  const geo =
+    debug?.effectiveGeo ?? debug?.geo ?? normalizedIntent?.geo ?? null;
+  const pairingPreference =
+    debug?.pairingPreference ??
+    normalizedIntent?.pairingPreference ??
+    normalizedIntent?.pairing_preference ??
+    null;
+  const rejectionReasons = buildRejectionReasonSummary(debug);
+  const counts = {
+    restaurants: inferRestaurantCount({}, result, debug),
+    activities: inferActivityCount({}, result, debug),
+    pairs: inferPairCount({}, result, debug),
+    pairCandidatesEvaluated: toInteger(debug?.pairCandidatesEvaluated),
+    validPairCountBeforeRender: toInteger(debug?.validPairCountBeforeRender),
+    finalDisplayedResultCount:
+      toInteger(
+        debug?.finalDisplayedResultCount ??
+          performance?.result_count ??
+          result?.card_counts?.matched_locations ??
+          result?.cardCounts?.matched_locations,
+      ) ??
+      arrayCount(result?.cards) ??
+      arrayCount(result?.matched_locations) ??
+      arrayCount(result?.matchedLocations),
+    pairsRejectedForDistance: toInteger(debug?.pairsRejectedForDistance) ?? 0,
+    pairsRejectedForMissingCoordinates:
+      toInteger(debug?.pairsRejectedForMissingCoordinates) ?? 0,
+    extremeWalkingRoutesRejected:
+      toInteger(debug?.extremeWalkingRoutesRejected) ?? 0,
+    invalidWalkingRoutesHiddenFromDisplay:
+      toInteger(debug?.invalidWalkingRoutesHiddenFromDisplay) ?? 0,
+    suppressedLowQualityPairCount:
+      toInteger(debug?.suppressedLowQualityPairCount) ?? 0,
+  };
 
   return normalizeJsonValue({
-    normalizedIntent,
-    originalGeo: debug?.originalGeo ?? null,
-    effectiveGeo: debug?.effectiveGeo ?? debug?.geo ?? null,
-    pairingPreference: debug?.pairingPreference ?? normalizedIntent?.pairingPreference ?? null,
+    rawQuery:
+      debug?.rawQuery ?? normalizedIntent?.rawQuery ?? result?.rawQuery ?? null,
     route: getRouteDebug(debug),
-    counts: {
-      restaurants: inferRestaurantCount({}, result, debug),
-      activities: inferActivityCount({}, result, debug),
-      pairs: inferPairCount({}, result, debug),
-      pairCandidatesEvaluated: toInteger(debug?.pairCandidatesEvaluated),
-      validPairCountBeforeRender: toInteger(debug?.validPairCountBeforeRender),
-      extremeWalkingRoutesRejected: toInteger(debug?.extremeWalkingRoutesRejected) ?? 0,
-      invalidWalkingRoutesHiddenFromDisplay: toInteger(debug?.invalidWalkingRoutesHiddenFromDisplay) ?? 0,
-      suppressedLowQualityPairCount: toInteger(debug?.suppressedLowQualityPairCount) ?? 0,
+    searchType:
+      normalizedIntent?.searchType ??
+      normalizedIntent?.search_type ??
+      result?.render_mode ??
+      result?.renderMode ??
+      null,
+    primaryDomain:
+      normalizedIntent?.primaryDomain ??
+      normalizedIntent?.primary_domain ??
+      null,
+    intentParserSource:
+      debug?.intentParserSource ?? performance?.intentParserSource ?? null,
+    fastPathMatched: toBoolean(
+      debug?.fastPathMatched ?? performance?.fastPathMatched,
+    ),
+    fastPathReason:
+      debug?.fastPathReason ?? performance?.fastPathReason ?? null,
+    normalizedIntent,
+    parsedIntent: normalizedIntent,
+    searchTerms: {
+      restaurant: {
+        mealTerms: safeStringArray(
+          restaurantIntent?.mealTerms ?? debug?.restaurantMealTerms,
+        ),
+        foodTerms: safeStringArray(
+          restaurantIntent?.foodTerms ?? debug?.restaurantFoodTerms,
+        ),
+        cuisineTerms: safeStringArray(
+          restaurantIntent?.cuisineTerms ?? debug?.restaurantCuisineTerms,
+        ),
+        categoryTerms: safeStringArray(
+          restaurantIntent?.categoryTerms ?? debug?.restaurantCategoryTerms,
+        ),
+        vibeTerms: safeStringArray(
+          restaurantIntent?.vibeTerms ?? debug?.restaurantVibeTerms,
+        ),
+        featureTerms: safeStringArray(
+          restaurantIntent?.featureTerms ?? debug?.restaurantFeatureTerms,
+        ),
+      },
+      activity: {
+        activityTerms: safeStringArray(
+          activityIntent?.activityTerms ?? debug?.activityTerms,
+        ),
+        categoryTerms: safeStringArray(
+          activityIntent?.categoryTerms ?? debug?.activityCategoryTerms,
+        ),
+        vibeTerms: safeStringArray(
+          activityIntent?.vibeTerms ?? debug?.activityVibeTerms,
+        ),
+        featureTerms: safeStringArray(
+          activityIntent?.featureTerms ?? debug?.activityFeatureTerms,
+        ),
+      },
     },
-    performance,
+    restaurantTerms: safeStringArray(debug?.restaurantTerms),
+    activityTerms: safeStringArray(debug?.activityTerms),
+    geo: compactRecord({
+      raw: geo?.raw ?? null,
+      neighborhood: geo?.neighborhood ?? null,
+      borough: geo?.borough ?? null,
+      city: geo?.city ?? null,
+      state: geo?.state ?? null,
+      latitude: numberOrNull(geo?.latitude),
+      longitude: numberOrNull(geo?.longitude),
+      radiusMiles: numberOrNull(geo?.radiusMiles),
+      geoStrictness: geo?.geoStrictness ?? null,
+    }),
+    originalGeo: debug?.originalGeo ?? null,
+    effectiveGeo: geo,
+    pairingPreference: compactRecord({
+      requiresPairing: toBoolean(
+        pairingPreference?.requiresPairing ?? normalizedIntent?.wantsPairing,
+      ),
+      distanceMode:
+        pairingPreference?.distanceMode ?? debug?.distanceMode ?? null,
+      maxPairDistanceMiles: numberOrNull(
+        pairingPreference?.maxPairDistanceMiles ?? debug?.maxPairDistanceMiles,
+      ),
+      maxPairWalkingMinutes: numberOrNull(
+        pairingPreference?.maxPairWalkingMinutes ??
+          debug?.maxPairWalkingMinutes,
+      ),
+      requireWalkablePair: toBoolean(
+        pairingPreference?.requireWalkablePair ?? debug?.requireWalkablePair,
+      ),
+    }),
+    routeDebug: debug?.route ?? null,
+    counts,
+    rejectionReasons,
+    performance: compactRecord({
+      intent_parse_ms: toInteger(
+        performance?.intent_parse_ms ?? performance?.intentParseMs,
+      ),
+      llm_ms: toInteger(performance?.llm_ms ?? performance?.llmMs),
+      rpc_ms: toInteger(performance?.rpc_ms ?? performance?.rpcMs),
+      pairing_ms: toInteger(performance?.pairing_ms ?? performance?.pairingMs),
+      ranking_ms: toInteger(performance?.ranking_ms ?? performance?.rankingMs),
+      route_check_ms: toInteger(
+        performance?.route_check_ms ?? performance?.routeCheckMs,
+      ),
+      total_ms: toInteger(performance?.total_ms ?? performance?.totalMs),
+      speed_status:
+        performance?.speed_status ?? performance?.speedStatus ?? null,
+      result_count: toInteger(
+        performance?.result_count ?? performance?.resultCount,
+      ),
+      source: performance?.source ?? null,
+      route: performance?.route ?? getRouteDebug(debug),
+    }),
     rejectedPairs: safeSlice(debug?.rejectedPairs, 25),
-    restaurantQualityScorePreview: safeSlice(debug?.restaurantQualityScorePreview, 12),
-    activityQualityScorePreview: safeSlice(debug?.activityQualityScorePreview, 12),
+    restaurantQualityScorePreview: safeSlice(
+      debug?.restaurantQualityScorePreview,
+      12,
+    ),
+    activityQualityScorePreview: safeSlice(
+      debug?.activityQualityScorePreview,
+      12,
+    ),
     pairQualityScorePreview: safeSlice(debug?.pairQualityScorePreview, 12),
   });
 }
@@ -236,101 +561,278 @@ function classifyWithReason(args: LoggerArgs, payload: any) {
   const needsRestaurant = needsRestaurantForSearch(args, result, debug);
   const needsActivity = needsActivityForSearch(args, result, debug);
   const wantsPairing = wantsPairingForSearch(args, result, debug);
-  const distanceMode = args.distanceMode ?? payload.distance_mode ?? debug?.distanceMode ?? debug?.pairingPreference?.distanceMode;
-  const requireWalkablePair = args.requireWalkablePair ?? debug?.requireWalkablePair ?? debug?.pairingPreference?.requireWalkablePair;
+  const distanceMode =
+    args.distanceMode ??
+    payload.distance_mode ??
+    debug?.distanceMode ??
+    debug?.pairingPreference?.distanceMode;
+  const requireWalkablePair =
+    args.requireWalkablePair ??
+    debug?.requireWalkablePair ??
+    debug?.pairingPreference?.requireWalkablePair;
   const counters = getIssueCounters(args, debug);
   const errors = Array.isArray(payload.errors) ? payload.errors : [];
   const speedStatus = String(payload.speed_status ?? "").toLowerCase();
   const timingMs = Number(payload.timing_ms ?? 0);
 
   if (payload.source === "admin_test_event") {
-    return { eventType: "test_event", severity: "info" as const, eventLabel: "Admin test event", noPairsReason: payload.no_pairs_reason };
+    return {
+      eventType: "test_event",
+      severity: "info" as const,
+      eventLabel: "Admin test event",
+      noPairsReason: payload.no_pairs_reason,
+    };
   }
-  if (errors.length > 0) return { eventType: "search_error", severity: "error" as const, eventLabel: "Search error", noPairsReason: payload.no_pairs_reason };
-  if (payload.source === "admin_search_lab" && (args.forceLog === true || args.forceLogSearchHealth === true || args.debugMode === true || args.debugEnabled === true || args.logSearchHealth === true) && Number(payload.pair_count ?? 0) > 0 && payload.restaurant_count === 0 && payload.activity_count === 0) {
-    return { eventType: "successful_debug_run", severity: "info" as const, eventLabel: "Search Lab debug run", noPairsReason: payload.no_pairs_reason };
+  if (errors.length > 0)
+    return {
+      eventType: "search_error",
+      severity: "error" as const,
+      eventLabel: "Search error",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  if (
+    payload.source === "admin_search_lab" &&
+    (args.forceLog === true ||
+      args.forceLogSearchHealth === true ||
+      args.debugMode === true ||
+      args.debugEnabled === true ||
+      args.logSearchHealth === true) &&
+    Number(payload.pair_count ?? 0) > 0 &&
+    payload.restaurant_count === 0 &&
+    payload.activity_count === 0
+  ) {
+    return {
+      eventType: "successful_debug_run",
+      severity: "info" as const,
+      eventLabel: "Search Lab debug run",
+      noPairsReason: payload.no_pairs_reason,
+    };
   }
-  if (payload.restaurant_count === 0 && needsRestaurant) return { eventType: "no_restaurant_results", severity: "warning" as const, eventLabel: "No restaurant results", noPairsReason: payload.no_pairs_reason };
-  if (payload.activity_count === 0 && needsActivity) return { eventType: "no_activity_results", severity: "warning" as const, eventLabel: "No activity results", noPairsReason: payload.no_pairs_reason };
-  if (wantsPairing && Number(payload.restaurant_count ?? 0) > 0 && Number(payload.activity_count ?? 0) > 0 && payload.pair_count === 0) {
+  if (payload.restaurant_count === 0 && needsRestaurant)
+    return {
+      eventType: "no_restaurant_results",
+      severity: "warning" as const,
+      eventLabel: "No restaurant results",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  if (payload.activity_count === 0 && needsActivity)
+    return {
+      eventType: "no_activity_results",
+      severity: "warning" as const,
+      eventLabel: "No activity results",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  if (
+    wantsPairing &&
+    Number(payload.restaurant_count ?? 0) > 0 &&
+    Number(payload.activity_count ?? 0) > 0 &&
+    payload.pair_count === 0
+  ) {
     if (walkingMode(distanceMode) || requireWalkablePair === true) {
-      return { eventType: "no_valid_pairs", severity: "warning" as const, eventLabel: "No valid pairs within walking distance", noPairsReason: "no_pairs_within_walking_distance" };
+      return {
+        eventType: "no_valid_pairs",
+        severity: "warning" as const,
+        eventLabel: "No valid pairs within walking distance",
+        noPairsReason: "no_pairs_within_walking_distance",
+      };
     }
-    return { eventType: "no_valid_pairs", severity: "warning" as const, eventLabel: "No valid pairs found", noPairsReason: "no_valid_pairs" };
+    return {
+      eventType: "no_valid_pairs",
+      severity: "warning" as const,
+      eventLabel: "No valid pairs found",
+      noPairsReason: "no_valid_pairs",
+    };
   }
-  if (walkingMode(distanceMode) && Number(payload.max_pair_walking_minutes ?? args.maxPairWalkingMinutes ?? 999) <= 5 && Number(payload.pair_count ?? 0) > 0 && Number(payload.pair_count ?? 0) <= 2) {
-    return { eventType: "low_pair_count", severity: "info" as const, eventLabel: "Strict walking search with limited pairs", noPairsReason: payload.no_pairs_reason };
+  if (
+    walkingMode(distanceMode) &&
+    Number(
+      payload.max_pair_walking_minutes ?? args.maxPairWalkingMinutes ?? 999,
+    ) <= 5 &&
+    Number(payload.pair_count ?? 0) > 0 &&
+    Number(payload.pair_count ?? 0) <= 2
+  ) {
+    return {
+      eventType: "low_pair_count",
+      severity: "info" as const,
+      eventLabel: "Strict walking search with limited pairs",
+      noPairsReason: payload.no_pairs_reason,
+    };
   }
-  if (timingMs > 3000 || ["slow", "degraded"].includes(speedStatus)) return { eventType: "slow_search", severity: "warning" as const, eventLabel: "Slow search", noPairsReason: payload.no_pairs_reason };
-  if (counters.extremeWalkingRoutesRejected > 0 || counters.invalidWalkingRoutesHiddenFromDisplay > 0) return { eventType: "walking_route_warning", severity: "warning" as const, eventLabel: "Walking route warning", noPairsReason: payload.no_pairs_reason };
-  if (counters.suppressedLowQualityPairCount > 0) return { eventType: "quality_warning", severity: "info" as const, eventLabel: "Low-quality pairs suppressed", noPairsReason: payload.no_pairs_reason };
-  if (payload.source === "admin_search_lab") return { eventType: "successful_debug_run", severity: "info" as const, eventLabel: "Search Lab debug run", noPairsReason: payload.no_pairs_reason };
-  return { eventType: "search_event", severity: "info" as const, eventLabel: "Search event", noPairsReason: payload.no_pairs_reason };
+  if (timingMs > 3000 || ["slow", "degraded"].includes(speedStatus))
+    return {
+      eventType: "slow_search",
+      severity: "warning" as const,
+      eventLabel: "Slow search",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  if (
+    counters.extremeWalkingRoutesRejected > 0 ||
+    counters.invalidWalkingRoutesHiddenFromDisplay > 0
+  )
+    return {
+      eventType: "walking_route_warning",
+      severity: "warning" as const,
+      eventLabel: "Walking route warning",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  if (counters.suppressedLowQualityPairCount > 0)
+    return {
+      eventType: "quality_warning",
+      severity: "info" as const,
+      eventLabel: "Low-quality pairs suppressed",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  if (payload.source === "admin_search_lab")
+    return {
+      eventType: "successful_debug_run",
+      severity: "info" as const,
+      eventLabel: "Search Lab debug run",
+      noPairsReason: payload.no_pairs_reason,
+    };
+  return {
+    eventType: "search_event",
+    severity: "info" as const,
+    eventLabel: "Search event",
+    noPairsReason: payload.no_pairs_reason,
+  };
 }
 
-export function classifySearchHealthEvent(input: LoggerArgs | any): { eventType: string; severity: SearchHealthSeverity; eventLabel: string } {
-  const args: LoggerArgs = isLoggerArgsLikeInput(input) ? input : { result: input };
+export function classifySearchHealthEvent(input: LoggerArgs | any): {
+  eventType: string;
+  severity: SearchHealthSeverity;
+  eventLabel: string;
+} {
+  const args: LoggerArgs = isLoggerArgsLikeInput(input)
+    ? input
+    : { result: input };
   const payload = buildSearchHealthEventPayloadBase(args);
   const classified = classifyWithReason(args, payload);
-  return { eventType: classified.eventType, severity: classified.severity, eventLabel: classified.eventLabel };
+  return {
+    eventType: classified.eventType,
+    severity: classified.severity,
+    eventLabel: classified.eventLabel,
+  };
 }
 
 function isLoggerArgsLikeInput(input: any): boolean {
   if (!input || typeof input !== "object") return false;
   return Boolean(
     input.result ||
-      input.debug ||
-      input.source ||
-      "restaurant_count" in input ||
-      "activity_count" in input ||
-      "pair_count" in input ||
-      "needsActivity" in input ||
-      "needsRestaurant" in input ||
-      "wantsPairing" in input ||
-      "distanceMode" in input ||
-      "requireWalkablePair" in input ||
-      "timing_ms" in input ||
-      "timingMs" in input ||
-      "speed_status" in input ||
-      "speedStatus" in input ||
-      "no_pairs_reason" in input ||
-      "noPairsReason" in input ||
-      "no_results_reason" in input ||
-      "noResultsReason" in input
+    input.debug ||
+    input.source ||
+    "restaurant_count" in input ||
+    "activity_count" in input ||
+    "pair_count" in input ||
+    "needsActivity" in input ||
+    "needsRestaurant" in input ||
+    "wantsPairing" in input ||
+    "distanceMode" in input ||
+    "requireWalkablePair" in input ||
+    "timing_ms" in input ||
+    "timingMs" in input ||
+    "speed_status" in input ||
+    "speedStatus" in input ||
+    "no_pairs_reason" in input ||
+    "noPairsReason" in input ||
+    "no_results_reason" in input ||
+    "noResultsReason" in input,
   );
 }
 
 function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
   const result = args.result ?? {};
   const debug = args.debug ?? result.debug ?? {};
-  const normalizedIntent = debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
+  const normalizedIntent =
+    debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
   const performance = debug?.performance ?? {};
+  const pairingPreference =
+    debug?.pairingPreference ??
+    normalizedIntent?.pairingPreference ??
+    normalizedIntent?.pairing_preference ??
+    null;
   const restaurantCount = inferRestaurantCount(args, result, debug);
   const activityCount = inferActivityCount(args, result, debug);
   const pairCount = inferPairCount(args, result, debug);
-  const timingMs = toInteger(args.timingMs ?? args.timing_ms ?? debug?.timingMs ?? performance?.total_ms ?? result?.searchPerformance?.totalMs);
-  const speedStatus = args.speedStatus ?? args.speed_status ?? performance?.speed_status ?? result?.searchPerformance?.speedStatus ?? null;
-  const errors = asArray(args.errors ?? debug?.errors ?? debug?.error ?? debug?.edge_error ?? debug?.llmError);
+  const timingMs = toInteger(
+    args.timingMs ??
+      args.timing_ms ??
+      debug?.timingMs ??
+      performance?.total_ms ??
+      result?.searchPerformance?.totalMs,
+  );
+  const speedStatus =
+    args.speedStatus ??
+    args.speed_status ??
+    performance?.speed_status ??
+    result?.searchPerformance?.speedStatus ??
+    null;
+  const errors = asArray(
+    args.errors ??
+      debug?.errors ??
+      debug?.error ??
+      debug?.edge_error ??
+      debug?.llmError,
+  );
   const warnings = asArray(args.warnings ?? debug?.warnings ?? debug?.warning);
-  const noResultsReason = inferNoResultsReason(args, restaurantCount, activityCount);
-  const noPairsReason = args.noPairsReason ?? args.no_pairs_reason ?? debug?.noPairsReason ?? debug?.no_pairs_reason ?? null;
+  const noResultsReason = inferNoResultsReason(
+    args,
+    restaurantCount,
+    activityCount,
+  );
+  const noPairsReason =
+    args.noPairsReason ??
+    args.no_pairs_reason ??
+    debug?.noPairsReason ??
+    debug?.no_pairs_reason ??
+    null;
 
   return {
     source: args.source ?? debug?.source ?? "search",
-    environment: args.environment ?? process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "production",
-    raw_query: args.rawQuery ?? args.raw_query ?? debug?.rawQuery ?? normalizedIntent?.rawQuery ?? null,
-    normalized_search_type: normalizedIntent?.searchType ?? normalizedIntent?.search_type ?? result?.render_mode ?? result?.renderMode ?? null,
-    primary_domain: normalizedIntent?.primaryDomain ?? normalizedIntent?.primary_domain ?? null,
+    environment:
+      args.environment ??
+      process.env.VERCEL_ENV ??
+      process.env.NODE_ENV ??
+      "production",
+    raw_query:
+      args.rawQuery ??
+      args.raw_query ??
+      debug?.rawQuery ??
+      normalizedIntent?.rawQuery ??
+      null,
+    normalized_search_type:
+      normalizedIntent?.searchType ??
+      normalizedIntent?.search_type ??
+      result?.render_mode ??
+      result?.renderMode ??
+      null,
+    primary_domain:
+      normalizedIntent?.primaryDomain ??
+      normalizedIntent?.primary_domain ??
+      null,
     default_market_applied: toBoolean(debug?.defaultMarketApplied),
     default_market_id: debug?.defaultMarketId ?? null,
-    distance_mode: args.distanceMode ?? debug?.distanceMode ?? normalizedIntent?.pairingPreference?.distanceMode ?? null,
-    max_pair_distance_miles: toNumber(debug?.maxPairDistanceMiles ?? normalizedIntent?.pairingPreference?.maxPairDistanceMiles),
-    max_pair_walking_minutes: toNumber(args.maxPairWalkingMinutes ?? debug?.maxPairWalkingMinutes ?? normalizedIntent?.pairingPreference?.maxPairWalkingMinutes),
+    distance_mode:
+      args.distanceMode ??
+      debug?.distanceMode ??
+      pairingPreference?.distanceMode ??
+      null,
+    max_pair_distance_miles: toNumber(
+      debug?.maxPairDistanceMiles ?? pairingPreference?.maxPairDistanceMiles,
+    ),
+    max_pair_walking_minutes: toNumber(
+      args.maxPairWalkingMinutes ??
+        debug?.maxPairWalkingMinutes ??
+        pairingPreference?.maxPairWalkingMinutes,
+    ),
     restaurant_count: restaurantCount,
     activity_count: activityCount,
     pair_count: pairCount,
-    pair_candidates_evaluated: toInteger(args.pairCandidatesEvaluated ?? debug?.pairCandidatesEvaluated),
-    valid_pair_count_before_render: toInteger(args.validPairCountBeforeRender ?? debug?.validPairCountBeforeRender),
+    pair_candidates_evaluated: toInteger(
+      args.pairCandidatesEvaluated ?? debug?.pairCandidatesEvaluated,
+    ),
+    valid_pair_count_before_render: toInteger(
+      args.validPairCountBeforeRender ?? debug?.validPairCountBeforeRender,
+    ),
     no_results_reason: noResultsReason,
     no_pairs_reason: noPairsReason ? String(noPairsReason) : null,
     errors: normalizeJsonValue(errors) as unknown[],
@@ -339,8 +841,16 @@ function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
     timing_ms: timingMs,
     speed_status: speedStatus ? String(speedStatus) : null,
     created_by_user_id: args.createdByUserId ?? args.created_by_user_id ?? null,
-    beta_tester_id: args.betaTesterId ?? args.beta_tester_id ?? debug?.performance?.beta_tester_id ?? null,
-    beta_assignment_id: args.betaAssignmentId ?? args.beta_assignment_id ?? debug?.performance?.beta_assignment_id ?? null,
+    beta_tester_id:
+      args.betaTesterId ??
+      args.beta_tester_id ??
+      debug?.performance?.beta_tester_id ??
+      null,
+    beta_assignment_id:
+      args.betaAssignmentId ??
+      args.beta_assignment_id ??
+      debug?.performance?.beta_assignment_id ??
+      null,
   };
 }
 
@@ -349,7 +859,9 @@ export function buildSearchHealthEventPayload(args: LoggerArgs) {
   const classified = classifyWithReason(args, payload);
   return {
     ...payload,
-    no_pairs_reason: classified.noPairsReason ? String(classified.noPairsReason) : payload.no_pairs_reason,
+    no_pairs_reason: classified.noPairsReason
+      ? String(classified.noPairsReason)
+      : payload.no_pairs_reason,
     event_type: classified.eventType,
     severity: classified.severity,
     event_label: classified.eventLabel,
@@ -357,7 +869,9 @@ export function buildSearchHealthEventPayload(args: LoggerArgs) {
 }
 
 export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
-  const args: LoggerArgs = isLoggerArgsLikeInput(input) ? input : { result: input };
+  const args: LoggerArgs = isLoggerArgsLikeInput(input)
+    ? input
+    : { result: input };
   const payload = buildSearchHealthEventPayload(args);
   const debug = args.debug ?? args.result?.debug ?? {};
   const needsActivity = needsActivityForSearch(args, args.result ?? {}, debug);
@@ -376,24 +890,46 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
     Boolean(payload.no_results_reason) ||
     Boolean(payload.no_pairs_reason) ||
     timingMs > 3000 ||
-    ["slow", "degraded", "critical", "failed", "timeout"].includes(speedStatus) ||
+    ["slow", "degraded", "critical", "failed", "timeout"].includes(
+      speedStatus,
+    ) ||
     counters.extremeWalkingRoutesRejected > 0 ||
     counters.invalidWalkingRoutesHiddenFromDisplay > 0 ||
     counters.suppressedLowQualityPairCount > 0;
   const isAdminSearchLab = payload.source === "admin_search_lab";
-  const isBetaTesterSearch = payload.source === "beta_tester_search" || Boolean(payload.beta_tester_id);
+  const isBetaTesterSearch =
+    payload.source === "beta_tester_search" || Boolean(payload.beta_tester_id);
 
-  if (isAdminSearchLab && (args.forceLog === true || args.forceLogSearchHealth === true || args.debugMode === true || args.debugEnabled === true || args.logSearchHealth === true)) return true;
-  if (isBetaTesterSearch) return hasIssue || args.betaFeedbackSubmitted === true || args.debugMode === true || args.debugEnabled === true || (wantsPairing && payload.pair_count === 0);
+  if (
+    isAdminSearchLab &&
+    (args.forceLog === true ||
+      args.forceLogSearchHealth === true ||
+      args.debugMode === true ||
+      args.debugEnabled === true ||
+      args.logSearchHealth === true)
+  )
+    return true;
+  if (isBetaTesterSearch)
+    return (
+      hasIssue ||
+      args.betaFeedbackSubmitted === true ||
+      args.debugMode === true ||
+      args.debugEnabled === true ||
+      (wantsPairing && payload.pair_count === 0)
+    );
 
   return hasIssue;
 }
 
-export async function logSearchHealthEvent(args: LoggerArgs): Promise<{ ok: boolean; error?: unknown }> {
+export async function logSearchHealthEvent(
+  args: LoggerArgs,
+): Promise<{ ok: boolean; error?: unknown }> {
   try {
     if (!shouldLogSearchHealthEvent(args)) return { ok: true };
     const payload = buildSearchHealthEventPayload(args);
-    const { error } = await supabaseAdmin.from("search_health_events").insert(payload);
+    const { error } = await supabaseAdmin
+      .from("search_health_events")
+      .insert(payload);
     if (error) {
       console.warn("[search-health] insert failed", {
         message: error.message,
