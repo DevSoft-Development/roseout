@@ -42,6 +42,7 @@ function createMockSupabase() {
     search_document: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
     semantic_search_text: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
     image_url: "https://example.com/restaurant.jpg",
+    state: "NY",
     latitude: 40.75,
     longitude: -73.98,
   };
@@ -50,10 +51,11 @@ function createMockSupabase() {
     name: "Mock Hookah Lounge",
     activity_name: "Mock Hookah Lounge",
     location_type: "activity",
-    primary_category: "hookah lounge nightlife activity",
-    activity_type: "hookah lounge",
-    search_document: "hookah lounge drinks cocktails activity nightlife",
-    semantic_search_text: "hookah lounge drinks cocktails activity nightlife",
+    primary_category: "hookah lounge rooftop nightlife activity",
+    activity_type: "hookah rooftop lounge",
+    search_document: "hookah lounge rooftop drinks cocktails activity nightlife",
+    semantic_search_text: "hookah lounge rooftop drinks cocktails activity nightlife",
+    state: "NY",
     image_url: "https://example.com/activity.jpg",
     latitude: 40.751,
     longitude: -73.981,
@@ -130,6 +132,43 @@ async function main() {
     assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).searchType, "mixed_outing");
     assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
     assert.equal(result.renderMode, "mixed_pairs");
+  }
+
+
+  {
+    const mock = createMockSupabase();
+    const result = await runEnterpriseSearch("restaurant and rooftop drinks after walking distance", { supabase: mock.client, betaDebug: true, useLLM: false });
+    assert.equal(result.debug?.defaultMarketApplied, true, "no-geo query should apply default market");
+    assert.equal(result.debug?.defaultMarketId, "nyc_long_island");
+    assert.equal(result.debug?.defaultMarketLabel, "NYC + Long Island");
+    assert.equal((result.debug?.effectiveGeo as any)?.geoStrictness, "default_market");
+    assert.equal(result.debug?.rpcGeoLatitude, 40.758);
+    assert.equal(result.debug?.rpcGeoLongitude, -73.9855);
+    assert.equal(result.debug?.rpcRadiusMiles, 45);
+    assert.equal((result.debug?.originalGeo as any)?.geoStrictness, "none");
+    assert.equal((result.debug?.originalGeo as any)?.latitude, null);
+    assert.equal((result.debug?.effectiveGeo as any)?.defaultMarketId, "nyc_long_island");
+    const restaurantCall = mock.calls.find((call) => call.params.p_domain === "restaurant");
+    const activityCall = mock.calls.find((call) => call.params.p_domain === "activity");
+    for (const call of [restaurantCall, activityCall]) {
+      assert(call, "expected restaurant and activity RPC calls");
+      assert.equal(call.params.p_latitude, 40.758);
+      assert.equal(call.params.p_longitude, -73.9855);
+      assert.equal(call.params.p_radius_miles, 45);
+      assert.equal(call.params.p_state, "NY");
+    }
+  }
+
+  for (const query of [
+    "restaurant and rooftop drinks in Brooklyn walking distance",
+    "restaurant and rooftop drinks in Long Island walking distance",
+    "rooftop drinks near Hoboken",
+    "dinner in Miami",
+  ] as const) {
+    const mock = createMockSupabase();
+    const result = await runEnterpriseSearch(query, { supabase: mock.client, betaDebug: true, useLLM: false });
+    assert.equal(result.debug?.defaultMarketApplied, false, `${query} should not apply default market`);
+    assert.equal(result.debug?.marketReason, "explicit_geo", `${query} should keep explicit geo`);
   }
 
   {

@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     const legacySearch = () =>
       runEnterpriseSearch(query, {
         useLLM: true,
+        body,
         source: "admin_search_lab",
         route: "/api/admin/beta/search-lab",
         logPerformance: true,
@@ -70,6 +71,16 @@ export async function POST(req: NextRequest) {
       speed_status: perf.speed_status,
       parsedIntent: debug?.normalizedIntent || (result as any).normalizedIntent,
       performance: perf,
+      defaultMarketApplied: debug?.defaultMarketApplied ?? false,
+      defaultMarketId: debug?.defaultMarketId ?? null,
+      defaultMarketLabel: debug?.defaultMarketLabel ?? null,
+      defaultMarketRadiusMiles: debug?.defaultMarketRadiusMiles ?? null,
+      marketReason: debug?.marketReason ?? null,
+      originalGeo: debug?.originalGeo ?? null,
+      effectiveGeo: debug?.effectiveGeo ?? null,
+      rpcGeoLatitude: debug?.rpcGeoLatitude ?? debug?.geoLatitude ?? null,
+      rpcGeoLongitude: debug?.rpcGeoLongitude ?? debug?.geoLongitude ?? null,
+      rpcRadiusMiles: debug?.rpcRadiusMiles ?? debug?.radiusMiles ?? null,
       rejectedReasons: {
         restaurants: debug?.restaurantRejectedSummary,
         activities: debug?.activityRejectedSummary,
