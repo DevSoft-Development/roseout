@@ -6,6 +6,7 @@ const regressionQueries = [
   "steak dinner",
   "sushi dinner in Queens",
   "rooftop dinner in Long Island City",
+  "Seafood dinner with rooftop after",
   "steak dinner with bowling in Astoria",
   "hookah lounge after steak dinner",
   "Italian restaurant near me",
@@ -113,6 +114,41 @@ async function main() {
   assert.equal(parseEnterpriseIntentFastPath("tell me something romantic but not too expensive"), null);
   assert.equal(parseEnterpriseIntentFastPath("things to do in queens"), null);
 
+  {
+    const intent = normalizeIntent("Seafood dinner with rooftop after");
+
+    assert.equal(intent.searchType, "mixed_outing");
+    assert.equal(intent.needsRestaurant, true);
+    assert.equal(intent.needsActivity, true);
+    assert.equal(intent.wantsPairing, true);
+
+    assert(intent.restaurantIntent.foodTerms.includes("seafood"));
+    assert(!intent.restaurantIntent.foodTerms.includes("rooftop"));
+    assert(!intent.restaurantIntent.featureTerms.includes("rooftop"));
+
+    assert(intent.activityIntent.activityTerms.includes("rooftop"));
+    assert(intent.activityIntent.activityTerms.includes("rooftop bar"));
+    assert(intent.activityIntent.activityTerms.includes("rooftop lounge"));
+  }
+
+  {
+    const intent = normalizeIntent("rooftop dinner in Long Island City");
+
+    assert.equal(intent.needsRestaurant, true);
+    assert.equal(intent.needsActivity, false);
+    assert(intent.restaurantIntent.featureTerms.includes("rooftop"));
+  }
+
+  {
+    const parsed = await parseEnterpriseIntent("Seafood dinner with rooftop after", { useLLM: true });
+
+    assert.equal(parsed.intentParserSource, "fast_path");
+    assert.equal(parsed.fastPathMatched, true);
+    assert.equal(parsed.usedLlm, false);
+    assert.equal(parsed.intent.searchType, "mixed_outing");
+    assert(parsed.intent.activityIntent.activityTerms.includes("rooftop"));
+    assert(!parsed.intent.restaurantIntent.foodTerms.includes("rooftop"));
+  }
 
   const { runEnterpriseSearch } = await import("../lib/search/enterprise/index");
 

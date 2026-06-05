@@ -89,12 +89,31 @@ function hasRooftopDrinkActivityPhrase(query: string) {
     /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(query);
 }
 
+function hasStandaloneRooftopSecondStop(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  const connectorBeforeRooftop =
+    /\b(?:with|and|then|after|afterward|afterwards|next|later|plus|followed by|before)\b[\s\w'-]{0,40}\b(?:a\s+)?(?:rooftop|roof top)\b/i.test(q);
+
+  const rooftopBeforeAfter =
+    /\b(?:rooftop|roof top)\b[\s\w'-]{0,20}\b(?:after|afterward|afterwards|next|later)\b/i.test(q);
+
+  const rooftopDinner =
+    /\b(?:rooftop|roof top)\s+(?:dinner|restaurant|dining|brunch|lunch|breakfast)\b/i.test(q);
+
+  return (connectorBeforeRooftop || rooftopBeforeAfter) && !rooftopDinner;
+}
+
+function hasRooftopActivityPhrase(query: string) {
+  return hasRooftopDrinkActivityPhrase(query) || hasStandaloneRooftopSecondStop(query);
+}
+
 function isRooftopFastPathSignal(term: string) {
   return term === "rooftop" || term.startsWith("rooftop ");
 }
 
 function detectFastPathActivitySignals(query: string) {
-  const rooftopActivity = hasRooftopDrinkActivityPhrase(query);
+  const rooftopActivity = hasRooftopActivityPhrase(query);
   const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) =>
     includesFastPathPhrase(query, term) && (rooftopActivity || !isRooftopFastPathSignal(term)),
   );
@@ -107,7 +126,7 @@ function detectFastPathActivitySignals(query: string) {
 function detectFastPathActivityIntentTerms(query: string) {
   const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
 
-  if (hasRooftopDrinkActivityPhrase(query)) {
+  if (hasRooftopActivityPhrase(query)) {
     return uniqueTerms([
       "rooftop",
       "rooftop bar",
