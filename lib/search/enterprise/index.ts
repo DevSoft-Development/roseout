@@ -163,6 +163,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
   const started = Date.now();
   const perf = {
     total_ms: 0,
+    intent_parse_ms: 0,
     llm_ms: null as number | null,
     restaurant_rpc_ms: 0,
     activity_rpc_ms: 0,
@@ -170,6 +171,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     ranking_ms: 0,
     photo_filter_ms: 0,
     pairing_ms: 0,
+    route_check_ms: null as number | null,
   };
   let parsedIntent: SearchIntent | null = null;
   let usedFallback = false;
@@ -190,7 +192,8 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       body: options?.body,
     });
     usedLlm = parsedWithLlm;
-    perf.llm_ms = usedLlm ? Date.now() - intentStart : intentParserSource === "fast_path" ? 0 : null;
+    perf.intent_parse_ms = Date.now() - intentStart;
+    perf.llm_ms = usedLlm ? perf.intent_parse_ms : intentParserSource === "fast_path" ? 0 : null;
     const marketResolution = resolveSearchMarket({
       geo: intent.geo,
       selectedMarketId: options?.selectedMarketId ?? options?.body?.selectedMarketId ?? options?.body?.selected_market_id ?? null,
