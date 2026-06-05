@@ -11,7 +11,7 @@ describe("enterprise search distance labels", () => {
   });
 
   it("walking mode does not render labels over the default walking cap", () => {
-    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 158, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe("Distance unavailable");
+    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 158, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe(undefined);
     expect(cleanDistanceLabel("158 min walk from The Modern • Google walking route")).toBe(undefined);
   });
 

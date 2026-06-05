@@ -7,7 +7,7 @@ describe("enterprise search pure fixture regressions", () => {
     const result = runFixturePipeline("restaurant and rooftop drinks after walking distance");
     expect(result.marketResolution.marketApplied).toBe(true);
     expect(result.marketResolution.market?.id).toBe("nyc_long_island");
-    expect(result.pairDisplayLabels.some((label) => label.includes("min walk"))).toBe(true);
+    expect(result.pairDisplayLabels.some((label) => Boolean(label?.includes("min walk")))).toBe(true);
     expect(names(result.activities).some((name) => /Rooftop|Sky Lounge/.test(name))).toBe(true);
     expect(names(result.activities)).not.toContain("Winter Garden Theatre");
     expect(result.pairs.length).toBeGreaterThan(0);

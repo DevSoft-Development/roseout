@@ -1039,7 +1039,7 @@ function buildFlowText(
             : { distanceMode: "any", requireWalkablePair: false },
       });
 
-      if (label !== "Distance unavailable") return label;
+      if (label) return label;
     }
 
     return `${distance} mi between ${restaurantName || "dinner"} and ${

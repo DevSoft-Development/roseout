@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSafeWalkingMinutes, shouldRejectPairForWalkingRoute } from "../distance";
+import { getSafeWalkingMinutes, shouldHidePairForWalkingLimit, shouldRejectPairForWalkingRoute } from "../distance";
 import { createPairingDebug, createSearchPairs, scorePairQuality, sortPairs } from "../pairing";
 import { restaurants, activities, makeIntent, runFixturePipeline } from "./fixtures";
 import type { EnterprisePair, PairingPreference } from "../types";
@@ -28,6 +28,41 @@ describe("enterprise search pairing", () => {
     expect(shouldRejectPairForWalkingRoute(pairs[3], walkingPreference).reason).toBe("extreme_walking_route_duration");
     expect(kept).toContain("E");
     expect(getSafeWalkingMinutes(pairs[4])).toBe(8);
+  });
+
+  it("hides walking pairs over the effective walking cap", () => {
+    const defaultWalkingPreference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "walking",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: true,
+    };
+
+    expect(shouldHidePairForWalkingLimit({ walkingDurationMinutes: 158 }, defaultWalkingPreference)).toEqual({
+      hide: true,
+      reason: "walking_route_exceeds_default_60_minutes",
+    });
+    expect(shouldHidePairForWalkingLimit({ walkingDurationMinutes: 61 }, defaultWalkingPreference)).toEqual({
+      hide: true,
+      reason: "walking_route_exceeds_default_60_minutes",
+    });
+    expect(shouldHidePairForWalkingLimit({ walkingDurationMinutes: 60 }, defaultWalkingPreference)).toEqual({
+      hide: false,
+      reason: null,
+    });
+    expect(shouldHidePairForWalkingLimit({ walkingDurationMinutes: 45 }, defaultWalkingPreference)).toEqual({
+      hide: false,
+      reason: null,
+    });
+    expect(shouldHidePairForWalkingLimit({ walkingDurationMinutes: 45 }, { ...defaultWalkingPreference, maxPairWalkingMinutes: 30 })).toEqual({
+      hide: true,
+      reason: "walking_route_exceeds_requested_minutes",
+    });
+    expect(shouldHidePairForWalkingLimit({ walkingDurationMinutes: 90 }, { ...defaultWalkingPreference, distanceMode: "any", requireWalkablePair: false })).toEqual({
+      hide: false,
+      reason: null,
+    });
   });
 
   it("applies the default 60-minute walking route cap", () => {
@@ -81,8 +116,10 @@ describe("enterprise search pairing", () => {
       debug,
     );
 
-    expect(pairs).toHaveLength(0);
+    expect(pairs.length).toBe(0);
     expect(debug.pairsRejectedForWalkingMinutes).toBe(1);
+    expect(debug.walkingPairsHiddenOverLimit).toBe(1);
+    expect(debug.walkingPairRejectReasons.walking_route_exceeds_default_60_minutes).toBe(1);
     expect(debug.rejectedPairs[0]?.reason).toBe("walking_route_exceeds_default_60_minutes");
     expect(debug.rejectedPairs[0]?.walkingDurationMinutes).toBe(158);
   });

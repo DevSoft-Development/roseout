@@ -16,7 +16,7 @@ import { toDisplayLabel } from "@/lib/displayLabel";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
-import { cleanDistanceLabel, formatDistanceFromRestaurant, isSafeWalkingLabel } from "@/lib/search/enterprise/distance";
+import { cleanDistanceLabel, formatDistanceFromRestaurant, getEffectiveWalkingPairLimitMinutes, isWalkingDistanceSearch, shouldHidePairForWalkingLimit, isSafeWalkingLabel } from "@/lib/search/enterprise/distance";
 
 type RestaurantCard = LocationScoreFields &
   LocationVisibilityFields & {
@@ -121,6 +121,7 @@ type Message = {
   resultOrder?: ResultSectionKind[];
   searchQuery?: string;
   outingType?: string;
+  pairingPreference?: WalkingPairingPreference | null;
 };
 
 type ApiResponse = {
@@ -134,6 +135,17 @@ type ApiResponse = {
   render_mode?: string;
   hide_text_results?: boolean;
   diagnostics?: Record<string, unknown>;
+  debug?: {
+    normalizedIntent?: {
+      pairingPreference?: WalkingPairingPreference | null;
+    } | null;
+  } | null;
+};
+
+type WalkingPairingPreference = {
+  distanceMode?: string | null;
+  maxPairWalkingMinutes?: number | null;
+  requireWalkablePair?: boolean | null;
 };
 
 type ExactCampaignLocation = {
@@ -808,7 +820,8 @@ export default function CreatePage() {
       const previousActivities = previousAssistant?.activities || [];
       let responseRestaurants = data.restaurants || [];
       let responseActivities = data.activities || [];
-      const responsePairs = data.pairs || [];
+      const pairingPreference = getFrontendPairingPreference(data, cleanInput);
+      const responsePairs = filterVisibleWalkingResults(data.pairs || [], pairingPreference);
       const responseMatchedLocations = data.matched_locations || [];
       const normalizedCards = normalizeApiCards(data);
       if (normalizedCards.restaurants.length) responseRestaurants = normalizedCards.restaurants;
@@ -894,6 +907,7 @@ export default function CreatePage() {
         activities: dedupedResults.activities,
         pairs: responsePairs,
         matched_locations: responseMatchedLocations,
+        pairingPreference,
       };
       const hasRenderableCards =
         assistantMessage.restaurants?.length ||
@@ -1198,8 +1212,8 @@ export default function CreatePage() {
           {messages.map((message, index) => {
             const isUser = message.role === "user";
             const restaurants = message.restaurants || [];
-            const activities = message.activities || [];
-            const pairs = message.pairs || [];
+            const activities = filterVisibleWalkingResults(message.activities || [], message.pairingPreference);
+            const pairs = filterVisibleWalkingResults(message.pairs || [], message.pairingPreference);
             const matchedLocations = message.matched_locations || [];
             const hasCards =
               restaurants.length > 0 ||
@@ -2368,6 +2382,51 @@ function getResultInstruction(resultOrder: ResultSectionKind[]) {
     : "Select a restaurant, then choose the experience that completes the outing.";
 }
 
+
+function getRequestedWalkingLimitFromQuery(input: string) {
+  const match = input.match(/\b(\d{1,3})\s*(?:minute|min)\s*walk\b/i);
+  const minutes = match ? Number(match[1]) : null;
+
+  return Number.isFinite(minutes) && minutes && minutes > 0 ? minutes : null;
+}
+
+function getFrontendPairingPreference(
+  data: ApiResponse,
+  input: string,
+): WalkingPairingPreference | null {
+  const backendPreference = data.debug?.normalizedIntent?.pairingPreference;
+
+  if (backendPreference) return backendPreference;
+
+  if (!queryRequestsWalkingDistance(input)) return null;
+
+  return {
+    distanceMode: "walking",
+    maxPairWalkingMinutes: getRequestedWalkingLimitFromQuery(input),
+    requireWalkablePair: true,
+  };
+}
+
+function filterVisibleWalkingResults<T>(
+  results: T[],
+  pairingPreference?: WalkingPairingPreference | null,
+) {
+  if (!isWalkingDistanceSearch(pairingPreference ?? undefined)) return results;
+
+  const maxWalkingMinutes = getEffectiveWalkingPairLimitMinutes(
+    pairingPreference ?? undefined,
+  );
+
+  return results.filter((result: any) => {
+    const walkingLimitCheck = shouldHidePairForWalkingLimit(result, {
+      ...pairingPreference,
+      maxPairWalkingMinutes: maxWalkingMinutes,
+    });
+
+    return !walkingLimitCheck.hide;
+  });
+}
+
 function normalizeApiCards(data: ApiResponse) {
   const restaurants = Array.isArray(data.restaurants) ? data.restaurants : [];
   const activities = Array.isArray(data.activities) ? data.activities : [];
@@ -2694,7 +2753,7 @@ function buildDistanceText(
           pairingPreference: { distanceMode: "walking", requireWalkablePair: true },
         });
 
-        if (label !== "Distance unavailable") {
+        if (label) {
           return label.replace(" from ", " between ").replace(/$/, ` and ${getLocationName(activity)}`);
         }
       }
