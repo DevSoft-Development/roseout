@@ -130,6 +130,9 @@ export type EnterpriseLocation = {
   domain_score?: number | null;
   quality_rank_score?: number | null;
   restaurantQualityScore?: number | null;
+  restaurantOutingFitScore?: number | null;
+  restaurantOutingFitReasons?: string[] | null;
+  restaurantOutingFitPenalties?: string[] | null;
   restaurantQualityReasons?: string[] | null;
   restaurantQualityPenalties?: string[] | null;
   activityQualityScore?: number | null;
@@ -158,6 +161,7 @@ export type EnterprisePair = {
   pairQualityScore?: number;
   pairQualityTier?: number;
   restaurantQualityScore?: number;
+  restaurantOutingFitScore?: number;
   activityQualityScore?: number;
   pairQualityReasons?: string[];
   pairQualityPenalties?: string[];

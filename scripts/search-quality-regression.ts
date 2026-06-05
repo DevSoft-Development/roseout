@@ -444,10 +444,19 @@ const qualityRestaurants: EnterpriseLocation[] = [
   { id: "qr1", name: "Dave's Hot Chicken", restaurant_name: "Dave's Hot Chicken", location_type: "restaurant", primary_category: "fast_food", cuisine: "Chicken", latitude: 40.758, longitude: -73.985, rating: 4.5, review_count: 900, has_photos: true, search_document: "fast food quick service hot chicken counter service chain" },
   { id: "qr2", name: "The Modern", restaurant_name: "The Modern", location_type: "restaurant", primary_category: "fine_dining", cuisine: "New American", latitude: 40.7614, longitude: -73.9779, rating: 4.7, review_count: 2500, has_photos: true, public_visibility_tier: "premium", quality_status: "published", search_document: "fine dining full service upscale romantic date night cocktails dinner restaurant" },
   { id: "qr3", name: "OLIO E PIÙ Bryant Park", restaurant_name: "OLIO E PIÙ Bryant Park", location_type: "restaurant", primary_category: "full_service", cuisine: "Italian", latitude: 40.7539, longitude: -73.9836, rating: 4.6, review_count: 1300, has_photos: true, quality_status: "verified", search_document: "full service italian restaurant dinner date night wine cocktails" },
+  { id: "qr4", name: "MOE EATS NYC", restaurant_name: "MOE EATS NYC", location_type: "restaurant", primary_category: "restaurant", latitude: 40.7509, longitude: -73.9857, rating: 4.6, review_count: 700, has_photos: true, search_document: "casual eats quick bite takeout delivery" },
+  { id: "qr5", name: "La Grande Boucherie", restaurant_name: "La Grande Boucherie", location_type: "restaurant", primary_category: "brasserie", cuisine: "French", latitude: 40.7529, longitude: -73.9857, rating: 4.5, review_count: 6500, has_photos: true, public_visibility_tier: "featured", curation_tier: "curated", quality_status: "verified", search_document: "brasserie full service upscale romantic date night dinner cocktails reservations elegant ambiance" },
+  { id: "qr6", name: "Parker & Quinn", restaurant_name: "Parker & Quinn", location_type: "restaurant", primary_category: "full_service", cuisine: "American", latitude: 40.7519, longitude: -73.9857, rating: 4.4, review_count: 1800, has_photos: true, quality_status: "published", search_document: "full service restaurant cocktail dinner lounge reservations date night" },
 ];
 const rankedGenericRestaurants = rankRestaurantResults(qualityRestaurants, genericRooftopWalkingIntent).map((record) => record.name);
 assert(rankedGenericRestaurants.indexOf("The Modern") < rankedGenericRestaurants.indexOf("Dave's Hot Chicken"), "fine dining should outrank fast-food for generic restaurant/dinner queries");
 assert(rankedGenericRestaurants.indexOf("OLIO E PIÙ Bryant Park") < rankedGenericRestaurants.indexOf("Dave's Hot Chicken"), "full-service dinner should outrank fast-food for generic restaurant/dinner queries");
+const moe = qualityRestaurants.find((record) => record.name === "MOE EATS NYC");
+const boucherie = qualityRestaurants.find((record) => record.name === "La Grande Boucherie");
+const parker = qualityRestaurants.find((record) => record.name === "Parker & Quinn");
+assert(moe && boucherie && parker);
+assert(Number((boucherie as any).restaurantOutingFitScore) > Number((moe as any).restaurantOutingFitScore), "brasserie/full-service/upscale restaurant should have higher outingFitScore than generic eats venue");
+assert(Number((parker as any).restaurantOutingFitScore) > Number((moe as any).restaurantOutingFitScore), "full-service cocktail/dinner restaurant should have higher outingFitScore than generic eats venue");
 
 const casualChickenIntent = normalizeIntent("casual chicken dinner and rooftop drinks walking distance");
 const rankedCasualRestaurants = rankRestaurantResults(qualityRestaurants, casualChickenIntent).map((record) => record.name);
@@ -457,6 +466,7 @@ const rooftopActivities: EnterpriseLocation[] = [
   { id: "qa1", name: "Monarch Rooftop Lounge", activity_name: "Monarch Rooftop Lounge", location_type: "activity", activity_type: "rooftop_lounge", primary_category: "rooftop_bar", latitude: 40.7505, longitude: -73.9864, rating: 4.5, review_count: 1200, has_photos: true, quality_status: "published", search_document: "real rooftop lounge rooftop bar cocktails skyline views terrace nightlife" },
   { id: "qa2", name: "Rooftop Bars NYC", activity_name: "Rooftop Bars NYC", location_type: "activity", activity_type: "rooftop", primary_category: "listing", latitude: 40.751, longitude: -73.986, rating: 4.8, review_count: 50, has_photos: false, search_document: "best rooftop bars nyc guide to rooftop bars list" },
   { id: "qa3", name: "Broadway Playhouse", activity_name: "Broadway Playhouse", location_type: "activity", activity_type: "theater", primary_category: "theater", latitude: 40.759, longitude: -73.985, rating: 4.7, review_count: 2000, has_photos: true, search_document: "theater theatre broadway performance musical" },
+  { id: "qa4", name: "Refinery Rooftop", activity_name: "Refinery Rooftop", location_type: "activity", activity_type: "rooftop_lounge", primary_category: "rooftop_bar", latitude: 40.7525, longitude: -73.9862, rating: 4.4, review_count: 1600, has_photos: true, quality_status: "verified", search_document: "rooftop lounge rooftop bar cocktails skyline views terrace nightlife" },
 ];
 const rankedRooftopActivities = rankActivityResults(rooftopActivities, genericRooftopWalkingIntent).map((record) => record.name);
 assert.equal(rankedRooftopActivities[0], "Monarch Rooftop Lounge", "real rooftop lounge/bar should rank first for rooftop drinks");
@@ -472,6 +482,11 @@ assert.equal(pairDebug.finalPairSortReason, "market_quality_then_distance");
 assert(pairDebug.pairQualityScorePreview.length > 0, "pair quality debug preview should be populated");
 assert(Number((pairQualityResults[0] as any).pairQualityTier) >= Number((pairQualityResults.at(-1) as any).pairQualityTier), "pairs should sort by quality tier before tiny distance differences");
 assert.notEqual(pairQualityResults[0]?.restaurant.name, "Dave's Hot Chicken", "ultra-close fast-food pairs should not dominate stronger generic outing pairs");
+assert.notEqual(pairQualityResults[0]?.restaurant.name, "MOE EATS NYC", "ultra-close weak outing-fit pairs should not dominate stronger generic outing pairs");
+assert(pairQualityResults.some((pair) => pair.restaurant.name === "La Grande Boucherie" || pair.restaurant.name === "Parker & Quinn"), "strong full-service restaurants should remain renderable in pair results");
+assert(pairDebug.pairQualityTierCounts.tier3 + pairDebug.pairQualityTierCounts.tier2 >= 5, "test fixture should include at least 5 strong tier 2/3 pairs");
+assert(pairDebug.suppressedWeakOutingFitPairCount > 0, "tier 0 weak outing-fit pairs should be suppressed when enough tier 2/3 pairs exist");
+assert("restaurantOutingFitScore" in pairDebug.pairQualityScorePreview[0], "pair debug preview should include restaurant outing fit score");
 
 assert.equal(toDisplayLabel("Fine_dining"), "Fine Dining", "raw enum labels should be display formatted");
 assert(!cleanDistanceLabel("8 min walk from The Modern • Google walking route")?.includes("Google walking route"), "Google walking route wording should be removed from visible labels");
