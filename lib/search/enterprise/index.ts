@@ -9,6 +9,7 @@ import { createRpcDebug, recoverEnterpriseLane, searchEnterpriseLane } from "./r
 import { productionSafeDebug } from "./debug";
 import { getSearchSpeedStatus, logSearchPerformance } from "@/lib/search/performance";
 import { resolveSearchMarket, type UserSearchLocation } from "./markets";
+import { logSearchHealthEvent } from "./searchHealthLogger";
 
 function firstImage(value: unknown): string | null {
   if (!value) return null;
@@ -152,6 +153,8 @@ type EnterpriseSearchOptions = {
   useFastPath?: boolean;
   selectedMarketId?: string | null;
   userLocation?: UserSearchLocation | null;
+  createdByUserId?: string | null;
+  searchHealthDebug?: boolean;
 };
 
 export async function runEnterpriseSearch(query: string, options?: EnterpriseSearchOptions): Promise<EnterpriseSearchResult> {
@@ -363,7 +366,19 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         debug: options.betaDebug ? performanceDebug : null,
       });
     }
-    return { success: true, reply: replyFor(restaurants,activities,pairs,effectiveIntent), restaurants, activities, pairs, matched_locations, matchedLocations: matched_locations, render_mode, renderMode: render_mode, card_counts, cardCounts: card_counts, debug: options?.betaDebug ? fullDebug : productionSafeDebug(fullDebug) };
+    const responseDebug = options?.betaDebug ? fullDebug : productionSafeDebug(fullDebug);
+    const response: EnterpriseSearchResult = { success: true, reply: replyFor(restaurants,activities,pairs,effectiveIntent), restaurants, activities, pairs, matched_locations, matchedLocations: matched_locations, render_mode, renderMode: render_mode, card_counts, cardCounts: card_counts, debug: responseDebug };
+    void logSearchHealthEvent({
+      source: options?.source ?? "enterprise_search",
+      rawQuery: query,
+      result: response,
+      debug: fullDebug,
+      createdByUserId: options?.createdByUserId ?? options?.userId ?? null,
+      betaAssignmentId: options?.betaAssignmentId ?? null,
+      betaTesterId: options?.betaTesterId ?? null,
+      debugMode: Boolean(options?.searchHealthDebug ?? options?.betaDebug),
+    });
+    return response;
   } catch (error) {
     const totalMs = Date.now() - started;
     if (options?.logPerformance) {
@@ -385,6 +400,38 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         errorMessage: error instanceof Error ? error.message : String(error),
       });
     }
+    void logSearchHealthEvent({
+      source: options?.source ?? "enterprise_search",
+      rawQuery: query,
+      result: {
+        success: false,
+        restaurants: [],
+        activities: [],
+        pairs: [],
+        render_mode: "empty",
+        debug: {
+          normalizedIntent: parsedIntent,
+          performance: {
+            total_ms: totalMs,
+            speed_status: getSearchSpeedStatus({ totalMs, success: false }),
+          },
+        },
+      },
+      debug: {
+        normalizedIntent: parsedIntent,
+        performance: {
+          total_ms: totalMs,
+          speed_status: getSearchSpeedStatus({ totalMs, success: false }),
+        },
+      },
+      errors: [error instanceof Error ? error.message : String(error)],
+      timingMs: totalMs,
+      speedStatus: getSearchSpeedStatus({ totalMs, success: false }),
+      createdByUserId: options?.createdByUserId ?? options?.userId ?? null,
+      betaAssignmentId: options?.betaAssignmentId ?? null,
+      betaTesterId: options?.betaTesterId ?? null,
+      debugMode: Boolean(options?.searchHealthDebug ?? options?.betaDebug),
+    });
     throw error;
   }
 }

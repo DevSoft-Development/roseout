@@ -1,6 +1,7 @@
 import { firstImage, getLocationImage } from "@/lib/locationImage";
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
+import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -114,6 +115,7 @@ function emptySearchResponse(reply: string) {
 
 export async function POST(request: Request) {
   const startedAt = Date.now();
+  let searchHealthRawQuery: string | null = null;
 
   try {
     const body = await request.json().catch(() => ({}));
@@ -128,6 +130,7 @@ export async function POST(request: Request) {
             : "";
 
     const cleanInput = input.trim();
+    searchHealthRawQuery = cleanInput;
 
     if (!cleanInput) {
       return Response.json(
@@ -149,7 +152,7 @@ export async function POST(request: Request) {
     const legacySearch = () => runEnterpriseSearch(cleanInput, {
       body,
       useLLM: true,
-      source: "create",
+      source: betaTesterId ? "beta_tester_search" : "public_create_search",
       route: "/api/generate",
       logPerformance: true,
       sessionId: request.headers.get("x-session-id") || null,
@@ -157,6 +160,7 @@ export async function POST(request: Request) {
       betaTesterId,
       usedCustomPrompt,
       betaDebug,
+      searchHealthDebug: betaDebug,
     });
 
     const result: any = await runCreateSearchWithEdgeFallback(
@@ -210,6 +214,18 @@ export async function POST(request: Request) {
       },
     };
 
+    if (result.source === "edge" || (result.debug as any)?.source === "edge") {
+      void logSearchHealthEvent({
+        source: betaTesterId ? "beta_tester_search" : "public_create_search",
+        rawQuery: cleanInput,
+        result,
+        debug: result.debug,
+        betaAssignmentId,
+        betaTesterId,
+        debugMode: betaDebug || Boolean(body?.debug),
+      });
+    }
+
     console.log(
       "ROUTE_TIMING",
       JSON.stringify({
@@ -234,6 +250,15 @@ export async function POST(request: Request) {
         message.includes("not iterable") || message.includes("intent.vibe")
           ? "Likely LLM intent shape regression. Check intent.vibe normalization."
           : "Search route failed after parsing or ranking.",
+    });
+
+    void logSearchHealthEvent({
+      source: "public_create_search",
+      rawQuery: searchHealthRawQuery,
+      result: emptySearchResponse("Search is having trouble right now."),
+      errors: [message],
+      timingMs: Date.now() - startedAt,
+      speedStatus: "failed",
     });
 
     return Response.json(

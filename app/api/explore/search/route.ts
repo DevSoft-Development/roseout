@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const betaTesterId = params.get("betaTesterId") || request.headers.get("x-beta-tester-id");
     const usedCustomPrompt = params.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
     const betaDebug = process.env.NODE_ENV !== "production" || params.get("betaDebug") === "true";
-    const result = await runEnterpriseSearch(query, { useLLM: !simple && q.split(/\s+/).length > 3, displayLimit: 48, source: "explore", route: "/api/explore/search", logPerformance: true, sessionId: request.cookies.get("toh_session")?.value || request.headers.get("x-session-id"), betaAssignmentId, betaTesterId, usedCustomPrompt, betaDebug });
+    const result = await runEnterpriseSearch(query, { useLLM: !simple && q.split(/\s+/).length > 3, displayLimit: 48, source: betaTesterId ? "beta_tester_search" : "search_api", route: "/api/explore/search", logPerformance: true, sessionId: request.cookies.get("toh_session")?.value || request.headers.get("x-session-id"), betaAssignmentId, betaTesterId, usedCustomPrompt, betaDebug, searchHealthDebug: betaDebug });
     const mixedWithPairing = result.render_mode === "mixed_pairs" || result.render_mode === "partial_mixed";
     let exploreNote: string | undefined;
     let items = kind === "restaurants" || kind === "rooftops" ? result.restaurants : kind === "activities" || kind === "lounges" ? result.activities : mixedWithPairing && result.pairs.length ? [...result.pairs, ...result.restaurants, ...result.activities] : [...result.restaurants, ...result.activities];

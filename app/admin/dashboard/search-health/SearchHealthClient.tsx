@@ -1,0 +1,216 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type SearchHealthData = {
+  summary?: Record<string, number>;
+  recentEvents?: any[];
+  topNoPairReasons?: { reason: string; count: number }[];
+  topNoResultReasons?: { reason: string; count: number }[];
+  slowestSearches?: any[];
+};
+
+const ranges = ["24h", "7d", "30d"];
+const sources = ["", "admin_search_lab", "public_create_search", "beta_tester_search", "search_api"];
+const statuses = ["", "new", "reviewing", "fixed", "ignored", "archived"];
+const speeds = ["", "slow", "critical", "failed", "timeout", "degraded"];
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function issueLabel(event: any) {
+  return event?.no_pairs_reason || event?.no_results_reason || event?.speed_status || "search_warning";
+}
+
+export default function SearchHealthClient() {
+  const [range, setRange] = useState("7d");
+  const [source, setSource] = useState("");
+  const [status, setStatus] = useState("");
+  const [speed, setSpeed] = useState("");
+  const [data, setData] = useState<SearchHealthData>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const params = useMemo(() => {
+    const next = new URLSearchParams({ range });
+    if (source) next.set("source", source);
+    if (status) next.set("review_status", status);
+    if (speed) next.set("speed_status", speed);
+    return next;
+  }, [range, source, status, speed]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/admin/search-health?${params.toString()}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (cancelled) return;
+        if (!payload.success) throw new Error(payload.error || "Failed to load search health");
+        setData(payload);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load search health");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [params]);
+
+  async function openDetail(id: string) {
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/admin/search-health/${id}`, { cache: "no-store" });
+      const payload = await res.json();
+      if (!payload.success) throw new Error(payload.error || "Failed to load event");
+      setSelected(payload.row);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load event");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  const summary = data.summary ?? {};
+  const cards = [
+    ["Total Search Issues", summary.totalEvents ?? 0],
+    ["No Result Searches", summary.noResultSearches ?? 0],
+    ["No Valid Pair Searches", summary.noPairSearches ?? 0],
+    ["Slow Searches", summary.slowSearches ?? 0],
+    ["Unresolved Events", summary.unresolvedEvents ?? 0],
+  ];
+
+  return (
+    <>
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {cards.map(([title, value]) => (
+          <div key={title} className="rounded-3xl border border-white/10 bg-white/[0.05] p-5">
+            <p className="text-sm font-black text-white">{title}</p>
+            <p className="mt-5 text-3xl font-black text-white">{loading ? "—" : value}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="grid gap-3 rounded-3xl border border-white/10 bg-[#120d0b] p-4 md:grid-cols-4">
+        <Filter label="Date range" value={range} values={ranges} onChange={setRange} />
+        <Filter label="Source" value={source} values={sources} onChange={setSource} empty="All sources" />
+        <Filter label="Status" value={status} values={statuses} onChange={setStatus} empty="All statuses" />
+        <Filter label="Speed" value={speed} values={speeds} onChange={setSpeed} empty="All speeds" />
+      </section>
+
+      {error ? <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">{error}</div> : null}
+
+      <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
+        <h2 className="text-lg font-black">Recent Search Issues</h2>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[1000px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.2em] text-white/45">
+              <tr>
+                {['Time','Query','Issue','Pair Count','Restaurant Count','Activity Count','Speed','Market','Status'].map((h) => <th key={h} className="px-3 py-3">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {(data.recentEvents ?? []).map((event) => (
+                <tr key={event.id} className="cursor-pointer hover:bg-white/[0.04]" onClick={() => openDetail(event.id)}>
+                  <td className="px-3 py-3 text-white/60">{formatTime(event.created_at)}</td>
+                  <td className="max-w-[280px] truncate px-3 py-3 font-semibold">{event.raw_query || '—'}</td>
+                  <td className="px-3 py-3 text-rose-100">{issueLabel(event)}</td>
+                  <td className="px-3 py-3">{event.pair_count ?? '—'}</td>
+                  <td className="px-3 py-3">{event.restaurant_count ?? '—'}</td>
+                  <td className="px-3 py-3">{event.activity_count ?? '—'}</td>
+                  <td className="px-3 py-3">{event.timing_ms ? `${event.timing_ms}ms` : event.speed_status || '—'}</td>
+                  <td className="px-3 py-3">{event.default_market_id || '—'}</td>
+                  <td className="px-3 py-3">{event.review_status}</td>
+                </tr>
+              ))}
+              {!loading && !(data.recentEvents ?? []).length ? (
+                <tr><td className="px-3 py-8 text-center text-white/50" colSpan={9}>No search health events match these filters.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <ReasonTable title="Top No Pair Reasons" rows={data.topNoPairReasons ?? []} />
+        <div className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
+          <h2 className="text-lg font-black">Slowest Searches</h2>
+          <div className="mt-4 space-y-3">
+            {(data.slowestSearches ?? []).map((row) => (
+              <div key={row.id} className="rounded-2xl bg-white/[0.04] p-3 text-sm">
+                <div className="font-semibold">{row.raw_query || '—'}</div>
+                <div className="mt-1 text-white/55">{row.timing_ms}ms · {row.source} · {formatTime(row.last_seen || row.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <ReasonTable title="Top No Result Reasons" rows={data.topNoResultReasons ?? []} />
+
+      {selected ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setSelected(null)}>
+          <div className="max-h-[85vh] w-full max-w-4xl overflow-auto rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Search Health Detail</p>
+                <h3 className="mt-2 text-2xl font-black">{selected.raw_query || 'Untitled event'}</h3>
+                <p className="mt-1 text-sm text-white/55">{formatTime(selected.created_at)} · {selected.source}</p>
+              </div>
+              <button className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold" onClick={() => setSelected(null)}>Close</button>
+            </div>
+            <button
+              className="mt-5 rounded-2xl bg-rose-500 px-4 py-2 text-sm font-black text-white"
+              onClick={() => navigator.clipboard.writeText(JSON.stringify(selected.debug ?? {}, null, 2))}
+            >
+              Copy Debug JSON
+            </button>
+            <pre className="mt-4 overflow-auto rounded-2xl bg-black/40 p-4 text-xs leading-5 text-white/70">{JSON.stringify(selected.debug ?? {}, null, 2)}</pre>
+          </div>
+        </div>
+      ) : null}
+      {detailLoading ? <div className="fixed bottom-4 right-4 rounded-full bg-white px-4 py-2 text-sm font-black text-black">Loading event…</div> : null}
+    </>
+  );
+}
+
+function Filter({ label, value, values, empty, onChange }: { label: string; value: string; values: string[]; empty?: string; onChange: (value: string) => void }) {
+  return (
+    <label className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+      {label}
+      <select className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm normal-case tracking-normal text-white" value={value} onChange={(event) => onChange(event.target.value)}>
+        {values.map((item) => <option key={item || 'all'} value={item}>{item || empty || item}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function ReasonTable({ title, rows }: { title: string; rows: { reason: string; count: number }[] }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
+      <h2 className="text-lg font-black">{title}</h2>
+      <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-white/[0.04] text-xs uppercase tracking-[0.2em] text-white/45"><tr><th className="px-4 py-3">Reason</th><th className="px-4 py-3">Count</th></tr></thead>
+          <tbody className="divide-y divide-white/10">
+            {rows.map((row) => <tr key={row.reason}><td className="px-4 py-3">{row.reason}</td><td className="px-4 py-3 font-black">{row.count}</td></tr>)}
+            {!rows.length ? <tr><td className="px-4 py-6 text-white/50" colSpan={2}>No reasons found.</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
