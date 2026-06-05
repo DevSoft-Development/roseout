@@ -10,24 +10,51 @@ export type SearchHealthSource =
   | "admin_test_event"
   | string;
 
-type LoggerArgs = {
+export type SearchHealthSeverity = "info" | "warning" | "error" | "critical";
+
+export type LoggerArgs = {
   source?: SearchHealthSource | null;
   environment?: string | null;
   rawQuery?: string | null;
+  raw_query?: string | null;
   result?: any;
   debug?: any;
   errors?: unknown[] | unknown;
   warnings?: unknown[] | unknown;
   createdByUserId?: string | null;
+  created_by_user_id?: string | null;
   betaTesterId?: string | null;
+  beta_tester_id?: string | null;
   betaAssignmentId?: string | null;
+  beta_assignment_id?: string | null;
   debugMode?: boolean;
+  debugEnabled?: boolean;
+  logSearchHealth?: boolean;
   forceLog?: boolean;
+  forceLogSearchHealth?: boolean;
   betaFeedbackSubmitted?: boolean;
   noResultsReason?: string | null;
+  no_results_reason?: string | null;
   noPairsReason?: string | null;
+  no_pairs_reason?: string | null;
   timingMs?: number | null;
+  timing_ms?: number | null;
   speedStatus?: string | null;
+  speed_status?: string | null;
+  needsActivity?: boolean | null;
+  needsRestaurant?: boolean | null;
+  wantsPairing?: boolean | null;
+  distanceMode?: string | null;
+  requireWalkablePair?: boolean | null;
+  maxPairWalkingMinutes?: number | null;
+  restaurant_count?: number | null;
+  activity_count?: number | null;
+  pair_count?: number | null;
+  pairCandidatesEvaluated?: number | null;
+  validPairCountBeforeRender?: number | null;
+  extremeWalkingRoutesRejected?: number | null;
+  invalidWalkingRoutesHiddenFromDisplay?: number | null;
+  suppressedLowQualityPairCount?: number | null;
 };
 
 function asArray(value: unknown): unknown[] {
@@ -67,8 +94,9 @@ function arrayCount(value: unknown): number | null {
   return Array.isArray(value) ? value.length : null;
 }
 
-function inferRestaurantCount(result: any, debug: any): number {
+function inferRestaurantCount(args: LoggerArgs, result: any, debug: any): number {
   return (
+    toInteger(args.restaurant_count) ??
     countFrom(result, debug, "restaurant_count", ["restaurantCount"]) ??
     arrayCount(result?.restaurants) ??
     toInteger(result?.card_counts?.restaurants) ??
@@ -77,8 +105,9 @@ function inferRestaurantCount(result: any, debug: any): number {
   );
 }
 
-function inferActivityCount(result: any, debug: any): number {
+function inferActivityCount(args: LoggerArgs, result: any, debug: any): number {
   return (
+    toInteger(args.activity_count) ??
     countFrom(result, debug, "activity_count", ["activityCount"]) ??
     arrayCount(result?.activities) ??
     toInteger(result?.card_counts?.activities) ??
@@ -87,8 +116,9 @@ function inferActivityCount(result: any, debug: any): number {
   );
 }
 
-function inferPairCount(result: any, debug: any): number {
+function inferPairCount(args: LoggerArgs, result: any, debug: any): number {
   return (
+    toInteger(args.pair_count) ??
     countFrom(result, debug, "pair_count", ["pairCount"]) ??
     arrayCount(result?.pairs) ??
     toInteger(result?.card_counts?.pairs) ??
@@ -97,29 +127,79 @@ function inferPairCount(result: any, debug: any): number {
   );
 }
 
-function inferNoResultsReason(args: LoggerArgs, restaurantCount: number, activityCount: number) {
-  const result = args.result ?? {};
-  const debug = args.debug ?? result.debug ?? {};
-  const intent = debug?.normalizedIntent ?? result?.normalizedIntent ?? {};
-  if (args.noResultsReason) return args.noResultsReason;
-  if (debug?.noResultsReason) return String(debug.noResultsReason);
-  if (result?.diagnostics?.no_results_reason) return String(result.diagnostics.no_results_reason);
-  if (restaurantCount === 0 && activityCount === 0) return "no_restaurant_or_activity_results";
-  if (restaurantCount === 0) return "no_restaurant_results";
-  if (intent?.needsActivity === true && activityCount === 0) return "no_activity_results";
-  return null;
-}
-
 function normalizeJsonValue(value: unknown): unknown {
   if (value == null) return value;
   try {
-    return JSON.parse(JSON.stringify(value, (_key, item) => {
+    return JSON.parse(JSON.stringify(value, (key, item) => {
+      const lowerKey = String(key).toLowerCase();
+      if (lowerKey.includes("token") || lowerKey.includes("secret") || lowerKey.includes("apikey") || lowerKey.includes("api_key") || lowerKey === "authorization") {
+        return "[redacted]";
+      }
       if (typeof item === "string" && item.length > 2000) return `${item.slice(0, 2000)}…`;
       return item;
     }));
   } catch {
     return String(value);
   }
+}
+
+function getIntent(args: LoggerArgs, result: any, debug: any) {
+  return debug?.normalizedIntent ?? result?.normalizedIntent ?? {};
+}
+
+function needsRestaurantForSearch(args: LoggerArgs, result: any, debug: any) {
+  const intent = getIntent(args, result, debug);
+  if (typeof args.needsRestaurant === "boolean") return args.needsRestaurant;
+  if (typeof intent?.needsRestaurant === "boolean") return intent.needsRestaurant;
+  if (typeof intent?.needs_restaurant === "boolean") return intent.needs_restaurant;
+  return true;
+}
+
+function needsActivityForSearch(args: LoggerArgs, result: any, debug: any) {
+  const intent = getIntent(args, result, debug);
+  if (typeof args.needsActivity === "boolean") return args.needsActivity;
+  if (typeof intent?.needsActivity === "boolean") return intent.needsActivity;
+  if (typeof intent?.needs_activity === "boolean") return intent.needs_activity;
+  return false;
+}
+
+function wantsPairingForSearch(args: LoggerArgs, result: any, debug: any) {
+  const intent = getIntent(args, result, debug);
+  if (typeof args.wantsPairing === "boolean") return args.wantsPairing;
+  return (
+    intent?.wantsPairing === true ||
+    intent?.wants_pairing === true ||
+    ["mixed_pairs", "partial_mixed"].includes(String(result?.render_mode ?? result?.renderMode ?? debug?.renderMode ?? ""))
+  );
+}
+
+function inferNoResultsReason(args: LoggerArgs, restaurantCount: number, activityCount: number) {
+  const result = args.result ?? {};
+  const debug = args.debug ?? result.debug ?? {};
+  if (args.noResultsReason || args.no_results_reason) return args.noResultsReason ?? args.no_results_reason ?? null;
+  if (debug?.noResultsReason) return String(debug.noResultsReason);
+  if (debug?.no_results_reason) return String(debug.no_results_reason);
+  if (result?.diagnostics?.no_results_reason) return String(result.diagnostics.no_results_reason);
+  if (restaurantCount === 0 && activityCount === 0 && needsRestaurantForSearch(args, result, debug) && needsActivityForSearch(args, result, debug)) return "no_restaurant_or_activity_results";
+  if (restaurantCount === 0 && needsRestaurantForSearch(args, result, debug)) return "no_restaurant_results";
+  if (activityCount === 0 && needsActivityForSearch(args, result, debug)) return "no_activity_results";
+  return null;
+}
+
+function walkingMode(value: unknown) {
+  return ["walking", "short_walk", "walk"].includes(String(value ?? "").toLowerCase());
+}
+
+function getIssueCounters(args: LoggerArgs, debug: any) {
+  return {
+    extremeWalkingRoutesRejected: toInteger(args.extremeWalkingRoutesRejected ?? debug?.extremeWalkingRoutesRejected) ?? 0,
+    invalidWalkingRoutesHiddenFromDisplay: toInteger(args.invalidWalkingRoutesHiddenFromDisplay ?? debug?.invalidWalkingRoutesHiddenFromDisplay) ?? 0,
+    suppressedLowQualityPairCount: toInteger(args.suppressedLowQualityPairCount ?? debug?.suppressedLowQualityPairCount) ?? 0,
+  };
+}
+
+function getRouteDebug(debug: any) {
+  return debug?.performance?.route ?? debug?.route ?? null;
 }
 
 export function buildSearchHealthDebug(result: any, debug: any) {
@@ -131,65 +211,120 @@ export function buildSearchHealthDebug(result: any, debug: any) {
     originalGeo: debug?.originalGeo ?? null,
     effectiveGeo: debug?.effectiveGeo ?? debug?.geo ?? null,
     pairingPreference: debug?.pairingPreference ?? normalizedIntent?.pairingPreference ?? null,
+    route: getRouteDebug(debug),
     counts: {
-      restaurants: inferRestaurantCount(result, debug),
-      activities: inferActivityCount(result, debug),
-      pairs: inferPairCount(result, debug),
+      restaurants: inferRestaurantCount({}, result, debug),
+      activities: inferActivityCount({}, result, debug),
+      pairs: inferPairCount({}, result, debug),
       pairCandidatesEvaluated: toInteger(debug?.pairCandidatesEvaluated),
       validPairCountBeforeRender: toInteger(debug?.validPairCountBeforeRender),
       extremeWalkingRoutesRejected: toInteger(debug?.extremeWalkingRoutesRejected) ?? 0,
       invalidWalkingRoutesHiddenFromDisplay: toInteger(debug?.invalidWalkingRoutesHiddenFromDisplay) ?? 0,
       suppressedLowQualityPairCount: toInteger(debug?.suppressedLowQualityPairCount) ?? 0,
     },
+    performance,
     rejectedPairs: safeSlice(debug?.rejectedPairs, 25),
     restaurantQualityScorePreview: safeSlice(debug?.restaurantQualityScorePreview, 12),
     activityQualityScorePreview: safeSlice(debug?.activityQualityScorePreview, 12),
     pairQualityScorePreview: safeSlice(debug?.pairQualityScorePreview, 12),
-    performance,
   });
 }
 
-export function buildSearchHealthEventPayload(args: LoggerArgs) {
+function classifyWithReason(args: LoggerArgs, payload: any) {
+  const result = args.result ?? {};
+  const debug = args.debug ?? result.debug ?? {};
+  const needsRestaurant = needsRestaurantForSearch(args, result, debug);
+  const needsActivity = needsActivityForSearch(args, result, debug);
+  const wantsPairing = wantsPairingForSearch(args, result, debug);
+  const distanceMode = args.distanceMode ?? payload.distance_mode ?? debug?.distanceMode ?? debug?.pairingPreference?.distanceMode;
+  const requireWalkablePair = args.requireWalkablePair ?? debug?.requireWalkablePair ?? debug?.pairingPreference?.requireWalkablePair;
+  const counters = getIssueCounters(args, debug);
+  const errors = Array.isArray(payload.errors) ? payload.errors : [];
+  const speedStatus = String(payload.speed_status ?? "").toLowerCase();
+  const timingMs = Number(payload.timing_ms ?? 0);
+
+  if (payload.source === "admin_test_event") {
+    return { eventType: "test_event", severity: "info" as const, eventLabel: "Admin test event", noPairsReason: payload.no_pairs_reason };
+  }
+  if (errors.length > 0) return { eventType: "search_error", severity: "error" as const, eventLabel: "Search error", noPairsReason: payload.no_pairs_reason };
+  if (payload.restaurant_count === 0 && needsRestaurant) return { eventType: "no_restaurant_results", severity: "warning" as const, eventLabel: "No restaurant results", noPairsReason: payload.no_pairs_reason };
+  if (payload.activity_count === 0 && needsActivity) return { eventType: "no_activity_results", severity: "warning" as const, eventLabel: "No activity results", noPairsReason: payload.no_pairs_reason };
+  if (wantsPairing && Number(payload.restaurant_count ?? 0) > 0 && Number(payload.activity_count ?? 0) > 0 && payload.pair_count === 0) {
+    if (walkingMode(distanceMode) || requireWalkablePair === true) {
+      return { eventType: "no_valid_pairs", severity: "warning" as const, eventLabel: "No valid pairs within walking distance", noPairsReason: "no_pairs_within_walking_distance" };
+    }
+    return { eventType: "no_valid_pairs", severity: "warning" as const, eventLabel: "No valid pairs found", noPairsReason: "no_valid_pairs" };
+  }
+  if (walkingMode(distanceMode) && Number(payload.max_pair_walking_minutes ?? args.maxPairWalkingMinutes ?? 999) <= 5 && Number(payload.pair_count ?? 0) > 0 && Number(payload.pair_count ?? 0) <= 2) {
+    return { eventType: "low_pair_count", severity: "info" as const, eventLabel: "Strict walking search with limited pairs", noPairsReason: payload.no_pairs_reason };
+  }
+  if (timingMs > 3000 || ["slow", "degraded"].includes(speedStatus)) return { eventType: "slow_search", severity: "warning" as const, eventLabel: "Slow search", noPairsReason: payload.no_pairs_reason };
+  if (counters.extremeWalkingRoutesRejected > 0 || counters.invalidWalkingRoutesHiddenFromDisplay > 0) return { eventType: "walking_route_warning", severity: "warning" as const, eventLabel: "Walking route warning", noPairsReason: payload.no_pairs_reason };
+  if (counters.suppressedLowQualityPairCount > 0) return { eventType: "quality_warning", severity: "info" as const, eventLabel: "Low-quality pairs suppressed", noPairsReason: payload.no_pairs_reason };
+  if (payload.source === "admin_search_lab") return { eventType: "successful_debug_run", severity: "info" as const, eventLabel: "Search Lab debug run", noPairsReason: payload.no_pairs_reason };
+  return { eventType: "search_event", severity: "info" as const, eventLabel: "Search event", noPairsReason: payload.no_pairs_reason };
+}
+
+export function classifySearchHealthEvent(input: LoggerArgs | any): { eventType: string; severity: SearchHealthSeverity; eventLabel: string } {
+  const args: LoggerArgs = input?.result || input?.debug || input?.source ? input : { result: input };
+  const payload = buildSearchHealthEventPayloadBase(args);
+  const classified = classifyWithReason(args, payload);
+  return { eventType: classified.eventType, severity: classified.severity, eventLabel: classified.eventLabel };
+}
+
+function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
   const result = args.result ?? {};
   const debug = args.debug ?? result.debug ?? {};
   const normalizedIntent = debug?.normalizedIntent ?? result?.normalizedIntent ?? null;
   const performance = debug?.performance ?? {};
-  const restaurantCount = inferRestaurantCount(result, debug);
-  const activityCount = inferActivityCount(result, debug);
-  const pairCount = inferPairCount(result, debug);
-  const timingMs = toInteger(args.timingMs ?? debug?.timingMs ?? performance?.total_ms ?? result?.searchPerformance?.totalMs);
-  const speedStatus = args.speedStatus ?? performance?.speed_status ?? result?.searchPerformance?.speedStatus ?? null;
+  const restaurantCount = inferRestaurantCount(args, result, debug);
+  const activityCount = inferActivityCount(args, result, debug);
+  const pairCount = inferPairCount(args, result, debug);
+  const timingMs = toInteger(args.timingMs ?? args.timing_ms ?? debug?.timingMs ?? performance?.total_ms ?? result?.searchPerformance?.totalMs);
+  const speedStatus = args.speedStatus ?? args.speed_status ?? performance?.speed_status ?? result?.searchPerformance?.speedStatus ?? null;
   const errors = asArray(args.errors ?? debug?.errors ?? debug?.error ?? debug?.edge_error ?? debug?.llmError);
   const warnings = asArray(args.warnings ?? debug?.warnings ?? debug?.warning);
   const noResultsReason = inferNoResultsReason(args, restaurantCount, activityCount);
-  const noPairsReason = args.noPairsReason ?? debug?.noPairsReason ?? null;
+  const noPairsReason = args.noPairsReason ?? args.no_pairs_reason ?? debug?.noPairsReason ?? debug?.no_pairs_reason ?? null;
 
   return {
     source: args.source ?? debug?.source ?? "search",
     environment: args.environment ?? process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "production",
-    raw_query: args.rawQuery ?? debug?.rawQuery ?? normalizedIntent?.rawQuery ?? null,
-    normalized_search_type: normalizedIntent?.searchType ?? result?.render_mode ?? result?.renderMode ?? null,
+    raw_query: args.rawQuery ?? args.raw_query ?? debug?.rawQuery ?? normalizedIntent?.rawQuery ?? null,
+    normalized_search_type: normalizedIntent?.searchType ?? normalizedIntent?.search_type ?? result?.render_mode ?? result?.renderMode ?? null,
     primary_domain: normalizedIntent?.primaryDomain ?? normalizedIntent?.primary_domain ?? null,
     default_market_applied: toBoolean(debug?.defaultMarketApplied),
     default_market_id: debug?.defaultMarketId ?? null,
-    distance_mode: debug?.distanceMode ?? normalizedIntent?.pairingPreference?.distanceMode ?? null,
+    distance_mode: args.distanceMode ?? debug?.distanceMode ?? normalizedIntent?.pairingPreference?.distanceMode ?? null,
     max_pair_distance_miles: toNumber(debug?.maxPairDistanceMiles ?? normalizedIntent?.pairingPreference?.maxPairDistanceMiles),
-    max_pair_walking_minutes: toNumber(debug?.maxPairWalkingMinutes ?? normalizedIntent?.pairingPreference?.maxPairWalkingMinutes),
+    max_pair_walking_minutes: toNumber(args.maxPairWalkingMinutes ?? debug?.maxPairWalkingMinutes ?? normalizedIntent?.pairingPreference?.maxPairWalkingMinutes),
     restaurant_count: restaurantCount,
     activity_count: activityCount,
     pair_count: pairCount,
-    pair_candidates_evaluated: toInteger(debug?.pairCandidatesEvaluated),
-    valid_pair_count_before_render: toInteger(debug?.validPairCountBeforeRender),
+    pair_candidates_evaluated: toInteger(args.pairCandidatesEvaluated ?? debug?.pairCandidatesEvaluated),
+    valid_pair_count_before_render: toInteger(args.validPairCountBeforeRender ?? debug?.validPairCountBeforeRender),
     no_results_reason: noResultsReason,
     no_pairs_reason: noPairsReason ? String(noPairsReason) : null,
-    errors: normalizeJsonValue(errors),
-    warnings: normalizeJsonValue(warnings),
+    errors: normalizeJsonValue(errors) as unknown[],
+    warnings: normalizeJsonValue(warnings) as unknown[],
     debug: buildSearchHealthDebug(result, debug),
     timing_ms: timingMs,
     speed_status: speedStatus ? String(speedStatus) : null,
-    created_by_user_id: args.createdByUserId ?? null,
-    beta_tester_id: args.betaTesterId ?? debug?.performance?.beta_tester_id ?? null,
-    beta_assignment_id: args.betaAssignmentId ?? debug?.performance?.beta_assignment_id ?? null,
+    created_by_user_id: args.createdByUserId ?? args.created_by_user_id ?? null,
+    beta_tester_id: args.betaTesterId ?? args.beta_tester_id ?? debug?.performance?.beta_tester_id ?? null,
+    beta_assignment_id: args.betaAssignmentId ?? args.beta_assignment_id ?? debug?.performance?.beta_assignment_id ?? null,
+  };
+}
+
+export function buildSearchHealthEventPayload(args: LoggerArgs) {
+  const payload = buildSearchHealthEventPayloadBase(args);
+  const classified = classifyWithReason(args, payload);
+  return {
+    ...payload,
+    no_pairs_reason: classified.noPairsReason ? String(classified.noPairsReason) : payload.no_pairs_reason,
+    event_type: classified.eventType,
+    severity: classified.severity,
+    event_label: classified.eventLabel,
   };
 }
 
@@ -197,13 +332,16 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
   const args: LoggerArgs = input?.result || input?.debug || input?.source ? input : { result: input };
   const payload = buildSearchHealthEventPayload(args);
   const debug = args.debug ?? args.result?.debug ?? {};
-  const normalizedIntent = debug?.normalizedIntent ?? args.result?.normalizedIntent ?? {};
-  const needsActivity = normalizedIntent?.needsActivity === true;
-  const wantsPairing = normalizedIntent?.wantsPairing === true || args.result?.render_mode === "mixed_pairs" || args.result?.renderMode === "mixed_pairs" || args.result?.render_mode === "partial_mixed" || args.result?.renderMode === "partial_mixed";
+  const needsActivity = needsActivityForSearch(args, args.result ?? {}, debug);
+  const wantsPairing = wantsPairingForSearch(args, args.result ?? {}, debug);
   const timingMs = Number(payload.timing_ms ?? 0);
   const speedStatus = String(payload.speed_status ?? "").toLowerCase();
+  const counters = getIssueCounters(args, debug);
   const hasIssue =
+    args.forceLog === true ||
+    args.forceLogSearchHealth === true ||
     (Array.isArray(payload.errors) && payload.errors.length > 0) ||
+    (Array.isArray(payload.warnings) && payload.warnings.length > 0) ||
     payload.restaurant_count === 0 ||
     (needsActivity && payload.activity_count === 0) ||
     (wantsPairing && payload.pair_count === 0) ||
@@ -211,27 +349,37 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
     Boolean(payload.no_pairs_reason) ||
     timingMs > 3000 ||
     ["slow", "degraded", "critical", "failed", "timeout"].includes(speedStatus) ||
-    Number(debug?.extremeWalkingRoutesRejected ?? 0) > 0 ||
-    Number(debug?.invalidWalkingRoutesHiddenFromDisplay ?? 0) > 0 ||
-    Number(debug?.suppressedLowQualityPairCount ?? 0) > 0;
+    counters.extremeWalkingRoutesRejected > 0 ||
+    counters.invalidWalkingRoutesHiddenFromDisplay > 0 ||
+    counters.suppressedLowQualityPairCount > 0;
   const isAdminSearchLab = payload.source === "admin_search_lab";
   const isBetaTesterSearch = payload.source === "beta_tester_search" || Boolean(payload.beta_tester_id);
 
-  if (isAdminSearchLab && (args.forceLog === true || args.debugMode === true)) return true;
-  if (isBetaTesterSearch) {
-    return hasIssue || args.betaFeedbackSubmitted === true || args.debugMode === true || (wantsPairing && payload.pair_count === 0);
-  }
+  if (isAdminSearchLab && (args.forceLog === true || args.forceLogSearchHealth === true || args.debugMode === true || args.debugEnabled === true || args.logSearchHealth === true)) return true;
+  if (isBetaTesterSearch) return hasIssue || args.betaFeedbackSubmitted === true || args.debugMode === true || args.debugEnabled === true || (wantsPairing && payload.pair_count === 0);
 
   return hasIssue;
 }
 
-export async function logSearchHealthEvent(args: LoggerArgs): Promise<void> {
+export async function logSearchHealthEvent(args: LoggerArgs): Promise<{ ok: boolean; error?: unknown }> {
   try {
-    if (!shouldLogSearchHealthEvent(args)) return;
+    if (!shouldLogSearchHealthEvent(args)) return { ok: true };
     const payload = buildSearchHealthEventPayload(args);
     const { error } = await supabaseAdmin.from("search_health_events").insert(payload);
-    if (error) console.warn("Search health logging failed", error.message);
+    if (error) {
+      console.warn("[search-health] insert failed", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        raw_query: payload.raw_query,
+        source: payload.source,
+      });
+      return { ok: false, error };
+    }
+    return { ok: true };
   } catch (error) {
-    console.warn("Search health logging failed", error);
+    console.warn("[search-health] insert failed", error);
+    return { ok: false, error };
   }
 }
