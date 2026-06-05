@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { SearchIntent } from "./types";
-import { deterministicIntentFromQuery, normalizeIntent } from "./normalize-intent";
+import { deterministicIntentFromQuery, hasRooftopActivitySecondStop, normalizeIntent } from "./normalize-intent";
 import { detectActivityTerms, detectFoodTerms, detectMealTerms } from "./taxonomy";
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
@@ -85,8 +85,7 @@ function detectFastPathRestaurantSignals(query: string) {
 }
 
 function hasRooftopDrinkActivityPhrase(query: string) {
-  return /\b(rooftop|roof top)\s+(drinks?|cocktails?|bar|lounge|nightlife)\b/i.test(query) ||
-    /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(query);
+  return hasRooftopActivitySecondStop(query);
 }
 
 function isRooftopFastPathSignal(term: string) {

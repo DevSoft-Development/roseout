@@ -38,9 +38,9 @@ function createMockSupabase() {
     restaurant_name: "Mock Dinner & Drinks",
     location_type: "restaurant",
     primary_category: "restaurant",
-    cuisine: "american",
-    search_document: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
-    semantic_search_text: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
+    cuisine: "seafood american",
+    search_document: "restaurant dinner drinks cocktails group night steak seafood rooftop food dining menu",
+    semantic_search_text: "restaurant dinner drinks cocktails group night steak seafood rooftop food dining menu",
     image_url: "https://example.com/restaurant.jpg",
     state: "NY",
     latitude: 40.75,
@@ -97,7 +97,11 @@ async function main() {
     );
   }
 
-  for (const query of ["steak dinner and hookah lounge after", "sushi dinner and karaoke after"] as const) {
+  for (const query of [
+    "steak dinner and hookah lounge after",
+    "sushi dinner and karaoke after",
+    "seafood dinner with rooftop after",
+  ] as const) {
     const fastPathIntent = parseEnterpriseIntentFastPath(query);
     assert(fastPathIntent, `${query} should match enterprise fast path`);
     assert.equal(fastPathIntent.searchType, "mixed_outing");
@@ -109,6 +113,20 @@ async function main() {
     assert.equal(parsed.fastPathMatched, true, `${query} fast path flag`);
     assert.equal(parsed.usedLlm, false, `${query} should skip LLM`);
   }
+
+  const rooftopAfter = normalizeIntent("seafood dinner with rooftop after");
+  assert.equal(rooftopAfter.searchType, "mixed_outing");
+  assert.equal(rooftopAfter.needsRestaurant, true);
+  assert.equal(rooftopAfter.needsActivity, true);
+  assert.equal(rooftopAfter.wantsPairing, true);
+  assert(restaurantSearchTerms(rooftopAfter).includes("seafood"));
+  assert(activitySearchTerms(rooftopAfter).includes("rooftop bar"));
+  assert(activitySearchTerms(rooftopAfter).includes("rooftop lounge"));
+
+  const rooftopDinnerOnly = normalizeIntent("romantic rooftop dinner in Manhattan");
+  assert.equal(rooftopDinnerOnly.needsRestaurant, true);
+  assert.equal(rooftopDinnerOnly.needsActivity, false);
+  assert.deepEqual(activitySearchTerms(rooftopDinnerOnly), []);
 
   assert.equal(parseEnterpriseIntentFastPath("tell me something romantic but not too expensive"), null);
   assert.equal(parseEnterpriseIntentFastPath("things to do in queens"), null);
@@ -130,6 +148,20 @@ async function main() {
     const mock = createMockSupabase();
     const result = await runEnterpriseSearch("group dinner and drinks after", { supabase: mock.client, betaDebug: true, useLLM: false });
     assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).searchType, "mixed_outing");
+    assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
+    assert.equal(result.renderMode, "mixed_pairs");
+  }
+
+  {
+    const mock = createMockSupabase();
+    const result = await runEnterpriseSearch("seafood dinner with rooftop after", {
+      supabase: mock.client,
+      betaDebug: true,
+      useLLM: true,
+    });
+    assert.equal(result.debug?.intentParserSource, "fast_path");
+    assert.equal(result.debug?.fastPathMatched, true);
+    assert.equal((result.debug?.normalizedIntent as any)?.searchType, "mixed_outing");
     assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
     assert.equal(result.renderMode, "mixed_pairs");
   }
