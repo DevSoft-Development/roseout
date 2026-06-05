@@ -54,8 +54,8 @@ function termsFor(intent: SearchIntent, domain: SearchDomain) {
   return domain === "restaurant"
     ? restaurantSearchTerms(intent)
     : domain === "activity"
-      ? activitySearchTerms(intent)
-      : [...restaurantSearchTerms(intent), ...activitySearchTerms(intent)];
+      ? activityRpcTerms(intent).terms
+      : [...restaurantSearchTerms(intent), ...activityRpcTerms(intent).terms];
 }
 
 function originalTermsFor(intent: SearchIntent, domain: SearchDomain) {

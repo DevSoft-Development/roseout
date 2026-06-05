@@ -521,6 +521,11 @@ export function buildSearchHealthDebug(result: any, debug: any) {
     }),
     routeDebug: debug?.route ?? null,
     counts,
+    requiredPairingSuppressedFallback: toBoolean(debug?.requiredPairingSuppressedFallback),
+    requiredPairingFailureReason: debug?.requiredPairingFailureReason ?? null,
+    candidateRestaurantCountBeforeRequiredPairSuppression: toInteger(debug?.candidateRestaurantCountBeforeRequiredPairSuppression),
+    candidateActivityCountBeforeRequiredPairSuppression: toInteger(debug?.candidateActivityCountBeforeRequiredPairSuppression),
+    candidatePairCountBeforeRequiredPairSuppression: toInteger(debug?.candidatePairCountBeforeRequiredPairSuppression),
     rejectionReasons,
     performance: compactRecord({
       intent_parse_ms: toInteger(
@@ -589,6 +594,16 @@ function classifyWithReason(args: LoggerArgs, payload: any) {
       severity: "error" as const,
       eventLabel: "Search error",
       noPairsReason: payload.no_pairs_reason,
+    };
+  if (debug?.requiredPairingSuppressedFallback === true)
+    return {
+      eventType: "no_required_pair",
+      severity: "warning" as const,
+      eventLabel: "Required pair fallback suppressed",
+      noPairsReason:
+        debug?.requiredPairingFailureReason ??
+        payload.no_pairs_reason ??
+        "no_valid_required_pair",
     };
   if (
     payload.source === "admin_search_lab" &&
@@ -835,6 +850,8 @@ function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
     ),
     no_results_reason: noResultsReason,
     no_pairs_reason: noPairsReason ? String(noPairsReason) : null,
+    required_pairing_suppressed_fallback: toBoolean(debug?.requiredPairingSuppressedFallback),
+    required_pairing_failure_reason: debug?.requiredPairingFailureReason ?? null,
     errors: normalizeJsonValue(errors) as unknown[],
     warnings: normalizeJsonValue(warnings) as unknown[],
     debug: buildSearchHealthDebug(result, debug),
@@ -887,6 +904,7 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
     payload.restaurant_count === 0 ||
     (needsActivity && payload.activity_count === 0) ||
     (wantsPairing && payload.pair_count === 0) ||
+    payload.required_pairing_suppressed_fallback === true ||
     Boolean(payload.no_results_reason) ||
     Boolean(payload.no_pairs_reason) ||
     timingMs > 3000 ||

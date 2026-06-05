@@ -18,6 +18,32 @@ const walkingNoPair = {
 };
 
 describe("enterprise Search Health classification", () => {
+  it("classifies required-pair fallback suppression", () => {
+    const input = {
+      source: "public_create_search",
+      restaurant_count: 0,
+      activity_count: 0,
+      pair_count: 0,
+      wantsPairing: true,
+      needsRestaurant: true,
+      needsActivity: true,
+      debug: {
+        requiredPairingSuppressedFallback: true,
+        requiredPairingFailureReason: "no_activity_results_for_required_pair",
+      },
+    };
+    expect(shouldLogSearchHealthEvent(input)).toBe(true);
+    expect(classifySearchHealthEvent(input)).toEqual({
+      eventType: "no_required_pair",
+      severity: "warning",
+      eventLabel: "Required pair fallback suppressed",
+    });
+    const payload = buildSearchHealthEventPayload(input);
+    expect((payload.debug as any).requiredPairingSuppressedFallback).toBe(true);
+    expect((payload.debug as any).requiredPairingFailureReason).toBe("no_activity_results_for_required_pair");
+    expect(payload.no_pairs_reason).toBe("no_activity_results_for_required_pair");
+  });
+
   it("logs public no-valid-walking-pair warnings", () => {
     expect(shouldLogSearchHealthEvent(walkingNoPair)).toBe(true);
     expect(classifySearchHealthEvent(walkingNoPair)).toEqual({

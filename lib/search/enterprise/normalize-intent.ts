@@ -6,6 +6,7 @@ import {
 import { detectGeoIntent } from "./geo-taxonomy";
 import {
   ACTIVITY_TERMS,
+  GENERIC_ACTIVITY_FALLBACK_TERMS,
   createEmptyActivityIntent,
   createEmptyRestaurantIntent,
   detectActivityTerms,
@@ -16,6 +17,8 @@ import {
   expandFoodSynonyms,
   FOOD_TERMS,
   MEAL_TERMS,
+  hasGenericActivitySignal,
+  hasOnlyGenericActivityTerms,
   PLACE_OF_WORSHIP_TERMS,
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
@@ -352,11 +355,12 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const activityContext =
     acts.length > 0 ||
     activityAlternativeGroups.length > 0 ||
-    /things to do|fun things|activity|then|with|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(
+    hasGenericActivitySignal(query) ||
+    /things to do|fun things|something to do|something fun|date idea|date activity|outing|experience|entertainment|then|with|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(
       query,
     ) ||
     (/date night/i.test(query) &&
-      /walkable|walking distance|everything|outing|plan/i.test(query));
+      /walkable|walking distance|everything|outing|plan|activity|things to do|something fun/i.test(query));
   const hookahOnly =
     acts.includes("hookah") &&
     !/dinner|restaurant|food|eat|dining/i.test(query);
@@ -656,6 +660,24 @@ export function restaurantSearchTerms(intent: SearchIntent) {
   );
 }
 
+function shouldAddGenericActivityFallback(intent: SearchIntent, terms: string[]) {
+  return (
+    intent.searchType === "mixed_outing" &&
+    intent.needsActivity === true &&
+    hasOnlyGenericActivityTerms(terms)
+  );
+}
+
+export function genericActivityFallbackTerms(intent?: SearchIntent) {
+  const terms = [...GENERIC_ACTIVITY_FALLBACK_TERMS];
+
+  if (intent && hasRelaxedActivityIntent(intent.rawQuery)) {
+    terms.push("relaxed activity", "board games", "coffee", "dessert");
+  }
+
+  return uniq(terms);
+}
+
 export function activitySearchTerms(intent: SearchIntent) {
   const raw = uniq([
     ...intent.activityIntent.activityTerms,
@@ -664,7 +686,10 @@ export function activitySearchTerms(intent: SearchIntent) {
     ...(intent.activityIntent.alternativeGroups ?? []).flat(),
   ]);
 
-  const cleaned = stripBlockedTerms(raw, ACTIVITY_SEARCH_TERM_BLOCKLIST);
+  const withFallback = shouldAddGenericActivityFallback(intent, raw)
+    ? uniq([...raw, ...genericActivityFallbackTerms(intent)])
+    : raw;
+  const cleaned = stripBlockedTerms(withFallback, ACTIVITY_SEARCH_TERM_BLOCKLIST);
 
   return cleanPlaceOfWorshipTerms(cleaned, intent.rawQuery);
 }
@@ -681,12 +706,16 @@ export function restaurantSearchTermsOriginal(intent: SearchIntent) {
 }
 
 export function activitySearchTermsOriginal(intent: SearchIntent) {
-  return uniq([
+  const raw = uniq([
     ...intent.activityIntent.activityTerms,
     ...intent.activityIntent.categoryTerms,
     ...intent.activityIntent.featureTerms,
     ...(intent.activityIntent.alternativeGroups ?? []).flat(),
   ]);
+
+  return shouldAddGenericActivityFallback(intent, raw)
+    ? uniq([...raw, ...genericActivityFallbackTerms(intent)])
+    : raw;
 }
 
 export function hasRelaxedActivityIntent(query: string | null | undefined) {

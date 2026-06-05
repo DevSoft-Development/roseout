@@ -23,6 +23,10 @@ const FAST_PATH_RESTAURANT_SIGNAL_TERMS = [
   "breakfast",
   "restaurant",
   "dining",
+  "food",
+  "eat",
+  "place to eat",
+  "somewhere to eat",
   "steak",
   "steakhouse",
   "sushi",
@@ -59,7 +63,24 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "jazz",
   "paint and sip",
   "escape room",
+  "activity",
+  "activities",
+  "thing to do",
+  "things to do",
+  "something to do",
+  "something fun",
+  "fun",
+  "fun activity",
   "relaxed activity",
+  "chill activity",
+  "low key activity",
+  "date idea",
+  "date activity",
+  "outing",
+  "experience",
+  "entertainment",
+  "indoor activity",
+  "outdoor activity",
 ];
 
 function includesFastPathPhrase(query: string, term: string) {
@@ -147,7 +168,10 @@ function detectFastPathActivityIntentTerms(query: string) {
   if (explicitSignals.includes("comedy show")) return ["comedy show"];
   if (explicitSignals.includes("rooftop lounge")) return ["rooftop lounge"];
 
-  return uniqueTerms(detectActivityTerms(query));
+  const detected = uniqueTerms(detectActivityTerms(query));
+  if (detected.length) return detected;
+
+  return uniqueTerms(explicitSignals.filter((term) => !isRooftopFastPathSignal(term)));
 }
 
 function emptyGeoIntent() {
