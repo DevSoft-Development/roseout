@@ -231,18 +231,35 @@ function hasPairingConnectorForSecondStop(rawQuery: string): boolean {
   return /\b(and|then|after|afterward|afterwards|next|later|plus|followed by|before)\b/i.test(rawQuery);
 }
 
-function hasRooftopDrinkSecondStop(rawQuery: string): boolean {
+export function hasRooftopActivitySecondStop(rawQuery: string): boolean {
   const q = String(rawQuery || "").toLowerCase();
 
   const rooftopDrinkPhrase =
     /\b(rooftop|roof top)\s+(drinks?|cocktails?|bar|lounge|nightlife)\b/i.test(q) ||
     /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(q);
 
-  return rooftopDrinkPhrase && hasPairingConnectorForSecondStop(q);
+  if (rooftopDrinkPhrase && hasPairingConnectorForSecondStop(q)) {
+    return true;
+  }
+
+  const hasRestaurantStop =
+    /\b(dinner|brunch|lunch|breakfast|meal|restaurant|restaurants|dining|eat|seafood|steak|sushi|italian|mexican|tacos|pizza|burgers?)\b/i.test(q);
+  if (!hasRestaurantStop) {
+    return false;
+  }
+
+  const rooftopAfterConnector =
+    /\b(?:with|and|plus)\s+(?:a\s+)?(?:rooftop|roof top)\s+(?:after|afterward|afterwards|then|later|next)\b/i.test(q);
+  const connectorBeforeRooftop =
+    /\b(?:after|afterward|afterwards|then|later|next|followed by)\s+(?:a\s+)?(?:rooftop|roof top)\b/i.test(q);
+  const rooftopThenConnector =
+    /\b(?:rooftop|roof top)\s+(?:after|afterward|afterwards|then|later|next)\b/i.test(q);
+
+  return rooftopAfterConnector || connectorBeforeRooftop || rooftopThenConnector;
 }
 
 function rooftopBelongsToActivityLane(rawQuery: string): boolean {
-  return hasRooftopDrinkSecondStop(rawQuery);
+  return hasRooftopActivitySecondStop(rawQuery);
 }
 
 function addRooftopDrinkActivityTerms(terms: string[], rawQuery: string): string[] {
