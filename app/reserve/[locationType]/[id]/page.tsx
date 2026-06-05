@@ -1,10 +1,14 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
-import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
+import {
+  getLocationScore,
+  type LocationScoreFields,
+} from "@/lib/locationScore";
 import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
@@ -58,11 +62,14 @@ export default async function ReserveLocationPage({
 
   const location = data as unknown as LocationRow;
 
-  const locationName = getLocationName(location, isActivity ? "Activity" : "Restaurant");
+  const locationName = getLocationName(
+    location,
+    isActivity ? "Activity" : "Restaurant",
+  );
 
   const backHref = `/locations/${isActivity ? "activities" : "restaurants"}/${id}`;
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
-    getOperatingHours(location)
+    getOperatingHours(location),
   );
 
   return (
@@ -90,8 +97,14 @@ export default async function ReserveLocationPage({
                 className="h-[360px] w-full object-cover opacity-80"
               />
             ) : (
-              <div className="flex h-[360px] items-center justify-center bg-gradient-to-br from-rose-950 via-black to-[#090706] text-6xl">
-                🌹
+              <div className="flex h-[360px] items-center justify-center bg-gradient-to-br from-rose-950 via-black to-[#090706]">
+                <Image
+                  src="/toh_logo.png"
+                  alt="TheOutHaven"
+                  width={80}
+                  height={80}
+                  className="h-20 w-20 object-contain"
+                />
               </div>
             )}
 
@@ -119,7 +132,7 @@ export default async function ReserveLocationPage({
                       Rating
                     </p>
                     <p className="mt-1 text-xl font-black">
-                      🌹 {location.rating || 0}
+                      ★ {location.rating || 0}
                     </p>
                   </div>
 

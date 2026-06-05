@@ -6,7 +6,10 @@ import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackAnalytics } from "@/lib/trackAnalytics";
-import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
+import {
+  trackLocationEvent,
+  type LocationAnalyticsMetadata,
+} from "@/lib/location-analytics";
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
@@ -16,7 +19,14 @@ import { toDisplayLabel } from "@/lib/displayLabel";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
-import { cleanDistanceLabel, formatDistanceFromRestaurant, getEffectiveWalkingPairLimitMinutes, isWalkingDistanceSearch, shouldHidePairForWalkingLimit, isSafeWalkingLabel } from "@/lib/search/enterprise/distance";
+import {
+  cleanDistanceLabel,
+  formatDistanceFromRestaurant,
+  getEffectiveWalkingPairLimitMinutes,
+  isWalkingDistanceSearch,
+  shouldHidePairForWalkingLimit,
+  isSafeWalkingLabel,
+} from "@/lib/search/enterprise/distance";
 
 type RestaurantCard = LocationScoreFields &
   LocationVisibilityFields & {
@@ -349,7 +359,8 @@ export default function CreatePage() {
     latestAssistant?.resultOrder || DEFAULT_RESULT_ORDER;
 
   const latestSearchQuery = latestAssistant?.searchQuery || "";
-  const latestOutingType = latestAssistant?.outingType || latestResultOrder.join("+");
+  const latestOutingType =
+    latestAssistant?.outingType || latestResultOrder.join("+");
 
   const selectedPlanText = buildSelectedPlanText(
     selectedRestaurant,
@@ -477,8 +488,9 @@ export default function CreatePage() {
     );
   }, [latestAssistant]);
 
-
-  function toExactPlanCard(location: ExactCampaignLocation): RestaurantCard | ActivityCard {
+  function toExactPlanCard(
+    location: ExactCampaignLocation,
+  ): RestaurantCard | ActivityCard {
     const shared = {
       ...location,
       id: location.sourceId || location.id,
@@ -490,7 +502,8 @@ export default function CreatePage() {
       primary_category: location.primaryCategory || null,
       main_image: location.imageUrl || null,
       image_url: location.imageUrl || null,
-      detail_location_type: location.type === "activity" ? "activities" : "restaurants",
+      detail_location_type:
+        location.type === "activity" ? "activities" : "restaurants",
     };
 
     if (location.type === "activity") {
@@ -517,25 +530,32 @@ export default function CreatePage() {
     setError("");
 
     try {
-      const response = await fetch(`/api/marketing/campaign-location?${params.toString()}`);
+      const response = await fetch(
+        `/api/marketing/campaign-location?${params.toString()}`,
+      );
       const data: CampaignLocationResponse = await response.json();
 
       if (!response.ok || !data.location) {
-        throw new Error(data.error || "The campaign location could not be loaded.");
+        throw new Error(
+          data.error || "The campaign location could not be loaded.",
+        );
       }
 
       const card = toExactPlanCard(data.location);
       const isActivity = data.location.type === "activity";
       const restaurant = isActivity ? null : (card as RestaurantCard);
       const activity = isActivity ? (card as ActivityCard) : null;
-      const resultOrder: ResultSectionKind[] = isActivity ? ["activities", "restaurants"] : ["restaurants", "activities"];
+      const resultOrder: ResultSectionKind[] = isActivity
+        ? ["activities", "restaurants"]
+        : ["restaurants", "activities"];
 
       setSelectedRestaurant(restaurant);
       setSelectedActivity(activity);
       setMessages([
         {
           role: "assistant",
-          content: "This campaign location is locked in as your starting pick. TheOutHaven will only add nearby complementary spots around it.",
+          content:
+            "This campaign location is locked in as your starting pick. TheOutHaven will only add nearby complementary spots around it.",
           restaurants: restaurant ? [restaurant] : [],
           activities: activity ? [activity] : [],
           distancePreference: "miles",
@@ -558,7 +578,14 @@ export default function CreatePage() {
 
       if (nearby) {
         const nearbyPrompt = `near ${data.location.name}`;
-        window.setTimeout(() => submitSearch(nearbyPrompt, { addOnTarget: isActivity ? "restaurant" : "activity", preservePlan: true }), 0);
+        window.setTimeout(
+          () =>
+            submitSearch(nearbyPrompt, {
+              addOnTarget: isActivity ? "restaurant" : "activity",
+              preservePlan: true,
+            }),
+          0,
+        );
         return;
       }
 
@@ -572,7 +599,11 @@ export default function CreatePage() {
       if (activity?.id) planParams.set("activityId", activity.id);
       router.replace(`/plan?${planParams.toString()}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "The campaign location could not be loaded.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "The campaign location could not be loaded.",
+      );
     } finally {
       setExactCampaignLoading(false);
     }
@@ -804,7 +835,9 @@ export default function CreatePage() {
         console.error("[create] search route returned safe error", {
           error: data.error,
           internal_message:
-            process.env.NODE_ENV === "development" ? data.internal_message : undefined,
+            process.env.NODE_ENV === "development"
+              ? data.internal_message
+              : undefined,
         });
 
         throw new Error(
@@ -821,11 +854,16 @@ export default function CreatePage() {
       let responseRestaurants = data.restaurants || [];
       let responseActivities = data.activities || [];
       const pairingPreference = getFrontendPairingPreference(data, cleanInput);
-      const responsePairs = filterVisibleWalkingResults(data.pairs || [], pairingPreference);
+      const responsePairs = filterVisibleWalkingResults(
+        data.pairs || [],
+        pairingPreference,
+      );
       const responseMatchedLocations = data.matched_locations || [];
       const normalizedCards = normalizeApiCards(data);
-      if (normalizedCards.restaurants.length) responseRestaurants = normalizedCards.restaurants;
-      if (normalizedCards.activities.length) responseActivities = normalizedCards.activities;
+      if (normalizedCards.restaurants.length)
+        responseRestaurants = normalizedCards.restaurants;
+      if (normalizedCards.activities.length)
+        responseActivities = normalizedCards.activities;
 
       if (
         !addOnTarget &&
@@ -1084,7 +1122,8 @@ export default function CreatePage() {
 
     const campaignSlug = currentParams.get("campaignSlug");
     if (campaignSlug) params.set("campaignSlug", campaignSlug);
-    if (currentParams.get("planExact") === "true") params.set("planExact", "true");
+    if (currentParams.get("planExact") === "true")
+      params.set("planExact", "true");
     const locationId = currentParams.get("locationId");
     if (locationId) params.set("locationId", locationId);
     const locationName = currentParams.get("locationName");
@@ -1103,7 +1142,9 @@ export default function CreatePage() {
         <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5 overflow-hidden lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div className="flex min-w-0 max-w-full flex-col justify-center">
             <div className="mb-3 inline-flex w-fit max-w-full rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
-              {exactCampaignLoading ? "Loading Campaign Pick" : "AI Outing Planner"}
+              {exactCampaignLoading
+                ? "Loading Campaign Pick"
+                : "AI Outing Planner"}
             </div>
 
             <h1 className="max-w-full break-words text-[2.45rem] font-black leading-[0.92] tracking-[-0.055em] text-white xs:text-4xl sm:text-6xl lg:text-7xl">
@@ -1212,8 +1253,14 @@ export default function CreatePage() {
           {messages.map((message, index) => {
             const isUser = message.role === "user";
             const restaurants = message.restaurants || [];
-            const activities = filterVisibleWalkingResults(message.activities || [], message.pairingPreference);
-            const pairs = filterVisibleWalkingResults(message.pairs || [], message.pairingPreference);
+            const activities = filterVisibleWalkingResults(
+              message.activities || [],
+              message.pairingPreference,
+            );
+            const pairs = filterVisibleWalkingResults(
+              message.pairs || [],
+              message.pairingPreference,
+            );
             const matchedLocations = message.matched_locations || [];
             const hasCards =
               restaurants.length > 0 ||
@@ -1240,7 +1287,10 @@ export default function CreatePage() {
                 <HelpfulSearchState
                   key={index}
                   title="No perfect matches yet."
-                  message={message.content || "Try loosening one part of your search so TheOutHaven can show useful places."}
+                  message={
+                    message.content ||
+                    "Try loosening one part of your search so TheOutHaven can show useful places."
+                  }
                   onSuggestion={runHelpfulSuggestion}
                 />
               );
@@ -1289,7 +1339,9 @@ export default function CreatePage() {
                                 key={restaurantId || restaurantIndex}
                                 index={restaurantIndex}
                                 type="restaurant"
-                                imageUrl={getLocationImage(restaurant) || undefined}
+                                imageUrl={
+                                  getLocationImage(restaurant) || undefined
+                                }
                                 title={getLocationName(restaurant)}
                                 eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
@@ -1301,17 +1353,23 @@ export default function CreatePage() {
                                 selected={isSelected}
                                 priority={restaurantIndex === 0}
                                 selectLabel={
-                                  isSelected ? "Selected spot" : "Choose this spot"
+                                  isSelected
+                                    ? "Selected spot"
+                                    : "Choose this spot"
                                 }
                                 onSelect={() => {
                                   trackRestaurantClick(restaurantId);
                                   trackRestaurantSave(restaurantId);
                                   selectRestaurantAndMaybeScroll(restaurant);
                                 }}
-                                onCardClick={() => trackRestaurantClick(restaurantId)}
+                                onCardClick={() =>
+                                  trackRestaurantClick(restaurantId)
+                                }
                                 locationId={restaurantId}
-                                analyticsMetadata={CREATE_RESULTS_ANALYTICS_METADATA}
-                                />
+                                analyticsMetadata={
+                                  CREATE_RESULTS_ANALYTICS_METADATA
+                                }
+                              />
                             );
                           })}
                         </ResultSection>
@@ -1366,7 +1424,9 @@ export default function CreatePage() {
                                 key={activityId || activityIndex}
                                 index={activityIndex}
                                 type="activity"
-                                imageUrl={getLocationImage(activity) || undefined}
+                                imageUrl={
+                                  getLocationImage(activity) || undefined
+                                }
                                 title={getLocationName(activity)}
                                 eyebrow={getPrimaryCategory(activity)}
                                 address={formatAddress(activity)}
@@ -1384,17 +1444,23 @@ export default function CreatePage() {
                                 selected={isSelected}
                                 priority={activityIndex === 0}
                                 selectLabel={
-                                  isSelected ? "Selected spot" : "Choose this spot"
+                                  isSelected
+                                    ? "Selected spot"
+                                    : "Choose this spot"
                                 }
                                 onSelect={() => {
                                   trackActivityClick(activityId);
                                   trackActivitySave(activityId);
                                   selectActivity(activity);
                                 }}
-                                onCardClick={() => trackActivityClick(activityId)}
+                                onCardClick={() =>
+                                  trackActivityClick(activityId)
+                                }
                                 locationId={activityId}
-                                analyticsMetadata={CREATE_RESULTS_ANALYTICS_METADATA}
-                                />
+                                analyticsMetadata={
+                                  CREATE_RESULTS_ANALYTICS_METADATA
+                                }
+                              />
                             );
                           })}
                         </ResultSection>
@@ -1607,10 +1673,19 @@ function HelpfulSearchState({
   onSuggestion: (prompt: string) => void;
 }) {
   const suggestions = [
-    { label: "Try another area", prompt: "restaurants and activities in Brooklyn" },
+    {
+      label: "Try another area",
+      prompt: "restaurants and activities in Brooklyn",
+    },
     { label: "Remove one filter", prompt: "fun dinner and activity nearby" },
-    { label: "Search without borough", prompt: "date night restaurant and activity" },
-    { label: "Browse popular spots nearby", prompt: "popular restaurants and activities near me" },
+    {
+      label: "Search without borough",
+      prompt: "date night restaurant and activity",
+    },
+    {
+      label: "Browse popular spots nearby",
+      prompt: "popular restaurants and activities near me",
+    },
     { label: "Try restaurants only", prompt: "best restaurants nearby" },
     { label: "Try activities only", prompt: "fun activities nearby" },
   ];
@@ -1799,7 +1874,7 @@ function PlanSummarySheet({
               meta={[
                 getCuisine(restaurant) || "Restaurant",
                 restaurant?.city || null,
-                restaurant?.rating ? `🌹 ${restaurant.rating}` : null,
+                restaurant?.rating ? `★ ${restaurant.rating}` : null,
               ]
                 .filter(Boolean)
                 .join(" • ")}
@@ -1838,7 +1913,7 @@ function PlanSummarySheet({
               meta={[
                 getPrimaryCategory(activity),
                 activity?.city || null,
-                activity?.rating ? `🌹 ${activity.rating}` : null,
+                activity?.rating ? `★ ${activity.rating}` : null,
               ]
                 .filter(Boolean)
                 .join(" • ")}
@@ -2133,7 +2208,10 @@ function ResultCard({
     type,
   });
   const cleanedDistanceLabel = cleanDistanceLabel(distanceLabel);
-  const viewRef = useTrackLocationView<HTMLElement>(locationId, analyticsMetadata);
+  const viewRef = useTrackLocationView<HTMLElement>(
+    locationId,
+    analyticsMetadata,
+  );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
 
   return (
@@ -2173,7 +2251,9 @@ function ResultCard({
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 sm:bottom-3 sm:right-3 sm:gap-1.5">
-          {!cleanedDistanceLabel && distance !== null && distance !== undefined ? (
+          {!cleanedDistanceLabel &&
+          distance !== null &&
+          distance !== undefined ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
               {distance} mi
             </span>
@@ -2181,7 +2261,7 @@ function ResultCard({
 
           {rating ? (
             <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-black sm:px-2.5 sm:py-1 sm:text-[11px]">
-              🌹 {rating}
+              ★ {rating}
             </span>
           ) : null}
         </div>
@@ -2205,7 +2285,10 @@ function ResultCard({
           {chips.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {chips.map((chip) => (
-                <span key={chip} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
+                <span
+                  key={chip}
+                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75"
+                >
                   {chip}
                 </span>
               ))}
@@ -2241,20 +2324,19 @@ function ResultCard({
         </div>
 
         <div className="mt-auto pt-4">
-        <div className="grid grid-cols-1 gap-2 border-t border-white/10 pt-3">
-          <button
-            type="button"
-            onClick={onSelect}
-            className={`rounded-full px-3 py-2.5 text-xs font-black transition ${
-              selected
-                ? "bg-[#e1062a] text-white"
-                : "border border-white/12 text-white/85 hover:bg-white hover:text-black"
-            }`}
-          >
-            {selectLabel}
-          </button>
-
-        </div>
+          <div className="grid grid-cols-1 gap-2 border-t border-white/10 pt-3">
+            <button
+              type="button"
+              onClick={onSelect}
+              className={`rounded-full px-3 py-2.5 text-xs font-black transition ${
+                selected
+                  ? "bg-[#e1062a] text-white"
+                  : "border border-white/12 text-white/85 hover:bg-white hover:text-black"
+              }`}
+            >
+              {selectLabel}
+            </button>
+          </div>
         </div>
       </div>
     </article>
@@ -2297,15 +2379,32 @@ function LoadingResults({ label }: { label: string }) {
 
 function normalizeLabel(value: unknown): string {
   if (!value) return "";
-  if (Array.isArray(value)) return value.map((item) => normalizeLabel(item)).filter(Boolean).join(", ");
+  if (Array.isArray(value))
+    return value
+      .map((item) => normalizeLabel(item))
+      .filter(Boolean)
+      .join(", ");
   if (typeof value === "string") {
     const trimmed = value.trim();
-    if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed)) return "";
-    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
-      try { return normalizeLabel(JSON.parse(trimmed)); } catch { return ""; }
+    if (!trimmed || ["[]", "{}", "null", "undefined"].includes(trimmed))
+      return "";
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
+      try {
+        return normalizeLabel(JSON.parse(trimmed));
+      } catch {
+        return "";
+      }
     }
     const cleaned = trimmed.replace(/^"|"$/g, "");
-    const labelMap: Record<string, string> = { "theouthaven-friendly outing": "TheOutHaven Pick", "date-night": "Date Night", "group-outing": "Group Outing", "group-outings": "Group Outing" };
+    const labelMap: Record<string, string> = {
+      "theouthaven-friendly outing": "TheOutHaven Pick",
+      "date-night": "Date Night",
+      "group-outing": "Group Outing",
+      "group-outings": "Group Outing",
+    };
     const lower = cleaned.toLowerCase();
     if (labelMap[lower]) return labelMap[lower];
     return toDisplayLabel(cleaned);
@@ -2315,14 +2414,40 @@ function normalizeLabel(value: unknown): string {
 
 function normalizeLabels(values: unknown, limit = 3): string[] {
   const rawValues = Array.isArray(values) ? values : [values];
-  return rawValues.flatMap((value) => normalizeLabel(value).split(",").map((part) => part.trim()).filter(Boolean))
-    .filter((label) => !["[]", "{}", "null", "undefined"].includes(label.toLowerCase()))
-    .filter((label, index, arr) => arr.findIndex((item) => item.toLowerCase() === label.toLowerCase()) === index)
+  return rawValues
+    .flatMap((value) =>
+      normalizeLabel(value)
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    )
+    .filter(
+      (label) =>
+        !["[]", "{}", "null", "undefined"].includes(label.toLowerCase()),
+    )
+    .filter(
+      (label, index, arr) =>
+        arr.findIndex((item) => item.toLowerCase() === label.toLowerCase()) ===
+        index,
+    )
     .slice(0, limit);
 }
 
-function getCardChips(location: { eyebrow?: string | null; primaryTag?: string | null; reviewKeywords?: string[] | null }): string[] {
-  return normalizeLabels([location.eyebrow, location.primaryTag, ...(Array.isArray(location.reviewKeywords) ? location.reviewKeywords : normalizeLabels(location.reviewKeywords, 3))], 3);
+function getCardChips(location: {
+  eyebrow?: string | null;
+  primaryTag?: string | null;
+  reviewKeywords?: string[] | null;
+}): string[] {
+  return normalizeLabels(
+    [
+      location.eyebrow,
+      location.primaryTag,
+      ...(Array.isArray(location.reviewKeywords)
+        ? location.reviewKeywords
+        : normalizeLabels(location.reviewKeywords, 3)),
+    ],
+    3,
+  );
 }
 
 function formatAddress(item: {
@@ -2382,7 +2507,6 @@ function getResultInstruction(resultOrder: ResultSectionKind[]) {
     : "Select a restaurant, then choose the experience that completes the outing.";
 }
 
-
 function getRequestedWalkingLimitFromQuery(input: string) {
   const match = input.match(/\b(\d{1,3})\s*(?:minute|min)\s*walk\b/i);
   const minutes = match ? Number(match[1]) : null;
@@ -2431,11 +2555,17 @@ function normalizeApiCards(data: ApiResponse) {
   const restaurants = Array.isArray(data.restaurants) ? data.restaurants : [];
   const activities = Array.isArray(data.activities) ? data.activities : [];
   const cards = Array.isArray(data.cards) ? data.cards : [];
-  const matched = Array.isArray(data.matched_locations) ? data.matched_locations : [];
+  const matched = Array.isArray(data.matched_locations)
+    ? data.matched_locations
+    : [];
 
   const fallbackCards = cards.length ? cards : matched;
-  const mappedRestaurants = fallbackCards.filter((item: any) => getCardType(item) === "restaurant") as RestaurantCard[];
-  const mappedActivities = fallbackCards.filter((item: any) => getCardType(item) === "activity") as ActivityCard[];
+  const mappedRestaurants = fallbackCards.filter(
+    (item: any) => getCardType(item) === "restaurant",
+  ) as RestaurantCard[];
+  const mappedActivities = fallbackCards.filter(
+    (item: any) => getCardType(item) === "activity",
+  ) as ActivityCard[];
 
   return {
     restaurants: restaurants.length ? restaurants : mappedRestaurants,
@@ -2444,7 +2574,8 @@ function normalizeApiCards(data: ApiResponse) {
 }
 
 function getCardType(item: any): "restaurant" | "activity" {
-  const raw = `${item?.location_type || item?.type || item?.source_table || item?.detail_location_type || ""}`.toLowerCase();
+  const raw =
+    `${item?.location_type || item?.type || item?.source_table || item?.detail_location_type || ""}`.toLowerCase();
   if (raw.includes("activity")) return "activity";
   return "restaurant";
 }
@@ -2474,7 +2605,8 @@ function titleCase(value: string) {
 
 function toArray(value?: string[] | string | null): string[] {
   if (!value) return [];
-  if (Array.isArray(value)) return value.map((item) => normalizeLabel(item)).filter(Boolean);
+  if (Array.isArray(value))
+    return value.map((item) => normalizeLabel(item)).filter(Boolean);
   return normalizeLabels(value);
 }
 
@@ -2697,7 +2829,6 @@ function getSafeWalkingMinutes(location: RestaurantCard | ActivityCard | null) {
   return normalizeRouteMinutes(getRawWalkingMinutes(location));
 }
 
-
 function queryRequestsWalkingDistance(input: string) {
   return /\b(walk|walking|walkable|walks)\b/i.test(input);
 }
@@ -2717,7 +2848,11 @@ function buildDistanceFromRestaurantLabel(
   if (distance === null) return undefined;
 
   return formatDistanceFromRestaurant({
-    pair: { ...activity, pairDistanceMiles: distance, pair_distance_miles: activity.pair_distance_miles },
+    pair: {
+      ...activity,
+      pairDistanceMiles: distance,
+      pair_distance_miles: activity.pair_distance_miles,
+    },
     restaurantName: getLocationName(restaurant),
     pairingPreference:
       distancePreference === "walking"
@@ -2750,11 +2885,16 @@ function buildDistanceText(
             pair_distance_miles: activity.pair_distance_miles,
           },
           restaurantName: getLocationName(restaurant),
-          pairingPreference: { distanceMode: "walking", requireWalkablePair: true },
+          pairingPreference: {
+            distanceMode: "walking",
+            requireWalkablePair: true,
+          },
         });
 
         if (label) {
-          return label.replace(" from ", " between ").replace(/$/, ` and ${getLocationName(activity)}`);
+          return label
+            .replace(" from ", " between ")
+            .replace(/$/, ` and ${getLocationName(activity)}`);
         }
       }
 

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import ActivityTracker from "@/components/ActivityTracker";
@@ -17,7 +18,6 @@ type SavedPlan = {
   created_at?: string | null;
 };
 
-
 function adminSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,7 +26,7 @@ function adminSupabase() {
       auth: {
         persistSession: false,
       },
-    }
+    },
   );
 }
 
@@ -34,7 +34,7 @@ export default async function UserDashboardPage() {
   const cookieStore = await cookies();
 
   const impersonatedUserId = cookieStore.get(
-    "theouthaven_impersonate_user_id"
+    "theouthaven_impersonate_user_id",
   )?.value;
 
   const authSupabase = await import("@/lib/supabase-server").then((m) =>
@@ -210,13 +210,17 @@ export default async function UserDashboardPage() {
 
             {!savedPlans || savedPlans.length === 0 ? (
               <div className="rounded-[1.5rem] border border-dashed border-white/15 bg-black/25 p-10 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/15 text-2xl">
-                  🌹
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/15 p-2">
+                  <Image
+                    src="/toh_logo.png"
+                    alt="TheOutHaven"
+                    width={40}
+                    height={40}
+                    className="h-10 w-10 object-contain"
+                  />
                 </div>
 
-                <h3 className="mt-5 text-2xl font-black">
-                  No saved plans yet
-                </h3>
+                <h3 className="mt-5 text-2xl font-black">No saved plans yet</h3>
 
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">
                   Start with a restaurant, activity, or full date-night plan.
@@ -347,8 +351,8 @@ export default async function UserDashboardPage() {
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-white/55">
-                Tell TheOutHaven what mood, borough, budget, and vibe you want. Get
-                a polished plan in seconds.
+                Tell TheOutHaven what mood, borough, budget, and vibe you want.
+                Get a polished plan in seconds.
               </p>
 
               <TrackedButton

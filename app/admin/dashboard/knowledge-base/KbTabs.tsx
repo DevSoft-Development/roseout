@@ -8,9 +8,14 @@ import { roleCanManageKb } from "@/lib/knowledge-base/access";
 const tabs = [
   { label: "Overview", href: "/admin/dashboard/knowledge-base", exact: true },
   { label: "Articles", href: "/admin/dashboard/knowledge-base/articles" },
+  {
+    label: "Categories",
+    href: "/admin/dashboard/knowledge-base/categories",
+    managersOnly: true,
+  },
   { label: "Templates", href: "/admin/dashboard/knowledge-base/templates" },
   { label: "AI Assistant", href: "/admin/dashboard/knowledge-base/ai" },
-  { label: "Categories", href: "/admin/dashboard/knowledge-base/categories", managersOnly: true },
+  { label: "New Article", href: "/admin/dashboard/knowledge-base/new" },
   { label: "Public Help", href: "/help", external: true },
 ];
 
@@ -19,12 +24,19 @@ export default function KbTabs({ role }: { role: string }) {
   const canManage = roleCanManageKb(role);
 
   return (
-    <nav className="overflow-x-auto rounded-3xl border border-white/10 bg-[#0d0d0d]/90 p-2 shadow-[0_18px_50px_rgba(225,6,42,0.10)]" aria-label="Knowledge Base sections">
+    <nav
+      className="overflow-x-auto rounded-3xl border border-white/10 bg-[#0d0d0d]/90 p-2 shadow-[0_18px_50px_rgba(225,6,42,0.10)]"
+      aria-label="Knowledge Base sections"
+    >
       <div className="flex min-w-max gap-2">
         {tabs
           .filter((tab) => !tab.managersOnly || canManage)
           .map((tab) => {
-            const active = !tab.external && (tab.exact ? pathname === tab.href : pathname === tab.href || pathname.startsWith(`${tab.href}/`));
+            const active =
+              !tab.external &&
+              (tab.exact
+                ? pathname === tab.href
+                : pathname === tab.href || pathname.startsWith(`${tab.href}/`));
             return (
               <Link
                 key={tab.href}
