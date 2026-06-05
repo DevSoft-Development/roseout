@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getDefaultMarketTier } from "../lib/search/enterprise/default-market";
 import { createPairingDebug, createSearchPairs } from "../lib/search/enterprise/pairing";
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
 import { rankActivityResults, rankRestaurantResults } from "../lib/search/enterprise/ranking";
@@ -49,6 +50,37 @@ i=normalizeIntent("sushi then karaoke in Manhattan"); assert.equal(i.searchType,
 i=normalizeIntent("things to do in Queens"); assert.equal(i.searchType,"activity"); aa=activities(i.rawQuery); assert(aa.length>0); assert(!aa.some(a=>a.restaurant_name));
 
 i=normalizeIntent("Italian restaurant in Nassau"); assert.equal(i.searchType,"restaurant"); assert.equal(i.geo.county,"Nassau County"); assert.equal(i.geo.region,"Long Island"); assert.notEqual(i.geo.neighborhood,"Long Island City"); assert.equal(restaurants(i.rawQuery)[0].id,"r6");
+
+// NYC + Long Island default-market support
+i=normalizeIntent("restaurant and rooftop drinks after walking distance");
+assert.equal(i.geo.geoStrictness, "default_market");
+assert.equal(i.geo.defaultMarketId, "nyc_long_island");
+assert.equal(i.geo.defaultMarketLabel, "NYC + Long Island");
+assert.equal(i.geo.state, "NY");
+assert.equal(i.geo.radiusMiles, 45);
+
+const defaultMarketCandidates: EnterpriseLocation[] = [
+  { id: "dm1", name: "The Modern", restaurant_name: "The Modern", location_type: "restaurant", cuisine: "American", borough: "Manhattan", city: "New York", state: "NY", latitude: 40.7614, longitude: -73.9776, review_count: 100, search_document: "restaurant dinner New York Manhattan" },
+  { id: "dm2", name: "Garden City Restaurant", restaurant_name: "Garden City Restaurant", location_type: "restaurant", cuisine: "American", county: "Nassau County", region: "Long Island", city: "Garden City", state: "NY", latitude: 40.7268, longitude: -73.6343, review_count: 100, search_document: "restaurant dinner Nassau County Long Island Garden City" },
+  { id: "dm3", name: "Hoboken Restaurant", restaurant_name: "Hoboken Restaurant", location_type: "restaurant", cuisine: "American", city: "Hoboken", state: "NJ", latitude: 40.7433, longitude: -74.0324, review_count: 100, search_document: "restaurant dinner Hoboken New Jersey" },
+];
+const defaultRanked = rankRestaurantResults(defaultMarketCandidates, i);
+assert.deepEqual(defaultRanked.map((record) => record.id), ["dm1", "dm2", "dm3"]);
+assert.equal(getDefaultMarketTier({ city: "Huntington", county: "Suffolk County", state: "NY" }), 1);
+
+i=normalizeIntent("rooftop drinks in Long Island");
+assert.notEqual(i.geo.geoStrictness, "default_market");
+assert.equal(i.geo.region, "Long Island");
+
+i=normalizeIntent("restaurant and rooftop drinks near Nassau County");
+assert.notEqual(i.geo.geoStrictness, "default_market");
+assert.equal(i.geo.county, "Nassau County");
+assert.equal(i.geo.region, "Long Island");
+
+i=normalizeIntent("rooftop drinks near Hoboken");
+assert.notEqual(i.geo.geoStrictness, "default_market");
+assert.equal(i.geo.city, "Hoboken");
+assert.equal(i.geo.state, "NJ");
 
 i=normalizeIntent("date night in Hoboken"); assert.equal(i.geo.city,"Hoboken"); assert.equal(i.geo.state,"NJ");
 

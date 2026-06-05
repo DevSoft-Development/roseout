@@ -1,4 +1,5 @@
 import type { EnterpriseLocation, EnterprisePair, GeoIntent, PairDistanceMode, PairingPreference, SearchIntent } from "./types";
+import { getPairDefaultMarketPriority, isDefaultMarketAppliedGeo } from "./default-market";
 import { estimateWalkingMinutes, estimateWalkingMinutesFromMiles, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isWalkablePair, normalizeWalkingMinutes, shouldRejectPairForWalkingRoute } from "./distance";
 import { scoreGeoMatch } from "./geo-taxonomy";
 
@@ -17,6 +18,10 @@ export type PairingDebug = {
   pairsMissingGoogleWalkingMinutes: number;
   validPairCountBeforeRender: number;
   walkablePairsFound: number;
+  inDefaultMarketPairCount: number;
+  outOfDefaultMarketPairCount: number;
+  pairsSuppressedForDefaultMarket: number;
+  pairDefaultMarketPriorities: number[];
   rejectedPairs: Array<{
     restaurantId: EnterpriseLocation["id"];
     restaurantName?: string | null;
@@ -27,7 +32,7 @@ export type PairingDebug = {
     walkingDurationMinutes?: number | null;
   }>;
 };
-export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, walkablePairsFound: 0, rejectedPairs: [] }; }
+export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, walkablePairsFound: 0, inDefaultMarketPairCount: 0, outOfDefaultMarketPairCount: 0, pairsSuppressedForDefaultMarket: 0, pairDefaultMarketPriorities: [], rejectedPairs: [] }; }
 
 function pairPreference(intent: SearchIntent): PairingPreference { return intent.pairingPreference ?? { requiresPairing: intent.wantsPairing, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
 function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) { if (distanceMiles == null) return 0; if (distanceMiles <= 0.25) return 50; if (distanceMiles <= 0.5) return 40; if (distanceMiles <= 0.75) return 30; if (distanceMiles <= 1.5 && (mode === "walking" || mode === "nearby")) return 15; if (distanceMiles <= 3 && mode === "same_area") return 5; return 0; }
@@ -118,6 +123,12 @@ export function getPairStableName(pair: Partial<EnterprisePair>) {
 
 export function sortMixedPairs<T extends EnterprisePair>(pairs: T[], geo?: Partial<GeoIntent> | null) {
   return pairs.sort((a, b) => {
+    if (isDefaultMarketAppliedGeo(geo)) {
+      const aDefaultMarketPriority = getPairDefaultMarketPriority(a);
+      const bDefaultMarketPriority = getPairDefaultMarketPriority(b);
+      if (aDefaultMarketPriority !== bDefaultMarketPriority) return aDefaultMarketPriority - bDefaultMarketPriority;
+    }
+
     const aGeoPriority = getPairGeoPriority(a, geo);
     const bGeoPriority = getPairGeoPriority(b, geo);
     if (aGeoPriority !== bGeoPriority) return aGeoPriority - bGeoPriority;
@@ -264,7 +275,19 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
   }
 
   debug.validPairCountBeforeRender = candidates.length;
-  return sortMixedPairs(candidates, intent.geo).slice(0, 8);
+  let sortableCandidates = candidates;
+  if (isDefaultMarketAppliedGeo(intent.geo)) {
+    debug.pairDefaultMarketPriorities = candidates.map(getPairDefaultMarketPriority);
+    debug.inDefaultMarketPairCount = debug.pairDefaultMarketPriorities.filter((priority) => priority <= 1).length;
+    debug.outOfDefaultMarketPairCount = candidates.length - debug.inDefaultMarketPairCount;
+
+    if (debug.inDefaultMarketPairCount >= 3) {
+      sortableCandidates = candidates.filter((pair) => getPairDefaultMarketPriority(pair) <= 1);
+      debug.pairsSuppressedForDefaultMarket = candidates.length - sortableCandidates.length;
+    }
+  }
+
+  return sortMixedPairs(sortableCandidates, intent.geo).slice(0, 8);
 }
 
 export { getPairDistanceMiles };

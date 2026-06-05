@@ -1,4 +1,5 @@
 import type { PairingPreference, SearchIntent } from "./types";
+import { applyDefaultMarketWhenMissing } from "./default-market";
 import { detectGeoIntent } from "./geo-taxonomy";
 import {
   ACTIVITY_TERMS,
@@ -474,7 +475,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const cuisine = detectCuisineTerms(query);
   const meals = detectMealTerms(query);
   const acts = stripDistanceTerms(addRooftopDrinkActivityTerms(detectActivityTerms(query), query));
-  const geo = detectGeoIntent(query);
+  const geo = applyDefaultMarketWhenMissing(detectGeoIntent(query)).geo;
   const restaurantAlternativeGroups = detectAlternativeGroupsForLane(query, "restaurant");
   const activityAlternativeGroups = detectAlternativeGroupsForLane(query, "activity");
   const restaurantFood = stripRooftopActivityLaneRestaurantTerms(food, query).filter((t) => t !== "rooftop" && t !== "lounge");
@@ -541,7 +542,7 @@ export function normalizeIntent(query: string, llmIntent?: Partial<SearchIntent>
   const base = deterministicIntentFromQuery(query);
   const merged: SearchIntent = { ...base, ...(llmIntent ?? {}), rawQuery: query, restaurantIntent: { ...base.restaurantIntent, ...(llmIntent?.restaurantIntent ?? {}) }, activityIntent: { ...base.activityIntent, ...(llmIntent?.activityIntent ?? {}) } };
   const redetectedGeo = detectGeoIntent(query);
-  merged.geo = redetectedGeo.raw ? redetectedGeo : base.geo;
+  merged.geo = applyDefaultMarketWhenMissing(redetectedGeo.raw ? redetectedGeo : base.geo).geo;
   const food = uniq([...detectFoodTerms(query), ...(merged.restaurantIntent.foodTerms ?? [])]);
   const cuisine = uniq([...detectCuisineTerms(query), ...(merged.restaurantIntent.cuisineTerms ?? [])]);
   const meals = uniq([...detectMealTerms(query), ...(merged.restaurantIntent.mealTerms ?? [])]);

@@ -1,6 +1,6 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
 export type SearchType = "restaurant" | "activity" | "mixed_outing" | "any";
-export type GeoStrictness = "none" | "soft" | "medium" | "strict";
+export type GeoStrictness = "none" | "soft" | "medium" | "strict" | "default_market";
 export type PairDistanceMode = "short_walk" | "walking" | "nearby" | "same_area" | "any";
 
 export type PairingPreference = {
@@ -44,6 +44,8 @@ export type GeoIntent = {
   longitude?: number | null;
   radiusMiles?: number | null;
   geoStrictness: GeoStrictness;
+  defaultMarketId?: string | null;
+  defaultMarketLabel?: string | null;
 };
 
 export type SearchIntent = {

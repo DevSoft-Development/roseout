@@ -1,4 +1,5 @@
 import type { EnterpriseLocation, SearchIntent, SearchDomain } from "./types";
+import { getDefaultMarketTier, isDefaultMarketAppliedGeo } from "./default-market";
 import { scoreGeoMatch, shouldExcludeByGeo } from "./geo-taxonomy";
 import { getLocationDistanceMiles, scoreDistance } from "./distance";
 import {
@@ -442,6 +443,18 @@ function relevance(
   domain: SearchDomain,
 ) {
   const geo = scoreGeoMatch(r, intent.geo);
+  const defaultMarketTier = isDefaultMarketAppliedGeo(intent.geo) ? getDefaultMarketTier(r) : null;
+  const defaultMarketScore = defaultMarketTier == null
+    ? 0
+    : defaultMarketTier === 0
+      ? 180
+      : defaultMarketTier === 1
+        ? 120
+        : defaultMarketTier === 2
+          ? 20
+          : defaultMarketTier === 3
+            ? -80
+            : -120;
   const dist = getLocationDistanceMiles(r, intent.geo);
   if (dist != null) r.distance_miles = Number(dist.toFixed(2));
   r.distance_score = scoreDistance(r, intent.geo);
@@ -493,10 +506,11 @@ function relevance(
     Number(r.rating ?? 0) * 2 +
     Math.min(Number(r.review_count ?? 0) / 100, 10);
   r.term_score = termScore + alternativeScore + generic;
-  r.geo_score = geo;
+  r.geo_score = geo + defaultMarketScore;
+  (r as any).defaultMarketTier = defaultMarketTier;
   r.domain_score = domainScore;
   r.quality_rank_score = quality;
-  r.match_score = (r.term_score ?? 0) + domainScore + geo;
+  r.match_score = (r.term_score ?? 0) + domainScore + geo + defaultMarketScore;
   return (
     (r.match_score ?? 0) +
     (r.term_score ?? 0) +
