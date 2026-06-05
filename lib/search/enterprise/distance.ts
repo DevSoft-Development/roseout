@@ -29,6 +29,7 @@ export function getPairDistanceMiles(restaurantOrPair: EnterpriseLocation | any,
   return miles;
 }
 export const MAX_SAFE_WALKING_ROUTE_MINUTES = 180;
+export const DEFAULT_MAX_WALKING_PAIR_MINUTES = 60;
 export const WALKING_MINUTES_PER_MILE = 20;
 export const WALKING_ROUTE_LABEL_DISPLAY_MAX_MINUTES = 45;
 
@@ -60,7 +61,8 @@ export function getWalkingMinutesFromLabel(label: string | undefined | null): nu
 
 export function isSafeWalkingLabel(label: string | undefined | null): boolean {
   const minutes = getWalkingMinutesFromLabel(label);
-  return normalizeWalkingMinutes(minutes) != null;
+  const safeMinutes = normalizeWalkingMinutes(minutes);
+  return safeMinutes != null && safeMinutes <= DEFAULT_MAX_WALKING_PAIR_MINUTES;
 }
 
 export function sanitizeWalkingDistanceLabel(label: string | undefined | null): string | undefined {
@@ -71,7 +73,7 @@ export function sanitizeWalkingDistanceLabel(label: string | undefined | null): 
   if (minutes != null) {
     const safeMinutes = normalizeWalkingMinutes(minutes);
 
-    if (safeMinutes == null) {
+    if (safeMinutes == null || safeMinutes > DEFAULT_MAX_WALKING_PAIR_MINUTES) {
       return undefined;
     }
 
@@ -93,8 +95,12 @@ export function cleanDistanceLabel(label: string | undefined | null): string | u
 
   const walkingMinutes = getWalkingMinutesFromLabel(cleaned);
 
-  if (walkingMinutes != null && normalizeWalkingMinutes(walkingMinutes) == null) {
-    return undefined;
+  if (walkingMinutes != null) {
+    const safeMinutes = normalizeWalkingMinutes(walkingMinutes);
+
+    if (safeMinutes == null || safeMinutes > DEFAULT_MAX_WALKING_PAIR_MINUTES) {
+      return undefined;
+    }
   }
 
   return cleaned || undefined;
@@ -123,14 +129,14 @@ export function getRawWalkingMinutes(pair: any): number | null {
 }
 
 export function estimateWalkingMinutesFromMiles(miles: unknown): number | null {
+  if (miles == null) return null;
+
   const distanceMiles = Number(miles);
 
   if (!Number.isFinite(distanceMiles)) return null;
   if (distanceMiles < 0) return null;
 
-  const estimatedMinutes = distanceMiles * WALKING_MINUTES_PER_MILE;
-
-  return normalizeWalkingMinutes(estimatedMinutes);
+  return Math.round(distanceMiles * WALKING_MINUTES_PER_MILE);
 }
 
 export function getSafeWalkingMinutes(pair: any): number | null {
@@ -157,26 +163,39 @@ export function shouldRejectPairForWalkingRoute(
     return { reject: false, reason: null };
   }
 
+  const requestedMaxMinutes = Number(pairingPreference?.maxPairWalkingMinutes);
+  const hasRequestedMaxMinutes = Number.isFinite(requestedMaxMinutes) && requestedMaxMinutes > 0;
+  const effectiveMaxMinutes = hasRequestedMaxMinutes
+    ? Math.min(requestedMaxMinutes, DEFAULT_MAX_WALKING_PAIR_MINUTES)
+    : DEFAULT_MAX_WALKING_PAIR_MINUTES;
+  const exceedsReason = hasRequestedMaxMinutes
+    ? "walking_route_exceeds_requested_minutes"
+    : "walking_route_exceeds_default_60_minutes";
+
   const rawMinutes = getRawWalkingMinutes(pair);
 
-  if (rawMinutes == null) {
+  if (rawMinutes != null) {
+    if (isExtremeWalkingRoute(rawMinutes)) {
+      return { reject: true, reason: "extreme_walking_route_duration" };
+    }
+
+    const safeMinutes = normalizeRouteMinutes(rawMinutes);
+
+    if (safeMinutes != null && safeMinutes > effectiveMaxMinutes) {
+      return { reject: true, reason: exceedsReason };
+    }
+
+    if (rawMinutes > effectiveMaxMinutes) {
+      return { reject: true, reason: exceedsReason };
+    }
+
     return { reject: false, reason: null };
   }
 
-  if (isExtremeWalkingRoute(rawMinutes)) {
-    return { reject: true, reason: "extreme_walking_route_duration" };
-  }
+  const estimatedMinutes = estimateWalkingMinutesFromMiles(getPairDistanceMiles(pair));
 
-  const safeMinutes = normalizeRouteMinutes(rawMinutes);
-
-  if (safeMinutes == null) {
-    return { reject: false, reason: null };
-  }
-
-  const maxMinutes = Number(pairingPreference?.maxPairWalkingMinutes);
-
-  if (Number.isFinite(maxMinutes) && safeMinutes > maxMinutes) {
-    return { reject: true, reason: "walking_route_exceeds_requested_minutes" };
+  if (estimatedMinutes != null && estimatedMinutes > effectiveMaxMinutes) {
+    return { reject: true, reason: exceedsReason };
   }
 
   return { reject: false, reason: null };
@@ -206,6 +225,10 @@ export function formatDistanceFromRestaurant({
   const miles = getPairDistanceMiles(pair);
 
   if (askedForWalking && walkingMinutes != null) {
+    if (walkingMinutes > DEFAULT_MAX_WALKING_PAIR_MINUTES) {
+      return "Distance unavailable";
+    }
+
     return `${walkingMinutes} min walk from ${restaurantName}`;
   }
 
@@ -244,12 +267,13 @@ export function isWalkablePair(restaurant: EnterpriseLocation, activity: Enterpr
   const warnings: string[] = [];
   const pairDistanceMiles = getPairDistanceMiles(restaurant, activity);
   const pairWalkingMinutes = pairDistanceMiles == null ? null : estimateWalkingMinutes(pairDistanceMiles);
+  const withinDefaultWalkingLimit = pairWalkingMinutes != null && pairWalkingMinutes <= DEFAULT_MAX_WALKING_PAIR_MINUTES;
   if (pairDistanceMiles == null) {
     warnings.push("missing_coordinates");
     return { isWalkable: !pref.requireWalkablePair, warnings, pairDistanceMiles, pairWalkingMinutes };
   }
-  if (pref.distanceMode === "short_walk") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 0.75), warnings, pairDistanceMiles, pairWalkingMinutes };
-  if (pref.distanceMode === "walking") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 1.5), warnings, pairDistanceMiles, pairWalkingMinutes };
+  if (pref.distanceMode === "short_walk") return { isWalkable: withinDefaultWalkingLimit && pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 0.75), warnings, pairDistanceMiles, pairWalkingMinutes };
+  if (pref.distanceMode === "walking") return { isWalkable: withinDefaultWalkingLimit && pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 1.5), warnings, pairDistanceMiles, pairWalkingMinutes };
   if (pref.distanceMode === "nearby") return { isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 2.5), warnings, pairDistanceMiles, pairWalkingMinutes };
   if (pref.distanceMode === "same_area") {
     const closeEnough = pairDistanceMiles <= (pref.maxPairDistanceMiles ?? 5);

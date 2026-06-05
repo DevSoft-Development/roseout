@@ -3,7 +3,7 @@ import { createPairingDebug, createSearchPairs } from "../lib/search/enterprise/
 import { normalizeIntent, restaurantSearchTerms, activitySearchTerms } from "../lib/search/enterprise/normalize-intent";
 import { rankActivityResults, rankRestaurantResults } from "../lib/search/enterprise/ranking";
 import type { EnterpriseLocation } from "../lib/search/enterprise/types";
-import { buildSafePairDistanceLabel, cleanDistanceLabel, formatDistanceFromRestaurant, isSafeWalkingLabel } from "../lib/search/enterprise/distance";
+import { buildSafePairDistanceLabel, cleanDistanceLabel, formatDistanceFromRestaurant, isSafeWalkingLabel, shouldRejectPairForWalkingRoute } from "../lib/search/enterprise/distance";
 import { toDisplayLabel } from "../lib/displayLabel";
 import { isLowLevelLocation, isQualifiedWellnessActivity, LOW_LEVEL_TERMS } from "../lib/search/lowLevel";
 
@@ -381,6 +381,46 @@ assert.equal(
   }),
   "6 min walk from The Modern",
   "walking queries should prefer safe Google walking minutes",
+);
+assert.deepEqual(
+  shouldRejectPairForWalkingRoute(
+    { walkingDurationMinutes: 158 },
+    { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: true },
+  ),
+  { reject: true, reason: "walking_route_exceeds_default_60_minutes" },
+  "walking queries should reject Google walking routes over the default 60-minute cap",
+);
+assert.deepEqual(
+  shouldRejectPairForWalkingRoute(
+    { walkingDurationMinutes: 45 },
+    { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: true },
+  ),
+  { reject: false, reason: null },
+  "walking queries should keep Google walking routes under the default 60-minute cap",
+);
+assert.deepEqual(
+  shouldRejectPairForWalkingRoute(
+    { walkingDurationMinutes: 61 },
+    { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: true },
+  ),
+  { reject: true, reason: "walking_route_exceeds_default_60_minutes" },
+  "walking queries should reject Google walking routes just over the default 60-minute cap",
+);
+assert.deepEqual(
+  shouldRejectPairForWalkingRoute(
+    { walkingDurationMinutes: 45 },
+    { requiresPairing: true, distanceMode: "walking", maxPairDistanceMiles: null, maxPairWalkingMinutes: 30, requireWalkablePair: true },
+  ),
+  { reject: true, reason: "walking_route_exceeds_requested_minutes" },
+  "walking queries should respect a user walking cap lower than 60 minutes",
+);
+assert.deepEqual(
+  shouldRejectPairForWalkingRoute(
+    { walkingDurationMinutes: 158 },
+    { requiresPairing: true, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
+  ),
+  { reject: false, reason: null },
+  "non-walking queries should not reject solely because route minutes exceed 60",
 );
 assert.equal(
   formatDistanceFromRestaurant({

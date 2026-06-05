@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getSafeWalkingMinutes, shouldRejectPairForWalkingRoute } from "../distance";
-import { scorePairQuality, sortPairs } from "../pairing";
+import { createPairingDebug, createSearchPairs, scorePairQuality, sortPairs } from "../pairing";
 import { restaurants, activities, makeIntent, runFixturePipeline } from "./fixtures";
 import type { EnterprisePair, PairingPreference } from "../types";
 
@@ -28,6 +28,63 @@ describe("enterprise search pairing", () => {
     expect(shouldRejectPairForWalkingRoute(pairs[3], walkingPreference).reason).toBe("extreme_walking_route_duration");
     expect(kept).toContain("E");
     expect(getSafeWalkingMinutes(pairs[4])).toBe(8);
+  });
+
+  it("applies the default 60-minute walking route cap", () => {
+    const defaultWalkingPreference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "walking",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: true,
+    };
+
+    expect(shouldRejectPairForWalkingRoute({ walkingDurationMinutes: 45 }, defaultWalkingPreference)).toEqual({
+      reject: false,
+      reason: null,
+    });
+    expect(shouldRejectPairForWalkingRoute({ walkingDurationMinutes: 61 }, defaultWalkingPreference)).toEqual({
+      reject: true,
+      reason: "walking_route_exceeds_default_60_minutes",
+    });
+    expect(shouldRejectPairForWalkingRoute({ walkingDurationMinutes: 158 }, defaultWalkingPreference)).toEqual({
+      reject: true,
+      reason: "walking_route_exceeds_default_60_minutes",
+    });
+    expect(shouldRejectPairForWalkingRoute({ walkingDurationMinutes: 45 }, { ...defaultWalkingPreference, maxPairWalkingMinutes: 30 })).toEqual({
+      reject: true,
+      reason: "walking_route_exceeds_requested_minutes",
+    });
+    expect(shouldRejectPairForWalkingRoute({ walkingDurationMinutes: 158 }, { ...defaultWalkingPreference, distanceMode: "any", requireWalkablePair: false })).toEqual({
+      reject: false,
+      reason: null,
+    });
+  });
+
+  it("increments walking rejection debug for a 158-minute route", () => {
+    const intent = {
+      ...makeIntent("restaurant with activity walking distance"),
+      wantsPairing: true,
+      pairingPreference: {
+        requiresPairing: true,
+        distanceMode: "walking",
+        maxPairDistanceMiles: null,
+        maxPairWalkingMinutes: null,
+        requireWalkablePair: true,
+      } satisfies PairingPreference,
+    };
+    const debug = createPairingDebug();
+    const pairs = createSearchPairs(
+      [restaurants[0]],
+      [{ ...activities[0], walkingDurationMinutes: 158 }],
+      intent,
+      debug,
+    );
+
+    expect(pairs).toHaveLength(0);
+    expect(debug.pairsRejectedForWalkingMinutes).toBe(1);
+    expect(debug.rejectedPairs[0]?.reason).toBe("walking_route_exceeds_default_60_minutes");
+    expect(debug.rejectedPairs[0]?.walkingDurationMinutes).toBe(158);
   });
 
   it("reports no walking pairs instead of no activities when both lanes have results", () => {
