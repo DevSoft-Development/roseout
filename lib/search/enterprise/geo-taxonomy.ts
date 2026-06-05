@@ -19,6 +19,7 @@ const base: GeoTaxonomyRecord[] = [
   { name: "Hoboken", aliases: ["hoboken"], type: "city", city: "Hoboken", county: "Hudson County", state: "NJ", latitude: 40.7433, longitude: -74.0324, defaultRadiusMiles: 4 },
   { name: "Connecticut", aliases: ["connecticut", "ct"], type: "state", region: "Connecticut", state: "CT", latitude: 41.0534, longitude: -73.5387, defaultRadiusMiles: 30 },
   { name: "Stamford", aliases: ["stamford", "stamford ct"], type: "city", city: "Stamford", county: "Fairfield County", state: "CT", latitude: 41.0534, longitude: -73.5387, defaultRadiusMiles: 6 },
+  { name: "Miami", aliases: ["miami", "miami fl"], type: "city", city: "Miami", county: "Miami-Dade County", state: "FL", latitude: 25.7617, longitude: -80.1918, defaultRadiusMiles: 10 },
 ];
 const add = (name: string, type: GeoType, parent: Partial<GeoTaxonomyRecord>, lat: number, lon: number, aliases: string[] = []) => base.push({ name, aliases: [name.toLowerCase(), ...aliases], type, state: parent.state ?? "NY", city: parent.city, borough: parent.borough, county: parent.county, region: parent.region, latitude: lat, longitude: lon, defaultRadiusMiles: type === "neighborhood" ? 3 : type === "city" ? 6 : 12 });
 const man = { city: "New York", borough: "Manhattan", county: "New York County", state: "NY" };
