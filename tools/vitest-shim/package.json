@@ -1,0 +1,10 @@
+{
+  "name": "vitest",
+  "version": "0.0.0-local-search-regression-shim",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.cjs",
+  "bin": {
+    "vitest": "bin/vitest.mjs"
+  }
+}

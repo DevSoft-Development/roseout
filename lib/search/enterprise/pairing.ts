@@ -199,6 +199,10 @@ export function sortMixedPairs<T extends EnterprisePair>(pairs: T[], geo?: Parti
     const bTier = Number((b as any).pairQualityTier ?? 1);
     if (aTier !== bTier) return bTier - aTier;
 
+    const aScore = Number((a as any).pairQualityScore ?? getPairCombinedScore(a));
+    const bScore = Number((b as any).pairQualityScore ?? getPairCombinedScore(b));
+    if (aScore !== bScore) return bScore - aScore;
+
     const aDistance = getPairDistanceValue(a);
     const bDistance = getPairDistanceValue(b);
     if (aDistance !== bDistance) return aDistance - bDistance;
@@ -208,10 +212,6 @@ export function sortMixedPairs<T extends EnterprisePair>(pairs: T[], geo?: Parti
     if (aWalkMinutes != null && bWalkMinutes != null && aWalkMinutes !== bWalkMinutes) {
       return aWalkMinutes - bWalkMinutes;
     }
-
-    const aScore = Number((a as any).pairQualityScore ?? getPairCombinedScore(a));
-    const bScore = Number((b as any).pairQualityScore ?? getPairCombinedScore(b));
-    if (aScore !== bScore) return bScore - aScore;
 
     const aReviewStrength = getPairReviewStrength(a);
     const bReviewStrength = getPairReviewStrength(b);
@@ -378,5 +378,7 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
   }));
   return sorted;
 }
+
+export const sortPairs = sortMixedPairs;
 
 export { getPairDistanceMiles };

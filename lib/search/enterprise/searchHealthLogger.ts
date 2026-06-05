@@ -247,6 +247,9 @@ function classifyWithReason(args: LoggerArgs, payload: any) {
     return { eventType: "test_event", severity: "info" as const, eventLabel: "Admin test event", noPairsReason: payload.no_pairs_reason };
   }
   if (errors.length > 0) return { eventType: "search_error", severity: "error" as const, eventLabel: "Search error", noPairsReason: payload.no_pairs_reason };
+  if (payload.source === "admin_search_lab" && (args.forceLog === true || args.forceLogSearchHealth === true || args.debugMode === true || args.debugEnabled === true || args.logSearchHealth === true) && Number(payload.pair_count ?? 0) > 0 && payload.restaurant_count === 0 && payload.activity_count === 0) {
+    return { eventType: "successful_debug_run", severity: "info" as const, eventLabel: "Search Lab debug run", noPairsReason: payload.no_pairs_reason };
+  }
   if (payload.restaurant_count === 0 && needsRestaurant) return { eventType: "no_restaurant_results", severity: "warning" as const, eventLabel: "No restaurant results", noPairsReason: payload.no_pairs_reason };
   if (payload.activity_count === 0 && needsActivity) return { eventType: "no_activity_results", severity: "warning" as const, eventLabel: "No activity results", noPairsReason: payload.no_pairs_reason };
   if (wantsPairing && Number(payload.restaurant_count ?? 0) > 0 && Number(payload.activity_count ?? 0) > 0 && payload.pair_count === 0) {
@@ -266,10 +269,35 @@ function classifyWithReason(args: LoggerArgs, payload: any) {
 }
 
 export function classifySearchHealthEvent(input: LoggerArgs | any): { eventType: string; severity: SearchHealthSeverity; eventLabel: string } {
-  const args: LoggerArgs = input?.result || input?.debug || input?.source ? input : { result: input };
+  const args: LoggerArgs = isLoggerArgsLikeInput(input) ? input : { result: input };
   const payload = buildSearchHealthEventPayloadBase(args);
   const classified = classifyWithReason(args, payload);
   return { eventType: classified.eventType, severity: classified.severity, eventLabel: classified.eventLabel };
+}
+
+function isLoggerArgsLikeInput(input: any): boolean {
+  if (!input || typeof input !== "object") return false;
+  return Boolean(
+    input.result ||
+      input.debug ||
+      input.source ||
+      "restaurant_count" in input ||
+      "activity_count" in input ||
+      "pair_count" in input ||
+      "needsActivity" in input ||
+      "needsRestaurant" in input ||
+      "wantsPairing" in input ||
+      "distanceMode" in input ||
+      "requireWalkablePair" in input ||
+      "timing_ms" in input ||
+      "timingMs" in input ||
+      "speed_status" in input ||
+      "speedStatus" in input ||
+      "no_pairs_reason" in input ||
+      "noPairsReason" in input ||
+      "no_results_reason" in input ||
+      "noResultsReason" in input
+  );
 }
 
 function buildSearchHealthEventPayloadBase(args: LoggerArgs) {
@@ -329,7 +357,7 @@ export function buildSearchHealthEventPayload(args: LoggerArgs) {
 }
 
 export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
-  const args: LoggerArgs = input?.result || input?.debug || input?.source ? input : { result: input };
+  const args: LoggerArgs = isLoggerArgsLikeInput(input) ? input : { result: input };
   const payload = buildSearchHealthEventPayload(args);
   const debug = args.debug ?? args.result?.debug ?? {};
   const needsActivity = needsActivityForSearch(args, args.result ?? {}, debug);

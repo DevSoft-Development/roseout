@@ -51,7 +51,7 @@ function cloneGeo(geo: GeoIntent): GeoIntent {
   };
 }
 
-function hasExplicitGeo(geo: GeoIntent) {
+export function hasExplicitGeo(geo: GeoIntent) {
   return Boolean(
     geo.raw ||
       geo.neighborhood ||

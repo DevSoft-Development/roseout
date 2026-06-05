@@ -29,7 +29,8 @@
     "test:search-route-regression": "rm -rf .tmp-test/search-route && tsc -p tsconfig.search-route-regression.json && mkdir -p .tmp-test/search-route/node_modules && ln -s .. .tmp-test/search-route/node_modules/@ && node .tmp-test/search-route/scripts/search-route-regression.js; status=$?; rm -rf .tmp-test/search-route; exit $status",
     "test:search-route-live": "node scripts/test-search-route.mjs",
     "test:llm-intent": "node scripts/test-llm-intent.mjs",
-    "validate:low-level": "tsx scripts/validate-low-level-cleanup.ts"
+    "validate:low-level": "tsx scripts/validate-low-level-cleanup.ts",
+    "test:search": "vitest run lib/search/enterprise"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -63,6 +64,7 @@
     "eslint-config-next": "16.2.4",
     "postcss": "^8.5.12",
     "tailwindcss": "^4.2.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "file:tools/vitest-shim"
   }
 }
