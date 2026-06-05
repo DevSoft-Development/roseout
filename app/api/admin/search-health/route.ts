@@ -13,10 +13,10 @@ const RANGE_MS: Record<RangeKey, number> = {
   "30d": 30 * 24 * 60 * 60 * 1000,
 };
 
-const RECENT_COLUMNS = "id,created_at,source,raw_query,normalized_search_type,primary_domain,pair_count,restaurant_count,activity_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,default_market_id,review_status";
+const RECENT_COLUMNS = "id,created_at,source,raw_query,normalized_search_type,primary_domain,event_type,severity,event_label,pair_count,restaurant_count,activity_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,default_market_id,review_status";
 
 function parseRange(value: string | null): RangeKey {
-  return value === "24h" || value === "7d" || value === "30d" ? value : "7d";
+  return value === "24h" || value === "7d" || value === "30d" ? value : "30d";
 }
 
 function sinceIso(range: RangeKey) {
@@ -52,17 +52,20 @@ function applyFilters(query: any, filters: Record<string, string | null>, fromIs
   return next;
 }
 
-function topCounts(rows: any[], key: string) {
-  const counts = new Map<string, number>();
+function topCounts(rows: any[], key: string, outputKey: "type" | "reason" = "reason") {
+  const counts = new Map<string, { count: number; exampleQuery?: string | null }>();
   for (const row of rows) {
     const value = typeof row?.[key] === "string" && row[key].trim() ? row[key].trim() : null;
-    if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+    if (!value) continue;
+    const current = counts.get(value) ?? { count: 0, exampleQuery: null };
+    current.count += 1;
+    if (!current.exampleQuery && row.raw_query) current.exampleQuery = row.raw_query;
+    counts.set(value, current);
   }
-  return Array.from(counts, ([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+  return Array.from(counts, ([value, meta]) => ({ [outputKey]: value, reason: value, count: meta.count, exampleQuery: meta.exampleQuery }))
+    .sort((a, b) => b.count - a.count || String((a as any)[outputKey]).localeCompare(String((b as any)[outputKey])))
     .slice(0, 12);
 }
-
 
 function sourceCounts(rows: any[]) {
   const counts = new Map<string, number>();
@@ -75,12 +78,14 @@ function sourceCounts(rows: any[]) {
 }
 
 function commonQueries(rows: any[]) {
-  const counts = new Map<string, { query: string; count: number; lastSeen: string | null }>();
+  const issueTypes = new Set(["no_valid_pairs", "no_results", "no_activity_results", "no_restaurant_results", "search_error"]);
+  const counts = new Map<string, { query: string; count: number; lastSeen: string | null; eventType?: string | null }>();
   for (const row of rows) {
+    if (row.event_type && !issueTypes.has(row.event_type) && !row.no_pairs_reason && !row.no_results_reason) continue;
     const query = typeof row?.raw_query === "string" ? row.raw_query.trim() : "";
     if (!query) continue;
     const key = query.toLowerCase();
-    const current = counts.get(key) ?? { query, count: 0, lastSeen: null };
+    const current = counts.get(key) ?? { query, count: 0, lastSeen: null, eventType: row.event_type };
     current.count += 1;
     if (!current.lastSeen || String(row.created_at) > current.lastSeen) current.lastSeen = row.created_at;
     counts.set(key, current);
@@ -104,22 +109,22 @@ export async function GET(req: Request) {
       speed_status: cleanFilter(searchParams.get("speed_status")),
       no_pairs_reason: cleanFilter(searchParams.get("no_pairs_reason")),
       no_results_reason: cleanFilter(searchParams.get("no_results_reason")),
+      severity: cleanFilter(searchParams.get("severity")),
+      event_type: cleanFilter(searchParams.get("event_type")),
     };
     const q = cleanFilter(searchParams.get("q"));
 
-    let recentQuery = applyFilters(
-      supabaseAdmin
-        .from("search_health_events")
-        .select(RECENT_COLUMNS)
-        .order("created_at", { ascending: false })
-        .limit(100),
-      filters,
-      fromIso,
-      q,
-    );
-
-    const [{ data: recentEvents, error: recentError }, aggregateResult] = await Promise.all([
-      recentQuery,
+    const [{ data: recentEvents, error: recentError }, aggregateResult, digestResult] = await Promise.all([
+      applyFilters(
+        supabaseAdmin
+          .from("search_health_events")
+          .select(RECENT_COLUMNS)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        filters,
+        fromIso,
+        q,
+      ),
       applyFilters(
         supabaseAdmin
           .from("search_health_events")
@@ -130,6 +135,12 @@ export async function GET(req: Request) {
         fromIso,
         q,
       ),
+      supabaseAdmin
+        .from("search_health_digest_runs")
+        .select("id,created_at,source,sent,recipient_count,total_events,error_count,warning_count,no_pair_count,no_result_count,slow_count,response")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     if (recentError) throw recentError;
@@ -151,11 +162,15 @@ export async function GET(req: Request) {
       totalEvents,
       totalEventsLast24h,
       totalEventsLast7d,
-      noResultSearches: aggregateRows.filter((row: any) => row.no_results_reason).length,
-      noPairSearches: aggregateRows.filter((row: any) => row.no_pairs_reason || row.pair_count === 0).length,
-      slowSearches: aggregateRows.filter((row: any) => ["slow", "degraded", "critical", "timeout"].includes(String(row.speed_status ?? "")) || Number(row.timing_ms ?? 0) > 3000).length,
+      errors: aggregateRows.filter((row: any) => ["error", "critical"].includes(String(row.severity))).length,
+      warnings: aggregateRows.filter((row: any) => row.severity === "warning").length,
+      infoEvents: aggregateRows.filter((row: any) => row.severity === "info").length,
+      noResultSearches: aggregateRows.filter((row: any) => row.no_results_reason || ["no_restaurant_results", "no_activity_results", "no_results"].includes(row.event_type)).length,
+      noPairSearches: aggregateRows.filter((row: any) => row.no_pairs_reason || row.event_type === "no_valid_pairs").length,
+      lowPairCountSearches: aggregateRows.filter((row: any) => row.event_type === "low_pair_count").length,
+      slowSearches: aggregateRows.filter((row: any) => row.event_type === "slow_search" || ["slow", "degraded", "critical", "timeout"].includes(String(row.speed_status ?? "")) || Number(row.timing_ms ?? 0) > 3000).length,
       unresolvedEvents,
-      eventsBySource: sourceCounts(aggregateRows),
+      latestEventCreatedAt: aggregateRows[0]?.created_at ?? null,
     };
 
     const slowestSearches = [...aggregateRows]
@@ -177,10 +192,13 @@ export async function GET(req: Request) {
       range,
       summary,
       recentEvents: recentEvents ?? [],
+      topEventTypes: topCounts(aggregateRows, "event_type", "type"),
       topNoPairReasons: topCounts(aggregateRows, "no_pairs_reason"),
       topNoResultReasons: topCounts(aggregateRows, "no_results_reason"),
       slowestSearches,
       commonFailingQueries: commonQueries(aggregateRows),
+      eventsBySource: sourceCounts(aggregateRows),
+      lastDigestRun: digestResult.error ? null : digestResult.data ?? null,
     });
   } catch (error) {
     console.error("ADMIN_SEARCH_HEALTH_ERROR", error);
