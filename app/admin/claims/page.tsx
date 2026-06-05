@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getLocationName } from "@/lib/locationName";
 
@@ -51,12 +52,19 @@ function statusBadge(status?: string | null) {
 
   if (value === "approved") return "border-rose-200 bg-rose-50 text-rose-700";
   if (value === "rejected") return "border-red-200 bg-red-50 text-red-700";
-  if (value === "needs_more_info") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (value === "needs_more_info")
+    return "border-sky-200 bg-sky-50 text-sky-700";
 
   return "border-amber-200 bg-amber-50 text-amber-700";
 }
 
-function Badge({ tone, children }: { tone: "emerald" | "amber" | "red" | "rose" | "slate"; children: ReactNode }) {
+function Badge({
+  tone,
+  children,
+}: {
+  tone: "emerald" | "amber" | "red" | "rose" | "slate";
+  children: ReactNode;
+}) {
   const tones = {
     emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
     amber: "border-amber-200 bg-amber-50 text-amber-700",
@@ -64,7 +72,13 @@ function Badge({ tone, children }: { tone: "emerald" | "amber" | "red" | "rose" 
     rose: "border-rose-200 bg-rose-50 text-rose-700",
     slate: "border-black/10 bg-white text-black/45",
   };
-  return <span className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${tones[tone]}`}>{children}</span>;
+  return (
+    <span
+      className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${tones[tone]}`}
+    >
+      {children}
+    </span>
+  );
 }
 
 export default function AdminClaimsPage() {
@@ -92,8 +106,10 @@ export default function AdminClaimsPage() {
       (claim: any) => ({
         id: claim.id,
         type: "restaurant",
-        location_name:
-          getLocationName(claim, claim.location_name || "Unnamed Restaurant"),
+        location_name: getLocationName(
+          claim,
+          claim.location_name || "Unnamed Restaurant",
+        ),
         address: claim.address,
         city: claim.city,
         state: claim.state,
@@ -104,15 +120,17 @@ export default function AdminClaimsPage() {
         message: claim.message,
         status: claim.status,
         created_at: claim.created_at,
-      })
+      }),
     );
 
     const activityClaims: LocationClaim[] = (data.activityClaims || []).map(
       (claim: any) => ({
         id: claim.id,
         type: "activity",
-        location_name:
-          getLocationName(claim, claim.location_name || "Unnamed Activity"),
+        location_name: getLocationName(
+          claim,
+          claim.location_name || "Unnamed Activity",
+        ),
         location_type: claim.activity_type,
         address: claim.address,
         city: claim.city,
@@ -124,7 +142,7 @@ export default function AdminClaimsPage() {
         message: claim.message,
         status: claim.status,
         created_at: claim.created_at,
-      })
+      }),
     );
 
     const locationClaims: LocationClaim[] = (data.locationClaims || []).map(
@@ -153,7 +171,7 @@ export default function AdminClaimsPage() {
         claim_code: claim.claim_code,
         status: claim.status,
         created_at: claim.submitted_at || claim.created_at,
-      })
+      }),
     );
 
     setClaims([...locationClaims, ...restaurantClaims, ...activityClaims]);
@@ -167,7 +185,7 @@ export default function AdminClaimsPage() {
   async function updateClaimStatus(
     id: string,
     type: "restaurant" | "activity" | "location",
-    status: ClaimStatus
+    status: ClaimStatus,
   ) {
     setUpdatingId(id);
 
@@ -191,15 +209,23 @@ export default function AdminClaimsPage() {
     await fetchClaims();
 
     if (status === "approved" && data.signup_url) {
-      alert(`Location claim approved.\n\nOwner signup link:\n${data.signup_url}`);
+      alert(
+        `Location claim approved.\n\nOwner signup link:\n${data.signup_url}`,
+      );
     }
   }
 
   const stats = useMemo(() => {
     const pending = claims.filter((claim) => claim.status === "pending").length;
-    const approved = claims.filter((claim) => claim.status === "approved").length;
-    const rejected = claims.filter((claim) => claim.status === "rejected").length;
-    const needsMoreInfo = claims.filter((claim) => claim.status === "needs_more_info").length;
+    const approved = claims.filter(
+      (claim) => claim.status === "approved",
+    ).length;
+    const rejected = claims.filter(
+      (claim) => claim.status === "rejected",
+    ).length;
+    const needsMoreInfo = claims.filter(
+      (claim) => claim.status === "needs_more_info",
+    ).length;
 
     return {
       total: claims.length,
@@ -296,8 +322,14 @@ export default function AdminClaimsPage() {
 
           {loading ? (
             <div className="p-12 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-2xl">
-                🌹
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 p-3">
+                <Image
+                  src="/toh_logo.png"
+                  alt="TheOutHaven"
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 object-contain"
+                />
               </div>
               <p className="mt-4 text-lg font-black">Loading claims...</p>
               <p className="mt-1 text-sm text-black/50">
@@ -337,12 +369,16 @@ export default function AdminClaimsPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">
-                            {claim.type === "restaurant" ? "Restaurant" : claim.type === "activity" ? "Activity" : "Location"}
+                            {claim.type === "restaurant"
+                              ? "Restaurant"
+                              : claim.type === "activity"
+                                ? "Activity"
+                                : "Location"}
                           </span>
 
                           <span
                             className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${statusBadge(
-                              claim.status
+                              claim.status,
                             )}`}
                           >
                             {claim.status || "pending"}
@@ -370,12 +406,40 @@ export default function AdminClaimsPage() {
                         )}
 
                         <div className="mt-4 flex flex-wrap gap-2">
-                          {claim.claim_code ? <Badge tone="emerald">Code Verified</Badge> : <Badge tone="slate">No Code</Badge>}
-                          {claim.verification_status === "background_matched" && <Badge tone="emerald">Background Matched</Badge>}
-                          {claim.verification_status === "needs_admin_match" && <Badge tone="amber">Needs Admin Match</Badge>}
-                          {claim.match_status && <Badge tone={claim.match_status === "no_match" ? "red" : claim.match_status === "exact_match" ? "emerald" : "amber"}>{claim.match_status.replace(/_/g, " ")}</Badge>}
-                          {claim.plan_interest === "pro" ? <Badge tone="rose">Pro Plan</Badge> : claim.plan_interest ? <Badge tone="slate">Free Discovery</Badge> : null}
-                          {claim.request_type && <Badge tone="slate">{claim.request_type}</Badge>}
+                          {claim.claim_code ? (
+                            <Badge tone="emerald">Code Verified</Badge>
+                          ) : (
+                            <Badge tone="slate">No Code</Badge>
+                          )}
+                          {claim.verification_status ===
+                            "background_matched" && (
+                            <Badge tone="emerald">Background Matched</Badge>
+                          )}
+                          {claim.verification_status ===
+                            "needs_admin_match" && (
+                            <Badge tone="amber">Needs Admin Match</Badge>
+                          )}
+                          {claim.match_status && (
+                            <Badge
+                              tone={
+                                claim.match_status === "no_match"
+                                  ? "red"
+                                  : claim.match_status === "exact_match"
+                                    ? "emerald"
+                                    : "amber"
+                              }
+                            >
+                              {claim.match_status.replace(/_/g, " ")}
+                            </Badge>
+                          )}
+                          {claim.plan_interest === "pro" ? (
+                            <Badge tone="rose">Pro Plan</Badge>
+                          ) : claim.plan_interest ? (
+                            <Badge tone="slate">Free Discovery</Badge>
+                          ) : null}
+                          {claim.request_type && (
+                            <Badge tone="slate">{claim.request_type}</Badge>
+                          )}
                           {claim.claim_code && (
                             <span className="rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-[11px] font-black uppercase text-black/45">
                               {claim.claim_code}
@@ -405,7 +469,9 @@ export default function AdminClaimsPage() {
                             <span className="font-black text-black/40">
                               Name:
                             </span>{" "}
-                            <strong>{claim.owner_name || "Not provided"}</strong>
+                            <strong>
+                              {claim.owner_name || "Not provided"}
+                            </strong>
                           </p>
 
                           <p className="truncate">
@@ -430,7 +496,9 @@ export default function AdminClaimsPage() {
                             <span className="font-black text-black/40">
                               Role:
                             </span>{" "}
-                            <strong>{claim.role_at_business || "Not provided"}</strong>
+                            <strong>
+                              {claim.role_at_business || "Not provided"}
+                            </strong>
                           </p>
                         </div>
                       </div>
@@ -439,11 +507,7 @@ export default function AdminClaimsPage() {
                         <button
                           disabled={isUpdating}
                           onClick={() =>
-                            updateClaimStatus(
-                              claim.id,
-                              claim.type,
-                              "approved"
-                            )
+                            updateClaimStatus(claim.id, claim.type, "approved")
                           }
                           className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:scale-[1.03] disabled:opacity-50"
                         >
@@ -456,7 +520,7 @@ export default function AdminClaimsPage() {
                             updateClaimStatus(
                               claim.id,
                               claim.type,
-                              "needs_more_info"
+                              "needs_more_info",
                             )
                           }
                           className="flex-1 rounded-full border border-black/10 bg-sky-700 px-4 py-3 text-sm font-black text-white transition hover:bg-sky-800 disabled:opacity-50"
@@ -467,11 +531,7 @@ export default function AdminClaimsPage() {
                         <button
                           disabled={isUpdating}
                           onClick={() =>
-                            updateClaimStatus(
-                              claim.id,
-                              claim.type,
-                              "rejected"
-                            )
+                            updateClaimStatus(claim.id, claim.type, "rejected")
                           }
                           className="flex-1 rounded-full border border-black/10 bg-[#1b1210] px-4 py-3 text-sm font-black text-white transition hover:bg-red-700 disabled:opacity-50"
                         >

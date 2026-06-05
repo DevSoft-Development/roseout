@@ -3,7 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { trackLocationEvent, type LocationAnalyticsMetadata } from "@/lib/location-analytics";
+import {
+  trackLocationEvent,
+  type LocationAnalyticsMetadata,
+} from "@/lib/location-analytics";
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { useSearchParams } from "next/navigation";
 import {
@@ -108,7 +111,12 @@ const PLAN_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
   source_section: "outing_card",
 };
 
-type ExternalPlanEvent = "reservation_started" | "phone_click" | "website_click" | "share_click" | "directions_click";
+type ExternalPlanEvent =
+  | "reservation_started"
+  | "phone_click"
+  | "website_click"
+  | "share_click"
+  | "directions_click";
 
 function trackPlanExternalAction(
   locationId: string | null | undefined,
@@ -154,7 +162,6 @@ function PlanPageInner() {
   const [shareStatus, setShareStatus] = useState("");
   const [outingComplete, setOutingComplete] = useState(false);
 
-
   function toPlanLocation(location: ExactCampaignLocation): PlanLocation {
     return {
       ...location,
@@ -167,9 +174,14 @@ function PlanPageInner() {
       state: location.state || null,
       description: location.description || null,
       primary_category: location.primaryCategory || null,
-      cuisine_type: location.type === "restaurant" ? location.primaryCategory || null : null,
-      activity_type: location.type === "activity" ? location.primaryCategory || null : null,
-      detail_location_type: location.type === "activity" ? "activities" : "restaurants",
+      cuisine_type:
+        location.type === "restaurant"
+          ? location.primaryCategory || null
+          : null,
+      activity_type:
+        location.type === "activity" ? location.primaryCategory || null : null,
+      detail_location_type:
+        location.type === "activity" ? "activities" : "restaurants",
       main_image: location.imageUrl || null,
       image_url: location.imageUrl || null,
     } as PlanLocation;
@@ -188,7 +200,9 @@ function PlanPageInner() {
       const sourceTable = searchParams.get("sourceTable");
       if (sourceTable) params.set("sourceTable", sourceTable);
 
-      const response = await fetch(`/api/marketing/campaign-location?${params.toString()}`);
+      const response = await fetch(
+        `/api/marketing/campaign-location?${params.toString()}`,
+      );
       const data: CampaignLocationResponse = await response.json();
 
       if (!response.ok || !data.location) {
@@ -228,7 +242,10 @@ function PlanPageInner() {
         const saved = localStorage.getItem(PLAN_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as SavedPlan;
-          const savedMatchesCampaign = !campaignSlug || parsed.campaignSlug === campaignSlug || parsed.planExact;
+          const savedMatchesCampaign =
+            !campaignSlug ||
+            parsed.campaignSlug === campaignSlug ||
+            parsed.planExact;
           if (savedMatchesCampaign && (parsed.restaurant || parsed.activity)) {
             setPlan(parsed);
             return;
@@ -270,13 +287,14 @@ function PlanPageInner() {
     return names.length ? names.join(" + ") : "Your TheOutHaven Plan";
   }, [restaurant, activity]);
 
-  const completionPrompt = restaurant && activity
-    ? `Find another idea like ${getLocationName(restaurant)} and ${getLocationName(activity)}`
-    : restaurant
-      ? `Add an activity near ${getLocationName(restaurant)}`
-      : activity
-        ? `Add a restaurant near ${getLocationName(activity)}`
-        : "Plan a restaurant and activity nearby";
+  const completionPrompt =
+    restaurant && activity
+      ? `Find another idea like ${getLocationName(restaurant)} and ${getLocationName(activity)}`
+      : restaurant
+        ? `Add an activity near ${getLocationName(restaurant)}`
+        : activity
+          ? `Add a restaurant near ${getLocationName(activity)}`
+          : "Plan a restaurant and activity nearby";
 
   function saveCurrentPlan() {
     if (!plan) return;
@@ -287,7 +305,12 @@ function PlanPageInner() {
     setSaveStatus("Saved — you can come back to this plan from this device.");
 
     [restaurant, activity].forEach((location) => {
-      if (location?.id) trackLocationEvent(String(location.id), "save", PLAN_ANALYTICS_METADATA);
+      if (location?.id)
+        trackLocationEvent(
+          String(location.id),
+          "save",
+          PLAN_ANALYTICS_METADATA,
+        );
     });
   }
 
@@ -303,9 +326,14 @@ function PlanPageInner() {
         await navigator.clipboard.writeText(url);
       }
 
-      setShareStatus(hasNativeShare ? "Share sheet opened." : "Plan link copied.");
+      setShareStatus(
+        hasNativeShare ? "Share sheet opened." : "Plan link copied.",
+      );
       [restaurant, activity].forEach((location) => {
-        if (location?.id) trackPlanExternalAction(String(location.id), "share_click", { plan_title: planTitle });
+        if (location?.id)
+          trackPlanExternalAction(String(location.id), "share_click", {
+            plan_title: planTitle,
+          });
       });
     } catch {
       setShareStatus("Share was cancelled — your plan is still saved here.");
@@ -314,9 +342,16 @@ function PlanPageInner() {
 
   function markOutingComplete() {
     setOutingComplete(true);
-    setSaveStatus("Outing marked complete. Need another idea when you are ready?");
+    setSaveStatus(
+      "Outing marked complete. Need another idea when you are ready?",
+    );
     [restaurant, activity].forEach((location) => {
-      if (location?.id) trackLocationEvent(String(location.id), "booking", PLAN_ANALYTICS_METADATA);
+      if (location?.id)
+        trackLocationEvent(
+          String(location.id),
+          "booking",
+          PLAN_ANALYTICS_METADATA,
+        );
     });
   }
 
@@ -324,7 +359,6 @@ function PlanPageInner() {
 
   return (
     <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-black text-white">
-
       <section className="relative border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:pt-32">
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div>
@@ -401,7 +435,11 @@ function PlanPageInner() {
         className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8"
       >
         {!hasPlan ? (
-          loadingExactCampaign ? <PlanLoading /> : <EmptyPlan />
+          loadingExactCampaign ? (
+            <PlanLoading />
+          ) : (
+            <EmptyPlan />
+          )
         ) : (
           <div className="grid gap-5 lg:grid-cols-[0.82fr_1.18fr]">
             <aside className="h-fit rounded-[1.2rem] border border-white/10 bg-[#080808] p-4 shadow-2xl shadow-black/40 sm:p-5">
@@ -410,7 +448,11 @@ function PlanPageInner() {
               </p>
 
               <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">
-                {restaurant && activity ? "Dinner → Activity" : restaurant ? "Dinner selected" : "Activity selected"}
+                {restaurant && activity
+                  ? "Dinner → Activity"
+                  : restaurant
+                    ? "Dinner selected"
+                    : "Activity selected"}
               </h2>
 
               <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
@@ -422,20 +464,37 @@ function PlanPageInner() {
                   Next Step
                 </p>
                 <p className="mt-1 text-sm font-bold leading-6 text-white">
-                  Reserve, call, or open the website for either pick. If it is not right, replace a location or add another stop.
+                  Reserve, call, or open the website for either pick. If it is
+                  not right, replace a location or add another stop.
                 </p>
               </div>
 
               <div className="mt-4 grid gap-2">
                 <Link
-                  href={restaurant ? buildCreateHref(`replace restaurant near ${getLocationName(activity || restaurant)}`) : buildCreateHref(`add restaurant near ${getLocationName(activity)}`)}
+                  href={
+                    restaurant
+                      ? buildCreateHref(
+                          `replace restaurant near ${getLocationName(activity || restaurant)}`,
+                        )
+                      : buildCreateHref(
+                          `add restaurant near ${getLocationName(activity)}`,
+                        )
+                  }
                   className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
                 >
                   {restaurant ? "Replace Restaurant" : "Add Restaurant"}
                 </Link>
 
                 <Link
-                  href={activity ? buildCreateHref(`replace activity near ${getLocationName(restaurant || activity)}`) : buildCreateHref(`add activity near ${getLocationName(restaurant)}`)}
+                  href={
+                    activity
+                      ? buildCreateHref(
+                          `replace activity near ${getLocationName(restaurant || activity)}`,
+                        )
+                      : buildCreateHref(
+                          `add activity near ${getLocationName(restaurant)}`,
+                        )
+                  }
                   className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
                 >
                   {activity ? "Replace Activity" : "Add Activity"}
@@ -649,12 +708,14 @@ function TimelineLocation({
   type: "restaurant" | "activity";
 }) {
   const active = Boolean(location);
-  const title = location ? getLocationName(location, fallbackTitle) : fallbackTitle;
+  const title = location
+    ? getLocationName(location, fallbackTitle)
+    : fallbackTitle;
 
   const meta = [
     type === "restaurant" ? getCuisine(location) : getPrimaryCategory(location),
     location?.city,
-    location?.rating ? `🌹 ${location.rating}` : null,
+    location?.rating ? `★ ${location.rating}` : null,
   ]
     .filter(Boolean)
     .join(" • ");
@@ -736,7 +797,10 @@ function PlanActionCard({
   location: PlanLocation;
   directionsUrl?: string;
 }) {
-  const title = getLocationName(location, type === "restaurant" ? "Restaurant" : "Activity");
+  const title = getLocationName(
+    location,
+    type === "restaurant" ? "Restaurant" : "Activity",
+  );
 
   const detailHref = `${getLocationDetailHref({
     id: location.id,
@@ -747,10 +811,17 @@ function PlanActionCard({
   const reservationUrl = getExternalReservationUrl(location);
   const internalReservationHref = getInternalReservationHref(location, type);
   const locationId = location.id ? String(location.id) : null;
-  const phoneHref = location.phone ? `tel:${String(location.phone).replace(/[^+\d]/g, "")}` : null;
-  const viewRef = useTrackLocationView<HTMLElement>(locationId, PLAN_ANALYTICS_METADATA);
-  const trackClick = () => trackLocationEvent(locationId, "click", PLAN_ANALYTICS_METADATA);
-  const trackBooking = () => trackLocationEvent(locationId, "booking", PLAN_ANALYTICS_METADATA);
+  const phoneHref = location.phone
+    ? `tel:${String(location.phone).replace(/[^+\d]/g, "")}`
+    : null;
+  const viewRef = useTrackLocationView<HTMLElement>(
+    locationId,
+    PLAN_ANALYTICS_METADATA,
+  );
+  const trackClick = () =>
+    trackLocationEvent(locationId, "click", PLAN_ANALYTICS_METADATA);
+  const trackBooking = () =>
+    trackLocationEvent(locationId, "booking", PLAN_ANALYTICS_METADATA);
   const trackReserve = () => {
     trackClick();
     trackBooking();
@@ -761,7 +832,9 @@ function PlanActionCard({
   };
   const trackWebsite = () => {
     trackClick();
-    trackPlanExternalAction(locationId, "website_click", { location_type: type });
+    trackPlanExternalAction(locationId, "website_click", {
+      location_type: type,
+    });
   };
   const trackPhone = () => {
     trackClick();
@@ -769,11 +842,20 @@ function PlanActionCard({
   };
   const trackDirections = () => {
     trackClick();
-    trackPlanExternalAction(locationId, "directions_click", { location_type: type });
+    trackPlanExternalAction(locationId, "directions_click", {
+      location_type: type,
+    });
   };
 
   return (
-    <article ref={viewRef} onClick={(event) => { if ((event.target as HTMLElement).closest("a,button")) return; trackClick(); }} className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30">
+    <article
+      ref={viewRef}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a,button")) return;
+        trackClick();
+      }}
+      className="overflow-hidden rounded-[1.1rem] border border-white/10 bg-[#101010] shadow-xl shadow-black/30"
+    >
       <div className="relative h-[170px] bg-neutral-950">
         {getLocationImage(location) ? (
           <Image
@@ -800,7 +882,7 @@ function PlanActionCard({
 
         {location.rating ? (
           <div className="absolute bottom-3 right-3 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-black">
-            🌹 {location.rating}
+            ★ {location.rating}
           </div>
         ) : null}
       </div>
@@ -810,7 +892,7 @@ function PlanActionCard({
           {titleCase(
             type === "restaurant"
               ? getCuisine(location) || "Restaurant"
-              : getPrimaryCategory(location)
+              : getPrimaryCategory(location),
           )}
         </p>
 
@@ -958,7 +1040,6 @@ function titleCase(value?: string | null) {
   return toDisplayLabel(value || "");
 }
 
-
 function getLocationCoordinates(item: PlanLocation | null) {
   if (!item) return null;
 
@@ -975,7 +1056,7 @@ function haversineMiles(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ) {
   const toRad = (value: number) => (value * Math.PI) / 180;
   const radius = 3958.8;
@@ -984,16 +1065,14 @@ function haversineMiles(
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function distanceBetweenLocations(
   restaurant: PlanLocation | null,
-  activity: PlanLocation | null
+  activity: PlanLocation | null,
 ) {
   const restaurantCoords = getLocationCoordinates(restaurant);
   const activityCoords = getLocationCoordinates(activity);
@@ -1005,15 +1084,15 @@ function distanceBetweenLocations(
       restaurantCoords.latitude,
       restaurantCoords.longitude,
       activityCoords.latitude,
-      activityCoords.longitude
-    ).toFixed(1)
+      activityCoords.longitude,
+    ).toFixed(1),
   );
 }
 
 function buildFlowText(
   restaurant: PlanLocation | null,
   activity: PlanLocation | null,
-  distancePreference: "walking" | "miles"
+  distancePreference: "walking" | "miles",
 ) {
   if (!restaurant || !activity) return "Dinner → Activity";
 

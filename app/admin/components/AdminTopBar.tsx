@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -136,90 +137,29 @@ export default function AdminTopBar({
         label: "CRM",
         activePaths: [
           "/admin/dashboard/claims",
-          "/admin/dashboard/claim-qrs",
-          "/admin/dashboard/claim-tools",
           "/admin/dashboard/data-quality",
         ],
         activePrefixes: ["/admin/dashboard/crm", "/admin/dashboard/locations"],
         items: [
           {
-            label: "All Locations",
+            label: "CRM Overview",
             href: "/admin/dashboard/crm",
             visible: canAdmin(adminRole, "crm"),
           },
           {
-            label: "Upgrade Opportunities",
-            href: "/admin/dashboard/crm?filter=upgrade-opportunities",
-            visible: canAdmin(adminRole, "upgradeOpportunities"),
-          },
-          {
-            label: "At Risk Locations",
-            href: "/admin/dashboard/crm?filter=at-risk",
-            visible: canAdmin(adminRole, "crm"),
-          },
-          {
-            label: "Pending Claims",
-            href: "/admin/dashboard/crm?filter=pending-claims",
-            visible: canAdmin(adminRole, "claims"),
-          },
-          {
-            label: "Owner Accounts",
-            href: "/admin/dashboard/crm?filter=owner-accounts",
-            visible: canAdmin(adminRole, "ownerAccounts"),
-          },
-          {
-            label: "Location Tasks",
-            href: "/admin/dashboard/crm?filter=location-tasks",
-            visible: canView,
-          },
-          {
-            label: "Follow-ups",
-            href: "/admin/dashboard/crm?filter=follow-ups",
-            visible: canView,
-          },
-          {
-            label: "QR Codes",
-            href: "/admin/dashboard/crm?filter=qr-codes",
-            visible: canView,
-          },
-          {
-            label: "Legacy Locations",
+            label: "Locations",
             href: "/admin/dashboard/locations",
             visible: canAdmin(adminRole, "locations"),
           },
-        ],
-      },
-      {
-        label: "Team Tools",
-        activePrefixes: ["/admin/dashboard/team", "/admin/dashboard/my-workspace"],
-        widthClass: "w-[460px] max-w-[calc(100vw-24px)]",
-        gridClass: "md:grid-cols-2",
-        sections: [
           {
-            label: "Work",
-            items: [
-              { label: "My Workspace", href: "/admin/dashboard/my-workspace", visible: canView },
-              { label: "Team Tools Overview", href: "/admin/dashboard/team", visible: canView, exact: true },
-              { label: "Team Members", href: "/admin/dashboard/team/members", visible: canManagePlatform },
-              { label: "Work Sessions", href: "/admin/dashboard/team/work-sessions", visible: canView },
-              { label: "Manager Review", href: "/admin/dashboard/team/review", visible: canView },
-              { label: "Site Visit Check-Ins", href: "/admin/dashboard/team/site-visits", visible: canView },
-              { label: "Social Outreach", href: "/admin/dashboard/team/social-outreach", visible: canView },
-              { label: "Support Work", href: "/admin/dashboard/team/support-work", visible: canView },
-              { label: "Location Change Requests", href: "/admin/dashboard/team/location-change-requests", visible: canView },
-              { label: "Claim Code Audit", href: "/admin/dashboard/team/claim-code-audit", visible: canView },
-              { label: "Password Reset Audit", href: "/admin/dashboard/team/password-reset-audit", visible: canView },
-            ],
+            label: "Claims",
+            href: "/admin/dashboard/claims",
+            visible: canAdmin(adminRole, "claims"),
           },
           {
-            label: "Review + Payroll",
-            items: [
-              { label: "Demo / Training", href: "/admin/dashboard/team/demo", visible: canView },
-              { label: "Payroll Export", href: "/admin/dashboard/team/payroll", visible: canView },
-              { label: "Performance", href: "/admin/dashboard/team/performance", visible: canView },
-              { label: "Proof Review", href: "/admin/dashboard/team/proof-review", visible: canView },
-              { label: "Settings", href: "/admin/dashboard/team/settings", visible: canManagePlatform },
-            ],
+            label: "Data Quality",
+            href: "/admin/dashboard/data-quality",
+            visible: canAdmin(adminRole, "dataQuality"),
           },
         ],
       },
@@ -228,16 +168,16 @@ export default function AdminTopBar({
         activePaths: ["/admin/dashboard/reservation-opportunities"],
         activePrefixes: [
           "/admin/dashboard/reservations",
-          "/admin/dashboard/reservation",
+          "/admin/dashboard/reserve",
         ],
         items: [
           {
-            label: "Reservations Overview",
+            label: "Reservations",
             href: "/admin/dashboard/reservations",
             visible: canAdmin(adminRole, "reservations"),
           },
           {
-            label: "Reservation Opportunities",
+            label: "Opportunities",
             href: "/admin/dashboard/reservation-opportunities",
             visible: canAdmin(adminRole, "reservations"),
           },
@@ -272,27 +212,26 @@ export default function AdminTopBar({
             href: "/admin/dashboard/plans",
             visible: canAdmin(adminRole, "billing"),
           },
-          {
-            label: "Upgrade Opportunities",
-            href: "/admin/dashboard/businesses/upgrade-opportunities",
-            visible: canAdmin(adminRole, "upgradeOpportunities"),
-          },
-          {
-            label: "Churn Risk",
-            href: "/admin/dashboard/businesses/churn-risk",
-            visible: canAdmin(adminRole, "businessCrm"),
-          },
         ],
       },
       {
         label: "Analytics",
-        activePaths: ["/admin/dashboard/analytics", "/admin/search-qa"],
+        activePaths: [
+          "/admin/dashboard/analytics",
+          "/admin/dashboard/search-health",
+          "/admin/search-qa",
+        ],
         items: [
           {
             label: "Analytics",
             href: "/admin/dashboard/analytics",
             visible: canAdmin(adminRole, "analytics"),
             exact: true,
+          },
+          {
+            label: "Search Health",
+            href: "/admin/dashboard/search-health",
+            visible: canAdmin(adminRole, "searchHealth"),
           },
           {
             label: "Search QA",
@@ -302,119 +241,112 @@ export default function AdminTopBar({
         ],
       },
       {
-        label: "Admin Tools",
-        widthClass: "w-[520px] max-w-[calc(100vw-24px)]",
-        align: "right",
+        label: "Marketing",
         activePaths: [
-          "/admin/dashboard/import",
-          "/admin/dashboard/reviews",
-          "/admin/dashboard/support",
-          "/admin/dashboard/communication",
+          "/admin/dashboard/marketing",
           "/admin/dashboard/campaigns",
           "/admin/dashboard/settings/promo-codes",
           "/admin/dashboard/seo-tools",
+        ],
+        items: [
+          {
+            label: "Marketing Center",
+            href: "/admin/dashboard/marketing",
+            visible: canAdmin(adminRole, "marketing"),
+          },
+          {
+            label: "Campaigns",
+            href: "/admin/dashboard/campaigns",
+            visible: canAdmin(adminRole, "campaigns"),
+          },
+          {
+            label: "Promo Codes",
+            href: "/admin/dashboard/settings/promo-codes",
+            visible: canAdmin(adminRole, "promoCodes"),
+          },
+          {
+            label: "SEO Tools",
+            href: "/admin/dashboard/seo-tools",
+            visible: canAdmin(adminRole, "seoTools"),
+          },
+        ],
+      },
+      {
+        label: "Team",
+        activePrefixes: [
+          "/admin/dashboard/team",
+          "/admin/dashboard/my-workspace",
+        ],
+        items: [
+          {
+            label: "Team Overview",
+            href: "/admin/dashboard/team",
+            visible: canView,
+            exact: true,
+          },
+          {
+            label: "My Workspace",
+            href: "/admin/dashboard/my-workspace",
+            visible: canView,
+          },
+        ],
+      },
+      {
+        label: "System",
+        align: "right",
+        activePaths: [
+          "/admin/dashboard/import",
+          "/admin/dashboard/knowledge-base",
+          "/admin/dashboard/beta",
           "/admin/dashboard/settings",
           "/admin/dashboard/feature-flags",
           "/admin/dashboard/logs",
-          "/admin/dashboard/search-health",
           "/admin/dashboard/launch-checklist",
+        ],
+        activePrefixes: [
           "/admin/dashboard/knowledge-base",
           "/admin/dashboard/beta",
         ],
-        activePrefixes: ["/admin/dashboard/knowledge-base"],
-        gridClass: "md:grid-cols-3",
-        sections: [
+        items: [
           {
-            label: "Operations",
-            items: [
-              {
-                label: "Import Center",
-                href: "/admin/dashboard/import",
-                visible: canAdmin(adminRole, "import"),
-              },
-              {
-                label: "Reviews",
-                href: "/admin/dashboard/reviews",
-                visible: canAdmin(adminRole, "reviews"),
-              },
-              {
-                label: "Experience Inbox",
-                href: "/admin/dashboard/support",
-                visible: canAdmin(adminRole, "experienceInbox"),
-              },
-              {
-                label: "Knowledge Base",
-                href: "/admin/dashboard/knowledge-base",
-                visible: canAdmin(adminRole, "knowledgeBase"),
-                activePrefixes: ["/admin/dashboard/knowledge-base"],
-              },
-              {
-                label: "Beta Testing",
-                href: "/admin/dashboard/beta",
-                visible: [
-                  "superadmin",
-                  "admin",
-                  "experience",
-                  "experience_team",
-                ].includes(String(adminRole)),
-                activePrefixes: ["/admin/dashboard/beta"],
-              },
-            ],
+            label: "Import Center",
+            href: "/admin/dashboard/import",
+            visible: canAdmin(adminRole, "import"),
           },
           {
-            label: "Marketing",
-            items: [
-              {
-                label: "Marketing Center",
-                href: "/admin/dashboard/communication",
-                visible: canAdmin(adminRole, "communication"),
-              },
-              {
-                label: "Campaigns",
-                href: "/admin/dashboard/campaigns",
-                visible: canAdmin(adminRole, "campaigns"),
-              },
-              {
-                label: "Promo Codes",
-                href: "/admin/dashboard/settings/promo-codes",
-                visible: canAdmin(adminRole, "promoCodes"),
-              },
-              {
-                label: "SEO Tools",
-                href: "/admin/dashboard/seo-tools",
-                visible: canAdmin(adminRole, "seoTools"),
-              },
-            ],
+            label: "Knowledge Base",
+            href: "/admin/dashboard/knowledge-base",
+            visible: canAdmin(adminRole, "knowledgeBase"),
           },
           {
-            label: "System",
-            items: [
-              {
-                label: "Settings",
-                href: "/admin/dashboard/settings",
-                visible: canAdmin(adminRole, "settings"),
-              },
-              {
-                label: "Feature Flags",
-                href: "/admin/dashboard/feature-flags",
-                visible: canAdmin(adminRole, "featureFlags"),
-              },
-              {
-                label: "Logs",
-                href: "/admin/dashboard/logs",
-                visible: canAdmin(adminRole, "logs"),
-              },
-              {
-                label: "Search Health",
-                href: "/admin/dashboard/search-health",
-                visible: canAdmin(adminRole, "searchHealth"),
-              },
-              {
-                label: "Launch Checklist",
-                href: "/admin/dashboard/launch-checklist",
-                visible: canManagePlatform,
-              },
-            ],
+            label: "Beta Testing",
+            href: "/admin/dashboard/beta",
+            visible: [
+              "superadmin",
+              "admin",
+              "experience",
+              "experience_team",
+            ].includes(String(adminRole)),
+          },
+          {
+            label: "Settings",
+            href: "/admin/dashboard/settings",
+            visible: canAdmin(adminRole, "settings"),
+          },
+          {
+            label: "Feature Flags",
+            href: "/admin/dashboard/feature-flags",
+            visible: canAdmin(adminRole, "featureFlags"),
+          },
+          {
+            label: "Logs",
+            href: "/admin/dashboard/logs",
+            visible: canAdmin(adminRole, "logs"),
+          },
+          {
+            label: "Launch Checklist",
+            href: "/admin/dashboard/launch-checklist",
+            visible: canManagePlatform,
           },
         ],
       },
@@ -524,43 +456,11 @@ export default function AdminTopBar({
 
   const isGroupActive = (group: NavGroup) => {
     if (!pathname) return false;
-    if (group.label === "Team Tools") {
-      return pathname === "/admin/dashboard/team" || pathname.startsWith("/admin/dashboard/team/");
-    }
-    if (group.label === "Reservations") {
-      return (
-        pathname === "/admin/dashboard/reservation-opportunities" ||
-        pathname === "/admin/dashboard/reservations" ||
-        pathname.startsWith("/admin/dashboard/reservations/") ||
-        pathname.includes("/reservations")
-      );
-    }
     if (
       group.label === "Analytics" &&
       pathname === "/admin/dashboard/analytics/reservations"
     ) {
       return false;
-    }
-    if (group.label === "Admin Tools") {
-      const adminToolPaths = [
-        "/admin/dashboard/import",
-        "/admin/dashboard/reviews",
-        "/admin/dashboard/support",
-        "/admin/dashboard/communication",
-        "/admin/dashboard/campaigns",
-        "/admin/dashboard/settings/promo-codes",
-        "/admin/dashboard/seo-tools",
-        "/admin/dashboard/settings",
-        "/admin/dashboard/feature-flags",
-        "/admin/dashboard/logs",
-        "/admin/dashboard/search-health",
-        "/admin/dashboard/launch-checklist",
-        "/admin/dashboard/knowledge-base",
-        "/admin/dashboard/beta",
-      ];
-      return adminToolPaths.some(
-        (path) => pathname === path || pathname.startsWith(`${path}/`),
-      );
     }
     if (group.activePaths?.includes(pathname)) return true;
     if (
@@ -748,10 +648,14 @@ export default function AdminTopBar({
           onClick={closeMenus}
           className="group flex min-w-0 shrink-0 items-center gap-3"
         >
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-rose-200/25 bg-gradient-to-br from-rose-200 via-rose-300 to-rose-200 text-[13px] font-black tracking-tight text-[#5b1022] shadow-[0_12px_35px_rgba(244,114,182,0.18)] lg:h-11 lg:w-11">
-            TOH
-            <span className="absolute inset-x-1 bottom-1 h-px bg-white/50" />
-          </div>
+          <Image
+            src="/toh_logo.png"
+            alt="TheOutHaven"
+            width={44}
+            height={44}
+            className="h-10 w-10 rounded-2xl object-contain lg:h-11 lg:w-11"
+            priority
+          />
           <div className="hidden min-w-0 text-left sm:block">
             <div className="flex items-center gap-2">
               <p className="truncate text-base font-black tracking-tight text-white">
