@@ -1,13 +1,51 @@
 import { handleOptions } from "../_shared/cors.ts";
-import { ok, serverError, unauthorized } from "../_shared/response.ts";
+import { jsonResponse, ok } from "../_shared/response.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
 
-type EventRow = Record<string, any>;
+type EventRow = Record<string, unknown>;
 
-function validCronSecret(req: Request) {
-  const expected = Deno.env.get("CRON_SECRET");
-  return Boolean(expected && req.headers.get("x-cron-secret") === expected);
+type DigestRunClient = {
+  from: (table: "search_health_digest_runs") => {
+    insert: (row: Record<string, unknown>) => Promise<{ error?: Error | null }>;
+  };
+};
+
+function errorResponse(error: unknown, status = 500, context: Record<string, unknown> = {}) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  console.error("[admin-search-health-digest] error", {
+    message,
+    ...context,
+  });
+
+  return jsonResponse({
+    success: false,
+    error: message,
+    context,
+  }, status);
 }
+
+function envStatus() {
+  return {
+    hasSupabaseUrl: Boolean(Deno.env.get("SUPABASE_URL")),
+    hasServiceRoleKey: Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
+    hasResendApiKey: Boolean(Deno.env.get("RESEND_API_KEY")),
+    hasDigestTo: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_TO")),
+    hasDigestFrom: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_FROM") || Deno.env.get("EMAIL_FROM")),
+    hasCronSecret: Boolean(Deno.env.get("CRON_SECRET")),
+    hasSiteUrl: Boolean(Deno.env.get("NEXT_PUBLIC_SITE_URL") || Deno.env.get("SITE_URL")),
+  };
+}
+
+function requireEnv(name: string) {
+  if (!Deno.env.get(name)) throw new Error(`Missing ${name}`);
+}
+
+function cronSecretMatches(req: Request) {
+  const expected = Deno.env.get("CRON_SECRET");
+  return req.headers.get("x-cron-secret") === expected;
+}
+
 
 function recipients() {
   return (Deno.env.get("SEARCH_HEALTH_DIGEST_TO") || Deno.env.get("ADMIN_EMAIL") || "")
@@ -115,54 +153,95 @@ async function sendEmail(to: string[], subject: string, html: string, text: stri
   return { sent: true, id: data?.id ?? null };
 }
 
-async function recordRun(supabase: any, row: Record<string, unknown>) {
+async function recordRun(supabase: DigestRunClient, row: Record<string, unknown>) {
   try {
-    await supabase.from("search_health_digest_runs").insert(row);
-  } catch {
+    const { error } = await supabase.from("search_health_digest_runs").insert(row);
+    if (error) throw error;
+    return null;
+  } catch (error) {
     // Optional table may not exist in older deployments.
+    return error instanceof Error ? error.message : String(error);
   }
 }
 
 Deno.serve(async (req) => {
-  const options = handleOptions(req);
-  if (options) return options;
-  if (!validCronSecret(req)) return unauthorized("Invalid cron secret");
-
-  const supabase = createSupabaseAdminClient();
-  const body = await req.json().catch(() => ({}));
-  const hours = Math.min(Math.max(Number(body.hours ?? 24), 1), 168);
-  const force = body.force === true;
-  const source = String(body.source || "cron");
-  const since = new Date(Date.now() - hours * 3600000).toISOString();
-
   try {
-    const { data, error } = await supabase
-      .from("search_health_events")
-      .select("id,created_at,source,raw_query,event_type,severity,event_label,restaurant_count,activity_count,pair_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,review_status,beta_tester_id")
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(1000);
-    if (error) throw error;
+    const options = handleOptions(req);
+    if (options) return options;
+
+    const body = await req.json().catch(() => ({}));
+
+    if (body.checkOnly === true) {
+      return ok({
+        success: true,
+        checkOnly: true,
+        env: envStatus(),
+      });
+    }
+
+    requireEnv("SUPABASE_URL");
+    requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+    requireEnv("RESEND_API_KEY");
+    requireEnv("SEARCH_HEALTH_DIGEST_TO");
+    requireEnv("CRON_SECRET");
+
+    if (!cronSecretMatches(req)) {
+      return jsonResponse({ success: false, error: "Unauthorized" }, 401);
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const hours = Math.min(Math.max(Number(body.hours ?? 24), 1), 168);
+    const force = body.force === true;
+    const source = String(body.source || "cron");
+    const since = new Date(Date.now() - hours * 3600000).toISOString();
+
+    let data: EventRow[] | null = null;
+    try {
+      const result = await supabase
+        .from("search_health_events")
+        .select("id,created_at,source,raw_query,event_type,severity,event_label,restaurant_count,activity_count,pair_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,review_status,beta_tester_id")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+
+      if (result.error) throw result.error;
+      data = result.data ?? [];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({
+        success: false,
+        error: "search_health_events_query_failed",
+        details: message,
+      }, 500);
+    }
+
     const rows = data ?? [];
     const summary = summaryFor(rows);
     if (!rows.length && !force) {
       const response = { success: true, sent: false, reason: "no_search_health_events", hours, summary };
-      await recordRun(supabase, { source, sent: false, recipient_count: 0, total_events: 0, error_count: 0, warning_count: 0, no_pair_count: 0, no_result_count: 0, slow_count: 0, response });
-      return ok(response);
+      const digestRunInsertError = await recordRun(supabase, { source, sent: false, recipient_count: 0, total_events: 0, error_count: 0, warning_count: 0, no_pair_count: 0, no_result_count: 0, slow_count: 0, response });
+      return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
     }
     const to = recipients();
-    if (!to.length) throw new Error("SEARCH_HEALTH_DIGEST_TO is not configured");
+    if (!to.length) throw new Error("Missing SEARCH_HEALTH_DIGEST_TO");
     const issueCount = summary.warningCount + summary.errorCount;
     const subject = issueCount > 0 ? `TheOutHaven Search Health Digest: ${issueCount} issues in last ${hours}h` : "TheOutHaven Search Health Digest: No issues found";
     const email = buildEmail(rows, hours, summary);
-    const emailResponse = await sendEmail(to, subject, email.html, email.text);
+    let emailResponse;
+    try {
+      emailResponse = await sendEmail(to, subject, email.html, email.text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({
+        success: false,
+        error: "email_send_failed",
+        details: `Resend failed: ${message}`,
+      }, 500);
+    }
     const response = { success: true, sent: true, recipients: to, hours, summary, email: emailResponse };
-    await recordRun(supabase, { source, sent: true, recipient_count: to.length, total_events: summary.totalEvents, error_count: summary.errorCount, warning_count: summary.warningCount, no_pair_count: summary.noPairCount, no_result_count: summary.noResultCount, slow_count: summary.slowCount, response });
-    return ok(response);
+    const digestRunInsertError = await recordRun(supabase, { source, sent: true, recipient_count: to.length, total_events: summary.totalEvents, error_count: summary.errorCount, warning_count: summary.warningCount, no_pair_count: summary.noPairCount, no_result_count: summary.noResultCount, slow_count: summary.slowCount, response });
+    return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Search Health digest failed";
-    const response = { success: false, error: message };
-    await recordRun(supabase, { source, sent: false, recipient_count: 0, response });
-    return serverError("Search Health digest failed", message);
+    return errorResponse(error);
   }
 });
