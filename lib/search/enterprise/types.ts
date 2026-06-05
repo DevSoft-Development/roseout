@@ -129,6 +129,12 @@ export type EnterpriseLocation = {
   distance_miles?: number | null;
   domain_score?: number | null;
   quality_rank_score?: number | null;
+  restaurantQualityScore?: number | null;
+  restaurantQualityReasons?: string[] | null;
+  restaurantQualityPenalties?: string[] | null;
+  activityQualityScore?: number | null;
+  activityQualityReasons?: string[] | null;
+  activityQualityPenalties?: string[] | null;
   [key: string]: unknown;
 };
 
@@ -149,6 +155,13 @@ export type EnterprisePair = {
   walking_route_minutes?: number | null;
   pairDistanceLabel: string;
   pairWarnings: string[];
+  pairQualityScore?: number;
+  pairQualityTier?: number;
+  restaurantQualityScore?: number;
+  activityQualityScore?: number;
+  pairQualityReasons?: string[];
+  pairQualityPenalties?: string[];
+  defaultMarketPairPriority?: number;
   isWalkable: boolean;
 };
 

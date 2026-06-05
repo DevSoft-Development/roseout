@@ -291,6 +291,107 @@ function wellnessIntentAdjustment(r: EnterpriseLocation, intent: SearchIntent, d
   return 0;
 }
 
+
+function hasLocationPhotos(r: EnterpriseLocation) {
+  const images = (r as any).images ?? (r as any).gallery_images;
+  const hasImageArray = Array.isArray(images) ? images.filter(Boolean).length > 0 : typeof images === "string" && images.trim().length > 2 && !["[]", "null"].includes(images.trim().toLowerCase());
+  return Boolean((r as any).has_photos === true || r.image_url || r.main_image || (r as any).photo_url || (r as any).primary_photo_url || hasImageArray);
+}
+
+function normalizedVisibilityTier(r: EnterpriseLocation) {
+  return String((r as any).public_visibility_tier ?? (r as any).curation_tier ?? "").toLowerCase().replaceAll("_", " ");
+}
+
+function normalizedQualityStatus(r: EnterpriseLocation) {
+  return String((r as any).quality_status ?? (r as any).source_quality_status ?? (r as any).data_status ?? (r as any).status ?? "").toLowerCase().replaceAll("_", " ");
+}
+
+function userAskedForCasualQuickOrChicken(intent: SearchIntent) {
+  return /\b(casual|quick|fast|fast casual|fast food|chicken|wings|fried chicken|hot chicken|takeout|take out|delivery|food truck)\b/i.test(intent.rawQuery);
+}
+
+function isGenericRestaurantQualityIntent(intent: SearchIntent) {
+  const text = intentText(intent);
+  return /\b(restaurant|restaurants|dinner|date|date night|girls night|casual dinner|nice dinner|dining)\b/.test(text);
+}
+
+function qualityReason(pushTo: string[], reason: string, points: number) {
+  pushTo.push(`${reason} ${points > 0 ? "+" : ""}${points}`);
+}
+
+function baseQualitySignals(r: EnterpriseLocation) {
+  const text = compactRecordText(r).toLowerCase();
+  const rating = Number(r.rating ?? 0);
+  const reviewCount = Number(r.review_count ?? (r as any).reviewCount ?? (r as any).total_reviews ?? 0);
+  const visibility = normalizedVisibilityTier(r);
+  const status = normalizedQualityStatus(r);
+  const curated = Boolean((r as any).is_featured || (r as any).featured || (r as any).is_curated || (r as any).approved) || /\b(featured|premium|curated|editor|approved)\b/.test(visibility);
+  const approved = /\b(approved|published|publish ready|verified|active)\b/.test(status);
+  return { text, rating, reviewCount, visibility, status, curated, approved, hasPhotos: hasLocationPhotos(r) };
+}
+
+export function scoreRestaurantQuality(r: EnterpriseLocation, intent: SearchIntent) {
+  const reasons: string[] = [];
+  const penalties: string[] = [];
+  const signals = baseQualitySignals(r);
+  let score = 0;
+  if (signals.curated) { score += 35; qualityReason(reasons, "curated/featured/premium", 35); }
+  if (signals.rating >= 4.6 && signals.reviewCount >= 300) { score += 25; qualityReason(reasons, "rating >= 4.6 with 300+ reviews", 25); }
+  else if (signals.rating >= 4.4 && signals.reviewCount >= 100) { score += 20; qualityReason(reasons, "rating >= 4.4 with 100+ reviews", 20); }
+  if (signals.hasPhotos) { score += 15; qualityReason(reasons, "has photos", 15); }
+  const upscaleMatch = /\b(fine dining|fine_dining|upscale|date night|romantic|full service|full_service|restaurant|dining room|bistro|steakhouse|seafood|italian|sushi|omakase|tasting menu)\b/.test(signals.text);
+  if (upscaleMatch) { score += 15; qualityReason(reasons, "full-service/date/upscale dining signal", 15); }
+  if (/\b(cocktail|cocktails|lounge|wine bar|bar|dinner|date)\b/.test(signals.text)) { score += 10; qualityReason(reasons, "cocktail/lounge/dinner vibe", 10); }
+  const priority = Number((r as any).default_market_priority ?? (r as any).market_priority);
+  if (priority === 0) { score += 10; qualityReason(reasons, "default market priority 0", 10); }
+  else if (priority === 1) { score += 5; qualityReason(reasons, "default market priority 1", 5); }
+  if (signals.approved) { score += 8; qualityReason(reasons, "approved/published/verified status", 8); }
+
+  const askedCasual = userAskedForCasualQuickOrChicken(intent);
+  if ((r as any).is_low_level === true) { score -= 35; qualityReason(penalties, "low-level location", -35); }
+  if (!askedCasual && /\b(fast food|fast_food|quick service|quick_service|fast casual|fast_casual|takeout|take out|delivery|catering only|catering_only|ghost kitchen|food truck|counter service)\b/.test(signals.text)) { score -= 30; qualityReason(penalties, "fast/quick/takeout/delivery-style", -30); }
+  if (!signals.hasPhotos) { score -= 25; qualityReason(penalties, "missing photos", -25); }
+  if (isGenericRestaurantQualityIntent(intent) && !upscaleMatch && !/\b(restaurant|dining|bistro|grill|bar and grill|gastropub|lounge)\b/.test(signals.text)) { score -= 20; qualityReason(penalties, "weak generic restaurant relevance", -20); }
+  const chainOrLowPriority = (r as any).is_chain === true || /\b(chain|utility|low priority|low_priority)\b/.test(`${signals.visibility} ${signals.text}`);
+  if (!askedCasual && chainOrLowPriority) { score -= 15; qualityReason(penalties, "chain/low-priority not requested", -15); }
+  if (askedCasual && /\b(chicken|wings|fried chicken|hot chicken|fast casual|casual|quick)\b/.test(signals.text)) { score += 28; qualityReason(reasons, "requested casual/chicken fit", 28); }
+
+  (r as any).restaurantQualityScore = score;
+  (r as any).restaurantQualityReasons = reasons;
+  (r as any).restaurantQualityPenalties = penalties;
+  return { score, reasons, penalties };
+}
+
+export function scoreActivityQuality(r: EnterpriseLocation, intent: SearchIntent) {
+  const reasons: string[] = [];
+  const penalties: string[] = [];
+  const signals = baseQualitySignals(r);
+  let score = 0;
+  if (signals.curated) { score += 35; qualityReason(reasons, "curated/featured/premium", 35); }
+  if (signals.rating >= 4.6 && signals.reviewCount >= 300) { score += 25; qualityReason(reasons, "rating >= 4.6 with 300+ reviews", 25); }
+  else if (signals.rating >= 4.4 && signals.reviewCount >= 100) { score += 20; qualityReason(reasons, "rating >= 4.4 with 100+ reviews", 20); }
+  if (signals.hasPhotos) { score += 15; qualityReason(reasons, "has photos", 15); }
+  if (/\b(rooftop|roof top|rooftop bar|rooftop lounge|terrace|skyline|views?|roof deck)\b/.test(signals.text)) { score += 30; qualityReason(reasons, "rooftop/terrace/skyline signal", 30); }
+  if (/\b(cocktail|cocktails|lounge|bar|speakeasy|nightlife)\b/.test(signals.text)) { score += 20; qualityReason(reasons, "drinks/lounge/nightlife signal", 20); }
+  if (/\b(live dj|dj)\b/.test(signals.text) && userAskedForHardNightlife(intent.rawQuery)) { score += 10; qualityReason(reasons, "requested DJ/nightlife signal", 10); }
+  if (signals.approved) { score += 8; qualityReason(reasons, "approved/published/verified status", 8); }
+
+  const theaterRequested = userExplicitlyAskedForTheater(intent);
+  if (isTheaterRecord(r) && theaterRequested) { score += 30; qualityReason(reasons, "requested theater/theatre", 30); }
+  if (isTheaterRecord(r) && !theaterRequested) { score -= 60; qualityReason(penalties, "theater/performance not requested", -60); }
+  const rooftopDrinksRequested = /\b(rooftop|drinks|cocktails|bar|lounge)\b/i.test(intent.rawQuery);
+  const restaurantOnly = Boolean(r.restaurant_name || r.cuisine || r.cuisine_type) && !/\b(rooftop|roof top|bar|lounge|cocktail|speakeasy|nightlife|terrace)\b/.test(signals.text);
+  if (rooftopDrinksRequested && restaurantOnly) { score -= 35; qualityReason(penalties, "restaurant-only activity without rooftop/bar relevance", -35); }
+  if (/\b(rooftop bars? nyc|best rooftop bars|top rooftop bars|rooftop bars list|guide to rooftop)\b/.test(signals.text)) { score -= 25; qualityReason(penalties, "aggregator/listing-style rooftop name", -25); }
+  if (!signals.hasPhotos) { score -= 25; qualityReason(penalties, "missing photos", -25); }
+  if ((r as any).is_low_level === true) { score -= 35; qualityReason(penalties, "low-level activity", -35); }
+
+  (r as any).activityQualityScore = score;
+  (r as any).activityQualityReasons = reasons;
+  (r as any).activityQualityPenalties = penalties;
+  return { score, reasons, penalties };
+}
+
 function intentText(intent: SearchIntent) {
   return [
     intent.rawQuery,
@@ -488,10 +589,12 @@ function relevance(
     isGenericMealIntent(intent.restaurantIntent) && domain === "restaurant"
       ? 30
       : 0;
+  const domainQuality = domain === "restaurant" ? scoreRestaurantQuality(r, intent).score : scoreActivityQuality(r, intent).score;
   const quality =
     Number(r.theouthaven_score ?? r.quality_score ?? 0) +
     Number(r.rating ?? 0) * 2 +
-    Math.min(Number(r.review_count ?? 0) / 100, 10);
+    Math.min(Number(r.review_count ?? 0) / 100, 10) +
+    domainQuality;
   r.term_score = termScore + alternativeScore + generic;
   r.geo_score = geo;
   r.domain_score = domainScore;
