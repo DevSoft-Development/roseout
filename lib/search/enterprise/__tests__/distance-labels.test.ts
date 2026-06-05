@@ -10,6 +10,11 @@ describe("enterprise search distance labels", () => {
     expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: null, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe("8 min walk from The Modern");
   });
 
+  it("walking mode does not render labels over the default walking cap", () => {
+    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 158, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe("Distance unavailable");
+    expect(cleanDistanceLabel("158 min walk from The Modern • Google walking route")).toBe(undefined);
+  });
+
   it("any mode prefers miles", () => {
     expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 8, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "any", requireWalkablePair: false } })).toBe("0.4 mi from The Modern");
   });

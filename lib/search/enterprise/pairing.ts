@@ -1,5 +1,5 @@
 import type { EnterpriseLocation, EnterprisePair, GeoIntent, PairDistanceMode, PairingPreference, SearchIntent } from "./types";
-import { estimateWalkingMinutes, estimateWalkingMinutesFromMiles, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isWalkablePair, normalizeWalkingMinutes, shouldRejectPairForWalkingRoute } from "./distance";
+import { DEFAULT_MAX_WALKING_PAIR_MINUTES, estimateWalkingMinutes, estimateWalkingMinutesFromMiles, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isWalkablePair, normalizeWalkingMinutes, shouldRejectPairForWalkingRoute } from "./distance";
 import { scoreGeoMatch } from "./geo-taxonomy";
 import { scoreActivityQuality, scoreRestaurantQuality } from "./ranking";
 
@@ -307,8 +307,8 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
     }
 
     const isWalkable = !missingCoordinates && (safeWalkingMinutes != null
-      ? true
-      : pairDistanceMiles != null && (pref.maxPairDistanceMiles == null ? pairDistanceMiles <= 1.5 : pairDistanceMiles <= pref.maxPairDistanceMiles));
+      ? safeWalkingMinutes <= DEFAULT_MAX_WALKING_PAIR_MINUTES
+      : pairDistanceMiles != null && (pref.maxPairDistanceMiles == null ? pairDistanceMiles <= 3 : pairDistanceMiles <= pref.maxPairDistanceMiles));
     if (walkability.isWalkable && !missingCoordinates) debug.walkablePairsFound += 1;
     const pairWarnings = missingCoordinates && pref.requireWalkablePair ? [...walkability.warnings, "missing_coordinates_walkability_unverified"] : walkability.warnings;
     if (missingCoordinates) missingCoordinatePairsKept += 1;
