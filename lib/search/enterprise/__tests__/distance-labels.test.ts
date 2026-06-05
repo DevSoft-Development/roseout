@@ -1,36 +1,91 @@
 import { describe, expect, it } from "vitest";
-import { cleanDistanceLabel, formatDistanceFromRestaurant } from "../distance";
+import {
+  MAX_WALKING_DISTANCE_MINUTES,
+  estimateWalkingMinutes,
+  walkingMinutesToMiles,
+  isWalkablePair,
+} from "../distance";
+import { buildPairDistanceLabel } from "../pairing";
+import type { EnterpriseLocation, PairingPreference } from "../types";
 
-describe("enterprise search distance labels", () => {
-  it("walking mode prefers minutes from route data", () => {
-    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 6, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe("6 min walk from The Modern");
+function loc(overrides: Partial<EnterpriseLocation>): EnterpriseLocation {
+  return {
+    id: "id",
+    name: "Test Location",
+    domain: "restaurant",
+    location_type: "restaurant",
+    latitude: null,
+    longitude: null,
+    match_score: 0,
+    term_score: 0,
+    geo_score: 0,
+    ...overrides,
+  } as EnterpriseLocation;
+}
+
+describe("enterprise walking distance rules", () => {
+  it("uses a 60-minute general walking cap", () => {
+    expect(MAX_WALKING_DISTANCE_MINUTES).toBe(60);
+    expect(walkingMinutesToMiles(60)).toBe(3);
   });
 
-  it("walking mode estimates minutes from miles", () => {
-    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: null, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe("8 min walk from The Modern");
+  it("estimates walking minutes at 20 minutes per mile", () => {
+    expect(estimateWalkingMinutes(1)).toBe(20);
+    expect(estimateWalkingMinutes(1.5)).toBe(30);
+    expect(estimateWalkingMinutes(3)).toBe(60);
   });
 
-  it("walking mode does not render labels over the default walking cap", () => {
-    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 158, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "walking", requireWalkablePair: true } })).toBe(undefined);
-    expect(cleanDistanceLabel("158 min walk from The Modern • Google walking route")).toBe(undefined);
+  it("labels null pair distance as unavailable", () => {
+    expect(buildPairDistanceLabel(null)).toBe("Distance unavailable");
   });
 
-  it("any mode prefers miles", () => {
-    expect(formatDistanceFromRestaurant({ pair: { walkingDurationMinutes: 8, pairDistanceMiles: 0.4 }, restaurantName: "The Modern", pairingPreference: { distanceMode: "any", requireWalkablePair: false } })).toBe("0.4 mi from The Modern");
+  it("does not mark missing coordinates as walkable when walking is requested", () => {
+    const preference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "walking",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: 60,
+      requireWalkablePair: true,
+    };
+
+    const restaurant = loc({ id: "r1", latitude: null, longitude: null });
+    const activity = loc({ id: "a1", latitude: 40.7128, longitude: -74.006 });
+
+    const result = isWalkablePair(restaurant, activity, preference);
+
+    expect(result.isWalkable).toBe(false);
+    expect(result.pairDistanceMiles).toBeNull();
+    expect(result.pairWalkingMinutes).toBeNull();
   });
 
-  it("unsafe walking duration falls back to miles and strips Google wording", () => {
-    const raw = "288 min walk from Fogo de Chão Brazilian Steakhouse • Google walking route";
-    expect(cleanDistanceLabel(raw)).toBe(undefined);
-    const fallback = formatDistanceFromRestaurant({ pair: { pairDistanceLabel: raw, pairDistanceMiles: 2.4 }, restaurantName: "Fogo de Chão Brazilian Steakhouse", pairingPreference: { distanceMode: "any", requireWalkablePair: false } });
-    expect(fallback).not.toContain("288 min walk");
-    expect(fallback).not.toContain("Google walking route");
-    expect(fallback).toBe("2.4 mi from Fogo de Chão Brazilian Steakhouse");
-  });
+  it("respects explicit 30-minute walking limit", () => {
+    const preference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "walking",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: 30,
+      requireWalkablePair: true,
+    };
 
-  it("never renders Google walking route wording", () => {
-    const label = cleanDistanceLabel("6 min walk from The Modern • Google walking route");
-    expect(label).toBe("6 min walk from The Modern");
-    expect(label).not.toContain("Google walking route");
+    const restaurant = loc({
+      id: "r1",
+      latitude: 40.758,
+      longitude: -73.9855,
+    });
+
+    const nearbyActivity = loc({
+      id: "a1",
+      latitude: 40.768,
+      longitude: -73.9855,
+    });
+
+    const farActivity = loc({
+      id: "a2",
+      latitude: 40.82,
+      longitude: -73.9855,
+    });
+
+    expect(isWalkablePair(restaurant, nearbyActivity, preference).isWalkable).toBe(true);
+    expect(isWalkablePair(restaurant, farActivity, preference).isWalkable).toBe(false);
   });
 });

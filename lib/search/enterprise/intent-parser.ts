@@ -570,10 +570,12 @@ Rules:
 - "hookah lounge" can be an activity/nightlife venue unless the user asks for food there.
 - "bowling", "karaoke", "museum", "comedy show", "arcade", "spa", "paint and sip" are activities.
 - If user asks restaurant + activity, set wantsPairing true.
-- If user asks walking distance, nearby, close by, same block, no driving, short walk, set pairingPreference.
+- If user asks walking distance, nearby, close by, same block, no driving, short walk, or an explicit walking minute limit, set pairingPreference.
 
 Pairing preference:
-- walking distance/no driving/short walk/same block: distanceMode "walking", maxPairDistanceMiles 0.75, maxPairWalkingMinutes 15, requireWalkablePair true.
+- walking distance/no driving: distanceMode "walking", maxPairDistanceMiles 3, maxPairWalkingMinutes 60, requireWalkablePair true.
+- explicit walking limits like "30 minute walk apart": distanceMode "walking", maxPairDistanceMiles 1.5, maxPairWalkingMinutes 30, requireWalkablePair true. Never set a walking limit above 60 minutes.
+- short walk/same block: distanceMode "walking", maxPairDistanceMiles 0.75, maxPairWalkingMinutes 15, requireWalkablePair true.
 - nearby/close by/close together: distanceMode "nearby", maxPairDistanceMiles 1.5, maxPairWalkingMinutes 30, requireWalkablePair true.
 - same area/neighborhood: distanceMode "same_area", maxPairDistanceMiles 3, requireWalkablePair false.
 - no distance phrase: distanceMode "any", maxPairDistanceMiles null, requireWalkablePair false.
