@@ -241,8 +241,23 @@ function hasRooftopDrinkSecondStop(rawQuery: string): boolean {
   return rooftopDrinkPhrase && hasPairingConnectorForSecondStop(q);
 }
 
+function hasStandaloneRooftopSecondStop(rawQuery: string): boolean {
+  const q = String(rawQuery || "").toLowerCase();
+
+  const connectorBeforeRooftop =
+    /\b(?:with|and|then|after|afterward|afterwards|next|later|plus|followed by|before)\b[\s\w'-]{0,40}\b(?:a\s+)?(?:rooftop|roof top)\b/i.test(q);
+
+  const rooftopBeforeAfter =
+    /\b(?:rooftop|roof top)\b[\s\w'-]{0,20}\b(?:after|afterward|afterwards|next|later)\b/i.test(q);
+
+  const rooftopDinner =
+    /\b(?:rooftop|roof top)\s+(?:dinner|restaurant|dining|brunch|lunch|breakfast)\b/i.test(q);
+
+  return (connectorBeforeRooftop || rooftopBeforeAfter) && !rooftopDinner;
+}
+
 function rooftopBelongsToActivityLane(rawQuery: string): boolean {
-  return hasRooftopDrinkSecondStop(rawQuery);
+  return hasRooftopDrinkSecondStop(rawQuery) || hasStandaloneRooftopSecondStop(rawQuery);
 }
 
 function addRooftopDrinkActivityTerms(terms: string[], rawQuery: string): string[] {

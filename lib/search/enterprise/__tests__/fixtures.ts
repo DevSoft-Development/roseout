@@ -22,10 +22,11 @@ function text(parts: Array<string | string[] | null | undefined>) {
 }
 
 function restaurant(input: Partial<FixtureLocation> & { id: string; name: string }): FixtureLocation {
+  const { id, name, ...rest } = input;
   const base: FixtureLocation = {
-    id: input.id,
-    name: input.name,
-    restaurant_name: input.name,
+    id,
+    name,
+    restaurant_name: name,
     city: "New York",
     borough: "Manhattan",
     county: "New York County",
@@ -47,7 +48,7 @@ function restaurant(input: Partial<FixtureLocation> & { id: string; name: string
     tags: ["dinner", "date night", "full service", "reservations"],
     description: "Full-service dinner spot with ambiance and reservations.",
     google_types: ["restaurant", "food", "point_of_interest"],
-    ...input,
+    ...rest,
   };
   base.search_document = input.search_document ?? text([
     base.name,
@@ -67,10 +68,11 @@ function restaurant(input: Partial<FixtureLocation> & { id: string; name: string
 }
 
 function activity(input: Partial<FixtureLocation> & { id: string; name: string }): FixtureLocation {
+  const { id, name, ...rest } = input;
   const base: FixtureLocation = {
-    id: input.id,
-    name: input.name,
-    activity_name: input.name,
+    id,
+    name,
+    activity_name: name,
     city: "New York",
     borough: "Manhattan",
     county: "New York County",
@@ -92,7 +94,7 @@ function activity(input: Partial<FixtureLocation> & { id: string; name: string }
     tags: ["rooftop", "cocktails", "lounge", "drinks"],
     description: "Rooftop bar and lounge with skyline views and cocktails.",
     google_types: ["bar", "night_club", "point_of_interest"],
-    ...input,
+    ...rest,
   };
   base.search_document = input.search_document ?? text([
     base.name,
