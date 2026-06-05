@@ -31,7 +31,7 @@ function envStatus() {
     hasServiceRoleKey: Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
     hasResendApiKey: Boolean(Deno.env.get("RESEND_API_KEY")),
     hasDigestTo: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_TO")),
-    hasDigestFrom: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_FROM") || Deno.env.get("EMAIL_FROM")),
+    hasDigestFrom: Boolean(Deno.env.get("SEARCH_HEALTH_DIGEST_FROM")),
     hasCronSecret: Boolean(Deno.env.get("CRON_SECRET")),
     hasSiteUrl: Boolean(Deno.env.get("NEXT_PUBLIC_SITE_URL") || Deno.env.get("SITE_URL")),
   };
@@ -48,7 +48,7 @@ function cronSecretMatches(req: Request) {
 
 
 function recipients() {
-  return (Deno.env.get("SEARCH_HEALTH_DIGEST_TO") || Deno.env.get("ADMIN_EMAIL") || "")
+  return (Deno.env.get("SEARCH_HEALTH_DIGEST_TO") || "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
@@ -91,6 +91,13 @@ function escapeHtml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
+function safeEmailErrorDetails(error: unknown) {
+  let message = error instanceof Error ? error.message : String(error);
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (apiKey) message = message.replaceAll(apiKey, "[redacted]");
+  return `Resend failed: ${message}`;
+}
+
 function summaryFor(rows: EventRow[]) {
   return {
     totalEvents: rows.length,
@@ -119,7 +126,7 @@ function buildEmail(rows: EventRow[], hours: number, summary: ReturnType<typeof 
   const topNoPairReasons = countBy(rows, "no_pairs_reason");
   const failingQueries = commonFailingQueries(rows);
   const slowest = [...rows].filter((row) => row.timing_ms != null).sort((a, b) => Number(b.timing_ms ?? 0) - Number(a.timing_ms ?? 0)).slice(0, 5);
-  const recent = rows.filter((row) => ["warning", "error", "critical"].includes(String(row.severity))).slice(0, 10);
+  const recent = rows.slice(0, 10);
   const cards = [
     ["Total Events", summary.totalEvents], ["Errors", summary.errorCount], ["Warnings", summary.warningCount], ["No Valid Pairs", summary.noPairCount], ["No Results", summary.noResultCount], ["Slow Searches", summary.slowCount], ["Unresolved", summary.unresolvedCount],
   ];
@@ -132,17 +139,42 @@ function buildEmail(rows: EventRow[], hours: number, summary: ReturnType<typeof 
     ${table("Top No-Pair Reasons", topNoPairReasons)}
     <h2>Common Failing Queries</h2>${failingQueries.length ? `<ul>${failingQueries.map((row) => `<li>${escapeHtml(row.query)} <b>(${row.count})</b></li>`).join("")}</ul>` : "<p>No repeated failing queries.</p>"}
     <h2>Slowest Searches</h2>${slowest.length ? `<ul>${slowest.map((row) => `<li>${escapeHtml(row.raw_query || "—")} — <b>${escapeHtml(row.timing_ms)}ms</b> · ${escapeHtml(row.source)}</li>`).join("")}</ul>` : "<p>No timed searches.</p>"}
-    <h2>Recent Events</h2>${recent.length ? recent.map((row) => `<div style="border-top:1px solid #eee;padding:10px 0"><b>${escapeHtml(row.event_label || row.event_type)}</b> · ${escapeHtml(row.severity)}<br/>${escapeHtml(row.raw_query || "—")}<br/><small>${escapeHtml(row.source)} · pairs ${escapeHtml(row.pair_count)} · restaurants ${escapeHtml(row.restaurant_count)} · activities ${escapeHtml(row.activity_count)} · ${escapeHtml(row.timing_ms)}ms · ${escapeHtml(row.created_at)}</small></div>`).join("") : "<p>No recent warnings or errors.</p>"}
+    <h2>Recent Events</h2>${recent.length ? recent.map((row) => `<div style="border-top:1px solid #eee;padding:10px 0"><b>${escapeHtml(row.event_label || row.event_type)}</b> · ${escapeHtml(row.severity)}<br/>${escapeHtml(row.raw_query || "—")}<br/><small>${escapeHtml(row.source)} · pairs ${escapeHtml(row.pair_count)} · restaurants ${escapeHtml(row.restaurant_count)} · activities ${escapeHtml(row.activity_count)} · ${escapeHtml(row.timing_ms)}ms · ${escapeHtml(row.created_at)}</small></div>`).join("") : "<p>No recent events.</p>"}
     <p><a href="${dashboardUrl}" style="display:inline-block;background:#e11d48;color:white;padding:12px 16px;border-radius:12px;text-decoration:none;font-weight:800">Open Search Health Dashboard</a></p>
   </div>`;
-  const text = `TheOutHaven Search Health Digest\nLast ${hours} hours\n${JSON.stringify(summary, null, 2)}\nDashboard: ${dashboardUrl}`;
+  const text = [
+    "TheOutHaven Search Health Digest",
+    `Last ${hours} hours`,
+    "",
+    `Total Events: ${summary.totalEvents}`,
+    `Errors: ${summary.errorCount}`,
+    `Warnings: ${summary.warningCount}`,
+    `No Valid Pairs: ${summary.noPairCount}`,
+    `No Results: ${summary.noResultCount}`,
+    `Slow Searches: ${summary.slowCount}`,
+    `Unresolved: ${summary.unresolvedCount}`,
+    "",
+    "Top Event Types:",
+    ...(topEventTypes.length ? topEventTypes.map((row) => `- ${row.value}: ${row.count}`) : ["- No data."]),
+    "",
+    "Top No-Pair Reasons:",
+    ...(topNoPairReasons.length ? topNoPairReasons.map((row) => `- ${row.value}: ${row.count}`) : ["- No data."]),
+    "",
+    "Recent Events:",
+    ...(recent.length
+      ? recent.map((row) => `- ${String(row.created_at ?? "")} ${String(row.severity ?? "")} ${String(row.event_label || row.event_type || "event")} — ${String(row.raw_query || "—")}`)
+      : ["- No recent events."]),
+    "",
+    `Dashboard: ${dashboardUrl}`,
+  ].join("\n");
   return { html, text };
 }
 
 async function sendEmail(to: string[], subject: string, html: string, text: string) {
   const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("SEARCH_HEALTH_DIGEST_FROM") || Deno.env.get("EMAIL_FROM") || "no-reply@theouthaven.com";
-  if (!apiKey) return { sent: false, skipped: true, reason: "RESEND_API_KEY missing" };
+  const from = Deno.env.get("SEARCH_HEALTH_DIGEST_FROM");
+  if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
+  if (!from) throw new Error("SEARCH_HEALTH_DIGEST_FROM is not configured");
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -181,8 +213,6 @@ Deno.serve(async (req) => {
 
     requireEnv("SUPABASE_URL");
     requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    requireEnv("RESEND_API_KEY");
-    requireEnv("SEARCH_HEALTH_DIGEST_TO");
     requireEnv("CRON_SECRET");
 
     if (!cronSecretMatches(req)) {
@@ -222,6 +252,10 @@ Deno.serve(async (req) => {
       const digestRunInsertError = await recordRun(supabase, { source, sent: false, recipient_count: 0, total_events: 0, error_count: 0, warning_count: 0, no_pair_count: 0, no_result_count: 0, slow_count: 0, response });
       return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
     }
+    requireEnv("RESEND_API_KEY");
+    requireEnv("SEARCH_HEALTH_DIGEST_TO");
+    requireEnv("SEARCH_HEALTH_DIGEST_FROM");
+
     const to = recipients();
     if (!to.length) throw new Error("Missing SEARCH_HEALTH_DIGEST_TO");
     const issueCount = summary.warningCount + summary.errorCount;
@@ -231,14 +265,14 @@ Deno.serve(async (req) => {
     try {
       emailResponse = await sendEmail(to, subject, email.html, email.text);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       return jsonResponse({
         success: false,
         error: "email_send_failed",
-        details: `Resend failed: ${message}`,
+        details: safeEmailErrorDetails(error),
       }, 500);
     }
-    const response = { success: true, sent: true, recipients: to, hours, summary, email: emailResponse };
+    const emailResult = { provider: "resend", id: emailResponse.id ?? null, accepted: to.length };
+    const response = { success: true, sent: true, recipient_count: to.length, recipients: to, hours, summary, emailResult };
     const digestRunInsertError = await recordRun(supabase, { source, sent: true, recipient_count: to.length, total_events: summary.totalEvents, error_count: summary.errorCount, warning_count: summary.warningCount, no_pair_count: summary.noPairCount, no_result_count: summary.noResultCount, slow_count: summary.slowCount, response });
     return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
   } catch (error) {
