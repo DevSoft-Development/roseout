@@ -33,6 +33,115 @@ export const DEFAULT_MAX_WALKING_PAIR_MINUTES = 60;
 export const WALKING_MINUTES_PER_MILE = 20;
 export const WALKING_ROUTE_LABEL_DISPLAY_MAX_MINUTES = 45;
 
+
+export function getEffectiveWalkingPairLimitMinutes(pairingPreference?: {
+  distanceMode?: string | null;
+  maxPairWalkingMinutes?: number | null;
+  requireWalkablePair?: boolean | null;
+}) {
+  const requestedMax = Number(pairingPreference?.maxPairWalkingMinutes);
+
+  if (Number.isFinite(requestedMax) && requestedMax > 0) {
+    return Math.min(requestedMax, DEFAULT_MAX_WALKING_PAIR_MINUTES);
+  }
+
+  return DEFAULT_MAX_WALKING_PAIR_MINUTES;
+}
+
+export function isWalkingDistanceSearch(pairingPreference?: {
+  distanceMode?: string | null;
+  requireWalkablePair?: boolean | null;
+}) {
+  return (
+    pairingPreference?.distanceMode === "walking" ||
+    pairingPreference?.distanceMode === "short_walk" ||
+    pairingPreference?.requireWalkablePair === true
+  );
+}
+
+export function shouldHidePairForWalkingLimit(
+  pair: any,
+  pairingPreference: any,
+): { hide: boolean; reason: string | null } {
+  if (!isWalkingDistanceSearch(pairingPreference)) {
+    return { hide: false, reason: null };
+  }
+
+  const maxMinutes = getEffectiveWalkingPairLimitMinutes(pairingPreference);
+  const hasRequestedMax =
+    pairingPreference?.maxPairWalkingMinutes &&
+    Number(pairingPreference.maxPairWalkingMinutes) < DEFAULT_MAX_WALKING_PAIR_MINUTES;
+
+  const rawWalkingMinutes =
+    pair?.walkingDurationMinutes ??
+    pair?.walking_duration_minutes ??
+    pair?.walkingMinutes ??
+    pair?.walking_minutes ??
+    pair?.googleWalkingMinutes ??
+    pair?.google_walking_minutes ??
+    pair?.googleWalkingDurationMinutes ??
+    pair?.google_walking_duration_minutes ??
+    pair?.routeDurationMinutes ??
+    pair?.route_duration_minutes ??
+    pair?.walking_route_minutes ??
+    pair?.pairWalkingMinutes ??
+    pair?.pair_walking_minutes ??
+    pair?.activity?.walkingDurationMinutes ??
+    pair?.activity?.walking_duration_minutes ??
+    pair?.activity?.walkingMinutes ??
+    pair?.activity?.walking_minutes ??
+    pair?.activity?.googleWalkingMinutes ??
+    pair?.activity?.google_walking_minutes ??
+    pair?.activity?.googleWalkingDurationMinutes ??
+    pair?.activity?.google_walking_duration_minutes ??
+    pair?.activity?.routeDurationMinutes ??
+    pair?.activity?.route_duration_minutes ??
+    pair?.activity?.walking_route_minutes ??
+    pair?.activity?.pairWalkingMinutes ??
+    pair?.activity?.pair_walking_minutes ??
+    null;
+
+  const numericWalkingMinutes =
+    rawWalkingMinutes == null ? null : Number(rawWalkingMinutes);
+
+  if (typeof numericWalkingMinutes === "number" && Number.isFinite(numericWalkingMinutes) && numericWalkingMinutes > maxMinutes) {
+    return {
+      hide: true,
+      reason: hasRequestedMax
+        ? "walking_route_exceeds_requested_minutes"
+        : "walking_route_exceeds_default_60_minutes",
+    };
+  }
+
+  const miles =
+    pair?.pairDistanceMiles ??
+    pair?.pair_distance_miles ??
+    pair?.distanceMiles ??
+    pair?.distance_miles ??
+    pair?.activity?.pairDistanceMiles ??
+    pair?.activity?.pair_distance_miles ??
+    pair?.activity?.distanceMiles ??
+    pair?.activity?.distance_miles ??
+    null;
+
+  const numericMiles = miles == null ? null : Number(miles);
+
+  if (typeof numericMiles === "number" && Number.isFinite(numericMiles)) {
+    const estimatedMinutes = Math.round(numericMiles * WALKING_MINUTES_PER_MILE);
+
+    if (estimatedMinutes > maxMinutes) {
+      return {
+        hide: true,
+        reason: hasRequestedMax
+          ? "walking_distance_exceeds_requested_minutes"
+          : "walking_distance_exceeds_default_60_minutes",
+      };
+    }
+  }
+
+  return { hide: false, reason: null };
+}
+
 export function estimateWalkingMinutes(distanceMiles: number) { return Math.round(distanceMiles * WALKING_MINUTES_PER_MILE); }
 
 export function normalizeWalkingMinutes(value: unknown): number | null {
@@ -219,17 +328,21 @@ export function formatDistanceFromRestaurant({
   pair: any;
   restaurantName: string;
   pairingPreference: any;
-}): string {
+}): string | undefined {
   const askedForWalking = userAskedForWalking(pairingPreference);
   const walkingMinutes = getSafeWalkingMinutes(pair);
   const miles = getPairDistanceMiles(pair);
 
-  if (askedForWalking && walkingMinutes != null) {
-    if (walkingMinutes > DEFAULT_MAX_WALKING_PAIR_MINUTES) {
-      return "Distance unavailable";
+  if (askedForWalking) {
+    const walkingLimitCheck = shouldHidePairForWalkingLimit(pair, pairingPreference);
+
+    if (walkingLimitCheck.hide) {
+      return undefined;
     }
 
-    return `${walkingMinutes} min walk from ${restaurantName}`;
+    if (walkingMinutes != null) {
+      return `${walkingMinutes} min walk from ${restaurantName}`;
+    }
   }
 
   if (miles != null) {

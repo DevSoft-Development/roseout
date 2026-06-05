@@ -1,5 +1,5 @@
 import type { EnterpriseLocation, EnterprisePair, GeoIntent, PairDistanceMode, PairingPreference, SearchIntent } from "./types";
-import { DEFAULT_MAX_WALKING_PAIR_MINUTES, estimateWalkingMinutes, estimateWalkingMinutesFromMiles, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isWalkablePair, normalizeWalkingMinutes, shouldRejectPairForWalkingRoute } from "./distance";
+import { DEFAULT_MAX_WALKING_PAIR_MINUTES, estimateWalkingMinutes, estimateWalkingMinutesFromMiles, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, isExtremeWalkingRoute, isWalkablePair, normalizeWalkingMinutes, shouldHidePairForWalkingLimit } from "./distance";
 import { scoreGeoMatch } from "./geo-taxonomy";
 import { scoreActivityQuality, scoreRestaurantQuality } from "./ranking";
 
@@ -34,6 +34,8 @@ export type PairingDebug = {
   }>;
   finalPairSortReason: string;
   walkablePairsFound: number;
+  walkingPairsHiddenOverLimit: number;
+  walkingPairRejectReasons: Record<string, number>;
   rejectedPairs: Array<{
     restaurantId: EnterpriseLocation["id"];
     restaurantName?: string | null;
@@ -44,7 +46,7 @@ export type PairingDebug = {
     walkingDurationMinutes?: number | null;
   }>;
 };
-export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, suppressedLowQualityPairCount: 0, suppressedWeakOutingFitPairCount: 0, weakOutingFitRestaurantCount: 0, pairQualityTierCounts: { tier3: 0, tier2: 0, tier1: 0, tier0: 0 }, pairQualityScorePreview: [], finalPairSortReason: "market_quality_then_distance", walkablePairsFound: 0, rejectedPairs: [] }; }
+export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, suppressedLowQualityPairCount: 0, suppressedWeakOutingFitPairCount: 0, weakOutingFitRestaurantCount: 0, pairQualityTierCounts: { tier3: 0, tier2: 0, tier1: 0, tier0: 0 }, pairQualityScorePreview: [], finalPairSortReason: "market_quality_then_distance", walkablePairsFound: 0, walkingPairsHiddenOverLimit: 0, walkingPairRejectReasons: {}, rejectedPairs: [] }; }
 
 function pairPreference(intent: SearchIntent): PairingPreference { return intent.pairingPreference ?? { requiresPairing: intent.wantsPairing, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
 function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) { if (distanceMiles == null) return 0; if (distanceMiles <= 0.25) return 50; if (distanceMiles <= 0.5) return 40; if (distanceMiles <= 0.75) return 30; if (distanceMiles <= 1.5 && (mode === "walking" || mode === "nearby")) return 15; if (distanceMiles <= 3 && mode === "same_area") return 5; return 0; }
@@ -283,14 +285,18 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
       debug.invalidWalkingRoutesHiddenFromDisplay += 1;
     }
 
-    const walkingRouteDecision = shouldRejectPairForWalkingRoute(pairSeed, pref);
+    const walkingLimitCheck = shouldHidePairForWalkingLimit(pairSeed, pref);
 
-    if (walkingRouteDecision.reject) {
+    if (walkingLimitCheck.hide) {
+      const reason = walkingLimitCheck.reason ?? "walking_limit_exceeded";
+      debug.walkingPairsHiddenOverLimit = (debug.walkingPairsHiddenOverLimit ?? 0) + 1;
+      debug.walkingPairRejectReasons = debug.walkingPairRejectReasons ?? {};
+      debug.walkingPairRejectReasons[reason] = (debug.walkingPairRejectReasons[reason] ?? 0) + 1;
       debug.pairsRejectedForWalkingMinutes += 1;
-      if (walkingRouteDecision.reason === "extreme_walking_route_duration") {
+      if (rawWalkingMinutes != null && isExtremeWalkingRoute(rawWalkingMinutes)) {
         debug.extremeWalkingRoutesRejected += 1;
       }
-      debug.rejectedPairs.push(rejectedPairDebug(restaurant, activity, pairDistanceMiles, walkingRouteDecision.reason));
+      debug.rejectedPairs.push(rejectedPairDebug(restaurant, activity, pairDistanceMiles, reason));
       continue;
     }
 

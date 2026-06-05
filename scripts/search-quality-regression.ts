@@ -300,7 +300,7 @@ assert.deepEqual(routeFilteredPairs.map((pair) => pair.activity.id), ["ra", "rb"
 assert.equal(routeFilterDebug.pairsRejectedForWalkingMinutes, 2);
 assert.equal(routeFilterDebug.extremeWalkingRoutesRejected, 1);
 assert(routeFilterDebug.rejectedPairs.some((pair) => pair.activityName === "C" && pair.reason === "walking_route_exceeds_requested_minutes"));
-assert(routeFilterDebug.rejectedPairs.some((pair) => pair.activityName === "D" && pair.walkingDurationMinutes === 496 && pair.reason === "extreme_walking_route_duration"));
+assert(routeFilterDebug.rejectedPairs.some((pair) => pair.activityName === "D" && pair.walkingDurationMinutes === 496 && pair.reason === "walking_route_exceeds_requested_minutes"));
 
 const noValidWalkDebug = createPairingDebug();
 const noValidPairs = createSearchPairs([routeRestaurant], routeActivities.slice(2), distanceIntent, noValidWalkDebug);
@@ -315,7 +315,7 @@ const extremeWalkingLabel = buildSafePairDistanceLabel({
   pairDistanceMiles: 0.6,
   pairingPreference: { requiresPairing: true, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
 });
-assert(!extremeWalkingLabel.includes("496 min walk"), "extreme walking routes should never render as walking labels");
+assert(!extremeWalkingLabel?.includes("496 min walk"), "extreme walking routes should never render as walking labels");
 assert.equal(extremeWalkingLabel, "0.6 mi from Fogo de Chão Brazilian Steakhouse");
 
 
@@ -437,8 +437,8 @@ assert.equal(
     restaurantName: "The Modern",
     pairingPreference: { distanceMode: "walking" },
   }),
-  "8 min walk from The Modern",
-  "unsafe walking durations should fall back to estimated walking minutes in walking mode",
+  undefined,
+  "over-limit walking durations should not render in walking mode",
 );
 
 assert.equal(
@@ -447,8 +447,8 @@ assert.equal(
     restaurantName: "The Modern",
     pairingPreference: { distanceMode: "walking" },
   }),
-  "Distance unavailable",
-  "unsafe walking durations without miles should be unavailable",
+  undefined,
+  "over-limit walking durations without miles should not render in walking mode",
 );
 assert.equal(
   formatDistanceFromRestaurant({
@@ -470,7 +470,7 @@ assert(!formatDistanceFromRestaurant({
   pair: { walkingDurationMinutes: 18, pairDistanceMiles: 0.6 },
   restaurantName: "Fogo de Chão Brazilian Steakhouse",
   pairingPreference: { distanceMode: "walking" },
-}).includes("Google walking route"));
+})?.includes("Google walking route"));
 assert.equal(toDisplayLabel("Fine_dining"), "Fine Dining");
 assert.equal(toDisplayLabel("rooftop_bar"), "Rooftop Bar");
 
