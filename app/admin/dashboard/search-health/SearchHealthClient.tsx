@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 type SearchHealthData = {
-  summary?: Record<string, number>;
+  summary?: { [key: string]: number | { source: string; count: number }[] | undefined; eventsBySource?: { source: string; count: number }[] };
   recentEvents?: any[];
   topNoPairReasons?: { reason: string; count: number }[];
   topNoResultReasons?: { reason: string; count: number }[];
@@ -11,7 +11,7 @@ type SearchHealthData = {
 };
 
 const ranges = ["24h", "7d", "30d"];
-const sources = ["", "admin_search_lab", "public_create_search", "beta_tester_search", "search_api"];
+const sources = ["", "admin_search_lab", "public_create_search", "public_explore_search", "public_plan_search", "beta_tester_search", "search_api", "admin_test_event"];
 const statuses = ["", "new", "reviewing", "fixed", "ignored", "archived"];
 const speeds = ["", "slow", "critical", "failed", "timeout", "degraded"];
 
@@ -85,12 +85,14 @@ export default function SearchHealthClient() {
   }
 
   const summary = data.summary ?? {};
+  const eventsBySource = Array.isArray(summary.eventsBySource) ? summary.eventsBySource : [];
+  const onlyAdminSearchLab = eventsBySource.length === 1 && eventsBySource[0]?.source === "admin_search_lab";
   const cards = [
-    ["Total Search Issues", summary.totalEvents ?? 0],
-    ["No Result Searches", summary.noResultSearches ?? 0],
-    ["No Valid Pair Searches", summary.noPairSearches ?? 0],
-    ["Slow Searches", summary.slowSearches ?? 0],
-    ["Unresolved Events", summary.unresolvedEvents ?? 0],
+    ["Total Search Issues", Number(summary.totalEvents ?? 0)],
+    ["No Result Searches", Number(summary.noResultSearches ?? 0)],
+    ["No Valid Pair Searches", Number(summary.noPairSearches ?? 0)],
+    ["Slow Searches", Number(summary.slowSearches ?? 0)],
+    ["Unresolved Events", Number(summary.unresolvedEvents ?? 0)],
   ];
 
   return (
@@ -109,6 +111,25 @@ export default function SearchHealthClient() {
         <Filter label="Source" value={source} values={sources} onChange={setSource} empty="All sources" />
         <Filter label="Status" value={status} values={statuses} onChange={setStatus} empty="All statuses" />
         <Filter label="Speed" value={speed} values={speeds} onChange={setSpeed} empty="All speeds" />
+      </section>
+
+      {onlyAdminSearchLab ? (
+        <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm font-semibold text-amber-100">
+          Currently showing Search Lab events. Public warning logs will appear here when user-facing searches trigger warnings.
+        </div>
+      ) : null}
+
+      <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
+        <h2 className="text-lg font-black">Source Breakdown</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {eventsBySource.map((row) => (
+            <div key={row.source} className="rounded-2xl bg-white/[0.04] p-4 text-sm">
+              <div className="font-black text-white">{row.source}</div>
+              <div className="mt-2 text-2xl font-black text-rose-100">{row.count}</div>
+            </div>
+          ))}
+          {!eventsBySource.length ? <div className="text-sm text-white/50">No source data for this filter.</div> : null}
+        </div>
       </section>
 
       {error ? <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">{error}</div> : null}

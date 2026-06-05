@@ -149,6 +149,7 @@ export async function POST(request: Request) {
     const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
     const usedCustomPrompt = body?.usedCustomPrompt === true || body?.usedCustomPrompt === "true" || new URL(request.url).searchParams.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
     const betaDebug = process.env.NODE_ENV !== "production" || Boolean(betaAssignmentId || betaTesterId || body?.betaDebug);
+    const betaFeedbackSubmitted = Boolean(betaTesterId && (body?.feedbackSubmitted === true || body?.feedback_submitted === true || body?.feedback || body?.feedback_type || body?.expected_result || body?.actual_result || body?.rating));
     const legacySearch = () => runEnterpriseSearch(cleanInput, {
       body,
       useLLM: true,
@@ -161,6 +162,7 @@ export async function POST(request: Request) {
       usedCustomPrompt,
       betaDebug,
       searchHealthDebug: betaDebug,
+      betaFeedbackSubmitted,
     });
 
     const result: any = await runCreateSearchWithEdgeFallback(
@@ -223,6 +225,7 @@ export async function POST(request: Request) {
         betaAssignmentId,
         betaTesterId,
         debugMode: betaDebug || Boolean(body?.debug),
+        betaFeedbackSubmitted,
       });
     }
 
