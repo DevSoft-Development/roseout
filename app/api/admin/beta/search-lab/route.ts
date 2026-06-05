@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { getSearchSpeedStatus } from "@/lib/search/performance";
+import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import { requireBetaAdmin, safeError } from "../_shared";
 
 export async function POST(req: NextRequest) {
@@ -34,6 +35,8 @@ export async function POST(req: NextRequest) {
         betaTesterId: body.betaTesterId ?? null,
         usedCustomPrompt: !!body.usedCustomPrompt,
         useFastPath,
+        createdByUserId: auth.adminUser?.user_id ?? null,
+        searchHealthDebug: true,
       });
 
     const result = await runCreateSearchWithEdgeFallback(
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
     const debug = result.debug as any;
     const perf = debug?.performance || {};
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
       reply: result.reply,
       restaurants: (result.restaurants as any[])?.length || 0,
@@ -112,7 +115,22 @@ export async function POST(req: NextRequest) {
       fallbackUsed: Boolean(debug?.restaurantRecoveryUsed || debug?.activityRecoveryUsed || debug?.edge_error),
       customPrompt: !!body.usedCustomPrompt,
       debug: result.debug,
-    });
+    };
+
+    if ((result as any).source === "edge" || debug?.source === "edge") {
+      void logSearchHealthEvent({
+        source: "admin_search_lab",
+        rawQuery: query,
+        result: responseBody,
+        debug: result.debug,
+        createdByUserId: auth.adminUser?.user_id ?? null,
+        betaAssignmentId: body.betaAssignmentId ?? null,
+        betaTesterId: body.betaTesterId ?? null,
+        debugMode: true,
+      });
+    }
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     console.error(error);
     return safeError("Search Lab failed");
