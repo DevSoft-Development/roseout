@@ -298,8 +298,16 @@ function hasLocationPhotos(r: EnterpriseLocation) {
   return Boolean((r as any).has_photos === true || r.image_url || r.main_image || (r as any).photo_url || (r as any).primary_photo_url || hasImageArray);
 }
 
+function normalizedPublicVisibilityTier(r: EnterpriseLocation) {
+  return String((r as any).public_visibility_tier ?? "").toLowerCase().replaceAll("_", " ");
+}
+
+function normalizedCurationTier(r: EnterpriseLocation) {
+  return String((r as any).curation_tier ?? "").toLowerCase().replaceAll("_", " ");
+}
+
 function normalizedVisibilityTier(r: EnterpriseLocation) {
-  return String((r as any).public_visibility_tier ?? (r as any).curation_tier ?? "").toLowerCase().replaceAll("_", " ");
+  return `${normalizedPublicVisibilityTier(r)} ${normalizedCurationTier(r)}`.trim();
 }
 
 function normalizedQualityStatus(r: EnterpriseLocation) {
@@ -307,7 +315,15 @@ function normalizedQualityStatus(r: EnterpriseLocation) {
 }
 
 function userAskedForCasualQuickOrChicken(intent: SearchIntent) {
-  return /\b(casual|quick|fast|fast casual|fast food|chicken|wings|fried chicken|hot chicken|takeout|take out|delivery|food truck)\b/i.test(intent.rawQuery);
+  return /\b(casual|quick|fast|fast casual|fast food|chicken|wings|fried chicken|hot chicken|takeout|take out|delivery|food truck|pizza|slice|deli|quick bite)\b/i.test(intent.rawQuery);
+}
+
+function userAskedForChicken(intent: SearchIntent) {
+  return /\b(chicken|wings|fried chicken|hot chicken)\b/i.test(intent.rawQuery);
+}
+
+function userAskedForQuickService(intent: SearchIntent) {
+  return /\b(quick|quick bite|fast|fast casual|fast food|counter service|takeout|take out|delivery|food truck)\b/i.test(intent.rawQuery);
 }
 
 function isGenericRestaurantQualityIntent(intent: SearchIntent) {
@@ -321,45 +337,108 @@ function qualityReason(pushTo: string[], reason: string, points: number) {
 
 function baseQualitySignals(r: EnterpriseLocation) {
   const text = compactRecordText(r).toLowerCase();
+  const nameText = fieldText(r, ["name", "restaurant_name"]);
+  const categoryTypeText = fieldText(r, [
+    "primary_category",
+    "activity_type",
+    "cuisine",
+    "cuisine_type",
+    "google_types",
+    "tags",
+    "semantic_tags",
+    "intent_tags",
+  ]);
+  const descriptionTagText = fieldText(r, [
+    "description",
+    "tags",
+    "vibe_tags",
+    "best_for_tags",
+    "date_style_tags",
+    "semantic_tags",
+    "intent_tags",
+    "search_keywords",
+    "search_document",
+    "semantic_search_text",
+  ]);
   const rating = Number(r.rating ?? 0);
   const reviewCount = Number(r.review_count ?? (r as any).reviewCount ?? (r as any).total_reviews ?? 0);
+  const publicVisibility = normalizedPublicVisibilityTier(r);
+  const curationTier = normalizedCurationTier(r);
   const visibility = normalizedVisibilityTier(r);
   const status = normalizedQualityStatus(r);
   const curated = Boolean((r as any).is_featured || (r as any).featured || (r as any).is_curated || (r as any).approved) || /\b(featured|premium|curated|editor|approved)\b/.test(visibility);
   const approved = /\b(approved|published|publish ready|verified|active)\b/.test(status);
-  return { text, rating, reviewCount, visibility, status, curated, approved, hasPhotos: hasLocationPhotos(r) };
+  return { text, nameText, categoryTypeText, descriptionTagText, rating, reviewCount, publicVisibility, curationTier, visibility, status, curated, approved, hasPhotos: hasLocationPhotos(r) };
 }
 
-export function scoreRestaurantQuality(r: EnterpriseLocation, intent: SearchIntent) {
+const OUTING_CATEGORY_RE = /\b(fine dining|upscale|full service|restaurant|bistro|brasserie|steakhouse|seafood|italian restaurant|wine bar|supper club)\b/;
+const OUTING_DESCRIPTION_RE = /\b(date night|romantic|ambiance|ambience|elegant|upscale|cocktails|lounge|dinner|reservations?)\b/;
+const QUICK_SERVICE_RE = /\b(fast food|quick service|fast casual|counter service)\b/;
+const TAKEOUT_FIRST_RE = /\b(delivery|takeout|take out|catering|ghost kitchen)\b/;
+const RESERVATION_DINING_RE = /\b(reservations?|reservation friendly|book a table|open ?table|resy|full service|dining room|dinner service|table service|waiter|waitstaff|host stand)\b/;
+const WEAK_OUTING_RE = /\b(eats|chicken|pizza|deli|slice|burger|sandwich|wings|takeout|delivery|counter service|fast food|fast casual|quick service|catering|ghost kitchen)\b/;
+
+function hasReservationSignal(r: EnterpriseLocation, text: string) {
+  return Boolean(r.reservation_url || r.reservation_link || r.booking_url || r.external_reservation_url || (r as any).reservation_enabled || (r as any).reservations_url) || RESERVATION_DINING_RE.test(text);
+}
+
+export function scoreRestaurantOutingFit(r: EnterpriseLocation, intent: SearchIntent) {
   const reasons: string[] = [];
   const penalties: string[] = [];
   const signals = baseQualitySignals(r);
   let score = 0;
-  if (signals.curated) { score += 35; qualityReason(reasons, "curated/featured/premium", 35); }
-  if (signals.rating >= 4.6 && signals.reviewCount >= 300) { score += 25; qualityReason(reasons, "rating >= 4.6 with 300+ reviews", 25); }
-  else if (signals.rating >= 4.4 && signals.reviewCount >= 100) { score += 20; qualityReason(reasons, "rating >= 4.4 with 100+ reviews", 20); }
-  if (signals.hasPhotos) { score += 15; qualityReason(reasons, "has photos", 15); }
-  const upscaleMatch = /\b(fine dining|fine_dining|upscale|date night|romantic|full service|full_service|restaurant|dining room|bistro|steakhouse|seafood|italian|sushi|omakase|tasting menu)\b/.test(signals.text);
-  if (upscaleMatch) { score += 15; qualityReason(reasons, "full-service/date/upscale dining signal", 15); }
-  if (/\b(cocktail|cocktails|lounge|wine bar|bar|dinner|date)\b/.test(signals.text)) { score += 10; qualityReason(reasons, "cocktail/lounge/dinner vibe", 10); }
-  const priority = Number((r as any).default_market_priority ?? (r as any).market_priority);
-  if (priority === 0) { score += 10; qualityReason(reasons, "default market priority 0", 10); }
-  else if (priority === 1) { score += 5; qualityReason(reasons, "default market priority 1", 5); }
-  if (signals.approved) { score += 8; qualityReason(reasons, "approved/published/verified status", 8); }
-
   const askedCasual = userAskedForCasualQuickOrChicken(intent);
+  const askedChicken = userAskedForChicken(intent);
+  const askedQuickService = userAskedForQuickService(intent);
+  const categoryTypeText = signals.categoryTypeText;
+  const descriptionTagText = signals.descriptionTagText;
+  const outingCategoryMatch = OUTING_CATEGORY_RE.test(categoryTypeText);
+  const outingDescriptionMatch = OUTING_DESCRIPTION_RE.test(descriptionTagText);
+  const strongOutingSignal = /\b(fine dining|upscale|full service|bistro|brasserie|steakhouse|seafood|italian restaurant|wine bar|supper club)\b/.test(categoryTypeText) || outingDescriptionMatch;
+  const reservationSignal = hasReservationSignal(r, `${categoryTypeText} ${descriptionTagText} ${signals.text}`);
+  const ambianceSignal = outingDescriptionMatch || /\b(romantic|elegant|ambiance|ambience|date night|upscale|lounge|supper club|brasserie|fine dining)\b/.test(`${categoryTypeText} ${descriptionTagText}`);
+
+  if (/\b(featured|premium|curated)\b/.test(signals.curationTier) || Boolean((r as any).is_featured || (r as any).featured || (r as any).is_curated)) { score += 25; qualityReason(reasons, "curation tier featured/premium/curated", 25); }
+  if (/\b(featured|premium)\b/.test(signals.publicVisibility)) { score += 20; qualityReason(reasons, "public visibility featured/premium", 20); }
+  if (signals.approved) { score += 10; qualityReason(reasons, "approved/verified/published status", 10); }
+  if (signals.hasPhotos) { score += 15; qualityReason(reasons, "has photos", 15); }
+  if (signals.rating >= 4.5 && signals.reviewCount >= 500) { score += 25; qualityReason(reasons, "rating >= 4.5 with 500+ reviews", 25); }
+  else if (signals.rating >= 4.3 && signals.reviewCount >= 100) { score += 15; qualityReason(reasons, "rating >= 4.3 with 100+ reviews", 15); }
+  if (outingCategoryMatch) { score += 20; qualityReason(reasons, "outing category/type dining signal", 20); }
+  if (outingDescriptionMatch) { score += 15; qualityReason(reasons, "date-night/ambiance/dinner tag signal", 15); }
+
+  const priority = Number((r as any).default_market_priority ?? (r as any).market_priority);
+  if (priority === 0) { score += 8; qualityReason(reasons, "default market priority 0", 8); }
+  else if (priority === 1) { score += 4; qualityReason(reasons, "default market priority 1", 4); }
+
   if ((r as any).is_low_level === true) { score -= 35; qualityReason(penalties, "low-level location", -35); }
-  if (!askedCasual && /\b(fast food|fast_food|quick service|quick_service|fast casual|fast_casual|takeout|take out|delivery|catering only|catering_only|ghost kitchen|food truck|counter service)\b/.test(signals.text)) { score -= 30; qualityReason(penalties, "fast/quick/takeout/delivery-style", -30); }
-  if (!signals.hasPhotos) { score -= 25; qualityReason(penalties, "missing photos", -25); }
-  if (isGenericRestaurantQualityIntent(intent) && !upscaleMatch && !/\b(restaurant|dining|bistro|grill|bar and grill|gastropub|lounge)\b/.test(signals.text)) { score -= 20; qualityReason(penalties, "weak generic restaurant relevance", -20); }
-  const chainOrLowPriority = (r as any).is_chain === true || /\b(chain|utility|low priority|low_priority)\b/.test(`${signals.visibility} ${signals.text}`);
-  if (!askedCasual && chainOrLowPriority) { score -= 15; qualityReason(penalties, "chain/low-priority not requested", -15); }
-  if (askedCasual && /\b(chicken|wings|fried chicken|hot chicken|fast casual|casual|quick)\b/.test(signals.text)) { score += 28; qualityReason(reasons, "requested casual/chicken fit", 28); }
+  if (!askedCasual && /\beats\b/.test(signals.nameText) && !strongOutingSignal) { score -= 15; qualityReason(penalties, "name contains eats without upscale/full-service signal", -15); }
+  if (!askedChicken && /\bchicken\b/.test(signals.nameText)) { score -= 20; qualityReason(penalties, "name contains chicken not requested", -20); }
+  if (!askedCasual && !askedQuickService && QUICK_SERVICE_RE.test(categoryTypeText)) { score -= 30; qualityReason(penalties, "fast casual/quick service/counter service category", -30); }
+  if (!askedQuickService && TAKEOUT_FIRST_RE.test(categoryTypeText)) { score -= 30; qualityReason(penalties, "delivery/takeout/catering/ghost kitchen category", -30); }
+  if (!askedCasual && ((r as any).is_chain === true || /\b(chain|utility|low priority)\b/.test(`${signals.visibility} ${signals.text}`))) { score -= 15; qualityReason(penalties, "chain/low-priority not requested", -15); }
+  if (isGenericRestaurantQualityIntent(intent) && !ambianceSignal) { score -= 10; qualityReason(penalties, "weak outing ambiance signal", -10); }
+  if (isGenericRestaurantQualityIntent(intent) && !reservationSignal && !strongOutingSignal) { score -= 10; qualityReason(penalties, "missing reservation/dining/full-service signal", -10); }
+  if (!signals.hasPhotos) { score -= 15; qualityReason(penalties, "missing photos", -15); }
+  if (!askedCasual && isGenericRestaurantQualityIntent(intent) && WEAK_OUTING_RE.test(signals.nameText) && !strongOutingSignal) { score -= 10; qualityReason(penalties, "quick-bite style name for generic outing", -10); }
+  if (askedCasual && /\b(casual|quick|fast casual|quick service|chicken|wings|fried chicken|hot chicken|pizza|slice|deli)\b/.test(signals.text)) { score += 20; qualityReason(reasons, "requested casual/quick/specific food fit", 20); }
+
+  (r as any).restaurantOutingFitScore = score;
+  (r as any).restaurantOutingFitReasons = reasons;
+  (r as any).restaurantOutingFitPenalties = penalties;
+  return { score, reasons, penalties };
+}
+
+export function scoreRestaurantQuality(r: EnterpriseLocation, intent: SearchIntent) {
+  const outingFit = scoreRestaurantOutingFit(r, intent);
+  const score = outingFit.score;
+  const reasons = [...outingFit.reasons];
+  const penalties = [...outingFit.penalties];
 
   (r as any).restaurantQualityScore = score;
   (r as any).restaurantQualityReasons = reasons;
   (r as any).restaurantQualityPenalties = penalties;
-  return { score, reasons, penalties };
+  return { score, outingFitScore: outingFit.score, reasons, penalties };
 }
 
 export function scoreActivityQuality(r: EnterpriseLocation, intent: SearchIntent) {

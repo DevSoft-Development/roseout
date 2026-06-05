@@ -18,11 +18,15 @@ export type PairingDebug = {
   pairsMissingGoogleWalkingMinutes: number;
   validPairCountBeforeRender: number;
   suppressedLowQualityPairCount: number;
+  suppressedWeakOutingFitPairCount: number;
+  weakOutingFitRestaurantCount: number;
+  pairQualityTierCounts: { tier3: number; tier2: number; tier1: number; tier0: number };
   pairQualityScorePreview: Array<{
     restaurantName?: string | null;
     activityName?: string | null;
     score: number;
     tier: number;
+    restaurantOutingFitScore: number;
     pairDistanceMiles: number | null;
     safeWalkingMinutes: number | null;
     reasons: string[];
@@ -40,7 +44,7 @@ export type PairingDebug = {
     walkingDurationMinutes?: number | null;
   }>;
 };
-export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, suppressedLowQualityPairCount: 0, pairQualityScorePreview: [], finalPairSortReason: "market_quality_then_distance", walkablePairsFound: 0, rejectedPairs: [] }; }
+export function createPairingDebug(): PairingDebug { return { pairCandidatesEvaluated: 0, pairsRejectedForDistance: 0, pairsRejectedForMissingCoordinates: 0, pairsRejectedForWalkingMinutes: 0, extremeWalkingRoutesRejected: 0, invalidWalkingRoutesHiddenFromDisplay: 0, walkingMinutesEstimatedFromMiles: 0, pairsWithGoogleWalkingMinutes: 0, pairsMissingGoogleWalkingMinutes: 0, validPairCountBeforeRender: 0, suppressedLowQualityPairCount: 0, suppressedWeakOutingFitPairCount: 0, weakOutingFitRestaurantCount: 0, pairQualityTierCounts: { tier3: 0, tier2: 0, tier1: 0, tier0: 0 }, pairQualityScorePreview: [], finalPairSortReason: "market_quality_then_distance", walkablePairsFound: 0, rejectedPairs: [] }; }
 
 function pairPreference(intent: SearchIntent): PairingPreference { return intent.pairingPreference ?? { requiresPairing: intent.wantsPairing, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
 function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) { if (distanceMiles == null) return 0; if (distanceMiles <= 0.25) return 50; if (distanceMiles <= 0.5) return 40; if (distanceMiles <= 0.75) return 30; if (distanceMiles <= 1.5 && (mode === "walking" || mode === "nearby")) return 15; if (distanceMiles <= 3 && mode === "same_area") return 5; return 0; }
@@ -73,10 +77,11 @@ function pairPhotoScore(pair: Pick<EnterprisePair, "restaurant" | "activity">) {
 
 export function scorePairQuality(pair: Pick<EnterprisePair, "restaurant" | "activity" | "distance_miles" | "pairDistanceMiles">, intent: SearchIntent) {
   const restaurantQuality = scoreRestaurantQuality(pair.restaurant, intent);
+  const restaurantOutingFitScore = restaurantQuality.outingFitScore ?? restaurantQuality.score;
   const activityQuality = scoreActivityQuality(pair.activity, intent);
   const reasons = [...restaurantQuality.reasons.map((r) => `restaurant: ${r}`), ...activityQuality.reasons.map((r) => `activity: ${r}`)];
   const penalties = [...restaurantQuality.penalties.map((r) => `restaurant: ${r}`), ...activityQuality.penalties.map((r) => `activity: ${r}`)];
-  let score = restaurantQuality.score + activityQuality.score;
+  let score = restaurantOutingFitScore + activityQuality.score;
   const relevanceScore = Number(pair.restaurant.match_score ?? 0) + Number(pair.activity.match_score ?? 0);
   const market = marketPriorityScore(pair, intent.geo);
   const proximity = proximityScore(pair.pairDistanceMiles ?? pair.distance_miles ?? null);
@@ -85,10 +90,16 @@ export function scorePairQuality(pair: Pick<EnterprisePair, "restaurant" | "acti
   if (market) reasons.push(`market priority +${market}`);
   if (proximity) reasons.push(`proximity +${proximity}`);
   if (photos > 0) reasons.push(`both sides photo availability +${photos}`); else penalties.push(`missing pair photo availability ${photos}`);
-  if (restaurantQuality.score < 0 && activityQuality.score < 0) { score -= 40; penalties.push("weak restaurant plus weak activity pair -40"); }
-  else if (restaurantQuality.score < 0 || activityQuality.score < 0) { score -= 15; penalties.push("one weak side of pair -15"); }
-  const tier = restaurantQuality.score >= 35 && activityQuality.score >= 35 ? 3 : restaurantQuality.score >= 20 || activityQuality.score >= 20 ? 2 : restaurantQuality.score >= 0 && activityQuality.score >= 0 ? 1 : 0;
-  return { score, tier, reasons, penalties, restaurantQualityScore: restaurantQuality.score, activityQualityScore: activityQuality.score };
+  if (restaurantOutingFitScore < 0 && activityQuality.score < 0) { score -= 40; penalties.push("weak outing-fit restaurant plus weak activity pair -40"); }
+  else if (restaurantOutingFitScore < 0 || activityQuality.score < 0) { score -= 15; penalties.push("one weak outing side of pair -15"); }
+  const pairDistanceMiles = pair.pairDistanceMiles ?? pair.distance_miles ?? null;
+  const withinWalkingLimit = pairDistanceMiles != null && Number.isFinite(Number(pairDistanceMiles)) && Number(pairDistanceMiles) <= 1.5;
+  let tier = 0;
+  if (restaurantOutingFitScore >= 50 && activityQuality.score >= 60 && withinWalkingLimit) tier = 3;
+  else if (restaurantOutingFitScore >= 35 && activityQuality.score >= 50 && withinWalkingLimit) tier = 2;
+  else if (restaurantOutingFitScore >= 20 && activityQuality.score >= 0) tier = 1;
+  else penalties.push("weak restaurant fit for generic outing tier 0");
+  return { score, tier, reasons, penalties, restaurantQualityScore: restaurantQuality.score, restaurantOutingFitScore, activityQualityScore: activityQuality.score };
 }
 export function scorePair(pair: Pick<EnterprisePair, "restaurant" | "activity" | "distance_miles" | "pairDistanceMiles">, intent: SearchIntent) { const pref = pairPreference(intent); let score = Number(pair.restaurant.match_score ?? 0) + Number(pair.activity.match_score ?? 0) + scoreGeoMatch(pair.restaurant, intent.geo) + scoreGeoMatch(pair.activity, intent.geo); if (sameText(pair.restaurant.neighborhood, pair.activity.neighborhood)) score += 120; else if (sameText(pair.restaurant.borough, pair.activity.borough)) score += 80; else if (sameText(pair.restaurant.city, pair.activity.city)) score += 50; score += distanceBonus(pair.pairDistanceMiles ?? pair.distance_miles, pref.distanceMode); return score; }
 export function buildPairTitle(_pair: Pick<EnterprisePair, "restaurant" | "activity">, intent: SearchIntent) { const food = intent.restaurantIntent.foodTerms.find((t) => !["restaurant", "dining"].includes(t)) ?? intent.restaurantIntent.cuisineTerms[0] ?? intent.restaurantIntent.mealTerms[0] ?? "Dinner"; const act = intent.activityIntent.activityTerms.find((t) => !["activity", "things to do"].includes(t)) ?? "Activity"; return `${titleCase(food)} + ${titleCase(act)} Night`; }
@@ -329,6 +340,7 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
     (pair as any).pairQualityScore = pairQuality.score;
     (pair as any).pairQualityTier = pairQuality.tier;
     (pair as any).restaurantQualityScore = pairQuality.restaurantQualityScore;
+    (pair as any).restaurantOutingFitScore = pairQuality.restaurantOutingFitScore;
     (pair as any).activityQualityScore = pairQuality.activityQualityScore;
     (pair as any).pairQualityReasons = pairQuality.reasons;
     (pair as any).pairQualityPenalties = pairQuality.penalties;
@@ -338,15 +350,27 @@ export function createSearchPairs(restaurants: EnterpriseLocation[], activities:
   }
 
   debug.validPairCountBeforeRender = candidates.length;
-  const higherQualityCount = candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) > 0).length;
-  const renderableCandidates = higherQualityCount >= 5 ? candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) > 0) : candidates;
+  debug.weakOutingFitRestaurantCount = new Set(candidates
+    .filter((pair) => Number((pair as any).restaurantOutingFitScore ?? 0) < 20)
+    .map((pair) => pair.restaurant.id ?? pair.restaurant.name ?? pair.restaurant.restaurant_name))
+    .size;
+  debug.pairQualityTierCounts = {
+    tier3: candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) === 3).length,
+    tier2: candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) === 2).length,
+    tier1: candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) === 1).length,
+    tier0: candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) === 0).length,
+  };
+  const strongPairCount = debug.pairQualityTierCounts.tier3 + debug.pairQualityTierCounts.tier2;
+  const renderableCandidates = strongPairCount >= 5 ? candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) > 0) : candidates;
   debug.suppressedLowQualityPairCount = candidates.length - renderableCandidates.length;
+  debug.suppressedWeakOutingFitPairCount = candidates.filter((pair) => Number((pair as any).pairQualityTier ?? 0) === 0 && !renderableCandidates.includes(pair)).length;
   const sorted = sortMixedPairs(renderableCandidates, intent.geo).slice(0, 8);
   debug.pairQualityScorePreview = sorted.map((pair) => ({
     restaurantName: pair.restaurant.name || pair.restaurant.restaurant_name || null,
     activityName: pair.activity.name || pair.activity.activity_name || null,
     score: Number((pair as any).pairQualityScore ?? pair.pairScore ?? 0),
     tier: Number((pair as any).pairQualityTier ?? 0),
+    restaurantOutingFitScore: Number((pair as any).restaurantOutingFitScore ?? 0),
     pairDistanceMiles: pair.pairDistanceMiles,
     safeWalkingMinutes: getSafeWalkingMinutes(pair),
     reasons: ((pair as any).pairQualityReasons ?? []).slice(0, 8),
