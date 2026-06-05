@@ -3,8 +3,11 @@ import { supabaseAdmin } from "../../supabase-admin";
 export type SearchHealthSource =
   | "admin_search_lab"
   | "public_create_search"
+  | "public_explore_search"
+  | "public_plan_search"
   | "beta_tester_search"
   | "search_api"
+  | "admin_test_event"
   | string;
 
 type LoggerArgs = {
@@ -19,6 +22,8 @@ type LoggerArgs = {
   betaTesterId?: string | null;
   betaAssignmentId?: string | null;
   debugMode?: boolean;
+  forceLog?: boolean;
+  betaFeedbackSubmitted?: boolean;
   noResultsReason?: string | null;
   noPairsReason?: string | null;
   timingMs?: number | null;
@@ -197,21 +202,27 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
   const wantsPairing = normalizedIntent?.wantsPairing === true || args.result?.render_mode === "mixed_pairs" || args.result?.renderMode === "mixed_pairs" || args.result?.render_mode === "partial_mixed" || args.result?.renderMode === "partial_mixed";
   const timingMs = Number(payload.timing_ms ?? 0);
   const speedStatus = String(payload.speed_status ?? "").toLowerCase();
-
-  return (
+  const hasIssue =
     (Array.isArray(payload.errors) && payload.errors.length > 0) ||
-    (wantsPairing && payload.pair_count === 0) ||
     payload.restaurant_count === 0 ||
     (needsActivity && payload.activity_count === 0) ||
-    Boolean(payload.no_pairs_reason) ||
+    (wantsPairing && payload.pair_count === 0) ||
     Boolean(payload.no_results_reason) ||
+    Boolean(payload.no_pairs_reason) ||
     timingMs > 3000 ||
     ["slow", "degraded", "critical", "failed", "timeout"].includes(speedStatus) ||
     Number(debug?.extremeWalkingRoutesRejected ?? 0) > 0 ||
     Number(debug?.invalidWalkingRoutesHiddenFromDisplay ?? 0) > 0 ||
-    Number(debug?.suppressedLowQualityPairCount ?? 0) > 0 ||
-    ((payload.source === "admin_search_lab" || payload.source === "beta_tester_search" || Boolean(payload.beta_tester_id)) && args.debugMode === true)
-  );
+    Number(debug?.suppressedLowQualityPairCount ?? 0) > 0;
+  const isAdminSearchLab = payload.source === "admin_search_lab";
+  const isBetaTesterSearch = payload.source === "beta_tester_search" || Boolean(payload.beta_tester_id);
+
+  if (isAdminSearchLab && (args.forceLog === true || args.debugMode === true)) return true;
+  if (isBetaTesterSearch) {
+    return hasIssue || args.betaFeedbackSubmitted === true || args.debugMode === true || (wantsPairing && payload.pair_count === 0);
+  }
+
+  return hasIssue;
 }
 
 export async function logSearchHealthEvent(args: LoggerArgs): Promise<void> {

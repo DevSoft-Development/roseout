@@ -155,6 +155,7 @@ type EnterpriseSearchOptions = {
   userLocation?: UserSearchLocation | null;
   createdByUserId?: string | null;
   searchHealthDebug?: boolean;
+  betaFeedbackSubmitted?: boolean;
 };
 
 export async function runEnterpriseSearch(query: string, options?: EnterpriseSearchOptions): Promise<EnterpriseSearchResult> {
@@ -377,6 +378,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       betaAssignmentId: options?.betaAssignmentId ?? null,
       betaTesterId: options?.betaTesterId ?? null,
       debugMode: Boolean(options?.searchHealthDebug ?? options?.betaDebug),
+      betaFeedbackSubmitted: options?.betaFeedbackSubmitted === true,
     });
     return response;
   } catch (error) {
@@ -431,6 +433,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       betaAssignmentId: options?.betaAssignmentId ?? null,
       betaTesterId: options?.betaTesterId ?? null,
       debugMode: Boolean(options?.searchHealthDebug ?? options?.betaDebug),
+      betaFeedbackSubmitted: options?.betaFeedbackSubmitted === true,
     });
     throw error;
   }

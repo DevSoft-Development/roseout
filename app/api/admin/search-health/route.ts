@@ -63,6 +63,17 @@ function topCounts(rows: any[], key: string) {
     .slice(0, 12);
 }
 
+
+function sourceCounts(rows: any[]) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const source = typeof row?.source === "string" && row.source.trim() ? row.source.trim() : "unknown";
+    counts.set(source, (counts.get(source) ?? 0) + 1);
+  }
+  return Array.from(counts, ([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
+}
+
 function commonQueries(rows: any[]) {
   const counts = new Map<string, { query: string; count: number; lastSeen: string | null }>();
   for (const row of rows) {
@@ -144,6 +155,7 @@ export async function GET(req: Request) {
       noPairSearches: aggregateRows.filter((row: any) => row.no_pairs_reason || row.pair_count === 0).length,
       slowSearches: aggregateRows.filter((row: any) => ["slow", "degraded", "critical", "timeout"].includes(String(row.speed_status ?? "")) || Number(row.timing_ms ?? 0) > 3000).length,
       unresolvedEvents,
+      eventsBySource: sourceCounts(aggregateRows),
     };
 
     const slowestSearches = [...aggregateRows]

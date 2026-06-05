@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
         betaAssignmentId: body.betaAssignmentId ?? null,
         betaTesterId: body.betaTesterId ?? null,
         debugMode: true,
+        forceLog: body?.logSearchHealth === true || body?.debug === true || body?.debug?.logSearchHealth === true,
       });
     }
 
