@@ -438,3 +438,40 @@ const sortedRoutePairs = createSearchPairs([routeRestaurant], [routeActivities[2
 assert.deepEqual(sortedRoutePairs.map((pair) => pair.activity.id), ["ra", "rb"], "valid route pairs should sort nearest-first before lower-priority scoring");
 
 console.log("search-quality-regression passed");
+
+const genericRooftopWalkingIntent = normalizeIntent("restaurant and rooftop drinks after walking distance");
+const qualityRestaurants: EnterpriseLocation[] = [
+  { id: "qr1", name: "Dave's Hot Chicken", restaurant_name: "Dave's Hot Chicken", location_type: "restaurant", primary_category: "fast_food", cuisine: "Chicken", latitude: 40.758, longitude: -73.985, rating: 4.5, review_count: 900, has_photos: true, search_document: "fast food quick service hot chicken counter service chain" },
+  { id: "qr2", name: "The Modern", restaurant_name: "The Modern", location_type: "restaurant", primary_category: "fine_dining", cuisine: "New American", latitude: 40.7614, longitude: -73.9779, rating: 4.7, review_count: 2500, has_photos: true, public_visibility_tier: "premium", quality_status: "published", search_document: "fine dining full service upscale romantic date night cocktails dinner restaurant" },
+  { id: "qr3", name: "OLIO E PIÙ Bryant Park", restaurant_name: "OLIO E PIÙ Bryant Park", location_type: "restaurant", primary_category: "full_service", cuisine: "Italian", latitude: 40.7539, longitude: -73.9836, rating: 4.6, review_count: 1300, has_photos: true, quality_status: "verified", search_document: "full service italian restaurant dinner date night wine cocktails" },
+];
+const rankedGenericRestaurants = rankRestaurantResults(qualityRestaurants, genericRooftopWalkingIntent).map((record) => record.name);
+assert(rankedGenericRestaurants.indexOf("The Modern") < rankedGenericRestaurants.indexOf("Dave's Hot Chicken"), "fine dining should outrank fast-food for generic restaurant/dinner queries");
+assert(rankedGenericRestaurants.indexOf("OLIO E PIÙ Bryant Park") < rankedGenericRestaurants.indexOf("Dave's Hot Chicken"), "full-service dinner should outrank fast-food for generic restaurant/dinner queries");
+
+const casualChickenIntent = normalizeIntent("casual chicken dinner and rooftop drinks walking distance");
+const rankedCasualRestaurants = rankRestaurantResults(qualityRestaurants, casualChickenIntent).map((record) => record.name);
+assert(rankedCasualRestaurants.indexOf("Dave's Hot Chicken") <= 1, "requested casual/chicken fit may rank fast-casual candidates higher");
+
+const rooftopActivities: EnterpriseLocation[] = [
+  { id: "qa1", name: "Monarch Rooftop Lounge", activity_name: "Monarch Rooftop Lounge", location_type: "activity", activity_type: "rooftop_lounge", primary_category: "rooftop_bar", latitude: 40.7505, longitude: -73.9864, rating: 4.5, review_count: 1200, has_photos: true, quality_status: "published", search_document: "real rooftop lounge rooftop bar cocktails skyline views terrace nightlife" },
+  { id: "qa2", name: "Rooftop Bars NYC", activity_name: "Rooftop Bars NYC", location_type: "activity", activity_type: "rooftop", primary_category: "listing", latitude: 40.751, longitude: -73.986, rating: 4.8, review_count: 50, has_photos: false, search_document: "best rooftop bars nyc guide to rooftop bars list" },
+  { id: "qa3", name: "Broadway Playhouse", activity_name: "Broadway Playhouse", location_type: "activity", activity_type: "theater", primary_category: "theater", latitude: 40.759, longitude: -73.985, rating: 4.7, review_count: 2000, has_photos: true, search_document: "theater theatre broadway performance musical" },
+];
+const rankedRooftopActivities = rankActivityResults(rooftopActivities, genericRooftopWalkingIntent).map((record) => record.name);
+assert.equal(rankedRooftopActivities[0], "Monarch Rooftop Lounge", "real rooftop lounge/bar should rank first for rooftop drinks");
+assert(!rankedRooftopActivities.includes("Broadway Playhouse"), "theater should be suppressed unless requested for rooftop drinks");
+assert(rankedRooftopActivities.indexOf("Rooftop Bars NYC") > rankedRooftopActivities.indexOf("Monarch Rooftop Lounge"), "aggregator-style rooftop listing should rank below real venues");
+
+const theatreIntent = normalizeIntent("seafood dinner with theatre after");
+assert(rankActivityResults(rooftopActivities, theatreIntent).some((record) => record.name === "Broadway Playhouse"), "theater activities should be allowed when theatre is requested");
+
+const pairDebug = createPairingDebug();
+const pairQualityResults = createSearchPairs(qualityRestaurants, rooftopActivities, genericRooftopWalkingIntent, pairDebug);
+assert.equal(pairDebug.finalPairSortReason, "market_quality_then_distance");
+assert(pairDebug.pairQualityScorePreview.length > 0, "pair quality debug preview should be populated");
+assert(Number((pairQualityResults[0] as any).pairQualityTier) >= Number((pairQualityResults.at(-1) as any).pairQualityTier), "pairs should sort by quality tier before tiny distance differences");
+assert.notEqual(pairQualityResults[0]?.restaurant.name, "Dave's Hot Chicken", "ultra-close fast-food pairs should not dominate stronger generic outing pairs");
+
+assert.equal(toDisplayLabel("Fine_dining"), "Fine Dining", "raw enum labels should be display formatted");
+assert(!cleanDistanceLabel("8 min walk from The Modern • Google walking route")?.includes("Google walking route"), "Google walking route wording should be removed from visible labels");
