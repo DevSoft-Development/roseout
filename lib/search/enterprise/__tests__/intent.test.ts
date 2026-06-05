@@ -1,8 +1,59 @@
 import { describe, expect, it } from "vitest";
-import { normalizeIntent } from "../normalize-intent";
+import { activitySearchTerms, deterministicIntentFromQuery, normalizeIntent } from "../normalize-intent";
 import { resolveSearchMarket } from "../markets";
+import { getEnterpriseIntentFastPathReason, parseEnterpriseIntent } from "../intent-parser";
 
 describe("enterprise search intent", () => {
+  for (const query of [
+    "restaurant with activity walking distance",
+    "dinner and activity nearby",
+    "restaurant and things to do walking distance",
+    "dinner with something to do after",
+  ]) {
+    it(`parses generic mixed outing without the LLM for ${query}`, () => {
+      const intent = deterministicIntentFromQuery(query);
+      expect(intent.searchType).toBe("mixed_outing");
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(true);
+      expect(intent.wantsPairing).toBe(true);
+      expect(activitySearchTerms(intent).length).toBeGreaterThan(0);
+    });
+  }
+
+
+  it("fast-paths generic required activity searches without missing activity signal", async () => {
+    const parsed = await parseEnterpriseIntent("restaurant with activity walking distance", { useLLM: true });
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.fastPathMatched).toBe(true);
+    expect(String(parsed.fastPathReason)).not.toBe("missing_activity_signal");
+    expect(getEnterpriseIntentFastPathReason("restaurant with activity walking distance")).not.toBe("missing_activity_signal");
+    expect(parsed.intent.searchType).toBe("mixed_outing");
+    expect(activitySearchTerms(parsed.intent).length).toBeGreaterThan(0);
+  });
+
+  it("keeps generic walking activity searches pair-required with a 60-minute cap", () => {
+    const intent = deterministicIntentFromQuery("restaurant with activity walking distance");
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.primaryDomain).toBe("mixed");
+    expect(intent.pairingPreference?.requiresPairing).toBe(true);
+    expect(intent.pairingPreference?.distanceMode).toBe("walking");
+    expect(intent.pairingPreference?.maxPairWalkingMinutes).toBe(60);
+    expect(activitySearchTerms(intent).length).toBeGreaterThan(0);
+  });
+
+  it("respects explicit generic walking minutes", () => {
+    const intent = deterministicIntentFromQuery("restaurant and activity 30 minute walk");
+    expect(intent.pairingPreference?.distanceMode).toBe("walking");
+    expect(intent.pairingPreference?.maxPairWalkingMinutes).toBe(30);
+  });
+
+  it("broadens casual relaxed activity searches", () => {
+    const intent = deterministicIntentFromQuery("casual dinner and relaxed activity");
+    const terms = activitySearchTerms(intent);
+    expect(intent.searchType).toBe("mixed_outing");
+    for (const term of ["relaxed activity", "lounge", "arcade", "bowling", "mini golf", "gallery"]) expect(terms).toContain(term);
+  });
+
   it("parses rooftop drinks after steak dinner as a mixed outing", () => {
     const intent = normalizeIntent("steak dinner and rooftop drinks after");
     expect(intent.searchType).toBe("mixed_outing");

@@ -100,6 +100,59 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"],
 };
 
+
+export const GENERIC_ACTIVITY_SIGNAL_TERMS = [
+  "activity",
+  "activities",
+  "thing to do",
+  "things to do",
+  "something to do",
+  "something fun",
+  "fun",
+  "fun activity",
+  "relaxed activity",
+  "chill activity",
+  "low key activity",
+  "date idea",
+  "date activity",
+  "outing",
+  "experience",
+  "entertainment",
+  "indoor activity",
+  "outdoor activity",
+];
+
+export const GENERIC_ACTIVITY_FALLBACK_TERMS = [
+  "activity",
+  "things to do",
+  "entertainment",
+  "experience",
+  "lounge",
+  "arcade",
+  "bowling",
+  "mini golf",
+  "museum",
+  "gallery",
+  "live music",
+  "rooftop",
+  "games",
+  "comedy",
+  "karaoke",
+];
+
+export function hasGenericActivitySignal(query: string) {
+  const q = String(query || "").toLowerCase();
+  return GENERIC_ACTIVITY_SIGNAL_TERMS.some((term) => includesPhrase(q, term));
+}
+
+export function hasOnlyGenericActivityTerms(terms: string[]) {
+  if (!terms.length) return true;
+  const generic = new Set(GENERIC_ACTIVITY_SIGNAL_TERMS.map((term) => term.toLowerCase()));
+  generic.add("thing to do");
+  generic.add("things to do");
+  return terms.every((term) => generic.has(term.toLowerCase()));
+}
+
 export const FOOD_TERMS = uniq(Object.values(FOOD_SYNONYMS).flat());
 export const MEAL_TERMS = uniq(Object.values(MEAL_SYNONYMS).flat());
 export const ACTIVITY_TERMS = uniq(Object.values(ACTIVITY_SYNONYMS).flat());
@@ -194,8 +247,36 @@ export function detectActivityTerms(query: string) {
       (rooftopActivityContext || !ROOFTOP_ACTIVITY_TERMS.has(term)),
   );
 
-  if (includesPhrase(q, "things to do") || includesPhrase(q, "fun things")) {
+  if (includesPhrase(q, "things to do") || includesPhrase(q, "thing to do") || includesPhrase(q, "something to do") || includesPhrase(q, "fun things")) {
     terms.push("things to do", "activity");
+  }
+
+  if (includesPhrase(q, "something fun")) {
+    terms.push("something fun", "fun", "activity");
+  }
+
+  if (includesPhrase(q, "fun activity")) {
+    terms.push("fun activity", "fun", "activity");
+  }
+
+  if (includesPhrase(q, "date idea") || includesPhrase(q, "date activity")) {
+    terms.push("date idea", "date activity", "activity");
+  }
+
+  if (includesPhrase(q, "outing") || includesPhrase(q, "experience") || includesPhrase(q, "entertainment")) {
+    terms.push(...["outing", "experience", "entertainment"].filter((term) => includesPhrase(q, term)));
+  }
+
+  if (includesPhrase(q, "activity") || includesPhrase(q, "activities")) {
+    terms.push("activity");
+  }
+
+  if (includesPhrase(q, "indoor activity")) {
+    terms.push("indoor activity", "activity", "arcade", "bowling", "museum", "gallery", "games");
+  }
+
+  if (includesPhrase(q, "outdoor activity")) {
+    terms.push("outdoor activity", "activity", "park", "rooftop", "walking tour");
   }
 
   if (hasExplicitRelaxedActivity) {

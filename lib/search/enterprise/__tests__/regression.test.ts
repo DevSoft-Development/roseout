@@ -1,8 +1,59 @@
 import { describe, expect, it } from "vitest";
 import { classifySearchHealthEvent } from "../searchHealthLogger";
+import { createPairingDebug, createSearchPairs } from "../pairing";
+import { activitySearchTerms, normalizeIntent } from "../normalize-intent";
 import { names, runFixturePipeline } from "./fixtures";
 
 describe("enterprise search pure fixture regressions", () => {
+  it("keeps generic activity terms actionable and fast-path compatible", () => {
+    const intent = normalizeIntent("restaurant with activity walking distance");
+    expect(activitySearchTerms(intent).length).toBeGreaterThan(0);
+    for (const term of ["activity", "things to do", "entertainment", "experience"]) expect(activitySearchTerms(intent)).toContain(term);
+  });
+
+  it("suppresses restaurant-only fallback when required mixed outing has zero activities", () => {
+    const intent = normalizeIntent("restaurant with activity walking distance");
+    const restaurants = [{ id: "r-only", name: "Fallback Bistro" }];
+    const activities: any[] = [];
+    const pairs: any[] = [];
+    const requiredPairingSuppressedFallback =
+      intent.searchType === "mixed_outing" &&
+      intent.wantsPairing &&
+      intent.needsRestaurant &&
+      intent.needsActivity &&
+      intent.pairingPreference?.requiresPairing === true &&
+      pairs.length === 0;
+    const displayed = requiredPairingSuppressedFallback
+      ? { restaurants: [], activities: [], pairs: [], matched_locations: [] }
+      : { restaurants, activities, pairs, matched_locations: restaurants };
+
+    expect(requiredPairingSuppressedFallback).toBe(true);
+    expect(displayed).toEqual({ restaurants: [], activities: [], pairs: [], matched_locations: [] });
+    expect(activities.length === 0 ? "no_activity_results_for_required_pair" : "no_valid_required_pair").toBe("no_activity_results_for_required_pair");
+  });
+
+  it("suppresses individual fallback cards when required walking pairs fail", () => {
+    const intent = normalizeIntent("restaurant with activity walking distance");
+    const restaurants: any[] = [{ id: "r-far", name: "Far Bistro", latitude: 40.75, longitude: -73.99 }];
+    const activities: any[] = [{ id: "a-far", name: "Far Arcade", latitude: 40.0, longitude: -74.9 }];
+    const pairs = createSearchPairs(restaurants, activities, intent, createPairingDebug());
+    const requiredPairingSuppressedFallback =
+      intent.searchType === "mixed_outing" &&
+      intent.wantsPairing &&
+      intent.needsRestaurant &&
+      intent.needsActivity &&
+      intent.pairingPreference?.requiresPairing === true &&
+      pairs.length === 0;
+    const displayed = requiredPairingSuppressedFallback
+      ? { restaurants: [], activities: [], pairs: [], matched_locations: [] }
+      : { restaurants, activities, pairs, matched_locations: [...restaurants, ...activities] };
+
+    expect(pairs.length).toBe(0);
+    expect(requiredPairingSuppressedFallback).toBe(true);
+    expect(displayed).toEqual({ restaurants: [], activities: [], pairs: [], matched_locations: [] });
+    expect("no_walkable_pair_found").toBe("no_walkable_pair_found");
+  });
+
   it("protects default-market rooftop walking behavior", () => {
     const result = runFixturePipeline("restaurant and rooftop drinks after walking distance");
     expect(result.marketResolution.marketApplied).toBe(true);

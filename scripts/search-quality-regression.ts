@@ -104,6 +104,25 @@ assert.equal(result.intent.pairingPreference?.requireWalkablePair, false);
 assert(result.pairs.length > 0);
 assert(result.pairs.some((p)=>p.pairDistanceMiles != null));
 
+const genericMixedOutingQueries = [
+  "restaurant with activity walking distance",
+  "restaurant with activities walking distance",
+  "dinner and activity nearby",
+  "dinner and activity walking distance",
+  "dinner with something to do after",
+  "restaurant and things to do walking distance",
+  "casual dinner and relaxed activity",
+  "date night dinner and activity",
+  "brunch and activity nearby",
+  "dinner and entertainment nearby",
+];
+for (const query of genericMixedOutingQueries) {
+  const intent = normalizeIntent(query);
+  assert.equal(intent.searchType, "mixed_outing", `${query}: should parse as mixed outing`);
+  assert(intent.needsRestaurant && intent.needsActivity && intent.wantsPairing, `${query}: should need both lanes and pairing`);
+  assert(activitySearchTerms(intent).length > 0, `${query}: activity terms should not be empty`);
+}
+
 result = pairIds("restaurant with activity walking distance");
 assert.equal(result.intent.searchType, "mixed_outing");
 assert.equal(result.intent.pairingPreference?.requiresPairing, true);
