@@ -128,6 +128,7 @@ export const ADMIN_PAGE_ACCESS = {
   featureFlags: ["superadmin"],
   logs: ["superadmin"],
   experienceLogs: ["superadmin", "admin", "experience"],
+  searchHealth: ["superadmin", "admin", "experience", "experience_team"],
 
   import: ["superadmin"],
   dataQuality: ["superadmin", "admin"],

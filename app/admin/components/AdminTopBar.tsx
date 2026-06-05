@@ -316,6 +316,7 @@ export default function AdminTopBar({
           "/admin/dashboard/settings",
           "/admin/dashboard/feature-flags",
           "/admin/dashboard/logs",
+          "/admin/dashboard/search-health",
           "/admin/dashboard/launch-checklist",
           "/admin/dashboard/knowledge-base",
           "/admin/dashboard/beta",
@@ -402,6 +403,11 @@ export default function AdminTopBar({
                 label: "Logs",
                 href: "/admin/dashboard/logs",
                 visible: canAdmin(adminRole, "logs"),
+              },
+              {
+                label: "Search Health",
+                href: "/admin/dashboard/search-health",
+                visible: canAdmin(adminRole, "searchHealth"),
               },
               {
                 label: "Launch Checklist",
@@ -547,6 +553,7 @@ export default function AdminTopBar({
         "/admin/dashboard/settings",
         "/admin/dashboard/feature-flags",
         "/admin/dashboard/logs",
+        "/admin/dashboard/search-health",
         "/admin/dashboard/launch-checklist",
         "/admin/dashboard/knowledge-base",
         "/admin/dashboard/beta",
