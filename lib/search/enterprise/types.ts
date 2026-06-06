@@ -169,6 +169,30 @@ export type EnterprisePair = {
   isWalkable: boolean;
 };
 
+
+export type EnterpriseSearchDebugMetadata = {
+  intentParserSource?: string | null;
+  preIntentSource?: string | null;
+  preIntentMatched?: boolean;
+  preIntentReason?: string | null;
+  intentLlmModel?: string | null;
+  intentLlmFastModel?: string | null;
+  intentLlmFallbackModel?: string | null;
+  llmEnhancementUsed?: boolean;
+  llmFallbackUsed?: boolean;
+  llmTimedOut?: boolean;
+  fallbackIntentUsed?: boolean;
+  intentCacheHit?: boolean;
+  intentCacheKey?: string | null;
+  intentCacheVersion?: string | null;
+  intent_parse_ms?: number | null;
+  llm_ms?: number | null;
+  fast_llm_ms?: number | null;
+  fallback_llm_ms?: number | null;
+  llmError?: string | null;
+  llmFallbackError?: string | null;
+};
+
 export type EnterpriseSearchResult = {
   success: boolean;
   restaurants: EnterpriseLocation[];
@@ -181,5 +205,5 @@ export type EnterpriseSearchResult = {
   reply: string;
   card_counts: { restaurants: number; activities: number; matched_locations: number; pairs: number };
   cardCounts?: { restaurants: number; activities: number; matched_locations: number; pairs: number };
-  debug?: Record<string, unknown>;
+  debug?: Record<string, unknown> & EnterpriseSearchDebugMetadata;
 };

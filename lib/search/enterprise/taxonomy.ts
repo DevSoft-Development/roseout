@@ -96,7 +96,13 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   bookstore: ["bookstore", "library event"],
   park: ["park", "waterfront", "pier", "beach", "boardwalk", "garden", "botanical garden", "zoo", "aquarium", "boat ride", "cruise", "rooftop view", "observation deck", "walking tour", "sightseeing"],
   spa: ["spa", "massage", "sauna", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"],
-  sports: ["skating", "roller skating", "ice skating", "basketball", "golf", "driving range", "batting cages", "climbing", "rock climbing", "gym", "sports bar"],
+  sports: [
+    "skating", "roller skating", "ice skating", "basketball", "golf", "driving range", "batting cages", "climbing", "rock climbing", "gym",
+    "sports bar", "sports lounge", "bar with tv", "bar with tvs", "bar with screens", "watch party", "game day", "live sports", "pub", "tavern", "bar and grill",
+  ],
+  "sports bar": [
+    "sports bar", "sports lounge", "bar with tv", "bar with tvs", "bar with screens", "tv bar", "tvs", "big screen", "big screens", "watch party", "game day", "game night", "live sports", "sports viewing", "pub", "tavern", "bar and grill",
+  ],
   shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"],
 };
 

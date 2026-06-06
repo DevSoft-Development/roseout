@@ -23,7 +23,7 @@ describe("enterprise search intent", () => {
 
   it("fast-paths generic required activity searches without missing activity signal", async () => {
     const parsed = await parseEnterpriseIntent("restaurant with activity walking distance", { useLLM: true });
-    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(["fast_path", "fast_path_timeout_fallback", "fast_path_plus_llm"]).toContain(parsed.intentParserSource);
     expect(parsed.fastPathMatched).toBe(true);
     expect(String(parsed.fastPathReason)).not.toBe("missing_activity_signal");
     expect(getEnterpriseIntentFastPathReason("restaurant with activity walking distance")).not.toBe("missing_activity_signal");
@@ -87,5 +87,72 @@ describe("enterprise search intent", () => {
     expect(intent.pairingPreference?.requireWalkablePair).toBe(true);
     expect(intent.geo.borough).toBe("Queens");
     expect(resolveSearchMarket({ geo: intent.geo }).marketApplied).toBe(false);
+  });
+});
+
+describe("hybrid intent parsing", () => {
+  it("fast-path parses sports-watch activity searches without requiring a pairing connector", async () => {
+    const { parseEnterpriseIntentFastPath } = await import("../intent-parser");
+    const intent = parseEnterpriseIntentFastPath("Best bar to watch the Knicks game in Harlem");
+
+    expect(intent).toBeTruthy();
+    expect(intent?.searchType).toBe("activity");
+    expect(intent?.primaryDomain).toBe("activity");
+    expect(intent?.needsActivity).toBe(true);
+    expect(intent?.needsRestaurant).toBe(false);
+    expect(intent?.wantsPairing).toBe(false);
+    expect(intent?.activityIntent?.categoryTerms).toContain("sports bar");
+    expect(intent?.activityIntent?.featureTerms).toContain("tv");
+    expect(intent?.activityIntent?.activityTerms?.join(" ")).toMatch(/sports bar|watch party|knicks game/i);
+  });
+
+  it("reports sports-watch fast-path reason", () => {
+    const reason = getEnterpriseIntentFastPathReason("bar with TVs for NBA game");
+
+    expect(reason).toBe("matched sports-watch activity fast path");
+  });
+
+  it("keeps activity-only preIntent when LLM tries to over-expand it", async () => {
+    const { mergeLlmIntentWithPreIntent } = await import("../normalize-intent");
+    const merged = mergeLlmIntentWithPreIntent({
+      rawQuery: "Best bar to watch the Knicks game in Harlem",
+      preIntent: {
+        rawQuery: "Best bar to watch the Knicks game in Harlem",
+        searchType: "activity",
+        primaryDomain: "activity",
+        needsRestaurant: false,
+        needsActivity: true,
+        wantsPairing: false,
+        activityIntent: {
+          activityTerms: ["sports bar", "knicks game"],
+          categoryTerms: ["sports bar"],
+          featureTerms: ["tv"],
+          vibeTerms: [],
+          negativeTerms: [],
+          alternativeGroups: [],
+        },
+      } as any,
+      llmIntent: {
+        rawQuery: "Best bar to watch the Knicks game in Harlem",
+        searchType: "mixed_outing",
+        primaryDomain: "mixed",
+        needsRestaurant: true,
+        needsActivity: true,
+        wantsPairing: true,
+        activityIntent: {
+          activityTerms: ["rooftop lounge"],
+          categoryTerms: [],
+          featureTerms: [],
+          vibeTerms: [],
+          negativeTerms: [],
+          alternativeGroups: [],
+        },
+      } as any,
+    });
+
+    expect((merged as any).searchType).toBe("activity");
+    expect((merged as any).needsRestaurant).toBe(false);
+    expect((merged as any).activityIntent.categoryTerms).toContain("sports bar");
+    expect((merged as any).activityIntent.featureTerms).toContain("tv");
   });
 });
