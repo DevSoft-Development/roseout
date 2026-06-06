@@ -360,7 +360,9 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
       query,
     ) ||
     (/date night/i.test(query) &&
-      /walkable|walking distance|everything|outing|plan|activity|things to do|something fun/i.test(query));
+      /walkable|walking distance|everything|outing|plan|activity|things to do|something fun/i.test(
+        query,
+      ));
   const hookahOnly =
     acts.includes("hookah") &&
     !/dinner|restaurant|food|eat|dining/i.test(query);
@@ -644,7 +646,7 @@ export function normalizeIntent(
       : Array.isArray(base.vibe)
         ? base.vibe
         : [];
-  return merged;
+  return cleanupSportsWatchIntentTerms(merged);
 }
 
 export function mergeLlmIntentWithPreIntent(args: {
@@ -660,10 +662,14 @@ export function mergeLlmIntentWithPreIntent(args: {
   const llm = { ...llmIntent } as any;
 
   const rawHasFood =
-    /\b(restaurant|dinner|brunch|lunch|breakfast|eat|food|steak|seafood|sushi|pizza|tacos)\b/.test(q);
+    /\b(restaurant|dinner|brunch|lunch|breakfast|eat|food|steak|seafood|sushi|pizza|tacos)\b/.test(
+      q,
+    );
 
   const rawHasActivity =
-    /\b(activity|drinks|cocktails|bar|lounge|rooftop|hookah|comedy|theater|theatre|museum|arcade|bowling|karaoke|sports bar|watch|game)\b/.test(q);
+    /\b(activity|drinks|cocktails|bar|lounge|rooftop|hookah|comedy|theater|theatre|museum|arcade|bowling|karaoke|sports bar|watch|game)\b/.test(
+      q,
+    );
 
   if (preIntent.searchType === "activity" && !rawHasFood && rawHasActivity) {
     llm.searchType = "activity";
@@ -673,7 +679,11 @@ export function mergeLlmIntentWithPreIntent(args: {
     llm.wantsPairing = false;
   }
 
-  if (/\b(watch|game|knicks|nets|yankees|mets|giants|jets|rangers|nba|nfl|mlb|nhl|ufc)\b/.test(q)) {
+  if (
+    /\b(watch|game|knicks|nets|yankees|mets|giants|jets|rangers|nba|nfl|mlb|nhl|ufc)\b/.test(
+      q,
+    )
+  ) {
     llm.activityIntent = {
       ...(llm.activityIntent ?? {}),
       activityTerms: uniq([
@@ -719,7 +729,10 @@ export function restaurantSearchTerms(intent: SearchIntent) {
   );
 }
 
-function shouldAddGenericActivityFallback(intent: SearchIntent, terms: string[]) {
+function shouldAddGenericActivityFallback(
+  intent: SearchIntent,
+  terms: string[],
+) {
   return (
     intent.searchType === "mixed_outing" &&
     intent.needsActivity === true &&
@@ -748,7 +761,10 @@ export function activitySearchTerms(intent: SearchIntent) {
   const withFallback = shouldAddGenericActivityFallback(intent, raw)
     ? uniq([...raw, ...genericActivityFallbackTerms(intent)])
     : raw;
-  const cleaned = stripBlockedTerms(withFallback, ACTIVITY_SEARCH_TERM_BLOCKLIST);
+  const cleaned = stripBlockedTerms(
+    withFallback,
+    ACTIVITY_SEARCH_TERM_BLOCKLIST,
+  );
 
   return cleanPlaceOfWorshipTerms(cleaned, intent.rawQuery);
 }
@@ -824,12 +840,127 @@ export function hasSportsWatchIntent(query: string | null | undefined) {
     .replaceAll("-", " ");
 
   const sportsOrGame =
-    /\b(watch|showing|viewing|game|match|fight|ufc|boxing|nba|nfl|mlb|nhl|wnba|soccer|football|basketball|baseball|hockey|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils)\b/.test(q);
+    /\b(watch|showing|viewing|game|match|fight|ufc|boxing|nba|nfl|mlb|nhl|wnba|soccer|football|basketball|baseball|hockey|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils)\b/.test(
+      q,
+    );
 
   const venueOrViewing =
-    /\b(bar|sports bar|sports lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens|watch party|game day|game night|live sports)\b/.test(q);
+    /\b(bar|sports bar|sports lounge|sport lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens|watch party|game day|game night|live sports)\b/.test(
+      q,
+    );
 
   return sportsOrGame && venueOrViewing;
+}
+
+const SPORTS_WATCH_BLOCKED_ACTIVITY_TERMS = new Set([
+  "nightlife",
+  "rooftop lounge",
+  "rooftop",
+  "roof top",
+  "club",
+  "dance club",
+  "dancing",
+  "nightclub",
+  "live dj",
+  "dj",
+  "speakeasy",
+]);
+
+const SPORTS_WATCH_REQUIRED_ACTIVITY_TERMS = [
+  "sports bar",
+  "sports lounge",
+  "sport lounge",
+  "bar",
+  "pub",
+  "tavern",
+  "bar and grill",
+  "tv",
+  "tvs",
+  "screens",
+  "watch party",
+  "game day",
+  "game night",
+  "live sports",
+  "sports viewing",
+];
+
+const sportsWatchRemovedActivityTermsByIntent = new WeakMap<
+  SearchIntent,
+  string[]
+>();
+
+function normalizeSportsWatchTerm(term: string) {
+  return String(term || "")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function cleanupSportsWatchActivityTerms(terms: string[]) {
+  return uniq([
+    ...terms
+      .map(normalizeSportsWatchTerm)
+      .filter((term) => term && !SPORTS_WATCH_BLOCKED_ACTIVITY_TERMS.has(term)),
+    ...SPORTS_WATCH_REQUIRED_ACTIVITY_TERMS,
+  ]);
+}
+
+export function sportsWatchTermsRemoved(terms: string[]) {
+  return uniq(
+    terms
+      .map(normalizeSportsWatchTerm)
+      .filter((term) => term && SPORTS_WATCH_BLOCKED_ACTIVITY_TERMS.has(term)),
+  );
+}
+
+export function cleanupSportsWatchIntentTerms(
+  intent: SearchIntent,
+): SearchIntent {
+  if (!hasSportsWatchIntent(intent.rawQuery)) return intent;
+
+  const activityIntent = intent.activityIntent ?? createEmptyActivityIntent();
+  const removedTerms = sportsWatchTermsRemoved(
+    activityIntent.activityTerms ?? [],
+  );
+
+  const cleaned: SearchIntent = {
+    ...intent,
+    searchType: "activity",
+    primaryDomain: "activity",
+    needsRestaurant: false,
+    needsActivity: true,
+    wantsPairing: false,
+    activityIntent: {
+      ...activityIntent,
+      activityTerms: cleanupSportsWatchActivityTerms(
+        activityIntent.activityTerms ?? [],
+      ),
+      categoryTerms: uniq([
+        "sports bar",
+        ...(activityIntent.categoryTerms ?? []).map(normalizeSportsWatchTerm),
+      ]),
+      featureTerms: uniq([
+        "tv",
+        ...(activityIntent.featureTerms ?? []).map(normalizeSportsWatchTerm),
+      ]),
+    },
+    restaurantIntent: {
+      ...createEmptyRestaurantIntent(),
+    },
+    pairingPreference: {
+      requiresPairing: false,
+      distanceMode: "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+  };
+
+  sportsWatchRemovedActivityTermsByIntent.set(cleaned, removedTerms);
+
+  return cleaned;
 }
 
 export function pruneSportsWatchActivityTerms(
@@ -837,43 +968,27 @@ export function pruneSportsWatchActivityTerms(
   terms: string[] = activitySearchTermsOriginal(intent),
 ) {
   if (!hasSportsWatchIntent(intent.rawQuery)) return terms;
-
-  const pruned = terms.filter((term) => {
-    const t = String(term || "").toLowerCase();
-
-    return !/\b(rooftop lounge|rooftop|roof top|club|dance club|dancing|nightclub|live dj|dj|speakeasy|nightlife)\b/.test(t);
-  });
-
-  return uniq([
-    ...pruned,
-    "sports bar",
-    "sports lounge",
-    "bar",
-    "pub",
-    "tavern",
-    "bar and grill",
-    "tv",
-    "tvs",
-    "screens",
-    "watch party",
-    "game day",
-    "live sports",
-  ]);
+  return cleanupSportsWatchActivityTerms(terms);
 }
 
 export function activityRpcTerms(intent: SearchIntent) {
   const original = activitySearchTermsOriginal(intent);
   const afterDomainPruning = pruneActivityRpcTerms(intent, original);
-  const afterSportsWatchPruning = pruneSportsWatchActivityTerms(intent, afterDomainPruning);
+  const afterSportsWatchPruning = pruneSportsWatchActivityTerms(
+    intent,
+    afterDomainPruning,
+  );
   const terms = pruneRelaxedActivityTerms(intent, afterSportsWatchPruning);
 
   const kept = new Set(terms.map((term) => term.toLowerCase()));
-  const sportsWatchKept = new Set(afterSportsWatchPruning.map((term) => term.toLowerCase()));
 
   return {
     terms,
     removedForSportsWatchIntent: hasSportsWatchIntent(intent.rawQuery)
-      ? afterDomainPruning.filter((term) => !sportsWatchKept.has(term.toLowerCase()))
+      ? uniq([
+          ...(sportsWatchRemovedActivityTermsByIntent.get(intent) ?? []),
+          ...sportsWatchTermsRemoved(afterDomainPruning),
+        ])
       : [],
     removedForRelaxedIntent: hasRelaxedActivityIntent(intent.rawQuery)
       ? afterSportsWatchPruning.filter((term) => !kept.has(term.toLowerCase()))
