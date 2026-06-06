@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { clampScore } from "@/lib/clampScore";
-import ScoreBadge from "@/components/ScoreBadge";
 import GoogleAddressAutocomplete, {
   type GoogleAddressFields,
 } from "@/components/GoogleAddressAutocomplete";
@@ -15,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
+type QualityStatus = "Excellent" | "Strong" | "Needs review" | "Incomplete";
 
 type FormState = {
   name: string;
@@ -110,6 +110,27 @@ function normalizeLocationTypeParam(value: string): LocationType | null {
 function hasValue(value: unknown) {
   if (Array.isArray(value)) return value.length > 0;
   return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function getQualityStatus(score: number, readinessPercent: number): QualityStatus {
+  if (score >= 90 && readinessPercent >= 85) return "Excellent";
+  if (score >= 75 && readinessPercent >= 70) return "Strong";
+  if (score >= 55) return "Needs review";
+
+  return "Incomplete";
+}
+
+function getQualityStatusClass(status: QualityStatus) {
+  switch (status) {
+    case "Excellent":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "Strong":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "Needs review":
+      return "border-amber-200 bg-amber-50 text-amber-800";
+    case "Incomplete":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+  }
 }
 
 function calculateUpdatedScore(location: LocationRecord) {
@@ -526,6 +547,11 @@ export default function EditLocationPage() {
     [form, mainImage]
   );
   const completedReadiness = readiness.filter(([, complete]) => complete).length;
+  const readinessPercent = readiness.length
+    ? Math.round((completedReadiness / readiness.length) * 100)
+    : 0;
+  const qualityStatus = getQualityStatus(safeScore, readinessPercent);
+  const qualityStatusClass = getQualityStatusClass(qualityStatus);
 
   const setMainImage = (url: string) => {
     setForm((prev) => ({
@@ -937,7 +963,7 @@ export default function EditLocationPage() {
             </EditorSection>
           </section>
 
-          <aside className="space-y-4 xl:sticky xl:top-[152px] xl:self-start">
+          <aside className="space-y-4 xl:sticky xl:top-[96px] xl:self-start">
             <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#fffaf6] text-[#1f1713] shadow-2xl">
               {mainImage ? (
                 <Image
@@ -973,16 +999,58 @@ export default function EditLocationPage() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-[#fffaf6] p-5 text-[#1f1713] shadow-2xl">
-              <div className="flex items-center justify-between gap-4">
+            <section className="rounded-[24px] border border-black/10 bg-[#fffaf6] p-5 text-[#1f1713] shadow-sm">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-black/40">Publish Readiness</p>
-                  <h3 className="mt-1 text-2xl font-black">{completedReadiness}/{readiness.length} ready</h3>
+                  <h3 className="text-base font-black text-[#1f1713]">Location Quality</h3>
+                  <p className="mt-1 text-sm font-medium leading-5 text-black/50">
+                    Operational readiness for search, publishing, and booking workflows.
+                  </p>
                 </div>
-                <div className="rounded-[1rem] border border-black/10 bg-white p-3">
-                  <ScoreBadge score={safeScore} />
+                <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${qualityStatusClass}`}>
+                  {qualityStatus}
+                </span>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-black/10 bg-white p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40">
+                    Readiness
+                  </p>
+                  <div className="mt-2 flex items-end gap-1">
+                    <span className="text-2xl font-black text-[#1f1713]">{completedReadiness}</span>
+                    <span className="pb-1 text-xs font-bold text-black/45">of {readiness.length}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-black/10 bg-white p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40">
+                    Quality Score
+                  </p>
+                  <div className="mt-2 flex items-end gap-1">
+                    <span className="text-2xl font-black text-[#1f1713]">{safeScore}</span>
+                    <span className="pb-1 text-xs font-bold text-black/45">/100</span>
+                  </div>
                 </div>
               </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-bold text-black/55">Completion</span>
+                  <span className="text-xs font-black text-black/65">{readinessPercent}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-black/10">
+                  <div
+                    className="h-full rounded-full bg-[#ff1654]"
+                    style={{ width: `${readinessPercent}%` }}
+                  />
+                </div>
+              </div>
+
+              <p className="mt-4 text-sm font-medium leading-5 text-black/50">
+                This location is evaluated for listing completeness, search visibility, media, contact details, and admin approval.
+              </p>
+
               <div className="mt-5 space-y-2">
                 {readiness.map(([label, complete]) => (
                   <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3">
@@ -991,7 +1059,7 @@ export default function EditLocationPage() {
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
             <div className="grid grid-cols-2 gap-3">
               <MetricCard label="Score" value={`${safeScore}`} dark />
