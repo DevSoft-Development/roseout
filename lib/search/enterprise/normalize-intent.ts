@@ -724,6 +724,21 @@ export function hasRelaxedActivityIntent(query: string | null | undefined) {
   );
 }
 
+export function hasSportsWatchIntent(query: string | null | undefined) {
+  const q = String(query ?? "")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+
+  const sportsOrGame =
+    /\b(watch|showing|viewing|game|match|fight|ufc|boxing|nba|nfl|mlb|nhl|wnba|soccer|football|basketball|baseball|hockey|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils)\b/.test(q);
+
+  const venueOrViewing =
+    /\b(bar|sports bar|sports lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens|watch party|game day|game night|live sports)\b/.test(q);
+
+  return sportsOrGame && venueOrViewing;
+}
+
 export function hasSpecificRestaurantFoodOrCuisine(intent: SearchIntent) {
   return [
     ...intent.restaurantIntent.foodTerms,
@@ -758,15 +773,51 @@ export function pruneRelaxedActivityTerms(
   );
 }
 
+export function pruneSportsWatchActivityTerms(
+  intent: SearchIntent,
+  terms: string[] = activitySearchTermsOriginal(intent),
+) {
+  if (!hasSportsWatchIntent(intent.rawQuery)) return terms;
+
+  const pruned = terms.filter((term) => {
+    const t = String(term || "").toLowerCase();
+
+    return !/\b(rooftop lounge|rooftop|roof top|club|dance club|dancing|nightclub|live dj|dj|speakeasy|nightlife)\b/.test(t);
+  });
+
+  return uniq([
+    ...pruned,
+    "sports bar",
+    "sports lounge",
+    "bar",
+    "pub",
+    "tavern",
+    "bar and grill",
+    "tv",
+    "tvs",
+    "screens",
+    "watch party",
+    "game day",
+    "live sports",
+  ]);
+}
+
 export function activityRpcTerms(intent: SearchIntent) {
   const original = activitySearchTermsOriginal(intent);
   const afterDomainPruning = pruneActivityRpcTerms(intent, original);
-  const terms = pruneRelaxedActivityTerms(intent, afterDomainPruning);
+  const afterSportsWatchPruning = pruneSportsWatchActivityTerms(intent, afterDomainPruning);
+  const terms = pruneRelaxedActivityTerms(intent, afterSportsWatchPruning);
+
   const kept = new Set(terms.map((term) => term.toLowerCase()));
+  const sportsWatchKept = new Set(afterSportsWatchPruning.map((term) => term.toLowerCase()));
+
   return {
     terms,
+    removedForSportsWatchIntent: hasSportsWatchIntent(intent.rawQuery)
+      ? afterDomainPruning.filter((term) => !sportsWatchKept.has(term.toLowerCase()))
+      : [],
     removedForRelaxedIntent: hasRelaxedActivityIntent(intent.rawQuery)
-      ? afterDomainPruning.filter((term) => !kept.has(term.toLowerCase()))
+      ? afterSportsWatchPruning.filter((term) => !kept.has(term.toLowerCase()))
       : [],
   };
 }
