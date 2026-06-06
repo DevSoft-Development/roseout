@@ -1,7 +1,15 @@
 import OpenAI from "openai";
 import type { SearchIntent } from "./types";
-import { deterministicIntentFromQuery, mergeLlmIntentWithPreIntent, normalizeIntent } from "./normalize-intent";
-import { detectActivityTerms, detectFoodTerms, detectMealTerms } from "./taxonomy";
+import {
+  deterministicIntentFromQuery,
+  mergeLlmIntentWithPreIntent,
+  normalizeIntent,
+} from "./normalize-intent";
+import {
+  detectActivityTerms,
+  detectFoodTerms,
+  detectMealTerms,
+} from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
   SEARCH_INTENT_FAST_MODEL,
@@ -9,9 +17,12 @@ import {
   SEARCH_INTENT_LLM_TIMEOUT_MS,
   SEARCH_INTENT_FALLBACK_TIMEOUT_MS,
 } from "./model-config";
-import { buildSearchIntentCacheKey, getCachedSearchIntent, setCachedSearchIntent } from "./searchIntentCache";
+import {
+  buildSearchIntentCacheKey,
+  getCachedSearchIntent,
+  setCachedSearchIntent,
+} from "./searchIntentCache";
 import { withTimeout } from "./timeout";
-
 
 const FAST_PATH_CONNECTORS = [
   "and",
@@ -103,17 +114,61 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "outdoor activity",
 ];
 
-
 const FAST_PATH_SPORTS_WATCH_TERMS = [
-  "sports bar", "sports lounge", "bar with tv", "bar with tvs", "bar with screens",
-  "watch the game", "watch game", "watch party", "game day", "game night", "live sports",
-  "showing the game", "nba game", "nfl game", "mlb game", "nhl game", "ufc fight",
-  "boxing fight", "knicks game", "nets game", "yankees game", "mets game", "giants game",
-  "jets game", "rangers game", "islanders game", "devils game",
+  "sports bar",
+  "sports lounge",
+  "bar with tv",
+  "bar with tvs",
+  "bar with screens",
+  "watch the game",
+  "watch game",
+  "watch party",
+  "game day",
+  "game night",
+  "live sports",
+  "showing the game",
+  "nba game",
+  "nfl game",
+  "mlb game",
+  "nhl game",
+  "ufc fight",
+  "boxing fight",
+  "knicks game",
+  "nets game",
+  "yankees game",
+  "mets game",
+  "giants game",
+  "jets game",
+  "rangers game",
+  "islanders game",
+  "devils game",
 ];
 
-const SPORTS_TEAM_TERMS = ["knicks", "nets", "yankees", "mets", "giants", "jets", "rangers", "islanders", "devils"];
-const SPORTS_LEAGUE_TERMS = ["nba", "nfl", "mlb", "nhl", "wnba", "ufc", "boxing", "soccer", "football", "basketball", "baseball", "hockey"];
+const SPORTS_TEAM_TERMS = [
+  "knicks",
+  "nets",
+  "yankees",
+  "mets",
+  "giants",
+  "jets",
+  "rangers",
+  "islanders",
+  "devils",
+];
+const SPORTS_LEAGUE_TERMS = [
+  "nba",
+  "nfl",
+  "mlb",
+  "nhl",
+  "wnba",
+  "ufc",
+  "boxing",
+  "soccer",
+  "football",
+  "basketball",
+  "baseball",
+  "hockey",
+];
 
 type EnterpriseIntentFastPathResult = {
   intent: Partial<SearchIntent> | null;
@@ -122,20 +177,29 @@ type EnterpriseIntentFastPathResult = {
 };
 
 function includesFastPathPhrase(query: string, term: string) {
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const escaped = term
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(query);
 }
 
 function uniqueTerms(items: string[]) {
-  return Array.from(new Set(items.map((item) => item.toLowerCase().trim()).filter(Boolean)));
+  return Array.from(
+    new Set(items.map((item) => item.toLowerCase().trim()).filter(Boolean)),
+  );
 }
 
 function detectFastPathConnector(query: string) {
-  return FAST_PATH_CONNECTORS.find((term) => includesFastPathPhrase(query, term)) ?? null;
+  return (
+    FAST_PATH_CONNECTORS.find((term) => includesFastPathPhrase(query, term)) ??
+    null
+  );
 }
 
 function detectFastPathRestaurantSignals(query: string) {
-  const explicitSignals = FAST_PATH_RESTAURANT_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+  const explicitSignals = FAST_PATH_RESTAURANT_SIGNAL_TERMS.filter((term) =>
+    includesFastPathPhrase(query, term),
+  );
   return uniqueTerms([
     ...explicitSignals,
     ...detectMealTerms(query),
@@ -144,27 +208,42 @@ function detectFastPathRestaurantSignals(query: string) {
 }
 
 function hasRooftopDrinkActivityPhrase(query: string) {
-  return /\b(rooftop|roof top)\s+(drinks?|cocktails?|bar|lounge|nightlife)\b/i.test(query) ||
-    /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(query);
+  return (
+    /\b(rooftop|roof top)\s+(drinks?|cocktails?|bar|lounge|nightlife)\b/i.test(
+      query,
+    ) ||
+    /\b(drinks?|cocktails?|bar|lounge|nightlife)\s+(on|at)?\s*(a\s+)?(rooftop|roof top)\b/i.test(
+      query,
+    )
+  );
 }
 
 function hasStandaloneRooftopSecondStop(query: string) {
   const q = String(query || "").toLowerCase();
 
   const connectorBeforeRooftop =
-    /\b(?:with|and|then|after|afterward|afterwards|next|later|plus|followed by|before)\b[\s\w'-]{0,40}\b(?:a\s+)?(?:rooftop|roof top)\b/i.test(q);
+    /\b(?:with|and|then|after|afterward|afterwards|next|later|plus|followed by|before)\b[\s\w'-]{0,40}\b(?:a\s+)?(?:rooftop|roof top)\b/i.test(
+      q,
+    );
 
   const rooftopBeforeAfter =
-    /\b(?:rooftop|roof top)\b[\s\w'-]{0,20}\b(?:after|afterward|afterwards|next|later)\b/i.test(q);
+    /\b(?:rooftop|roof top)\b[\s\w'-]{0,20}\b(?:after|afterward|afterwards|next|later)\b/i.test(
+      q,
+    );
 
   const rooftopDinner =
-    /\b(?:rooftop|roof top)\s+(?:dinner|restaurant|dining|brunch|lunch|breakfast)\b/i.test(q);
+    /\b(?:rooftop|roof top)\s+(?:dinner|restaurant|dining|brunch|lunch|breakfast)\b/i.test(
+      q,
+    );
 
   return (connectorBeforeRooftop || rooftopBeforeAfter) && !rooftopDinner;
 }
 
 function hasRooftopActivityPhrase(query: string) {
-  return hasRooftopDrinkActivityPhrase(query) || hasStandaloneRooftopSecondStop(query);
+  return (
+    hasRooftopDrinkActivityPhrase(query) ||
+    hasStandaloneRooftopSecondStop(query)
+  );
 }
 
 function isRooftopFastPathSignal(term: string) {
@@ -173,17 +252,18 @@ function isRooftopFastPathSignal(term: string) {
 
 function detectFastPathActivitySignals(query: string) {
   const rooftopActivity = hasRooftopActivityPhrase(query);
-  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) =>
-    includesFastPathPhrase(query, term) && (rooftopActivity || !isRooftopFastPathSignal(term)),
+  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter(
+    (term) =>
+      includesFastPathPhrase(query, term) &&
+      (rooftopActivity || !isRooftopFastPathSignal(term)),
   );
-  return uniqueTerms([
-    ...explicitSignals,
-    ...detectActivityTerms(query),
-  ]);
+  return uniqueTerms([...explicitSignals, ...detectActivityTerms(query)]);
 }
 
 function detectFastPathActivityIntentTerms(query: string) {
-  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) => includesFastPathPhrase(query, term));
+  const explicitSignals = FAST_PATH_ACTIVITY_SIGNAL_TERMS.filter((term) =>
+    includesFastPathPhrase(query, term),
+  );
 
   if (hasRooftopActivityPhrase(query)) {
     return uniqueTerms([
@@ -209,7 +289,9 @@ function detectFastPathActivityIntentTerms(query: string) {
   const detected = uniqueTerms(detectActivityTerms(query));
   if (detected.length) return detected;
 
-  return uniqueTerms(explicitSignals.filter((term) => !isRooftopFastPathSignal(term)));
+  return uniqueTerms(
+    explicitSignals.filter((term) => !isRooftopFastPathSignal(term)),
+  );
 }
 
 function emptyGeoIntent() {
@@ -229,7 +311,6 @@ function emptyGeoIntent() {
   };
 }
 
-
 function hasSportsWatchFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
 
@@ -241,25 +322,43 @@ function hasSportsWatchFastPathIntent(query: string) {
     /\b(watch|showing|viewing|see)\b/.test(q) &&
     /\b(game|match|fight|sports)\b/.test(q);
 
-  const hasTeamOrLeague = [...SPORTS_TEAM_TERMS, ...SPORTS_LEAGUE_TERMS].some((term) =>
-    includesFastPathPhrase(q, term),
+  const hasTeamOrLeague = [...SPORTS_TEAM_TERMS, ...SPORTS_LEAGUE_TERMS].some(
+    (term) => includesFastPathPhrase(q, term),
   );
 
   const hasVenue =
-    /\b(bar|sports bar|sports lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens)\b/.test(q);
+    /\b(bar|sports bar|sports lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens)\b/.test(
+      q,
+    );
 
-  return explicitSportsWatch || (hasWatchLanguage && hasTeamOrLeague && hasVenue);
+  return (
+    explicitSportsWatch || (hasWatchLanguage && hasTeamOrLeague && hasVenue)
+  );
 }
 
 function sportsWatchActivityTermsFromQuery(query: string) {
   const q = String(query || "").toLowerCase();
 
-  const teamTerms = SPORTS_TEAM_TERMS.filter((term) => includesFastPathPhrase(q, term));
-  const leagueTerms = SPORTS_LEAGUE_TERMS.filter((term) => includesFastPathPhrase(q, term));
+  const teamTerms = SPORTS_TEAM_TERMS.filter((term) =>
+    includesFastPathPhrase(q, term),
+  );
+  const leagueTerms = SPORTS_LEAGUE_TERMS.filter((term) =>
+    includesFastPathPhrase(q, term),
+  );
 
   const terms = [
-    "sports bar", "sports lounge", "bar", "pub", "tavern", "bar and grill", "tv", "tvs",
-    "screens", "watch party", "game day", "live sports",
+    "sports bar",
+    "sports lounge",
+    "bar",
+    "pub",
+    "tavern",
+    "bar and grill",
+    "tv",
+    "tvs",
+    "screens",
+    "watch party",
+    "game day",
+    "live sports",
     ...teamTerms.map((term) => `${term} game`),
     ...leagueTerms.map((term) => `${term} game`),
   ];
@@ -282,7 +381,14 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
     needsActivity: true,
     wantsPairing: false,
     restaurantIntent: {
-      mealTerms: [], foodTerms: [], cuisineTerms: [], categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [], alternativeGroups: [],
+      mealTerms: [],
+      foodTerms: [],
+      cuisineTerms: [],
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+      alternativeGroups: [],
     },
     activityIntent: {
       activityTerms,
@@ -307,7 +413,9 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
   return intent;
 }
 
-function createEnterpriseIntentFastPathResult(rawQuery: string): EnterpriseIntentFastPathResult {
+function createEnterpriseIntentFastPathResult(
+  rawQuery: string,
+): EnterpriseIntentFastPathResult {
   const query = rawQuery.toLowerCase().trim();
 
   if (hasSportsWatchFastPathIntent(query)) {
@@ -391,11 +499,15 @@ function createEnterpriseIntentFastPathResult(rawQuery: string): EnterpriseInten
   };
 }
 
-export function parseEnterpriseIntentFastPath(rawQuery: string): Partial<SearchIntent> | null {
+export function parseEnterpriseIntentFastPath(
+  rawQuery: string,
+): Partial<SearchIntent> | null {
   return createEnterpriseIntentFastPathResult(rawQuery).intent;
 }
 
-export function getEnterpriseIntentFastPathReason(rawQuery: string): string | null {
+export function getEnterpriseIntentFastPathReason(
+  rawQuery: string,
+): string | null {
   return createEnterpriseIntentFastPathResult(rawQuery).reason;
 }
 
@@ -481,7 +593,9 @@ function sanitizeLlmIntent(value: unknown) {
         ? value.needsRestaurant
         : undefined,
     needsActivity:
-      typeof value.needsActivity === "boolean" ? value.needsActivity : undefined,
+      typeof value.needsActivity === "boolean"
+        ? value.needsActivity
+        : undefined,
     wantsPairing:
       typeof value.wantsPairing === "boolean" ? value.wantsPairing : undefined,
 
@@ -561,7 +675,10 @@ function mergeLlmWithBaseline(
     return baseline;
   }
 
-  const normalizedLlm = normalizeIntent(query, safeLlm as Partial<SearchIntent>);
+  const normalizedLlm = normalizeIntent(
+    query,
+    safeLlm as Partial<SearchIntent>,
+  );
 
   return {
     ...baseline,
@@ -672,7 +789,8 @@ function mergeLlmWithBaseline(
       region: normalizedLlm.geo?.region || baseline.geo?.region || null,
       state: normalizedLlm.geo?.state || baseline.geo?.state || null,
       latitude: baseline.geo?.latitude ?? normalizedLlm.geo?.latitude ?? null,
-      longitude: baseline.geo?.longitude ?? normalizedLlm.geo?.longitude ?? null,
+      longitude:
+        baseline.geo?.longitude ?? normalizedLlm.geo?.longitude ?? null,
       radiusMiles:
         baseline.geo?.radiusMiles ?? normalizedLlm.geo?.radiusMiles ?? null,
     },
@@ -808,11 +926,14 @@ async function enhanceIntentWithLLM(args: {
 
   const rawText = completion.choices[0]?.message?.content ?? "{}";
   const parsed = extractJson(rawText);
-  if (!parsed) throw new Error("LLM returned invalid JSON. Used deterministic baseline.");
+  if (!parsed)
+    throw new Error("LLM returned invalid JSON. Used deterministic baseline.");
   return parsed;
 }
 
-function isUsablePreIntent(preIntent: Partial<SearchIntent> | SearchIntent | null | undefined) {
+function isUsablePreIntent(
+  preIntent: Partial<SearchIntent> | SearchIntent | null | undefined,
+) {
   if (!preIntent) return false;
 
   const hasDomain =
@@ -820,13 +941,18 @@ function isUsablePreIntent(preIntent: Partial<SearchIntent> | SearchIntent | nul
     preIntent.searchType === "activity" ||
     preIntent.searchType === "mixed_outing";
 
-  const hasNeed = Boolean(preIntent.needsRestaurant) || Boolean(preIntent.needsActivity);
+  const hasNeed =
+    Boolean(preIntent.needsRestaurant) || Boolean(preIntent.needsActivity);
 
   return hasDomain && hasNeed;
 }
 
 function getIntentConfidence(intent: any): number | null {
-  const confidence = intent?.confidence ?? intent?.parserConfidence ?? intent?.llmConfidence ?? null;
+  const confidence =
+    intent?.confidence ??
+    intent?.parserConfidence ??
+    intent?.llmConfidence ??
+    null;
   const n = Number(confidence);
   return Number.isFinite(n) ? n : null;
 }
@@ -838,24 +964,41 @@ function shouldUseFallbackIntentModel(args: {
   rawQuery: string;
 }) {
   if (args.fastModelFailed && !args.hasUsablePreIntent) return true;
-  if ((args.fastModelConfidence ?? 1) < 0.55 && !args.hasUsablePreIntent) return true;
+  if ((args.fastModelConfidence ?? 1) < 0.55 && !args.hasUsablePreIntent)
+    return true;
 
   const q = args.rawQuery.toLowerCase();
   const complex =
-    /\b(surprise me|plan my night|something different|not too expensive|romantic but fun|low key but upscale|after dinner nearby|before dinner nearby|somewhere unique|make it special)\b/.test(q) ||
-    q.split(/\s+/).length >= 18;
+    /\b(surprise me|plan my night|something different|not too expensive|romantic but fun|low key but upscale|after dinner nearby|before dinner nearby|somewhere unique|make it special)\b/.test(
+      q,
+    ) || q.split(/\s+/).length >= 18;
 
   return complex && !args.hasUsablePreIntent;
 }
 
 export async function parseEnterpriseIntent(
   query: string,
-  options?: { useLLM?: boolean; useFastPath?: boolean; body?: unknown; debug?: Record<string, any> },
+  options?: {
+    useLLM?: boolean;
+    useFastPath?: boolean;
+    body?: unknown;
+    debug?: Record<string, any>;
+  },
 ): Promise<{
   intent: SearchIntent;
   llmIntentRaw: unknown;
   llmError?: string;
-  intentParserSource: "fast_path" | "llm" | "deterministic" | "cache" | "fast_path_plus_llm" | "llm_fast_model" | "fast_path_timeout_fallback" | "llm_fallback_model" | "preintent_fallback" | "deterministic_fallback";
+  intentParserSource:
+    | "fast_path"
+    | "llm"
+    | "deterministic"
+    | "cache"
+    | "fast_path_plus_llm"
+    | "llm_fast_model"
+    | "fast_path_timeout_fallback"
+    | "llm_fallback_model"
+    | "preintent_fallback"
+    | "deterministic_fallback";
   fastPathMatched: boolean;
   fastPathReason: string | null;
   usedLlm: boolean;
@@ -880,6 +1023,38 @@ export async function parseEnterpriseIntent(
   debug.preIntentSource = preIntent ? "fast_path" : null;
   debug.preIntentReason = fastPathResult.reason ?? null;
 
+  if (
+    fastPathResult?.reason === "matched sports-watch activity fast path" &&
+    (fastPathResult.confidence ?? 0) >= 0.9
+  ) {
+    const normalized = normalizeIntent(
+      query,
+      preIntent as Partial<SearchIntent>,
+    );
+
+    debug.intentParserSource = "fast_path";
+    debug.intentLlmModel = null;
+    debug.llmEnhancementUsed = false;
+    debug.llmFallbackUsed = false;
+    debug.llmTimedOut = false;
+    debug.fallbackIntentUsed = false;
+    debug.intentCacheHit = false;
+    debug.llm_ms = 0;
+    debug.fast_llm_ms = 0;
+    debug.intent_parse_ms = Date.now() - startedAt;
+
+    return {
+      intent: normalized,
+      llmIntentRaw: null,
+      llmError: undefined,
+      intentParserSource: "fast_path",
+      fastPathMatched: true,
+      fastPathReason: fastPathResult.reason,
+      usedLlm: false,
+      debug,
+    };
+  }
+
   if (options?.useLLM === false) {
     const intent = normalizeIntent(query, preIntent ?? baseline);
     debug.intentParserSource = preIntent ? "fast_path" : "deterministic";
@@ -887,12 +1062,22 @@ export async function parseEnterpriseIntent(
     debug.llmFallbackUsed = false;
     debug.fallbackIntentUsed = !preIntent;
     debug.intent_parse_ms = Date.now() - startedAt;
-    return { intent, llmIntentRaw: null, llmError: undefined, intentParserSource: debug.intentParserSource, fastPathMatched: Boolean(preIntent), fastPathReason: fastPathResult.reason, usedLlm: false, debug };
+    return {
+      intent,
+      llmIntentRaw: null,
+      llmError: undefined,
+      intentParserSource: debug.intentParserSource,
+      fastPathMatched: Boolean(preIntent),
+      fastPathReason: fastPathResult.reason,
+      usedLlm: false,
+      debug,
+    };
   }
 
   const cacheKey = buildSearchIntentCacheKey({
     rawQuery: query,
-    geo: (options?.body as any)?.geo ?? (options?.body as any)?.location ?? null,
+    geo:
+      (options?.body as any)?.geo ?? (options?.body as any)?.location ?? null,
     parserVersion: SEARCH_INTENT_CACHE_VERSION,
     model: SEARCH_INTENT_FAST_MODEL,
   });
@@ -904,7 +1089,15 @@ export async function parseEnterpriseIntent(
     debug.intent_parse_ms = Date.now() - startedAt;
     debug.llmEnhancementUsed = Boolean(cached.llmEnhancementUsed ?? true);
     debug.intentLlmModel = cached.modelUsed ?? SEARCH_INTENT_FAST_MODEL;
-    return { intent: cached.intent, llmIntentRaw: null, intentParserSource: "cache", fastPathMatched: Boolean(preIntent), fastPathReason: fastPathResult.reason, usedLlm: debug.llmEnhancementUsed, debug };
+    return {
+      intent: cached.intent,
+      llmIntentRaw: null,
+      intentParserSource: "cache",
+      fastPathMatched: Boolean(preIntent),
+      fastPathReason: fastPathResult.reason,
+      usedLlm: debug.llmEnhancementUsed,
+      debug,
+    };
   }
   debug.intentCacheHit = false;
 
@@ -915,16 +1108,26 @@ export async function parseEnterpriseIntent(
 
   try {
     const fastIntent = await withTimeout(
-      enhanceIntentWithLLM({ rawQuery: query, preIntent, model: SEARCH_INTENT_FAST_MODEL }),
+      enhanceIntentWithLLM({
+        rawQuery: query,
+        preIntent,
+        model: SEARCH_INTENT_FAST_MODEL,
+      }),
       SEARCH_INTENT_LLM_TIMEOUT_MS,
       "search_intent_fast_model_timeout",
     );
     llmIntentRaw = fastIntent;
     fastModelConfidence = getIntentConfidence(fastIntent);
-    const merged = mergeLlmIntentWithPreIntent({ rawQuery: query, preIntent, llmIntent: fastIntent });
+    const merged = mergeLlmIntentWithPreIntent({
+      rawQuery: query,
+      preIntent,
+      llmIntent: fastIntent,
+    });
     const normalized = normalizeIntent(query, merged);
 
-    debug.intentParserSource = hasPreIntent ? "fast_path_plus_llm" : "llm_fast_model";
+    debug.intentParserSource = hasPreIntent
+      ? "fast_path_plus_llm"
+      : "llm_fast_model";
     debug.intentLlmModel = SEARCH_INTENT_FAST_MODEL;
     debug.llmEnhancementUsed = true;
     debug.llmFallbackUsed = false;
@@ -934,8 +1137,21 @@ export async function parseEnterpriseIntent(
     debug.llm_ms = debug.fast_llm_ms;
     debug.intent_parse_ms = Date.now() - startedAt;
 
-    await setCachedSearchIntent(cacheKey, { intent: normalized, modelUsed: SEARCH_INTENT_FAST_MODEL, parserVersion: SEARCH_INTENT_CACHE_VERSION, llmEnhancementUsed: true });
-    return { intent: normalized, llmIntentRaw, intentParserSource: debug.intentParserSource, fastPathMatched: Boolean(preIntent), fastPathReason: fastPathResult.reason, usedLlm: true, debug };
+    await setCachedSearchIntent(cacheKey, {
+      intent: normalized,
+      modelUsed: SEARCH_INTENT_FAST_MODEL,
+      parserVersion: SEARCH_INTENT_CACHE_VERSION,
+      llmEnhancementUsed: true,
+    });
+    return {
+      intent: normalized,
+      llmIntentRaw,
+      intentParserSource: debug.intentParserSource,
+      fastPathMatched: Boolean(preIntent),
+      fastPathReason: fastPathResult.reason,
+      usedLlm: true,
+      debug,
+    };
   } catch (error) {
     fastModelError = error;
     debug.fast_llm_ms = Date.now() - fastLlmStartedAt;
@@ -951,21 +1167,50 @@ export async function parseEnterpriseIntent(
       debug.llmFallbackUsed = false;
       debug.fallbackIntentUsed = true;
       debug.intent_parse_ms = Date.now() - startedAt;
-      await setCachedSearchIntent(cacheKey, { intent: normalizedPreIntent, modelUsed: "preIntent", parserVersion: SEARCH_INTENT_CACHE_VERSION, llmEnhancementUsed: false });
-      return { intent: normalizedPreIntent, llmIntentRaw: null, llmError: debug.llmError, intentParserSource: debug.intentParserSource, fastPathMatched: true, fastPathReason: fastPathResult.reason, usedLlm: false, debug };
+      await setCachedSearchIntent(cacheKey, {
+        intent: normalizedPreIntent,
+        modelUsed: "preIntent",
+        parserVersion: SEARCH_INTENT_CACHE_VERSION,
+        llmEnhancementUsed: false,
+      });
+      return {
+        intent: normalizedPreIntent,
+        llmIntentRaw: null,
+        llmError: debug.llmError,
+        intentParserSource: debug.intentParserSource,
+        fastPathMatched: true,
+        fastPathReason: fastPathResult.reason,
+        usedLlm: false,
+        debug,
+      };
     }
   }
 
-  if (shouldUseFallbackIntentModel({ fastModelFailed: Boolean(fastModelError), fastModelConfidence, hasUsablePreIntent: hasPreIntent, rawQuery: query })) {
+  if (
+    shouldUseFallbackIntentModel({
+      fastModelFailed: Boolean(fastModelError),
+      fastModelConfidence,
+      hasUsablePreIntent: hasPreIntent,
+      rawQuery: query,
+    })
+  ) {
     const fallbackStartedAt = Date.now();
     try {
       const fallbackIntent = await withTimeout(
-        enhanceIntentWithLLM({ rawQuery: query, preIntent, model: SEARCH_INTENT_FALLBACK_MODEL }),
+        enhanceIntentWithLLM({
+          rawQuery: query,
+          preIntent,
+          model: SEARCH_INTENT_FALLBACK_MODEL,
+        }),
         SEARCH_INTENT_FALLBACK_TIMEOUT_MS,
         "search_intent_fallback_model_timeout",
       );
       llmIntentRaw = fallbackIntent;
-      const merged = mergeLlmIntentWithPreIntent({ rawQuery: query, preIntent, llmIntent: fallbackIntent });
+      const merged = mergeLlmIntentWithPreIntent({
+        rawQuery: query,
+        preIntent,
+        llmIntent: fallbackIntent,
+      });
       const normalized = normalizeIntent(query, merged);
       debug.intentParserSource = "llm_fallback_model";
       debug.intentLlmModel = SEARCH_INTENT_FALLBACK_MODEL;
@@ -975,21 +1220,49 @@ export async function parseEnterpriseIntent(
       debug.fallback_llm_ms = Date.now() - fallbackStartedAt;
       debug.llm_ms = (debug.fast_llm_ms ?? 0) + debug.fallback_llm_ms;
       debug.intent_parse_ms = Date.now() - startedAt;
-      await setCachedSearchIntent(cacheKey, { intent: normalized, modelUsed: SEARCH_INTENT_FALLBACK_MODEL, parserVersion: SEARCH_INTENT_CACHE_VERSION, llmEnhancementUsed: true, fallbackUsed: true });
-      return { intent: normalized, llmIntentRaw, intentParserSource: "llm_fallback_model", fastPathMatched: Boolean(preIntent), fastPathReason: fastPathResult.reason, usedLlm: true, debug };
+      await setCachedSearchIntent(cacheKey, {
+        intent: normalized,
+        modelUsed: SEARCH_INTENT_FALLBACK_MODEL,
+        parserVersion: SEARCH_INTENT_CACHE_VERSION,
+        llmEnhancementUsed: true,
+        fallbackUsed: true,
+      });
+      return {
+        intent: normalized,
+        llmIntentRaw,
+        intentParserSource: "llm_fallback_model",
+        fastPathMatched: Boolean(preIntent),
+        fastPathReason: fastPathResult.reason,
+        usedLlm: true,
+        debug,
+      };
     } catch (fallbackError) {
-      debug.llmFallbackError = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      debug.llmFallbackError =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : String(fallbackError);
       debug.fallback_llm_ms = Date.now() - fallbackStartedAt;
     }
   }
 
   const deterministicIntent = normalizeIntent(query, preIntent ?? baseline);
-  debug.intentParserSource = preIntent ? "preintent_fallback" : "deterministic_fallback";
+  debug.intentParserSource = preIntent
+    ? "preintent_fallback"
+    : "deterministic_fallback";
   debug.intentLlmModel = null;
   debug.llmEnhancementUsed = false;
   debug.llmFallbackUsed = false;
   debug.fallbackIntentUsed = true;
   debug.intent_parse_ms = Date.now() - startedAt;
 
-  return { intent: deterministicIntent, llmIntentRaw, llmError: debug.llmError, intentParserSource: debug.intentParserSource, fastPathMatched: Boolean(preIntent), fastPathReason: fastPathResult.reason, usedLlm: false, debug };
+  return {
+    intent: deterministicIntent,
+    llmIntentRaw,
+    llmError: debug.llmError,
+    intentParserSource: debug.intentParserSource,
+    fastPathMatched: Boolean(preIntent),
+    fastPathReason: fastPathResult.reason,
+    usedLlm: false,
+    debug,
+  };
 }
