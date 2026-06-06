@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { clampScore } from "@/lib/clampScore";
 import ScoreBadge from "@/components/ScoreBadge";
@@ -13,6 +14,7 @@ import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
 
 type LocationType = "restaurants" | "activities";
+type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
 
 type FormState = {
   name: string;
@@ -79,6 +81,23 @@ type LocationRecord = Record<string, unknown> & {
   owner_user_id?: string | null;
 };
 
+const inputClass =
+  "w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-black/75 shadow-sm outline-none transition placeholder:text-black/30 focus:border-[#ff1654]/50 focus:ring-4 focus:ring-[#ff1654]/10";
+const selectClass = `${inputClass} appearance-none`;
+const labelClass = "text-xs font-black uppercase tracking-[0.18em] text-black/45";
+
+const navItems = [
+  ["overview", "Overview"],
+  ["contact", "Contact"],
+  ["location-map", "Location & Map"],
+  ["classification", "Classification"],
+  ["search-tags", "Search & Tags"],
+  ["photos", "Photos"],
+  ["publishing", "Publishing"],
+  ["ownership", "Ownership"],
+  ["admin-notes", "Admin Notes"],
+];
+
 function normalizeLocationTypeParam(value: string): LocationType | null {
   if (value === "restaurants" || value === "restaurant") return "restaurants";
   if (value === "activities" || value === "activity" || value === "activitys") {
@@ -88,40 +107,45 @@ function normalizeLocationTypeParam(value: string): LocationType | null {
   return null;
 }
 
+function hasValue(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
 function calculateUpdatedScore(location: LocationRecord) {
   let score = 40;
 
-  const has = (value: unknown) => {
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== null && value !== undefined && String(value).trim() !== "";
-  };
-
-  if (has(location.description)) score += 8;
-  if (has(location.image_url)) score += 8;
-  if (has(location.website)) score += 4;
+  if (hasValue(location.description)) score += 8;
+  if (hasValue(location.image_url)) score += 8;
+  if (hasValue(location.website)) score += 4;
   if (
-    has(location.external_reservation_url) ||
-    has(location.reservation_url) ||
-    has(location.reservation_link)
+    hasValue(location.external_reservation_url) ||
+    hasValue(location.reservation_url) ||
+    hasValue(location.reservation_link)
   ) score += 5;
-  if (has(location.price_range)) score += 4;
-  if (has(location.atmosphere)) score += 6;
-  if (has(location.primary_tag)) score += 5;
-  if (has(location.date_style_tags)) score += 5;
-  if (has(location.best_for)) score += 5;
-  if (has(location.special_features)) score += 5;
-  if (has(location.search_keywords)) score += 5;
-  if (has(location.latitude) && has(location.longitude)) score += 5;
+  if (hasValue(location.price_range)) score += 4;
+  if (hasValue(location.atmosphere)) score += 6;
+  if (hasValue(location.primary_tag)) score += 5;
+  if (hasValue(location.date_style_tags)) score += 5;
+  if (hasValue(location.best_for)) score += 5;
+  if (hasValue(location.special_features)) score += 5;
+  if (hasValue(location.search_keywords)) score += 5;
+  if (hasValue(location.latitude) && hasValue(location.longitude)) score += 5;
   if (getIsClaimed(location)) score += 8;
   if (location.rating) score += Math.min(Number(location.rating) * 2, 10);
 
   return clampScore(score);
 }
 
+function serializeForm(form: FormState) {
+  return JSON.stringify(form);
+}
+
 export default function EditLocationPage() {
   useEffect(() => {
     document.title = "Edit Location | TheOutHaven Admin";
   }, []);
+
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -129,7 +153,7 @@ export default function EditLocationPage() {
   const rawType = String(params.type || "");
   const type = normalizeLocationTypeParam(rawType);
   const id = String(params.id || "");
-  const from = searchParams.get("from") || "/locations/dashboard";
+  const from = searchParams.get("from") || "/admin/dashboard/locations";
 
   const table = type || "restaurants";
   const nameField = type === "activities" ? "activity_name" : "restaurant_name";
@@ -138,6 +162,7 @@ export default function EditLocationPage() {
   const [saving, setSaving] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [message, setMessage] = useState("");
+  const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [effectiveId, setEffectiveId] = useState(id);
   const [newGalleryImage, setNewGalleryImage] = useState("");
@@ -220,7 +245,7 @@ export default function EditLocationPage() {
         setIsImpersonating(Boolean(result.isImpersonating));
         setEffectiveId(result.effectiveId || id);
 
-        setForm({
+        const nextForm: FormState = {
           name: data[nameField] || data.name || "",
           description: data.description || "",
           address: data.address || "",
@@ -283,7 +308,10 @@ export default function EditLocationPage() {
           is_searchable: typeof data.is_searchable === "boolean" ? String(data.is_searchable) : "",
           data_status: data.data_status || "",
           missing_fields: Array.isArray(data.missing_fields) ? data.missing_fields.join(", ") : data.missing_fields || "",
-        });
+        };
+
+        setForm(nextForm);
+        setSavedSnapshot(serializeForm(nextForm));
       } catch {
         setMessage("Location failed to load.");
       } finally {
@@ -294,7 +322,7 @@ export default function EditLocationPage() {
     if (id && type) loadLocation();
   }, [id, type, table, nameField]);
 
-  const update = (key: string, value: string) => {
+  const update = (key: keyof FormState, value: string) => {
     setForm((prev) => ({
       ...prev,
       [key]: value,
@@ -363,7 +391,7 @@ export default function EditLocationPage() {
           : prev.search_keywords,
       }));
 
-      setMessage("✅ AI optimization applied. Review and save changes.");
+      setMessage("AI optimization applied. Review and save changes.");
     } catch {
       setMessage("AI optimization failed.");
     } finally {
@@ -456,12 +484,14 @@ export default function EditLocationPage() {
 
       setEffectiveId(result.effectiveId || effectiveId);
 
-      setForm((prev) => ({
-        ...prev,
+      const nextForm = {
+        ...form,
         theouthaven_score: calculatedScore,
-      }));
+      };
 
-      setMessage(`✅ Saved successfully. TheOutHaven Score: ${calculatedScore}/100`);
+      setForm(nextForm);
+      setSavedSnapshot(serializeForm(nextForm));
+      setMessage(`Saved successfully. TheOutHaven Score: ${calculatedScore}/100`);
     } catch {
       setMessage("Failed to save location.");
     } finally {
@@ -472,6 +502,30 @@ export default function EditLocationPage() {
   const safeScore = clampScore(form.theouthaven_score);
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
+  const publicPreviewHref = `/locations/${type}/${effectiveId || id}`;
+  const adminDetailHref = `/admin/dashboard/locations/${type}/${effectiveId || id}`;
+  const crmHref = `/admin/dashboard/locations/${type}/${effectiveId || id}/crm`;
+  const hasUnsavedChanges = savedSnapshot !== "" && serializeForm(form) !== savedSnapshot;
+  const isSuccess =
+    message.toLowerCase().includes("success") ||
+    message.toLowerCase().includes("saved") ||
+    message.toLowerCase().includes("applied");
+
+  const readiness = useMemo(
+    () => [
+      ["Has name", hasValue(form.name)],
+      ["Has full address", hasValue(form.address) || hasValue(form.formatted_address)],
+      ["Has city/state/zip", hasValue(form.city) && hasValue(form.state) && hasValue(form.zip_code)],
+      ["Has phone or website", hasValue(form.phone) || hasValue(form.website)],
+      ["Has primary image", hasValue(mainImage)],
+      ["Is approved", ["approved", "active", "published", "complete"].some((term) => `${form.data_status} ${form.claim_status}`.toLowerCase().includes(term))],
+      ["Is searchable", form.is_searchable === "true" || form.is_searchable === ""],
+      ["Has category/tags", hasValue(form.cuisine) || hasValue(form.activity_type) || hasValue(form.primary_tag) || hasValue(form.date_style_tags)],
+      ["Has coordinates", hasValue(form.latitude) && hasValue(form.longitude)],
+    ] as const,
+    [form, mainImage]
+  );
+  const completedReadiness = readiness.filter(([, complete]) => complete).length;
 
   const setMainImage = (url: string) => {
     setForm((prev) => ({
@@ -535,7 +589,7 @@ export default function EditLocationPage() {
         image_url: prev.image_url || prev.main_image || url,
         images: Array.from(new Set([...(prev.images || []), url])).filter(Boolean),
       }));
-      setMessage("✅ Image uploaded. Save changes to keep it on this listing.");
+      setMessage("Image uploaded. Save changes to keep it on this listing.");
     }
     setUploadingImage(false);
   };
@@ -569,16 +623,9 @@ export default function EditLocationPage() {
     }));
   };
 
-  const publicPreviewHref = `/locations/${type}/${effectiveId || id}`;
-
-  const isSuccess =
-    message.includes("✅") ||
-    message.toLowerCase().includes("success") ||
-    message.toLowerCase().includes("applied");
-
   if (!type) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#090706] px-5 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#0b0708] px-5 text-white">
         <div className="max-w-lg rounded-[2rem] border border-red-400/30 bg-red-400/10 p-8 text-center shadow-2xl">
           <p className="text-sm font-black uppercase tracking-[0.25em] text-red-100">
             Invalid Link
@@ -595,10 +642,10 @@ export default function EditLocationPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#080407] pt-28 text-white">
-        <div className="text-center">
-          <div className="mx-auto mb-5 h-12 w-12 animate-pulse rounded-full bg-gradient-to-br from-rose-500 to-fuchsia-600 shadow-lg shadow-rose-500/30" />
-          <p className="text-sm font-black uppercase tracking-[0.3em] text-rose-200/70">
+      <main className="flex min-h-screen items-center justify-center bg-[#0b0708] pt-28 text-white">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center shadow-2xl">
+          <div className="mx-auto mb-5 h-12 w-12 animate-pulse rounded-full bg-[#ff1654] shadow-lg shadow-[#ff1654]/30" />
+          <p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">
             Loading Location
           </p>
         </div>
@@ -607,91 +654,81 @@ export default function EditLocationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#080407] pt-20 text-white">
-      <section className="relative overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(244,63,94,0.28),_transparent_34%),linear-gradient(135deg,#16080d,#080407_62%,#000)]">
-        <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-rose-600/20 blur-3xl" />
-        <div className="absolute bottom-[-170px] left-[-120px] h-96 w-96 rounded-full bg-fuchsia-600/10 blur-3xl" />
-
-        <div className="relative mx-auto max-w-7xl px-5 py-5 sm:px-8">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <button
-              onClick={() => router.push(from)}
-              className="rounded-full border border-white/10 bg-white/[0.06] px-5 py-2.5 text-sm font-black text-white/85 transition hover:bg-white hover:text-black"
-            >
-              ← Back
-            </button>
-
-            <div className="flex flex-wrap gap-3">
+    <main className="min-h-screen bg-[#0b0708] px-4 pb-12 pt-24 text-white md:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1560px] space-y-6">
+        <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#22070d] via-[#12090b] to-[#070707] p-5 shadow-2xl md:p-7">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
               <button
                 type="button"
-                onClick={optimizeWithAI}
-                disabled={optimizing || saving}
-                className="rounded-full border border-rose-300/30 bg-rose-500/10 px-5 py-2.5 text-sm font-black text-rose-100 transition hover:bg-rose-500 hover:text-white disabled:opacity-50"
+                onClick={() => router.push(from)}
+                className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white/75 transition hover:bg-white hover:text-black"
               >
-                {optimizing ? "Optimizing..." : "✨ Improve With AI"}
+                Back to Locations
               </button>
+              <p className="mt-6 text-xs font-black uppercase tracking-[0.35em] text-[#ff9bb6]">
+                TheOutHaven Admin · Location Editor
+              </p>
+              <h1 className="mt-3 max-w-4xl truncate text-4xl font-black tracking-tight text-white md:text-5xl">
+                {form.name || "Untitled Location"}
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
+                {[form.address, form.city, form.state, form.zip_code].filter(Boolean).join(", ") || "Address not added"}
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <StatusPill tone="dark">{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
+                <StatusPill tone={form.claim_status ? "success" : "warning"}>{form.claim_status || "Unclaimed"}</StatusPill>
+                <StatusPill tone={form.data_status ? "success" : "neutral"}>{form.data_status || "Quality Review"}</StatusPill>
+                {isImpersonating ? <StatusPill tone="dark">Admin View</StatusPill> : null}
+              </div>
+            </div>
 
+            <div className="flex flex-wrap gap-3">
+              <a href={publicPreviewHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white hover:text-black">
+                View Public Page
+              </a>
+              <a href={crmHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white hover:text-black">
+                Open CRM
+              </a>
+              <a href={adminDetailHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white hover:text-black">
+                Legacy View
+              </a>
               <button
                 onClick={saveLocation}
                 disabled={saving || optimizing}
-                className="rounded-full bg-white px-6 py-2.5 text-sm font-black text-black transition hover:bg-rose-100 disabled:opacity-50"
+                className="rounded-full bg-[#ff1654] px-6 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#d90046] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </div>
+        </section>
 
-          {isImpersonating && (
-            <div className="mb-5 inline-flex rounded-full border border-rose-300/30 bg-rose-500/15 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-rose-100">
-              Admin viewing this location
+        <div className="sticky top-[72px] z-30 rounded-full border border-white/10 bg-[#12090b]/95 p-2 shadow-2xl backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 px-3">
+              <p className="truncate text-sm font-black text-white">Editing {form.name || "location"}</p>
+              <p className="text-xs font-bold text-white/45">{hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}</p>
             </div>
-          )}
-
-          <div className="grid gap-8 lg:grid-cols-[96px_1fr_190px] lg:items-center">
-            <div className="overflow-hidden rounded-[1.25rem] border border-white/10 bg-black/35 shadow-2xl">
-              {mainImage ? (
-                <Image src={mainImage} alt={form.name || "Location"} width={360} height={260} className="h-24 w-full object-cover" />
-              ) : (
-                <div className="flex h-24 items-center justify-center text-xs font-black uppercase tracking-[0.2em] text-white/30">No Image</div>
-              )}
-            </div>
-
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-200/70">
-                TheOutHaven Admin · Location Studio
-              </p>
-
-              <h1 className="mt-3 max-w-3xl text-3xl font-black tracking-tight sm:text-4xl">
-                {form.name || "Edit Location"}
-              </h1>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Tag>{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</Tag>
-                <Tag>{form.claim_status || "Unclaimed"}</Tag>
-                <Tag>{form.data_status || "Quality review"}</Tag>
-              </div>
-
-              <p className="mt-3 max-w-2xl text-xs leading-5 text-white/60">
-                Refine this listing with a cleaner section hierarchy, premium media, address intelligence, discovery signals, reserve settings, claim tools, and data quality controls.
-              </p>
-            </div>
-
-            <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-3 shadow-2xl backdrop-blur">
-              <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/45">
-                Current Score
-              </p>
-              <div className="rounded-[1rem] border border-white/10 bg-black/35 p-3 text-white">
-                <ScoreBadge score={safeScore} />
-              </div>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill tone={hasUnsavedChanges ? "warning" : "success"}>{hasUnsavedChanges ? "Draft" : "Saved"}</StatusPill>
+              <button type="button" onClick={() => router.push(from)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white hover:text-black">
+                Cancel / Back
+              </button>
+              <button
+                onClick={saveLocation}
+                disabled={saving || optimizing}
+                className="rounded-full bg-[#ff1654] px-5 py-2 text-xs font-black text-white transition hover:bg-[#d90046] disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
             </div>
           </div>
         </div>
-      </section>
 
-      <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
         {message && (
           <div
-            className={`mb-6 rounded-[1.5rem] border p-4 text-sm font-bold shadow-xl ${
+            className={`rounded-[24px] border p-4 text-sm font-bold shadow-xl ${
               isSuccess
                 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
                 : "border-red-400/30 bg-red-400/10 text-red-100"
@@ -701,60 +738,51 @@ export default function EditLocationPage() {
           </div>
         )}
 
-        <nav className="mb-6 flex gap-2 overflow-x-auto rounded-full border border-white/10 bg-white/[0.04] p-2 text-xs font-black uppercase tracking-[0.18em] text-white/55">
-          {["Basic Info", "Address", "Images", "Discovery", "Reservations", "Claim & QR", "Data Quality"].map((item) => (
-            <a key={item} href={`#${item.toLowerCase().replaceAll(" ", "-").replaceAll("&", "and")}`} className="shrink-0 rounded-full px-4 py-2 transition hover:bg-white hover:text-black">{item}</a>
-          ))}
-        </nav>
+        <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_340px]">
+          <aside className="xl:sticky xl:top-[152px] xl:self-start">
+            <nav className="flex gap-2 overflow-x-auto rounded-[24px] border border-white/10 bg-white/[0.06] p-3 xl:grid xl:gap-2 xl:overflow-visible">
+              {navItems.map(([href, label]) => (
+                <a key={href} href={`#${href}`} className="shrink-0 rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white hover:text-black xl:w-full">
+                  {label}
+                </a>
+              ))}
+            </nav>
+          </aside>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_410px]">
           <section className="space-y-6">
-            <Panel id="basic-info" title="Basic Info">
-              <Field label="Location Name" value={form.name} onChange={(v) => update("name", v)} />
-
-              <TextArea
-                label="Short Description"
-                helper="This helps TheOutHaven understand what makes the location special."
-                value={form.description}
-                onChange={(v) => update("description", v)}
-              />
-
-              <div className="grid gap-4 md:grid-cols-2">
-                {type === "restaurants" && (
-                  <Field
-                    label="Cuisine"
-                    value={form.cuisine}
-                    onChange={(v) => update("cuisine", v)}
-                    placeholder="Italian, Caribbean, Steakhouse"
-                  />
+            <EditorSection id="overview" title="Overview" description="Core venue identity, public description, pricing, and website details.">
+              <FieldRow columns={2}>
+                <TextInput label="Location Name" value={form.name} onChange={(v) => update("name", v)} />
+                <TextInput label="Website URL" value={form.website} onChange={(v) => update("website", v)} placeholder="https://..." />
+              </FieldRow>
+              <FieldRow columns={2}>
+                {type === "restaurants" ? (
+                  <TextInput label="Cuisine / Restaurant Type" value={form.cuisine} onChange={(v) => update("cuisine", v)} placeholder="Italian, Caribbean, Steakhouse" />
+                ) : (
+                  <TextInput label="Activity Type" value={form.activity_type} onChange={(v) => update("activity_type", v)} placeholder="Bowling, Museum, Spa, Lounge" />
                 )}
+                <TextInput label="Price Tier" value={form.price_range} onChange={(v) => update("price_range", v)} placeholder="$, $$, $$$" />
+              </FieldRow>
+              <TextArea label="Description" helper="Short, operator-quality copy used for the public listing and discovery surfaces." value={form.description} onChange={(v) => update("description", v)} />
+            </EditorSection>
 
-                {type === "activities" && (
-                  <Field
-                    label="Activity Type"
-                    value={form.activity_type}
-                    onChange={(v) => update("activity_type", v)}
-                    placeholder="Bowling, Museum, Spa, Lounge"
-                  />
-                )}
+            <EditorSection id="contact" title="Contact" description="Customer contact, booking, reservations, and outbound destination URLs.">
+              <FieldRow columns={2}>
+                <TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
+                <TextInput label="Reservation URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} placeholder="https://..." />
+              </FieldRow>
+              <FieldRow columns={2}>
+                <TextInput label="Booking URL" value={form.booking_url} onChange={(v) => update("booking_url", v)} placeholder="https://..." />
+                <SelectInput label="Reservation Source" value={form.reservation_source} onChange={(v) => update("reservation_source", v)} options={["external", "internal", "both", "none"]} />
+              </FieldRow>
+              <TextInput label="Reservation Provider" value={form.reservation_provider} onChange={(v) => update("reservation_provider", v)} placeholder="OpenTable, Resy, SevenRooms, direct" />
+              <FieldRow columns={2}>
+                <ToggleRow title="Internal reservations" text="Allow this venue to use TheOutHaven reservation tools." checked={form.internal_reservations_enabled || form.uses_internal_reservations} onChange={setInternalReservations} />
+                <ToggleRow title="External reservations" text="Keep outbound booking or reservation links enabled." checked={form.allow_external_reservations} onChange={setAllowExternalReservations} />
+              </FieldRow>
+            </EditorSection>
 
-                <Field
-                  label="Price Range"
-                  value={form.price_range}
-                  onChange={(v) => update("price_range", v)}
-                  placeholder="$, $$, $$$"
-                />
-              </div>
-
-              <Field
-                label="Primary Tag"
-                value={form.primary_tag}
-                onChange={(v) => update("primary_tag", v)}
-                placeholder="Romantic, Trendy, Cozy, Upscale"
-              />
-            </Panel>
-
-            <Panel id="address" title="Address">
+            <EditorSection id="location-map" title="Location & Map" description="Address intelligence, Google enrichment, and coordinate quality.">
               <GoogleAddressAutocomplete
                 label="Address"
                 value={form.address}
@@ -773,223 +801,203 @@ export default function EditLocationPage() {
                 onAddressSelect={(selected: GoogleAddressFields) =>
                   setForm((prev) => ({ ...prev, ...selected }))
                 }
-                inputClassName="mt-2 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-rose-400"
-                labelClassName="text-xs font-black uppercase tracking-[0.18em] text-white/45"
-                statusClassName="mt-2 text-xs font-bold text-white/45"
-                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#121212] shadow-2xl"
-                predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/75 transition last:border-b-0 hover:bg-white/10"
-                buttonClassName="mt-3 rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black text-rose-100 transition hover:bg-rose-500 hover:text-white disabled:opacity-50"
+                inputClassName={`mt-2 ${inputClass}`}
+                labelClassName={labelClass}
+                statusClassName="mt-2 text-xs font-bold text-black/45"
+                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl"
+                predictionButtonClassName="block w-full border-b border-black/10 px-4 py-3 text-left text-sm font-bold text-black/70 transition last:border-b-0 hover:bg-[#fff1f5]"
+                buttonClassName="mt-3 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-black text-black/65 transition hover:bg-[#ff1654] hover:text-white disabled:opacity-50"
               />
+              <FieldRow columns={4}>
+                <TextInput label="City" value={form.city} onChange={(v) => update("city", v)} />
+                <TextInput label="State" value={form.state} onChange={(v) => update("state", v)} />
+                <TextInput label="Zip" value={form.zip_code} onChange={(v) => update("zip_code", v)} />
+                <TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} />
+              </FieldRow>
+              <TextInput label="Formatted Address" value={form.formatted_address} onChange={(v) => update("formatted_address", v)} />
+              <FieldRow columns={3}>
+                <TextInput label="Latitude" value={String(form.latitude || "")} onChange={(v) => update("latitude", v)} />
+                <TextInput label="Longitude" value={String(form.longitude || "")} onChange={(v) => update("longitude", v)} />
+                <TextInput label="Google Place ID" value={form.google_place_id} onChange={(v) => update("google_place_id", v)} />
+              </FieldRow>
+            </EditorSection>
 
-              <div className="grid gap-4 md:grid-cols-4">
-                <Field label="City" value={form.city} onChange={(v) => update("city", v)} />
-                <Field label="State" value={form.state} onChange={(v) => update("state", v)} />
-                <Field label="Zip Code" value={form.zip_code} onChange={(v) => update("zip_code", v)} />
-                <Field label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} />
+            <EditorSection id="classification" title="Classification" description="Venue taxonomy, atmosphere, feature tags, and discovery positioning.">
+              <FieldRow columns={2}>
+                <TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} placeholder="Romantic, Trendy, Cozy, Upscale" />
+                <TextInput label="Date Style Tags" value={form.date_style_tags} onChange={(v) => update("date_style_tags", v)} placeholder="Comma-separated tags" />
+              </FieldRow>
+              <FieldRow columns={2}>
+                <TextInput label="Atmosphere / Ambience" value={form.atmosphere} onChange={(v) => update("atmosphere", v)} />
+                <TextInput label="Noise Level" value={form.noise_level} onChange={(v) => update("noise_level", v)} />
+              </FieldRow>
+              <FieldRow columns={2}>
+                <TextInput label="Dress Code" value={form.dress_code} onChange={(v) => update("dress_code", v)} />
+                <TextInput label="Parking Info" value={form.parking_info} onChange={(v) => update("parking_info", v)} />
+              </FieldRow>
+              <TextArea label="Good For" value={form.best_for} onChange={(v) => update("best_for", v)} helper="Comma-separated situations, audiences, or occasions." />
+              <TextArea label="Feature Tags" value={form.special_features} onChange={(v) => update("special_features", v)} helper="Comma-separated venue features." />
+              <TextArea label="Signature Items" value={form.signature_items} onChange={(v) => update("signature_items", v)} helper="Food, drinks, amenities, or notable experiences." />
+            </EditorSection>
+
+            <EditorSection id="search-tags" title="Search & Tags" description="Internal search quality controls and discovery keywords.">
+              <TextArea label="Search Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} helper="Comma-separated keywords used by search and recommendations." />
+              <FieldRow columns={3}>
+                <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
+                <TextInput label="Quality Status" value={form.data_status || ""} onChange={(v) => update("data_status", v)} />
+                <TextInput label="Missing Fields" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} />
+              </FieldRow>
+            </EditorSection>
+
+            <EditorSection id="photos" title="Photos" description="Primary image, gallery URLs, and lightweight upload/backfill tools.">
+              <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                <div className="overflow-hidden rounded-[20px] border border-black/10 bg-white shadow-sm">
+                  {mainImage ? (
+                    <Image src={mainImage} alt={form.name || "Location"} width={420} height={300} className="h-40 w-full object-cover" />
+                  ) : (
+                    <div className="flex h-40 items-center justify-center bg-black/[0.04] text-xs font-black uppercase tracking-[0.18em] text-black/35">Missing photo</div>
+                  )}
+                </div>
+                <TextInput label="Primary Image URL" value={mainImage} onChange={setMainImage} helper="Saved to main_image and image_url for compatibility." />
               </div>
 
-              <input type="hidden" value={String(form.latitude || "")} readOnly />
-              <input type="hidden" value={String(form.longitude || "")} readOnly />
-            </Panel>
-
-            <Panel id="images" title="Images">
-              <Field label="Main Image URL" value={mainImage} onChange={setMainImage} helper="Saved to main_image and image_url for compatibility." />
-
-              <div className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
-                <label className="text-xs font-black uppercase tracking-[0.2em] text-white/45">Upload image</label>
+              <div className="rounded-[20px] border border-black/10 bg-white p-4">
+                <label className={labelClass}>Upload image</label>
                 <input
                   type="file"
                   accept="image/*"
                   disabled={uploadingImage}
                   onChange={(event) => uploadGalleryImage(event.target.files?.[0] || null)}
-                  className="mt-2 block w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white file:mr-4 file:rounded-full file:border-0 file:bg-rose-500 file:px-4 file:py-2 file:text-xs file:font-black file:text-white disabled:opacity-50"
+                  className="mt-2 block w-full rounded-2xl border border-black/10 bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-black/70 file:mr-4 file:rounded-full file:border-0 file:bg-[#ff1654] file:px-4 file:py-2 file:text-xs file:font-black file:text-white disabled:opacity-50"
                 />
-                <p className="mt-2 text-xs font-semibold text-white/35">If the storage bucket is not available, URL updates still work.</p>
+                <p className="mt-2 text-xs font-semibold text-black/40">If the storage bucket is not available, paste an image URL instead.</p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                <Field label="Add Gallery Image URL" value={newGalleryImage} onChange={setNewGalleryImage} placeholder="https://..." />
-                <button type="button" onClick={addGalleryImage} className="self-end rounded-full bg-rose-500 px-5 py-3 text-xs font-black uppercase tracking-wide text-white transition hover:bg-rose-600">Add image</button>
+                <TextInput label="Add Gallery Image URL" value={newGalleryImage} onChange={setNewGalleryImage} placeholder="https://..." />
+                <button type="button" onClick={addGalleryImage} className="self-end rounded-full bg-[#ff1654] px-5 py-3 text-xs font-black uppercase tracking-wide text-white transition hover:bg-[#d90046]">Add image</button>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 {(galleryImages.length ? galleryImages : [""]).slice(0, 9).map((image, index) => (
-                  <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
+                  <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center text-xs font-bold text-black/30">Gallery preview</div>}
                     <div className="space-y-2 p-3">
-                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">{image === mainImage ? "Main image" : `Photo ${index + 1}`}</div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-black/45">{image === mainImage ? "Main image" : `Photo ${index + 1}`}</div>
                       {image && (
                         <div className="flex gap-2">
-                          <button type="button" onClick={() => setMainImage(image)} className="flex-1 rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase text-white/70 hover:bg-white hover:text-black">Set main</button>
-                          <button type="button" onClick={() => removeGalleryImage(image)} className="flex-1 rounded-full border border-rose-300/30 bg-rose-500/10 px-3 py-1.5 text-[10px] font-black uppercase text-rose-100 hover:bg-rose-500 hover:text-white">Remove</button>
+                          <button type="button" onClick={() => setMainImage(image)} className="flex-1 rounded-full border border-black/10 px-3 py-1.5 text-[10px] font-black uppercase text-black/60 hover:bg-black hover:text-white">Set main</button>
+                          <button type="button" onClick={() => removeGalleryImage(image)} className="flex-1 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase text-red-700 hover:bg-red-600 hover:text-white">Remove</button>
                         </div>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
-            </Panel>
+            </EditorSection>
 
-            <Panel id="discovery" title="Discovery">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Atmosphere" value={form.atmosphere} onChange={(v) => update("atmosphere", v)} />
-                <Field label="Noise Level" value={form.noise_level} onChange={(v) => update("noise_level", v)} />
-                <Field label="Dress Code" value={form.dress_code} onChange={(v) => update("dress_code", v)} />
-                <Field label="Parking Info" value={form.parking_info} onChange={(v) => update("parking_info", v)} />
-              </div>
+            <EditorSection id="publishing" title="Publishing" description="Controls that influence public visibility, reservations, and live listing readiness.">
+              <FieldRow columns={2}>
+                <ToggleRow title="Internal reservations" text="Enable TheOutHaven reservation operations." checked={form.internal_reservations_enabled || form.uses_internal_reservations} onChange={setInternalReservations} />
+                <ToggleRow title="External reservations" text="Allow external booking URLs to remain available." checked={form.allow_external_reservations} onChange={setAllowExternalReservations} />
+              </FieldRow>
+              <FieldRow columns={2}>
+                <SelectInput label="Reservation Source" value={form.reservation_source} onChange={(v) => update("reservation_source", v)} options={["external", "internal", "both", "none"]} />
+                <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
+              </FieldRow>
+              <TextInput label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} placeholder="Mon-Fri 5pm-10pm" />
+              {type === "restaurants" ? (
+                <FieldRow columns={2}>
+                  <TextInput label="Days of Operation" value={(form.days_of_operation || []).join(", ")} onChange={(v) => setForm((prev) => ({ ...prev, days_of_operation: toArray(v) }))} />
+                  <TextInput label="Kitchen Closing Time" value={form.kitchen_closing_time || ""} onChange={(v) => setForm((prev) => ({ ...prev, kitchen_closing_time: v }))} />
+                </FieldRow>
+              ) : null}
+            </EditorSection>
 
-              <Field label="Best For" helper="Separate with commas." value={form.best_for} onChange={(v) => update("best_for", v)} />
-              <Field label="Special Features" helper="Separate with commas." value={form.special_features} onChange={(v) => update("special_features", v)} />
-              <Field label="Signature Items / Highlights" helper="Separate with commas." value={form.signature_items} onChange={(v) => update("signature_items", v)} />
-            </Panel>
+            <EditorSection id="ownership" title="Ownership" description="Owner contact data and claim status used by admin operations.">
+              <FieldRow columns={3}>
+                <TextInput label="Owner Name" value={form.owner_name} onChange={(v) => update("owner_name", v)} />
+                <TextInput label="Owner Email" value={form.owner_email} onChange={(v) => update("owner_email", v)} />
+                <TextInput label="Owner Phone" value={form.owner_phone} onChange={(v) => update("owner_phone", v)} />
+              </FieldRow>
+              <FieldRow columns={2}>
+                <TextInput label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} />
+                <ReadOnlyField label="Claim Summary" value={form.claim_status || "Unclaimed or not connected"} />
+              </FieldRow>
+              <a href={crmHref} className="inline-flex w-fit rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-black/65 transition hover:bg-black hover:text-white">Open CRM / Claim Management</a>
+            </EditorSection>
 
-
-            <Panel id="reservations" title="Reservations">
-              <div className="grid gap-4 md:grid-cols-2">
-                <ToggleCard
-                  title="Use TheOutHaven Reservation System"
-                  text="Show the native TheOutHaven reservation flow for this location."
-                  checked={form.uses_internal_reservations || form.internal_reservations_enabled}
-                  onChange={setInternalReservations}
-                />
-                <ToggleCard
-                  title="Allow External Reservations"
-                  text="Keep external provider links available when a valid provider URL exists."
-                  checked={form.allow_external_reservations}
-                  onChange={setAllowExternalReservations}
-                />
-              </div>
-
-              <label className="block">
-                <span className="text-xs font-black uppercase tracking-[0.2em] text-white/45">Reservation Source</span>
-                <select
-                  value={form.reservation_source}
-                  onChange={(event) => update("reservation_source", event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-rose-400"
-                >
-                  <option value="internal">Internal only</option>
-                  <option value="external">External only</option>
-                  <option value="both">Internal + external</option>
-                  <option value="none">No reservation CTA</option>
-                </select>
-              </label>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Website" value={form.website} onChange={(v) => update("website", v)} />
-                <Field label="Reservation URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} helper="Must be a supported booking provider to render as Reserve." />
-                <Field label="Reservation Provider" value={form.reservation_provider} onChange={(v) => update("reservation_provider", v)} placeholder="Resy, OpenTable, Tock" />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Booking URL" value={form.booking_url} onChange={(v) => update("booking_url", v)} />
-                <Field label="Public Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-              </div>
-
-              <Field label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} />
-            </Panel>
-
-            <Panel id="claim-and-qr" title="Claim & QR">
-              <div className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
-                <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/45">
-                  Owner Contact
-                </p>
-
-                <div className="grid gap-4">
-                  <Field label="Owner Name" value={form.owner_name} onChange={(v) => update("owner_name", v)} />
-                  <Field label="Owner Email" value={form.owner_email} onChange={(v) => update("owner_email", v)} />
-                  <Field label="Owner Phone" value={form.owner_phone} onChange={(v) => update("owner_phone", v)} />
-                </div>
-              </div>
-            </Panel>
-            <Panel id="data-quality" title="Data Quality">
-              <Field label="Date Style Tags" helper="Separate with commas." value={form.date_style_tags} onChange={(v) => update("date_style_tags", v)} />
-              <Field label="Search Keywords" helper="Separate with commas." value={form.search_keywords} onChange={(v) => update("search_keywords", v)} />
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="TheOutHaven Score" value={String(safeScore)} onChange={(v) => update("theouthaven_score", v)} helper="This updates automatically when you save." />
-                <Field label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} />
-              </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} helper="true / false" />
-                <Field label="Data Status" value={form.data_status || ""} onChange={(v) => update("data_status", v)} />
-                <Field label="Missing Fields" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Visible for admins only." />
-              </div>
-              <a href={publicPreviewHref} target="_blank" className="inline-flex w-fit rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">Preview public page</a>
-            </Panel>
-
-            <div className="sticky bottom-4 z-30 rounded-[1.5rem] border border-white/10 bg-black/75 p-3 shadow-2xl backdrop-blur-xl">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs font-bold text-white/45">Unsaved edits stay local until you save this premium location profile.</p>
-                <button
-                  onClick={saveLocation}
-                  disabled={saving || optimizing}
-                  className="rounded-full bg-white px-6 py-3 font-black text-black transition hover:bg-rose-100 disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : "Save All Changes"}
-                </button>
-              </div>
-            </div>
+            <EditorSection id="admin-notes" title="Admin Notes" description="Operational context and read-only quality signals for staff review.">
+              <FieldRow columns={3}>
+                <MetricCard label="TheOutHaven Score" value={`${safeScore}/100`} />
+                <MetricCard label="Effective ID" value={effectiveId || id} />
+                <MetricCard label="Source" value={type === "restaurants" ? "Restaurants" : "Activities"} />
+              </FieldRow>
+              <TextArea label="Data Quality Notes" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Stored in the existing missing_fields value when present." />
+            </EditorSection>
           </section>
 
-          <aside className="lg:sticky lg:top-28 lg:self-start">
-            <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#12090d] text-white shadow-2xl">
+          <aside className="space-y-4 xl:sticky xl:top-[152px] xl:self-start">
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#fffaf6] text-[#1f1713] shadow-2xl">
               {mainImage ? (
                 <Image
                   src={mainImage}
                   alt={form.name || "Location preview"}
                   width={700}
                   height={420}
-                  className="h-72 w-full object-cover"
+                  className="h-56 w-full object-cover"
                 />
               ) : (
-                <div className="flex h-72 items-center justify-center bg-black/40 text-white/35">
+                <div className="flex h-56 items-center justify-center bg-black/[0.04] text-sm font-black uppercase tracking-[0.18em] text-black/35">
                   No image preview
                 </div>
               )}
 
               <div className="p-5">
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
-                  Listing Preview
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-black/40">
+                  Live Summary
                 </p>
-
                 <h2 className="mt-2 text-2xl font-black">
                   {form.name || "Location Name"}
                 </h2>
-
-                <p className="mt-2 text-sm text-white/50">
+                <p className="mt-2 text-sm leading-6 text-black/55">
                   {[form.address, form.city, form.state, form.zip_code]
                     .filter(Boolean)
                     .join(", ") || "Address will appear here"}
                 </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <StatusPill>{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
+                  <StatusPill tone={form.claim_status ? "success" : "warning"}>{form.claim_status || "Unclaimed"}</StatusPill>
+                  <StatusPill tone={form.is_searchable === "false" ? "danger" : "success"}>{form.is_searchable === "false" ? "Not searchable" : "Searchable"}</StatusPill>
+                </div>
+              </div>
+            </div>
 
-                <div className="mt-5 rounded-[1rem] border border-white/10 bg-black/35 p-3">
+            <div className="rounded-[28px] border border-white/10 bg-[#fffaf6] p-5 text-[#1f1713] shadow-2xl">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-black/40">Publish Readiness</p>
+                  <h3 className="mt-1 text-2xl font-black">{completedReadiness}/{readiness.length} ready</h3>
+                </div>
+                <div className="rounded-[1rem] border border-black/10 bg-white p-3">
                   <ScoreBadge score={safeScore} />
                 </div>
-
-                {form.description && (
-                  <p className="mt-4 text-sm leading-6 text-white/60">
-                    {form.description}
-                  </p>
-                )}
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {form.primary_tag && <Tag>{form.primary_tag}</Tag>}
-                  {form.price_range && <Tag>{form.price_range}</Tag>}
-                  {form.claim_status && <Tag>{form.claim_status}</Tag>}
-                </div>
-
-                <PreviewBlock title="Why It Stands Out">
-                  <PreviewLine label="Atmosphere" value={form.atmosphere} />
-                  <PreviewLine label="Best For" value={form.best_for} />
-                  <PreviewLine label="Features" value={form.special_features} />
-                </PreviewBlock>
-
-                <PreviewBlock title="Owner">
-                  <PreviewLine label="Name" value={form.owner_name} />
-                  <PreviewLine label="Email" value={form.owner_email} />
-                  <PreviewLine label="Phone" value={form.owner_phone} />
-                </PreviewBlock>
               </div>
+              <div className="mt-5 space-y-2">
+                {readiness.map(([label, complete]) => (
+                  <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3">
+                    <span className="text-sm font-bold text-black/65">{label}</span>
+                    <span className={`h-2.5 w-2.5 rounded-full ${complete ? "bg-emerald-500" : "bg-amber-400"}`} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <MetricCard label="Score" value={`${safeScore}`} dark />
+              <MetricCard label="Photos" value={String(galleryImages.length)} dark />
+              <MetricCard label="Tags" value={String(toArray(form.date_style_tags).length + (form.primary_tag ? 1 : 0))} dark />
+              <MetricCard label="Claim" value={form.claim_status || "Open"} dark />
             </div>
           </aside>
         </div>
@@ -998,45 +1006,29 @@ export default function EditLocationPage() {
   );
 }
 
-function Panel({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
+function EditorSection({ id, title, description, children }: { id: string; title: string; description?: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-32 rounded-[2rem] border border-white/10 bg-[#12090d] p-6 text-white shadow-2xl">
-      <p className="mb-5 text-xs font-black uppercase tracking-[0.25em] text-white/45">
-        {title}
-      </p>
-      <div className="grid gap-5">{children}</div>
+    <section id={id} className="scroll-mt-36 rounded-[24px] border border-black/10 bg-[#fffaf6] p-5 text-[#1f1713] shadow-sm md:p-6">
+      <div className="mb-5">
+        <h2 className="text-lg font-black text-[#1f1713]">{title}</h2>
+        {description ? <p className="mt-1 text-sm leading-6 text-black/55">{description}</p> : null}
+      </div>
+      <div className="grid gap-4">{children}</div>
     </section>
   );
 }
 
-function ToggleCard({
-  title,
-  text,
-  checked,
-  onChange,
-}: {
-  title: string;
-  text: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-4 rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="mt-1 h-4 w-4 accent-rose-600"
-      />
-      <span>
-        <span className="block text-sm font-black text-white">{title}</span>
-        <span className="mt-1 block text-xs leading-5 text-white/45">{text}</span>
-      </span>
-    </label>
-  );
+function FieldRow({ children, columns = 2 }: { children: ReactNode; columns?: 2 | 3 | 4 }) {
+  const cols = {
+    2: "md:grid-cols-2",
+    3: "md:grid-cols-3",
+    4: "md:grid-cols-4",
+  }[columns];
+
+  return <div className={`grid gap-4 ${cols}`}>{children}</div>;
 }
 
-function Field({
+function TextInput({
   label,
   value,
   onChange,
@@ -1050,20 +1042,16 @@ function Field({
   placeholder?: string;
 }) {
   return (
-    <div>
-      <label className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-        {label}
-      </label>
-
+    <label className="grid gap-2">
+      <span className={labelClass}>{label}</span>
       <input
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/30 focus:border-rose-400"
+        className={inputClass}
       />
-
-      {helper && <p className="mt-1 text-xs font-semibold text-white/35">{helper}</p>}
-    </div>
+      {helper ? <span className="text-xs font-semibold text-black/40">{helper}</span> : null}
+    </label>
   );
 }
 
@@ -1079,46 +1067,105 @@ function TextArea({
   helper?: string;
 }) {
   return (
-    <div>
-      <label className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-        {label}
-      </label>
-
+    <label className="grid gap-2">
+      <span className={labelClass}>{label}</span>
       <textarea
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         rows={5}
-        className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/30 focus:border-rose-400"
+        className={`${inputClass} resize-none`}
       />
+      {helper ? <span className="text-xs font-semibold text-black/40">{helper}</span> : null}
+    </label>
+  );
+}
 
-      {helper && <p className="mt-1 text-xs font-semibold text-white/35">{helper}</p>}
+function SelectInput({
+  label,
+  value,
+  onChange,
+  options,
+  optionLabels,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  optionLabels?: Record<string, string>;
+}) {
+  return (
+    <label className="grid gap-2">
+      <span className={labelClass}>{label}</span>
+      <select value={value || ""} onChange={(event) => onChange(event.target.value)} className={selectClass}>
+        {options.map((option) => (
+          <option key={option || "default"} value={option}>
+            {optionLabels?.[option] || option || "Use default"}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-2">
+      <span className={labelClass}>{label}</span>
+      <div className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-black/55 shadow-sm">
+        {value}
+      </div>
     </div>
   );
 }
 
-function Tag({ children }: { children: React.ReactNode }) {
+function ToggleRow({
+  title,
+  text,
+  checked,
+  onChange,
+}: {
+  title: string;
+  text: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
   return (
-    <span className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-1 text-xs font-black text-white/70">
+    <label className="flex cursor-pointer items-start gap-4 rounded-[20px] border border-black/10 bg-white p-4 shadow-sm transition hover:border-[#ff1654]/30">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 accent-[#ff1654]"
+      />
+      <span>
+        <span className="block text-sm font-black text-[#1f1713]">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-black/45">{text}</span>
+      </span>
+    </label>
+  );
+}
+
+function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: PillTone }) {
+  const tones: Record<PillTone, string> = {
+    neutral: "border-black/10 bg-black/[0.04] text-black/65",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    danger: "border-red-200 bg-red-50 text-red-700",
+    dark: "border-white/10 bg-white/10 text-white",
+  };
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] ${tones[tone]}`}>
       {children}
     </span>
   );
 }
 
-function PreviewBlock({ title, children }: { title: string; children: React.ReactNode }) {
+function MetricCard({ label, value, dark = false }: { label: string; value: string; dark?: boolean }) {
   return (
-    <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4">
-      <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-        {title}
-      </p>
-      <div className="mt-3 space-y-1">{children}</div>
+    <div className={dark ? "rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-white shadow-xl" : "rounded-[20px] border border-black/10 bg-white p-4 shadow-sm"}>
+      <p className={dark ? "text-[10px] font-black uppercase tracking-[0.18em] text-white/40" : "text-[10px] font-black uppercase tracking-[0.18em] text-black/40"}>{label}</p>
+      <p className={dark ? "mt-2 truncate text-xl font-black text-white" : "mt-2 truncate text-xl font-black text-[#1f1713]"}>{value || "—"}</p>
     </div>
-  );
-}
-
-function PreviewLine({ label, value }: { label: string; value?: string }) {
-  return (
-    <p className="text-sm text-white/60">
-      <b className="text-white/80">{label}:</b> {value || "Not added"}
-    </p>
   );
 }
