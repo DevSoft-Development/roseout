@@ -308,3 +308,143 @@ describe("hybrid intent parsing", () => {
     expect((merged as any).activityIntent.featureTerms).toContain("tv");
   });
 });
+
+describe("fast path expansion batch fixes", () => {
+  it("cleans relaxed no-club activity terms and adds negative terms", () => {
+    const intent = normalizeIntent("casual dinner relaxed activity no club", {
+      searchType: "mixed_outing",
+      primaryDomain: "mixed",
+      needsRestaurant: true,
+      needsActivity: true,
+      wantsPairing: true,
+      activityIntent: {
+        activityTerms: [
+          "nightlife",
+          "rooftop lounge",
+          "club",
+          "dance club",
+          "dancing",
+          "live dj",
+          "speakeasy",
+          "arcade",
+        ],
+        categoryTerms: [],
+        featureTerms: [],
+        vibeTerms: [],
+        negativeTerms: [],
+        alternativeGroups: [],
+      },
+    } as any);
+
+    for (const term of [
+      "nightlife",
+      "rooftop lounge",
+      "club",
+      "dance club",
+      "dancing",
+      "live dj",
+      "speakeasy",
+    ]) {
+      expect(intent.activityIntent.activityTerms).not.toContain(term);
+      expect(activityRpcTerms(intent).terms).not.toContain(term);
+    }
+
+    expect(intent.activityIntent.activityTerms).toContain("relaxed activity");
+    expect(intent.activityIntent.negativeTerms).toEqual(
+      expect.arrayContaining(["club", "dance club", "nightclub", "dj"]),
+    );
+    expect(activityRpcTerms(intent).removedForRelaxedIntent).toEqual(
+      expect.arrayContaining(["nightlife", "rooftop lounge", "club"]),
+    );
+  });
+
+  it("fast-paths relaxed mixed outings and skips LLM enhancement", async () => {
+    const parsed = await parseEnterpriseIntent(
+      "casual dinner relaxed activity no club",
+      { useLLM: true },
+    );
+
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.usedLlm).toBe(false);
+    expect(parsed.debug.llmEnhancementUsed).toBe(false);
+    expect(parsed.debug.llm_ms).toBe(0);
+    expect(parsed.fastPathReason).toBe("matched relaxed mixed outing fast path");
+  });
+
+  for (const query of [
+    "rooftop drinks in Harlem",
+    "cocktail bar in Queens",
+    "comedy show in Manhattan",
+    "karaoke in Harlem",
+    "hookah lounge with music",
+  ]) {
+    it(`fast-paths activity-only obvious query: ${query}`, () => {
+      expect(getEnterpriseIntentFastPathReason(query)).toBe(
+        "matched activity-only fast path",
+      );
+    });
+  }
+
+  for (const query of [
+    "best steakhouse in Manhattan",
+    "brunch spot in Brooklyn",
+    "sushi near me",
+    "birthday dinner restaurant",
+  ]) {
+    it(`fast-paths restaurant-only obvious query: ${query}`, () => {
+      expect(getEnterpriseIntentFastPathReason(query)).toBe(
+        "matched restaurant-only fast path",
+      );
+    });
+  }
+
+  for (const query of [
+    "pub to watch football in Manhattan",
+    "bar with big screens in Harlem",
+    "casual bar to watch basketball",
+  ]) {
+    it(`fast-paths sports-watch phrase: ${query}`, () => {
+      expect(getEnterpriseIntentFastPathReason(query)).toBe(
+        "matched sports-watch activity fast path",
+      );
+    });
+  }
+
+  it("keeps phrase RPC terms without adding noisy single-word tokens", () => {
+    const intent = normalizeIntent("bar with tvs watch party game day mini golf live music", {
+      searchType: "activity",
+      primaryDomain: "activity",
+      needsRestaurant: false,
+      needsActivity: true,
+      wantsPairing: false,
+      activityIntent: {
+        activityTerms: [
+          "bar with tvs",
+          "watch party",
+          "game day",
+          "mini golf",
+          "live music",
+        ],
+        categoryTerms: [],
+        featureTerms: [],
+        vibeTerms: [],
+        negativeTerms: [],
+        alternativeGroups: [],
+      },
+    } as any);
+    const terms = activityRpcTerms(intent).terms;
+
+    for (const phrase of [
+      "bar with tvs",
+      "watch party",
+      "game day",
+      "mini golf",
+      "live music",
+    ]) {
+      expect(terms).toContain(phrase);
+    }
+    for (const noisy of ["with", "watch", "party", "day", "mini", "live"]) {
+      expect(terms).not.toContain(noisy);
+    }
+  });
+});

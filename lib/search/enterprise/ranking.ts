@@ -93,6 +93,41 @@ function sportsWatchRecordSignal(r: EnterpriseLocation): number {
   return score;
 }
 
+
+function userAskedForRelaxedNoClub(intent: SearchIntent): boolean {
+  const q = String(intent.rawQuery ?? "").toLowerCase();
+  return /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|casual|relaxed|chill|quiet|not too loud|no club|no clubs|not a club|no dancing|no live dj|no dj|cozy)\b/.test(q);
+}
+
+function relaxedActivityRecordSignal(r: EnterpriseLocation): number {
+  const text = fieldText(r, [
+    "name",
+    "activity_name",
+    "primary_category",
+    "activity_type",
+    "google_types",
+    "tags",
+    "semantic_tags",
+    "intent_tags",
+    "description",
+    "search_document",
+    "semantic_search_text",
+    "search_keywords",
+  ]);
+
+  let score = 0;
+
+  if (/\bboard games?\b|\barcade\b|\bmini golf\b|\bbowling\b|\bgallery\b|\bmuseum\b|\bbilliards\b|\bpool hall\b|\bpaint and sip\b|\bcafe\b|\bdessert\b/.test(text)) {
+    score += 35;
+  }
+
+  if (/\brelaxed\b|\bchill\b|\blow key\b|\blow-key\b|\blaid back\b|\blaid-back\b|\bcasual\b|\bquiet\b|\bcozy\b/.test(text)) {
+    score += 20;
+  }
+
+  return score;
+}
+
 function isNightlifeOnlyForSportsWatch(r: EnterpriseLocation): boolean {
   const text = fieldText(r, [
     "name",
@@ -167,7 +202,7 @@ function userAskedForHardNightlife(rawQuery: string): boolean {
 function isHardNightlifeRecord(record: EnterpriseLocation): boolean {
   const text = textForRecord(record).toLowerCase();
 
-  return /\b(nightclub|dance club|club|live dj|dj|speakeasy)\b/i.test(text);
+  return /\bnightclub\b|\bdance club\b|\bclub\b|\bdancing\b|\bdance\b|\blive dj\b|\bdj\b|\bspeakeasy\b|\brooftop lounge\b|\brooftop\b|\broof top\b/i.test(text);
 }
 
 function isTheaterRecord(r: EnterpriseLocation) {
@@ -794,6 +829,16 @@ export function scoreActivityQuality(
   }
   const sportsWatchIntent = userAskedToWatchSportsGame(intent);
   const sportsWatchScore = sportsWatchRecordSignal(r);
+  const relaxedNoClubIntent = userAskedForRelaxedNoClub(intent);
+  const relaxedScore = relaxedNoClubIntent ? relaxedActivityRecordSignal(r) : 0;
+  if (relaxedNoClubIntent && relaxedScore > 0) {
+    score += relaxedScore;
+    qualityReason(reasons, "relaxed/casual activity fit", relaxedScore);
+  }
+  if (relaxedNoClubIntent && isHardNightlifeRecord(r)) {
+    score -= 60;
+    qualityReason(penalties, "hard nightlife result for relaxed/no-club query", -60);
+  }
   if (sportsWatchIntent && sportsWatchScore > 0) {
     score += sportsWatchScore;
     qualityReason(reasons, "sports/game-watch fit", sportsWatchScore);
@@ -812,6 +857,7 @@ export function scoreActivityQuality(
   }
   if (
     !sportsWatchIntent &&
+    !relaxedNoClubIntent &&
     /\b(rooftop|roof top|rooftop bar|rooftop lounge|terrace|skyline|views?|roof deck)\b/.test(
       signals.text,
     )
@@ -821,6 +867,7 @@ export function scoreActivityQuality(
   }
   if (
     !sportsWatchIntent &&
+    !relaxedNoClubIntent &&
     /\b(cocktail|cocktails|lounge|bar|speakeasy|nightlife)\b/.test(signals.text)
   ) {
     score += 20;
