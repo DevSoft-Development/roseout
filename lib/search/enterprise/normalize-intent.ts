@@ -25,6 +25,125 @@ import {
 
 export const uniq = (items: string[]) =>
   Array.from(new Set(items.map((x) => x.toLowerCase().trim()).filter(Boolean)));
+
+export const HARD_NIGHTLIFE_ACTIVITY_TERMS = new Set([
+  "nightlife",
+  "rooftop lounge",
+  "rooftop",
+  "roof top",
+  "club",
+  "dance club",
+  "nightclub",
+  "dancing",
+  "dance",
+  "live dj",
+  "dj",
+  "speakeasy",
+]);
+
+export const RELAXED_ACTIVITY_REQUIRED_TERMS = [
+  "relaxed activity",
+  "relaxing activity",
+  "chill activity",
+  "easy activity",
+  "low key",
+  "low-key",
+  "laid back",
+  "laid-back",
+  "casual activity",
+  "board games",
+  "arcade",
+  "mini golf",
+  "bowling",
+  "gallery",
+  "museum",
+  "billiards",
+  "pool hall",
+  "paint and sip",
+  "cafe",
+  "dessert",
+  "activity",
+];
+
+export function normalizeIntentTerm(term: string) {
+  return String(term || "")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function hasNoClubIntent(query: string | null | undefined) {
+  const q = String(query ?? "").toLowerCase();
+  return /\b(no club|no clubs|not a club|not clubs|avoid clubs|without clubs|no dancing|not dancing|no nightclub|no nightclubs|not a nightclub|no dj|no live dj|not too loud)\b/.test(q);
+}
+
+export function hasRelaxedOrCasualActivityIntent(query: string | null | undefined) {
+  const q = String(query ?? "").toLowerCase();
+  return (
+    /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|casual|relaxed|chill|quiet|not too loud|cozy|easy first date)\b/.test(q) ||
+    hasNoClubIntent(q)
+  );
+}
+
+export function cleanupRelaxedActivityTerms(terms: string[]) {
+  return uniq([
+    ...terms
+      .map(normalizeIntentTerm)
+      .filter((term) => term && !HARD_NIGHTLIFE_ACTIVITY_TERMS.has(term)),
+    ...RELAXED_ACTIVITY_REQUIRED_TERMS,
+  ]);
+}
+
+export function relaxedActivityTermsRemoved(terms: string[]) {
+  return uniq(
+    terms
+      .map(normalizeIntentTerm)
+      .filter((term) => term && HARD_NIGHTLIFE_ACTIVITY_TERMS.has(term)),
+  );
+}
+
+const relaxedRemovedActivityTermsByIntent = new WeakMap<
+  SearchIntent,
+  string[]
+>();
+
+export function cleanupRelaxedIntent(intent: SearchIntent): SearchIntent {
+  if (!hasRelaxedOrCasualActivityIntent(intent.rawQuery)) return intent;
+
+  const activityIntent = intent.activityIntent ?? createEmptyActivityIntent();
+  const removedTerms = relaxedActivityTermsRemoved(activityIntent.activityTerms ?? []);
+
+  const cleaned: SearchIntent = {
+    ...intent,
+    activityIntent: {
+      ...activityIntent,
+      activityTerms: cleanupRelaxedActivityTerms(activityIntent.activityTerms ?? []),
+      negativeTerms: uniq([
+        ...(activityIntent.negativeTerms ?? []).map(normalizeIntentTerm),
+        ...(hasNoClubIntent(intent.rawQuery)
+          ? [
+              "club",
+              "clubs",
+              "dance club",
+              "nightclub",
+              "dancing",
+              "live dj",
+              "dj",
+              "speakeasy",
+              "rooftop lounge",
+              "nightlife",
+            ]
+          : []),
+      ]),
+    },
+  };
+
+  relaxedRemovedActivityTermsByIntent.set(cleaned, removedTerms);
+
+  return cleaned;
+}
 const phrase = (query: string, text: string) =>
   new RegExp(
     `(^|[^a-z0-9])${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`,
@@ -646,7 +765,7 @@ export function normalizeIntent(
       : Array.isArray(base.vibe)
         ? base.vibe
         : [];
-  return cleanupSportsWatchIntentTerms(merged);
+  return cleanupRelaxedIntent(cleanupSportsWatchIntentTerms(merged));
 }
 
 export function mergeLlmIntentWithPreIntent(args: {
@@ -794,9 +913,7 @@ export function activitySearchTermsOriginal(intent: SearchIntent) {
 }
 
 export function hasRelaxedActivityIntent(query: string | null | undefined) {
-  return /relaxed|chill|easy|low[-\s]?key|laid[-\s]?back|casual|quiet|girls'? night/i.test(
-    String(query ?? ""),
-  );
+  return hasRelaxedOrCasualActivityIntent(query) || /girls'? night/i.test(String(query ?? ""));
 }
 
 export function hasSpecificRestaurantFoodOrCuisine(intent: SearchIntent) {
@@ -827,10 +944,8 @@ export function pruneRelaxedActivityTerms(
   intent: SearchIntent,
   terms: string[] = activitySearchTermsOriginal(intent),
 ) {
-  if (!hasRelaxedActivityIntent(intent.rawQuery)) return terms;
-  return terms.filter(
-    (term) => !/(club|dance club|nightclub|hard nightlife|live dj)/i.test(term),
-  );
+  if (!hasRelaxedOrCasualActivityIntent(intent.rawQuery)) return terms;
+  return cleanupRelaxedActivityTerms(terms);
 }
 
 export function hasSportsWatchIntent(query: string | null | undefined) {
@@ -980,7 +1095,6 @@ export function activityRpcTerms(intent: SearchIntent) {
   );
   const terms = pruneRelaxedActivityTerms(intent, afterSportsWatchPruning);
 
-  const kept = new Set(terms.map((term) => term.toLowerCase()));
 
   return {
     terms,
@@ -990,8 +1104,11 @@ export function activityRpcTerms(intent: SearchIntent) {
           ...sportsWatchTermsRemoved(afterDomainPruning),
         ])
       : [],
-    removedForRelaxedIntent: hasRelaxedActivityIntent(intent.rawQuery)
-      ? afterSportsWatchPruning.filter((term) => !kept.has(term.toLowerCase()))
+    removedForRelaxedIntent: hasRelaxedOrCasualActivityIntent(intent.rawQuery)
+      ? uniq([
+          ...(relaxedRemovedActivityTermsByIntent.get(intent) ?? []),
+          ...relaxedActivityTermsRemoved(afterSportsWatchPruning),
+        ])
       : [],
   };
 }

@@ -4,11 +4,14 @@ import {
   deterministicIntentFromQuery,
   mergeLlmIntentWithPreIntent,
   normalizeIntent,
+  hasNoClubIntent,
 } from "./normalize-intent";
 import {
   detectActivityTerms,
   detectFoodTerms,
   detectMealTerms,
+  createEmptyActivityIntent,
+  createEmptyRestaurantIntent,
 } from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
@@ -318,9 +321,10 @@ function hasSportsWatchFastPathIntent(query: string) {
     includesFastPathPhrase(q, term),
   );
 
-  const hasWatchLanguage =
-    /\b(watch|showing|viewing|see)\b/.test(q) &&
-    /\b(game|match|fight|sports)\b/.test(q);
+  const explicitPhrase = explicitSportsWatch;
+  const hasWatchVerb = /\b(watch|showing|viewing|see)\b/.test(q);
+  const hasGameWord = /\b(game|match|fight|sports)\b/.test(q);
+  const hasWatchLanguage = hasWatchVerb && hasGameWord;
 
   const hasTeamOrLeague = [...SPORTS_TEAM_TERMS, ...SPORTS_LEAGUE_TERMS].some(
     (term) => includesFastPathPhrase(q, term),
@@ -331,8 +335,19 @@ function hasSportsWatchFastPathIntent(query: string) {
       q,
     );
 
+  const hasViewingVenue =
+    /\b(bar|pub|sports bar|sports lounge|sport lounge|tavern|lounge|grill)\b/.test(q) &&
+    /\b(tv|tvs|screen|screens|big screen|big screens|watch|showing|viewing)\b/.test(q);
+
+  const hasSportWord =
+    /\b(football|basketball|baseball|hockey|soccer|nba|nfl|mlb|nhl|wnba|ufc|boxing|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils)\b/.test(q);
+
   return (
-    explicitSportsWatch || (hasWatchLanguage && hasTeamOrLeague && hasVenue)
+    explicitPhrase ||
+    (hasWatchLanguage && hasTeamOrLeague && hasVenue) ||
+    (hasViewingVenue && hasSportWord) ||
+    (hasViewingVenue && /\bbig screen|big screens|screens|tvs|tv\b/.test(q)) ||
+    (/\bbar\b|\bpub\b/.test(q) && /\bwatch\b/.test(q) && hasSportWord)
   );
 }
 
@@ -413,6 +428,133 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
   return intent;
 }
 
+
+function hasRelaxedMixedFastPathIntent(query: string) {
+  const q = String(query || "").toLowerCase();
+  const hasMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|eat)\b/.test(q);
+  const hasRelaxedActivity = /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|activity|something fun|board games|arcade|mini golf|bowling|gallery|museum|billiards|pool hall|not too loud|no club|not a club)\b/.test(q);
+  return hasMeal && hasRelaxedActivity;
+}
+
+function createRelaxedMixedFastPathIntent(rawQuery: string) {
+  const q = rawQuery.toLowerCase();
+  return {
+    rawQuery,
+    searchType: "mixed_outing",
+    primaryDomain: "mixed",
+    needsRestaurant: true,
+    needsActivity: true,
+    wantsPairing: true,
+    strictness: "high",
+    vibe: q.includes("casual") ? ["casual"] : [],
+    partySize: null,
+    geo: emptyGeoIntent(),
+    restaurantIntent: {
+      mealTerms: q.includes("brunch") ? ["brunch"] : q.includes("lunch") ? ["lunch"] : q.includes("breakfast") ? ["breakfast"] : ["dinner"],
+      foodTerms: [],
+      cuisineTerms: [],
+      categoryTerms: [],
+      vibeTerms: q.includes("casual") ? ["casual"] : [],
+      featureTerms: [],
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    activityIntent: {
+      activityTerms: ["relaxed activity", "relaxing activity", "chill activity", "easy activity", "low key", "laid back", "casual activity", "board games", "arcade", "mini golf", "bowling", "gallery", "museum", "billiards", "pool hall", "activity"],
+      categoryTerms: [],
+      vibeTerms: ["relaxed", "casual", "chill"],
+      featureTerms: [],
+      negativeTerms: hasNoClubIntent(rawQuery) ? ["club", "dance club", "nightclub", "dancing", "live dj", "dj", "speakeasy", "nightlife"] : [],
+      alternativeGroups: [],
+    },
+    pairingPreference: {
+      requiresPairing: true,
+      distanceMode: /\bwalk|walking|nearby|close by|close together|within walking distance\b/.test(q) ? "walking" : "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: /\b30 minute|30-minute\b/.test(q) ? 30 : null,
+      requireWalkablePair: /\bwalk|walking|within walking distance\b/.test(q),
+    },
+  } satisfies Partial<SearchIntent>;
+}
+
+function hasActivityOnlyFastPathIntent(query: string) {
+  const q = String(query || "").toLowerCase();
+  const hasRestaurantMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|steak|seafood|sushi|mexican|italian)\b/.test(q);
+  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|lounge|speakeasy|karaoke|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live music|bowling|arcade|museum|paint and sip|things to do|fun activity|date idea)\b/.test(q);
+  return hasActivity && !hasRestaurantMeal;
+}
+
+function createActivityOnlyFastPathIntent(rawQuery: string) {
+  const q = rawQuery.toLowerCase();
+  const activityTerms: string[] = [];
+  if (/\brooftop\b/.test(q)) activityTerms.push("rooftop bar", "rooftop lounge", "rooftop drinks", "rooftop cocktails", "terrace bar", "terrace lounge", "skyline bar", "skyline lounge", "views", "outdoor bar", "bar", "lounge", "cocktails", "drinks");
+  else if (/\bhookah\b|\bshisha\b/.test(q)) activityTerms.push("hookah", "hookah lounge", "hookah bar", "shisha", "lounge", "bar");
+  else if (/\bkaraoke\b/.test(q)) activityTerms.push("karaoke");
+  else if (/\bcomedy\b|\bshow\b/.test(q)) activityTerms.push("comedy show", "comedy", "show", "theater", "theatre");
+  else if (/\bspeakeasy\b/.test(q)) activityTerms.push("speakeasy", "cocktails", "bar", "lounge");
+  else if (/\bcocktail|cocktails|bar\b/.test(q)) activityTerms.push("cocktail bar", "cocktails", "bar", "lounge", "wine bar", "speakeasy");
+  else if (/\blounge\b/.test(q)) activityTerms.push("lounge", "bar", "cocktails", "nightlife");
+  else if (/\bthings to do|fun activity|date idea|first date|surprise me\b/.test(q)) activityTerms.push("activity", "things to do", "entertainment", "experience", "arcade", "bowling", "mini golf", "museum", "gallery", "comedy", "karaoke");
+  return {
+    rawQuery,
+    searchType: "activity",
+    primaryDomain: "activity",
+    needsRestaurant: false,
+    needsActivity: true,
+    wantsPairing: false,
+    strictness: "high",
+    vibe: [],
+    partySize: null,
+    geo: emptyGeoIntent(),
+    restaurantIntent: createEmptyRestaurantIntent(),
+    activityIntent: { activityTerms: uniqueTerms(activityTerms), categoryTerms: [], vibeTerms: [], featureTerms: [], negativeTerms: [], alternativeGroups: [] },
+    pairingPreference: { requiresPairing: false, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
+  } satisfies Partial<SearchIntent>;
+}
+
+function hasRestaurantOnlyFastPathIntent(query: string) {
+  const q = String(query || "").toLowerCase();
+  const hasActivity = /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|cocktails|rooftop|watch|game)\b/.test(q);
+  const hasRestaurant = /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
+  return hasRestaurant && !hasActivity;
+}
+
+function createRestaurantOnlyFastPathIntent(rawQuery: string) {
+  const q = rawQuery.toLowerCase();
+  const mealTerms: string[] = [];
+  const cuisineTerms: string[] = [];
+  const foodTerms: string[] = [];
+  const vibeTerms: string[] = [];
+  if (/\bbrunch\b/.test(q)) mealTerms.push("brunch");
+  if (/\bbreakfast\b/.test(q)) mealTerms.push("breakfast");
+  if (/\blunch\b/.test(q)) mealTerms.push("lunch");
+  if (/\bdinner\b/.test(q)) mealTerms.push("dinner");
+  if (mealTerms.length === 0 && /\brestaurant|steakhouse|food|spot\b/.test(q)) mealTerms.push("dinner");
+  if (/\bsteak|steakhouse\b/.test(q)) { cuisineTerms.push("steak"); foodTerms.push("steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "sirloin"); }
+  if (/\bseafood\b/.test(q)) { cuisineTerms.push("seafood"); foodTerms.push("seafood", "fish", "lobster", "crab", "shrimp", "oyster", "raw bar"); }
+  if (/\bsushi\b/.test(q)) { cuisineTerms.push("sushi", "japanese"); foodTerms.push("sushi", "sashimi", "omakase", "nigiri", "maki", "rolls"); }
+  if (/\bmexican\b/.test(q)) { cuisineTerms.push("mexican"); foodTerms.push("mexican", "tacos", "taco", "burritos", "birria", "taqueria", "tex-mex"); }
+  if (/\bitalian\b/.test(q)) { cuisineTerms.push("italian"); foodTerms.push("italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"); }
+  if (/\bromantic|date night\b/.test(q)) vibeTerms.push("romantic", "date night");
+  if (/\bcasual\b/.test(q)) vibeTerms.push("casual");
+  if (/\bbirthday\b/.test(q)) vibeTerms.push("birthday");
+  return {
+    rawQuery,
+    searchType: "restaurant",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    strictness: "high",
+    vibe: uniqueTerms(vibeTerms),
+    partySize: null,
+    geo: emptyGeoIntent(),
+    restaurantIntent: { mealTerms: uniqueTerms(mealTerms), foodTerms: uniqueTerms(foodTerms), cuisineTerms: uniqueTerms(cuisineTerms), categoryTerms: [], vibeTerms: uniqueTerms(vibeTerms), featureTerms: [], negativeTerms: [], alternativeGroups: [] },
+    activityIntent: createEmptyActivityIntent(),
+    pairingPreference: { requiresPairing: false, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
+  } satisfies Partial<SearchIntent>;
+}
+
 function createEnterpriseIntentFastPathResult(
   rawQuery: string,
 ): EnterpriseIntentFastPathResult {
@@ -422,6 +564,30 @@ function createEnterpriseIntentFastPathResult(
     return {
       intent: createSportsWatchFastPathIntent(rawQuery),
       reason: "matched sports-watch activity fast path",
+      confidence: 0.9,
+    };
+  }
+
+  if (hasRelaxedMixedFastPathIntent(query)) {
+    return {
+      intent: createRelaxedMixedFastPathIntent(rawQuery),
+      reason: "matched relaxed mixed outing fast path",
+      confidence: 0.9,
+    };
+  }
+
+  if (hasActivityOnlyFastPathIntent(query)) {
+    return {
+      intent: createActivityOnlyFastPathIntent(rawQuery),
+      reason: "matched activity-only fast path",
+      confidence: 0.88,
+    };
+  }
+
+  if (hasRestaurantOnlyFastPathIntent(query)) {
+    return {
+      intent: createRestaurantOnlyFastPathIntent(rawQuery),
+      reason: "matched restaurant-only fast path",
       confidence: 0.9,
     };
   }
@@ -1023,9 +1189,17 @@ export async function parseEnterpriseIntent(
   debug.preIntentSource = preIntent ? "fast_path" : null;
   debug.preIntentReason = fastPathResult.reason ?? null;
 
+  const highConfidenceFastPathReasons = new Set([
+    "matched sports-watch activity fast path",
+    "matched relaxed mixed outing fast path",
+    "matched activity-only fast path",
+    "matched restaurant-only fast path",
+  ]);
+
   if (
-    fastPathResult?.reason === "matched sports-watch activity fast path" &&
-    (fastPathResult.confidence ?? 0) >= 0.9
+    fastPathResult?.reason &&
+    highConfidenceFastPathReasons.has(fastPathResult.reason) &&
+    (fastPathResult.confidence ?? 0) >= 0.88
   ) {
     const normalized = normalizeIntent(
       query,
