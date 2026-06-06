@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import BatchQaRunner from "./BatchQaRunner";
 
 async function copyJsonToClipboard(value: unknown) {
   const text =
@@ -318,6 +319,8 @@ export default function SearchHealthClient() {
 
   return (
     <>
+      <BatchQaRunner />
+
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map(([title, value]) => (
           <div
