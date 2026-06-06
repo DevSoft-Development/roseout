@@ -81,6 +81,74 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "entertainment",
   "indoor activity",
   "outdoor activity",
+  "sports bar",
+  "sports lounge",
+  "bar with tv",
+  "bar with tvs",
+  "bar with screens",
+  "watch party",
+  "game day",
+  "game night",
+  "live sports",
+  "pub",
+  "tavern",
+];
+
+const FAST_PATH_SPORTS_WATCH_TERMS = [
+  "sports bar",
+  "sports lounge",
+  "bar with tv",
+  "bar with tvs",
+  "bar with screens",
+  "watch the game",
+  "watch game",
+  "watch party",
+  "game day",
+  "game night",
+  "live sports",
+  "showing the game",
+  "nba game",
+  "nfl game",
+  "mlb game",
+  "nhl game",
+  "ufc fight",
+  "boxing fight",
+  "knicks game",
+  "nets game",
+  "yankees game",
+  "mets game",
+  "giants game",
+  "jets game",
+  "rangers game",
+  "islanders game",
+  "devils game",
+];
+
+const SPORTS_TEAM_TERMS = [
+  "knicks",
+  "nets",
+  "yankees",
+  "mets",
+  "giants",
+  "jets",
+  "rangers",
+  "islanders",
+  "devils",
+];
+
+const SPORTS_LEAGUE_TERMS = [
+  "nba",
+  "nfl",
+  "mlb",
+  "nhl",
+  "wnba",
+  "ufc",
+  "boxing",
+  "soccer",
+  "football",
+  "basketball",
+  "baseball",
+  "hockey",
 ];
 
 function includesFastPathPhrase(query: string, term: string) {
@@ -174,6 +242,100 @@ function detectFastPathActivityIntentTerms(query: string) {
   return uniqueTerms(explicitSignals.filter((term) => !isRooftopFastPathSignal(term)));
 }
 
+function hasSportsWatchFastPathIntent(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  const explicitSportsWatch = FAST_PATH_SPORTS_WATCH_TERMS.some((term) =>
+    includesFastPathPhrase(q, term),
+  );
+
+  const hasWatchLanguage =
+    /\b(watch|showing|viewing|see)\b/.test(q) &&
+    /\b(game|match|fight|sports)\b/.test(q);
+
+  const hasTeamOrLeague = [...SPORTS_TEAM_TERMS, ...SPORTS_LEAGUE_TERMS].some((term) =>
+    includesFastPathPhrase(q, term),
+  );
+
+  const hasVenue =
+    /\b(bar|sports bar|sports lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens)\b/.test(q);
+
+  return explicitSportsWatch || (hasWatchLanguage && hasTeamOrLeague && hasVenue);
+}
+
+function sportsWatchActivityTermsFromQuery(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  const teamTerms = SPORTS_TEAM_TERMS.filter((term) => includesFastPathPhrase(q, term));
+  const leagueTerms = SPORTS_LEAGUE_TERMS.filter((term) => includesFastPathPhrase(q, term));
+
+  const terms = [
+    "sports bar",
+    "sports lounge",
+    "bar",
+    "pub",
+    "tavern",
+    "bar and grill",
+    "tv",
+    "tvs",
+    "screens",
+    "watch party",
+    "game day",
+    "live sports",
+    ...teamTerms.map((term) => `${term} game`),
+    ...leagueTerms.map((term) => `${term} game`),
+  ];
+
+  if (/\bufc\b|\bfight\b|\bboxing\b/.test(q)) {
+    terms.push("fight night", "ufc fight", "boxing fight");
+  }
+
+  return uniqueTerms(terms);
+}
+
+function createSportsWatchFastPathIntent(rawQuery: string) {
+  const activityTerms = sportsWatchActivityTermsFromQuery(rawQuery);
+
+  const intent: Partial<SearchIntent> = {
+    rawQuery,
+    searchType: "activity",
+    primaryDomain: "activity",
+    needsRestaurant: false,
+    needsActivity: true,
+    wantsPairing: false,
+    restaurantIntent: {
+      mealTerms: [],
+      foodTerms: [],
+      cuisineTerms: [],
+      categoryTerms: [],
+      vibeTerms: [],
+      featureTerms: [],
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    activityIntent: {
+      activityTerms,
+      categoryTerms: ["sports bar"],
+      vibeTerms: [],
+      featureTerms: ["tv"],
+      negativeTerms: [],
+      alternativeGroups: [],
+    },
+    pairingPreference: {
+      requiresPairing: false,
+      distanceMode: "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+    geo: emptyGeoIntent(),
+    vibe: rawQuery.toLowerCase().includes("best") ? ["best"] : [],
+    strictness: "high",
+  };
+
+  return intent;
+}
+
 function emptyGeoIntent() {
   return {
     raw: null,
@@ -194,6 +356,13 @@ function emptyGeoIntent() {
 function createEnterpriseIntentFastPathResult(rawQuery: string) {
   const query = rawQuery.toLowerCase().trim();
   const connector = detectFastPathConnector(query);
+
+  if (hasSportsWatchFastPathIntent(query)) {
+    return {
+      intent: createSportsWatchFastPathIntent(rawQuery),
+      reason: "matched sports-watch activity fast path",
+    };
+  }
 
   if (!connector) {
     return { intent: null, reason: "missing_pairing_connector" };

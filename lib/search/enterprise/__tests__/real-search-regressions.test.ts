@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { activityRpcTerms, normalizeIntent } from "../normalize-intent";
 
 describe("TheOutHaven enterprise search regression requirements", () => {
   it("protects real failed search phrases", () => {
@@ -38,4 +39,33 @@ describe("TheOutHaven enterprise search regression requirements", () => {
     expect(rules.walkingResultsSortNearestFirst).toBe(true);
     expect(rules.crossCityAndCrossStateResultsRankLower).toBe(true);
   });
+
+  it("does not treat Knicks game bar search as rooftop nightlife-first intent", () => {
+    const intent = normalizeIntent("Best bar to watch the Knicks game in Harlem", {
+      rawQuery: "Best bar to watch the Knicks game in Harlem",
+      searchType: "activity",
+      primaryDomain: "activity",
+      needsRestaurant: false,
+      needsActivity: true,
+      wantsPairing: false,
+      activityIntent: {
+        activityTerms: ["bar", "watch knicks game"],
+        categoryTerms: ["sports bar"],
+        featureTerms: ["tv"],
+        vibeTerms: [],
+        negativeTerms: [],
+        alternativeGroups: [],
+      },
+    } as any);
+
+    const rpcTerms = activityRpcTerms(intent);
+
+    expect(rpcTerms.terms).toContain("sports bar");
+    expect(rpcTerms.terms).toContain("tv");
+    expect(rpcTerms.terms).toContain("watch party");
+    expect(rpcTerms.terms).not.toContain("rooftop lounge");
+    expect(rpcTerms.terms).not.toContain("dance club");
+    expect(rpcTerms.terms).not.toContain("live dj");
+  });
+
 });

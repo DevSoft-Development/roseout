@@ -24,6 +24,7 @@ type RpcDebug = {
   activityRpcTermsPruned?: string[];
   relaxedActivityPruningApplied?: boolean;
   activityTermsRemovedForRelaxedIntent?: string[];
+  activityRpcTermsRemovedForSportsWatchIntent?: string[];
   relaxedActivityRpcSlimmingApplied?: boolean;
   activityTermsRemovedFromRpcForRelaxedIntent?: string[];
   restaurantRpcCount?: number;
@@ -152,6 +153,8 @@ export async function searchEnterpriseLane(
       debug.activityRpcTerms = p.p_search_terms;
       debug.activityRpcTermsOriginal = activityTermsOriginal;
       debug.activityRpcTermsPruned = rpcTerms.terms;
+      debug.activityRpcTermsRemovedForSportsWatchIntent =
+        rpcTerms.removedForSportsWatchIntent ?? [];
       debug.relaxedActivityPruningApplied = relaxedActivityIntent;
       debug.activityTermsRemovedForRelaxedIntent = relaxedActivityIntent
         ? activityTermsAfterHookah.filter((term) => !prunedNormalized.has(term.toLowerCase()))

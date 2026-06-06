@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { activitySearchTerms, deterministicIntentFromQuery, normalizeIntent } from "../normalize-intent";
 import { resolveSearchMarket } from "../markets";
-import { getEnterpriseIntentFastPathReason, parseEnterpriseIntent } from "../intent-parser";
+import { getEnterpriseIntentFastPathReason, parseEnterpriseIntent, parseEnterpriseIntentFastPath } from "../intent-parser";
 
 describe("enterprise search intent", () => {
   for (const query of [
@@ -88,4 +88,25 @@ describe("enterprise search intent", () => {
     expect(intent.geo.borough).toBe("Queens");
     expect(resolveSearchMarket({ geo: intent.geo }).marketApplied).toBe(false);
   });
+
+  it("fast-path parses sports-watch activity searches without requiring a pairing connector", () => {
+    const intent = parseEnterpriseIntentFastPath("Best bar to watch the Knicks game in Harlem");
+
+    expect(intent).toBeTruthy();
+    expect(intent?.searchType).toBe("activity");
+    expect(intent?.primaryDomain).toBe("activity");
+    expect(intent?.needsActivity).toBe(true);
+    expect(intent?.needsRestaurant).toBe(false);
+    expect(intent?.wantsPairing).toBe(false);
+    expect(intent?.activityIntent?.categoryTerms).toContain("sports bar");
+    expect(intent?.activityIntent?.featureTerms).toContain("tv");
+    expect(intent?.activityIntent?.activityTerms?.join(" ")).toMatch(/sports bar|watch party|knicks game/i);
+  });
+
+  it("reports sports-watch fast-path reason", () => {
+    const reason = getEnterpriseIntentFastPathReason("bar with TVs for NBA game");
+
+    expect(reason).toBe("matched sports-watch activity fast path");
+  });
+
 });
