@@ -8,6 +8,9 @@ import { haversineMiles, hasCoordinates, walkingMinutesFromMiles } from "../_sha
 import { hasValidPhoto } from "../_shared/photos.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
 
+const SEARCH_INTENT_FAST_MODEL = Deno.env.get("SEARCH_INTENT_FAST_MODEL") || "gpt-4o-mini";
+const SEARCH_INTENT_FALLBACK_MODEL = Deno.env.get("SEARCH_INTENT_FALLBACK_MODEL") || "gpt-4o";
+const SEARCH_INTENT_CACHE_VERSION = Deno.env.get("SEARCH_INTENT_CACHE_VERSION") || "intent-v4-fast-model";
 const STEAK_TERMS = ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib", "churrasco", "brazilian steakhouse"];
 const THEATER_TERMS = ["theater", "theatre", "cinema", "movie theater", "movie theatre", "movie_theater", "movies", "showtimes", "box office", "performing arts", "performing_arts", "performance", "playhouse", "concert hall", "opera house"];
 const THEATER_INTENT_TERMS = [...THEATER_TERMS, "movie", "show"];
@@ -82,7 +85,7 @@ function speedStatus(ms: number) { return ms < 1000 ? "excellent" : ms < 2000 ? 
 
 async function parseIntent(supabase: any, rawQuery: string, body: any, perf: Record<string, number>) {
   const cached = await getCachedIntent(supabase, rawQuery);
-  if (cached.cache_hit) return { intent: cached.intent as Record<string, unknown>, parser_source: "cache", cache_hit: true, llm_used: false };
+  if (cached.cache_hit) return { intent: cached.intent as Record<string, unknown>, parser_source: "cache", cache_hit: true, llm_used: false, intentLlmModel: SEARCH_INTENT_FAST_MODEL, intentCacheVersion: SEARCH_INTENT_CACHE_VERSION };
   const started = Date.now();
   const fast = fastParseSearchIntent(rawQuery, { area: body.area });
   perf.llm_ms = 0;
@@ -90,19 +93,19 @@ async function parseIntent(supabase: any, rawQuery: string, body: any, perf: Rec
   const force = body.force_llm === true || body.debug?.force_llm === true || !useFastPath;
   if (!force && parserConfidence(fast) >= 0.75 && fast.searchType !== "unknown") {
     await saveCachedIntent(supabase, rawQuery, fast, "fast_path");
-    return { intent: fast, parser_source: "fast_path", cache_hit: false, llm_used: false, fastPathMatched: true, fastPathReason: "edge_fast_parser_confidence_threshold" };
+    return { intent: fast, parser_source: "fast_path", cache_hit: false, llm_used: false, fastPathMatched: true, fastPathReason: "edge_fast_parser_confidence_threshold", intentLlmFastModel: SEARCH_INTENT_FAST_MODEL, intentLlmFallbackModel: SEARCH_INTENT_FALLBACK_MODEL, intentCacheVersion: SEARCH_INTENT_CACHE_VERSION };
   }
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) return { intent: normalizeIntent({ ...fast, parser_source: "fallback" }), parser_source: "fallback", cache_hit: false, llm_used: false, fastPathMatched: false, fastPathReason: useFastPath ? "llm_unavailable" : "fast_path_disabled" };
   try {
-    const model = Deno.env.get("SEARCH_LLM_MODEL") || "gpt-4o-mini";
+    const model = SEARCH_INTENT_FAST_MODEL;
     const res = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, response_format: { type: "json_object" }, temperature: 0.1, messages: [{ role: "system", content: "Return compact JSON TheOutHaven search intent." }, { role: "user", content: JSON.stringify({ rawQuery, fast }) }] }) });
     perf.llm_ms = Date.now() - started;
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     const intent = normalizeIntent({ ...fast, ...JSON.parse(data.choices?.[0]?.message?.content || "{}"), parser_source: "llm", confidence: 0.86 });
     await saveCachedIntent(supabase, rawQuery, intent, "llm", model);
-    return { intent, parser_source: "llm", cache_hit: false, llm_used: true, fastPathMatched: false, fastPathReason: useFastPath ? "fast_parser_confidence_below_threshold" : "fast_path_disabled" };
+    return { intent, parser_source: "llm", cache_hit: false, llm_used: true, intentLlmModel: model, intentLlmFastModel: SEARCH_INTENT_FAST_MODEL, intentLlmFallbackModel: SEARCH_INTENT_FALLBACK_MODEL, intentCacheVersion: SEARCH_INTENT_CACHE_VERSION, fastPathMatched: false, fastPathReason: useFastPath ? "fast_parser_confidence_below_threshold" : "fast_path_disabled" };
   } catch (error) {
     perf.llm_ms = Date.now() - started;
     return { intent: normalizeIntent({ ...fast, parser_source: "fallback", llm_error: safeError(error) }), parser_source: "fallback", cache_hit: false, llm_used: false, fastPathMatched: false, fastPathReason: useFastPath ? "llm_error" : "fast_path_disabled" };
@@ -251,7 +254,7 @@ Deno.serve(async (req) => {
     perf.pairing_ms = Date.now() - pairingStarted;
     perf.total_ms = totalTimer();
     const performance = { ...perf, speed_status: speedStatus(perf.total_ms) };
-    const debug = { parser_source: parsed.parser_source, intentParserSource: parsed.parser_source, fastPathMatched: Boolean(parsed.fastPathMatched), fastPathReason: parsed.fastPathReason ?? null, cache_hit: parsed.cache_hit, llm_used: parsed.llm_used, ...performance, restaurantTerms, activityTerms, restaurantRpcTerms: restaurantTerms, activityRpcTerms: activityTerms, restaurantRpcTermsOriginal, restaurantRpcTermsPruned: restaurantTerms, activityRpcTermsOriginal, activityRpcTermsPruned: activityTerms, activityGeoExpanded, activityInitialRadiusMiles: initialRadius, activityFinalRadiusMiles: activityRadius, activityExpansionReason: activityGeoExpanded ? "fewer than 5 strong activity matches" : null, pairCandidatesFound: restaurants.length * activities.length, pairsWithinRequestedDistance: pairs.length, ...pairDebug, performance };
+    const debug = { parser_source: parsed.parser_source, intentParserSource: parsed.parser_source, intentLlmModel: (parsed as any).intentLlmModel ?? (parsed.llm_used ? SEARCH_INTENT_FAST_MODEL : null), intentLlmFastModel: SEARCH_INTENT_FAST_MODEL, intentLlmFallbackModel: SEARCH_INTENT_FALLBACK_MODEL, intentCacheVersion: SEARCH_INTENT_CACHE_VERSION, llmEnhancementUsed: parsed.llm_used, llmFallbackUsed: false, llmTimedOut: false, fallbackIntentUsed: parsed.parser_source === "fallback", intentCacheHit: parsed.cache_hit, fastPathMatched: Boolean(parsed.fastPathMatched), fastPathReason: parsed.fastPathReason ?? null, cache_hit: parsed.cache_hit, llm_used: parsed.llm_used, ...performance, restaurantTerms, activityTerms, restaurantRpcTerms: restaurantTerms, activityRpcTerms: activityTerms, restaurantRpcTermsOriginal, restaurantRpcTermsPruned: restaurantTerms, activityRpcTermsOriginal, activityRpcTermsPruned: activityTerms, activityGeoExpanded, activityInitialRadiusMiles: initialRadius, activityFinalRadiusMiles: activityRadius, activityExpansionReason: activityGeoExpanded ? "fewer than 5 strong activity matches" : null, pairCandidatesFound: restaurants.length * activities.length, pairsWithinRequestedDistance: pairs.length, ...pairDebug, performance };
     await logEdgeFunctionRun(supabase, { function_name: "create-search", status: "success", user_id: user.id, input_summary: { rawQuery }, output_summary: { restaurants: restaurants.length, activities: activities.length, pairs: pairs.length }, duration_ms: perf.total_ms, metadata: debug });
     return ok({ success: true, search_system: "edge-enterprise-search-v1", rawQuery, normalizedIntent: intent, restaurants: restaurants.slice(0, limit), activities: activities.slice(0, limit), pairs, renderMode: pairs.length ? "mixed_pairs" : restaurants.length && activities.length ? "partial_mixed" : restaurants.length ? "restaurant_cards" : activities.length ? "activity_cards" : "empty", performance, debug });
   } catch (error) {

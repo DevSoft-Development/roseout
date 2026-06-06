@@ -6,10 +6,17 @@ import { fastParseSearchIntent, normalizeIntent, parserConfidence } from "../_sh
 import { getCachedIntent, saveCachedIntent } from "../_shared/searchIntentCache.ts";
 import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
 
+const SEARCH_INTENT_FAST_MODEL = Deno.env.get("SEARCH_INTENT_FAST_MODEL") || "gpt-4o-mini";
+const SEARCH_INTENT_FALLBACK_MODEL = Deno.env.get("SEARCH_INTENT_FALLBACK_MODEL") || "gpt-4o";
+const SEARCH_INTENT_LLM_TIMEOUT_MS = Number(Deno.env.get("SEARCH_INTENT_LLM_TIMEOUT_MS") || 1400);
+const SEARCH_INTENT_FALLBACK_TIMEOUT_MS = Number(Deno.env.get("SEARCH_INTENT_FALLBACK_TIMEOUT_MS") || 2200);
+void SEARCH_INTENT_FALLBACK_TIMEOUT_MS;
+const SEARCH_INTENT_CACHE_VERSION = Deno.env.get("SEARCH_INTENT_CACHE_VERSION") || "intent-v4-fast-model";
+
 async function llmParse(prompt: string, fastIntent: Record<string, unknown>, signal: AbortSignal) {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) return { intent: fastIntent, source: "fallback", model: null, llm_used: false, error: "OPENAI_API_KEY missing" };
-  const model = Deno.env.get("SEARCH_LLM_MODEL") || "gpt-4o-mini";
+  const model = SEARCH_INTENT_FAST_MODEL;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", signal,
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -49,7 +56,7 @@ Deno.serve(async (req) => {
     const needsLlm = forceLlm || parserConfidence(fastIntent) < 0.75 || fastIntent.searchType === "unknown";
     if (needsLlm) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4500);
+      const timeout = setTimeout(() => controller.abort(), SEARCH_INTENT_LLM_TIMEOUT_MS);
       const llmStarted = Date.now();
       try {
         const llm = await llmParse(rawQuery, fastIntent, controller.signal);
@@ -67,7 +74,7 @@ Deno.serve(async (req) => {
       await saveCachedIntent(supabase, rawQuery, finalIntent, "fast_path");
     }
     await logEdgeFunctionRun(supabase, { function_name: "parse-search-intent", status: "success", user_id: user.id, input_summary: { rawQuery }, output_summary: { parserSource, llmUsed }, duration_ms: timer(), metadata: { llmMs, intentParserSource: parserSource, fastPathMatched: parserSource === "fast_path", fastPathReason: parserSource === "fast_path" ? "edge_fast_parser_confidence_threshold" : (useFastPath ? "llm_required" : "fast_path_disabled") } });
-    return ok({ success: true, rawQuery, normalizedIntent: finalIntent, parser_source: parserSource, cache_hit: false, llm_used: llmUsed, timingMs: timer(), debug: body.debug ? { ...cached, llm_ms: llmMs, intentParserSource: parserSource, fastPathMatched: parserSource === "fast_path", fastPathReason: parserSource === "fast_path" ? "edge_fast_parser_confidence_threshold" : (useFastPath ? "llm_required" : "fast_path_disabled") } : undefined });
+    return ok({ success: true, rawQuery, normalizedIntent: finalIntent, parser_source: parserSource, cache_hit: false, llm_used: llmUsed, timingMs: timer(), debug: body.debug ? { ...cached, llm_ms: llmMs, intentParserSource: parserSource, intentLlmModel: llmUsed ? SEARCH_INTENT_FAST_MODEL : null, intentLlmFastModel: SEARCH_INTENT_FAST_MODEL, intentLlmFallbackModel: SEARCH_INTENT_FALLBACK_MODEL, intentCacheVersion: SEARCH_INTENT_CACHE_VERSION, fastPathMatched: parserSource === "fast_path", fastPathReason: parserSource === "fast_path" ? "edge_fast_parser_confidence_threshold" : (useFastPath ? "llm_required" : "fast_path_disabled") } : undefined });
   } catch (error) {
     if (supabase) await logEdgeFunctionRun(supabase, { function_name: "parse-search-intent", status: "error", error_message: safeError(error), duration_ms: timer() });
     return serverError("parse-search-intent failed", safeError(error));

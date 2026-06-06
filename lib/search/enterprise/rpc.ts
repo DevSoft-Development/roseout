@@ -8,6 +8,7 @@ import {
   hasSpecificRestaurantFoodOrCuisine,
   pruneActivityRpcTerms,
   pruneRelaxedActivityTerms,
+  pruneSportsWatchActivityTerms,
   restaurantSearchTerms,
   restaurantSearchTermsOriginal,
 } from "./normalize-intent";
@@ -26,6 +27,7 @@ type RpcDebug = {
   activityTermsRemovedForRelaxedIntent?: string[];
   relaxedActivityRpcSlimmingApplied?: boolean;
   activityTermsRemovedFromRpcForRelaxedIntent?: string[];
+  activityRpcTermsRemovedForSportsWatchIntent?: string[];
   restaurantRpcCount?: number;
   activityRpcCount?: number;
   restaurantRecoveryUsed?: boolean;
@@ -144,7 +146,8 @@ export async function searchEnterpriseLane(
     if (domain === "activity" && debug) {
       const activityTermsOriginal = activitySearchTermsOriginal(intent);
       const activityTermsAfterHookah = pruneActivityRpcTerms(intent, activityTermsOriginal);
-      const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterHookah);
+      const activityTermsAfterSportsWatch = pruneSportsWatchActivityTerms(intent, activityTermsAfterHookah);
+      const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterSportsWatch);
       const rpcTerms = activityRpcTerms(intent);
       const prunedNormalized = new Set(activityTermsPruned.map((term) => term.toLowerCase()));
       const relaxedActivityIntent = hasRelaxedActivityIntent(intent.rawQuery);
@@ -152,6 +155,7 @@ export async function searchEnterpriseLane(
       debug.activityRpcTerms = p.p_search_terms;
       debug.activityRpcTermsOriginal = activityTermsOriginal;
       debug.activityRpcTermsPruned = rpcTerms.terms;
+      debug.activityRpcTermsRemovedForSportsWatchIntent = (rpcTerms as any).removedForSportsWatchIntent ?? [];
       debug.relaxedActivityPruningApplied = relaxedActivityIntent;
       debug.activityTermsRemovedForRelaxedIntent = relaxedActivityIntent
         ? activityTermsAfterHookah.filter((term) => !prunedNormalized.has(term.toLowerCase()))

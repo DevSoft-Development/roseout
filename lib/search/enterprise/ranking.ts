@@ -11,7 +11,7 @@ import {
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
 import { isWellnessActivity } from "../lowLevel";
-import { hasRelaxedActivityIntent } from "./normalize-intent";
+import { hasRelaxedActivityIntent, hasSportsWatchIntent } from "./normalize-intent";
 
 function compactRecordText(r: EnterpriseLocation) {
   return textForRecord(r).replaceAll("_", " ").replaceAll("-", " ");
@@ -28,6 +28,50 @@ function fieldText(r: EnterpriseLocation, fields: string[]) {
     .toLowerCase()
     .replaceAll("_", " ")
     .replaceAll("-", " ");
+}
+
+
+function userAskedToWatchSportsGame(intent: SearchIntent): boolean {
+  const text = [
+    intent.rawQuery,
+    ...intent.activityIntent.activityTerms,
+    ...intent.activityIntent.categoryTerms,
+    ...intent.activityIntent.featureTerms,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+
+  return hasSportsWatchIntent(text);
+}
+
+function sportsWatchRecordSignal(r: EnterpriseLocation): number {
+  const text = fieldText(r, [
+    "name", "activity_name", "primary_category", "activity_type", "google_types", "tags", "semantic_tags", "intent_tags", "description", "search_document", "semantic_search_text", "search_keywords",
+  ]);
+
+  let score = 0;
+  if (/\bsports bar\b|\bsports lounge\b|\bsport bar\b|\bbar & grill\b|\bbar and grill\b|\bpub\b|\btavern\b/.test(text)) score += 55;
+  if (/\btv\b|\btvs\b|\btelevision\b|\bscreen\b|\bscreens\b|\bbig screen\b|\bbig screens\b|\bprojector\b/.test(text)) score += 35;
+  if (/\bwatch party\b|\bgame day\b|\bgame night\b|\bshowing the game\b|\bwatch the game\b|\blive sports\b|\bsports viewing\b/.test(text)) score += 45;
+  if (/\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(text)) score += 25;
+  return score;
+}
+
+function isNightlifeOnlyForSportsWatch(r: EnterpriseLocation): boolean {
+  const text = fieldText(r, [
+    "name", "activity_name", "primary_category", "activity_type", "google_types", "tags", "semantic_tags", "intent_tags", "description", "search_document", "semantic_search_text", "search_keywords",
+  ]);
+  const nightlifeOnly = /\bclub\b|\bdance club\b|\bnightclub\b|\blive dj\b|\bdj\b|\bspeakeasy\b|\brooftop lounge\b|\brooftop\b|\broof top\b|\bskyline\b/.test(text);
+  const hasSportsWatch = sportsWatchRecordSignal(r) > 0;
+  return nightlifeOnly && !hasSportsWatch;
+}
+
+function isBarPubForSportsWatch(r: EnterpriseLocation): boolean {
+  const text = fieldText(r, ["name", "activity_name", "primary_category", "activity_type", "google_types", "tags", "semantic_tags", "intent_tags", "description", "search_document", "semantic_search_text", "search_keywords"]);
+  return /\bbar\b|\bpub\b|\btavern\b|\bgrill\b/.test(text);
 }
 
 function userExplicitlyAskedForTheater(intent: SearchIntent) {
@@ -216,8 +260,8 @@ function isActivityLike(r: EnterpriseLocation) {
     r.activity_name ||
       r.activity_type ||
       /\bactivity\b|\bactivities\b|\bexperience\b|\bentertainment\b|\bnightlife\b/.test(typeText) ||
-      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\brooftop\b|\broof top\b|\brooftop bar\b|\brooftop lounge\b|\bcocktail bar\b|\bwine bar\b|\bbar\b|\bnightlife\b|\bspeakeasy\b|\barcade\b|\bmusic\b|\btheater\b|\btheatre\b|\bgallery\b|\bpark\b|\bescape room\b|\bclub\b|\bspa\b/.test(categoryText) ||
-      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\brooftop\b|\broof top\b|\brooftop bar\b|\brooftop lounge\b|\bcocktail bar\b|\bwine bar\b|\bbar\b|\bnightlife\b|\bspeakeasy\b|\bskyline\b|\barcade\b|\blive music\b|\btheater\b|\btheatre\b|\bescape room\b/.test(fullText),
+      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\brooftop\b|\broof top\b|\brooftop bar\b|\brooftop lounge\b|\bcocktail bar\b|\bwine bar\b|\bbar\b|\bsports bar\b|\bsports lounge\b|\bpub\b|\btavern\b|\bbar and grill\b|\blive sports\b|\bwatch party\b|\bgame day\b|\btv\b|\btvs\b|\bscreen\b|\bscreens\b|\bnightlife\b|\bspeakeasy\b|\barcade\b|\bmusic\b|\btheater\b|\btheatre\b|\bgallery\b|\bpark\b|\bescape room\b|\bclub\b|\bspa\b/.test(categoryText) ||
+      /\bbowling\b|\bkaraoke\b|\bmuseum\b|\bhookah\b|\blounge\b|\brooftop\b|\broof top\b|\brooftop bar\b|\brooftop lounge\b|\bcocktail bar\b|\bwine bar\b|\bbar\b|\bsports bar\b|\bsports lounge\b|\bpub\b|\btavern\b|\bbar and grill\b|\blive sports\b|\bwatch party\b|\bgame day\b|\btv\b|\btvs\b|\bscreen\b|\bscreens\b|\bnightlife\b|\bspeakeasy\b|\bskyline\b|\barcade\b|\blive music\b|\btheater\b|\btheatre\b|\bescape room\b/.test(fullText),
   );
 }
 const CURATED_TERMS = [
@@ -450,8 +494,14 @@ export function scoreActivityQuality(r: EnterpriseLocation, intent: SearchIntent
   if (signals.rating >= 4.6 && signals.reviewCount >= 300) { score += 25; qualityReason(reasons, "rating >= 4.6 with 300+ reviews", 25); }
   else if (signals.rating >= 4.4 && signals.reviewCount >= 100) { score += 20; qualityReason(reasons, "rating >= 4.4 with 100+ reviews", 20); }
   if (signals.hasPhotos) { score += 15; qualityReason(reasons, "has photos", 15); }
-  if (/\b(rooftop|roof top|rooftop bar|rooftop lounge|terrace|skyline|views?|roof deck)\b/.test(signals.text)) { score += 30; qualityReason(reasons, "rooftop/terrace/skyline signal", 30); }
-  if (/\b(cocktail|cocktails|lounge|bar|speakeasy|nightlife)\b/.test(signals.text)) { score += 20; qualityReason(reasons, "drinks/lounge/nightlife signal", 20); }
+  const sportsWatchIntent = userAskedToWatchSportsGame(intent);
+  const sportsWatchScore = sportsWatchRecordSignal(r);
+  if (sportsWatchIntent && sportsWatchScore > 0) { score += sportsWatchScore; qualityReason(reasons, "sports/game-watch fit", sportsWatchScore); }
+  if (sportsWatchIntent && sportsWatchScore <= 0) { score -= 45; qualityReason(penalties, "missing sports bar/TV/game-watch signal", -45); }
+  if (sportsWatchIntent && isNightlifeOnlyForSportsWatch(r)) { score -= 55; qualityReason(penalties, "nightlife/rooftop-only result for sports-watch query", -55); }
+  if (!sportsWatchIntent && /\b(rooftop|roof top|rooftop bar|rooftop lounge|terrace|skyline|views?|roof deck)\b/.test(signals.text)) { score += 30; qualityReason(reasons, "rooftop/terrace/skyline signal", 30); }
+  if (!sportsWatchIntent && /\b(cocktail|cocktails|lounge|bar|speakeasy|nightlife)\b/.test(signals.text)) { score += 20; qualityReason(reasons, "drinks/lounge/nightlife signal", 20); }
+  if (sportsWatchIntent && isBarPubForSportsWatch(r)) { score += 12; qualityReason(reasons, "bar/pub fit for sports-watch query", 12); }
   if (/\b(live dj|dj)\b/.test(signals.text) && userAskedForHardNightlife(intent.rawQuery)) { score += 10; qualityReason(reasons, "requested DJ/nightlife signal", 10); }
   if (signals.approved) { score += 8; qualityReason(reasons, "approved/published/verified status", 8); }
 
@@ -588,6 +638,14 @@ export function explainRejection(
 
   if (
     domain === "activity" &&
+    userAskedToWatchSportsGame(intent) &&
+    isNightlifeOnlyForSportsWatch(record)
+  ) {
+    return "nightlife_only_not_sports_watch";
+  }
+
+  if (
+    domain === "activity" &&
     isSpecificActivityIntent(intent.activityIntent) &&
     !hasGenericActivityAlternative &&
     specificActivityTerms.length > 0 &&
@@ -640,10 +698,19 @@ function relevance(
           ...intent.activityIntent.featureTerms,
           ...(intent.activityIntent.alternativeGroups ?? []).flat(),
         ];
-  const termScore = terms.reduce(
-    (s, t) => s + (termMatchesRecord(r, [t]) ? 35 : 0),
-    0,
-  );
+  const sportsWatchIntent = domain === "activity" && userAskedToWatchSportsGame(intent);
+  const termScore = terms.reduce((s, t) => {
+    const matched = termMatchesRecord(r, [t]);
+    if (!matched) return s;
+    const normalizedTerm = String(t || "").toLowerCase();
+    if (
+      sportsWatchIntent &&
+      /\b(sports bar|sports lounge|tv|tvs|screen|screens|watch game|watch the game|game day|watch party|live sports|bar with tv|bar with tvs)\b/.test(normalizedTerm)
+    ) {
+      return s + 65;
+    }
+    return s + 35;
+  }, 0);
   const alternativeScore =
     domain === "restaurant"
       ? (intent.restaurantIntent.alternativeGroups ?? []).some((group) =>
@@ -704,6 +771,7 @@ export function rankActivityResults(
   results: EnterpriseLocation[],
   intent: SearchIntent,
 ) {
+  results.forEach((result) => scoreActivityQuality(result, intent));
   return filterActivityResults(results, intent).sort(
     (a, b) =>
       relevance(b, intent, "activity") - relevance(a, intent, "activity"),
