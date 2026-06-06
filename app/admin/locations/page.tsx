@@ -934,176 +934,181 @@ export default async function AdminLocationsPage({
                   key={`${location.locationType}-${location.id}`}
                   className="group rounded-[1.5rem] border border-black/10 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-xl"
                 >
-                  <div className="grid gap-4 xl:grid-cols-[1fr_420px_140px] xl:items-center">
-                    <Link
-                      href={`/admin/dashboard/crm/${location.id}`}
-                      className="flex min-w-0 items-center gap-4"
-                    >
-                      <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
-                        {getLocationImage(location) ? (
-                          <img
-                            src={getLocationImage(location) || undefined}
-                            alt={location.name || "TheOutHaven location"}
-                            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-sm font-black text-black/30">
-                            RO
+                  <div className="space-y-3">
+                    <div className="grid gap-4 xl:grid-cols-[1fr_420px] xl:items-center">
+                      <Link
+                        href={`/admin/dashboard/crm/${location.id}`}
+                        className="flex min-w-0 items-center gap-4"
+                      >
+                        <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
+                          {getLocationImage(location) ? (
+                            <img
+                              src={getLocationImage(location) || undefined}
+                              alt={location.name || "TheOutHaven location"}
+                              className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-sm font-black text-black/30">
+                              RO
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-lg font-black">
+                              {location.name || "Untitled Location"}
+                            </h3>
+
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${typeBadge(
+                                location.locationType,
+                              )}`}
+                            >
+                              {location.locationType === "restaurants"
+                                ? "Restaurant"
+                                : "Activity"}
+                            </span>
+
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${statusBadge(
+                                location.status,
+                              )}`}
+                            >
+                              {location.status || "unknown"}
+                            </span>
+
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${
+                                isPubliclyVisible(location)
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-amber-200 bg-amber-50 text-amber-700"
+                              }`}
+                            >
+                              {isPubliclyVisible(location)
+                                ? "Searchable"
+                                : getDataStatus(location)}
+                            </span>
                           </div>
-                        )}
-                      </div>
 
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-lg font-black">
-                            {location.name || "Untitled Location"}
-                          </h3>
+                          <p className="mt-1 line-clamp-2 text-sm font-bold text-black/55">
+                            {formatFullAddress(location)}
+                          </p>
 
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${typeBadge(
-                              location.locationType,
-                            )}`}
-                          >
-                            {location.locationType === "restaurants"
-                              ? "Restaurant"
-                              : "Activity"}
-                          </span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">
+                              {location.category || "Category N/A"}
+                            </span>
 
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${statusBadge(
-                              location.status,
-                            )}`}
-                          >
-                            {location.status || "unknown"}
-                          </span>
+                            <span
+                              className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${
+                                getIsClaimed(location)
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-black/10 bg-[#f5eee8] text-black/50"
+                              }`}
+                            >
+                              {getIsClaimed(location)
+                                ? "Claimed"
+                                : "Open Claim"}
+                            </span>
 
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${
-                              isPubliclyVisible(location)
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700"
-                            }`}
-                          >
-                            {isPubliclyVisible(location)
-                              ? "Searchable"
-                              : getDataStatus(location)}
-                          </span>
+                            {getMissingFields(location).length > 0 && (
+                              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black uppercase text-amber-700">
+                                Missing {getMissingFields(location).length}
+                              </span>
+                            )}
+
+                            {location.is_hidden === true && (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
+                                Hidden
+                              </span>
+                            )}
+
+                            {location.is_low_level === true && (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
+                                Low-Level:{" "}
+                                {location.low_level_reason || "review"}
+                              </span>
+                            )}
+
+                            {location.source_quality_status && (
+                              <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-black uppercase text-blue-700">
+                                Source: {location.source_quality_status}
+                              </span>
+                            )}
+
+                            {location.public_visibility_tier && (
+                              <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/50">
+                                Tier: {location.public_visibility_tier}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </Link>
+
+                      <div className="grid grid-cols-4 gap-2">
+                        <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
+                            Rating
+                          </p>
+                          <p className="mt-1 text-sm font-black">
+                            {location.rating || 0}
+                          </p>
                         </div>
 
-                        <p className="mt-1 line-clamp-2 text-sm font-bold text-black/55">
-                          {formatFullAddress(location)}
-                        </p>
-
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <span className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">
-                            {location.category || "Category N/A"}
-                          </span>
-
-                          <span
-                            className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${
-                              getIsClaimed(location)
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-black/10 bg-[#f5eee8] text-black/50"
-                            }`}
-                          >
-                            {getIsClaimed(location) ? "Claimed" : "Open Claim"}
-                          </span>
-
-                          {getMissingFields(location).length > 0 && (
-                            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black uppercase text-amber-700">
-                              Missing {getMissingFields(location).length}
-                            </span>
-                          )}
-
-                          {location.is_hidden === true && (
-                            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
-                              Hidden
-                            </span>
-                          )}
-
-                          {location.is_low_level === true && (
-                            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
-                              Low-Level: {location.low_level_reason || "review"}
-                            </span>
-                          )}
-
-                          {location.source_quality_status && (
-                            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-black uppercase text-blue-700">
-                              Source: {location.source_quality_status}
-                            </span>
-                          )}
-
-                          {location.public_visibility_tier && (
-                            <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/50">
-                              Tier: {location.public_visibility_tier}
-                            </span>
-                          )}
+                        <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
+                            Views
+                          </p>
+                          <p className="mt-1 text-sm font-black">
+                            {formatNumber(location.view_count)}
+                          </p>
                         </div>
-                      </div>
-                    </Link>
 
-                    <div className="grid grid-cols-4 gap-2">
-                      <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
-                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
-                          Rating
-                        </p>
-                        <p className="mt-1 text-sm font-black">
-                          {location.rating || 0}
-                        </p>
-                      </div>
+                        <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
+                            Clicks
+                          </p>
+                          <p className="mt-1 text-sm font-black">
+                            {formatNumber(location.click_count)}
+                          </p>
+                        </div>
 
-                      <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
-                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
-                          Views
-                        </p>
-                        <p className="mt-1 text-sm font-black">
-                          {formatNumber(location.view_count)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
-                        <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
-                          Clicks
-                        </p>
-                        <p className="mt-1 text-sm font-black">
-                          {formatNumber(location.click_count)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-[#1b1210] p-3 text-center text-white">
-                        <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
-                          Score
-                        </p>
-                        <p className="mt-1 text-sm font-black">
-                          {getLocationScore(location)}
-                        </p>
+                        <div className="rounded-2xl bg-[#1b1210] p-3 text-center text-white">
+                          <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
+                            Score
+                          </p>
+                          <p className="mt-1 text-sm font-black">
+                            {getLocationScore(location)}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex gap-2 xl:flex-col">
+                    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-black/5 pt-3">
                       <Link
                         href={`/admin/dashboard/crm/${location.id}`}
-                        className="flex-1 rounded-full bg-[#1b1210] px-4 py-2 text-center text-xs font-black text-white transition hover:bg-rose-700"
+                        className="min-w-[130px] rounded-full bg-[#1b1210] px-4 py-2 text-center text-xs font-black text-white transition hover:bg-rose-700"
                       >
                         Open in CRM
                       </Link>
                       <Link
                         href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}
-                        className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
+                        className="min-w-[130px] rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
                       >
                         Legacy View
                       </Link>
 
                       <Link
                         href={`/admin/dashboard/locations/edit/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
-                        className="flex-1 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
+                        className="min-w-[130px] rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
                       >
                         Edit
                       </Link>
 
                       <Link
                         href={`/admin/dashboard/marketing?source_table=${location.locationType}&source_id=${location.id}&location_id=${location.id}&location_name=${encodeURIComponent(location.name || "Untitled Location")}&image=${encodeURIComponent(getLocationImage(location) || "")}&category=${encodeURIComponent(location.category || "")}&city=${encodeURIComponent(location.city || "")}&state=${encodeURIComponent(location.state || "")}&address=${encodeURIComponent(formatFullAddress(location))}&public_url=${encodeURIComponent(`/locations/${location.locationType}/${location.id}`)}`}
-                        className="flex-1 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-center text-xs font-black text-rose-700 transition hover:bg-rose-600 hover:text-white"
+                        className="min-w-[150px] rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-center text-xs font-black text-rose-700 transition hover:bg-rose-600 hover:text-white"
                       >
                         Create Marketing
                       </Link>
@@ -1116,10 +1121,10 @@ export default async function AdminLocationsPage({
                             locationType={location.locationType}
                             userId={location.owner_user_id}
                             label="Log in as owner"
-                            className="flex-1 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-black text-amber-800 transition hover:bg-amber-500 hover:text-white disabled:opacity-50"
+                            className="min-w-[150px] rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-black text-amber-800 transition hover:bg-amber-500 hover:text-white disabled:opacity-50"
                           />
                         ) : (
-                          <span className="flex-1 rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-black/35">
+                          <span className="min-w-[150px] rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-black/35">
                             No owner connected
                           </span>
                         ))}
