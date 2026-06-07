@@ -218,6 +218,8 @@ export default function LocationDetailPage() {
         .from("location_reviews")
         .select("*")
         .eq("location_id", data.id || id)
+        .eq("status", "approved")
+        .eq("verified_visit", true)
         .order("created_at", { ascending: false });
 
       setLocation(data);
@@ -769,7 +771,7 @@ export default function LocationDetailPage() {
               >
                 {reviews.length === 0 ? (
                   <p className="text-sm leading-7 text-white/60">
-                    Curated and imported review snippets will appear here when available. Public review submission is hidden until visits can be verified.
+                    Verified guest reviews will appear here after TheOutHaven outings.
                   </p>
                 ) : (
                   <div className="mt-6 space-y-4">

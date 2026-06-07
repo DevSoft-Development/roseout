@@ -37,6 +37,26 @@ function scoreRecord(record: any, terms: string[]) {
   }, 0);
 }
 
+
+function reviewKeywordScore(record: any, intent: CanonicalSearchIntent) {
+  const query = [intent.rawQuery, intent.normalizedQuery, ...(intent.vibes ?? []), ...(intent.normalizedIntent?.vibeTerms ?? []), ...(intent.normalizedIntent?.activityTerms ?? []), ...(intent.normalizedIntent?.restaurantTerms ?? [])].join(" ").toLowerCase();
+  const keywords = (Array.isArray(record?.review_keywords) ? record.review_keywords : []).map((v: unknown) => String(v).toLowerCase());
+  const hay = keywords.join(" ");
+  let score = Math.min(20, Math.max(0, Number(record?.review_score || 0)) / 5);
+  const wantsQuiet = /quiet|conversation|chill|low key|no club/.test(query);
+  const wantsSports = /sports|watch|game|tv/.test(query);
+  const wantsRooftop = /rooftop|terrace|skyline|views/.test(query);
+  const wantsHookah = /hookah|shisha/.test(query);
+  const wantsRomantic = /romantic|date/.test(query);
+  if (wantsQuiet && /quiet|conversation|low key|chill/.test(hay)) score += 18;
+  if (wantsQuiet && /loud|club|dance floor|dj/.test(hay)) score -= 20;
+  if (wantsSports && /tv|big screen|watch party|sports bar|game day|sports/.test(hay)) score += 18;
+  if (wantsRooftop && /rooftop|terrace|skyline|views/.test(hay)) score += 16;
+  if (wantsHookah && /hookah|shisha/.test(hay)) score += 16;
+  if (wantsRomantic && /romantic|date night|cozy|intimate/.test(hay)) score += 16;
+  return score;
+}
+
 function isRestaurantLike(record: any) {
   const hay = [
     record?.source_table,
@@ -316,6 +336,8 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     bs += bRooftop;
     as -= chainRankPenalty(a, intent);
     bs -= chainRankPenalty(b, intent);
+    as += reviewKeywordScore(a, intent);
+    bs += reviewKeywordScore(b, intent);
     as += Number(a.search_boost ?? 0);
     bs += Number(b.search_boost ?? 0);
     const ah = JSON.stringify(a).toLowerCase();
@@ -339,10 +361,12 @@ export function rankActivities(records: any[], intent: CanonicalSearchIntent) {
       intent.normalizedIntent?.activityTerms ?? intent.activityIntents;
     const aScore =
       scoreRecord(a, activityTerms) +
-      scoreGeoMatch(a, intent.geoIntent) * geoWeight;
+      scoreGeoMatch(a, intent.geoIntent) * geoWeight +
+      reviewKeywordScore(a, intent);
     const bScore =
       scoreRecord(b, activityTerms) +
-      scoreGeoMatch(b, intent.geoIntent) * geoWeight;
+      scoreGeoMatch(b, intent.geoIntent) * geoWeight +
+      reviewKeywordScore(b, intent);
     return bScore - aScore;
   });
 }
