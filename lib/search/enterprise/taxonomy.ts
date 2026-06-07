@@ -77,7 +77,6 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   "wine tasting": ["wine tasting"],
   brewery: ["brewery", "beer garden"],
   arcade: ["arcade", "games"],
-  "mini golf": ["mini golf"],
   billiards: ["pool hall", "billiards"],
   darts: ["darts"],
   "axe throwing": ["axe throwing"],
@@ -96,12 +95,14 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   bookstore: ["bookstore", "library event"],
   park: ["park", "waterfront", "pier", "beach", "boardwalk", "garden", "botanical garden", "zoo", "aquarium", "boat ride", "cruise", "rooftop view", "observation deck", "walking tour", "sightseeing"],
   spa: ["spa", "massage", "sauna", "wellness", "head spa", "float spa", "yoga spa", "recovery spa"],
-  sports: [
-    "skating", "roller skating", "ice skating", "basketball", "golf", "driving range", "batting cages", "climbing", "rock climbing", "gym",
-    "sports bar", "sports lounge", "bar with tv", "bar with tvs", "bar with screens", "watch party", "game day", "live sports", "pub", "tavern", "bar and grill",
+  "active recreation": [
+    "skating", "roller skating", "ice skating", "batting cages", "climbing", "rock climbing", "gym",
   ],
+  "mini golf": ["mini golf", "putt putt", "games"],
+  golf: ["golf", "driving range"],
+  sports: ["basketball", "football", "baseball", "hockey", "soccer"],
   "sports bar": [
-    "sports bar", "sports lounge", "bar with tv", "bar with tvs", "bar with screens", "tv bar", "tvs", "big screen", "big screens", "watch party", "game day", "game night", "live sports", "sports viewing", "pub", "tavern", "bar and grill",
+    "sports bar", "sports lounge", "sport lounge", "bar with tv", "bar with tvs", "bar with screens", "tv bar", "tvs", "tv", "big screen", "big screens", "watch party", "game day", "game night", "live sports", "sports viewing", "pub", "tavern", "bar and grill",
   ],
   shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"],
 };

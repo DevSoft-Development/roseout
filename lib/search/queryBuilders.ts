@@ -70,9 +70,10 @@ export function buildActivitySearchInput(intent: CanonicalSearchIntent): string 
   ]);
   const terms = uniq([
     ...((normalized?.activityTerms ?? intent.activityIntents).map((v) => (v === "paint_and_sip" ? "paint and sip sip and paint painting studio" : v))),
+    ...(intent.wantsActivity ? intent.addOnFoodIntents ?? [] : []),
     ...geoTerms(intent),
     ...activityRelevantVibes(intent),
     "activity",
-  ]).filter((term) => !restaurantLaneTerms.has(term));
+  ]).filter((term) => !restaurantLaneTerms.has(term) || (intent.addOnFoodIntents ?? []).includes(term));
   return terms.join(" ").trim();
 }

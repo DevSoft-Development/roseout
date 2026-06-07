@@ -147,30 +147,29 @@ const FAST_PATH_SPORTS_WATCH_TERMS = [
   "devils game",
 ];
 
-const SPORTS_TEAM_TERMS = [
-  "knicks",
-  "nets",
-  "yankees",
-  "mets",
-  "giants",
-  "jets",
-  "rangers",
-  "islanders",
-  "devils",
+const NBA_TEAM_TERMS = [
+  "knicks", "nets", "lakers", "warriors", "celtics", "heat", "bucks", "sixers", "76ers", "bulls", "mavericks", "mavs", "suns", "clippers", "nuggets", "timberwolves", "wolves", "thunder", "grizzlies", "pelicans", "kings", "trail blazers", "blazers", "jazz", "rockets", "spurs", "raptors", "pacers", "cavaliers", "cavs", "magic", "hawks", "hornets", "pistons", "wizards",
 ];
+const NFL_TEAM_TERMS = [
+  "giants", "jets", "cowboys", "eagles", "commanders", "patriots", "chiefs", "ravens", "steelers", "bills", "dolphins", "bengals", "browns", "texans", "colts", "jaguars", "titans", "broncos", "raiders", "chargers", "packers", "bears", "lions", "vikings", "falcons", "panthers", "saints", "buccaneers", "bucs", "cardinals", "rams", "49ers", "seahawks",
+];
+const MLB_TEAM_TERMS = [
+  "yankees", "mets", "dodgers", "red sox", "cubs", "white sox", "phillies", "braves", "astros", "rangers", "blue jays", "orioles", "rays", "guardians", "tigers", "royals", "twins", "angels", "athletics", "mariners", "nationals", "marlins", "brewers", "cardinals", "pirates", "reds", "diamondbacks", "rockies", "padres", "giants",
+];
+const NHL_TEAM_TERMS = [
+  "rangers", "islanders", "devils", "bruins", "flyers", "penguins", "capitals", "hurricanes", "panthers", "lightning", "maple leafs", "leafs", "canadiens", "senators", "sabres", "red wings", "blackhawks", "blues", "predators", "wild", "jets", "stars", "avalanche", "golden knights", "knights", "kraken", "canucks", "oilers", "flames", "ducks", "kings", "sharks", "coyotes",
+];
+const WNBA_TEAM_TERMS = [
+  "liberty", "aces", "sun", "storm", "sparks", "mercury", "sky", "fever", "wings", "dream", "mystics", "lynx", "valkyries",
+];
+const COLLEGE_TEAM_TERMS = [
+  "march madness", "final four", "duke", "unc", "north carolina", "uconn", "kentucky", "kansas", "villanova", "gonzaga", "alabama", "michigan", "ohio state", "penn state", "notre dame", "syracuse",
+];
+const SPORTS_TEAM_TERMS = uniqueTerms([
+  ...NBA_TEAM_TERMS, ...NFL_TEAM_TERMS, ...MLB_TEAM_TERMS, ...NHL_TEAM_TERMS, ...WNBA_TEAM_TERMS, ...COLLEGE_TEAM_TERMS,
+]);
 const SPORTS_LEAGUE_TERMS = [
-  "nba",
-  "nfl",
-  "mlb",
-  "nhl",
-  "wnba",
-  "ufc",
-  "boxing",
-  "soccer",
-  "football",
-  "basketball",
-  "baseball",
-  "hockey",
+  "nba", "nfl", "mlb", "nhl", "wnba", "ufc", "boxing", "soccer", "football", "basketball", "baseball", "hockey", "college basketball", "college football", "march madness", "final four",
 ];
 
 type EnterpriseIntentFastPathResult = {
@@ -314,75 +313,86 @@ function emptyGeoIntent() {
   };
 }
 
+function hasMealOrRestaurantTerm(query: string) {
+  const q = String(query || "").toLowerCase();
+  return /\b(dinner|brunch|lunch|breakfast|restaurant|food|eat|steakhouse|steak|seafood|sushi|mexican|italian|tacos|pizza|birthday dinner|anniversary dinner)\b/.test(q);
+}
+
+function hasActivityVenueOrActivityTerm(query: string) {
+  const q = String(query || "").toLowerCase();
+  return /\b(activity|things to do|something fun|karaoke|comedy|comedy club|comedy show|bowling|arcade|museum|museum date|hookah|hookah lounge|lounge|cocktail bar|wine bar|bar with|bar showing|sports bar|sports lounge|rooftop bar|rooftop lounge|rooftop drinks|paint and sip|sip and paint|mini golf|live jazz|jazz|live music|pool hall|billiards|game day|watch party)\b/.test(q);
+}
+
+function hasExplicitMixedOutingIntent(query: string) {
+  const q = String(query || "").toLowerCase();
+  const hasConnector = /\b(and|with|after|before|then|nearby|close by|walking distance|walk apart|close together)\b/.test(q);
+  return hasConnector && hasMealOrRestaurantTerm(q) && hasActivityVenueOrActivityTerm(q);
+}
+
+function isActivityVenueOnlyQuery(query: string) {
+  const q = String(query || "").toLowerCase();
+  const hasActivityVenue = /\b(cocktail bar|wine bar|rooftop bar|rooftop lounge|sports bar|sports lounge|sport lounge|hookah bar|karaoke bar|comedy club|jazz club|lounge|speakeasy|bar with tv|bar with tvs|bar with screens|quiet lounge|upscale lounge)\b/.test(q);
+  const hasExplicitMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|eat|food before|food after|steak|seafood|sushi|mexican|italian)\b/.test(q);
+  const hasVibeOnlyTrigger = /\b(date night|romantic|vibes|girls night|girls' night|first date|no loud music|quiet|not too loud)\b/.test(q);
+  return hasActivityVenue && !hasExplicitMeal && (hasVibeOnlyTrigger || /\bspeakeasy\b/.test(q));
+}
+
 function hasSportsWatchFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
-
-  const explicitSportsWatch = FAST_PATH_SPORTS_WATCH_TERMS.some((term) =>
-    includesFastPathPhrase(q, term),
-  );
-
-  const explicitPhrase = explicitSportsWatch;
-  const hasWatchVerb = /\b(watch|showing|viewing|see)\b/.test(q);
-  const hasGameWord = /\b(game|match|fight|sports)\b/.test(q);
-  const hasWatchLanguage = hasWatchVerb && hasGameWord;
-
-  const hasTeamOrLeague = [...SPORTS_TEAM_TERMS, ...SPORTS_LEAGUE_TERMS].some(
-    (term) => includesFastPathPhrase(q, term),
-  );
-
-  const hasVenue =
-    /\b(bar|sports bar|sports lounge|pub|tavern|lounge|grill|tv|tvs|screen|screens)\b/.test(
-      q,
-    );
-
-  const hasViewingVenue =
-    /\b(bar|pub|sports bar|sports lounge|sport lounge|tavern|lounge|grill)\b/.test(q) &&
-    /\b(tv|tvs|screen|screens|big screen|big screens|watch|showing|viewing)\b/.test(q);
-
-  const hasSportWord =
-    /\b(football|basketball|baseball|hockey|soccer|nba|nfl|mlb|nhl|wnba|ufc|boxing|knicks|nets|yankees|mets|giants|jets|rangers|islanders|devils)\b/.test(q);
-
-  return (
-    explicitPhrase ||
-    (hasWatchLanguage && hasTeamOrLeague && hasVenue) ||
-    (hasViewingVenue && hasSportWord) ||
-    (hasViewingVenue && /\bbig screen|big screens|screens|tvs|tv\b/.test(q)) ||
-    (/\bbar\b|\bpub\b/.test(q) && /\bwatch\b/.test(q) && hasSportWord)
-  );
+  const allSportsTeamsAndLeagues = [...SPORTS_TEAM_TERMS, ...SPORTS_LEAGUE_TERMS];
+  const explicitPhrase = FAST_PATH_SPORTS_WATCH_TERMS.some((term) => includesFastPathPhrase(q, term));
+  const hasTeamOrLeague = allSportsTeamsAndLeagues.some((term) => includesFastPathPhrase(q, term));
+  const hasViewingLanguage = /\b(watch|showing|viewing|see|catch|plays?|game|match|fight|watch party|game day)\b/.test(q);
+  const hasVenueLanguage = /\b(bar|pub|sports bar|sports lounge|sport lounge|tavern|lounge|grill|tv|tvs|screen|screens|big screen|big screens)\b/.test(q);
+  const hasSportOnlyViewing = /\b(where can i watch|watch basketball|watch football|watch baseball|watch hockey|football bar|basketball bar|baseball bar|hockey bar|nba bar|nfl bar|mlb bar|nhl bar|wnba bar|sports bar with wings and tvs|bar with big screens)\b/.test(q);
+  return explicitPhrase || (hasTeamOrLeague && (hasViewingLanguage || hasVenueLanguage)) || hasSportOnlyViewing;
 }
 
 function sportsWatchActivityTermsFromQuery(query: string) {
   const q = String(query || "").toLowerCase();
-
-  const teamTerms = SPORTS_TEAM_TERMS.filter((term) =>
-    includesFastPathPhrase(q, term),
-  );
-  const leagueTerms = SPORTS_LEAGUE_TERMS.filter((term) =>
-    includesFastPathPhrase(q, term),
-  );
-
+  const teamTerms = SPORTS_TEAM_TERMS.filter((term) => includesFastPathPhrase(q, term));
+  const leagueTerms = SPORTS_LEAGUE_TERMS.filter((term) => includesFastPathPhrase(q, term));
   const terms = [
-    "sports bar",
-    "sports lounge",
-    "bar",
-    "pub",
-    "tavern",
-    "bar and grill",
-    "tv",
-    "tvs",
-    "screens",
-    "watch party",
-    "game day",
-    "live sports",
+    "sports bar", "sports lounge", "sport lounge", "bar with tv", "bar with tvs", "bar with screens", "tv bar", "big screen", "big screens", "watch party", "game day", "game night", "live sports", "sports viewing", "pub", "tavern", "bar and grill", "bar", "tv", "tvs", "screens",
     ...teamTerms.map((term) => `${term} game`),
     ...leagueTerms.map((term) => `${term} game`),
   ];
-
-  if (/\bufc\b|\bfight\b|\bboxing\b/.test(q)) {
-    terms.push("fight night", "ufc fight", "boxing fight");
-  }
-
+  if (/\b(basketball|nba|knicks|nets|lakers|warriors|celtics|heat|bucks|sixers|76ers|bulls|mavericks|mavs|suns|clippers|nuggets|timberwolves|wolves|thunder|grizzlies|pelicans|kings|blazers|jazz|rockets|spurs|raptors|pacers|cavaliers|cavs|magic|hawks|hornets|pistons|wizards|duke|uconn|march madness|final four)\b/.test(q)) terms.push("basketball", "watch basketball");
+  if (/\b(football|nfl|giants|jets|cowboys|eagles|commanders|patriots|chiefs|ravens|steelers|bills|dolphins|bengals|browns|texans|colts|jaguars|titans|broncos|raiders|chargers|packers|bears|lions|vikings|falcons|panthers|saints|buccaneers|bucs|cardinals|rams|49ers|seahawks)\b/.test(q)) terms.push("football", "watch football");
+  if (/\b(baseball|mlb|yankees|mets|dodgers|red sox|cubs|phillies|braves|astros|blue jays|orioles|rays|guardians|tigers|royals|twins|angels|athletics|mariners|nationals|marlins|brewers|pirates|reds|diamondbacks|rockies|padres)\b/.test(q)) terms.push("baseball", "watch baseball");
+  if (/\b(hockey|nhl|rangers|islanders|devils|bruins|flyers|penguins|capitals|hurricanes|panthers|lightning|maple leafs|leafs|canadiens|senators|sabres|red wings|blackhawks|blues|predators|wild|stars|avalanche|golden knights|knights|kraken|canucks|oilers|flames|ducks|sharks|coyotes)\b/.test(q)) terms.push("hockey", "watch hockey");
+  if (/\b(ufc|boxing|fight)\b/.test(q)) terms.push("fight night", "ufc fight", "boxing fight");
   return uniqueTerms(terms);
+}
+
+function createExplicitMixedFastPathIntent(rawQuery: string) {
+  const q = rawQuery.toLowerCase();
+  const restaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const activityIntent = createActivityOnlyFastPathIntent(rawQuery).activityIntent ?? createEmptyActivityIntent();
+  const detectedActivityTerms = detectFastPathActivityIntentTerms(q);
+  return {
+    rawQuery,
+    searchType: "mixed_outing",
+    primaryDomain: "mixed",
+    needsRestaurant: true,
+    needsActivity: true,
+    wantsPairing: true,
+    restaurantIntent,
+    activityIntent: {
+      ...activityIntent,
+      activityTerms: uniqueTerms([...(activityIntent.activityTerms ?? []), ...detectedActivityTerms]),
+    },
+    pairingPreference: {
+      requiresPairing: true,
+      distanceMode: /\b(walking|walk|close by|nearby|walk apart)\b/.test(q) ? "walking" : "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: /\b(walking|walk|walk apart)\b/.test(q),
+    },
+    geo: emptyGeoIntent(),
+    vibe: [],
+    strictness: "high",
+  } satisfies Partial<SearchIntent>;
 }
 
 function createSportsWatchFastPathIntent(rawQuery: string) {
@@ -432,7 +442,7 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
 function hasRelaxedMixedFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
   const hasMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|eat)\b/.test(q);
-  const hasRelaxedActivity = /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|activity|something fun|board games|arcade|mini golf|bowling|gallery|museum|billiards|pool hall|not too loud|no club|not a club)\b/.test(q);
+  const hasRelaxedActivity = /\b(relaxed activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|something fun|board games|arcade|mini golf|bowling|gallery|museum|billiards|pool hall|not too loud|no club|not a club)\b/.test(q);
   return hasMeal && hasRelaxedActivity;
 }
 
@@ -480,7 +490,7 @@ function createRelaxedMixedFastPathIntent(rawQuery: string) {
 function hasActivityOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
   const hasRestaurantMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|steak|seafood|sushi|mexican|italian)\b/.test(q);
-  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|lounge|speakeasy|karaoke|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live music|bowling|arcade|museum|paint and sip|things to do|fun activity|date idea)\b/.test(q);
+  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|wine bar|chill drinks spot|bar with good music|lounge|speakeasy|karaoke bar|karaoke|comedy club|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live jazz spot|live jazz|live music|bowling|arcade|museum|mini golf|paint and sip|things to do|fun indoor activity|fun activity|date idea|football bar|watch basketball|where can i watch basketball)\b/.test(q);
   return hasActivity && !hasRestaurantMeal;
 }
 
@@ -489,10 +499,15 @@ function createActivityOnlyFastPathIntent(rawQuery: string) {
   const activityTerms: string[] = [];
   if (/\brooftop\b/.test(q)) activityTerms.push("rooftop bar", "rooftop lounge", "rooftop drinks", "rooftop cocktails", "terrace bar", "terrace lounge", "skyline bar", "skyline lounge", "views", "outdoor bar", "bar", "lounge", "cocktails", "drinks");
   else if (/\bhookah\b|\bshisha\b/.test(q)) activityTerms.push("hookah", "hookah lounge", "hookah bar", "shisha", "lounge", "bar");
-  else if (/\bkaraoke\b/.test(q)) activityTerms.push("karaoke");
-  else if (/\bcomedy\b|\bshow\b/.test(q)) activityTerms.push("comedy show", "comedy", "show", "theater", "theatre");
+  else if (/\bkaraoke\b/.test(q)) activityTerms.push("karaoke", "karaoke bar");
+  else if (/\bmini golf\b/.test(q)) activityTerms.push("mini golf", "putt putt", "games");
+  else if (/\barcade\b/.test(q)) activityTerms.push("arcade", "games");
+  else if (/\bmuseum\b/.test(q)) activityTerms.push("museum", "exhibit", "exhibition", "cultural center");
+  else if (/\b(live jazz|jazz)\b/.test(q)) activityTerms.push("live jazz", "jazz", "jazz club", "live music");
+  else if (/\bcomedy\b|\bshow\b/.test(q)) activityTerms.push("comedy club", "comedy show", "comedy", "show", "theater", "theatre");
   else if (/\bspeakeasy\b/.test(q)) activityTerms.push("speakeasy", "cocktails", "bar", "lounge");
-  else if (/\bcocktail|cocktails|bar\b/.test(q)) activityTerms.push("cocktail bar", "cocktails", "bar", "lounge", "wine bar", "speakeasy");
+  else if (/\bwine bar\b/.test(q)) activityTerms.push("wine bar", "bar", "drinks", "cocktails");
+  else if (/\bcocktail|cocktails|bar|drinks\b/.test(q)) activityTerms.push("cocktail bar", "cocktails", "bar", "lounge", "wine bar", "speakeasy", "drinks");
   else if (/\blounge\b/.test(q)) activityTerms.push("lounge", "bar", "cocktails", "nightlife");
   else if (/\bthings to do|fun activity|date idea|first date|surprise me\b/.test(q)) activityTerms.push("activity", "things to do", "entertainment", "experience", "arcade", "bowling", "mini golf", "museum", "gallery", "comedy", "karaoke");
   return {
@@ -568,11 +583,27 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
+  if (hasExplicitMixedOutingIntent(query)) {
+    return {
+      intent: createExplicitMixedFastPathIntent(rawQuery),
+      reason: "matched explicit mixed outing fast path",
+      confidence: 0.9,
+    };
+  }
+
   if (hasRelaxedMixedFastPathIntent(query)) {
     return {
       intent: createRelaxedMixedFastPathIntent(rawQuery),
       reason: "matched relaxed mixed outing fast path",
       confidence: 0.9,
+    };
+  }
+
+  if (isActivityVenueOnlyQuery(query)) {
+    return {
+      intent: createActivityOnlyFastPathIntent(rawQuery),
+      reason: "matched activity-only venue fast path",
+      confidence: 0.88,
     };
   }
 

@@ -85,7 +85,7 @@ function sportsWatchRecordSignal(r: EnterpriseLocation): number {
   )
     score += 45;
   if (
-    /\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(
+    /\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bmarch madness\b|\bfinal four\b|\blakers\b|\bwarriors\b|\bceltics\b|\bcowboys\b|\beagles\b|\bchiefs\b|\bdodgers\b|\bred sox\b|\bduke\b|\buconn\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(
       text,
     )
   )

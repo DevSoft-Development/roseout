@@ -9,6 +9,7 @@ import { resolveSearchMarket } from "../markets";
 import {
   getEnterpriseIntentFastPathReason,
   parseEnterpriseIntent,
+  parseEnterpriseIntentFastPath,
 } from "../intent-parser";
 
 describe("enterprise search intent", () => {
@@ -446,5 +447,96 @@ describe("fast path expansion batch fixes", () => {
     for (const noisy of ["with", "watch", "party", "day", "mini", "live"]) {
       expect(terms).not.toContain(noisy);
     }
+  });
+});
+
+describe("merged cleanup and national sports-watch fixes", () => {
+  for (const [query, reason] of [
+    ["dinner and paint and sip after", "matched explicit mixed outing fast path"],
+    ["seafood restaurant and live jazz nearby", "matched explicit mixed outing fast path"],
+    ["cocktail bar for date night no loud music", "matched activity-only venue fast path"],
+    ["speakeasy with romantic vibes", "matched activity-only venue fast path"],
+    ["paint and sip for date night", "matched activity-only fast path"],
+  ] as const) {
+    it(`uses expected fast path order for ${query}`, () => {
+      expect(getEnterpriseIntentFastPathReason(query)).toBe(reason);
+    });
+  }
+
+  for (const query of ["casual brunch spot in Queens", "cozy restaurant for first date"]) {
+    it(`zeroes activity terms for restaurant-only query: ${query}`, () => {
+      const intent = normalizeIntent(query);
+      expect(intent.searchType).toBe("restaurant");
+      expect(intent.needsActivity).toBe(false);
+      expect(activitySearchTerms(intent)).toEqual([]);
+    });
+  }
+
+  it("zeroes restaurant terms for activity-only venue vibe queries", () => {
+    const intent = normalizeIntent("cocktail bar for date night no loud music");
+    expect(intent.searchType).toBe("activity");
+    expect(intent.needsRestaurant).toBe(false);
+    expect(intent.restaurantIntent.mealTerms).toEqual([]);
+  });
+
+  it("removes standalone junk tokens while preserving useful phrases", () => {
+    const intent = normalizeIntent("paint and sip, mini golf, watch party, game day date night", {
+      searchType: "activity",
+      primaryDomain: "activity",
+      needsRestaurant: false,
+      needsActivity: true,
+      wantsPairing: false,
+      activityIntent: {
+        activityTerms: ["paint and sip", "paint", "and", "sip", "mini golf", "mini", "golf", "watch party", "watch", "party", "game day", "game", "day", "date night", "date", "night"],
+        categoryTerms: [],
+        featureTerms: [],
+        vibeTerms: [],
+        negativeTerms: [],
+        alternativeGroups: [],
+      },
+    } as any);
+    const terms = activitySearchTerms(intent);
+    for (const phrase of ["paint and sip", "mini golf", "watch party", "game day"]) expect(terms).toContain(phrase);
+    for (const junk of ["paint", "and", "sip", "mini", "golf", "watch", "party", "game", "day", "date", "night"]) expect(terms).not.toContain(junk);
+  });
+
+  for (const query of [
+    "bar to watch the Lakers game in Brooklyn",
+    "Lakers game near me",
+    "sports bar showing Warriors game",
+    "where can I watch Celtics in Manhattan",
+    "bar with TVs for Cowboys game",
+    "Eagles watch party in Queens",
+    "Dodgers game at a bar",
+    "NBA bar in Queens",
+    "where can I watch basketball in Manhattan",
+    "football bar not too crowded",
+    "sports bar with wings and TVs",
+  ]) {
+    it(`detects national sports-watch search: ${query}`, () => {
+      const intent = parseEnterpriseIntentFastPath(query);
+      expect(getEnterpriseIntentFastPathReason(query)).toBe("matched sports-watch activity fast path");
+      expect(intent?.searchType).toBe("activity");
+      expect(intent?.needsRestaurant).toBe(false);
+      expect(intent?.needsActivity).toBe(true);
+      const terms = [
+        ...(intent?.activityIntent?.activityTerms ?? []),
+        ...(intent?.activityIntent?.categoryTerms ?? []),
+        ...(intent?.activityIntent?.featureTerms ?? []),
+      ];
+      for (const blocked of ["skating", "golf", "gym", "watch", "party", "game", "day", "live", "screen", "night", "viewing"]) expect(terms).not.toContain(blocked);
+    });
+  }
+
+  it("adds team-specific sports-watch terms for non-local teams", () => {
+    const intent = parseEnterpriseIntentFastPath("sports bar showing the Cowboys game near me");
+    expect(intent?.activityIntent?.activityTerms).toContain("cowboys game");
+  });
+
+  it("keeps mini golf expansion separate from sports-watch and active recreation", () => {
+    const intent = normalizeIntent("mini golf or arcade near me");
+    const terms = activitySearchTerms(intent);
+    expect(terms).toEqual(expect.arrayContaining(["mini golf", "arcade", "games"]));
+    for (const blocked of ["sports bar", "watch party", "gym", "skating", "climbing"]) expect(terms).not.toContain(blocked);
   });
 });
