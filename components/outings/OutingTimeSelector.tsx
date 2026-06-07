@@ -18,24 +18,52 @@ type OutingTimeSelectorProps = {
   showReminderOptions?: boolean;
   hasEmailContact?: boolean;
   hasSmsOptIn?: boolean;
+  variant?: "compact" | "panel";
 };
 
 function formatContext(context: string | null) {
-  if (!context) return "that timing";
+  if (!context) return "your outing";
+  if (context === "this_weekend") return "This weekend";
+  if (context === "tonight") return "Tonight";
+  if (context === "tomorrow") return "Tomorrow";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(context)) {
+    try {
+      const [year, month, day] = context.split("-").map(Number);
+      return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+      }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+    } catch {
+      return context;
+    }
+  }
   return context.replace(/_/g, " ");
 }
 
-function formatDateTime(iso: string | null, timezone: string) {
-  if (!iso) return "your selected time";
+function formatCompactDateTime(iso: string | null, timezone: string) {
+  if (!iso) return "Time set";
   try {
     return new Intl.DateTimeFormat("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
       timeZone: timezone,
     }).format(new Date(iso));
   } catch {
-    return "your selected time";
+    return "Time set";
   }
+}
+
+function formatCompactStatus(value: OutingTimeValue) {
+  if (value.outingTimeConfidence === "exact") {
+    return formatCompactDateTime(value.plannedFor, value.timezone);
+  }
+
+  if (value.outingTimeConfidence === "date_only") {
+    return formatContext(value.outingDateContext);
+  }
+
+  return "Optional";
 }
 
 function inputDateFromIso(iso: string | null, timezone: string) {
@@ -71,24 +99,74 @@ function inputTimeFromIso(iso: string | null, timezone: string) {
   }
 }
 
-export default function OutingTimeSelector({ value, onChange, showReminderOptions = true }: OutingTimeSelectorProps) {
-  const safeValue = value || emptyOutingTimeValue();
-  const [date, setDate] = useState(inputDateFromIso(safeValue.plannedFor, safeValue.timezone));
-  const [time, setTime] = useState(inputTimeFromIso(safeValue.plannedFor, safeValue.timezone));
 
-  const stateCopy = useMemo(() => {
-    if (safeValue.outingTimeConfidence === "exact") {
-      return `You’re planning for ${formatDateTime(safeValue.plannedFor, safeValue.timezone)}. We can help keep your plan handy and check in tomorrow to see how everything went.`;
-    }
-    if (safeValue.outingTimeConfidence === "date_only") {
-      return `We noticed you said ${formatContext(safeValue.outingDateContext)}. We’ll check in tomorrow to see how everything went.`;
-    }
-    return "Planning ahead? Choose when you’re going so we can help keep your outing organized.";
-  }, [safeValue.outingDateContext, safeValue.outingTimeConfidence, safeValue.plannedFor, safeValue.timezone]);
+function getFollowupDateForValue(value: OutingTimeValue, selectedDate: string) {
+  if (selectedDate) return getNextMorningFollowupDateForDate(selectedDate, value.timezone);
+  if (
+    value.outingDateContext === "tonight" ||
+    value.outingDateContext === "tomorrow" ||
+    value.outingDateContext === "this_weekend"
+  ) {
+    return getDateContextFollowupDate(value.outingDateContext, value.timezone);
+  }
+  return value.nextMorningFollowupDate;
+}
+
+function inputDateFromValue(value: OutingTimeValue) {
+  if (value.plannedFor) return inputDateFromIso(value.plannedFor, value.timezone);
+  if (value.outingDateContext && /^\d{4}-\d{2}-\d{2}$/.test(value.outingDateContext)) {
+    return value.outingDateContext;
+  }
+  return "";
+}
+
+export default function OutingTimeSelector({
+  value,
+  onChange,
+  showReminderOptions = true,
+  variant = "panel",
+}: OutingTimeSelectorProps) {
+  const safeValue = value || emptyOutingTimeValue();
+  const [date, setDate] = useState(inputDateFromValue(safeValue));
+  const [time, setTime] = useState(inputTimeFromIso(safeValue.plannedFor, safeValue.timezone));
+  const [showCustomPicker, setShowCustomPicker] = useState(
+    safeValue.outingTimeConfidence === "exact" ||
+      Boolean(safeValue.plannedFor) ||
+      Boolean(inputDateFromValue(safeValue)),
+  );
+
+  const panelStateCopy = useMemo(() => {
+    if (safeValue.outingTimeConfidence === "exact") return "Your plan time is set.";
+    if (safeValue.outingTimeConfidence === "date_only") return "Follow-up will be set for the next morning.";
+    return "Choose a date or time to organize this outing.";
+  }, [safeValue.outingTimeConfidence]);
+
+  const isTonightActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "tonight";
+  const isTomorrowActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "tomorrow";
+  const isWeekendActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "this_weekend";
+  const isDateActive =
+    safeValue.outingTimeConfidence === "exact" ||
+    (safeValue.outingTimeConfidence === "date_only" && Boolean(inputDateFromValue(safeValue))) ||
+    showCustomPicker;
+
+  const chipBase =
+    "rounded-full border px-3 py-1.5 text-[11px] font-black transition focus:outline-none focus:ring-2 focus:ring-[#e1062a]/40";
+  const inactiveChip = `${chipBase} border-white/10 bg-white/[0.04] text-white/65 hover:border-white/20 hover:text-white`;
+  const activeChip = `${chipBase} border-[#e1062a]/60 bg-[#e1062a]/15 text-white shadow-sm shadow-[#e1062a]/20`;
+  const inputClass =
+    "h-9 w-full rounded-full border border-white/10 bg-black px-3 text-xs font-bold text-white outline-none transition focus:border-[#e1062a]/70 focus:ring-2 focus:ring-[#e1062a]/20";
+
+  function clearValue() {
+    setDate("");
+    setTime("");
+    setShowCustomPicker(false);
+    onChange(emptyOutingTimeValue(safeValue.timezone));
+  }
 
   function chooseDateContext(context: "tonight" | "tomorrow" | "this_weekend") {
     setDate("");
     setTime("");
+    setShowCustomPicker(false);
     onChange({
       ...safeValue,
       plannedFor: null,
@@ -100,9 +178,19 @@ export default function OutingTimeSelector({ value, onChange, showReminderOption
     });
   }
 
+  function applyDateOnly(nextDate: string) {
+    onChange({
+      ...safeValue,
+      plannedFor: null,
+      outingDateContext: nextDate,
+      outingTimeConfidence: "date_only",
+      remindersEnabled: false,
+      nextMorningFollowupEnabled: true,
+      nextMorningFollowupDate: getNextMorningFollowupDateForDate(nextDate, safeValue.timezone),
+    });
+  }
+
   function applyExact(nextDate: string, nextTime: string) {
-    setDate(nextDate);
-    setTime(nextTime);
     const plannedFor = buildExactPlannedForIso(nextDate, nextTime, safeValue.timezone);
     if (!plannedFor) return;
     onChange({
@@ -116,46 +204,127 @@ export default function OutingTimeSelector({ value, onChange, showReminderOption
     });
   }
 
+  function handleDateChange(nextDate: string) {
+    setDate(nextDate);
+    if (!nextDate) {
+      if (!time) clearValue();
+      return;
+    }
+    if (time) applyExact(nextDate, time);
+    else applyDateOnly(nextDate);
+  }
+
+  function handleTimeChange(nextTime: string) {
+    setTime(nextTime);
+    if (!date) return;
+    if (nextTime) applyExact(date, nextTime);
+    else applyDateOnly(date);
+  }
+
+  const picker = (
+    <div className={variant === "compact" ? "mt-2 grid gap-2 sm:grid-cols-[1fr_0.8fr]" : "mt-3 grid gap-2 sm:grid-cols-2"}>
+      <label>
+        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Pick date</span>
+        <input type="date" value={date} onChange={(event) => handleDateChange(event.target.value)} className={`${inputClass} mt-1`} />
+      </label>
+      <label>
+        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Pick time</span>
+        <input type="time" value={time} onChange={(event) => handleTimeChange(event.target.value)} className={`${inputClass} mt-1`} />
+      </label>
+    </div>
+  );
+
+  if (variant === "compact") {
+    return (
+      <section className="rounded-2xl border border-white/10 bg-black/50 p-2.5 text-white shadow-lg shadow-black/20 sm:p-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">When</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-white/60">
+              {formatCompactStatus(safeValue)}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" onClick={() => chooseDateContext("tonight")} className={isTonightActive ? activeChip : inactiveChip}>Tonight</button>
+            <button type="button" onClick={() => chooseDateContext("tomorrow")} className={isTomorrowActive ? activeChip : inactiveChip}>Tomorrow</button>
+            <button type="button" onClick={() => chooseDateContext("this_weekend")} className={isWeekendActive ? activeChip : inactiveChip}>Weekend</button>
+            <button type="button" onClick={() => setShowCustomPicker(true)} className={isDateActive ? activeChip : inactiveChip}>Date</button>
+            {safeValue.outingTimeConfidence !== "none" ? (
+              <button type="button" onClick={clearValue} className="px-1.5 text-[10px] font-black text-white/35 transition hover:text-white">
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {showCustomPicker ? picker : null}
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-white">
-      <div>
-        <label className="text-sm font-black text-white">When are you going?</label>
-        <p className="mt-1 text-xs font-semibold text-white/50">Optional — this helps us organize your plan.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <label className="text-sm font-black text-white">When are you going?</label>
+          <p className="mt-1 text-xs font-semibold text-white/50">Optional — this helps us organize your plan.</p>
+        </div>
+        {safeValue.outingTimeConfidence !== "none" ? (
+          <button type="button" onClick={clearValue} className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35 transition hover:text-white">
+            Clear
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={() => chooseDateContext("tonight")} className="rounded-full border border-white/10 bg-black/40 px-3 py-2 text-xs font-bold text-white/75 hover:text-white">Tonight</button>
-        <button type="button" onClick={() => chooseDateContext("tomorrow")} className="rounded-full border border-white/10 bg-black/40 px-3 py-2 text-xs font-bold text-white/75 hover:text-white">Tomorrow</button>
-        <button type="button" onClick={() => chooseDateContext("this_weekend")} className="rounded-full border border-white/10 bg-black/40 px-3 py-2 text-xs font-bold text-white/75 hover:text-white">This weekend</button>
+        <button type="button" onClick={() => chooseDateContext("tonight")} className={isTonightActive ? activeChip : inactiveChip}>Tonight</button>
+        <button type="button" onClick={() => chooseDateContext("tomorrow")} className={isTomorrowActive ? activeChip : inactiveChip}>Tomorrow</button>
+        <button type="button" onClick={() => chooseDateContext("this_weekend")} className={isWeekendActive ? activeChip : inactiveChip}>This weekend</button>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <div>
-          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Pick date</span>
-          <input type="date" value={date} onChange={(event) => { const nextDate = event.target.value; setDate(nextDate); if (nextDate && time) applyExact(nextDate, time); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
-        </div>
-        <div>
-          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Pick time</span>
-          <input type="time" value={time} onChange={(event) => { const nextTime = event.target.value; setTime(nextTime); if (date && nextTime) applyExact(date, nextTime); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
-        </div>
-      </div>
+      {picker}
 
       {showReminderOptions && safeValue.outingTimeConfidence !== "none" ? (
         <div className="mt-3 space-y-2">
           {safeValue.outingTimeConfidence === "exact" ? (
             <label className="flex items-start gap-2 text-xs font-bold text-white/70">
-              <input type="checkbox" checked={safeValue.remindersEnabled} onChange={(event) => onChange({ ...safeValue, remindersEnabled: event.target.checked && Boolean(safeValue.plannedFor) })} className="mt-0.5" />
+              <input
+                type="checkbox"
+                checked={safeValue.remindersEnabled}
+                onChange={(event) => onChange({ ...safeValue, remindersEnabled: event.target.checked && Boolean(safeValue.plannedFor) })}
+                className="mt-0.5 accent-[#e1062a]"
+              />
               Keep this plan handy before I head out
             </label>
           ) : null}
-          <label className="flex items-start gap-2 text-xs font-bold text-white/70">
-            <input type="checkbox" checked={safeValue.nextMorningFollowupEnabled} onChange={(event) => onChange({ ...safeValue, nextMorningFollowupEnabled: event.target.checked, nextMorningFollowupDate: event.target.checked ? safeValue.nextMorningFollowupDate : null })} className="mt-0.5" />
-            Send me a follow-up tomorrow
-          </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={safeValue.nextMorningFollowupEnabled}
+            onClick={() =>
+              onChange({
+                ...safeValue,
+                nextMorningFollowupEnabled: !safeValue.nextMorningFollowupEnabled,
+                nextMorningFollowupDate: safeValue.nextMorningFollowupEnabled ? null : getFollowupDateForValue(safeValue, date),
+              })
+            }
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-left transition hover:border-white/20"
+          >
+            <span>
+              <span className="block text-xs font-black text-white/80">Next-morning check-in</span>
+              <span className="mt-0.5 block text-[11px] font-semibold text-white/45">Ask how everything went.</span>
+            </span>
+            <span className={`h-5 w-9 rounded-full border p-0.5 transition ${safeValue.nextMorningFollowupEnabled ? "border-[#e1062a]/60 bg-[#e1062a]/40" : "border-white/10 bg-white/10"}`}>
+              <span className={`block h-3.5 w-3.5 rounded-full bg-white transition ${safeValue.nextMorningFollowupEnabled ? "translate-x-4" : "translate-x-0"}`} />
+            </span>
+          </button>
         </div>
       ) : null}
 
-      <p className="mt-3 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-xs font-semibold leading-5 text-white/65">{stateCopy}</p>
+      <p className="mt-3 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-xs font-semibold leading-5 text-white/65">
+        {panelStateCopy}
+      </p>
     </section>
   );
 }

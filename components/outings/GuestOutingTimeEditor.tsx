@@ -36,11 +36,11 @@ export default function GuestOutingTimeEditor({ token, initialValue, initialEmai
 
   return (
     <div className="mt-5 space-y-4">
-      <OutingTimeSelector value={value} onChange={setValue} />
+      <OutingTimeSelector value={value} onChange={setValue} variant="panel" />
       {(value.nextMorningFollowupEnabled || value.remindersEnabled) ? (
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <p className="text-sm font-black">Contact for your secure follow-up</p>
-          <p className="mt-1 text-xs font-semibold text-white/55">We’ll check in tomorrow to see how everything went.</p>
+          <p className="mt-1 text-xs font-semibold text-white/55">We’ll ask how everything went.</p>
           <div className="mt-3 grid gap-2">
             <input value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="Email" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white" />
             <input value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white" />
