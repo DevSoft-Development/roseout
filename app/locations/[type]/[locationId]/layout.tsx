@@ -26,24 +26,24 @@ type LocationRecord = Record<string, any>;
 
 type Props = {
   children: React.ReactNode;
-  params: Promise<{ type: string; id: string }>;
+  params: Promise<{ type: string; locationId: string }>;
 };
 
-const loadLocation = cache(async (type: string, id: string) => {
+const loadLocation = cache(async (type: string, locationId: string) => {
   const sourceTable = type === "activities" || type === "activity" ? "activities" : "restaurants";
   const supabase = serverSupabase();
 
   let { data } = await supabase
     .from("locations")
     .select("*")
-    .or(`id.eq.${id},and(source_table.eq.${sourceTable},source_id.eq.${id})`)
+    .or(`id.eq.${locationId},and(source_table.eq.${sourceTable},source_id.eq.${locationId})`)
     .maybeSingle();
 
   if (!data) {
     const slugResult = await supabase
       .from("locations")
       .select("*")
-      .eq("slug", id)
+      .eq("slug", locationId)
       .maybeSingle();
     data = slugResult.data;
   }
@@ -53,8 +53,8 @@ const loadLocation = cache(async (type: string, id: string) => {
   return data as LocationRecord;
 });
 
-function locationPath(type: string, id: string) {
-  return `/locations/${type}/${id}`;
+function locationPath(type: string, locationId: string) {
+  return `/locations/${type}/${locationId}`;
 }
 
 function locationDescription(location: LocationRecord) {
@@ -69,7 +69,7 @@ function locationDescription(location: LocationRecord) {
   });
 }
 
-function locationJsonLd(location: LocationRecord, type: string, id: string) {
+function locationJsonLd(location: LocationRecord, type: string, locationId: string) {
   const name = getLocationName(location, "TheOutHaven location");
   const isRestaurant = String(location.location_type || type).toLowerCase().includes("restaurant");
   const image = getLocationImage(location);
@@ -78,7 +78,7 @@ function locationJsonLd(location: LocationRecord, type: string, id: string) {
     "@context": "https://schema.org",
     "@type": isRestaurant ? "Restaurant" : "LocalBusiness",
     name,
-    url: canonicalUrl(locationPath(type, id)),
+    url: canonicalUrl(locationPath(type, locationId)),
     description: locationDescription(location),
   };
 
@@ -110,9 +110,9 @@ function locationJsonLd(location: LocationRecord, type: string, id: string) {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { type, id } = await params;
-  const location = await loadLocation(type, id);
-  const path = locationPath(type, id);
+  const { type, locationId } = await params;
+  const location = await loadLocation(type, locationId);
+  const path = locationPath(type, locationId);
 
   if (!location) {
     return buildMetadata({
@@ -137,8 +137,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function LocationDetailLayout({ children, params }: Props) {
-  const { type, id } = await params;
-  const location = await loadLocation(type, id);
+  const { type, locationId } = await params;
+  const location = await loadLocation(type, locationId);
 
   if (!location) return children;
 
@@ -149,9 +149,9 @@ export default async function LocationDetailLayout({ children, params }: Props) 
       { name: "Home", path: "/" },
       { name: "Explore", path: "/explore" },
       { name: category || "Locations", path: "/explore" },
-      { name, path: locationPath(type, id) },
+      { name, path: locationPath(type, locationId) },
     ]),
-    locationJsonLd(location, type, id),
+    locationJsonLd(location, type, locationId),
   ];
 
   return (

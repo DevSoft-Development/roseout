@@ -69,7 +69,7 @@ export default function ReserveLocationPage() {
   const params = useParams();
   const searchParams = useSearchParams();
 
-  const locationId = String(params.id || "");
+  const locationId = String(params.locationId || "");
   const locationType = searchParams.get("type") || "restaurant";
 
   const rescheduleToken = searchParams.get("rescheduleToken") || "";

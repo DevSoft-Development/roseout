@@ -14,10 +14,10 @@ function safeFilename(name: string) {
     .replace(/^[-.]+|[-.]+$/g, "") || "image";
 }
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ locationId: string }> }) {
   const { error, adminUser } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
   if (error) return error;
-  const { id: locationId } = await context.params;
+  const { locationId } = await context.params;
 
   try {
     const formData = await request.formData();

@@ -173,7 +173,7 @@ export default function EditLocationPage() {
 
   const rawType = String(params.type || "");
   const type = normalizeLocationTypeParam(rawType);
-  const id = String(params.id || "");
+  const locationId = String(params.locationId || "");
   const from = searchParams.get("from") || "/admin/dashboard/locations";
 
   const table = type || "restaurants";
@@ -185,7 +185,7 @@ export default function EditLocationPage() {
   const [message, setMessage] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
-  const [effectiveId, setEffectiveId] = useState(id);
+  const [effectiveId, setEffectiveId] = useState(locationId);
   const [newGalleryImage, setNewGalleryImage] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -249,7 +249,7 @@ export default function EditLocationPage() {
 
       try {
         const res = await fetch(
-          `/api/locations/edit-context?type=${table}&id=${encodeURIComponent(id)}`,
+          `/api/locations/edit-context?type=${table}&id=${encodeURIComponent(locationId)}`,
           { cache: "no-store" }
         );
 
@@ -264,7 +264,7 @@ export default function EditLocationPage() {
         const data = result.location;
 
         setIsImpersonating(Boolean(result.isImpersonating));
-        setEffectiveId(result.effectiveId || id);
+        setEffectiveId(result.effectiveId || locationId);
 
         const nextForm: FormState = {
           name: data[nameField] || data.name || "",
@@ -340,8 +340,8 @@ export default function EditLocationPage() {
       }
     };
 
-    if (id && type) loadLocation();
-  }, [id, type, table, nameField]);
+    if (locationId && type) loadLocation();
+  }, [locationId, type, table, nameField]);
 
   const update = (key: keyof FormState, value: string) => {
     setForm((prev) => ({
@@ -490,7 +490,7 @@ export default function EditLocationPage() {
         },
         body: JSON.stringify({
           type: table,
-          id: effectiveId || id,
+          id: effectiveId || locationId,
           payload,
         }),
       });
@@ -523,9 +523,9 @@ export default function EditLocationPage() {
   const safeScore = clampScore(form.theouthaven_score);
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
-  const publicPreviewHref = `/locations/${type}/${effectiveId || id}`;
-  const adminDetailHref = `/admin/dashboard/locations/${type}/${effectiveId || id}`;
-  const crmHref = `/admin/dashboard/locations/${type}/${effectiveId || id}/crm`;
+  const publicPreviewHref = `/locations/${type}/${effectiveId || locationId}`;
+  const adminDetailHref = `/admin/dashboard/locations/${type}/${effectiveId || locationId}`;
+  const crmHref = `/admin/dashboard/locations/${type}/${effectiveId || locationId}/crm`;
   const hasUnsavedChanges = savedSnapshot !== "" && serializeForm(form) !== savedSnapshot;
   const isSuccess =
     message.toLowerCase().includes("success") ||
@@ -596,7 +596,7 @@ export default function EditLocationPage() {
     setMessage("");
 
     const extension = file.name.split(".").pop() || "jpg";
-    const path = `locations/${type}/${effectiveId || id}/${Date.now()}.${extension}`;
+    const path = `locations/${type}/${effectiveId || locationId}/${Date.now()}.${extension}`;
     const { data, error } = await supabase.storage.from("location-images").upload(path, file, { upsert: true });
 
     if (error) {
@@ -956,7 +956,7 @@ export default function EditLocationPage() {
             <EditorSection id="admin-notes" title="Admin Notes" description="Operational context and read-only quality signals for staff review.">
               <FieldRow columns={3}>
                 <MetricCard label="TheOutHaven Score" value={`${safeScore}/100`} />
-                <MetricCard label="Effective ID" value={effectiveId || id} />
+                <MetricCard label="Effective ID" value={effectiveId || locationId} />
                 <MetricCard label="Source" value={type === "restaurants" ? "Restaurants" : "Activities"} />
               </FieldRow>
               <TextArea label="Data Quality Notes" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Stored in the existing missing_fields value when present." />
