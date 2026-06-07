@@ -1259,11 +1259,13 @@ export default function CreatePage() {
               </div>
             </div>
 
-            <div className="mt-3">
+            <div className="mt-2">
               <OutingTimeSelector
                 value={outingTime}
                 onChange={(value) => setOutingTime(value)}
                 query={input}
+                variant="compact"
+                showReminderOptions={false}
               />
             </div>
 

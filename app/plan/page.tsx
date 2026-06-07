@@ -545,11 +545,11 @@ function PlanPageInner() {
 
               <div className="mt-5 space-y-3">
                 <h3 className="text-sm font-black">Outing time & follow-up</h3>
-                <OutingTimeSelector value={outingTime} onChange={setOutingTime} />
+                <OutingTimeSelector value={outingTime} onChange={setOutingTime} variant="panel" />
                 {(outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) ? (
                   <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
                     <p className="text-sm font-black">No account needed. We’ll send you a secure link to your plan.</p>
-                    <p className="mt-1 text-xs font-semibold text-white/50">We’ll check in tomorrow to see how everything went.</p>
+                    <p className="mt-1 text-xs font-semibold text-white/50">We’ll ask how everything went.</p>
                     <div className="mt-3 grid gap-2">
                       <input type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="Email" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
                       <input type="text" value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
@@ -561,7 +561,7 @@ function PlanPageInner() {
                 ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save outing time</button>
-                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Save plan & follow-up</button>
+                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Save plan</button>
                 </div>
                 {startStatus ? <p className="text-xs font-bold leading-5 text-white/50">{startStatus}</p> : null}
               </div>
