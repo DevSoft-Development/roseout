@@ -136,6 +136,8 @@ export const ADMIN_PAGE_ACCESS = {
 
   adminUsers: ["superadmin"],
   impersonation: ["superadmin"],
+  giveaway: ["superadmin", "admin", "manager", "experience", "viewer"],
+  giveawayManage: ["superadmin", "admin", "manager"],
 } as const satisfies Record<string, readonly AdminRole[]>;
 
 export type AdminPermissionKey = keyof typeof ADMIN_PAGE_ACCESS;
