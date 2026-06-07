@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1027,6 +1028,18 @@ Deno.serve(async (req) => {
     } = await loadMissingPhotoLocations(supabase, batchSize);
 
     if (locationsError) {
+      await logCronJobRun(supabase, {
+        job_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill",
+        source,
+        status: "failed",
+        started_at: new Date(startedAt).toISOString(),
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        failed_count: 1,
+        error_message: locationsError.message,
+        metadata: { stage: "load_locations" },
+      });
       await logEdgeFunctionRun(supabase, {
         function_name: "nightly-photo-backfill",
         status: "error",
@@ -1079,9 +1092,12 @@ Deno.serve(async (req) => {
 
     if (loadedLocations.length === 0) {
       if (!dryRun) {
-        await supabase.from("cron_job_runs").insert({
+        await logCronJobRun(supabase, {
           job_name: "nightly-photo-backfill",
+          function_name: "nightly-photo-backfill",
+          source,
           status: "success",
+          started_at: new Date(startedAt).toISOString(),
           finished_at: new Date().toISOString(),
           duration_ms: timer(),
           checked_count: 0,
@@ -1198,9 +1214,12 @@ Deno.serve(async (req) => {
 
       const skipped = preLookupSkipped + locations.length;
       const eligible = locations.length;
-      await supabase.from("cron_job_runs").insert({
+      await logCronJobRun(supabase, {
         job_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill",
+        source,
         status: "success",
+        started_at: new Date(startedAt).toISOString(),
         finished_at: new Date().toISOString(),
         duration_ms: timer(),
         checked_count: checked,
@@ -1363,9 +1382,12 @@ Deno.serve(async (req) => {
     }
 
     const eligible = locations.length;
-    await supabase.from("cron_job_runs").insert({
+    await logCronJobRun(supabase, {
       job_name: "nightly-photo-backfill",
-      status: failed ? "partial" : "success",
+      function_name: "nightly-photo-backfill",
+      source,
+      status: failed ? "warning" : "success",
+      started_at: new Date(startedAt).toISOString(),
       finished_at: new Date().toISOString(),
       duration_ms: timer(),
       checked_count: checked,
@@ -1428,6 +1450,17 @@ Deno.serve(async (req) => {
       message: "Photo backfill completed.",
     });
   } catch (error) {
+    await logCronJobRun(supabase, {
+      job_name: "nightly-photo-backfill",
+      function_name: "nightly-photo-backfill",
+      source,
+      status: "failed",
+      started_at: new Date(startedAt).toISOString(),
+      finished_at: new Date().toISOString(),
+      duration_ms: timer(),
+      failed_count: 1,
+      error_message: safeError(error),
+    });
     await logEdgeFunctionRun(supabase, {
       function_name: "nightly-photo-backfill",
       status: "error",

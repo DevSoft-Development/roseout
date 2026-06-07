@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,6 +50,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  const startedAt = new Date().toISOString();
   const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
   try {
@@ -84,6 +86,22 @@ Deno.serve(async (req) => {
       }
     }
 
+    await logCronJobRun(supabase, {
+      job_name: "team-session-watchdog",
+      function_name: "team-session-watchdog",
+      source: "cron",
+      status: "success",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - new Date(startedAt).getTime(),
+      checked_count: openSessions.length,
+      success_count: flagged,
+      skipped_count: Math.max(openSessions.length - flagged, 0),
+      failed_count: 0,
+      success_rate: openSessions.length ? flagged / openSessions.length : null,
+      metadata: { cutoff },
+    });
+
     return jsonResponse({
       success: true,
       checked: openSessions.length,
@@ -92,10 +110,22 @@ Deno.serve(async (req) => {
       message: "Team session watchdog completed.",
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await logCronJobRun(supabase, {
+      job_name: "team-session-watchdog",
+      function_name: "team-session-watchdog",
+      source: "cron",
+      status: "failed",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - new Date(startedAt).getTime(),
+      failed_count: 1,
+      error_message: message,
+    });
     return jsonResponse(
       {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       },
       500,
     );
