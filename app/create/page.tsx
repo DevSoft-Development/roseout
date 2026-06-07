@@ -16,6 +16,8 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
+import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
+import { emptyOutingTimeValue, getBrowserTimezone, type OutingTimeValue } from "@/lib/outings/planned-time-client";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
@@ -143,6 +145,15 @@ type ApiResponse = {
   matched_locations?: unknown[];
   display_mode?: string;
   render_mode?: string;
+  plannedTime?: {
+    plannedFor: string | null;
+    timezone: string;
+    dateContext: string | null;
+    confidence: "none" | "date_only" | "exact";
+    shouldSchedulePreOutingReminders?: boolean;
+    shouldScheduleNextMorningFollowup?: boolean;
+    nextMorningFollowupDate: string | null;
+  } | null;
   hide_text_results?: boolean;
   diagnostics?: Record<string, unknown>;
   debug?: {
@@ -186,6 +197,17 @@ type ResultSectionKind = "restaurants" | "activities";
 type UserLocation = {
   latitude: number;
   longitude: number;
+};
+
+type SavedPlan = {
+  restaurant?: RestaurantCard | null;
+  activity?: ActivityCard | null;
+  locations?: Array<RestaurantCard | ActivityCard>;
+  distancePreference?: DistancePreference;
+  campaignSlug?: string;
+  planExact?: boolean;
+  savedAt?: number;
+  outingTime?: OutingTimeValue;
 };
 
 const LOCATION_KEY = "theouthaven_user_location";
@@ -326,6 +348,14 @@ export default function CreatePage() {
   );
   const [locationSaved, setLocationSaved] = useState(false);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
+  const [outingTime, setOutingTimeState] = useState<OutingTimeValue>(() =>
+    emptyOutingTimeValue(getBrowserTimezone()),
+  );
+  const outingTimeManuallySet = useRef(false);
+  function setOutingTime(value: OutingTimeValue, manual = true) {
+    if (manual) outingTimeManuallySet.current = true;
+    setOutingTimeState(value);
+  }
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const addOnInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -572,6 +602,7 @@ export default function CreatePage() {
         campaignSlug,
         planExact: true,
         savedAt: Date.now(),
+        outingTime,
       };
 
       localStorage.setItem("theouthaven_plan", JSON.stringify(plan));
@@ -801,6 +832,13 @@ export default function CreatePage() {
                 lng: savedLocation.longitude,
               }
             : {}),
+          plannedFor: outingTime.plannedFor,
+          timezone: outingTime.timezone,
+          outingDateContext: outingTime.outingDateContext,
+          outingTimeConfidence: outingTime.outingTimeConfidence,
+          remindersEnabled: outingTime.remindersEnabled,
+          nextMorningFollowupEnabled: outingTime.nextMorningFollowupEnabled,
+          nextMorningFollowupDate: outingTime.nextMorningFollowupDate,
         }),
       });
 
@@ -846,6 +884,21 @@ export default function CreatePage() {
               data.reply ||
               "Search is having trouble right now. Please try again or simplify the request.",
           ),
+        );
+      }
+
+      if (data.plannedTime && !outingTimeManuallySet.current) {
+        setOutingTime(
+          {
+            plannedFor: data.plannedTime.plannedFor,
+            timezone: data.plannedTime.timezone || outingTime.timezone,
+            outingDateContext: data.plannedTime.dateContext,
+            outingTimeConfidence: data.plannedTime.confidence,
+            remindersEnabled: Boolean(data.plannedTime.shouldSchedulePreOutingReminders),
+            nextMorningFollowupEnabled: Boolean(data.plannedTime.shouldScheduleNextMorningFollowup),
+            nextMorningFollowupDate: data.plannedTime.nextMorningFollowupDate,
+          },
+          false,
         );
       }
 
@@ -1090,14 +1143,15 @@ export default function CreatePage() {
     if (typeof window === "undefined") return;
 
     const currentParams = new URLSearchParams(window.location.search);
-    const plan = {
+    const plan: SavedPlan = {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
-      locations: [selectedRestaurant, selectedActivity].filter(Boolean),
+      locations: [selectedRestaurant, selectedActivity].filter(Boolean) as Array<RestaurantCard | ActivityCard>,
       distancePreference: latestDistancePreference,
       campaignSlug: currentParams.get("campaignSlug") || undefined,
       planExact: currentParams.get("planExact") === "true" || undefined,
       savedAt: Date.now(),
+      outingTime,
     };
 
     localStorage.setItem("theouthaven_plan", JSON.stringify(plan));
@@ -1132,6 +1186,13 @@ export default function CreatePage() {
     if (source) params.set("source", source);
     const sourceTable = currentParams.get("sourceTable");
     if (sourceTable) params.set("sourceTable", sourceTable);
+    if (outingTime.plannedFor) params.set("plannedFor", outingTime.plannedFor);
+    if (outingTime.timezone) params.set("timezone", outingTime.timezone);
+    if (outingTime.outingDateContext) params.set("outingDateContext", outingTime.outingDateContext);
+    if (outingTime.outingTimeConfidence) params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
+    if (outingTime.nextMorningFollowupDate) params.set("nextMorningFollowupDate", outingTime.nextMorningFollowupDate);
+    if (outingTime.nextMorningFollowupEnabled) params.set("nextMorningFollowupEnabled", "true");
+    if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
 
     router.push(`/plan?${params.toString()}`);
   }
@@ -1196,6 +1257,14 @@ export default function CreatePage() {
                   className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
                 />
               </div>
+            </div>
+
+            <div className="mt-3">
+              <OutingTimeSelector
+                value={outingTime}
+                onChange={(value) => setOutingTime(value)}
+                query={input}
+              />
             </div>
 
             <div className="mt-3 flex w-full min-w-0 justify-center sm:mt-4">

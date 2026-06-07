@@ -1,3 +1,4 @@
+import GuestOutingTimeEditor from "@/components/outings/GuestOutingTimeEditor";
 async function getPlan(token: string) {
   const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   const res = await fetch(`${base}/api/outings/guest/${token}`, { cache: "no-store" });
@@ -25,10 +26,27 @@ export default async function GuestOutingPage({ params }: { params: Promise<{ to
         </header>
         <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
           <h2 className="text-2xl font-black">Outing time & follow-up</h2>
-          {isExact ? <p className="mt-3 text-white/75">We can remind you before your outing and check in tomorrow to see how everything went.</p> : null}
+          {isExact ? <p className="mt-3 text-white/75">You’re planning for {new Date(outing.planned_for).toLocaleString()}. We can help keep your plan handy and check in tomorrow to see how everything went.</p> : null}
           {isDateOnly ? <div className="mt-3 space-y-2 text-white/75"><p>You said: {outing.outing_date_context}.</p><p>Pre-outing reminders need an exact time.</p><p>We’ll check in tomorrow to see how everything went.</p></div> : null}
-          {!isExact && !isDateOnly ? <p className="mt-3 text-white/75">Add a date or time if you want reminders or follow-up.</p> : null}
-          <div className="mt-5 flex flex-wrap gap-3"><button className="rounded-full bg-rose-500 px-5 py-3 font-bold">Add exact time</button><button className="rounded-full border border-white/15 px-5 py-3 font-bold">Share</button><button className="rounded-full border border-white/15 px-5 py-3 font-bold">Add to calendar</button></div>
+          {!isExact && !isDateOnly ? <p className="mt-3 text-white/75">Planning ahead? Choose when you’re going so we can help keep your outing organized.</p> : null}
+          <GuestOutingTimeEditor
+            token={token}
+            initialValue={{
+              plannedFor: outing.planned_for,
+              timezone: outing.timezone || "America/New_York",
+              outingDateContext: outing.outing_date_context,
+              outingTimeConfidence: outing.outing_time_confidence || "none",
+              remindersEnabled: Boolean(outing.reminders_enabled),
+              nextMorningFollowupEnabled: Boolean(outing.next_morning_followup_enabled),
+              nextMorningFollowupDate: outing.next_morning_followup_date,
+            }}
+            initialEmail={outing.guest_email}
+            initialName={outing.guest_name}
+            initialPhone={outing.guest_phone}
+            initialEmailOptIn={outing.email_opt_in}
+            initialSmsOptIn={outing.sms_opt_in}
+          />
+          <div className="mt-5 flex flex-wrap gap-3"><button className="rounded-full border border-white/15 px-5 py-3 font-bold">Share</button><button className="rounded-full border border-white/15 px-5 py-3 font-bold">Add to calendar</button></div>
         </section>
         <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
           <h2 className="text-2xl font-black">Place details</h2>

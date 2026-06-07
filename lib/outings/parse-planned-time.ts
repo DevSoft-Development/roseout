@@ -57,6 +57,7 @@ function contextTargetDate(context: string, timeZone: string, now = new Date()) 
   const dow = new Date(Date.UTC(today.year, today.month - 1, today.day, 12)).getUTCDay();
   if (lower.includes("this weekend")) {
     if (dow === 0) return todayDate;
+    if (dow === 6) return todayDate;
     return addLocalDays(todayDate, nextDayIndex(dow, 6));
   }
   const day = DAY_NAMES.find((d) => lower.includes(d));

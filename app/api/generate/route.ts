@@ -2,6 +2,7 @@ import { firstImage, getLocationImage } from "@/lib/locationImage";
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
+import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,34 @@ export async function POST(request: Request) {
       hasServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       nodeEnv: process.env.NODE_ENV,
     });
+    const timezone =
+      typeof body?.timezone === "string" && body.timezone.trim()
+        ? body.timezone.trim()
+        : "America/New_York";
+    const manualConfidence = ["none", "date_only", "exact"].includes(body?.outingTimeConfidence)
+      ? body.outingTimeConfidence
+      : null;
+    const parsedPlannedTime = parsePlannedTimeFromQuery(cleanInput, timezone);
+    const plannedTime = manualConfidence
+      ? {
+          plannedFor: typeof body?.plannedFor === "string" ? body.plannedFor : null,
+          timezone,
+          matchedText: null,
+          dateContext: typeof body?.outingDateContext === "string" ? body.outingDateContext : null,
+          confidence: manualConfidence,
+          shouldSchedulePreOutingReminders:
+            manualConfidence === "exact" && typeof body?.plannedFor === "string",
+          shouldScheduleNextMorningFollowup:
+            body?.nextMorningFollowupEnabled === true || typeof body?.nextMorningFollowupDate === "string",
+          nextMorningFollowupDate:
+            typeof body?.nextMorningFollowupDate === "string" ? body.nextMorningFollowupDate : null,
+          source: "manual",
+        }
+      : {
+          ...parsedPlannedTime,
+          source: parsedPlannedTime.confidence === "none" ? null : "query",
+        };
+
 
     const betaAssignmentId = body?.betaAssignmentId || body?.beta_assignment_id || new URL(request.url).searchParams.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
     const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
@@ -189,11 +218,12 @@ export async function POST(request: Request) {
 
     const response = {
       ...result,
+      plannedTime,
       cards,
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? result.debug : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), plannedTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo

@@ -37,19 +37,35 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ to
   for (const [key, value] of Object.entries(contacts)) if (value) patch[key] = value;
   if (typeof body.emailOptIn === "boolean") patch.email_opt_in = Boolean(body.emailOptIn) && Boolean(patch.guest_email || data.guest_email);
   if (typeof body.smsOptIn === "boolean") patch.sms_opt_in = Boolean(body.smsOptIn) && Boolean(patch.guest_phone || data.guest_phone);
-  if (typeof body.plannedFor === "string" && !Number.isNaN(Date.parse(body.plannedFor))) {
+  const confidence = body.outingTimeConfidence === "exact" || body.outingTimeConfidence === "date_only" || body.outingTimeConfidence === "none" ? body.outingTimeConfidence : data.outing_time_confidence || "none";
+  if (confidence === "exact") {
+    if (typeof body.plannedFor !== "string" || Number.isNaN(Date.parse(body.plannedFor))) {
+      return NextResponse.json({ ok: false, error: "invalid_planned_for", message: "Choose a valid date and time." }, { status: 400 });
+    }
     patch.planned_for = body.plannedFor;
     patch.outing_time_confidence = "exact";
     patch.reminders_enabled = Boolean(body.remindersEnabled);
-  }
-  if (body.plannedFor === null) {
+  } else {
     patch.planned_for = null;
     patch.reminders_enabled = false;
-    patch.outing_time_confidence = body.outingTimeConfidence === "date_only" ? "date_only" : "none";
+    patch.outing_time_confidence = confidence === "date_only" ? "date_only" : "none";
   }
+  if (typeof body.outingDateContext === "string" || body.outingDateContext === null) patch.outing_date_context = body.outingDateContext;
   if (typeof body.timezone === "string") patch.timezone = body.timezone;
   if (typeof body.nextMorningFollowupEnabled === "boolean") patch.next_morning_followup_enabled = body.nextMorningFollowupEnabled;
-  if (typeof body.nextMorningFollowupDate === "string") patch.next_morning_followup_date = body.nextMorningFollowupDate;
+  if (typeof body.nextMorningFollowupDate === "string" || body.nextMorningFollowupDate === null) patch.next_morning_followup_date = body.nextMorningFollowupDate;
+  const wantsFollowup = body.nextMorningFollowupEnabled === true;
+  const effectiveEmail = String(patch.guest_email || data.guest_email || "").trim();
+  const effectiveEmailOptIn = typeof patch.email_opt_in === "boolean" ? patch.email_opt_in : data.email_opt_in;
+  if (wantsFollowup && (!effectiveEmail || !effectiveEmailOptIn)) {
+    return NextResponse.json({ ok: false, error: "contact_required_for_followup", message: "Add an email so we can send your follow-up." }, { status: 400 });
+  }
+  if (body.smsOptIn === true && !(patch.guest_phone || data.guest_phone)) {
+    return NextResponse.json({ ok: false, error: "phone_required_for_sms", message: "Add a phone number and SMS opt-in to receive text reminders." }, { status: 400 });
+  }
+  if (wantsFollowup && !patch.next_morning_followup_date && !data.next_morning_followup_date) {
+    return NextResponse.json({ ok: false, error: "followup_date_required", message: "A follow-up date is required." }, { status: 400 });
+  }
   if (body.externalBookingClicked) patch.reservation_clicked_at = new Date().toISOString();
   if (body.cancel === true) patch.status = "cancelled";
 

@@ -18,6 +18,8 @@ import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
+import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
+import { emptyOutingTimeValue, getBrowserTimezone, type OutingTimeValue } from "@/lib/outings/planned-time-client";
 import { formatDistanceFromRestaurant } from "@/lib/search/enterprise/distance";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import {
@@ -83,6 +85,7 @@ type SavedPlan = {
   campaignSlug?: string;
   planExact?: boolean;
   savedAt?: number;
+  outingTime?: OutingTimeValue;
 };
 
 type ExactCampaignLocation = {
@@ -161,6 +164,15 @@ function PlanPageInner() {
   const [saveStatus, setSaveStatus] = useState("Plan saved on this device.");
   const [shareStatus, setShareStatus] = useState("");
   const [outingComplete, setOutingComplete] = useState(false);
+  const [outingTime, setOutingTime] = useState<OutingTimeValue>(() =>
+    emptyOutingTimeValue(getBrowserTimezone()),
+  );
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
+  const [emailOptIn, setEmailOptIn] = useState(true);
+  const [smsOptIn, setSmsOptIn] = useState(false);
+  const [startStatus, setStartStatus] = useState("");
 
   function toPlanLocation(location: ExactCampaignLocation): PlanLocation {
     return {
@@ -218,6 +230,7 @@ function PlanPageInner() {
         campaignSlug,
         planExact: true,
         savedAt: Date.now(),
+        outingTime,
       };
 
       localStorage.setItem(PLAN_KEY, JSON.stringify(nextPlan));
@@ -227,6 +240,24 @@ function PlanPageInner() {
     } finally {
       setLoadingExactCampaign(false);
     }
+  }
+
+
+  function outingTimeFromUrl(base: OutingTimeValue) {
+    const confidence = searchParams.get("outingTimeConfidence");
+    if (!confidence && !searchParams.get("plannedFor") && !searchParams.get("outingDateContext")) return base;
+    return {
+      plannedFor: searchParams.get("plannedFor"),
+      timezone: searchParams.get("timezone") || base.timezone,
+      outingDateContext: searchParams.get("outingDateContext"),
+      outingTimeConfidence:
+        confidence === "exact" || confidence === "date_only" || confidence === "none"
+          ? confidence
+          : base.outingTimeConfidence,
+      remindersEnabled: searchParams.get("remindersEnabled") === "true",
+      nextMorningFollowupEnabled: searchParams.get("nextMorningFollowupEnabled") === "true",
+      nextMorningFollowupDate: searchParams.get("nextMorningFollowupDate"),
+    } as OutingTimeValue;
   }
 
   useEffect(() => {
@@ -247,7 +278,11 @@ function PlanPageInner() {
             parsed.campaignSlug === campaignSlug ||
             parsed.planExact;
           if (savedMatchesCampaign && (parsed.restaurant || parsed.activity)) {
-            setPlan(parsed);
+            const nextOutingTime = outingTimeFromUrl(parsed.outingTime || emptyOutingTimeValue(getBrowserTimezone()));
+            const nextPlan = { ...parsed, outingTime: nextOutingTime };
+            setOutingTime(nextOutingTime);
+            setPlan(nextPlan);
+            localStorage.setItem(PLAN_KEY, JSON.stringify(nextPlan));
             return;
           }
         }
@@ -299,7 +334,7 @@ function PlanPageInner() {
   function saveCurrentPlan() {
     if (!plan) return;
 
-    const nextPlan = { ...plan, savedAt: Date.now() };
+    const nextPlan = { ...plan, outingTime, savedAt: Date.now() };
     localStorage.setItem(PLAN_KEY, JSON.stringify(nextPlan));
     setPlan(nextPlan);
     setSaveStatus("Saved — you can come back to this plan from this device.");
@@ -337,6 +372,55 @@ function PlanPageInner() {
       });
     } catch {
       setShareStatus("Share was cancelled — your plan is still saved here.");
+    }
+  }
+
+
+  async function savePlanAndFollowUp() {
+    if (!plan) return;
+    const primaryLocation = restaurant || activity;
+    if (!primaryLocation?.id) {
+      setStartStatus("Choose a location before saving a follow-up plan.");
+      return;
+    }
+    if ((outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) && !guestEmail.trim()) {
+      setStartStatus("Add an email so we can send your follow-up.");
+      return;
+    }
+    setStartStatus("Saving your plan…");
+    try {
+      const response = await fetch("/api/outings/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location_id: String(primaryLocation.id),
+          restaurantLocationId: restaurant?.id ? String(restaurant.id) : null,
+          activityLocationId: activity?.id ? String(activity.id) : null,
+          source: "plan_page",
+          sourceQuery: planTitle,
+          plannedFor: outingTime.plannedFor,
+          timezone: outingTime.timezone,
+          outingDateContext: outingTime.outingDateContext,
+          outingTimeConfidence: outingTime.outingTimeConfidence,
+          remindersEnabled: outingTime.remindersEnabled,
+          nextMorningFollowupEnabled: outingTime.nextMorningFollowupEnabled,
+          nextMorningFollowupDate: outingTime.nextMorningFollowupDate,
+          guestEmail,
+          guestPhone,
+          guestName,
+          emailOptIn,
+          smsOptIn,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        setStartStatus(data.message || "We could not save follow-up for this plan yet.");
+        return;
+      }
+      localStorage.setItem("theouthaven_active_outing", JSON.stringify({ outingId: data.outing?.id, planUrl: data.planUrl }));
+      setStartStatus(data.planUrl ? "Plan saved. Secure plan link created." : "Plan saved.");
+    } catch {
+      setStartStatus("We could not save follow-up for this plan yet.");
     }
   }
 
@@ -458,6 +542,29 @@ function PlanPageInner() {
               <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
                 {buildPlanSummaryText(restaurant, activity, distancePreference)}
               </p>
+
+              <div className="mt-5 space-y-3">
+                <h3 className="text-sm font-black">Outing time & follow-up</h3>
+                <OutingTimeSelector value={outingTime} onChange={setOutingTime} />
+                {(outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                    <p className="text-sm font-black">No account needed. We’ll send you a secure link to your plan.</p>
+                    <p className="mt-1 text-xs font-semibold text-white/50">We’ll check in tomorrow to see how everything went.</p>
+                    <div className="mt-3 grid gap-2">
+                      <input type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="Email" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
+                      <input type="text" value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
+                      <input type="tel" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} placeholder="Phone optional" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
+                      <label className="flex gap-2 text-xs font-bold text-white/70"><input type="checkbox" checked={emailOptIn} onChange={(event) => setEmailOptIn(event.target.checked)} />Email me my plan and follow-up</label>
+                      <label className="flex gap-2 text-xs font-bold text-white/70"><input type="checkbox" checked={smsOptIn} onChange={(event) => setSmsOptIn(event.target.checked)} />Text me reminders and follow-up</label>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save outing time</button>
+                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Save plan & follow-up</button>
+                </div>
+                {startStatus ? <p className="text-xs font-bold leading-5 text-white/50">{startStatus}</p> : null}
+              </div>
 
               <div className="mt-5 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100/70">
