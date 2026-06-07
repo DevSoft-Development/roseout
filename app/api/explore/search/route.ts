@@ -3,6 +3,30 @@ import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 
+
+function metadataString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeSearchMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeSearchMetadata);
+  if (!value || typeof value !== "object") {
+    if (typeof value !== "string") return value;
+    return value
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted_email]")
+      .replace(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/g, "[redacted_phone]");
+  }
+
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, unknown>>(
+    (acc, [key, item]) => {
+      if (/email|phone|address/i.test(key)) return acc;
+      acc[key] = sanitizeSearchMetadata(item);
+      return acc;
+    },
+    {},
+  );
+}
+
 function cleanParam(value: string | null) { return (value ?? "").trim(); }
 function normalizeKind(value: string | null) { const v=cleanParam(value).toLowerCase(); if (["restaurants","restaurant","food","brunch"].includes(v)) return "restaurants"; if (["activities","activity","things","things-to-do"].includes(v)) return "activities"; if (["rooftops","rooftop"].includes(v)) return "rooftops"; if (["lounges","lounge"].includes(v)) return "lounges"; return "all"; }
 function normalizeArea(value: string | null) { return cleanParam(value) || "all"; }
@@ -48,6 +72,63 @@ export async function GET(request: NextRequest) {
       debug.no_pairs_reason ??
       debug.noPairsReason ??
       (exploreNote ? "no_walkable_pairs_for_explore" : null);
+    const resolvedIntentParserSource =
+      debug.intentParserSource ??
+      debug.intent_parser_source ??
+      debug.intentParser?.source ??
+      debug.normalizedIntent?.intentParserSource ??
+      debug.normalizedIntent?.parserSource ??
+      normalizedIntent?.intentParserSource ??
+      normalizedIntent?.parserSource ??
+      (result as any)?.intentParserSource ??
+      (result as any)?.parserSource ??
+      null;
+    const resolvedSearchType =
+      normalizedIntent?.searchType ??
+      debug.normalizedIntent?.searchType ??
+      debug.intent?.searchType ??
+      (result as any)?.searchType ??
+      kind ??
+      null;
+    const resolvedPrimaryDomain =
+      normalizedIntent?.primaryDomain ??
+      debug.normalizedIntent?.primaryDomain ??
+      debug.intent?.primaryDomain ??
+      (result as any)?.primaryDomain ??
+      null;
+    const resolvedGeo =
+      normalizedIntent?.geo ??
+      debug.normalizedIntent?.geo ??
+      debug.geo ??
+      debug.originalGeo ??
+      (result as any)?.geo ??
+      (area !== "all" ? { city: area } : null);
+    const resolvedOutingDate =
+      metadataString(normalizedIntent?.outingDate?.date) ??
+      metadataString(normalizedIntent?.dateTime?.date) ??
+      metadataString(normalizedIntent?.outing?.date) ??
+      metadataString(debug.normalizedIntent?.outingDate?.date) ??
+      metadataString(debug.normalizedIntent?.dateTime?.date) ??
+      null;
+    const resolvedOutingTime =
+      metadataString(normalizedIntent?.outingDate?.time) ??
+      metadataString(normalizedIntent?.dateTime?.time) ??
+      metadataString(normalizedIntent?.outing?.time) ??
+      metadataString(debug.normalizedIntent?.outingDate?.time) ??
+      metadataString(debug.normalizedIntent?.dateTime?.time) ??
+      null;
+    const resolvedOutingDateTime =
+      metadataString(normalizedIntent?.outingDate?.dateTime) ??
+      metadataString(normalizedIntent?.dateTime?.dateTime) ??
+      metadataString(debug.normalizedIntent?.outingDate?.dateTime) ??
+      metadataString(debug.normalizedIntent?.dateTime?.dateTime) ??
+      null;
+    const resolvedOutingTimeLabel =
+      metadataString(normalizedIntent?.outingDate?.label) ??
+      metadataString(normalizedIntent?.dateTime?.label) ??
+      metadataString(debug.normalizedIntent?.outingDate?.label) ??
+      metadataString(debug.normalizedIntent?.dateTime?.label) ??
+      null;
 
     void logSearchEvent({
       source: "public_explore_search",
@@ -55,50 +136,19 @@ export async function GET(request: NextRequest) {
       rawQuery: query,
       normalizedQuery:
         normalizedIntent?.rawQuery ?? normalizedIntent?.query ?? query,
-      searchType:
-        normalizedIntent?.searchType ??
-        (result as any)?.searchType ??
-        debug?.normalizedIntent?.searchType ??
-        kind ??
-        null,
-      primaryDomain:
-        normalizedIntent?.primaryDomain ??
-        (result as any)?.primaryDomain ??
-        debug?.normalizedIntent?.primaryDomain ??
-        null,
-      intentParserSource:
-        debug?.intentParserSource ?? (result as any)?.intentParserSource ?? null,
+      searchType: resolvedSearchType,
+      primaryDomain: resolvedPrimaryDomain,
+      intentParserSource: resolvedIntentParserSource,
       sessionId:
         request.cookies.get("toh_session")?.value ||
         request.headers.get("x-session-id"),
       betaAssignmentId,
       betaTesterId,
-      geo:
-        normalizedIntent?.geo ??
-        (result as any)?.geo ??
-        debug?.geo ??
-        debug?.originalGeo ??
-        (area !== "all" ? { city: area } : null),
-      outingDate:
-        normalizedIntent?.outingDate?.date ??
-        normalizedIntent?.dateTime?.date ??
-        normalizedIntent?.date?.date ??
-        null,
-      outingTime:
-        normalizedIntent?.outingDate?.time ??
-        normalizedIntent?.dateTime?.time ??
-        normalizedIntent?.date?.time ??
-        null,
-      outingDateTime:
-        normalizedIntent?.outingDate?.dateTime ??
-        normalizedIntent?.dateTime?.dateTime ??
-        normalizedIntent?.date?.dateTime ??
-        null,
-      outingTimeLabel:
-        normalizedIntent?.outingDate?.label ??
-        normalizedIntent?.dateTime?.label ??
-        normalizedIntent?.date?.label ??
-        null,
+      geo: resolvedGeo,
+      outingDate: resolvedOutingDate,
+      outingTime: resolvedOutingTime,
+      outingDateTime: resolvedOutingDateTime,
+      outingTimeLabel: resolvedOutingTimeLabel,
       counts: debug?.counts ?? {
         restaurants: result.restaurants?.length ?? 0,
         activities: result.activities?.length ?? 0,
@@ -123,14 +173,19 @@ export async function GET(request: NextRequest) {
       issueLabel: noResultsReason ?? noPairsReason ?? null,
       noResultsReason,
       noPairsReason,
-      metadata: {
+      metadata: sanitizeSearchMetadata({
         search_system: debug?.search_system,
         render_mode: debug?.render_mode ?? result.render_mode,
         wantsPairing: normalizedIntent?.wantsPairing,
         needsRestaurant: normalizedIntent?.needsRestaurant,
         needsActivity: normalizedIntent?.needsActivity,
         explore_kind: kind,
-      },
+        normalizedIntent,
+        geo: resolvedGeo,
+        searchType: resolvedSearchType,
+        primaryDomain: resolvedPrimaryDomain,
+        intentParserSource: resolvedIntentParserSource,
+      }) as Record<string, any>,
     });
 
     return NextResponse.json({ success: true, items, restaurants: result.restaurants, activities: result.activities, pairs: result.pairs, note: exploreNote, total, searchPerformance: betaDebug && perf ? { totalMs: perf.total_ms, speedStatus: perf.speed_status, resultCount: perf.result_count } : undefined, debug: betaDebug ? result.debug : undefined });
