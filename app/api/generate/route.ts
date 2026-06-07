@@ -1,6 +1,7 @@
 import { firstImage, getLocationImage } from "@/lib/locationImage";
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
+import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 export const runtime = "nodejs";
@@ -246,6 +247,114 @@ export async function POST(request: Request) {
       },
     };
 
+    const debug = (result.debug as any) ?? {};
+    const normalizedIntent =
+      debug.normalizedIntent ?? debug.intent ?? result.normalizedIntent ?? null;
+    const counts = debug.counts ?? {
+      restaurants: result.restaurants?.length ?? 0,
+      activities: result.activities?.length ?? 0,
+      pairs: result.pairs?.length ?? 0,
+      finalDisplayedResultCount:
+        result.matched_locations?.length ??
+        result.matchedLocations?.length ??
+        result.cards?.length ??
+        0,
+    };
+    const noResultsReason =
+      result.no_results_reason ??
+      result.noResultsReason ??
+      debug.no_results_reason ??
+      debug.noResultsReason ??
+      response.diagnostics.no_results_reason ??
+      null;
+    const noPairsReason =
+      result.no_pairs_reason ??
+      result.noPairsReason ??
+      debug.no_pairs_reason ??
+      debug.noPairsReason ??
+      null;
+
+    void logSearchEvent({
+      source: "public_create_search",
+      route: "/api/generate",
+      rawQuery: cleanInput,
+      normalizedQuery:
+        normalizedIntent?.rawQuery ?? normalizedIntent?.query ?? cleanInput,
+      searchType:
+        normalizedIntent?.searchType ??
+        result?.searchType ??
+        debug?.normalizedIntent?.searchType ??
+        null,
+      primaryDomain:
+        normalizedIntent?.primaryDomain ??
+        result?.primaryDomain ??
+        debug?.normalizedIntent?.primaryDomain ??
+        null,
+      intentParserSource:
+        debug?.intentParserSource ?? result?.intentParserSource ?? null,
+      anonymousId:
+        (typeof body?.anonymousId === "string" ? body.anonymousId : null) ??
+        request.headers.get("x-anonymous-id"),
+      sessionId: request.headers.get("x-session-id"),
+      betaAssignmentId: typeof betaAssignmentId === "string" ? betaAssignmentId : null,
+      betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,
+      geo:
+        normalizedIntent?.geo ??
+        result?.geo ??
+        debug?.geo ??
+        debug?.originalGeo ??
+        null,
+      outingDate:
+        normalizedIntent?.outingDate?.date ??
+        normalizedIntent?.dateTime?.date ??
+        normalizedIntent?.date?.date ??
+        null,
+      outingTime:
+        normalizedIntent?.outingDate?.time ??
+        normalizedIntent?.dateTime?.time ??
+        normalizedIntent?.date?.time ??
+        null,
+      outingDateTime:
+        normalizedIntent?.outingDate?.dateTime ??
+        normalizedIntent?.dateTime?.dateTime ??
+        normalizedIntent?.date?.dateTime ??
+        null,
+      outingTimeLabel:
+        normalizedIntent?.outingDate?.label ??
+        normalizedIntent?.dateTime?.label ??
+        normalizedIntent?.date?.label ??
+        null,
+      counts,
+      performance: debug?.performance ?? {
+        route: "/api/generate",
+        total_ms: Date.now() - startedAt,
+      },
+      pairingPreference:
+        normalizedIntent?.pairingPreference ?? debug?.pairingPreference ?? null,
+      success: result?.success !== false,
+      hadIssue: Boolean(
+        noResultsReason ||
+          noPairsReason ||
+          debug?.event_type === "no_results" ||
+          debug?.event_type === "no_valid_pairs",
+      ),
+      issueType: noResultsReason
+        ? "no_results"
+        : noPairsReason
+          ? "no_valid_pairs"
+          : null,
+      issueLabel: noResultsReason ?? noPairsReason ?? null,
+      noResultsReason,
+      noPairsReason,
+      metadata: {
+        search_system: debug?.search_system,
+        render_mode: debug?.render_mode ?? result?.render_mode,
+        wantsPairing: normalizedIntent?.wantsPairing,
+        needsRestaurant: normalizedIntent?.needsRestaurant,
+        needsActivity: normalizedIntent?.needsActivity,
+      },
+    });
+
     if (result.source === "edge" || (result.debug as any)?.source === "edge") {
       void logSearchHealthEvent({
         source: betaTesterId ? "beta_tester_search" : "public_create_search",
@@ -283,6 +392,24 @@ export async function POST(request: Request) {
         message.includes("not iterable") || message.includes("intent.vibe")
           ? "Likely LLM intent shape regression. Check intent.vibe normalization."
           : "Search route failed after parsing or ranking.",
+    });
+
+    void logSearchEvent({
+      source: "public_create_search",
+      route: "/api/generate",
+      rawQuery: searchHealthRawQuery,
+      performance: {
+        route: "/api/generate",
+        total_ms: Date.now() - startedAt,
+        speed_status: "failed",
+      },
+      success: false,
+      hadIssue: true,
+      issueType: "search_error",
+      issueLabel: "Search route failed",
+      metadata: {
+        error: message,
+      },
     });
 
     void logSearchHealthEvent({

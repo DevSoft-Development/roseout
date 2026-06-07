@@ -945,6 +945,10 @@ export function buildSearchHealthEventPayload(args: LoggerArgs) {
   };
 }
 
+function shouldLogAllPublicSearchHealthEvents() {
+  return process.env.SEARCH_HEALTH_LOG_ALL_PUBLIC_SEARCHES === "true";
+}
+
 export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
   const args: LoggerArgs = isLoggerArgsLikeInput(input)
     ? input
@@ -995,6 +999,16 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
       args.debugEnabled === true ||
       (wantsPairing && payload.pair_count === 0)
     );
+
+  const isPublicSearch =
+    payload.source === "public_create_search" ||
+    payload.source === "public_explore_search" ||
+    payload.source === "public_plan_search" ||
+    payload.source === "search_api";
+
+  if (isPublicSearch && shouldLogAllPublicSearchHealthEvents()) {
+    return true;
+  }
 
   return hasIssue;
 }
