@@ -4,6 +4,7 @@ import {
   activitySearchTerms,
   deterministicIntentFromQuery,
   normalizeIntent,
+  restaurantSearchTerms,
 } from "../normalize-intent";
 import { resolveSearchMarket } from "../markets";
 import {
@@ -538,5 +539,97 @@ describe("merged cleanup and national sports-watch fixes", () => {
     const terms = activitySearchTerms(intent);
     expect(terms).toEqual(expect.arrayContaining(["mini golf", "arcade", "games"]));
     for (const blocked of ["sports bar", "watch party", "gym", "skating", "climbing"]) expect(terms).not.toContain(blocked);
+  });
+});
+
+describe("final cleanup architecture regressions", () => {
+  it("finalCleanTermList removes token pollution but preserves phrases", async () => {
+    const { finalCleanTermList, ACTIVITY_ALLOWED_SINGLE_WORDS } = await import("../normalize-intent");
+    const terms = finalCleanTermList(
+      [
+        "paint and sip", "paint", "and", "sip",
+        "mini golf", "mini", "golf",
+        "watch party", "watch", "party",
+        "game day", "game", "day",
+        "raw bar", "raw", "bar",
+        "date night", "date", "night",
+      ],
+      ACTIVITY_ALLOWED_SINGLE_WORDS,
+    );
+
+    for (const phrase of ["paint and sip", "mini golf", "watch party", "game day", "raw bar", "date night"]) {
+      expect(terms).toContain(phrase);
+    }
+    for (const junk of ["paint", "and", "sip", "mini", "golf", "watch", "party", "game", "day", "raw", "date", "night"]) {
+      expect(terms).not.toContain(junk);
+    }
+    expect(terms).toContain("bar");
+  });
+
+  it("cleans sports-watch final activity terms for non-local teams", () => {
+    const intent = normalizeIntent("Lakers watch party near Brooklyn");
+    const terms = activityRpcTerms(intent).terms;
+
+    for (const expected of ["lakers game", "watch party", "sports bar", "bar with tvs"]) {
+      expect(terms).toContain(expected);
+    }
+    for (const junk of ["lakers", "with", "watch", "party", "game", "day", "night", "live", "viewing", "and", "grill", "sport", "sports"]) {
+      expect(terms).not.toContain(junk);
+    }
+  });
+
+  for (const query of [
+    "dinner and mini golf after in Queens",
+    "sushi dinner then karaoke in Brooklyn",
+    "cocktail bar for date night no loud music",
+    "comedy club for date night near Times Square",
+  ]) {
+    it(`skips LLM for high-confidence fast path: ${query}`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      expect(parsed.intentParserSource).toBe("fast_path");
+      expect(parsed.usedLlm).toBe(false);
+      expect(parsed.debug.llm_ms).toBe(0);
+      expect(parsed.debug.fallback_llm_ms).toBeNull();
+    });
+  }
+
+  it("does not add relaxed activity alternatives to quiet bar venue searches", () => {
+    const intent = normalizeIntent("quiet bar with cocktails in Manhattan");
+    const terms = activitySearchTerms(intent);
+    expect(terms).toEqual(expect.arrayContaining(["cocktail bar", "cocktails", "bar", "lounge", "quiet"]));
+    for (const overexpanded of ["board games", "arcade", "mini golf", "bowling", "museum", "paint and sip"]) {
+      expect(terms).not.toContain(overexpanded);
+    }
+  });
+
+  it("keeps rooftop no-club venue terms without broad relaxed alternatives", () => {
+    const intent = normalizeIntent("rooftop drinks with views but not a club");
+    const terms = activitySearchTerms(intent);
+    expect(terms).toEqual(expect.arrayContaining(["rooftop bar", "rooftop drinks", "rooftop cocktails", "terrace bar", "terrace lounge", "skyline bar", "skyline lounge", "views", "outdoor bar", "cocktails", "drinks", "bar"]));
+    expect(intent.activityIntent.negativeTerms).toEqual(expect.arrayContaining(["club", "nightclub", "dancing", "dj", "live dj"]));
+    for (const overexpanded of ["board games", "mini golf", "museum", "paint and sip"]) {
+      expect(terms).not.toContain(overexpanded);
+    }
+  });
+
+  it("fast-paths speakeasy romantic vibes as activity-only", async () => {
+    const parsed = await parseEnterpriseIntent("speakeasy for romantic vibes in Brooklyn", { useLLM: true });
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.fastPathReason).toBe("matched activity-only venue fast path");
+    expect(parsed.intent.searchType).toBe("activity");
+    expect(parsed.intent.needsRestaurant).toBe(false);
+    expect(activitySearchTerms(parsed.intent)).toEqual(expect.arrayContaining(["speakeasy", "cocktail bar", "cocktails", "bar", "lounge", "romantic"]));
+    expect(restaurantSearchTerms(parsed.intent)).toEqual([]);
+  });
+
+  it("fast-paths rooftop restaurant with skyline views as restaurant-only", async () => {
+    const parsed = await parseEnterpriseIntent("rooftop restaurant with skyline views", { useLLM: true });
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.fastPathReason).toBe("matched restaurant-only fast path");
+    expect(parsed.intent.searchType).toBe("restaurant");
+    expect(parsed.intent.needsActivity).toBe(false);
+    expect(parsed.debug.llm_ms).toBe(0);
+    expect(restaurantSearchTerms(parsed.intent)).toEqual(expect.arrayContaining(["restaurant", "rooftop restaurant", "rooftop", "skyline", "skyline views", "scenic views", "terrace", "outdoor dining"]));
+    expect(activitySearchTerms(parsed.intent)).toEqual([]);
   });
 });

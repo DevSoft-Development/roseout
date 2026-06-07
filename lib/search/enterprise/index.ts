@@ -11,6 +11,33 @@ import { getSearchSpeedStatus, logSearchPerformance } from "@/lib/search/perform
 import { resolveSearchMarket, type UserSearchLocation } from "./markets";
 import { logSearchHealthEvent } from "./searchHealthLogger";
 
+
+function serializeErrorForDebug(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  try {
+    return {
+      message: JSON.stringify(error),
+      rawType: typeof error,
+    };
+  } catch {
+    return {
+      message: String(error),
+      rawType: typeof error,
+    };
+  }
+}
+
+function errorMessageForDebug(error: unknown) {
+  const serialized = serializeErrorForDebug(error);
+  return serialized.message || String(error);
+}
 function firstImage(value: unknown): string | null {
   if (!value) return null;
 
@@ -110,6 +137,8 @@ function hasPairConstraint(intent: SearchIntent) { return Boolean(intent.pairing
 function isRooftopDrinksIntent(intent: SearchIntent) { return /\brooftop\s+(drinks?|cocktails?|bar|lounge)|\b(rooftop drinks|rooftop bar|rooftop lounge)\b/i.test(intent.rawQuery) || intent.activityIntent.activityTerms.some((term) => ["rooftop drinks", "rooftop bar", "rooftop lounge"].includes(term.toLowerCase())); }
 const ROOFTOP_ACTIVITY_RECOVERY_TERMS = ["rooftop", "rooftop bar", "rooftop lounge", "drinks", "cocktails", "bar", "lounge"];
 const BAR_ACTIVITY_RECOVERY_TERMS = ["bar", "lounge", "cocktails", "drinks"];
+const ROOFTOP_RESTAURANT_RECOVERY_TERMS = ["restaurant", "rooftop", "views", "terrace", "outdoor dining"];
+function isRooftopRestaurantIntent(intent: SearchIntent) { return intent.needsRestaurant && !intent.needsActivity && /\b(rooftop restaurant|restaurant with (?:skyline views|views|outdoor dining|terrace)|skyline views|scenic views|terrace|outdoor dining)\b/i.test(intent.rawQuery); }
 
 function requiresStrictMixedPair(intent: SearchIntent) {
   return (
@@ -237,7 +266,13 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       let filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
       if (!filtered.length && restaurantSearchTerms(effectiveIntent).length) {
         usedFallback = true;
-        restaurantRaw=await recoverEnterpriseLane(supabase,effectiveIntent,"restaurant",debug);
+        restaurantRaw=await recoverEnterpriseLane(
+          supabase,
+          effectiveIntent,
+          "restaurant",
+          debug,
+          isRooftopRestaurantIntent(effectiveIntent) ? ROOFTOP_RESTAURANT_RECOVERY_TERMS : undefined,
+        );
         filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
       }
       perf.restaurant_rpc_ms = Date.now() - rpcStarted;
@@ -467,7 +502,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
         totalMs,
         usedLlm,
         success: false,
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: errorMessageForDebug(error),
       });
     }
     void logSearchHealthEvent({
@@ -489,12 +524,14 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       },
       debug: {
         normalizedIntent: parsedIntent,
+        error: serializeErrorForDebug(error),
+        rawQuery: query,
         performance: {
           total_ms: totalMs,
           speed_status: getSearchSpeedStatus({ totalMs, success: false }),
         },
       },
-      errors: [error instanceof Error ? error.message : String(error)],
+      errors: [errorMessageForDebug(error)],
       timingMs: totalMs,
       speedStatus: getSearchSpeedStatus({ totalMs, success: false }),
       createdByUserId: options?.createdByUserId ?? options?.userId ?? null,

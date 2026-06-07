@@ -265,6 +265,65 @@ function inferPairCount(args: LoggerArgs, result: any, debug: any): number {
   );
 }
 
+
+const TERM_POLLUTION_TOKENS = new Set([
+  "and", "with", "to", "do", "mini", "paint", "sip", "live", "big",
+  "screen", "watch", "party", "game", "day", "night", "date", "raw",
+  "tex", "mex", "house", "mignon", "prime", "rib", "outdoor", "dance",
+  "dj", "open", "mic", "alley", "lanes", "driving", "range",
+]);
+const RELAXED_OVEREXPANDED_TERMS = new Set([
+  "board games", "arcade", "mini golf", "bowling", "museum", "paint and sip",
+]);
+const SPORTS_WATCH_POLLUTION_TOKENS = new Set([
+  "with", "big", "screen", "watch", "party", "game", "day", "live",
+  "viewing", "and", "grill", "lakers", "warriors", "celtics", "cowboys",
+  "eagles", "dodgers", "duke",
+]);
+
+function normalizeHealthTerm(term: unknown) {
+  return String(term ?? "").toLowerCase().replaceAll("_", " ").replaceAll("-", " ").trim().replace(/\s+/g, " ");
+}
+
+function allSearchHealthTerms(debug: any, normalizedIntent: any) {
+  const restaurantIntent = normalizedIntent?.restaurantIntent ?? normalizedIntent?.restaurant_intent ?? {};
+  const activityIntent = normalizedIntent?.activityIntent ?? normalizedIntent?.activity_intent ?? {};
+  return {
+    restaurantTerms: [
+      ...safeStringArray(debug?.restaurantTerms, 100),
+      ...safeStringArray(restaurantIntent?.mealTerms, 100),
+      ...safeStringArray(restaurantIntent?.foodTerms, 100),
+      ...safeStringArray(restaurantIntent?.cuisineTerms, 100),
+      ...safeStringArray(restaurantIntent?.categoryTerms, 100),
+      ...safeStringArray(restaurantIntent?.featureTerms, 100),
+    ].map(normalizeHealthTerm),
+    activityTerms: [
+      ...safeStringArray(debug?.activityTerms, 100),
+      ...safeStringArray(activityIntent?.activityTerms, 100),
+      ...safeStringArray(activityIntent?.categoryTerms, 100),
+      ...safeStringArray(activityIntent?.featureTerms, 100),
+    ].map(normalizeHealthTerm),
+  };
+}
+
+function buildSuspiciousFlags(args: LoggerArgs, result: any, debug: any, normalizedIntent: any) {
+  const flags: string[] = [];
+  const q = String(args.rawQuery ?? args.raw_query ?? debug?.rawQuery ?? normalizedIntent?.rawQuery ?? "").toLowerCase();
+  const { restaurantTerms, activityTerms } = allSearchHealthTerms(debug, normalizedIntent);
+  const terms = [...restaurantTerms, ...activityTerms];
+  if (terms.some((term) => TERM_POLLUTION_TOKENS.has(term))) flags.push("term_pollution");
+  const llmMs = toInteger(debug?.performance?.llm_ms ?? debug?.llm_ms ?? result?.debug?.performance?.llm_ms);
+  const fastPathMatched = debug?.fastPathMatched === true || debug?.fastPathReason || debug?.performance?.fastPathMatched === true;
+  if (fastPathMatched && Number(llmMs ?? 0) > 0) flags.push("llm_wait_on_fast_path");
+  const quietVenue = /\b(no club|not a club|not a nightclub|no nightclub|no dancing|no dj|no live dj|not too loud|not loud|no loud music|quiet|quiet girls night|quiet bar|chill drinks|upscale lounge)\b/.test(q);
+  if (quietVenue && activityTerms.some((term) => RELAXED_OVEREXPANDED_TERMS.has(term))) flags.push("relaxed_overexpanded");
+  const sportsWatch = /\b(watch|showing|viewing|game|match|fight|nba|nfl|mlb|nhl|wnba|sports bar|watch party|game day|lakers|warriors|celtics|cowboys|eagles|dodgers|march madness|duke)\b/.test(q);
+  if (sportsWatch && activityTerms.some((term) => SPORTS_WATCH_POLLUTION_TOKENS.has(term) || term === "march" || term === "madness")) flags.push("sports_watch_term_pollution");
+  const ok = result?.ok ?? result?.success;
+  const activityOnlyVenue = /\b(cocktail bar|wine bar|rooftop bar|hookah bar|karaoke bar|comedy club|jazz club|speakeasy|lounge)\b/.test(q) && !/\b(dinner|brunch|lunch|breakfast|restaurant)\b/.test(q);
+  if (ok === false && activityOnlyVenue) flags.push("activity_only_error");
+  return Array.from(new Set(flags));
+}
 function normalizeJsonValue(value: unknown): unknown {
   if (value == null) return value;
   try {
@@ -527,6 +586,7 @@ export function buildSearchHealthDebug(result: any, debug: any) {
     candidateActivityCountBeforeRequiredPairSuppression: toInteger(debug?.candidateActivityCountBeforeRequiredPairSuppression),
     candidatePairCountBeforeRequiredPairSuppression: toInteger(debug?.candidatePairCountBeforeRequiredPairSuppression),
     rejectionReasons,
+    suspiciousFlags: buildSuspiciousFlags({}, result, debug, normalizedIntent),
     performance: compactRecord({
       intent_parse_ms: toInteger(
         performance?.intent_parse_ms ?? performance?.intentParseMs,
