@@ -5,6 +5,7 @@ import {
   activitySearchTerms,
   activitySearchTermsOriginal,
   hasRelaxedActivityIntent,
+  isBroadGenericActivityIntent,
   hasSpecificRestaurantFoodOrCuisine,
   pruneActivityRpcTerms,
   pruneRelaxedActivityTerms,
@@ -28,6 +29,8 @@ type RpcDebug = {
   relaxedActivityRpcSlimmingApplied?: boolean;
   activityTermsRemovedFromRpcForRelaxedIntent?: string[];
   activityRpcTermsRemovedForSportsWatchIntent?: string[];
+  compactGenericActivityRpcApplied?: boolean;
+  expandedGenericActivityRpcTerms?: string[];
   restaurantRpcCount?: number;
   activityRpcCount?: number;
   restaurantRecoveryUsed?: boolean;
@@ -155,6 +158,8 @@ export async function searchEnterpriseLane(
       debug.activityRpcTerms = p.p_search_terms;
       debug.activityRpcTermsOriginal = activityTermsOriginal;
       debug.activityRpcTermsPruned = rpcTerms.terms;
+      debug.compactGenericActivityRpcApplied = Boolean((rpcTerms as any).compactGenericActivityRpcApplied);
+      debug.expandedGenericActivityRpcTerms = (rpcTerms as any).expandedTerms ?? [];
       debug.activityRpcTermsRemovedForSportsWatchIntent = (rpcTerms as any).removedForSportsWatchIntent ?? [];
       debug.relaxedActivityPruningApplied = relaxedActivityIntent;
       debug.activityTermsRemovedForRelaxedIntent = relaxedActivityIntent
@@ -261,6 +266,8 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     activityTermsRemovedForRelaxedIntent: [],
     relaxedActivityRpcSlimmingApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedFromRpcForRelaxedIntent: [],
+    compactGenericActivityRpcApplied: isBroadGenericActivityIntent(intent),
+    expandedGenericActivityRpcTerms: [],
     activityRecoveryReason: null,
     activityRecoveryTermsTried: [],
     geoLatitude: intent.geo.latitude ?? null,

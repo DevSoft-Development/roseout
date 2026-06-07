@@ -125,6 +125,17 @@ export const GENERIC_ACTIVITY_SIGNAL_TERMS = [
   "outdoor activity",
 ];
 
+export const COMPACT_GENERIC_ACTIVITY_RPC_TERMS = [
+  "arcade",
+  "bowling",
+  "billiards",
+  "games",
+  "museum",
+  "gallery",
+  "mini golf",
+  "lounge",
+];
+
 export const GENERIC_ACTIVITY_FALLBACK_TERMS = [
   "activity",
   "things to do",
@@ -133,12 +144,13 @@ export const GENERIC_ACTIVITY_FALLBACK_TERMS = [
   "lounge",
   "arcade",
   "bowling",
+  "billiards",
+  "games",
   "mini golf",
   "museum",
   "gallery",
   "live music",
   "rooftop",
-  "games",
   "comedy",
   "karaoke",
 ];

@@ -1,10 +1,48 @@
 import { describe, expect, it } from "vitest";
 import { classifySearchHealthEvent } from "../searchHealthLogger";
 import { createPairingDebug, createSearchPairs } from "../pairing";
-import { activitySearchTerms, normalizeIntent } from "../normalize-intent";
+import { activityRpcTerms, activitySearchTerms, normalizeIntent } from "../normalize-intent";
 import { names, runFixturePipeline } from "./fixtures";
 
 describe("enterprise search pure fixture regressions", () => {
+
+  it.each([
+    "brunch and something fun in Brooklyn",
+    "brunch and activity in Brooklyn",
+    "fun date in Brooklyn",
+    "brunch and bowling in Brooklyn",
+    "brunch and museum in Brooklyn",
+  ])("preserves Brooklyn-first ranking for %s", (query) => {
+    const result = runFixturePipeline(query);
+
+    expect(result.intent.geo.borough).toBe("Brooklyn");
+    expect(result.intent.geo.city).toBe("New York");
+    expect(result.intent.geo.state).toBe("NY");
+    expect(result.intent.geo.radiusMiles).toBe(9);
+    expect(result.intent.pairingPreference?.distanceMode).toBe("any");
+    expect(result.intent.pairingPreference?.maxPairDistanceMiles).toBeNull();
+    expect(result.intent.pairingPreference?.maxPairWalkingMinutes).toBeNull();
+    expect(result.restaurants[0]?.borough).toBe("Brooklyn");
+    expect(result.activities[0]?.borough).toBe("Brooklyn");
+  });
+
+  it("uses compact activity RPC terms first for broad Brooklyn fun searches", () => {
+    const intent = normalizeIntent("brunch and something fun in Brooklyn");
+    const rpcTerms = activityRpcTerms(intent);
+
+    expect(rpcTerms.compactGenericActivityRpcApplied).toBe(true);
+    expect(rpcTerms.terms).toEqual([
+      "arcade",
+      "bowling",
+      "billiards",
+      "games",
+      "museum",
+      "gallery",
+      "mini golf",
+      "lounge",
+    ]);
+    expect(rpcTerms.expandedTerms.length).toBeGreaterThan(rpcTerms.terms.length);
+  });
   it("keeps generic activity terms actionable and fast-path compatible", () => {
     const intent = normalizeIntent("restaurant with activity walking distance");
     expect(activitySearchTerms(intent).length).toBeGreaterThan(0);

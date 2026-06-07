@@ -52,5 +52,21 @@ export function getGeoAliases(geo: GeoIntent | GeoTaxonomyRecord) { const rec = 
 export function getGeoCenter(geo: GeoIntent) { return geo.latitude != null && geo.longitude != null ? { latitude: geo.latitude, longitude: geo.longitude } : null; }
 function eq(a?: unknown,b?: unknown){ return Boolean(a&&b&&norm(String(a))===norm(String(b))); }
 export function isSameGeoFamily(record: EnterpriseLocation, geo: GeoIntent) { if (!geo.raw) return true; if (geo.state && record.state && !eq(record.state, geo.state)) return false; if (geo.neighborhood && eq(record.neighborhood, geo.neighborhood)) return true; if (geo.borough && eq(record.borough, geo.borough)) return true; if (geo.city && eq(record.city, geo.city)) return true; if (geo.region==="Long Island") return record.state==="NY" && ["nassau","suffolk"].some(t=>norm([record.city,record.borough,record.neighborhood,record.address,record.search_document].join(" ")).includes(t)); return true; }
-export function scoreGeoMatch(record: EnterpriseLocation, geo: GeoIntent) { if (!geo.raw) return 0; if (geo.state && record.state && !eq(record.state, geo.state)) return -200; if (geo.neighborhood && eq(record.neighborhood, geo.neighborhood)) return 120; if (geo.borough && eq(record.borough, geo.borough)) return 90; if (geo.city && eq(record.city, geo.city)) return 80; const text = norm([record.neighborhood,record.borough,record.city,record.state,record.address,record.search_document].join(" ")); if (getGeoAliases(geo).some(a=>text.includes(norm(a)))) return 60; if (geo.county && text.includes(norm(geo.county))) return 55; if (geo.region==="Long Island" && record.state==="NY" && /(nassau|suffolk|hempstead|huntington|garden city|mineola|long beach)/.test(text)) return 70; return geo.geoStrictness==="strict" ? -60 : -20; }
+export function scoreGeoMatch(record: EnterpriseLocation, geo: GeoIntent) {
+  if (!geo.raw) return 0;
+  if (geo.state && record.state && !eq(record.state, geo.state)) return -200;
+  if (geo.neighborhood && eq(record.neighborhood, geo.neighborhood)) return 130;
+  if (geo.borough) {
+    if (eq(record.borough, geo.borough)) return 125;
+    if (record.borough && geo.city && eq(record.city, geo.city)) {
+      return geo.geoStrictness === "strict" ? -90 : -70;
+    }
+  }
+  if (geo.city && eq(record.city, geo.city)) return 80;
+  const text = norm([record.neighborhood,record.borough,record.city,record.state,record.address,record.search_document].join(" "));
+  if (getGeoAliases(geo).some(a=>text.includes(norm(a)))) return geo.borough ? 95 : 60;
+  if (geo.county && text.includes(norm(geo.county))) return 55;
+  if (geo.region==="Long Island" && record.state==="NY" && /(nassau|suffolk|hempstead|huntington|garden city|mineola|long beach)/.test(text)) return 70;
+  return geo.geoStrictness==="strict" ? -60 : -20;
+}
 export function shouldExcludeByGeo(record: EnterpriseLocation, geo: GeoIntent) { if (!geo.raw) return false; const score = scoreGeoMatch(record, geo); if (geo.state && record.state && !eq(record.state, geo.state)) return true; if (geo.region==="Long Island" && /long island city|\blic\b|queens/.test(norm([record.neighborhood,record.borough,record.city].join(" ")))) return true; return geo.geoStrictness==="strict" && score < -100; }

@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "../../supabaseAdmin";
 import type { EnterpriseLocation, EnterpriseSearchResult, SearchIntent } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
-import { activitySearchTerms, restaurantSearchTerms } from "./normalize-intent";
+import { activitySearchTerms, isBroadGenericActivityIntent, restaurantSearchTerms } from "./normalize-intent";
 import { explainRejection, filterActivityResults, filterRestaurantResults, rankActivityResults, rankRestaurantResults } from "./ranking";
 import { createPairingDebug, createSearchPairs, getPairCityState, getPairGeoPriority } from "./pairing";
 import { formatDistanceFromRestaurant, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, shouldHidePairForWalkingLimit, userAskedForWalking } from "./distance";
@@ -282,7 +282,10 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       activityRaw = await searchEnterpriseLane(supabase,effectiveIntent,"activity",debug);
       activityRpcCountBeforeRecovery = activityRaw.length;
       let filtered=filterActivityResults(activityRaw,effectiveIntent);
-      if (!filtered.length && activitySearchTerms(effectiveIntent).length) {
+      if (
+        (!filtered.length && activitySearchTerms(effectiveIntent).length) ||
+        (isBroadGenericActivityIntent(effectiveIntent) && filtered.length < 6)
+      ) {
         usedFallback = true;
         if (isRooftopDrinksIntent(effectiveIntent)) {
           debug.activityRecoveryReason = "rooftop_drinks_zero_results";
@@ -295,7 +298,17 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
             filtered=filterActivityResults(activityRaw,effectiveIntent);
           }
         } else {
-          activityRaw=await recoverEnterpriseLane(supabase,effectiveIntent,"activity",debug);
+          const broadExpansionTerms = isBroadGenericActivityIntent(effectiveIntent)
+            ? activitySearchTerms(effectiveIntent)
+            : undefined;
+          if (broadExpansionTerms) {
+            debug.activityRecoveryReason = filtered.length
+              ? "broad_generic_activity_low_results"
+              : "broad_generic_activity_zero_results";
+            debug.activityRecoveryTermsTried = [broadExpansionTerms];
+          }
+          const recoveredActivityRaw=await recoverEnterpriseLane(supabase,effectiveIntent,"activity",debug,broadExpansionTerms);
+          activityRaw=uniqueById([...activityRaw,...recoveredActivityRaw]);
           filtered=filterActivityResults(activityRaw,effectiveIntent);
         }
       }

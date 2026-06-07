@@ -68,6 +68,8 @@ function toInteger(value: unknown): number | null {
 }
 
 function toNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -91,6 +93,8 @@ function safeStringArray(value: unknown, limit = 24): string[] {
 }
 
 function numberOrNull(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }

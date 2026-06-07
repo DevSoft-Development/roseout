@@ -40,6 +40,8 @@ function safeText(value: unknown, max = 500) {
 }
 
 function safeNumber(value: unknown) {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
 }
