@@ -88,6 +88,33 @@ function toCardRecord(item: any) {
   };
 }
 
+
+function metadataString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sanitizeSearchMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeSearchMetadata);
+  }
+
+  if (!value || typeof value !== "object") {
+    if (typeof value !== "string") return value;
+    return value
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted_email]")
+      .replace(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/g, "[redacted_phone]");
+  }
+
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, unknown>>(
+    (acc, [key, item]) => {
+      if (/email|phone|address/i.test(key)) return acc;
+      acc[key] = sanitizeSearchMetadata(item);
+      return acc;
+    },
+    {},
+  );
+}
+
 function emptySearchResponse(reply: string) {
   return {
     success: false,
@@ -273,6 +300,66 @@ export async function POST(request: Request) {
       debug.no_pairs_reason ??
       debug.noPairsReason ??
       null;
+    const responsePayload = response as any;
+    const resolvedIntentParserSource =
+      debug.intentParserSource ??
+      debug.intent_parser_source ??
+      debug.intentParser?.source ??
+      debug.normalizedIntent?.intentParserSource ??
+      debug.normalizedIntent?.parserSource ??
+      normalizedIntent?.intentParserSource ??
+      normalizedIntent?.parserSource ??
+      result?.intentParserSource ??
+      result?.parserSource ??
+      null;
+    const resolvedSearchType =
+      normalizedIntent?.searchType ??
+      debug.normalizedIntent?.searchType ??
+      debug.intent?.searchType ??
+      result?.searchType ??
+      responsePayload?.searchType ??
+      null;
+    const resolvedPrimaryDomain =
+      normalizedIntent?.primaryDomain ??
+      debug.normalizedIntent?.primaryDomain ??
+      debug.intent?.primaryDomain ??
+      result?.primaryDomain ??
+      responsePayload?.primaryDomain ??
+      null;
+    const resolvedGeo =
+      normalizedIntent?.geo ??
+      debug.normalizedIntent?.geo ??
+      debug.geo ??
+      debug.originalGeo ??
+      result?.geo ??
+      responsePayload?.geo ??
+      null;
+    const resolvedOutingDate =
+      metadataString(normalizedIntent?.outingDate?.date) ??
+      metadataString(normalizedIntent?.dateTime?.date) ??
+      metadataString(normalizedIntent?.outing?.date) ??
+      metadataString(debug.normalizedIntent?.outingDate?.date) ??
+      metadataString(debug.normalizedIntent?.dateTime?.date) ??
+      null;
+    const resolvedOutingTime =
+      metadataString(normalizedIntent?.outingDate?.time) ??
+      metadataString(normalizedIntent?.dateTime?.time) ??
+      metadataString(normalizedIntent?.outing?.time) ??
+      metadataString(debug.normalizedIntent?.outingDate?.time) ??
+      metadataString(debug.normalizedIntent?.dateTime?.time) ??
+      null;
+    const resolvedOutingDateTime =
+      metadataString(normalizedIntent?.outingDate?.dateTime) ??
+      metadataString(normalizedIntent?.dateTime?.dateTime) ??
+      metadataString(debug.normalizedIntent?.outingDate?.dateTime) ??
+      metadataString(debug.normalizedIntent?.dateTime?.dateTime) ??
+      null;
+    const resolvedOutingTimeLabel =
+      metadataString(normalizedIntent?.outingDate?.label) ??
+      metadataString(normalizedIntent?.dateTime?.label) ??
+      metadataString(debug.normalizedIntent?.outingDate?.label) ??
+      metadataString(debug.normalizedIntent?.dateTime?.label) ??
+      null;
 
     void logSearchEvent({
       source: "public_create_search",
@@ -280,50 +367,20 @@ export async function POST(request: Request) {
       rawQuery: cleanInput,
       normalizedQuery:
         normalizedIntent?.rawQuery ?? normalizedIntent?.query ?? cleanInput,
-      searchType:
-        normalizedIntent?.searchType ??
-        result?.searchType ??
-        debug?.normalizedIntent?.searchType ??
-        null,
-      primaryDomain:
-        normalizedIntent?.primaryDomain ??
-        result?.primaryDomain ??
-        debug?.normalizedIntent?.primaryDomain ??
-        null,
-      intentParserSource:
-        debug?.intentParserSource ?? result?.intentParserSource ?? null,
+      searchType: resolvedSearchType,
+      primaryDomain: resolvedPrimaryDomain,
+      intentParserSource: resolvedIntentParserSource,
       anonymousId:
         (typeof body?.anonymousId === "string" ? body.anonymousId : null) ??
         request.headers.get("x-anonymous-id"),
       sessionId: request.headers.get("x-session-id"),
       betaAssignmentId: typeof betaAssignmentId === "string" ? betaAssignmentId : null,
       betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,
-      geo:
-        normalizedIntent?.geo ??
-        result?.geo ??
-        debug?.geo ??
-        debug?.originalGeo ??
-        null,
-      outingDate:
-        normalizedIntent?.outingDate?.date ??
-        normalizedIntent?.dateTime?.date ??
-        normalizedIntent?.date?.date ??
-        null,
-      outingTime:
-        normalizedIntent?.outingDate?.time ??
-        normalizedIntent?.dateTime?.time ??
-        normalizedIntent?.date?.time ??
-        null,
-      outingDateTime:
-        normalizedIntent?.outingDate?.dateTime ??
-        normalizedIntent?.dateTime?.dateTime ??
-        normalizedIntent?.date?.dateTime ??
-        null,
-      outingTimeLabel:
-        normalizedIntent?.outingDate?.label ??
-        normalizedIntent?.dateTime?.label ??
-        normalizedIntent?.date?.label ??
-        null,
+      geo: resolvedGeo,
+      outingDate: resolvedOutingDate,
+      outingTime: resolvedOutingTime,
+      outingDateTime: resolvedOutingDateTime,
+      outingTimeLabel: resolvedOutingTimeLabel,
       counts,
       performance: debug?.performance ?? {
         route: "/api/generate",
@@ -346,13 +403,18 @@ export async function POST(request: Request) {
       issueLabel: noResultsReason ?? noPairsReason ?? null,
       noResultsReason,
       noPairsReason,
-      metadata: {
+      metadata: sanitizeSearchMetadata({
         search_system: debug?.search_system,
         render_mode: debug?.render_mode ?? result?.render_mode,
         wantsPairing: normalizedIntent?.wantsPairing,
         needsRestaurant: normalizedIntent?.needsRestaurant,
         needsActivity: normalizedIntent?.needsActivity,
-      },
+        normalizedIntent,
+        geo: resolvedGeo,
+        searchType: resolvedSearchType,
+        primaryDomain: resolvedPrimaryDomain,
+        intentParserSource: resolvedIntentParserSource,
+      }) as Record<string, any>,
     });
 
     if (result.source === "edge" || (result.debug as any)?.source === "edge") {
