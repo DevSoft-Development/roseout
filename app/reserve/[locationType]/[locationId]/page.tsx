@@ -37,9 +37,9 @@ type LocationRow = LocationScoreFields & {
 export default async function ReserveLocationPage({
   params,
 }: {
-  params: Promise<{ locationType: string; id: string }>;
+  params: Promise<{ locationType: string; locationId: string }>;
 }) {
-  const { locationType, id } = await params;
+  const { locationType, locationId } = await params;
 
   const isActivity = locationType === "activity";
   const tableName = isActivity ? "activities" : "restaurants";
@@ -55,7 +55,7 @@ export default async function ReserveLocationPage({
   const { data, error } = await supabase
     .from(tableName)
     .select(selectFields)
-    .eq("id", id)
+    .eq("id", locationId)
     .single();
 
   if (error || !data) notFound();
@@ -67,7 +67,7 @@ export default async function ReserveLocationPage({
     isActivity ? "Activity" : "Restaurant",
   );
 
-  const backHref = `/locations/${isActivity ? "activities" : "restaurants"}/${id}`;
+  const backHref = `/locations/${isActivity ? "activities" : "restaurants"}/${locationId}`;
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
     getOperatingHours(location),
   );
@@ -208,7 +208,7 @@ export default async function ReserveLocationPage({
             </div>
 
             <ReserveBookingForm
-              locationId={id}
+              locationId={locationId}
               locationType={locationType}
               locationName={locationName}
               defaultDuration={location.default_duration_minutes || 90}

@@ -96,11 +96,11 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 export default async function AdminLocationDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ locationId: string }>;
 }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.locations);
-  const { id } = await params;
-  const location = await findLocation(id);
+  const { locationId } = await params;
+  const location = await findLocation(locationId);
   if (!location) notFound();
 
   const name = getLocationName(location, "Untitled location");

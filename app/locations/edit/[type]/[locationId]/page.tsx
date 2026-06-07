@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 type RedirectPageProps = {
   params: Promise<{
     type: string;
-    id: string;
+    locationId: string;
   }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
@@ -37,11 +37,11 @@ export default async function LegacyEditLocationRedirect({
   params,
   searchParams,
 }: RedirectPageProps) {
-  const { type, id } = await params;
+  const { type, locationId } = await params;
   const resolvedSearchParams = await searchParams;
 
   redirect(
-    `/locations/${canonicalLocationType(type)}/${encodeURIComponent(id)}/edit${buildQueryString(
+    `/locations/${canonicalLocationType(type)}/${encodeURIComponent(locationId)}/edit${buildQueryString(
       resolvedSearchParams
     )}`
   );

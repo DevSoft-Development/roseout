@@ -165,7 +165,7 @@ export default function LocationDetailPage() {
   const searchParams = useSearchParams();
 
   const type = String(params.type || "");
-  const id = String(params.id || "");
+  const locationId = String(params.locationId || "");
 
   const from =
     searchParams.get("from") ||
@@ -186,14 +186,14 @@ export default function LocationDetailPage() {
       let { data, error } = await supabase
         .from("locations")
         .select("*")
-        .or(`id.eq.${id},and(source_table.eq.${sourceTable},source_id.eq.${id})`)
+        .or(`id.eq.${locationId},and(source_table.eq.${sourceTable},source_id.eq.${locationId})`)
         .maybeSingle();
 
       if (!data && !error) {
         const slugResult = await supabase
           .from("locations")
           .select("*")
-          .eq("slug", id)
+          .eq("slug", locationId)
           .maybeSingle();
 
         if (!slugResult.error) {
@@ -217,7 +217,7 @@ export default function LocationDetailPage() {
       const { data: reviewData } = await supabase
         .from("location_reviews")
         .select("*")
-        .eq("location_id", data.id || id)
+        .eq("location_id", data.id || locationId)
         .eq("status", "approved")
         .eq("verified_visit", true)
         .order("created_at", { ascending: false });
@@ -227,8 +227,8 @@ export default function LocationDetailPage() {
       setLoading(false);
     }
 
-    if (id) loadLocation();
-  }, [id, supabase, type]);
+    if (locationId) loadLocation();
+  }, [locationId, supabase, type]);
 
   useEffect(() => {
     function onScroll() {
@@ -398,7 +398,7 @@ export default function LocationDetailPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          location_id: location?.id || id,
+          location_id: location?.id || locationId,
           location_type: location?.location_type || type,
           external_reservation_url: method === "external" ? reservationUrl : null,
           phone_number: method === "phone" ? location?.phone : null,
@@ -410,12 +410,12 @@ export default function LocationDetailPage() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: data?.error || response.statusText, location_id: location?.id || id });
+        console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: data?.error || response.statusText, location_id: location?.id || locationId });
         return;
       }
-      console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, location_id: location?.id || id });
+      console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, location_id: location?.id || locationId });
     } catch (error) {
-      console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: error instanceof Error ? error.message : "unknown", location_id: location?.id || id });
+      console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: error instanceof Error ? error.message : "unknown", location_id: location?.id || locationId });
     }
   };
 
@@ -432,7 +432,7 @@ export default function LocationDetailPage() {
   });
 
   const baseMetadata = {
-    location_id: id,
+    location_id: locationId,
     location_type: location?.location_type || type,
     location_name: name,
   };
