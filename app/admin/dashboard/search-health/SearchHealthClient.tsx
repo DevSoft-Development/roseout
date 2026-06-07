@@ -51,9 +51,39 @@ type CountRow = {
   count: number;
   exampleQuery?: string | null;
 };
+type SearchEventRow = {
+  id: string;
+  created_at: string;
+  source?: string | null;
+  route?: string | null;
+  raw_query?: string | null;
+  normalized_query?: string | null;
+  search_type?: string | null;
+  primary_domain?: string | null;
+  intent_parser_source?: string | null;
+  city?: string | null;
+  state?: string | null;
+  borough?: string | null;
+  neighborhood?: string | null;
+  outing_date?: string | null;
+  outing_time?: string | null;
+  restaurant_count?: number | null;
+  activity_count?: number | null;
+  pair_count?: number | null;
+  result_count?: number | null;
+  timing_ms?: number | null;
+  speed_status?: string | null;
+  success?: boolean | null;
+  had_issue?: boolean | null;
+  issue_label?: string | null;
+};
+
 type SearchHealthData = {
   summary?: Record<string, any>;
   recentEvents?: any[];
+  allSearches?: SearchEventRow[];
+  matchCount?: number;
+  filters?: Record<string, any>;
   topEventTypes?: CountRow[];
   topNoPairReasons?: CountRow[];
   topNoResultReasons?: CountRow[];
@@ -64,6 +94,14 @@ type SearchHealthData = {
 };
 
 const ranges = ["24h", "7d", "30d"];
+const tabs = [
+  { key: "issues", label: "Recent Issues" },
+  { key: "all", label: "All Searches" },
+  { key: "slow", label: "Slow Searches" },
+  { key: "no_results", label: "No Results" },
+  { key: "no_pairs", label: "No Valid Pairs" },
+  { key: "debug", label: "Debug Events" },
+] as const;
 const sources = [
   "",
   "admin_search_lab",
@@ -129,7 +167,14 @@ function severityClass(severity?: string) {
 }
 
 export default function SearchHealthClient() {
-  const [range, setRange] = useState("30d");
+  const [range, setRange] = useState("24h");
+  const [view, setView] = useState<
+    "issues" | "all" | "slow" | "no_results" | "no_pairs" | "debug"
+  >("issues");
+  const [date, setDate] = useState("");
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [exactQuery, setExactQuery] = useState(false);
   const [source, setSource] = useState("");
   const [status, setStatus] = useState("");
   const [speed, setSpeed] = useState("");
@@ -145,15 +190,45 @@ export default function SearchHealthClient() {
   const [reviewStatus, setReviewStatus] = useState("new");
   const [reviewNotes, setReviewNotes] = useState("");
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
   const params = useMemo(() => {
-    const next = new URLSearchParams({ range });
+    const next = new URLSearchParams({ range, view });
+
+    if (date) next.set("date", date);
+    if (debouncedQuery) next.set("q", debouncedQuery);
+    if (exactQuery) next.set("exactQuery", "true");
+
     if (source) next.set("source", source);
     if (status) next.set("review_status", status);
     if (speed) next.set("speed_status", speed);
     if (severity) next.set("severity", severity);
     if (eventType) next.set("event_type", eventType);
+
+    if (view === "slow") next.set("speed_status", speed || "slow");
+    if (view === "no_results") next.set("event_type", eventType || "no_results");
+    if (view === "no_pairs") next.set("event_type", eventType || "no_valid_pairs");
+    if (view === "debug") next.set("event_type", eventType || "successful_debug_run");
+
     return next;
-  }, [range, source, status, speed, severity, eventType]);
+  }, [
+    range,
+    view,
+    date,
+    debouncedQuery,
+    exactQuery,
+    source,
+    status,
+    speed,
+    severity,
+    eventType,
+  ]);
 
   async function load() {
     setLoading(true);
@@ -369,48 +444,104 @@ export default function SearchHealthClient() {
         </div>
       </section>
 
-      <section className="grid gap-3 rounded-3xl border border-white/10 bg-[#120d0b] p-4 md:grid-cols-3 xl:grid-cols-6">
-        <Filter
-          label="Date range"
-          value={range}
-          values={ranges}
-          onChange={setRange}
-        />
-        <Filter
-          label="Source"
-          value={source}
-          values={sources}
-          onChange={setSource}
-          empty="All sources"
-        />
-        <Filter
-          label="Severity"
-          value={severity}
-          values={severities}
-          onChange={setSeverity}
-          empty="All severities"
-        />
-        <Filter
-          label="Type"
-          value={eventType}
-          values={eventTypes}
-          onChange={setEventType}
-          empty="All types"
-        />
-        <Filter
-          label="Status"
-          value={status}
-          values={statuses}
-          onChange={setStatus}
-          empty="All statuses"
-        />
-        <Filter
-          label="Speed"
-          value={speed}
-          values={speeds}
-          onChange={setSpeed}
-          empty="All speeds"
-        />
+      <section className="space-y-4 rounded-3xl border border-white/10 bg-[#120d0b] p-4">
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setView(tab.key)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                view === tab.key
+                  ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
+                  : "border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.06]"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {ranges.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                setRange(item);
+                setDate("");
+              }}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                range === item && !date
+                  ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
+                  : "border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.06]"
+              }`}
+            >
+              {item === "24h" ? "Last 24h" : item === "7d" ? "7 days" : "30 days"}
+            </button>
+          ))}
+
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => {
+              setDate(event.target.value);
+              setRange("24h");
+            }}
+            className="rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-xs text-white outline-none focus:border-amber-300/60"
+          />
+
+          {date ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDate("");
+                setRange("24h");
+              }}
+              className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/60 hover:bg-white/[0.06]"
+            >
+              Clear date
+            </button>
+          ) : null}
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <Filter
+            label="Source"
+            value={source}
+            values={sources}
+            onChange={setSource}
+            empty="All sources"
+          />
+          <Filter
+            label="Severity"
+            value={severity}
+            values={severities}
+            onChange={setSeverity}
+            empty="All severities"
+          />
+          <Filter
+            label="Type"
+            value={eventType}
+            values={eventTypes}
+            onChange={setEventType}
+            empty="All types"
+          />
+          <Filter
+            label="Status"
+            value={status}
+            values={statuses}
+            onChange={setStatus}
+            empty="All statuses"
+          />
+          <Filter
+            label="Speed"
+            value={speed}
+            values={speeds}
+            onChange={setSpeed}
+            empty="All speeds"
+          />
+        </div>
       </section>
 
       {notice ? (
@@ -466,81 +597,228 @@ export default function SearchHealthClient() {
       </section>
 
       <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
-        <h2 className="text-lg font-black">Recent Search Issues</h2>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.2em] text-white/45">
-              <tr>
-                {[
-                  "Time",
-                  "Query",
-                  "Event Label",
-                  "Severity",
-                  "Type",
-                  "Pair Count",
-                  "Restaurant Count",
-                  "Activity Count",
-                  "Speed",
-                  "Market",
-                  "Status",
-                ].map((h) => (
-                  <th key={h} className="px-3 py-3">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/10">
-              {(data.recentEvents ?? []).map((event) => (
-                <tr
-                  key={event.id}
-                  className="cursor-pointer hover:bg-white/[0.04]"
-                  onClick={() => openDetail(event.id)}
-                >
-                  <td className="px-3 py-3 text-white/60">
-                    {formatTime(event.created_at)}
-                  </td>
-                  <td className="max-w-[280px] truncate px-3 py-3 font-semibold">
-                    {event.raw_query || "—"}
-                  </td>
-                  <td className="px-3 py-3 text-rose-100">
-                    {issueLabel(event)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <span
-                      className={`rounded-full border px-2 py-1 text-xs font-black ${severityClass(event.severity)}`}
-                    >
-                      {event.severity || "info"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3">{event.event_type || "—"}</td>
-                  <td className="px-3 py-3">{event.pair_count ?? "—"}</td>
-                  <td className="px-3 py-3">{event.restaurant_count ?? "—"}</td>
-                  <td className="px-3 py-3">{event.activity_count ?? "—"}</td>
-                  <td className="px-3 py-3">
-                    {event.timing_ms
-                      ? `${event.timing_ms}ms`
-                      : event.speed_status || "—"}
-                  </td>
-                  <td className="px-3 py-3">
-                    {event.default_market_id || "—"}
-                  </td>
-                  <td className="px-3 py-3">{event.review_status}</td>
-                </tr>
-              ))}
-              {!loading && !(data.recentEvents ?? []).length ? (
-                <tr>
-                  <td
-                    className="px-3 py-8 text-center text-white/50"
-                    colSpan={11}
-                  >
-                    No search health events match these filters.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              {view === "all" ? "All Searches" : "Recent Search Issues"}
+            </h2>
+            <p className="text-xs text-white/50">
+              {date
+                ? `Showing ${date}`
+                : range === "24h"
+                  ? "Showing last 24 hours"
+                  : range === "7d"
+                    ? "Showing last 7 days"
+                    : "Showing last 30 days"}
+              {debouncedQuery
+                ? ` · ${exactQuery ? "exact query" : "search"} · ${
+                    data?.matchCount ?? 0
+                  } matches`
+                : ""}
+            </p>
+          </div>
+
+          <div className="flex w-full flex-col gap-2 md:w-auto md:min-w-[420px]">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search exact query, user search, source, issue, market, route..."
+              className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-2 text-sm text-white placeholder:text-white/35 outline-none focus:border-amber-300/60"
+            />
+
+            <label className="flex items-center gap-2 text-xs text-white/55">
+              <input
+                type="checkbox"
+                checked={exactQuery}
+                onChange={(event) => setExactQuery(event.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-black"
+              />
+              Exact query only
+            </label>
+          </div>
         </div>
+
+        <div className="mt-3 text-xs text-white/45">
+          Active filters: {view.replace(/_/g, " ")} · {date || range}
+          {source ? ` · source ${source}` : ""}
+          {severity ? ` · severity ${severity}` : ""}
+          {eventType ? ` · type ${eventType}` : ""}
+          {status ? ` · status ${status}` : ""}
+          {speed ? ` · speed ${speed}` : ""}
+        </div>
+
+        {view === "all" ? (
+          <div className="mt-4 overflow-x-auto rounded-3xl border border-white/10">
+            <table className="min-w-[1100px] w-full text-left text-sm">
+              <thead className="bg-white/[0.03] text-xs uppercase tracking-[0.2em] text-white/40">
+                <tr>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Search</th>
+                  <th className="px-4 py-3">Source</th>
+                  <th className="px-4 py-3">Route</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Location</th>
+                  <th className="px-4 py-3">Outing</th>
+                  <th className="px-4 py-3">Results</th>
+                  <th className="px-4 py-3">Speed</th>
+                  <th className="px-4 py-3">Issue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {(data?.allSearches ?? []).map((row) => (
+                  <tr key={row.id} className="hover:bg-white/[0.03]">
+                    <td className="px-4 py-3 text-white/60">
+                      {formatTime(row.created_at)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="max-w-[320px] truncate font-medium text-white">
+                        {row.raw_query || "—"}
+                      </div>
+                      <div className="text-xs text-white/40">
+                        {row.intent_parser_source || "parser unknown"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-white/60">{row.source || "—"}</td>
+                    <td className="px-4 py-3 text-white/60">{row.route || "—"}</td>
+                    <td className="px-4 py-3 text-white/60">
+                      {row.search_type || "—"} / {row.primary_domain || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-white/60">
+                      {[row.neighborhood, row.borough, row.city, row.state]
+                        .filter(Boolean)
+                        .join(", ") || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-white/60">
+                      {[row.outing_date, row.outing_time].filter(Boolean).join(" · ") ||
+                        "—"}
+                    </td>
+                    <td className="px-4 py-3 text-white/60">
+                      {row.result_count ?? 0}
+                      <span className="ml-2 text-white/35">
+                        R {row.restaurant_count ?? 0} · A {row.activity_count ?? 0} · P{" "}
+                        {row.pair_count ?? 0}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-white/60">
+                      {row.timing_ms ? `${row.timing_ms}ms` : "—"}
+                      {row.speed_status ? (
+                        <span className="ml-2 text-white/35">{row.speed_status}</span>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.had_issue ? (
+                        <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
+                          {row.issue_label || "Issue"}
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-xs text-emerald-100">
+                          OK
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[1450px] text-left text-sm">
+              <thead className="text-xs uppercase tracking-[0.2em] text-white/45">
+                <tr>
+                  {[
+                    "Time",
+                    "Query",
+                    "Source",
+                    "Route",
+                    "Parser",
+                    "Event Type",
+                    "Severity",
+                    "Issue Label",
+                    "Restaurant Count",
+                    "Activity Count",
+                    "Pair Count",
+                    "Speed",
+                    "Review Status",
+                    "Debug",
+                  ].map((h) => (
+                    <th key={h} className="px-3 py-3">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {(data.recentEvents ?? []).map((event) => (
+                  <tr
+                    key={event.id}
+                    className="cursor-pointer hover:bg-white/[0.04]"
+                    onClick={() => openDetail(event.id)}
+                  >
+                    <td className="px-3 py-3 text-white/60">
+                      {formatTime(event.created_at)}
+                    </td>
+                    <td className="max-w-[280px] truncate px-3 py-3 font-semibold">
+                      {event.raw_query || "—"}
+                    </td>
+                    <td className="px-3 py-3 text-white/60">{event.source || "—"}</td>
+                    <td className="px-3 py-3 text-white/60">{event.route || "—"}</td>
+                    <td className="px-3 py-3 text-white/60">
+                      {event.intentParserSource || "—"}
+                    </td>
+                    <td className="px-3 py-3">{event.event_type || "—"}</td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full border px-2 py-1 text-xs font-black ${severityClass(event.severity)}`}
+                      >
+                        {event.severity || "info"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-rose-100">
+                      {issueLabel(event)}
+                    </td>
+                    <td className="px-3 py-3">{event.restaurant_count ?? "—"}</td>
+                    <td className="px-3 py-3">{event.activity_count ?? "—"}</td>
+                    <td className="px-3 py-3">{event.pair_count ?? "—"}</td>
+                    <td className="px-3 py-3">
+                      {event.timing_ms
+                        ? `${event.timing_ms}ms`
+                        : event.speed_status || "—"}
+                    </td>
+                    <td className="px-3 py-3">{event.review_status}</td>
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation();
+                          void copyJsonToClipboard(event.debug ?? {});
+                        }}
+                        className="rounded-full border border-white/10 px-2 py-1 text-xs text-white/65 hover:bg-white/[0.06]"
+                      >
+                        Copy Debug JSON
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {view === "all" && !loading && (data?.allSearches ?? []).length === 0 ? (
+          <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-sm text-white/60">
+            No searches found for this filter. If you expected searches here, confirm
+            logSearchEvent is being called from /api/generate and /api/explore/search.
+          </div>
+        ) : null}
+
+        {view !== "all" && !loading && (data?.recentEvents ?? []).length === 0 ? (
+          <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-6 text-sm text-white/60">
+            No search health events found for this filter. Successful searches only
+            appear here if search health logging is enabled for that route. Use the All
+            Searches tab for normal successful searches.
+          </div>
+        ) : null}
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">

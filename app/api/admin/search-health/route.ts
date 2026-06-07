@@ -16,12 +16,28 @@ const RANGE_MS: Record<RangeKey, number> = {
 const RECENT_COLUMNS =
   "id,created_at,source,raw_query,normalized_search_type,primary_domain,event_type,severity,event_label,pair_count,restaurant_count,activity_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,default_market_id,review_status,distance_mode,max_pair_walking_minutes,debug";
 
+const SEARCH_EVENT_COLUMNS =
+  "id,created_at,source,route,raw_query,normalized_query,search_type,primary_domain,intent_parser_source,user_id,anonymous_id,session_id,default_market_id,city,state,borough,neighborhood,outing_date,outing_time,outing_datetime,outing_time_label,restaurant_count,activity_count,pair_count,result_count,pair_candidates_evaluated,valid_pair_count_before_render,wants_pairing,needs_restaurant,needs_activity,distance_mode,max_pair_distance_miles,max_pair_walking_minutes,timing_ms,llm_ms,rpc_ms,pairing_ms,ranking_ms,speed_status,success,had_issue,issue_type,issue_label,no_results_reason,no_pairs_reason,metadata";
+
 function parseRange(value: string | null): RangeKey {
-  return value === "24h" || value === "7d" || value === "30d" ? value : "30d";
+  return value === "24h" || value === "7d" || value === "30d" ? value : "24h";
 }
 
 function sinceIso(range: RangeKey) {
   return new Date(Date.now() - RANGE_MS[range]).toISOString();
+}
+
+function dateBoundsIso(date: string | null) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  const start = new Date(`${date}T00:00:00`);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 1);
+
+  return {
+    fromIso: start.toISOString(),
+    toIso: end.toISOString(),
+  };
 }
 
 function cleanFilter(value: string | null) {
@@ -44,17 +60,98 @@ async function countWhere(apply: (query: any) => any) {
   return count ?? 0;
 }
 
-function applyFilters(
+function applyTimeRange(query: any, fromIso: string, toIso?: string | null) {
+  let next = query.gte("created_at", fromIso);
+  if (toIso) next = next.lt("created_at", toIso);
+  return next;
+}
+
+function applyHealthFilters(
   query: any,
   filters: Record<string, string | null>,
   fromIso: string,
+  toIso?: string | null,
   q?: string | null,
+  exactQuery?: boolean,
 ) {
-  let next = query.gte("created_at", fromIso);
+  let next = applyTimeRange(query, fromIso, toIso);
+
   for (const [key, value] of Object.entries(filters)) {
     if (value) next = next.eq(key, value);
   }
-  if (q) next = next.ilike("raw_query", `%${escapeIlike(q)}%`);
+
+  if (q) {
+    const cleaned = q.replace(/^"|"$/g, "");
+    const escaped = escapeIlike(cleaned);
+
+    if (exactQuery) {
+      next = next.ilike("raw_query", escaped);
+    } else {
+      next = next.or(
+        [
+          `raw_query.ilike.%${escaped}%`,
+          `event_label.ilike.%${escaped}%`,
+          `event_type.ilike.%${escaped}%`,
+          `severity.ilike.%${escaped}%`,
+          `source.ilike.%${escaped}%`,
+          `speed_status.ilike.%${escaped}%`,
+          `no_pairs_reason.ilike.%${escaped}%`,
+          `no_results_reason.ilike.%${escaped}%`,
+          `default_market_id.ilike.%${escaped}%`,
+          `normalized_search_type.ilike.%${escaped}%`,
+          `primary_domain.ilike.%${escaped}%`,
+          `review_status.ilike.%${escaped}%`,
+        ].join(","),
+      );
+    }
+  }
+
+  return next;
+}
+
+function applySearchEventFilters(
+  query: any,
+  filters: Record<string, string | null>,
+  fromIso: string,
+  toIso?: string | null,
+  q?: string | null,
+  exactQuery?: boolean,
+) {
+  let next = applyTimeRange(query, fromIso, toIso);
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) next = next.eq(key, value);
+  }
+
+  if (q) {
+    const cleaned = q.replace(/^"|"$/g, "");
+    const escaped = escapeIlike(cleaned);
+
+    if (exactQuery) {
+      next = next.ilike("raw_query", escaped);
+    } else {
+      next = next.or(
+        [
+          `raw_query.ilike.%${escaped}%`,
+          `normalized_query.ilike.%${escaped}%`,
+          `source.ilike.%${escaped}%`,
+          `route.ilike.%${escaped}%`,
+          `search_type.ilike.%${escaped}%`,
+          `primary_domain.ilike.%${escaped}%`,
+          `intent_parser_source.ilike.%${escaped}%`,
+          `city.ilike.%${escaped}%`,
+          `state.ilike.%${escaped}%`,
+          `borough.ilike.%${escaped}%`,
+          `neighborhood.ilike.%${escaped}%`,
+          `issue_type.ilike.%${escaped}%`,
+          `issue_label.ilike.%${escaped}%`,
+          `no_results_reason.ilike.%${escaped}%`,
+          `no_pairs_reason.ilike.%${escaped}%`,
+        ].join(","),
+      );
+    }
+  }
+
   return next;
 }
 
@@ -211,6 +308,8 @@ function enrichEvent(row: any) {
     route: perf.route ?? debug.route ?? row.route ?? null,
     intentParserSource:
       debug.intentParserSource ?? perf.intentParserSource ?? null,
+    debugSearchSystem: debug.search_system ?? null,
+    debugRenderMode: debug.render_mode ?? null,
     searchType: debug.searchType ?? row.normalized_search_type ?? null,
     resultCount:
       counts.finalDisplayedResultCount ??
@@ -282,9 +381,17 @@ export async function GET(req: Request) {
 
   try {
     const { searchParams } = new URL(req.url);
+    const view = cleanFilter(searchParams.get("view")) ?? "issues";
+    const date = cleanFilter(searchParams.get("date"));
+    const q = cleanFilter(searchParams.get("q"));
+    const exactQuery = searchParams.get("exactQuery") === "true";
+
     const range = parseRange(searchParams.get("range"));
-    const fromIso = sinceIso(range);
-    const filters = {
+    const customBounds = dateBoundsIso(date);
+    const fromIso = customBounds?.fromIso ?? sinceIso(range);
+    const toIso = customBounds?.toIso ?? null;
+
+    const healthFilters = {
       source: cleanFilter(searchParams.get("source")),
       review_status: cleanFilter(searchParams.get("review_status")),
       speed_status: cleanFilter(searchParams.get("speed_status")),
@@ -293,32 +400,76 @@ export async function GET(req: Request) {
       severity: cleanFilter(searchParams.get("severity")),
       event_type: cleanFilter(searchParams.get("event_type")),
     };
-    const q = cleanFilter(searchParams.get("q"));
+
+    if (view === "slow" && !healthFilters.speed_status) {
+      healthFilters.speed_status = "slow";
+    }
+    if (view === "no_results" && !healthFilters.event_type) {
+      healthFilters.event_type = "no_results";
+    }
+    if (view === "no_pairs" && !healthFilters.event_type) {
+      healthFilters.event_type = "no_valid_pairs";
+    }
+    if (view === "debug" && !healthFilters.event_type) {
+      healthFilters.event_type = "successful_debug_run";
+    }
+
+    const searchEventFilters = {
+      source: cleanFilter(searchParams.get("source")),
+      speed_status: cleanFilter(searchParams.get("speed_status")),
+      search_type: cleanFilter(searchParams.get("search_type")),
+      primary_domain: cleanFilter(searchParams.get("primary_domain")),
+      issue_type: cleanFilter(searchParams.get("issue_type")),
+    };
+
+    let allSearches: any[] = [];
+
+    if (view === "all") {
+      const { data, error } = await applySearchEventFilters(
+        supabaseAdmin
+          .from("search_events")
+          .select(SEARCH_EVENT_COLUMNS)
+          .order("created_at", { ascending: false })
+          .limit(200),
+        searchEventFilters,
+        fromIso,
+        toIso,
+        q,
+        exactQuery,
+      );
+
+      if (error) throw error;
+      allSearches = data ?? [];
+    }
 
     const [
       { data: recentEvents, error: recentError },
       aggregateResult,
       digestResult,
     ] = await Promise.all([
-      applyFilters(
+      applyHealthFilters(
         supabaseAdmin
           .from("search_health_events")
           .select(RECENT_COLUMNS)
           .order("created_at", { ascending: false })
           .limit(100),
-        filters,
+        healthFilters,
         fromIso,
+        toIso,
         q,
+        exactQuery,
       ),
-      applyFilters(
+      applyHealthFilters(
         supabaseAdmin
           .from("search_health_events")
           .select(RECENT_COLUMNS)
           .order("created_at", { ascending: false })
           .limit(5000),
-        filters,
+        healthFilters,
         fromIso,
+        toIso,
         q,
+        exactQuery,
       ),
       supabaseAdmin
         .from("search_health_digest_runs")
@@ -407,9 +558,26 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       success: true,
+      view,
       range,
-      summary,
+      filters: {
+        view,
+        range,
+        date,
+        from: fromIso,
+        to: toIso,
+        q,
+        exactQuery,
+        source: searchParams.get("source"),
+        severity: searchParams.get("severity"),
+        eventType: searchParams.get("event_type"),
+        reviewStatus: searchParams.get("review_status"),
+        speedStatus: searchParams.get("speed_status"),
+      },
+      matchCount: view === "all" ? allSearches.length : (recentEvents ?? []).length,
+      allSearches,
       recentEvents: (recentEvents ?? []).map(enrichEvent),
+      summary,
       topEventTypes: topCounts(aggregateRows, "event_type", "type"),
       topNoPairReasons: topCounts(aggregateRows, "no_pairs_reason"),
       topNoResultReasons: topCounts(aggregateRows, "no_results_reason"),
