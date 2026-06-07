@@ -8,6 +8,7 @@ create extension if not exists pg_net;
 select cron.unschedule(jobname) from cron.job where jobname in (
   'nightly-photo-backfill',
   'beta-tester-reminders',
+  'admin-search-health-digest',
   'admin-cron-digest-email',
   'nightly-demo-reset',
   'team-session-watchdog'
@@ -16,7 +17,7 @@ select cron.unschedule(jobname) from cron.job where jobname in (
 select cron.schedule('nightly-photo-backfill','30 6 * * *',$$
   select net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/nightly-photo-backfill',
-    headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','YOUR_CRON_SECRET'),
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
     body := jsonb_build_object('source','cron','batchSize',50)
   );
 $$);
@@ -24,15 +25,24 @@ $$);
 select cron.schedule('beta-tester-reminders','0 14 * * 1-5',$$
   select net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/beta-tester-reminders',
-    headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','YOUR_CRON_SECRET'),
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
     body := jsonb_build_object('source','cron')
+  );
+$$);
+
+
+select cron.schedule('admin-search-health-digest','30 12 * * *',$$
+  select net.http_post(
+    url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/admin-search-health-digest',
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
+    body := jsonb_build_object('source','cron','hours',24)
   );
 $$);
 
 select cron.schedule('admin-cron-digest-email','0 12 * * *',$$
   select net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/admin-cron-digest-email',
-    headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','YOUR_CRON_SECRET'),
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
     body := jsonb_build_object('hours',24,'sendEmail',true)
   );
 $$);
@@ -40,7 +50,7 @@ $$);
 select cron.schedule('nightly-demo-reset','15 8 * * *',$$
   select net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/nightly-demo-reset',
-    headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','YOUR_CRON_SECRET'),
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
     body := jsonb_build_object('source','cron')
   );
 $$);
@@ -48,7 +58,7 @@ $$);
 select cron.schedule('team-session-watchdog','*/30 * * * *',$$
   select net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/team-session-watchdog',
-    headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','YOUR_CRON_SECRET'),
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
     body := jsonb_build_object('source','cron')
   );
 $$);

@@ -1,6 +1,7 @@
 import { handleOptions } from "../_shared/cors.ts";
 import { jsonResponse, ok } from "../_shared/response.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 type EventRow = Record<string, unknown>;
 
@@ -197,6 +198,9 @@ async function recordRun(supabase: DigestRunClient, row: Record<string, unknown>
 }
 
 Deno.serve(async (req) => {
+  const startedAt = new Date().toISOString();
+  let supabaseForFailure: ReturnType<typeof createSupabaseAdminClient> | null = null;
+  let sourceForFailure = "cron";
   try {
     const options = handleOptions(req);
     if (options) return options;
@@ -220,9 +224,11 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createSupabaseAdminClient();
+    supabaseForFailure = supabase;
     const hours = Math.min(Math.max(Number(body.hours ?? 24), 1), 168);
     const force = body.force === true;
     const source = String(body.source || "cron");
+    sourceForFailure = source;
     const since = new Date(Date.now() - hours * 3600000).toISOString();
 
     let data: EventRow[] | null = null;
@@ -238,6 +244,18 @@ Deno.serve(async (req) => {
       data = result.data ?? [];
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      await logCronJobRun(supabase, {
+        job_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest",
+        source,
+        status: "failed",
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - new Date(startedAt).getTime(),
+        failed_count: 1,
+        error_message: message,
+        metadata: { stage: "search_health_events_query" },
+      });
       return jsonResponse({
         success: false,
         error: "search_health_events_query_failed",
@@ -250,6 +268,20 @@ Deno.serve(async (req) => {
     if (!rows.length && !force) {
       const response = { success: true, sent: false, reason: "no_search_health_events", hours, summary };
       const digestRunInsertError = await recordRun(supabase, { source, sent: false, recipient_count: 0, total_events: 0, error_count: 0, warning_count: 0, no_pair_count: 0, no_result_count: 0, slow_count: 0, response });
+      await logCronJobRun(supabase, {
+        job_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest",
+        source,
+        status: "skipped",
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - new Date(startedAt).getTime(),
+        checked_count: 0,
+        success_count: 0,
+        skipped_count: 1,
+        failed_count: 0,
+        metadata: { reason: "no_search_health_events", digestRunInsertError },
+      });
       return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
     }
     requireEnv("RESEND_API_KEY");
@@ -265,17 +297,59 @@ Deno.serve(async (req) => {
     try {
       emailResponse = await sendEmail(to, subject, email.html, email.text);
     } catch (error) {
+      const details = safeEmailErrorDetails(error);
+      await logCronJobRun(supabase, {
+        job_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest",
+        source,
+        status: "failed",
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - new Date(startedAt).getTime(),
+        checked_count: rows.length,
+        failed_count: 1,
+        error_message: details,
+        metadata: { stage: "email_send" },
+      });
       return jsonResponse({
         success: false,
         error: "email_send_failed",
-        details: safeEmailErrorDetails(error),
+        details,
       }, 500);
     }
     const emailResult = { provider: "resend", id: emailResponse.id ?? null, accepted: to.length };
     const response = { success: true, sent: true, recipient_count: to.length, recipients: to, hours, summary, emailResult };
     const digestRunInsertError = await recordRun(supabase, { source, sent: true, recipient_count: to.length, total_events: summary.totalEvents, error_count: summary.errorCount, warning_count: summary.warningCount, no_pair_count: summary.noPairCount, no_result_count: summary.noResultCount, slow_count: summary.slowCount, response });
+    await logCronJobRun(supabase, {
+      job_name: "admin-search-health-digest",
+      function_name: "admin-search-health-digest",
+      source,
+      status: issueCount > 0 ? "warning" : "success",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - new Date(startedAt).getTime(),
+      checked_count: summary.totalEvents,
+      success_count: Math.max(summary.totalEvents - issueCount, 0),
+      skipped_count: 0,
+      failed_count: summary.errorCount,
+      success_rate: summary.totalEvents ? Math.max(summary.totalEvents - issueCount, 0) / summary.totalEvents : null,
+      metadata: { warningCount: summary.warningCount, sent: true, recipientCount: to.length, digestRunInsertError },
+    });
     return ok(digestRunInsertError ? { ...response, digestRunInsertError } : response);
   } catch (error) {
+    if (supabaseForFailure) {
+      await logCronJobRun(supabaseForFailure, {
+        job_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest",
+        source: sourceForFailure,
+        status: "failed",
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - new Date(startedAt).getTime(),
+        failed_count: 1,
+        error_message: error instanceof Error ? error.message : String(error),
+      });
+    }
     return errorResponse(error);
   }
 });

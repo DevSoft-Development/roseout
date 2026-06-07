@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -124,6 +125,23 @@ Deno.serve(async (req) => {
       finished_at: summary.finishedAt,
     });
 
+    await logCronJobRun(supabase, {
+      job_name: "nightly-demo-reset",
+      function_name: "nightly-demo-reset",
+      source: "cron",
+      status: summary.errors.length ? "warning" : "success",
+      started_at: startedAt,
+      finished_at: summary.finishedAt,
+      duration_ms: new Date(summary.finishedAt).getTime() - new Date(startedAt).getTime(),
+      checked_count: summary.sessionsFound,
+      success_count: summary.sessionsReset,
+      skipped_count: Math.max(summary.sessionsFound - summary.sessionsReset, 0),
+      failed_count: summary.errors.length,
+      success_rate: summary.sessionsFound ? summary.sessionsReset / summary.sessionsFound : null,
+      error_message: summary.errors.length ? summary.errors.join("; ") : null,
+      metadata: { sessionsFound: summary.sessionsFound, sessionsReset: summary.sessionsReset },
+    });
+
     return jsonResponse(summary);
   } catch (error) {
     summary.finishedAt = new Date().toISOString();
@@ -146,6 +164,21 @@ Deno.serve(async (req) => {
     } catch {
       // Ignore reset-log insert failure.
     }
+
+    await logCronJobRun(supabase, {
+      job_name: "nightly-demo-reset",
+      function_name: "nightly-demo-reset",
+      source: "cron",
+      status: "failed",
+      started_at: startedAt,
+      finished_at: summary.finishedAt,
+      duration_ms: new Date(summary.finishedAt).getTime() - new Date(startedAt).getTime(),
+      checked_count: summary.sessionsFound,
+      success_count: summary.sessionsReset,
+      failed_count: Math.max(summary.errors.length, 1),
+      error_message: summary.errors.join("; "),
+      metadata: { sessionsFound: summary.sessionsFound, sessionsReset: summary.sessionsReset },
+    });
 
     return jsonResponse(summary, 500);
   }
