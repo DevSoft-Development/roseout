@@ -69,6 +69,39 @@ function clampScore(value: unknown) {
   return Math.max(-10, Math.min(10, number));
 }
 
+
+function deterministicFallback(reviewText: string): ReviewAnalysis {
+  const text = reviewText.toLowerCase();
+  const keywords = new Set<string>();
+  const bestFor = new Set<string>();
+  const avoidIf = new Set<string>();
+  const result: ReviewAnalysis = { ...fallbackAnalysis, keywords: [], best_for: [], avoid_if: [], occasion_fit: [] };
+
+  const add = (...items: string[]) => items.forEach((item) => keywords.add(item));
+  if (/quiet|not too loud|conversation|talk/.test(text)) { result.noise_level = "quiet"; result.vibe = "chill"; add("quiet", "conversation", "low key", "chill"); bestFor.add("conversation-friendly outings"); }
+  if (/loud|dj|dance floor|club vibe|clubby|very loud/.test(text)) { result.noise_level = text.includes("very loud") ? "very loud" : "loud"; result.vibe = "energetic"; add("loud", "dj", "dance floor", "club vibe"); avoidIf.add("you want a quiet place"); }
+  if (/romantic|date night|anniversary|intimate|cozy/.test(text)) { result.date_night = true; result.vibe = text.includes("romantic") ? "romantic" : "cozy"; add("romantic", "date night", "cozy", "intimate"); result.occasion_fit.push("date night"); }
+  if (/sports|tv|game|watch party|big screen/.test(text)) add("sports", "tv", "game day", "watch party", "big screen");
+  if (/rooftop|views|terrace|skyline/.test(text)) add("rooftop", "views", "terrace", "skyline");
+  if (/hookah|shisha/.test(text)) add("hookah", "shisha");
+  if (/jazz|live music/.test(text)) add("jazz", "live music");
+  if (/cocktails|drinks|wine/.test(text)) add("cocktails", "drinks", "wine");
+  if (/friendly service|great service|excellent service/.test(text)) result.service_quality = "excellent";
+  else if (/rude service|slow service|bad service/.test(text)) { result.service_quality = "bad"; avoidIf.add("you need fast service"); }
+  if (/delicious|great food|amazing food/.test(text)) result.food_quality = "excellent";
+  else if (/bad food|disappointing food/.test(text)) result.food_quality = "bad";
+  if (/beautiful|ambiance|atmosphere|decor/.test(text)) result.ambiance_quality = "good";
+  if (/overpriced|expensive/.test(text)) result.price_feeling = "overpriced";
+  if (/worth it|good value|affordable/.test(text)) result.price_feeling = text.includes("affordable") ? "affordable" : "worth it";
+  if (/long wait|waited forever/.test(text)) result.wait_time = "long";
+  if (/positive|great|amazing|excellent|loved|delicious|friendly/.test(text)) { result.sentiment = "positive"; result.score_boost = 5; }
+  if (/bad|rude|terrible|disappointing|overpriced/.test(text)) { result.sentiment = result.sentiment === "positive" ? "neutral" : "negative"; result.score_boost = result.sentiment === "negative" ? -5 : 0; }
+  result.keywords = Array.from(keywords).slice(0, 15);
+  result.best_for = Array.from(bestFor).slice(0, 10);
+  result.avoid_if = Array.from(avoidIf).slice(0, 10);
+  return result;
+}
+
 function safeArray(value: unknown, limit = 12): string[] {
   if (!Array.isArray(value)) return [];
 
@@ -84,8 +117,7 @@ export async function analyzeReview(
 ): Promise<ReviewAnalysis> {
   try {
     if (!process.env.OPENAI_API_KEY) {
-      console.error("Missing OPENAI_API_KEY");
-      return fallbackAnalysis;
+      return deterministicFallback(reviewText);
     }
 
     const prompt = `
@@ -187,6 +219,6 @@ Customer review:
     };
   } catch (error) {
     console.error("Review AI failed:", error);
-    return fallbackAnalysis;
+    return deterministicFallback(reviewText);
   }
 }

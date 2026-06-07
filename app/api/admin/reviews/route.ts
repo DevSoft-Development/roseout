@@ -14,6 +14,14 @@ type AdminReview = {
   reviewText: string | null;
   status: string | null;
   createdAt: string | null;
+  verifiedVisit?: boolean;
+  verificationSource?: string | null;
+  outingId?: string | null;
+  reservationId?: string | null;
+  guestEmail?: string | null;
+  aiSentiment?: string | null;
+  aiScoreBoost?: number | null;
+  moderationNotes?: string | null;
 };
 
 const EMPTY_RESPONSE = {
@@ -34,6 +42,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "all";
+    const status = searchParams.get("status") || "all";
+    const verified = searchParams.get("verified") || "all";
+    const source = searchParams.get("source") || "all";
     const q = (searchParams.get("q") || searchParams.get("search") || "").trim().toLowerCase();
     const locationId = searchParams.get("location_id");
     const limit = Math.max(1, Math.min(200, Number(searchParams.get("limit") || 50)));
@@ -41,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from("location_reviews")
-      .select("id,customer_name,rating,review_text,status,created_at,location_id,locations:location_id(id,name,restaurant_name,activity_name,address,neighborhood,borough,location_type)")
+      .select("id,customer_name,rating,review_text,status,created_at,location_id,verified_visit,verification_source,verified_at,outing_id,reservation_id,guest_email,user_id,ai_sentiment,ai_score_boost,vibe,noise_level,date_night,group_friendly,service_quality,food_quality,ambiance_quality,best_for,avoid_if,approved_at,rejected_at,moderation_notes,locations:location_id(id,name,restaurant_name,activity_name,address,neighborhood,borough,location_type)")
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -66,7 +77,7 @@ export async function GET(request: NextRequest) {
       return {
         id: String(row.id),
         reviewerName: row.customer_name || null,
-        reviewerEmail: null,
+        reviewerEmail: row.guest_email ? String(row.guest_email).replace(/(^.).*(@.*$)/, "$1***$2") : null,
         locationId: row.location_id || null,
         locationName,
         locationType,
@@ -74,6 +85,14 @@ export async function GET(request: NextRequest) {
         reviewText: row.review_text || null,
         status: row.status || null,
         createdAt: row.created_at || null,
+        verifiedVisit: Boolean(row.verified_visit),
+        verificationSource: row.verification_source || null,
+        outingId: row.outing_id || null,
+        reservationId: row.reservation_id || null,
+        guestEmail: row.guest_email ? String(row.guest_email).replace(/(^.).*(@.*$)/, "$1***$2") : null,
+        aiSentiment: row.ai_sentiment || null,
+        aiScoreBoost: row.ai_score_boost == null ? null : Number(row.ai_score_boost),
+        moderationNotes: row.moderation_notes || null,
       };
     });
 
@@ -81,6 +100,10 @@ export async function GET(request: NextRequest) {
       if (type === "restaurants" && item.locationType !== "restaurant") return false;
       if (type === "activities" && item.locationType !== "activity") return false;
       if (locationId && item.locationId !== locationId) return false;
+      if (status !== "all" && String(item.status || "").toLowerCase() !== status) return false;
+      if (verified === "verified" && !item.verifiedVisit) return false;
+      if (verified === "unverified" && item.verifiedVisit) return false;
+      if (source !== "all" && item.verificationSource !== source) return false;
       if (!q) return true;
       const haystack = [item.locationName, item.reviewText].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(q);
