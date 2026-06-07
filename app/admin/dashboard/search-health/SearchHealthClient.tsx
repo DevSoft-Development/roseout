@@ -71,6 +71,9 @@ type SearchEventRow = {
   activity_count?: number | null;
   pair_count?: number | null;
   result_count?: number | null;
+  distance_mode?: string | null;
+  max_pair_distance_miles?: number | null;
+  max_pair_walking_minutes?: number | null;
   timing_ms?: number | null;
   speed_status?: string | null;
   success?: boolean | null;
@@ -146,6 +149,11 @@ function formatTime(value: string | null | undefined) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatPairLimit(value: number | null | undefined, unit: "mi" | "min") {
+  if (value == null) return "Any";
+  return `${value}${unit === "mi" ? " mi" : " min"}`;
 }
 
 function issueLabel(event: any) {
@@ -659,6 +667,7 @@ export default function SearchHealthClient() {
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Outing</th>
+                  <th className="px-4 py-3">Pair Limit</th>
                   <th className="px-4 py-3">Results</th>
                   <th className="px-4 py-3">Speed</th>
                   <th className="px-4 py-3">Issue</th>
@@ -691,6 +700,12 @@ export default function SearchHealthClient() {
                     <td className="px-4 py-3 text-white/60">
                       {[row.outing_date, row.outing_time].filter(Boolean).join(" · ") ||
                         "—"}
+                    </td>
+                    <td className="px-4 py-3 text-white/60">
+                      <div>{row.distance_mode || "any"}</div>
+                      <div className="text-xs text-white/35">
+                        {formatPairLimit(row.max_pair_distance_miles, "mi")} · {formatPairLimit(row.max_pair_walking_minutes, "min")}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-white/60">
                       {row.result_count ?? 0}

@@ -136,6 +136,33 @@ describe("enterprise Search Health classification", () => {
     expect((payload.debug as any).pairQualityScorePreview.length).toBe(12);
   });
 
+  it("preserves null pair limits for distanceMode any", () => {
+    const payload = buildSearchHealthEventPayload({
+      source: "public_create_search",
+      result: { restaurants: [{}], activities: [{}], pairs: [] },
+      debug: {
+        normalizedIntent: {
+          rawQuery: "brunch and something fun in Brooklyn",
+          wantsPairing: true,
+          needsRestaurant: true,
+          needsActivity: true,
+          pairingPreference: {
+            requiresPairing: true,
+            distanceMode: "any",
+            maxPairDistanceMiles: null,
+            maxPairWalkingMinutes: null,
+            requireWalkablePair: false,
+          },
+        },
+      },
+    });
+
+    expect(payload.max_pair_distance_miles).toBeNull();
+    expect(payload.max_pair_walking_minutes).toBeNull();
+    expect((payload.debug as any).pairingPreference.maxPairDistanceMiles).toBeNull();
+    expect((payload.debug as any).pairingPreference.maxPairWalkingMinutes).toBeNull();
+  });
+
   it("stores admin visibility fields in debug payload", () => {
     const payload = buildSearchHealthEventPayload({
       source: "public_create_search",

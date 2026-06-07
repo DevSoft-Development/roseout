@@ -6,6 +6,7 @@ import {
 import { detectGeoIntent } from "./geo-taxonomy";
 import {
   ACTIVITY_TERMS,
+  COMPACT_GENERIC_ACTIVITY_RPC_TERMS,
   GENERIC_ACTIVITY_FALLBACK_TERMS,
   createEmptyActivityIntent,
   createEmptyRestaurantIntent,
@@ -1160,10 +1161,25 @@ function shouldAddGenericActivityFallback(
   intent: SearchIntent,
   terms: string[],
 ) {
+  return isBroadGenericActivityIntent(intent, terms);
+}
+
+export function isBroadGenericActivityIntent(
+  intent: SearchIntent,
+  terms: string[] = [
+    ...intent.activityIntent.activityTerms,
+    ...intent.activityIntent.categoryTerms,
+    ...intent.activityIntent.featureTerms,
+    ...(intent.activityIntent.alternativeGroups ?? []).flat(),
+  ],
+) {
   return (
     intent.searchType === "mixed_outing" &&
     intent.needsActivity === true &&
-    hasOnlyGenericActivityTerms(terms)
+    (hasOnlyGenericActivityTerms(terms) ||
+      /\b(something fun|activity|activities|relaxed activity|casual activity|chill activity)\b/i.test(
+        intent.rawQuery ?? "",
+      ))
   );
 }
 
@@ -1394,16 +1410,25 @@ export function pruneSportsWatchActivityTerms(
 
 export function activityRpcTerms(intent: SearchIntent) {
   const original = activitySearchTermsOriginal(intent);
+  const broadGenericActivity = isBroadGenericActivityIntent(intent);
   const afterDomainPruning = pruneActivityRpcTerms(intent, original);
   const afterSportsWatchPruning = pruneSportsWatchActivityTerms(
     intent,
     afterDomainPruning,
   );
-  const terms = intent.needsActivity ? finalCleanTermList(pruneRelaxedActivityTerms(intent, afterSportsWatchPruning), ACTIVITY_ALLOWED_SINGLE_WORDS) : [];
+  const expandedTerms = pruneRelaxedActivityTerms(intent, afterSportsWatchPruning);
+  const terms = intent.needsActivity
+    ? finalCleanTermList(
+        broadGenericActivity ? COMPACT_GENERIC_ACTIVITY_RPC_TERMS : expandedTerms,
+        ACTIVITY_ALLOWED_SINGLE_WORDS,
+      )
+    : [];
 
 
   return {
     terms,
+    compactGenericActivityRpcApplied: broadGenericActivity,
+    expandedTerms,
     removedForSportsWatchIntent: hasSportsWatchIntent(intent.rawQuery)
       ? uniq([
           ...(sportsWatchRemovedActivityTermsByIntent.get(intent) ?? []),
