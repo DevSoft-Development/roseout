@@ -19,12 +19,12 @@ export const FOOD_SYNONYMS: Record<string, string[]> = {
 };
 
 export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
-  bowling: ["bowling", "bowling alley", "bowling lounge", "bowling lanes", "lanes"],
+  bowling: ["bowling", "bowling alley", "bowling lanes"],
   karaoke: ["karaoke"],
   hookah: ["hookah", "hookah lounge", "hookah bar", "shisha"],
-  "live music": ["live music", "concert", "jazz club", "open mic"],
+  "live music": ["live music", "concert", "jazz club"],
   museum: ["museum", "exhibit", "exhibition", "cultural center"],
-  lounge: ["nightlife", "lounge", "bar", "cocktail bar", "rooftop lounge", "club", "dance club", "dancing", "live dj", "speakeasy"],
+  lounge: ["lounge", "bar", "cocktail bar"],
   rooftop: [
     "rooftop",
     "roof top",
@@ -59,10 +59,6 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
     "relaxing activity",
     "chill activity",
     "easy activity",
-    "low key",
-    "low-key",
-    "laid back",
-    "laid-back",
     "casual activity",
     "lounge",
     "dessert",
@@ -73,7 +69,7 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
     "bowling",
     "gallery",
   ],
-  comedy: ["comedy club"],
+  comedy: ["comedy club", "comedy show", "comedy", "stand up comedy", "standup comedy"],
   "wine tasting": ["wine tasting"],
   brewery: ["brewery", "beer garden"],
   arcade: ["arcade", "games"],
@@ -99,7 +95,7 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
     "skating", "roller skating", "ice skating", "batting cages", "climbing", "rock climbing", "gym",
   ],
   "mini golf": ["mini golf", "putt putt", "games"],
-  golf: ["golf", "driving range"],
+  golf: ["golf"],
   sports: ["basketball", "football", "baseball", "hockey", "soccer"],
   "sports bar": [
     "sports bar", "sports lounge", "sport lounge", "bar with tv", "bar with tvs", "bar with screens", "tv bar", "tvs", "tv", "big screen", "big screens", "watch party", "game day", "game night", "live sports", "sports viewing", "pub", "tavern", "bar and grill",
@@ -224,20 +220,17 @@ export function detectActivityTerms(query: string) {
     includesPhrase(q, "relaxing activity") ||
     includesPhrase(q, "chill activity") ||
     includesPhrase(q, "easy activity") ||
-    includesPhrase(q, "low key") ||
-    includesPhrase(q, "low-key") ||
-    includesPhrase(q, "laid back") ||
-    includesPhrase(q, "laid-back") ||
-    includesPhrase(q, "casual activity");
+    includesPhrase(q, "quiet activity") ||
+    includesPhrase(q, "casual activity") ||
+    includesPhrase(q, "something fun") ||
+    includesPhrase(q, "fun but not loud") ||
+    includesPhrase(q, "not a club but still fun") ||
+    includesPhrase(q, "activity no club");
   const relaxedActivityTerms = new Set([
     "relaxed activity",
     "relaxing activity",
     "chill activity",
     "easy activity",
-    "low key",
-    "low-key",
-    "laid back",
-    "laid-back",
     "casual activity",
   ]);
   const hasRooftop = includesPhrase(q, "rooftop") || includesPhrase(q, "roof top");
@@ -289,12 +282,22 @@ export function detectActivityTerms(query: string) {
   if (hasExplicitRelaxedActivity) {
     terms.push(
       "relaxed activity",
-      "lounge",
+      "chill activity",
+      "easy activity",
+      "low key",
+      "laid back",
+      "casual activity",
       "board games",
       "arcade",
       "mini golf",
       "bowling",
       "gallery",
+      "museum",
+      "billiards",
+      "pool hall",
+      "paint and sip",
+      "cafe",
+      "dessert",
     );
   }
 

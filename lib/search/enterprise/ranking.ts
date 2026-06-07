@@ -66,32 +66,24 @@ function sportsWatchRecordSignal(r: EnterpriseLocation): number {
   ]);
 
   let score = 0;
-  if (
-    /\bsports bar\b|\bsports lounge\b|\bsport bar\b|\bsport lounge\b|\bbar & grill\b|\bbar and grill\b|\bpub\b|\btavern\b|\bplayoffs?\b|\bgame bar\b|\btv bar\b/.test(
-      text,
-    )
-  )
+  if (/\bsports bar\b|\bsports lounge\b|\bsport lounge\b/.test(text)) {
     score += 55;
-  if (
-    /\btv\b|\btvs\b|\btelevision\b|\bscreen\b|\bscreens\b|\bbig screen\b|\bbig screens\b|\bprojector\b/.test(
-      text,
-    )
-  )
+  }
+  if (/\btv\b|\btvs\b|\btelevision\b|\bscreen\b|\bscreens\b|\bbig screen\b|\bbig screens\b|\bprojector\b|\btv bar\b/.test(text)) {
     score += 35;
-  if (
-    /\bwatch party\b|\bgame day\b|\bgame night\b|\bshowing the game\b|\bwatch the game\b|\blive sports\b|\bsports viewing\b/.test(
-      text,
-    )
-  )
+  }
+  if (/\bwatch party\b|\bgame day\b|\bgame night\b|\bshowing the game\b|\bwatch the game\b|\blive sports\b|\bsports viewing\b|\bplayoffs?\b/.test(text)) {
     score += 45;
-  if (
-    /\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bmarch madness\b|\bfinal four\b|\blakers\b|\bwarriors\b|\bceltics\b|\bcowboys\b|\beagles\b|\bchiefs\b|\bdodgers\b|\bred sox\b|\bduke\b|\buconn\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(
-      text,
-    )
-  )
+  }
+  if (/\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bmarch madness\b|\bfinal four\b|\blakers\b|\bwarriors\b|\bceltics\b|\bcowboys\b|\beagles\b|\bchiefs\b|\bdodgers\b|\bred sox\b|\bduke\b|\buconn\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(text)) {
     score += 25;
+  }
+  if (/\bgame bar\b/.test(text)) {
+    score += 10;
+  }
   return score;
 }
+
 
 
 function userAskedForRelaxedNoClub(intent: SearchIntent): boolean {
@@ -843,7 +835,7 @@ export function scoreActivityQuality(
     score += sportsWatchScore;
     qualityReason(reasons, "sports/game-watch fit", sportsWatchScore);
   }
-  if (sportsWatchIntent && sportsWatchScore <= 0) {
+  if (sportsWatchIntent && sportsWatchScore <= 10) {
     score -= 45;
     qualityReason(penalties, "missing sports bar/TV/game-watch signal", -45);
   }
