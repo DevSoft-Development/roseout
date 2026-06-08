@@ -598,6 +598,24 @@ function stripBlockedTerms(terms: string[], blocked: Set<string>) {
 function stripRooftopFeatureTerms(terms: string[]) {
   return terms.filter((term) => !ROOFTOP_FEATURE_TERMS.has(term.toLowerCase()));
 }
+function activityForbiddenRestaurantTerms() {
+  const allowedActivityTerms = new Set([
+    "drinks",
+    "cocktails",
+    "cocktail bar",
+    "wine bar",
+    "bar",
+    "lounge",
+  ]);
+  return [...FOOD_TERMS, ...MEAL_TERMS].filter(
+    (term) => !allowedActivityTerms.has(term.toLowerCase()),
+  );
+}
+
+function userAskedForRooftopRestaurant(query: string) {
+  return /\b(rooftop restaurant|restaurant with (?:a )?rooftop|dinner on (?:a )?rooftop)\b/i.test(query);
+}
+
 function rooftopDrinksBelongToActivity(query: string) {
   return (
     /\brooftop\s+(?:drinks?|cocktails?|bars?|lounges?)\b/i.test(query) ||
@@ -814,9 +832,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
       cuisineTerms: cuisine,
       categoryTerms: /restaurant|dining/i.test(query) ? ["restaurant"] : [],
       featureTerms:
-        !rooftopActivity &&
-        (food.includes("rooftop") ||
-          /rooftop|terrace|skyline|view/i.test(query))
+        !rooftopActivity && userAskedForRooftopRestaurant(query)
           ? ["rooftop"]
           : [],
       alternativeGroups: restaurantAlternativeGroups,
@@ -932,7 +948,7 @@ export function normalizeIntent(
             )
           : uniq([
               ...(merged.restaurantIntent.featureTerms ?? []),
-              ...(food.includes("rooftop")
+              ...(userAskedForRooftopRestaurant(query)
                 ? ["rooftop", "terrace", "skyline", "view"]
                 : []),
             ]),
@@ -955,7 +971,7 @@ export function normalizeIntent(
     activityTerms: cleanPlaceOfWorshipTerms(
       stripBlockedTerms(
         stripDistanceTerms(
-          stripCrossTerms(actExpanded, [...FOOD_TERMS, ...MEAL_TERMS]),
+          stripCrossTerms(actExpanded, activityForbiddenRestaurantTerms()),
         ),
         ACTIVITY_SEARCH_TERM_BLOCKLIST,
       ),
@@ -964,10 +980,10 @@ export function normalizeIntent(
     categoryTerms: cleanPlaceOfWorshipTerms(
       stripBlockedTerms(
         stripDistanceTerms(
-          stripCrossTerms(uniq(merged.activityIntent.categoryTerms ?? []), [
-            ...FOOD_TERMS,
-            ...MEAL_TERMS,
-          ]),
+          stripCrossTerms(
+            uniq(merged.activityIntent.categoryTerms ?? []),
+            activityForbiddenRestaurantTerms(),
+          ),
         ),
         ACTIVITY_SEARCH_TERM_BLOCKLIST,
       ),
@@ -990,7 +1006,7 @@ export function normalizeIntent(
       .map((group) =>
         stripBlockedTerms(
           stripDistanceTerms(
-            stripCrossTerms(group, [...FOOD_TERMS, ...MEAL_TERMS]),
+            stripCrossTerms(group, activityForbiddenRestaurantTerms()),
           ),
           ACTIVITY_SEARCH_TERM_BLOCKLIST,
         ),
@@ -1140,7 +1156,7 @@ export function mergeLlmIntentWithPreIntent(args: {
 
 export function restaurantSearchTerms(intent: SearchIntent) {
   if (!intent.needsRestaurant) return [];
-  const rooftopRestaurantTerms = /\b(rooftop restaurant|restaurant with (?:skyline views|views|outdoor dining|terrace)|skyline views|scenic views|terrace|outdoor dining)\b/i.test(intent.rawQuery)
+  const rooftopRestaurantTerms = userAskedForRooftopRestaurant(intent.rawQuery)
     ? ["restaurant", "rooftop restaurant", "rooftop", "skyline", "skyline views", "scenic views", "terrace", "outdoor dining"]
     : [];
   return finalCleanTermList(stripBlockedTerms(

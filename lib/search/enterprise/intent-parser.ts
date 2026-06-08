@@ -117,6 +117,37 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "outdoor activity",
 ];
 
+
+const EXPLICIT_DATE_NIGHT_MIXED_PHRASES = [
+  "date night within walking distance",
+  "date night walking distance",
+  "date night close by",
+  "date night close together",
+  "date night nearby",
+  "date night with activity",
+  "date night and activity",
+  "date night dinner and activity",
+  "date night dinner then drinks",
+  "date night dinner then something to do",
+];
+
+const DATE_NIGHT_NEARBY_SIGNALS = [
+  "nearby",
+  "close by",
+  "close together",
+  "near each other",
+];
+
+const DATE_NIGHT_WALKING_SIGNALS = [
+  "within walking distance",
+  "walking distance",
+  "walk apart",
+  "walkable",
+  "walk to",
+  "walking",
+  "walk",
+];
+
 const FAST_PATH_SPORTS_WATCH_TERMS = [
   "sports bar",
   "sports lounge",
@@ -274,6 +305,8 @@ function detectFastPathActivityIntentTerms(query: string) {
       "rooftop lounge",
       "rooftop drinks",
       "rooftop cocktails",
+      "terrace bar",
+      "skyline lounge",
       "drinks",
       "cocktails",
       "bar",
@@ -328,6 +361,28 @@ function connectorIsRestaurantFeature(query: string) {
   return /\bwith\s+(?:skyline views|scenic views|views|rooftop|terrace|outdoor dining|cocktails|good drinks|live music)\b/.test(q);
 }
 
+function hasExplicitDateNightMixedFastPathIntent(query: string) {
+  const q = String(query || "").toLowerCase();
+  if (!includesFastPathPhrase(q, "date night")) return false;
+
+  return (
+    EXPLICIT_DATE_NIGHT_MIXED_PHRASES.some((phrase) =>
+      includesFastPathPhrase(q, phrase),
+    ) ||
+    DATE_NIGHT_WALKING_SIGNALS.some((signal) =>
+      includesFastPathPhrase(q, signal),
+    ) ||
+    DATE_NIGHT_NEARBY_SIGNALS.some((signal) =>
+      includesFastPathPhrase(q, signal),
+    )
+  );
+}
+
+function hasGenericDateNightActivitySignal(query: string) {
+  const q = String(query || "").toLowerCase();
+  return /\b(activity|activities|thing to do|things to do|something to do|something fun|date idea|outing|experience|drinks|cocktails|bar|lounge)\b/.test(q);
+}
+
 function hasExplicitMixedOutingIntent(query: string) {
   const q = String(query || "").toLowerCase();
   if (connectorIsRestaurantFeature(q)) return false;
@@ -371,6 +426,88 @@ function sportsWatchActivityTermsFromQuery(query: string) {
   return uniqueTerms(terms);
 }
 
+function fastPathDistanceMode(query: string): "walking" | "nearby" | "any" {
+  const q = String(query || "").toLowerCase();
+
+  if (
+    DATE_NIGHT_WALKING_SIGNALS.some((signal) =>
+      includesFastPathPhrase(q, signal),
+    ) ||
+    /\b(?:walking|walk|walkable|walk apart)\b/.test(q)
+  ) {
+    return "walking";
+  }
+
+  if (
+    DATE_NIGHT_NEARBY_SIGNALS.some((signal) =>
+      includesFastPathPhrase(q, signal),
+    ) ||
+    /\b(?:nearby|close by|close together|near each other)\b/.test(q)
+  ) {
+    return "nearby";
+  }
+
+  return "any";
+}
+
+function createDateNightMixedFastPathIntent(rawQuery: string) {
+  const q = rawQuery.toLowerCase();
+  const mealTerms = detectMealTerms(q);
+  const restaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const activityIntent = createActivityOnlyFastPathIntent(rawQuery).activityIntent ?? createEmptyActivityIntent();
+  const detectedActivityTerms = detectFastPathActivityIntentTerms(q);
+  const genericDateActivityTerms = hasGenericDateNightActivitySignal(q)
+    ? ["activity", "things to do", "date idea", "date activity", "outing", "experience"]
+    : ["activity", "things to do", "date idea", "date activity"];
+  const distanceMode = fastPathDistanceMode(q);
+
+  return {
+    rawQuery,
+    searchType: "mixed_outing",
+    primaryDomain: "mixed",
+    needsRestaurant: true,
+    needsActivity: true,
+    wantsPairing: true,
+    restaurantIntent: {
+      ...restaurantIntent,
+      mealTerms: uniqueTerms([
+        ...(restaurantIntent.mealTerms ?? []),
+        ...mealTerms,
+        "dinner",
+      ]),
+      vibeTerms: uniqueTerms([
+        ...(restaurantIntent.vibeTerms ?? []),
+        "romantic",
+        "date night",
+      ]),
+    },
+    activityIntent: {
+      ...activityIntent,
+      activityTerms: uniqueTerms([
+        ...(activityIntent.activityTerms ?? []),
+        ...detectedActivityTerms,
+        ...genericDateActivityTerms,
+      ]),
+      vibeTerms: uniqueTerms([
+        ...(activityIntent.vibeTerms ?? []),
+        "romantic",
+        "date night",
+      ]),
+    },
+    pairingPreference: {
+      requiresPairing: true,
+      distanceMode,
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: distanceMode !== "any",
+    },
+    geo: emptyGeoIntent(),
+    vibe: ["romantic", "date night"],
+    occasion: "date night",
+    strictness: "high",
+  } satisfies Partial<SearchIntent>;
+}
+
 function createExplicitMixedFastPathIntent(rawQuery: string) {
   const q = rawQuery.toLowerCase();
   const restaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
@@ -390,10 +527,10 @@ function createExplicitMixedFastPathIntent(rawQuery: string) {
     },
     pairingPreference: {
       requiresPairing: true,
-      distanceMode: /\b(walking|walk|close by|nearby|walk apart)\b/.test(q) ? "walking" : "any",
+      distanceMode: fastPathDistanceMode(q),
       maxPairDistanceMiles: null,
       maxPairWalkingMinutes: null,
-      requireWalkablePair: /\b(walking|walk|walk apart)\b/.test(q),
+      requireWalkablePair: fastPathDistanceMode(q) !== "any",
     },
     geo: emptyGeoIntent(),
     vibe: [],
@@ -539,7 +676,7 @@ function hasRestaurantFeatureWithConnector(query: string) {
 
 function hasRestaurantOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
-  const restaurantFeature = /\b(rooftop restaurant|restaurant with skyline views|restaurant with views|restaurant with outdoor dining|restaurant with terrace)\b/.test(q) || hasRestaurantFeatureWithConnector(q);
+  const restaurantFeature = /\b(rooftop restaurant|restaurant with (?:a )?rooftop|restaurant with skyline views|restaurant with views|restaurant with outdoor dining|restaurant with terrace|dinner on (?:a )?rooftop)\b/.test(q) || hasRestaurantFeatureWithConnector(q);
   const hasActivity = /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|watch|game)\b/.test(q) || (/\brooftop\b/.test(q) && !restaurantFeature);
   const hasRestaurant = restaurantFeature || /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
   return hasRestaurant && !hasActivity;
@@ -557,7 +694,7 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
   if (/\bdinner\b/.test(q)) mealTerms.push("dinner");
   if (mealTerms.length === 0 && /\brestaurant|steakhouse|food|spot\b/.test(q)) mealTerms.push("dinner");
   const featureTerms: string[] = [];
-  if (/\brooftop restaurant|restaurant with (?:skyline views|views|outdoor dining|terrace)|skyline views|scenic views|terrace|outdoor dining|rooftop\b/.test(q)) {
+  if (/\b(rooftop restaurant|restaurant with (?:a )?rooftop|dinner on (?:a )?rooftop)\b/.test(q)) {
     foodTerms.push("restaurant", "rooftop restaurant", "rooftop", "skyline", "skyline views", "scenic views", "terrace", "outdoor dining");
     featureTerms.push("rooftop", "skyline views", "scenic views", "terrace", "outdoor dining");
   }
@@ -596,6 +733,14 @@ function createEnterpriseIntentFastPathResult(
       intent: createSportsWatchFastPathIntent(rawQuery),
       reason: "matched sports-watch activity fast path",
       confidence: 0.9,
+    };
+  }
+
+  if (hasExplicitDateNightMixedFastPathIntent(query)) {
+    return {
+      intent: createDateNightMixedFastPathIntent(rawQuery),
+      reason: "matched date-night mixed outing fast path",
+      confidence: 0.92,
     };
   }
 
@@ -1239,6 +1384,7 @@ export async function parseEnterpriseIntent(
   const highConfidenceFastPathReasons = new Set([
     "matched sports-watch activity fast path",
     "matched explicit mixed outing fast path",
+    "matched date-night mixed outing fast path",
     "matched relaxed mixed outing fast path",
     "matched activity-only fast path",
     "matched activity-only venue fast path",
