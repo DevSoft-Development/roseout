@@ -33,3 +33,6 @@ verify_jwt = true
 
 [functions.geocode-address]
 verify_jwt = true
+
+[functions.admin-giveaway-review-reminder]
+verify_jwt = false
