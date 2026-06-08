@@ -48,6 +48,7 @@ export async function POST(req: Request) {
       regenerateCode: body.field === "claim_code" || body.field === "all",
       regenerateToken: body.field === "claim_token" || body.field === "qr" || body.field === "all",
       regenerateQr: body.field === "qr" || body.field === "all",
+      forceCanonicalUrl: body.field === "qr" || body.field === "all",
     });
 
     const { error: updateError } = await supabaseAdmin.from(table).update(fields).eq("id", id);

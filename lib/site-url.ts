@@ -1,24 +1,41 @@
 const CANONICAL_SITE_URL = "https://theouthaven.com";
 
+const LEGACY_HOSTS = [
+  "roseout.com",
+  "www.roseout.com",
+  "roseout.vercel.app",
+  "www.roseout.vercel.app",
+  "theouthaven.vercel.app",
+];
+
 function normalizeSiteUrl(value?: string | null): string {
-  const raw = (value || "").trim();
+  const raw = String(value || "").trim();
   if (!raw) return CANONICAL_SITE_URL;
 
   let withProtocol =
-    raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`;
+    raw.startsWith("http://") || raw.startsWith("https://")
+      ? raw
+      : `https://${raw}`;
 
   withProtocol = withProtocol.replace(/\/+$/, "");
-  const lower = withProtocol.toLowerCase();
 
-  if (
-    lower.includes("roseout.vercel.app") ||
-    lower === "https://theouthaven.com" ||
-    lower === "http://theouthaven.com"
-  ) {
+  try {
+    const parsed = new URL(withProtocol);
+    const host = parsed.hostname.toLowerCase();
+
+    if (
+      LEGACY_HOSTS.includes(host) ||
+      host.endsWith(".roseout.com") ||
+      parsed.origin.toLowerCase() === "http://theouthaven.com" ||
+      parsed.origin.toLowerCase() === "https://theouthaven.com"
+    ) {
+      return CANONICAL_SITE_URL;
+    }
+
+    return parsed.origin;
+  } catch {
     return CANONICAL_SITE_URL;
   }
-
-  return withProtocol;
 }
 
 export function getSiteUrl(): string {
@@ -27,7 +44,6 @@ export function getSiteUrl(): string {
       process.env.NEXT_PUBLIC_SITE_URL ||
       process.env.APP_URL ||
       process.env.SITE_URL ||
-      process.env.APP_URL ||
       CANONICAL_SITE_URL,
   );
 }
@@ -40,12 +56,13 @@ export function buildSiteUrl(path: string): string {
 
   try {
     const parsed = new URL(input);
-    const lower = parsed.origin.toLowerCase();
+    const host = parsed.hostname.toLowerCase();
 
     if (
-      lower.includes("roseout.vercel.app") ||
-      lower === "https://theouthaven.com" ||
-      lower === "http://theouthaven.com"
+      LEGACY_HOSTS.includes(host) ||
+      host.endsWith(".roseout.com") ||
+      parsed.origin.toLowerCase() === "http://theouthaven.com" ||
+      parsed.origin.toLowerCase() === "https://theouthaven.com"
     ) {
       return `${siteUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
