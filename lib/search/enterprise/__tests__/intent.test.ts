@@ -30,6 +30,31 @@ describe("enterprise search intent", () => {
     });
   }
 
+  for (const { query, distanceMode } of [
+    { query: "date night within walking distance", distanceMode: "walking" },
+    { query: "date night close by", distanceMode: "nearby" },
+    { query: "date night dinner and activity", distanceMode: "any" },
+    { query: "date night dinner then drinks nearby", distanceMode: "nearby" },
+  ] as const) {
+    it(`fast-paths clear date-night mixed outing phrases for ${query}`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+
+      expect(parsed.intentParserSource).toBe("fast_path");
+      expect(parsed.usedLlm).toBe(false);
+      expect(parsed.fastPathMatched).toBe(true);
+      expect(parsed.fastPathReason).toBe(
+        "matched date-night mixed outing fast path",
+      );
+      expect(parsed.intent.searchType).toBe("mixed_outing");
+      expect(parsed.intent.primaryDomain).toBe("mixed");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(true);
+      expect(parsed.intent.wantsPairing).toBe(true);
+      expect(parsed.intent.pairingPreference?.distanceMode).toBe(distanceMode);
+      expect(parsed.intentParserSource).not.toBe("deterministic_fallback");
+    });
+  }
+
   it("fast-paths generic required activity searches without missing activity signal", async () => {
     const parsed = await parseEnterpriseIntent(
       "restaurant with activity walking distance",
@@ -87,6 +112,49 @@ describe("enterprise search intent", () => {
     ])
       expect(terms).toContain(term);
   });
+
+  for (const query of [
+    "steak dinner and rooftop drinks after",
+    "steak dinner and rooftop drinks 30 minute walk apart",
+  ]) {
+    it(`fast-paths rooftop drinks as activity after steak dinner for ${query}`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      const restaurantTerms = restaurantSearchTerms(parsed.intent);
+      const activityTerms = [
+        ...parsed.intent.activityIntent.activityTerms,
+        ...parsed.intent.activityIntent.categoryTerms,
+        ...parsed.intent.activityIntent.featureTerms,
+      ];
+
+      expect(parsed.intentParserSource).toBe("fast_path");
+      expect(parsed.fastPathMatched).toBe(true);
+      expect(parsed.intent.searchType).toBe("mixed_outing");
+      expect(parsed.intent.primaryDomain).toBe("mixed");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(true);
+      expect(parsed.intent.wantsPairing).toBe(true);
+      expect(restaurantTerms).toEqual(expect.arrayContaining(["dinner", "steak"]));
+      expect(activityTerms).toEqual(
+        expect.arrayContaining([
+          "rooftop drinks",
+          "rooftop bar",
+          "rooftop lounge",
+          "skyline lounge",
+          "terrace bar",
+          "cocktails",
+          "drinks",
+        ]),
+      );
+      for (const rooftopRestaurantTerm of [
+        "rooftop restaurant",
+        "skyline",
+        "skyline views",
+        "terrace",
+      ]) {
+        expect(restaurantTerms).not.toContain(rooftopRestaurantTerm);
+      }
+    });
+  }
 
   it("parses rooftop drinks after steak dinner as a mixed outing", () => {
     const intent = normalizeIntent("steak dinner and rooftop drinks after");
