@@ -2,60 +2,174 @@
 
 import { useState } from "react";
 
+type RepairTable = "restaurants" | "activities" | "locations";
+
+type BatchResponse = {
+  ok?: boolean;
+  error?: string;
+  result?: BatchResult;
+};
+
+type BatchResult = {
+  table: RepairTable;
+  offset: number;
+  batchSize: number;
+  scanned: number;
+  total: number;
+  nextOffset: number;
+  done: boolean;
+  updated: number;
+  repairedLegacyUrls: number;
+  regeneratedQrs: number;
+  locationsSynced: number;
+  errors: Array<{ id: string | number; error: string }>;
+};
+
+const TABLES: RepairTable[] = ["restaurants", "activities", "locations"];
+const BATCH_SIZE = 100;
+
 export default function RepairClaimQrButton() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [currentTable, setCurrentTable] = useState<RepairTable | null>(null);
+  const [progress, setProgress] = useState({
+    scanned: 0,
+    total: 0,
+    updated: 0,
+    repairedLegacyUrls: 0,
+    regeneratedQrs: 0,
+    locationsSynced: 0,
+    errors: 0,
+  });
+  const [lastResult, setLastResult] = useState<BatchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [complete, setComplete] = useState(false);
+
+  async function runBatch(table: RepairTable, offset: number) {
+    const res = await fetch("/api/admin/locations/backfill-qr", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mode: "batch",
+        table,
+        offset,
+        batchSize: BATCH_SIZE,
+        forceCanonicalUrl: true,
+        regenerateQr: true,
+      }),
+    });
+
+    let json: BatchResponse | null = null;
+
+    try {
+      json = (await res.json()) as BatchResponse;
+    } catch {
+      throw new Error("The repair request failed before returning JSON.");
+    }
+
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || "Claim QR repair failed.");
+    }
+
+    if (!json.result) {
+      throw new Error("Claim QR repair response was missing batch results.");
+    }
+
+    return json.result;
+  }
 
   async function runRepair() {
     setLoading(true);
+    setComplete(false);
     setError(null);
+    setLastResult(null);
+    setProgress({
+      scanned: 0,
+      total: 0,
+      updated: 0,
+      repairedLegacyUrls: 0,
+      regeneratedQrs: 0,
+      locationsSynced: 0,
+      errors: 0,
+    });
 
     try {
-      const res = await fetch(
-        "/api/admin/locations/backfill-qr?force=1&regenerateQr=1",
-        { method: "POST" },
-      );
+      for (const table of TABLES) {
+        setCurrentTable(table);
 
-      const json = await res.json();
+        let offset = 0;
+        let done = false;
 
-      if (!res.ok) {
-        throw new Error(json?.error || "Could not repair claim QR codes.");
+        while (!done) {
+          const result = await runBatch(table, offset);
+          setLastResult(result);
+
+          setProgress((prev) => ({
+            scanned: prev.scanned + result.scanned,
+            total: Math.max(prev.total, prev.scanned + result.scanned + Math.max(result.total - result.nextOffset, 0)),
+            updated: prev.updated + result.updated,
+            repairedLegacyUrls: prev.repairedLegacyUrls + result.repairedLegacyUrls,
+            regeneratedQrs: prev.regeneratedQrs + result.regeneratedQrs,
+            locationsSynced: prev.locationsSynced + result.locationsSynced,
+            errors: prev.errors + (result.errors?.length || 0),
+          }));
+
+          done = result.done;
+          offset = result.nextOffset;
+
+          if (result.scanned === 0) {
+            done = true;
+          }
+        }
       }
 
-      setResult(json?.result || json);
+      setComplete(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not repair claim QR codes.");
+      setError(err instanceof Error ? err.message : "Claim QR repair failed.");
     } finally {
       setLoading(false);
+      setCurrentTable(null);
     }
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <button
         onClick={runRepair}
         disabled={loading}
         className="rounded-full border border-rose-300/30 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading ? "Repairing old QR codes..." : "Repair old roseout QR codes"}
+        {loading ? "Repairing old QR codes in batches..." : "Repair old roseout QR codes"}
       </button>
 
-      {result && (
-        <p className="text-xs leading-5 text-white/70">
-          Restaurants updated: {result.restaurants?.updated ?? 0} • Activities updated:{" "}
-          {result.activities?.updated ?? 0} • Locations synced:{" "}
-          {result.locationsSynced ?? 0} • Locations repaired:{" "}
-          {result.locationsEnsured ?? 0} • Legacy URLs repaired:{" "}
-          {(result.restaurants?.repairedLegacyUrls ?? 0) +
-            (result.activities?.repairedLegacyUrls ?? 0) +
-            (result.locationsRepairedLegacyUrls ?? 0)}{" "}
-          • QR images regenerated:{" "}
-          {(result.restaurants?.regeneratedQrs ?? 0) +
-            (result.activities?.regeneratedQrs ?? 0) +
-            (result.locationsRegeneratedQrs ?? 0)}{" "}
-          • Errors: {result.errors?.length ?? 0}
-        </p>
+      {(loading || complete || lastResult) && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs leading-6 text-white/75">
+          {loading && (
+            <p className="font-black text-white">
+              Processing {currentTable || "claim QR records"}...
+            </p>
+          )}
+
+          {lastResult && (
+            <p>
+              Last batch: {lastResult.table} • scanned {lastResult.scanned} of{" "}
+              {lastResult.total} • next offset {lastResult.nextOffset}
+            </p>
+          )}
+
+          <p>
+            Total scanned: {progress.scanned} • Updated: {progress.updated} • Legacy URLs repaired:{" "}
+            {progress.repairedLegacyUrls} • QR images regenerated: {progress.regeneratedQrs} •
+            Locations synced: {progress.locationsSynced} • Errors: {progress.errors}
+          </p>
+
+          {complete && (
+            <p className="mt-2 font-black text-emerald-200">
+              Repair complete. Rerun the SQL audit and scan an old QR to confirm it opens TheOutHaven.
+            </p>
+          )}
+        </div>
       )}
 
       {error && (
