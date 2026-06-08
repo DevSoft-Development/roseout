@@ -1,9 +1,12 @@
 export function normalizeClaimCode(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "");
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
 }
 
 export function extractClaimCodeFromQrValue(value: string) {
-  const raw = value.trim();
+  const raw = String(value || "").trim();
 
   try {
     const url =
@@ -18,11 +21,9 @@ export function extractClaimCodeFromQrValue(value: string) {
       url?.searchParams.get("claimCode") ||
       url?.searchParams.get("claim_code");
 
-    if (code) {
-      return normalizeClaimCode(code);
-    }
+    if (code) return normalizeClaimCode(code);
   } catch {
-    // Fall through to raw code support.
+    // Fall through to raw claim-code support.
   }
 
   return normalizeClaimCode(raw);

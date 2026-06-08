@@ -2,7 +2,7 @@ import crypto from "crypto";
 import QRCode from "qrcode";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
-import { getCanonicalAppUrl } from "@/lib/site-url";
+import { buildSiteUrl, getCanonicalAppUrl } from "@/lib/site-url";
 
 export type ClaimLocationType = "restaurant" | "activity" | "location";
 type ClaimSourceTable = "restaurants" | "activities" | "locations";
@@ -23,27 +23,73 @@ type ClaimFieldRow = {
 const CLAIM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CLAIM_CODE_LENGTH = 8;
 
-const missing = (v: unknown) => !String(v ?? "").trim();
-const legacyClaimUrl = (v: unknown) => String(v ?? "").includes("/location/apply/claim") || String(v ?? "").includes("/claim/");
-export function getClaimSiteUrl() { return getCanonicalAppUrl().replace(/\/$/, ""); }
-export function generateClaimToken() { return crypto.randomUUID(); }
-export function generateClaimCode() { const raw = Array.from(crypto.randomBytes(CLAIM_CODE_LENGTH), (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length]).join(""); return `TOH-${raw.slice(0, 4)}-${raw.slice(4)}`; }
-export function getClaimUrl(claimCode: string) { return `${getClaimSiteUrl()}${buildClaimUrlFromCode(claimCode)}`; }
-async function generateQrDataUrl(claimUrl: string) { return QRCode.toDataURL(claimUrl, { margin: 2, width: 700 }); }
+const missing = (value: unknown) => !String(value ?? "").trim();
 
-async function isClaimCodeAvailable(code: string, current?: { table: ClaimSourceTable; id: string | number }) {
+function isLegacyClaimValue(value: unknown) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return false;
+
+  return (
+    raw.includes("roseout.com") ||
+    raw.includes("roseout.vercel.app") ||
+    raw.includes("theouthaven.vercel.app") ||
+    raw.includes("/location/apply/claim") ||
+    raw.includes("/claim/")
+  );
+}
+
+export function getClaimSiteUrl() {
+  return getCanonicalAppUrl().replace(/\/$/, "");
+}
+
+export function generateClaimToken() {
+  return crypto.randomUUID();
+}
+
+export function generateClaimCode() {
+  const raw = Array.from(
+    crypto.randomBytes(CLAIM_CODE_LENGTH),
+    (b) => CLAIM_CODE_ALPHABET[b % CLAIM_CODE_ALPHABET.length],
+  ).join("");
+
+  return `TOH-${raw.slice(0, 4)}-${raw.slice(4)}`;
+}
+
+export function getClaimUrl(claimCode: string) {
+  return buildSiteUrl(buildClaimUrlFromCode(claimCode));
+}
+
+async function generateQrDataUrl(claimUrl: string) {
+  return QRCode.toDataURL(claimUrl, { margin: 2, width: 700 });
+}
+
+async function isClaimCodeAvailable(
+  code: string,
+  current?: { table: ClaimSourceTable; id: string | number },
+) {
   for (const table of ["locations", "restaurants", "activities"] as ClaimSourceTable[]) {
     let query = supabaseAdmin.from(table).select("id").eq("claim_code", code).limit(1);
-    if (current?.table === table) query = query.neq("id", current.id);
+
+    if (current?.table === table) {
+      query = query.neq("id", current.id);
+    }
+
     const { data, error } = await query;
     if (error) throw error;
     if (data?.length) return false;
   }
+
   return true;
 }
 
-export async function generateUniqueClaimCode(current?: { table: ClaimSourceTable; id: string | number }) {
-  for (let i = 0; i < 20; i += 1) { const code = generateClaimCode(); if (await isClaimCodeAvailable(code, current)) return code; }
+export async function generateUniqueClaimCode(
+  current?: { table: ClaimSourceTable; id: string | number },
+) {
+  for (let i = 0; i < 20; i += 1) {
+    const code = generateClaimCode();
+    if (await isClaimCodeAvailable(code, current)) return code;
+  }
+
   throw new Error("Could not generate a unique claim code.");
 }
 
@@ -52,50 +98,209 @@ export async function createClaimQr(_type: ClaimLocationType = "location") {
   const claim_token = generateClaimToken();
   const claim_url = getClaimUrl(claim_code);
   const qrCodeDataUrl = await generateQrDataUrl(claim_url);
-  return { claim_code, claim_token, claim_url, claim_status: "unclaimed", qr_link: claim_url, claim_qr_url: qrCodeDataUrl, qr_code_data_url: qrCodeDataUrl };
+
+  return {
+    claim_code,
+    claim_token,
+    claim_url,
+    claim_status: "unclaimed",
+    qr_link: claim_url,
+    claim_qr_url: qrCodeDataUrl,
+    qr_code_data_url: qrCodeDataUrl,
+  };
 }
 
-export async function ensureClaimFields(row: ClaimFieldRow, options: { table?: ClaimSourceTable; regenerateCode?: boolean; regenerateToken?: boolean; regenerateQr?: boolean } = {}) {
-  const current = options.table && row.id ? { table: options.table, id: row.id } : undefined;
-  const claim_code = options.regenerateCode || missing(row.claim_code) ? await generateUniqueClaimCode(current) : normalizeClaimCode(String(row.claim_code));
-  const claim_token = options.regenerateToken || missing(row.claim_token) ? generateClaimToken() : String(row.claim_token);
-  const claim_url = options.regenerateCode || options.regenerateToken || missing(row.claim_url) || legacyClaimUrl(row.claim_url) ? getClaimUrl(claim_code) : String(row.claim_url);
-  const needsQr = options.regenerateQr || options.regenerateCode || options.regenerateToken || legacyClaimUrl(row.claim_url) || missing(row.qr_code_data_url) || missing(row.claim_qr_url);
-  const qr_code_data_url = needsQr ? await generateQrDataUrl(claim_url) : String(row.qr_code_data_url || row.claim_qr_url);
-  return { claim_code, claim_token, claim_url, claim_status: row.claim_status || "unclaimed", qr_link: missing(row.qr_link) ? claim_url : String(row.qr_link), claim_qr_url: missing(row.claim_qr_url) || needsQr ? qr_code_data_url : String(row.claim_qr_url), qr_code_data_url };
+export async function ensureClaimFields(
+  row: ClaimFieldRow,
+  options: {
+    table?: ClaimSourceTable;
+    regenerateCode?: boolean;
+    regenerateToken?: boolean;
+    regenerateQr?: boolean;
+    forceCanonicalUrl?: boolean;
+  } = {},
+) {
+  const current =
+    options.table && row.id ? { table: options.table, id: row.id } : undefined;
+
+  const existingCode = normalizeClaimCode(String(row.claim_code || ""));
+  const shouldRegenerateCode = options.regenerateCode || missing(existingCode);
+
+  const claim_code = shouldRegenerateCode
+    ? await generateUniqueClaimCode(current)
+    : existingCode;
+
+  const claim_token =
+    options.regenerateToken || missing(row.claim_token)
+      ? generateClaimToken()
+      : String(row.claim_token);
+
+  const canonicalClaimUrl = getClaimUrl(claim_code);
+
+  const claimUrlIsLegacy = isLegacyClaimValue(row.claim_url);
+  const qrLinkIsLegacy = isLegacyClaimValue(row.qr_link);
+
+  const shouldRepairUrl =
+    options.forceCanonicalUrl ||
+    shouldRegenerateCode ||
+    options.regenerateToken ||
+    missing(row.claim_url) ||
+    claimUrlIsLegacy;
+
+  const claim_url = shouldRepairUrl ? canonicalClaimUrl : String(row.claim_url);
+
+  const shouldRegenerateQr =
+    options.regenerateQr ||
+    shouldRepairUrl ||
+    qrLinkIsLegacy ||
+    isLegacyClaimValue(row.claim_qr_url) ||
+    isLegacyClaimValue(row.qr_code_data_url) ||
+    missing(row.qr_code_data_url) ||
+    missing(row.claim_qr_url);
+
+  const qr_code_data_url = shouldRegenerateQr
+    ? await generateQrDataUrl(claim_url)
+    : String(row.qr_code_data_url || row.claim_qr_url);
+
+  return {
+    claim_code,
+    claim_token,
+    claim_url,
+    claim_status: row.claim_status || "unclaimed",
+    qr_link:
+      shouldRepairUrl || qrLinkIsLegacy || missing(row.qr_link)
+        ? claim_url
+        : String(row.qr_link),
+    claim_qr_url: shouldRegenerateQr ? qr_code_data_url : String(row.claim_qr_url),
+    qr_code_data_url,
+  };
 }
 
-export async function ensureClaimFieldsForTable(table: ClaimSourceTable, limit = 5000) {
-  const { data, error } = await supabaseAdmin.from(table).select("id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url").limit(limit);
+export async function ensureClaimFieldsForTable(
+  table: ClaimSourceTable,
+  limit = 5000,
+  options: { forceCanonicalUrl?: boolean; regenerateQr?: boolean } = {},
+) {
+  const { data, error } = await supabaseAdmin
+    .from(table)
+    .select(
+      "id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url",
+    )
+    .limit(limit);
+
   if (error) throw error;
-  let updated = 0; const errors: Array<{ id: string | number; error: string }> = [];
+
+  let updated = 0;
+  let repairedLegacyUrls = 0;
+  let regeneratedQrs = 0;
+  const errors: Array<{ id: string | number; error: string }> = [];
+
   for (const row of data || []) {
     try {
-      if ([row.claim_code,row.claim_token,row.claim_url,row.claim_qr_url,row.qr_link,row.qr_code_data_url,row.claim_status].some(missing)) {
-        const fields = await ensureClaimFields(row, { table });
-        await supabaseAdmin.from(table).update(fields).eq("id", row.id).throwOnError();
-        updated += 1;
-      }
-    } catch (e) { errors.push({ id: row.id, error: e instanceof Error ? e.message : String(e) }); }
-  }
-  return { table, scanned: data?.length || 0, updated, errors };
-}
+      const hadLegacyUrl =
+        isLegacyClaimValue(row.claim_url) || isLegacyClaimValue(row.qr_link);
 
-export async function syncClaimFieldsToLocations() {
-  const restaurants = await ensureClaimFieldsForTable("restaurants");
-  const activities = await ensureClaimFieldsForTable("activities");
+      const needsRepair =
+        options.forceCanonicalUrl ||
+        options.regenerateQr ||
+        [
+          row.claim_code,
+          row.claim_token,
+          row.claim_url,
+          row.claim_qr_url,
+          row.qr_link,
+          row.qr_code_data_url,
+          row.claim_status,
+        ].some(missing) ||
+        hadLegacyUrl;
 
-  let locationsSynced = 0;
-  for (const table of ["restaurants", "activities"] as const) {
-    const { data } = await supabaseAdmin.from(table).select("id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url");
-    for (const row of data || []) {
-      try {
-        await supabaseAdmin.from("locations").update({ claim_status: row.claim_status || "unclaimed", claim_code: row.claim_code, claim_token: row.claim_token, claim_url: row.claim_url, claim_qr_url: row.claim_qr_url, qr_link: row.qr_link, qr_code_data_url: row.qr_code_data_url }).eq("source_table", table).eq("source_id", String(row.id)).throwOnError();
-        locationsSynced += 1;
-      } catch {}
+      if (!needsRepair) continue;
+
+      const fields = await ensureClaimFields(row, {
+        table,
+        forceCanonicalUrl: options.forceCanonicalUrl || hadLegacyUrl,
+        regenerateQr: options.regenerateQr || hadLegacyUrl,
+      });
+
+      await supabaseAdmin.from(table).update(fields).eq("id", row.id).throwOnError();
+
+      updated += 1;
+      if (hadLegacyUrl) repairedLegacyUrls += 1;
+      if (options.regenerateQr || hadLegacyUrl) regeneratedQrs += 1;
+    } catch (error) {
+      errors.push({
+        id: row.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
-  const ensuredLocations = await ensureClaimFieldsForTable("locations");
-  return { restaurants: { updated: restaurants.updated }, activities: { updated: activities.updated }, locationsSynced, locationsEnsured: ensuredLocations.updated, errors: [...restaurants.errors, ...activities.errors, ...ensuredLocations.errors] };
+  return {
+    table,
+    scanned: data?.length || 0,
+    updated,
+    repairedLegacyUrls,
+    regeneratedQrs,
+    errors,
+  };
+}
+
+export async function syncClaimFieldsToLocations(
+  options: { forceCanonicalUrl?: boolean; regenerateQr?: boolean } = {},
+) {
+  const restaurants = await ensureClaimFieldsForTable("restaurants", 5000, options);
+  const activities = await ensureClaimFieldsForTable("activities", 5000, options);
+
+  let locationsSynced = 0;
+
+  for (const table of ["restaurants", "activities"] as const) {
+    const { data } = await supabaseAdmin
+      .from(table)
+      .select(
+        "id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url",
+      );
+
+    for (const row of data || []) {
+      try {
+        await supabaseAdmin
+          .from("locations")
+          .update({
+            claim_status: row.claim_status || "unclaimed",
+            claim_code: row.claim_code,
+            claim_token: row.claim_token,
+            claim_url: row.claim_url,
+            claim_qr_url: row.claim_qr_url,
+            qr_link: row.qr_link,
+            qr_code_data_url: row.qr_code_data_url,
+          })
+          .eq("source_table", table)
+          .eq("source_id", String(row.id))
+          .throwOnError();
+
+        locationsSynced += 1;
+      } catch {
+        // Keep bulk repair moving even if one synced location fails.
+      }
+    }
+  }
+
+  const ensuredLocations = await ensureClaimFieldsForTable("locations", 5000, options);
+
+  return {
+    restaurants: {
+      updated: restaurants.updated,
+      repairedLegacyUrls: restaurants.repairedLegacyUrls,
+      regeneratedQrs: restaurants.regeneratedQrs,
+    },
+    activities: {
+      updated: activities.updated,
+      repairedLegacyUrls: activities.repairedLegacyUrls,
+      regeneratedQrs: activities.regeneratedQrs,
+    },
+    locationsSynced,
+    locationsEnsured: ensuredLocations.updated,
+    locationsRepairedLegacyUrls: ensuredLocations.repairedLegacyUrls,
+    locationsRegeneratedQrs: ensuredLocations.regeneratedQrs,
+    errors: [...restaurants.errors, ...activities.errors, ...ensuredLocations.errors],
+  };
 }

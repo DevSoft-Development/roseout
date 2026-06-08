@@ -87,7 +87,12 @@ export default async function AdminClaimQrPrintPage({
   const filter = params.filter || "all";
   const page = Math.max(1, Number(params.page || 1));
   const loadAll = params.pageSize === "all";
-  if (params.repair === "1") await syncClaimFieldsToLocations();
+  if (params.repair === "1") {
+    await syncClaimFieldsToLocations({
+      forceCanonicalUrl: true,
+      regenerateQr: true,
+    });
+  }
   const requestedPageSize = Number(params.pageSize || 400);
   const pageSize = loadAll
     ? 100000
@@ -128,8 +133,19 @@ export default async function AdminClaimQrPrintPage({
   const safePage = loadAll ? 1 : Math.min(page, totalPages);
 
   for (const row of data || []) {
-    if (!row.claim_code || !(row.qr_code_data_url || row.claim_qr_url)) {
-      const fields = await ensureClaimFields(row, { table: "locations" });
+    const hasLegacyClaimUrl = /roseout\.com|roseout\.vercel\.app|theouthaven\.vercel\.app/i.test(
+      String(row.claim_url || ""),
+    );
+
+    const missingQr = !row.claim_code || !(row.qr_code_data_url || row.claim_qr_url);
+
+    if (missingQr || hasLegacyClaimUrl) {
+      const fields = await ensureClaimFields(row, {
+        table: "locations",
+        forceCanonicalUrl: hasLegacyClaimUrl,
+        regenerateQr: hasLegacyClaimUrl,
+      });
+
       await supabaseAdmin.from("locations").update(fields).eq("id", row.id);
       Object.assign(row, fields);
     }
@@ -166,7 +182,7 @@ export default async function AdminClaimQrPrintPage({
             <div>
               <h1 className="text-4xl font-black tracking-tight">Claim QR Codes</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Print labels, audit missing claim codes, and load every location with database-backed search and pagination.
+                Print labels, audit missing claim codes, and repair any old roseout QR codes so every scan opens TheOutHaven.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-right">
