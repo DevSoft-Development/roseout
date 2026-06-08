@@ -5,7 +5,7 @@ import { buildClaimUrlFromCode, normalizeClaimCode } from "@/lib/claimQr";
 import { buildSiteUrl, getCanonicalAppUrl } from "@/lib/site-url";
 
 export type ClaimLocationType = "restaurant" | "activity" | "location";
-type ClaimSourceTable = "restaurants" | "activities" | "locations";
+export type ClaimSourceTable = "restaurants" | "activities" | "locations";
 
 type ClaimFieldRow = {
   id?: string | number;
@@ -27,14 +27,33 @@ const missing = (value: unknown) => !String(value ?? "").trim();
 
 function isLegacyClaimValue(value: unknown) {
   const raw = String(value ?? "").trim().toLowerCase();
+
   if (!raw) return false;
 
   return (
     raw.includes("roseout.com") ||
+    raw.includes("www.roseout.com") ||
     raw.includes("roseout.vercel.app") ||
+    raw.includes("www.roseout.vercel.app") ||
     raw.includes("theouthaven.vercel.app") ||
     raw.includes("/location/apply/claim") ||
     raw.includes("/claim/")
+  );
+}
+
+function needsClaimRepair(row: ClaimFieldRow, options: { forceCanonicalUrl?: boolean; regenerateQr?: boolean } = {}) {
+  return (
+    options.forceCanonicalUrl ||
+    options.regenerateQr ||
+    missing(row.claim_code) ||
+    missing(row.claim_token) ||
+    missing(row.claim_url) ||
+    missing(row.claim_qr_url) ||
+    missing(row.qr_link) ||
+    missing(row.qr_code_data_url) ||
+    missing(row.claim_status) ||
+    isLegacyClaimValue(row.claim_url) ||
+    isLegacyClaimValue(row.qr_link)
   );
 }
 
@@ -75,6 +94,7 @@ async function isClaimCodeAvailable(
     }
 
     const { data, error } = await query;
+
     if (error) throw error;
     if (data?.length) return false;
   }
@@ -87,7 +107,10 @@ export async function generateUniqueClaimCode(
 ) {
   for (let i = 0; i < 20; i += 1) {
     const code = generateClaimCode();
-    if (await isClaimCodeAvailable(code, current)) return code;
+
+    if (await isClaimCodeAvailable(code, current)) {
+      return code;
+    }
   }
 
   throw new Error("Could not generate a unique claim code.");
@@ -124,11 +147,11 @@ export async function ensureClaimFields(
     options.table && row.id ? { table: options.table, id: row.id } : undefined;
 
   const existingCode = normalizeClaimCode(String(row.claim_code || ""));
-  const shouldRegenerateCode = options.regenerateCode || missing(existingCode);
 
-  const claim_code = shouldRegenerateCode
-    ? await generateUniqueClaimCode(current)
-    : existingCode;
+  const claim_code =
+    options.regenerateCode || missing(existingCode)
+      ? await generateUniqueClaimCode(current)
+      : existingCode;
 
   const claim_token =
     options.regenerateToken || missing(row.claim_token)
@@ -142,7 +165,7 @@ export async function ensureClaimFields(
 
   const shouldRepairUrl =
     options.forceCanonicalUrl ||
-    shouldRegenerateCode ||
+    options.regenerateCode ||
     options.regenerateToken ||
     missing(row.claim_url) ||
     claimUrlIsLegacy;
@@ -153,8 +176,6 @@ export async function ensureClaimFields(
     options.regenerateQr ||
     shouldRepairUrl ||
     qrLinkIsLegacy ||
-    isLegacyClaimValue(row.claim_qr_url) ||
-    isLegacyClaimValue(row.qr_code_data_url) ||
     missing(row.qr_code_data_url) ||
     missing(row.claim_qr_url);
 
@@ -171,7 +192,10 @@ export async function ensureClaimFields(
       shouldRepairUrl || qrLinkIsLegacy || missing(row.qr_link)
         ? claim_url
         : String(row.qr_link),
-    claim_qr_url: shouldRegenerateQr ? qr_code_data_url : String(row.claim_qr_url),
+    claim_qr_url:
+      shouldRegenerateQr || missing(row.claim_qr_url)
+        ? qr_code_data_url
+        : String(row.claim_qr_url),
     qr_code_data_url,
   };
 }
@@ -186,6 +210,7 @@ export async function ensureClaimFieldsForTable(
     .select(
       "id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url",
     )
+    .order("id", { ascending: true })
     .limit(limit);
 
   if (error) throw error;
@@ -200,21 +225,73 @@ export async function ensureClaimFieldsForTable(
       const hadLegacyUrl =
         isLegacyClaimValue(row.claim_url) || isLegacyClaimValue(row.qr_link);
 
-      const needsRepair =
-        options.forceCanonicalUrl ||
-        options.regenerateQr ||
-        [
-          row.claim_code,
-          row.claim_token,
-          row.claim_url,
-          row.claim_qr_url,
-          row.qr_link,
-          row.qr_code_data_url,
-          row.claim_status,
-        ].some(missing) ||
-        hadLegacyUrl;
+      if (!needsClaimRepair(row, options)) continue;
 
-      if (!needsRepair) continue;
+      const fields = await ensureClaimFields(row, {
+        table,
+        forceCanonicalUrl: options.forceCanonicalUrl || hadLegacyUrl,
+        regenerateQr: options.regenerateQr || hadLegacyUrl,
+      });
+
+      await supabaseAdmin.from(table).update(fields).eq("id", row.id).throwOnError();
+
+      updated += 1;
+      if (hadLegacyUrl) repairedLegacyUrls += 1;
+      if (options.regenerateQr || hadLegacyUrl) regeneratedQrs += 1;
+    } catch (error) {
+      errors.push({
+        id: row.id!,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return {
+    table,
+    scanned: data?.length || 0,
+    updated,
+    repairedLegacyUrls,
+    regeneratedQrs,
+    errors,
+  };
+}
+
+export async function ensureClaimFieldsForTableBatch(
+  table: ClaimSourceTable,
+  options: {
+    offset?: number;
+    batchSize?: number;
+    forceCanonicalUrl?: boolean;
+    regenerateQr?: boolean;
+  } = {},
+) {
+  const batchSize = Math.min(Math.max(Number(options.batchSize || 100), 1), 250);
+  const offset = Math.max(Number(options.offset || 0), 0);
+  const from = offset;
+  const to = offset + batchSize - 1;
+
+  const { data, error, count } = await supabaseAdmin
+    .from(table)
+    .select(
+      "id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url",
+      { count: "exact" },
+    )
+    .order("id", { ascending: true })
+    .range(from, to);
+
+  if (error) throw error;
+
+  let updated = 0;
+  let repairedLegacyUrls = 0;
+  let regeneratedQrs = 0;
+  const errors: Array<{ id: string | number; error: string }> = [];
+
+  for (const row of data || []) {
+    try {
+      const hadLegacyUrl =
+        isLegacyClaimValue(row.claim_url) || isLegacyClaimValue(row.qr_link);
+
+      if (!needsClaimRepair(row, options)) continue;
 
       const fields = await ensureClaimFields(row, {
         table,
@@ -235,9 +312,19 @@ export async function ensureClaimFieldsForTable(
     }
   }
 
+  const scanned = data?.length || 0;
+  const total = count || 0;
+  const nextOffset = offset + scanned;
+  const done = scanned === 0 || nextOffset >= total;
+
   return {
     table,
-    scanned: data?.length || 0,
+    offset,
+    batchSize,
+    scanned,
+    total,
+    nextOffset,
+    done,
     updated,
     repairedLegacyUrls,
     regeneratedQrs,
@@ -302,5 +389,62 @@ export async function syncClaimFieldsToLocations(
     locationsRepairedLegacyUrls: ensuredLocations.repairedLegacyUrls,
     locationsRegeneratedQrs: ensuredLocations.regeneratedQrs,
     errors: [...restaurants.errors, ...activities.errors, ...ensuredLocations.errors],
+  };
+}
+
+export async function syncClaimFieldsToLocationsBatch(
+  options: {
+    table: ClaimSourceTable;
+    offset?: number;
+    batchSize?: number;
+    forceCanonicalUrl?: boolean;
+    regenerateQr?: boolean;
+  },
+) {
+  const batch = await ensureClaimFieldsForTableBatch(options.table, options);
+
+  let locationsSynced = 0;
+  const syncErrors: Array<{ id: string | number; error: string }> = [];
+
+  if (options.table === "restaurants" || options.table === "activities") {
+    const { data } = await supabaseAdmin
+      .from(options.table)
+      .select(
+        "id, claim_status, claim_code, claim_token, claim_url, claim_qr_url, qr_link, qr_code_data_url",
+      )
+      .order("id", { ascending: true })
+      .range(batch.offset, batch.offset + batch.scanned - 1);
+
+    for (const row of data || []) {
+      try {
+        await supabaseAdmin
+          .from("locations")
+          .update({
+            claim_status: row.claim_status || "unclaimed",
+            claim_code: row.claim_code,
+            claim_token: row.claim_token,
+            claim_url: row.claim_url,
+            claim_qr_url: row.claim_qr_url,
+            qr_link: row.qr_link,
+            qr_code_data_url: row.qr_code_data_url,
+          })
+          .eq("source_table", options.table)
+          .eq("source_id", String(row.id))
+          .throwOnError();
+
+        locationsSynced += 1;
+      } catch (error) {
+        syncErrors.push({
+          id: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  return {
+    ...batch,
+    locationsSynced,
+    errors: [...batch.errors, ...syncErrors],
   };
 }
