@@ -150,8 +150,13 @@ export async function POST(request: Request) {
   let turnstileVerified = !isTurnstileEnabled();
   let turnstileHostname: string | null = null;
   if (isTurnstileEnabled()) {
+    const token = cleanText(body.turnstileToken);
+    if (!token) {
+      return NextResponse.json({ success: false, message: "Please complete the verification before submitting." }, { status: 400 });
+    }
+
     const turnstile = await verifyTurnstileToken({
-      token: cleanText(body.turnstileToken),
+      token,
       remoteIp: ipAddress,
       expectedAction: "launch_waitlist",
       source: "launch_waitlist",

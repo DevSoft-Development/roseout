@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useMemo, useState } from "react";
-import TurnstileWidget from "@/components/security/TurnstileWidget";
+import ClientTurnstile from "@/components/security/ClientTurnstile";
 
 const CONSENT_TEXT =
   "I agree to receive email and SMS updates from TheOutHaven about launch updates, giveaway details, early access, and outing ideas. Message and data rates may apply. Message frequency may vary. Reply STOP to unsubscribe from texts. I can unsubscribe from emails at any time.";
@@ -10,7 +10,7 @@ const DUPLICATE_SOCIAL_MESSAGE =
   "This social handle is already connected to another giveaway entry. Please use the same email you signed up with or enter a different handle.";
 
 function isTurnstileEnabled() {
-  return String(process.env.NEXT_PUBLIC_TURNSTILE_ENABLED ?? process.env.TURNSTILE_ENABLED ?? "true").toLowerCase() !== "false";
+  return String(process.env.NEXT_PUBLIC_TURNSTILE_ENABLED ?? "true").toLowerCase() !== "false";
 }
 
 export default function LaunchWaitlistForm() {
@@ -25,11 +25,45 @@ export default function LaunchWaitlistForm() {
   const [taggedTwoFriends, setTaggedTwoFriends] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const [turnstileError, setTurnstileError] = useState("");
+  const [turnstileKey, setTurnstileKey] = useState(0);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   const enabledTurnstile = useMemo(() => isTurnstileEnabled(), []);
+  const siteKeyMissing = enabledTurnstile && !process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const requiredFieldsMissing = !fullName.trim() || !email.trim() || !marketingConsent || (wantsGiveaway && (!socialHandle.trim() || !["instagram", "tiktok", "both"].includes(socialPlatform)));
+  const submitDisabled = loading || requiredFieldsMissing || (enabledTurnstile && !turnstileToken);
+
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken("");
+    setTurnstileReady(false);
+    setTurnstileKey((current) => current + 1);
+  }, []);
+
+  const handleTurnstileToken = useCallback((token: string) => {
+    setTurnstileToken(token);
+    setTurnstileReady(true);
+    setTurnstileError("");
+  }, []);
+
+  const handleTurnstileReady = useCallback(() => {
+    setTurnstileReady(true);
+    setTurnstileError("");
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken("");
+    setTurnstileError("Verification expired. Please try again.");
+  }, []);
+
+  const handleTurnstileError = useCallback(() => {
+    setTurnstileToken("");
+    setTurnstileReady(false);
+    setTurnstileError("Verification could not load. Please refresh and try again.");
+  }, []);
 
   const validate = useCallback(() => {
     const trimmedName = fullName.trim();
@@ -40,7 +74,7 @@ export default function LaunchWaitlistForm() {
     if (!marketingConsent) return "Please agree to the launch list and giveaway terms to continue.";
     if (wantsGiveaway && !socialHandle.trim()) return "Please enter your Instagram or TikTok handle to join the giveaway.";
     if (wantsGiveaway && !["instagram", "tiktok", "both"].includes(socialPlatform)) return "Please choose Instagram, TikTok, or Both.";
-    if (enabledTurnstile && !turnstileToken) return "Verification failed. Please refresh and try again.";
+    if (enabledTurnstile && !turnstileToken) return "Complete the verification to continue.";
     return "";
   }, [email, enabledTurnstile, fullName, marketingConsent, socialHandle, socialPlatform, turnstileToken, wantsGiveaway]);
 
@@ -76,12 +110,14 @@ export default function LaunchWaitlistForm() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) {
         setError(payload?.message || (response.status === 409 ? DUPLICATE_SOCIAL_MESSAGE : "Something went wrong. Please try again."));
+        if (enabledTurnstile) resetTurnstile();
         return;
       }
       setSuccess(payload?.message || (wantsGiveaway ? "Almost done. Check your email and tap Verify Email to complete your giveaway entry." : "Almost done. Check your email and tap Verify Email to confirm your launch list signup."));
-      setTurnstileToken("");
+      if (enabledTurnstile) resetTurnstile();
     } catch {
       setError("Something went wrong. Please try again.");
+      if (enabledTurnstile) resetTurnstile();
     } finally {
       setLoading(false);
     }
@@ -149,14 +185,28 @@ export default function LaunchWaitlistForm() {
         <input type="checkbox" checked={marketingConsent} onChange={(event) => setMarketingConsent(event.target.checked)} className="mt-1 h-5 w-5 accent-rose-500" required />
         <span className="text-sm leading-6 text-white/72">{CONSENT_TEXT}</span>
       </label>
-      <p className="text-xs leading-5 text-white/45">By checking this box, you agree to receive email and SMS messages from TheOutHaven about launch updates, giveaway details, early access, and outing ideas. Message and data rates may apply. Message frequency may vary. Reply STOP to unsubscribe from texts. You can unsubscribe from emails at any time.</p>
-
-      {enabledTurnstile ? <TurnstileWidget action="launch_waitlist" onToken={setTurnstileToken} onExpire={() => setTurnstileToken("")} onError={() => setTurnstileToken("")} theme="dark" /> : null}
+      {enabledTurnstile ? (
+        <div className="space-y-2">
+          <ClientTurnstile
+            key={turnstileKey}
+            resetKey={turnstileKey}
+            action="launch_waitlist"
+            onToken={handleTurnstileToken}
+            onReady={handleTurnstileReady}
+            onExpire={handleTurnstileExpire}
+            onError={handleTurnstileError}
+            theme="dark"
+          />
+          {!turnstileReady && !turnstileError && !siteKeyMissing ? <p className="text-xs font-bold text-white/50">Verification is loading. Complete it to continue.</p> : null}
+          {turnstileError ? <p className="text-xs font-bold text-amber-100">{turnstileError}</p> : null}
+          {enabledTurnstile && !turnstileToken ? <p className="text-xs font-bold text-white/50">Complete the verification to continue.</p> : null}
+        </div>
+      ) : null}
 
       {error ? <div className="rounded-2xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100">{error}</div> : null}
       {success ? <div className="rounded-2xl border border-emerald-300/40 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">{success}</div> : null}
 
-      <button type="submit" disabled={loading} className="w-full rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-6 py-4 text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60">
+      <button type="submit" disabled={submitDisabled} className="w-full rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-6 py-4 text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60">
         {loading ? "Joining..." : wantsGiveaway ? "Join Launch List + Enter Giveaway" : "Join Launch List"}
       </button>
     </form>
