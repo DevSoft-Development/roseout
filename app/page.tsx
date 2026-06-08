@@ -8,7 +8,7 @@ import { buildMetadata } from "@/lib/seo";
 export const revalidate = 300;
 
 export const metadata: Metadata = buildMetadata({
-  title: "Stop searching 10 tabs. Start planning one perfect outing.",
+  title: "Stop searching 10 tabs. Plan the night in one place.",
   description:
     "Join TheOutHaven Launch List for early access, NYC outing ideas, and a chance to win a $100 gift card.",
   path: "/",
@@ -18,9 +18,7 @@ const searchExamples = [
   "dinner and hookah after",
   "girls night with drinks",
   "date night with an activity nearby",
-  "steak dinner and rooftop drinks after",
-  "brunch and a fun activity nearby",
-  "birthday dinner with lounge vibes",
+  "brunch and something fun after",
 ];
 
 const howItWorks = [
@@ -75,7 +73,7 @@ function Nav() {
         </Link>
         <div className="flex items-center gap-2 sm:gap-3">
           <a href="#launch-list" className="hidden rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-50 transition hover:bg-rose-500/20 sm:inline-flex">
-            Join Launch List
+            Join Launch List + Enter Giveaway
           </a>
           <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/12">
             Log In
@@ -91,32 +89,27 @@ function Hero() {
     <section className="grid gap-10 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:pt-16">
       <div className="space-y-7">
         <div className="inline-flex rounded-full border border-rose-300/25 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-rose-100 shadow-lg shadow-rose-950/20">
-          TheOutHaven Launch Giveaway
+          Launching Late Summer 2026
         </div>
         <div className="space-y-5">
-          <p className="text-sm font-black uppercase tracking-[0.32em] text-white/55">Launching Late Summer 2026</p>
-          <h1 className="max-w-5xl text-5xl font-black tracking-[-0.055em] text-white sm:text-7xl lg:text-8xl">
-            Stop searching 10 tabs. Start planning one perfect outing.
+          <p className="text-sm font-black uppercase tracking-[0.32em] text-white/55">TheOutHaven Launch Giveaway</p>
+          <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-5xl">
+            Stop searching 10 tabs. Plan the night in one place.
           </h1>
-          <p className="max-w-3xl text-lg leading-8 text-white/76 sm:text-xl">
-            Search the way you actually talk: “dinner and hookah after,” “girls night with drinks,” or “date night with an activity nearby.” TheOutHaven helps turn full-sentence ideas into complete outings.
+          <p className="max-w-3xl text-base leading-7 text-white/76 sm:text-lg">
+            Tell us the whole plan once — dinner, drinks, activities, or something after — and TheOutHaven helps turn it into a complete outing.
           </p>
-          <p className="max-w-3xl text-base leading-7 text-white/62 sm:text-lg">
-            TheOutHaven is your AI outing assistant for restaurants, lounges, activities, and things to do after — all from one full-sentence search.
-          </p>
-          <p className="max-w-2xl rounded-3xl border border-white/10 bg-white/[0.06] p-4 text-base font-bold leading-7 text-white/82">
-            Tell us the whole plan once — we’ll help you find the food, the vibe, and what to do after.
-          </p>
+          <p className="max-w-2xl text-sm font-bold leading-6 text-white/62 sm:text-base">Your AI outing assistant for better nights out.</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <a href="#launch-list" className="rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.02]">
-            Join Launch List
+            Join Launch List + Enter Giveaway
           </a>
           <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.07] px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-white/12">
             Log In
           </Link>
         </div>
-        <p className="text-sm leading-6 text-white/55">Join the Launch List for early access, NYC outing ideas, and a chance to win a $100 gift card.</p>
+        <p className="text-sm leading-6 text-white/55">Join the Launch List for early access and a chance to win a $100 gift card.</p>
       </div>
       <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-4 shadow-2xl shadow-black/35 backdrop-blur">
         <div className="rounded-[1.5rem] border border-white/10 bg-[#0d0505] p-5">
@@ -127,12 +120,12 @@ function Hero() {
           </div>
           <div className="space-y-5 pt-5">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Try a full-sentence search</p>
-            <div className="rounded-3xl border border-rose-300/20 bg-rose-500/10 p-5 text-xl font-black leading-8 text-white">
-              birthday dinner with lounge vibes
+            <div className="rounded-3xl border border-rose-300/20 bg-rose-500/10 p-4 text-base font-black leading-7 text-white sm:text-lg">
+              dinner, drinks, and something fun after
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {searchExamples.map((example) => (
-                <span key={example} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/75">
+                <span key={example} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/75 sm:text-sm">
                   {example}
                 </span>
               ))}
@@ -150,11 +143,10 @@ function FullSentenceSearch() {
       <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">Full-sentence search</p>
-          <h2 className="mt-3 text-4xl font-black tracking-[-0.035em] sm:text-5xl">Search the way you actually talk.</h2>
+          <h2 className="mt-3 text-3xl font-black tracking-[-0.035em] sm:text-4xl">Search like you text your friends.</h2>
         </div>
-        <div className="space-y-4 text-base leading-8 text-white/70 sm:text-lg">
-          <p>Type the full plan in one sentence — dinner and hookah after, girls night with drinks, a birthday dinner with lounge vibes, or a date night that includes something fun nearby. TheOutHaven helps turn your idea into a complete outing.</p>
-          <p className="font-bold text-white/88">Tell us the whole plan once — we’ll help you find the food, the vibe, and what to do after.</p>
+        <div className="space-y-3 text-base leading-7 text-white/70">
+          <p>Type the plan naturally. We’ll help match the food, the vibe, and what to do after.</p>
         </div>
       </div>
     </section>
@@ -166,7 +158,7 @@ function LaunchFormCard() {
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl shadow-black/30 sm:p-7">
       <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">TheOutHaven Launch Giveaway</p>
       <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Join the Launch List.</h2>
-      <p className="mt-3 text-sm leading-6 text-white/62">Join the Launch List for early access, NYC outing ideas, and a chance to win a $100 gift card.</p>
+      <p className="mt-3 text-sm leading-6 text-white/62">Join the Launch List for early access and a chance to win a $100 gift card.</p>
       <div className="mt-6">
         <LaunchWaitlistForm />
       </div>
@@ -233,7 +225,7 @@ function SocialFollow() {
 function Footer() {
   return (
     <footer className="border-t border-white/10 px-5 py-8 text-center text-xs leading-5 text-white/45 sm:px-6 lg:px-8">
-      <p>Launching Late Summer 2026. No purchase necessary. Must be 18+. One winner selected at random. Prize is a $100 gift card. TheOutHaven is not responsible for third-party availability, terms, or restrictions.</p>
+      <p>TheOutHaven · Launching Late Summer 2026. No purchase necessary. Must be 18+. One winner selected at random. Prize is a $100 gift card. TheOutHaven is not responsible for third-party availability, terms, or restrictions.</p>
     </footer>
   );
 }
