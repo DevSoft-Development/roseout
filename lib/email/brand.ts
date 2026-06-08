@@ -1,8 +1,17 @@
 import type { EmailDepartment, EmailSenderResolution } from "./types";
 
+const siteUrl = () => (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
+
 export const THEOUTHAVEN_BRAND = {
   name: "TheOutHaven",
   domainLabel: "TheOutHaven.com",
+  logoPath: "/toh_logo.png",
+  get siteUrl() {
+    return siteUrl();
+  },
+  get logoUrl() {
+    return `${siteUrl()}${this.logoPath}`;
+  },
   emails: {
     default: "concierge@theouthaven.com",
     support: "support@theouthaven.com",
