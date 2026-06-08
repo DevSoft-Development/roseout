@@ -221,6 +221,7 @@ export default function GiveawayAdminClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -323,6 +324,34 @@ export default function GiveawayAdminClient({
     setDeleteConfirmId(null);
     setMessage("Entry deleted.");
     setBusyEntryId(null);
+  }
+
+  async function sendUserReminders() {
+    setMessage("");
+    setError("");
+    setIsSendingReminders(true);
+
+    const response = await fetch("/api/admin/giveaway/send-user-reminders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const payload = await response
+      .json()
+      .catch(() => ({ success: false, error: "Unable to send reminders." }));
+
+    if (!response.ok || !payload.success) {
+      setError(payload.error || "Unable to send reminders.");
+      setIsSendingReminders(false);
+      return;
+    }
+
+    setMessage(
+      payload.message ||
+        `Reminder emails sent to ${payload.sent || 0} users. Skipped ${
+          payload.skipped || 0
+        } users.`,
+    );
+    setIsSendingReminders(false);
   }
 
   function exportCsv() {
@@ -475,11 +504,12 @@ export default function GiveawayAdminClient({
         <p className="text-sm leading-6 text-white/70">
           Users are not fully entered until their email is verified. Social
           follow and tag checkboxes are self-reported. Use the submitted social
-          handle to check the giveaway post comments. Verify that the user
-          followed @TheOutHaven and tagged 2 friends in the giveaway post
-          comments before marking the entry verified. Duplicate emails update
-          the existing signup. Duplicate social handles across different emails
-          should be reviewed or blocked.
+          handle to check the giveaway post comments. Admins receive a daily
+          reminder email for users missing email verification, follow, 2 friend
+          tags, or social handle. Verify that the user followed @TheOutHaven and
+          tagged 2 friends in the giveaway post comments before marking the
+          entry verified. Duplicate emails update the existing signup. Duplicate
+          social handles across different emails should be reviewed or blocked.
         </p>
       </section>
 
@@ -514,6 +544,13 @@ export default function GiveawayAdminClient({
             className="rounded-full bg-white px-5 py-3 text-sm font-black text-[#120606] disabled:opacity-60"
           >
             {isLoading ? "Loading..." : "Search"}
+          </button>
+          <button
+            disabled={isSendingReminders}
+            onClick={sendUserReminders}
+            className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:opacity-60"
+          >
+            {isSendingReminders ? "Sending..." : "Send User Reminders"}
           </button>
           <button
             onClick={exportCsv}
