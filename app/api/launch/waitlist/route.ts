@@ -101,13 +101,21 @@ async function logDuplicateEvent(input: {
 
 async function sendVerificationEmail(params: { email: string; fullName: string; token: string }) {
   const url = buildSiteUrl(`/launch/verify?token=${encodeURIComponent(params.token)}`);
+  const firstName = params.fullName.split(/\s+/)[0] || "there";
   await sendRawBrandedEmail({
     to: params.email,
     department: "account",
     subject: "Verify your email for TheOutHaven Launch Giveaway",
     heading: "Verify your email",
     preview: "You're almost entered. Verify your email for TheOutHaven Launch Giveaway.",
-    body: `Hi ${params.fullName},<br><br>You're almost entered.<br><br>Thanks for joining TheOutHaven Launch List. Please verify your email to complete your entry for a chance to win a $100 gift card.<br><br>Tap the button below to verify your email.<br><br>This verification link expires in 24 hours.<br><br>After verifying, make sure you follow @TheOutHaven on Instagram or TikTok and tag 2 friends in the giveaway post comments.`,
+    sections: [
+      { type: "paragraph", text: `Hi ${firstName},` },
+      { type: "paragraph", text: "You're almost entered." },
+      { type: "paragraph", text: "Thanks for joining TheOutHaven Launch List. Please verify your email to complete your entry for a chance to win a $100 gift card." },
+      { type: "paragraph", text: "Tap the button below to verify your email." },
+      { type: "paragraph", text: "This verification link expires in 24 hours." },
+      { type: "paragraph", text: "After verifying, make sure you follow @TheOutHaven on Instagram or TikTok and tag 2 friends in the giveaway post comments." },
+    ],
     cta: { label: "Verify Email", url },
   });
 }
