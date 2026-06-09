@@ -38,6 +38,14 @@ type RpcDebug = {
   recoveryTerms?: string[];
   activityRecoveryReason?: string | null;
   activityRecoveryTermsTried?: string[][];
+  neighborhoodRecoveryUsed?: boolean;
+  neighborhoodRecoveryReason?: "strict_neighborhood_zero_results" | null;
+  neighborhoodRecoveryFrom?: string | null;
+  neighborhoodRecoveryTo?: string | null;
+  neighborhoodRecoveryRadiusMiles?: number | null;
+  neighborhoodRecoveryResultCount?: number;
+  neighborhoodRecoveryTerms?: string[];
+  neighborhoodRecoveryGeo?: object | null;
   geoLatitude?: number | null;
   geoLongitude?: number | null;
   radiusMiles?: number | null;
@@ -270,6 +278,14 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     expandedGenericActivityRpcTerms: [],
     activityRecoveryReason: null,
     activityRecoveryTermsTried: [],
+    neighborhoodRecoveryUsed: false,
+    neighborhoodRecoveryReason: null,
+    neighborhoodRecoveryFrom: null,
+    neighborhoodRecoveryTo: null,
+    neighborhoodRecoveryRadiusMiles: null,
+    neighborhoodRecoveryResultCount: 0,
+    neighborhoodRecoveryTerms: [],
+    neighborhoodRecoveryGeo: null,
     geoLatitude: intent.geo.latitude ?? null,
     geoLongitude: intent.geo.longitude ?? null,
     radiusMiles: intent.geo.radiusMiles ?? null,

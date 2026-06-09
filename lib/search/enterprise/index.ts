@@ -9,6 +9,7 @@ import { createRpcDebug, recoverEnterpriseLane, searchEnterpriseLane } from "./r
 import { productionSafeDebug } from "./debug";
 import { getSearchSpeedStatus, logSearchPerformance } from "@/lib/search/performance";
 import { resolveSearchMarket, type UserSearchLocation } from "./markets";
+import { detectGeoIntent } from "./geo-taxonomy";
 import { logSearchHealthEvent } from "./searchHealthLogger";
 
 
@@ -140,6 +141,54 @@ const BAR_ACTIVITY_RECOVERY_TERMS = ["bar", "lounge", "cocktails", "drinks"];
 const ROOFTOP_RESTAURANT_RECOVERY_TERMS = ["restaurant", "rooftop", "views", "terrace", "outdoor dining"];
 function isRooftopRestaurantIntent(intent: SearchIntent) { return intent.needsRestaurant && !intent.needsActivity && /\b(rooftop restaurant|restaurant with (?:skyline views|views|outdoor dining|terrace)|skyline views|scenic views|terrace|outdoor dining)\b/i.test(intent.rawQuery); }
 
+
+function hasExactNeighborhoodOnlyLanguage(rawQuery: string): boolean {
+  return /\b(only|must be in|inside|strictly in|nothing outside|no outside|only in)\b/i.test(rawQuery || "");
+}
+
+function shouldRunNeighborhoodRestaurantFallback(args: {
+  rawQuery?: string;
+  primaryDomain?: string;
+  needsRestaurant?: boolean;
+  needsActivity?: boolean;
+  wantsPairing?: boolean;
+  restaurantCount?: number;
+  geo?: any;
+}) {
+  return (
+    args.primaryDomain === "restaurant" &&
+    args.needsRestaurant === true &&
+    args.needsActivity !== true &&
+    args.wantsPairing !== true &&
+    Number(args.restaurantCount || 0) === 0 &&
+    args.geo?.geoStrictness === "strict" &&
+    Boolean(args.geo?.neighborhood) &&
+    Boolean(args.geo?.borough) &&
+    !hasExactNeighborhoodOnlyLanguage(args.rawQuery || "")
+  );
+}
+
+function buildBoroughRestaurantFallbackGeo(geo: any) {
+  const resolvedBoroughGeo = geo?.borough ? detectGeoIntent(String(geo.borough)) : null;
+  const resolvedRadius = Number(resolvedBoroughGeo?.radiusMiles ?? 0);
+  const originalRadius = Number(geo?.radiusMiles ?? 0);
+
+  return {
+    ...geo,
+    ...(resolvedBoroughGeo ?? {}),
+    raw: geo?.borough ?? resolvedBoroughGeo?.raw ?? null,
+    neighborhood: null,
+    city: resolvedBoroughGeo?.city || geo?.city || "New York",
+    borough: geo?.borough ?? resolvedBoroughGeo?.borough ?? null,
+    county: resolvedBoroughGeo?.county ?? geo?.county,
+    state: resolvedBoroughGeo?.state || geo?.state || "NY",
+    latitude: resolvedBoroughGeo?.latitude ?? geo?.latitude ?? null,
+    longitude: resolvedBoroughGeo?.longitude ?? geo?.longitude ?? null,
+    radiusMiles: Math.max(originalRadius, resolvedRadius, 10),
+    geoStrictness: "medium",
+  };
+}
+
 function requiresStrictMixedPair(intent: SearchIntent) {
   return (
     intent.searchType === "mixed_outing" &&
@@ -161,7 +210,7 @@ function requiredPairingFailureReason(restaurantCount: number, activityCount: nu
 }
 
 function areaLabel(intent: SearchIntent) { return intent.geo.neighborhood ?? intent.geo.borough ?? intent.geo.city ?? intent.geo.county ?? intent.geo.raw ?? "that area"; }
-function replyFor(restaurants: EnterpriseLocation[], activities: EnterpriseLocation[], pairs: ReturnType<typeof createSearchPairs>, intent: SearchIntent) {
+function replyFor(restaurants: EnterpriseLocation[], activities: EnterpriseLocation[], pairs: ReturnType<typeof createSearchPairs>, intent: SearchIntent, neighborhoodRecovery?: { used: boolean; from: string | null; to: string | null }) {
   if (intent.wantsPairing) {
     const constrained = hasPairConstraint(intent);
     const walkableWord = intent.pairingPreference?.distanceMode === "same_area" ? "same-area" : "walkable";
@@ -182,7 +231,12 @@ function replyFor(restaurants: EnterpriseLocation[], activities: EnterpriseLocat
     if (restaurants.length) return constrained ? "I found restaurants, but no matching walkable activity nearby." : `I found restaurant options near ${areaLabel(intent)}, but I couldn’t find matching activities nearby yet.`;
     if (activities.length) return constrained ? "I found activities, but no matching walkable restaurant nearby." : `I found activity options near ${areaLabel(intent)}, but I couldn’t find matching restaurants nearby yet.`;
   }
-  if (restaurants.length) return "Found restaurant matches.";
+  if (restaurants.length) {
+    if (neighborhoodRecovery?.used && neighborhoodRecovery.from && neighborhoodRecovery.to) {
+      return `I couldn’t find strong matches directly in ${neighborhoodRecovery.from}, but here are nearby ${neighborhoodRecovery.to} options.`;
+    }
+    return "Found restaurant matches.";
+  }
   if (activities.length) return "Found activity matches.";
   return "I couldn’t find strong matches for that request yet.";
 }
@@ -274,6 +328,34 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
           isRooftopRestaurantIntent(effectiveIntent) ? ROOFTOP_RESTAURANT_RECOVERY_TERMS : undefined,
         );
         filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
+      }
+      if (shouldRunNeighborhoodRestaurantFallback({
+        rawQuery: effectiveIntent.rawQuery,
+        primaryDomain: effectiveIntent.primaryDomain,
+        needsRestaurant: effectiveIntent.needsRestaurant,
+        needsActivity: effectiveIntent.needsActivity,
+        wantsPairing: effectiveIntent.wantsPairing,
+        restaurantCount: filtered.length,
+        geo: effectiveIntent.geo,
+      })) {
+        const fallbackGeo = buildBoroughRestaurantFallbackGeo(effectiveIntent.geo);
+        const fallbackIntent = { ...effectiveIntent, geo: fallbackGeo };
+        const fallbackTerms = restaurantSearchTerms(effectiveIntent);
+        usedFallback = true;
+        debug.neighborhoodRecoveryUsed = true;
+        debug.neighborhoodRecoveryReason = "strict_neighborhood_zero_results";
+        debug.neighborhoodRecoveryFrom = effectiveIntent.geo.neighborhood ?? null;
+        debug.neighborhoodRecoveryTo = fallbackGeo.borough ?? null;
+        debug.neighborhoodRecoveryRadiusMiles = Number(fallbackGeo.radiusMiles ?? 0) || null;
+        debug.neighborhoodRecoveryTerms = fallbackTerms;
+        debug.neighborhoodRecoveryGeo = fallbackGeo;
+        const fallbackRaw = await searchEnterpriseLane(supabase,fallbackIntent,"restaurant",debug);
+        const fallbackFiltered = filterRestaurantResults(fallbackRaw,effectiveIntent);
+        debug.neighborhoodRecoveryResultCount = fallbackFiltered.length;
+        if (fallbackFiltered.length) {
+          restaurantRaw = fallbackFiltered;
+          filtered = fallbackFiltered;
+        }
       }
       perf.restaurant_rpc_ms = Date.now() - rpcStarted;
     };
@@ -484,7 +566,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       });
     }
     const responseDebug = options?.betaDebug ? fullDebug : productionSafeDebug(fullDebug);
-    const response: EnterpriseSearchResult = { success: true, reply: replyFor(restaurants,activities,pairs,effectiveIntent), restaurants, activities, pairs, matched_locations, matchedLocations: matched_locations, render_mode, renderMode: render_mode, card_counts, cardCounts: card_counts, debug: responseDebug };
+    const response: EnterpriseSearchResult = { success: true, reply: replyFor(restaurants,activities,pairs,effectiveIntent,{ used: Boolean(debug.neighborhoodRecoveryUsed), from: debug.neighborhoodRecoveryFrom ?? null, to: debug.neighborhoodRecoveryTo ?? null }), restaurants, activities, pairs, matched_locations, matchedLocations: matched_locations, render_mode, renderMode: render_mode, card_counts, cardCounts: card_counts, debug: responseDebug };
     void logSearchHealthEvent({
       source: options?.source ?? "enterprise_search",
       rawQuery: query,
