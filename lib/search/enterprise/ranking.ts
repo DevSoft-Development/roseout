@@ -7,6 +7,7 @@ import {
   isSpecificActivityIntent,
   termMatchesRecord,
   textForRecord,
+  detectSingleVenueWithIntent,
   PLACE_OF_WORSHIP_TERMS,
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
@@ -377,6 +378,39 @@ function isActivityLike(r: EnterpriseLocation) {
     ),
   );
 }
+
+function hasSingleVenueWithSportsSignal(terms: string[]) {
+  return terms.some((term) => /sports|game watch|tv|bar with tv|screen/.test(term));
+}
+
+export function scoreSingleVenueWithMatch(record: EnterpriseLocation, intent: SearchIntent) {
+  const singleVenue = detectSingleVenueWithIntent(intent.rawQuery);
+  if (!singleVenue.matched) return { score: 0, venueMatched: false, foodMatched: false, featureMatched: false, dualMatched: false };
+
+  const venueMatched = singleVenue.venueTerms.length === 0 || termMatchesRecord(record, singleVenue.venueTerms);
+  const foodMatched = singleVenue.foodTerms.length === 0 || termMatchesRecord(record, singleVenue.foodTerms);
+  const featureMatched = singleVenue.featureTerms.length === 0 || termMatchesRecord(record, singleVenue.featureTerms);
+  const sportsMatched = hasSingleVenueWithSportsSignal([...singleVenue.venueTerms, ...singleVenue.featureTerms]) && sportsWatchRecordSignal(record) > 0;
+
+  let score = 0;
+  if (venueMatched && singleVenue.venueTerms.length) score += 70;
+  if (foodMatched && singleVenue.foodTerms.length) score += 70;
+  if (featureMatched && singleVenue.featureTerms.length) score += 40;
+  if (sportsMatched) score += 25;
+  if (singleVenue.foodTerms.length && venueMatched && !foodMatched) score -= 60;
+  if (singleVenue.venueTerms.length && foodMatched && !venueMatched) score -= 60;
+  if (isClearlyActivityOnly(record) && !isRestaurantLike(record)) score -= 80;
+  if (singleVenue.featureTerms.length && isRestaurantLike(record) && !venueMatched && !featureMatched) score -= 80;
+
+  (record as any).singleVenueWithScore = score;
+  (record as any).singleVenueWithVenueMatched = venueMatched;
+  (record as any).singleVenueWithFoodMatched = foodMatched;
+  (record as any).singleVenueWithFeatureMatched = featureMatched;
+  (record as any).singleVenueWithDualMatched = Boolean(venueMatched && (foodMatched || featureMatched));
+
+  return { score, venueMatched, foodMatched, featureMatched, dualMatched: Boolean(venueMatched && (foodMatched || featureMatched)) };
+}
+
 const CURATED_TERMS = [
   "romantic",
   "date night",
@@ -1167,12 +1201,14 @@ function relevance(
     domain === "restaurant"
       ? scoreRestaurantQuality(r, intent).score
       : scoreActivityQuality(r, intent).score;
+  const singleVenueWithScore = domain === "restaurant" ? scoreSingleVenueWithMatch(r, intent).score : 0;
   const quality =
     Number(r.theouthaven_score ?? r.quality_score ?? 0) +
     Number(r.rating ?? 0) * 2 +
     Math.min(Number(r.review_count ?? 0) / 100, 10) +
-    domainQuality;
-  r.term_score = termScore + alternativeScore + generic;
+    domainQuality +
+    singleVenueWithScore;
+  r.term_score = termScore + alternativeScore + generic + singleVenueWithScore;
   r.geo_score = geo;
   r.domain_score = domainScore;
   r.quality_rank_score = quality;

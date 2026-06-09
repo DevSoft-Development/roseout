@@ -12,6 +12,7 @@ import {
   detectMealTerms,
   createEmptyActivityIntent,
   createEmptyRestaurantIntent,
+  detectSingleVenueWithIntent,
 } from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
@@ -733,7 +734,8 @@ function createEnterpriseIntentFastPathResult(
 ): EnterpriseIntentFastPathResult {
   const query = rawQuery.toLowerCase().trim();
 
-  if (hasSportsWatchFastPathIntent(query)) {
+  const explicitSportsViewing = /\b(tv|tvs|screen|screens|watch|showing|viewing|game|games|watch party|game day|big screen|big screens)\b/i.test(query);
+  if (explicitSportsViewing && hasSportsWatchFastPathIntent(query)) {
     return {
       intent: createSportsWatchFastPathIntent(rawQuery),
       reason: "matched sports-watch activity fast path",
@@ -765,6 +767,32 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
+
+  if (hasRestaurantOnlyFastPathIntent(query)) {
+    return {
+      intent: createRestaurantOnlyFastPathIntent(rawQuery),
+      reason: "matched restaurant-only fast path",
+      confidence: 0.9,
+    };
+  }
+
+
+  const singleVenueWith = detectSingleVenueWithIntent(query);
+  if (singleVenueWith.matched) {
+    return {
+      intent: deterministicIntentFromQuery(rawQuery),
+      reason: "with_connector_single_venue",
+      confidence: 0.94,
+    };
+  }
+
+  if (hasSportsWatchFastPathIntent(query)) {
+    return {
+      intent: createSportsWatchFastPathIntent(rawQuery),
+      reason: "matched sports-watch activity fast path",
+      confidence: 0.9,
+    };
+  }
   if (isActivityVenueOnlyQuery(query)) {
     return {
       intent: createActivityOnlyFastPathIntent(rawQuery),
@@ -1370,6 +1398,14 @@ export async function parseEnterpriseIntent(
   const startedAt = Date.now();
   const debug = options?.debug ?? {};
   const baseline = deterministicIntentFromQuery(query);
+  const singleVenueDebug = detectSingleVenueWithIntent(query);
+  if (singleVenueDebug.matched) {
+    debug.singleVenueWithIntentUsed = true;
+    debug.singleVenueWithIntentReason = "with_connector_single_venue";
+    debug.singleVenueWithVenueTerms = singleVenueDebug.venueTerms;
+    debug.singleVenueWithFoodTerms = singleVenueDebug.foodTerms;
+    debug.singleVenueWithFeatureTerms = singleVenueDebug.featureTerms;
+  }
 
   debug.intentLlmFastModel = SEARCH_INTENT_FAST_MODEL;
   debug.intentLlmFallbackModel = SEARCH_INTENT_FALLBACK_MODEL;
@@ -1394,6 +1430,7 @@ export async function parseEnterpriseIntent(
     "matched activity-only fast path",
     "matched activity-only venue fast path",
     "matched restaurant-only fast path",
+    "with_connector_single_venue",
   ]);
 
   if (

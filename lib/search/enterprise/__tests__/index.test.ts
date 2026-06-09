@@ -204,3 +204,46 @@ describe("runEnterpriseSearch neighborhood restaurant fallback", () => {
     expect(result.debug?.neighborhoodRecoveryUsed).toBe(false);
   });
 });
+
+describe("runEnterpriseSearch single-venue with behavior", () => {
+  it("does not create pairs or activity copy for bar with wings", async () => {
+    const calls: RpcCall[] = [];
+    const supabase = {
+      rpc: async (name: string, params: Record<string, any>) => {
+        calls.push({ name, params });
+        if (params.p_domain !== "restaurant") return { data: [], error: null };
+        return {
+          data: [
+            restaurant({
+              id: "bar-wings",
+              name: "Queens Sports Bar Wings",
+              borough: "Queens",
+              county: "Queens County",
+              primary_category: "sports bar pub restaurant",
+              cuisine: "American bar food chicken wings",
+              tags: ["bar", "sports bar", "pub", "wings", "chicken wings"],
+              description: "Sports-bar-style pub serving wings and bar food.",
+            }),
+          ],
+          error: null,
+        };
+      },
+    };
+
+    const result = await runEnterpriseSearch("bar with wings nyc", {
+      supabase,
+      useLLM: false,
+      betaDebug: true,
+    });
+
+    expect(result.debug?.singleVenueWithIntentUsed).toBe(true);
+    expect(result.debug?.pair_count).toBe(0);
+    expect(result.pairs).toHaveLength(0);
+    expect(result.activities).toHaveLength(0);
+    expect(result.renderMode).toBe("restaurant_cards");
+    expect(result.reply).not.toContain("restaurant and activity options");
+    expect(result.reply).toMatch(/bars|sports-bar-style spots/i);
+    expect(result.reply).toMatch(/wings/i);
+    expect(calls.some((call) => call.params.p_domain === "activity")).toBe(false);
+  });
+});
