@@ -480,6 +480,61 @@ describe("fast path expansion batch fixes", () => {
     });
   }
 
+  it("keeps broad chicken lunch intent broad for restaurant-only searches", async () => {
+    const parsed = await parseEnterpriseIntent("chicken lunch in Astoria", {
+      useLLM: true,
+    });
+
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.fastPathReason).toBe("matched restaurant-only fast path");
+    expect(parsed.intent.searchType).toBe("restaurant");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+    expect(parsed.intent.wantsPairing).toBe(false);
+
+    expect(parsed.intent.geo.raw).toBe("Astoria");
+    expect(parsed.intent.geo.borough).toBe("Queens");
+    expect(parsed.intent.geo.state).toBe("NY");
+
+    const terms = restaurantSearchTerms(parsed.intent);
+
+    expect(terms).toEqual(
+      expect.arrayContaining([
+        "lunch",
+        "chicken",
+        "fried chicken",
+        "hot chicken",
+        "wings",
+      ]),
+    );
+
+    expect(terms).not.toEqual(["lunch", "fried chicken"]);
+    expect(activitySearchTerms(parsed.intent)).toEqual([]);
+  });
+
+  it("recognizes chicken in Astoria as a restaurant-only fast path", async () => {
+    const parsed = await parseEnterpriseIntent("chicken in Astoria", {
+      useLLM: true,
+    });
+
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.fastPathReason).toBe("matched restaurant-only fast path");
+    expect(parsed.intent.searchType).toBe("restaurant");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+
+    const terms = restaurantSearchTerms(parsed.intent);
+
+    expect(terms).toEqual(
+      expect.arrayContaining([
+        "chicken",
+        "fried chicken",
+        "hot chicken",
+        "wings",
+      ]),
+    );
+  });
+
   it("keeps phrase RPC terms without adding noisy single-word tokens", () => {
     const intent = normalizeIntent("bar with tvs watch party game day mini golf live music", {
       searchType: "activity",

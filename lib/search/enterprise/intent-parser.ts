@@ -57,6 +57,10 @@ const FAST_PATH_RESTAURANT_SIGNAL_TERMS = [
   "tacos",
   "pizza",
   "burgers",
+  "chicken",
+  "fried chicken",
+  "hot chicken",
+  "wings",
   "rooftop dinner",
   "cocktails with dinner",
 ];
@@ -678,7 +682,7 @@ function hasRestaurantOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
   const restaurantFeature = /\b(rooftop restaurant|restaurant with (?:a )?rooftop|restaurant with skyline views|restaurant with views|restaurant with outdoor dining|restaurant with terrace|dinner on (?:a )?rooftop)\b/.test(q) || hasRestaurantFeatureWithConnector(q);
   const hasActivity = /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|watch|game)\b/.test(q) || (/\brooftop\b/.test(q) && !restaurantFeature);
-  const hasRestaurant = restaurantFeature || /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
+  const hasRestaurant = restaurantFeature || /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|chicken|fried chicken|hot chicken|wings|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
   return hasRestaurant && !hasActivity;
 }
 
@@ -703,6 +707,7 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
   if (/\bsushi\b/.test(q)) { cuisineTerms.push("sushi", "japanese"); foodTerms.push("sushi", "sashimi", "omakase", "nigiri", "maki", "rolls"); }
   if (/\bmexican\b/.test(q)) { cuisineTerms.push("mexican"); foodTerms.push("mexican", "tacos", "taco", "burritos", "birria", "taqueria", "tex-mex"); }
   if (/\bitalian\b/.test(q)) { cuisineTerms.push("italian"); foodTerms.push("italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"); }
+  if (/\b(chicken|fried chicken|hot chicken|wings?)\b/.test(q)) { cuisineTerms.push("chicken"); foodTerms.push("chicken", "fried chicken", "hot chicken", "wings"); }
   if (/\bromantic|date night\b/.test(q)) vibeTerms.push("romantic", "date night");
   if (/\bcasual\b/.test(q)) vibeTerms.push("casual");
   if (/\bbirthday\b/.test(q)) vibeTerms.push("birthday");
