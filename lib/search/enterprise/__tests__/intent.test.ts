@@ -756,3 +756,93 @@ describe("final cleanup architecture regressions", () => {
     expect(activitySearchTerms(parsed.intent)).toEqual([]);
   });
 });
+
+describe("single-venue with intent regressions", () => {
+  const singleVenueCases = [
+    {
+      query: "bar with wings nyc",
+      food: ["wings", "chicken wings"],
+      categories: ["bar", "sports bar", "pub"],
+      features: ["bar food"],
+    },
+    {
+      query: "sports bar with burgers in Queens",
+      food: ["burger", "burgers"],
+      categories: ["sports bar", "bar", "pub"],
+      borough: "Queens",
+    },
+    {
+      query: "restaurant with hookah in Queens",
+      food: [],
+      categories: ["restaurant"],
+      features: ["hookah", "lounge"],
+      borough: "Queens",
+    },
+    {
+      query: "seafood restaurant with live music",
+      food: ["seafood"],
+      categories: ["restaurant"],
+      features: ["live music", "music"],
+    },
+    {
+      query: "pizza place with games",
+      food: ["pizza"],
+      categories: ["place"],
+      features: ["games", "arcade", "pool", "billiards"],
+    },
+    {
+      query: "vegan restaurant with cocktails",
+      food: ["vegan", "plant based"],
+      categories: ["restaurant"],
+      features: ["drinks", "cocktails", "bar"],
+    },
+    {
+      query: "halal restaurant with outdoor seating",
+      food: ["halal", "halal food", "halal restaurant"],
+      categories: ["restaurant", "halal restaurant"],
+      features: ["outdoor seating", "patio"],
+    },
+  ];
+
+  for (const testCase of singleVenueCases) {
+    it(`keeps ${testCase.query} as one restaurant/venue search`, async () => {
+      const parsed = await parseEnterpriseIntent(testCase.query, { useLLM: false });
+      expect(parsed.debug.singleVenueWithIntentUsed).toBe(true);
+      expect(parsed.intent.searchType).toBe("restaurant");
+      expect(parsed.intent.primaryDomain).toBe("restaurant");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(false);
+      expect(parsed.intent.wantsPairing).toBe(false);
+      expect(parsed.intent.activityIntent.activityTerms).toEqual([]);
+      expect(parsed.intent.pairingPreference?.requiresPairing).toBe(false);
+      expect(parsed.intent.restaurantIntent.foodTerms).toEqual(
+        expect.arrayContaining(testCase.food),
+      );
+      expect(parsed.intent.restaurantIntent.categoryTerms).toEqual(
+        expect.arrayContaining(testCase.categories),
+      );
+      if (testCase.features?.length) {
+        expect(parsed.intent.restaurantIntent.featureTerms).toEqual(
+          expect.arrayContaining(testCase.features),
+        );
+      }
+      if (testCase.borough) expect(parsed.intent.geo.borough).toBe(testCase.borough);
+      expect(activitySearchTerms(parsed.intent)).toEqual([]);
+      expect(restaurantSearchTerms(parsed.intent).length).toBeGreaterThan(0);
+    });
+  }
+
+  for (const query of [
+    "wings then bar",
+    "chicken dinner and lounge after",
+    "dinner before a show",
+  ]) {
+    it(`keeps true sequence query mixed: ${query}`, () => {
+      const intent = normalizeIntent(query);
+      expect(intent.searchType).toBe("mixed_outing");
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(true);
+      expect(intent.wantsPairing).toBe(true);
+    });
+  }
+});

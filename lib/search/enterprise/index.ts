@@ -2,7 +2,8 @@ import { supabaseAdmin } from "../../supabaseAdmin";
 import type { EnterpriseLocation, EnterpriseSearchResult, SearchIntent } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
 import { activitySearchTerms, isBroadGenericActivityIntent, restaurantSearchTerms } from "./normalize-intent";
-import { explainRejection, filterActivityResults, filterRestaurantResults, rankActivityResults, rankRestaurantResults } from "./ranking";
+import { detectSingleVenueWithIntent } from "./taxonomy";
+import { explainRejection, filterActivityResults, filterRestaurantResults, rankActivityResults, rankRestaurantResults, scoreSingleVenueWithMatch } from "./ranking";
 import { createPairingDebug, createSearchPairs, getPairCityState, getPairGeoPriority } from "./pairing";
 import { formatDistanceFromRestaurant, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, shouldHidePairForWalkingLimit, userAskedForWalking } from "./distance";
 import { createRpcDebug, recoverEnterpriseLane, searchEnterpriseLane } from "./rpc";
@@ -232,6 +233,14 @@ function replyFor(restaurants: EnterpriseLocation[], activities: EnterpriseLocat
     if (activities.length) return constrained ? "I found activities, but no matching walkable restaurant nearby." : `I found activity options near ${areaLabel(intent)}, but I couldn’t find matching restaurants nearby yet.`;
   }
   if (restaurants.length) {
+    const singleVenue = detectSingleVenueWithIntent(intent.rawQuery);
+    if (singleVenue.matched) {
+      const q = intent.rawQuery.toLowerCase();
+      if (/\bbar\b|\bsports bar\b|\bpub\b/.test(q) && /\bwings?\b|\bchicken wings\b/.test(q)) return "Here are NYC bars and sports-bar-style spots that match wings.";
+      if (/\bhookah\b/.test(q)) return "Here are restaurant-style spots that match hookah.";
+      if (/\bseafood\b/.test(q) && /\blive music\b/.test(q)) return "Here are seafood spots that also match live music.";
+      return "Here are places that match both parts of your search.";
+    }
     if (neighborhoodRecovery?.used && neighborhoodRecovery.from && neighborhoodRecovery.to) {
       return `I couldn’t find strong matches directly in ${neighborhoodRecovery.from}, but here are nearby ${neighborhoodRecovery.to} options.`;
     }
@@ -407,8 +416,29 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     perf.rpc_ms = perf.restaurant_rpc_ms + perf.activity_rpc_ms;
     const restaurantRejectedReasons=restaurantRaw.map(r=>explainRejection(r,effectiveIntent,"restaurant")).filter(Boolean); const activityRejectedReasons=activityRaw.map(r=>explainRejection(r,effectiveIntent,"activity")).filter(Boolean); const restaurantRejectedSummary=rejectionSummary(restaurantRaw,effectiveIntent,"restaurant"); const activityRejectedSummary=rejectionSummary(activityRaw,effectiveIntent,"activity");
     const rankStarted = Date.now();
-    const rankedRestaurants = rankRestaurantResults(uniqueById(restaurantRaw), effectiveIntent);
+    let rankedRestaurants = rankRestaurantResults(uniqueById(restaurantRaw), effectiveIntent);
     const rankedActivities = rankActivityResults(uniqueById(activityRaw), effectiveIntent);
+    const singleVenueWith = detectSingleVenueWithIntent(effectiveIntent.rawQuery);
+    if (singleVenueWith.matched) {
+      const scoredSingleVenue = rankedRestaurants.map((restaurant) => ({
+        restaurant,
+        match: scoreSingleVenueWithMatch(restaurant, effectiveIntent),
+      }));
+      const strongDualMatches = scoredSingleVenue.filter(({ match }) => match.dualMatched && match.score >= 110);
+      (debug as any).singleVenueWithIntentUsed = true;
+      (debug as any).singleVenueWithIntentReason = "with_connector_single_venue";
+      (debug as any).singleVenueWithVenueTerms = singleVenueWith.venueTerms;
+      (debug as any).singleVenueWithFoodTerms = singleVenueWith.foodTerms;
+      (debug as any).singleVenueWithFeatureTerms = singleVenueWith.featureTerms;
+      (debug as any).singleVenueWithStrongDualMatchCount = strongDualMatches.length;
+      if (strongDualMatches.length >= 3) {
+        rankedRestaurants = scoredSingleVenue
+          .filter(({ match }) => match.dualMatched)
+          .map(({ restaurant }) => restaurant);
+      } else {
+        (debug as any).singleVenueWithLooseMatchesUsed = true;
+      }
+    }
     perf.ranking_ms = Date.now() - rankStarted;
 
     const restaurantQualityScorePreview = rankedRestaurants.slice(0, 12).map((restaurant) => ({

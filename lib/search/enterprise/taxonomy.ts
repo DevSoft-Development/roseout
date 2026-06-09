@@ -168,6 +168,164 @@ export function hasOnlyGenericActivityTerms(terms: string[]) {
   return terms.every((term) => generic.has(term.toLowerCase()));
 }
 
+
+export type SingleVenueWithIntent = {
+  matched: boolean;
+  venueTerms: string[];
+  foodTerms: string[];
+  featureTerms: string[];
+  activityLikeFeatureTerms: string[];
+  geoText?: string | null;
+};
+
+export const FOOD_WITH_TERMS = [
+  "wings", "wing", "chicken wings", "chicken", "fried chicken", "hot chicken",
+  "burger", "burgers", "taco", "tacos", "pizza", "pasta", "sushi", "ramen",
+  "seafood", "steak", "steakhouse", "brunch", "breakfast", "lunch", "dinner",
+  "dessert", "pastries", "coffee", "vegan", "vegetarian", "halal", "jamaican",
+  "caribbean", "thai", "italian", "mexican", "soul food", "bbq", "bar food",
+  "small bites", "food",
+];
+
+export const VENUE_WITH_TERMS = [
+  "restaurant", "spot", "place", "bar", "bars", "sports bar", "pub", "tavern",
+  "brewery", "beer hall", "gastropub", "lounge", "rooftop", "rooftop bar",
+  "cafe", "coffee shop", "bakery", "diner", "brunch spot", "pizza place",
+  "burger spot", "seafood restaurant", "steakhouse", "sushi spot", "ramen spot",
+  "halal restaurant", "vegan restaurant",
+];
+
+export const SINGLE_VENUE_FEATURE_TERMS = [
+  "drinks", "cocktails", "beer", "wine", "happy hour", "outdoor seating", "patio",
+  "rooftop", "views", "hookah", "live music", "dj", "dancing", "karaoke",
+  "games", "arcade", "pool", "billiards", "sports", "tv", "game watch",
+  "dessert", "coffee", "pastries", "small bites",
+];
+
+export const TRUE_SEQUENCE_CONNECTORS = [
+  "then", "after", "afterwards", "before", "later", "nearby after",
+  "activity after", "things to do after", "drinks after", "bar after",
+  "lounge after", "hookah after", "show after",
+];
+
+export function escapeRegex(term: string) {
+  return String(term || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function withTermPattern(term: string) {
+  return new RegExp(`\\b${escapeRegex(term).replace(/\\s+/g, "\\\\s+")}\\b`, "i");
+}
+
+export function uniqueIntentTerms(items: string[]) {
+  return uniq(items);
+}
+
+export function hasTrueSequenceConnector(q: string): boolean {
+  const text = String(q || "").toLowerCase();
+  return /\b(then|after|afterwards|before|later)\b/.test(text)
+    || /\b(things to do after|activity after|drinks after|bar after|lounge after|hookah after|show after)\b/.test(text);
+}
+
+export function hasSingleVenueWithConnector(q: string): boolean {
+  const text = String(q || "").toLowerCase();
+  return /\b(with|serving|that serves|that has|has|have|featuring|including)\b/.test(text);
+}
+
+export function expandVenueTerms(terms: string[]) {
+  return uniq(terms.flatMap((term) => {
+    switch (term.toLowerCase()) {
+      case "bar":
+      case "bars":
+        return ["bar", "sports bar", "pub"];
+      case "sports bar":
+        return ["sports bar", "bar", "pub", "game watch", "tv"];
+      case "lounge":
+        return ["lounge", "bar", "nightlife"];
+      case "rooftop":
+        return ["rooftop", "rooftop bar", "views"];
+      default:
+        return [term];
+    }
+  }));
+}
+
+export function expandFoodTerms(terms: string[]) {
+  return uniq(terms.flatMap((term) => {
+    switch (term.toLowerCase()) {
+      case "wing":
+      case "wings":
+        return ["wings", "chicken wings"];
+      case "burger":
+      case "burgers":
+        return ["burger", "burgers"];
+      case "taco":
+      case "tacos":
+        return ["taco", "tacos", "mexican"];
+      case "vegan":
+        return ["vegan", "vegan restaurant", "plant based", "plant-based"];
+      case "halal":
+        return ["halal", "halal food", "halal restaurant"];
+      default:
+        return [term];
+    }
+  }));
+}
+
+export function expandFeatureTerms(terms: string[]) {
+  return uniq(terms.flatMap((term) => {
+    switch (term.toLowerCase()) {
+      case "drinks":
+        return ["drinks", "cocktails", "bar"];
+      case "cocktails":
+        return ["drinks", "cocktails", "bar"];
+      case "happy hour":
+        return ["happy hour", "drinks", "bar"];
+      case "hookah":
+        return ["hookah", "lounge"];
+      case "live music":
+        return ["live music", "music"];
+      case "games":
+        return ["games", "arcade", "pool", "billiards"];
+      case "outdoor seating":
+        return ["outdoor seating", "patio"];
+      default:
+        return [term];
+    }
+  }));
+}
+
+export function extractSingleVenueWithTerms(q: string) {
+  const text = String(q || "").toLowerCase();
+  const venueTerms = VENUE_WITH_TERMS.filter((term) => withTermPattern(term).test(text));
+  const foodTerms = FOOD_WITH_TERMS.filter((term) => withTermPattern(term).test(text));
+  const featureTerms = SINGLE_VENUE_FEATURE_TERMS.filter((term) => withTermPattern(term).test(text));
+  return {
+    venueTerms: uniq(expandVenueTerms(venueTerms)),
+    foodTerms: uniq(expandFoodTerms(foodTerms)),
+    featureTerms: uniq(expandFeatureTerms(featureTerms)),
+  };
+}
+
+export function detectSingleVenueWithIntent(q: string): SingleVenueWithIntent {
+  const text = String(q || "").toLowerCase();
+  if (!hasSingleVenueWithConnector(text) || hasTrueSequenceConnector(text)) {
+    return { matched: false, venueTerms: [], foodTerms: [], featureTerms: [], activityLikeFeatureTerms: [], geoText: null };
+  }
+  const terms = extractSingleVenueWithTerms(text);
+  const hasRestaurantStyleVenue = terms.venueTerms.some((term) => /restaurant|spot|place|cafe|coffee shop|bakery|diner|steakhouse/.test(term));
+  const matched = terms.venueTerms.length > 0 && (terms.foodTerms.length > 0 || (hasRestaurantStyleVenue && terms.featureTerms.length > 0));
+  return {
+    matched,
+    ...terms,
+    activityLikeFeatureTerms: terms.featureTerms.filter((term) => /hookah|live music|music|dj|dancing|karaoke|games|arcade|pool|billiards|sports|tv|game watch/.test(term)),
+    geoText: null,
+  };
+}
+
+export function isSingleVenueWithIntent(q: string): boolean {
+  return detectSingleVenueWithIntent(q).matched;
+}
+
 export const FOOD_TERMS = uniq(Object.values(FOOD_SYNONYMS).flat());
 export const MEAL_TERMS = uniq(Object.values(MEAL_SYNONYMS).flat());
 export const ACTIVITY_TERMS = uniq(Object.values(ACTIVITY_SYNONYMS).flat());

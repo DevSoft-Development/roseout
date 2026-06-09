@@ -263,3 +263,55 @@ it("counts Playoffs Sport Lounge as sports-watch fit", () => {
   );
   expect(scored.score).toBeGreaterThan(50);
 });
+
+it("ranks dual-match single-venue-with records first", () => {
+  const intent = normalizeIntent("bar with wings nyc");
+  const ranked = rankRestaurantResults([
+    {
+      id: "a",
+      name: "Ace Sports Bar",
+      restaurant_name: "Ace Sports Bar",
+      location_type: "restaurant",
+      primary_category: "sports bar pub",
+      cuisine: "American bar food",
+      description: "Sports bar and pub serving chicken wings with TVs.",
+      image_url: "x.jpg",
+    },
+    {
+      id: "b",
+      name: "Chicken Only",
+      restaurant_name: "Chicken Only",
+      location_type: "restaurant",
+      primary_category: "chicken restaurant",
+      cuisine: "Chicken wings",
+      description: "Chicken wings and fried chicken counter service.",
+      image_url: "x.jpg",
+    },
+    {
+      id: "c",
+      name: "Velvet Lounge",
+      restaurant_name: "Velvet Lounge",
+      location_type: "restaurant",
+      primary_category: "lounge bar",
+      cuisine: "American",
+      description: "Cocktail lounge with nightlife but no wings.",
+      image_url: "x.jpg",
+    },
+    {
+      id: "d",
+      name: "Night Activity",
+      activity_name: "Night Activity",
+      location_type: "activity",
+      primary_category: "nightlife activity",
+      activity_type: "nightlife",
+      description: "Nightlife activity with music.",
+      image_url: "x.jpg",
+    },
+  ] as any, intent);
+
+  expect(ranked[0].id).toBe("a");
+  expect((ranked.find((item) => item.id === "a") as any).singleVenueWithScore).toBeGreaterThan(
+    (ranked.find((item) => item.id === "b") as any).singleVenueWithScore,
+  );
+  expect(ranked.map((item) => item.id)).not.toContain("d");
+});

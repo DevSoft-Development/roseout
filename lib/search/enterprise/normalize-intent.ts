@@ -12,6 +12,7 @@ import {
   createEmptyRestaurantIntent,
   detectActivityTerms,
   detectCuisineTerms,
+  detectSingleVenueWithIntent,
   detectFoodTerms,
   detectMealTerms,
   expandActivitySynonyms,
@@ -364,6 +365,58 @@ function isActivityVenueOnlyQuery(query: string) {
 }
 function shouldForceActivityOnlyVenue(rawQuery: string) { return isActivityVenueOnlyQuery(rawQuery); }
 function resetPairingPreference() { return { requiresPairing: false, distanceMode: "any" as const, maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
+
+function cuisineTermsFromSingleVenueFoodTerms(foodTerms: string[]) {
+  return uniq(
+    foodTerms.filter((term) =>
+      /^(mexican|italian|thai|jamaican|caribbean|vegan|vegetarian|halal|seafood|steak|sushi|ramen|bbq|soul food|american)$/.test(
+        term,
+      ),
+    ),
+  );
+}
+
+function createSingleVenueWithSearchIntent(query: string): SearchIntent | null {
+  const singleVenue = detectSingleVenueWithIntent(query);
+  if (!singleVenue.matched) return null;
+  const geo = detectGeoIntent(query);
+  const meals = detectMealTerms(query);
+  const categoryTerms = uniq(singleVenue.venueTerms);
+  const foodTerms = uniq(singleVenue.foodTerms);
+  const featureTerms = uniq([
+    ...singleVenue.featureTerms,
+    ...(foodTerms.some((term) => /wings|chicken wings/.test(term)) && categoryTerms.some((term) => /bar|pub|sports bar/.test(term))
+      ? ["bar food"]
+      : []),
+  ]);
+
+  return {
+    rawQuery: query,
+    searchType: "restaurant",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    pairingPreference: resetPairingPreference(),
+    restaurantIntent: {
+      ...createEmptyRestaurantIntent(),
+      mealTerms: uniq(meals),
+      foodTerms,
+      cuisineTerms: cuisineTermsFromSingleVenueFoodTerms(foodTerms),
+      categoryTerms,
+      featureTerms,
+    },
+    activityIntent: createEmptyActivityIntent(),
+    geo,
+    occasion: null,
+    partySize: null,
+    timeContext: meals[0] ?? null,
+    budget: null,
+    vibe: [],
+    strictness: "high",
+  };
+}
+
 function venueTermsFromRawQuery(rawQuery: string) {
   const q = normalizeFinalTerm(rawQuery);
   const terms: string[] = [];
@@ -771,6 +824,9 @@ export function detectPairingPreference(
 }
 
 export function deterministicIntentFromQuery(query: string): SearchIntent {
+  const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
+  if (singleVenueWithIntent) return singleVenueWithIntent;
+
   const food = detectFoodTerms(query);
   const cuisine = detectCuisineTerms(query);
   const meals = detectMealTerms(query);
@@ -1089,6 +1145,23 @@ export function normalizeIntent(
   finalIntent = cleanupRelaxedIntent(finalIntent);
   finalIntent = finalDomainCleanup(finalIntent);
   finalIntent = finalCleanIntentTerms(finalIntent);
+  const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
+  if (singleVenueWithIntent) {
+    return {
+      ...finalIntent,
+      ...singleVenueWithIntent,
+      geo: finalIntent.geo?.raw ? finalIntent.geo : singleVenueWithIntent.geo,
+      restaurantIntent: {
+        ...singleVenueWithIntent.restaurantIntent,
+        mealTerms: uniq([
+          ...(singleVenueWithIntent.restaurantIntent.mealTerms ?? []),
+          ...(finalIntent.restaurantIntent.mealTerms ?? []),
+        ]),
+      },
+      activityIntent: createEmptyActivityIntent(),
+      pairingPreference: resetPairingPreference(),
+    };
+  }
   return finalIntent;
 }
 
