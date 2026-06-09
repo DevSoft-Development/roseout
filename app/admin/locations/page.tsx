@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import AdminLocationsSearchBox from "./AdminLocationsSearchBox";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
+import FoodTermBackfillPanel from "../dashboard/locations/FoodTermBackfillPanel";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
@@ -894,6 +895,8 @@ export default async function AdminLocationsPage({
             ))}
           </div>
         </section>
+
+        <FoodTermBackfillPanel />
 
         <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
           <div className="flex flex-col gap-3 border-b border-black/10 bg-[#fffaf6] p-4 md:flex-row md:items-center md:justify-between">
