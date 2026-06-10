@@ -265,6 +265,7 @@ const BLOCKED = new Set([
 const ACTIVITY_ONLY_PROBE_TERMS = [
   "comedy club",
   "arcade",
+  "claw",
   "claw arcade",
   "cooking class",
   "paint and sip",
@@ -306,6 +307,7 @@ const LIKELY_FOOD_PROBE_TERMS = [
 ];
 const SPECIFIC_AUTO_APPLY_CATEGORIES = [
   "bakery",
+  "cafe",
   "coffee shop",
   "italian restaurant",
   "mexican restaurant",
@@ -361,6 +363,10 @@ const json = (body: unknown, status = 200) =>
   });
 const parseBoolean = (value: unknown) =>
   value === true || value === "true" || value === 1 || value === "1";
+const parsePositiveInt = (value: unknown, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : fallback;
+};
 const nameOf = (row: any) =>
   row.name || row.restaurant_name || row.activity_name || "";
 const addrOf = (row: any) => row.address || row.street_address || "";
@@ -603,17 +609,24 @@ function foodProbeContext(row: any, place: any) {
   );
 }
 
-function buildFoodProbeQueries(row: any, place: any) {
+function isActivityOnlyForFoodProbe(row: any, place: any) {
+  return hasAny(foodProbeContext(row, place), ACTIVITY_ONLY_PROBE_TERMS);
+}
+
+function isLikelyFoodProbeCandidate(row: any, place: any) {
+  return hasAny(foodProbeContext(row, place), LIKELY_FOOD_PROBE_TERMS);
+}
+
+function buildFoodProbeQueries(row: any, place: any, maxProbes = 2) {
   const context = foodProbeContext(row, place);
   const name = nameOf(row) || place.displayName?.text || "";
   const city = row.city || row.borough || row.neighborhood || "";
-  const address = addrOf(row) || place.formattedAddress || "";
   const queries: string[] = [];
   const add = (...items: string[]) =>
     queries.push(...items.map((item) => item.trim()).filter(Boolean));
 
   if (hasAny(context, ["pizza", "pizzeria"]))
-    add(`${name} ${city} pizza`, `${name} ${address} pizzeria`);
+    add(`${name} ${city} pizza`, `${name} ${city} pizzeria`);
   else if (
     hasAny(context, ["bakery", "bagel", "cafe", "coffee shop", "coffee"])
   )
@@ -636,9 +649,17 @@ function buildFoodProbeQueries(row: any, place: any) {
     );
   else add(`${name} ${city} menu`, `${name} ${city} cuisine`);
 
-  return clean(queries)
-    .map((query) => query.replace(/\s+/g, " "))
-    .filter(Boolean);
+  const seen = new Set<string>();
+  return queries
+    .map((query) => query.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((query) => {
+      const key = query.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxProbes);
 }
 
 function initialProbeDebug(): FoodProbeDebug {
@@ -667,8 +688,9 @@ function hasStrongSuggestion(suggestion: SuggestionPatch) {
 function wouldStatusFor(matchConfidence: number, suggestion: SuggestionPatch) {
   if (!hasUsefulFoodTerms(suggestion) && !hasStrongSuggestion(suggestion))
     return "no_useful_terms";
-  if (matchConfidence < 85) return "pending_review";
-  return "auto_apply_ready";
+  return canAutoApply(matchConfidence, suggestion)
+    ? "auto_apply_ready"
+    : "pending_review";
 }
 
 function canAutoApply(matchConfidence: number, suggestion: SuggestionPatch) {
@@ -700,42 +722,42 @@ function probeSkipReason(
   dryRun: boolean,
   limit: number,
   googleMatched: boolean,
-  wouldStatus: string,
 ) {
-  if (!enableFoodProbe) return "disabled";
-  if (!dryRun && limit > 25) return "unsafe_limit";
-  if (!googleMatched) return "google_not_matched";
-  if (hasUsefulFoodTerms(suggestion) && wouldStatus !== "no_useful_terms")
-    return "already_has_useful_terms";
-  const context = foodProbeContext(row, place);
-  if (hasAny(context, ACTIVITY_ONLY_PROBE_TERMS))
-    return "activity_only_location";
-  if (!hasAny(context, LIKELY_FOOD_PROBE_TERMS)) return "not_likely_food_venue";
+  if (!enableFoodProbe) return "food_probe_disabled";
+  if (!dryRun && limit > 25) return "not_allowed_for_batch_size";
+  if (!googleMatched) return "not_likely_food_candidate";
+  if (suggestion.foodTerms.length > 0 || suggestion.cuisineTerms.length > 0)
+    return "already_has_food_or_cuisine_terms";
+  if (isActivityOnlyForFoodProbe(row, place)) return "activity_only";
+  if (!isLikelyFoodProbeCandidate(row, place))
+    return "not_likely_food_candidate";
+  if (!buildFoodProbeQueries(row, place, 1).length) return "no_queries";
   return null;
 }
 
-async function runFoodProbe(
-  row: any,
-  place: any,
-  key: string,
-  maxFoodProbesPerRow: number,
-  debug: FoodProbeDebug,
-  onApiCall: () => void,
-) {
-  const queries = buildFoodProbeQueries(row, place).slice(
-    0,
-    maxFoodProbesPerRow,
-  );
+function calculateMatchConfidence(row: any, place: any) {
+  return confidence(row, place);
+}
+
+async function runFoodProbes(row: any, place: any, maxProbes: number) {
+  const debug = initialProbeDebug();
+  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  const queries = buildFoodProbeQueries(row, place, maxProbes);
   debug.foodProbeQueries = queries;
+  if (!queries.length) {
+    debug.foodProbeSkippedReason = "no_queries";
+    return { suggestion: infer(place, row), debug };
+  }
+
   let merged = infer(place, row);
 
   for (const query of queries) {
     debug.foodProbeApiCalls++;
-    onApiCall();
-    const candidates = await searchText(query, key, row, 3);
+    const candidates = key ? await searchText(query, key, row, 3) : [];
     const accepted = candidates.find(
       (candidate: any) =>
-        candidate.place?.id === place.id || candidate.confidence >= 85,
+        candidate.place?.id === place.id ||
+        calculateMatchConfidence(row, candidate.place) >= 85,
     );
     if (!accepted) continue;
 
@@ -763,9 +785,7 @@ async function runFoodProbe(
 
   debug.foodProbeMatchedTerms = clean(debug.foodProbeMatchedTerms);
   debug.foodProbeUsed = debug.foodProbeApiCalls > 0;
-  if (debug.foodProbeUsed && !debug.foodProbeMatchedTerms.length)
-    debug.foodProbeSkippedReason = "no_probe_terms_matched";
-  return merged;
+  return { suggestion: merged, debug };
 }
 
 serve(async (req) => {
@@ -786,8 +806,8 @@ serve(async (req) => {
   const applyHigh = parseBoolean(body.applyHighConfidence);
   const enableFoodProbe = parseBoolean(body.enableFoodProbe);
   const maxFoodProbesPerRow = Math.min(
-    5,
-    Math.max(1, Number(body.maxFoodProbesPerRow || 2)),
+    3,
+    parsePositiveInt(body.maxFoodProbesPerRow, 2),
   );
   const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
   const url = Deno.env.get("NEXT_PUBLIC_SUPABASE_URL");
@@ -835,7 +855,9 @@ serve(async (req) => {
         if (!match || match.confidence < 55) {
           counters.no_match++;
           resultRow.status = "no_match";
-          resultRow.foodProbeSkippedReason = "google_not_matched";
+          resultRow.foodProbeSkippedReason = enableFoodProbe
+            ? "not_likely_food_candidate"
+            : "food_probe_disabled";
           counters.results.push(resultRow);
           if (!dryRun)
             await supabase
@@ -859,7 +881,9 @@ serve(async (req) => {
         resultRow.matchConfidence = matchConfidence;
         resultRow.googlePlaceId = place.id;
         resultRow.googleDisplayName = place.displayName?.text || null;
-        resultRow.foodProbeSkippedReason = "google_not_matched";
+        resultRow.foodProbeSkippedReason = enableFoodProbe
+          ? "not_likely_food_candidate"
+          : "food_probe_disabled";
         counters.results.push(resultRow);
         continue;
       }
@@ -875,21 +899,18 @@ serve(async (req) => {
         dryRun,
         limit,
         true,
-        wouldStatus,
       );
       probeDebug.foodProbeSkippedReason = skipReason;
 
       if (!skipReason) {
-        suggested = await runFoodProbe(
+        const probeResult = await runFoodProbes(
           row,
           place,
-          key,
           maxFoodProbesPerRow,
-          probeDebug,
-          () => {
-            counters.estimated_api_calls++;
-          },
         );
+        counters.estimated_api_calls += probeResult.debug.foodProbeApiCalls;
+        Object.assign(probeDebug, probeResult.debug);
+        suggested = probeResult.suggestion;
         wouldStatus = wouldStatusFor(matchConfidence, suggested);
       }
 
