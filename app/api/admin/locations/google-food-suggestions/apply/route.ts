@@ -1,10 +1,93 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { buildApplySuggestionUpdate } from "@/lib/google/places";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 const VALID_TABLES = new Set(["locations", "restaurants", "activities"]);
+
+function asArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function uniqueMerge(...values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+
+  for (const value of values) {
+    for (const item of asArray(value)) {
+      if (!seen.has(item)) {
+        seen.add(item);
+        merged.push(item);
+      }
+    }
+  }
+
+  return merged;
+}
+
+function firstNonEmpty(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      const first = asArray(value)[0];
+      if (first) return first;
+      continue;
+    }
+
+    const text = String(value || "").trim().toLowerCase();
+    if (text) return text;
+  }
+
+  return null;
+}
+
+function keepExistingOrFirst(existing: unknown, suggested: unknown): string | null {
+  const current = String(existing || "").trim();
+  if (current) return current;
+  return firstNonEmpty(suggested);
+}
+
+function buildCompatibleLocationUpdate(location: any, suggestion: any) {
+  const suggestedFoodTerms = asArray(suggestion.suggested_food_terms);
+  const suggestedCuisineTerms = asArray(suggestion.suggested_cuisine_terms);
+  const suggestedCategoryTerms = asArray(suggestion.suggested_category_terms);
+  const suggestedFeatureTerms = asArray(suggestion.suggested_feature_terms);
+  const suggestedSearchKeywords = asArray(suggestion.suggested_search_keywords);
+
+  const allSearchKeywords = uniqueMerge(
+    location.search_keywords,
+    suggestedSearchKeywords,
+    suggestedFoodTerms,
+    suggestedCuisineTerms,
+    suggestedCategoryTerms,
+    suggestedFeatureTerms,
+  );
+
+  const update: Record<string, unknown> = {
+    google_place_id: suggestion.google_place_id || location.google_place_id || null,
+    google_types: Array.isArray(suggestion.google_types)
+      ? suggestion.google_types
+      : Array.isArray(location.google_types)
+        ? location.google_types
+        : [],
+    signature_items: uniqueMerge(location.signature_items, suggestedFoodTerms),
+    cuisine: keepExistingOrFirst(location.cuisine, suggestedCuisineTerms),
+    cuisine_type: keepExistingOrFirst(location.cuisine_type, suggestedCuisineTerms),
+    primary_category: keepExistingOrFirst(location.primary_category, suggestedCategoryTerms),
+    primary_tag: keepExistingOrFirst(location.primary_tag, uniqueMerge(suggestedCategoryTerms, suggestedCuisineTerms)),
+    special_features: uniqueMerge(location.special_features, suggestedFeatureTerms),
+    tags: uniqueMerge(location.tags, suggestedCategoryTerms, suggestedFeatureTerms, suggestedCuisineTerms),
+    search_keywords: allSearchKeywords,
+  };
+
+  // Only update columns that actually exist on the selected row.
+  return Object.fromEntries(
+    Object.entries(update).filter(([key]) => Object.prototype.hasOwnProperty.call(location, key)),
+  );
+}
+
 
 export async function POST(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager", "editor"]);
@@ -54,15 +137,7 @@ export async function POST(req: Request) {
       continue;
     }
 
-    const update = {
-      ...buildApplySuggestionUpdate(location, suggestion),
-      google_place_id: suggestion.google_place_id || location.google_place_id,
-      google_enrichment_status: "approved",
-      google_enriched_at: new Date().toISOString(),
-      google_primary_type: suggestion.google_primary_type || location.google_primary_type,
-      google_types: suggestion.google_types || location.google_types || [],
-      google_last_error: null,
-    };
+    const update = buildCompatibleLocationUpdate(location, suggestion);
 
     const { error: updateError } = await supabaseAdmin
       .from(suggestion.source_table)
