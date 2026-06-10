@@ -22,7 +22,7 @@ type Suggestion = {
 
 export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggestions: Suggestion[] }) {
   const [sourceTable, setSourceTable] = useState("locations");
-  const [status, setStatus] = useState("pending");
+  const [status, setStatus] = useState("pending_review");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
@@ -121,7 +121,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
           <label className="text-sm font-bold text-white/70">
             Status
             <select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-2 w-full rounded-xl bg-black/50 p-3 text-white">
-              <option value="pending">pending</option>
+              <option value="pending_review">needs review</option>
               <option value="pending_review">needs review</option>
               <option value="auto_applied">auto applied</option>
               <option value="no_match">no match</option>
@@ -133,7 +133,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
           <button disabled={loading} onClick={() => runEnrichment(true)} className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-50">Preview 25</button>
-          <button disabled={loading} onClick={() => runEnrichment(false)} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Run 25</button>
+          <button disabled={loading} onClick={() => runEnrichment(false)} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Create Review Suggestions</button>
           <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">Approve Selected</button>
           <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50">Reject Selected</button>
           <button disabled={loading} onClick={() => runEnrichment(false, true)} className="rounded-full bg-amber-400 px-5 py-3 text-sm font-black text-black disabled:opacity-50">Apply high confidence only</button>
