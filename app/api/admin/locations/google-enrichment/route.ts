@@ -90,19 +90,28 @@ export async function POST(req: Request) {
     }
   }
 
-  if (!response.ok) {
+  const resultRecord: JsonRecord =
+    result && typeof result === "object" && !Array.isArray(result)
+      ? (result as JsonRecord)
+      : { raw: result };
+
+  if (!response.ok || resultRecord.success === false || resultRecord.error) {
     return Response.json(
       {
-        success: true,
-        sourceTable: body.sourceTable || "locations",
-        limit: body.limit || 25,
-        dryRun: body.dryRun !== false,
-        result: (result as JsonRecord)?.result || result,
-        ...(result as JsonRecord),
+        success: false,
+        error: resultRecord.error || "Google enrichment function failed.",
+        details: resultRecord,
       },
-      { status: response.status },
+      { status: response.ok ? 500 : response.status },
     );
   }
 
-  return Response.json({ success: true, ...payload, result });
+  const normalizedResult = resultRecord.result || resultRecord;
+
+  return Response.json({
+    success: true,
+    ...payload,
+    ...resultRecord,
+    result: normalizedResult,
+  });
 }
