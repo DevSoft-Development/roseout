@@ -589,6 +589,12 @@ export default async function AdminLocationsPage({
 
             <div className="flex flex-wrap items-center gap-3">
               <Link
+                href="/admin/dashboard/locations/google-enrichment"
+                className="rounded-full bg-white px-5 py-3 text-sm font-black text-black shadow-lg transition hover:scale-[1.02]"
+              >
+                Google Enrichment
+              </Link>
+              <Link
                 href="/admin/dashboard/locations/new"
                 className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg transition hover:scale-[1.02]"
               >
@@ -673,6 +679,21 @@ export default async function AdminLocationsPage({
             </div>
           </div>
         </section>
+
+        <nav className="mt-5 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-black/30 p-2 text-sm font-black">
+          <Link
+            href="/admin/dashboard/locations"
+            className="rounded-full bg-white px-4 py-2 text-black"
+          >
+            Locations
+          </Link>
+          <Link
+            href="/admin/dashboard/locations/google-enrichment"
+            className="rounded-full px-4 py-2 text-white/55 hover:bg-white/10 hover:text-white"
+          >
+            Google Enrichment
+          </Link>
+        </nav>
 
         {safeMode && (
           <div className="mt-5 rounded-3xl border border-amber-300/30 bg-amber-500/10 p-5 text-sm font-bold text-amber-100">
