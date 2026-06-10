@@ -38,21 +38,21 @@ const CANONICAL: Record<string, any> = {
   wings: {
     match: [
       "wing",
-      "wings",
+      
       "chicken wing",
-      "chicken wings",
-      "hot chicken",
-      "fried chicken",
+      
+      
+      
     ],
     foodTerms: [
-      "wings",
-      "chicken wings",
-      "fried chicken",
-      "hot chicken",
-      "chicken",
+      
+      
+      
+      
+      
     ],
     cuisineTerms: ["american"],
-    categoryTerms: ["wings", "fried chicken"],
+    categoryTerms: [],
     featureTerms: ["bar food"],
   },
   burger: {
@@ -310,7 +310,7 @@ const LIKELY_FOOD_PROBE_TERMS = [
   "coffee",
   "coffee shop",
   "sandwich",
-  "wings",
+  
   "burger",
   "burgers",
 ];
@@ -337,7 +337,7 @@ const STRONG_FOOD_VENUE_TERMS = [
   "brunch",
   "coffee shop",
   "sandwich",
-  "wings",
+  
   "burger",
   "burgers",
 ];
@@ -560,7 +560,7 @@ function infer(place: any, row: any): SuggestionPatch {
     if (!(config as any).match.some((term: string) => has(haystack, term)))
       continue;
     if (
-      ["wings", "burger", "tacos", "vegan", "halal", "hookah"].includes(key) &&
+      [ "burger", "tacos", "vegan", "halal", "hookah"].includes(key) &&
       !(config as any).match.some((term: string) => has(strict, term))
     )
       continue;
@@ -706,7 +706,7 @@ function buildFoodProbeQueries(row: any, place: any, maxProbes = 2): string[] {
   } else if (has(context, "churrascaria")) {
     add(base("brazilian steakhouse"), base("churrascaria"));
   } else if (hasAny(context, ["bar", "pub", "lounge"])) {
-    add(base("bar food"), base("wings"), base("happy hour"));
+    add(base("bar food"), base("happy hour"));
   } else {
     add(base("menu"), base("cuisine"));
   }
@@ -950,7 +950,7 @@ serve(async (req) => {
     .from(sourceTable)
     .select("*")
     .limit(limit * 3);
-  if (error) return json({ error: error.message }, 400);
+  if (error) return json({ error: stringifyError(error) }, 400);
 
   const eligible = (rows || [])
     .filter((row: any) => force || !body.onlyMissingPlaceId || !row.google_place_id)
@@ -1075,7 +1075,7 @@ serve(async (req) => {
         .select("id")
         .single();
       if (insertError) throw insertError;
-      counters.suggestions_created++;
+      if (dryRun) counters.suggestions_would_create = (counters.suggestions_would_create || 0) + 1; else counters.suggestions_created++;
 
       Object.assign(resultRow, {
         status: suggestionStatus,
@@ -1142,7 +1142,7 @@ serve(async (req) => {
       counters.failed++;
       Object.assign(resultRow, probeDebug);
       resultRow.status = "failed";
-      resultRow.error = error instanceof Error ? error.message : String(error);
+      resultRow.error = error instanceof Error ? stringifyError(error) : stringifyError(error);
       counters.results.push(resultRow);
       if (!dryRun)
         await supabase
@@ -1150,7 +1150,7 @@ serve(async (req) => {
           .update({
             google_enrichment_status: "failed",
             google_last_error:
-              error instanceof Error ? error.message : String(error),
+              error instanceof Error ? stringifyError(error) : stringifyError(error),
           })
           .eq("id", row.id);
     } finally {
