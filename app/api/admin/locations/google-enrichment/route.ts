@@ -17,7 +17,7 @@ function parseIntWithBounds(value: unknown, fallback: number, min: number, max: 
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }
 
-export async function POST(req: Request) {
+async function handleGoogleEnrichmentPost(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
   if (auth.error) return auth.error;
 
@@ -114,4 +114,27 @@ export async function POST(req: Request) {
     ...resultRecord,
     result: normalizedResult,
   });
+}
+
+
+export async function POST(req: Request) {
+  try {
+    return await handleGoogleEnrichmentPost(req);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+
+    console.error("Google enrichment admin route crashed", error);
+
+    return Response.json(
+      {
+        success: false,
+        error: message || "Google enrichment admin route crashed.",
+        details: {
+          stack,
+        },
+      },
+      { status: 500 },
+    );
+  }
 }
