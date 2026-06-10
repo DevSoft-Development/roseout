@@ -2,6 +2,19 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 export const dynamic = "force-dynamic";
 
+const VALID_SOURCE_TABLES = new Set(["locations", "restaurants", "activities"]);
+
+function parseBoolean(value: unknown, fallback: boolean) {
+  if (value === undefined || value === null) return fallback;
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+function parseIntWithBounds(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
 export async function POST(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
   if (auth.error) return auth.error;
@@ -16,14 +29,42 @@ export async function POST(req: Request) {
     );
   }
 
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
+  const sourceTable = VALID_SOURCE_TABLES.has(String(body.sourceTable))
+    ? String(body.sourceTable)
+    : "locations";
+  const dryRun = parseBoolean(body.dryRun, true);
+  const requestedLimit = parseIntWithBounds(body.limit, 10, 1, dryRun ? 100 : 25);
+  const limit = dryRun ? requestedLimit : Math.min(25, requestedLimit);
+  const confirmApply = parseBoolean(body.confirmApply, false);
+
+  if (!dryRun && !confirmApply) {
+    return Response.json(
+      { success: false, error: "confirmApply must be true before running a write batch." },
+      { status: 400 },
+    );
+  }
+
+  const payload = {
+    sourceTable,
+    limit,
+    dryRun,
+    onlyWeakSearchTerms: parseBoolean(body.onlyWeakSearchTerms, true),
+    onlyMissingPlaceId: parseBoolean(body.onlyMissingPlaceId, false),
+    force: parseBoolean(body.force, false),
+    enableFoodProbe: parseBoolean(body.enableFoodProbe, false),
+    maxFoodProbesPerRow: parseIntWithBounds(body.maxFoodProbesPerRow, 2, 1, 3),
+    confirmApply,
+    applyHighConfidence: !dryRun && confirmApply,
+  };
+
   const response = await fetch(`${supabaseUrl}/functions/v1/google-location-enrichment`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-cron-secret": cronSecret,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
 
   const text = await response.text();
@@ -37,8 +78,12 @@ export async function POST(req: Request) {
     }
   }
 
-  return Response.json(
-    { success: response.ok, result },
-    { status: response.ok ? 200 : response.status },
-  );
+  if (!response.ok) {
+    return Response.json(
+      { success: false, error: "Google enrichment function failed.", result },
+      { status: response.status },
+    );
+  }
+
+  return Response.json({ success: true, ...payload, result });
 }

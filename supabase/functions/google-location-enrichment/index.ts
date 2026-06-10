@@ -107,7 +107,7 @@ const CANONICAL: Record<string, any> = {
     match: ["pizza", "pizzeria"],
     foodTerms: ["pizza"],
     cuisineTerms: ["italian"],
-    categoryTerms: ["pizza place", "pizzeria"],
+    categoryTerms: ["pizza restaurant", "pizzeria"],
     featureTerms: [],
   },
   bagel: {
@@ -267,9 +267,10 @@ const ACTIVITY_ONLY_PROBE_TERMS = [
   "arcade",
   "claw",
   "claw arcade",
-  "cooking class",
   "paint and sip",
-  "event venue",
+  "cooking class",
+  "class",
+  "workshop",
   "museum",
   "bowling",
   "mini golf",
@@ -277,8 +278,9 @@ const ACTIVITY_ONLY_PROBE_TERMS = [
   "theater",
   "theatre",
   "concert hall",
-  "class",
-  "workshop",
+  "event venue",
+  "golf simulator",
+  "indoor golf",
 ];
 const LIKELY_FOOD_PROBE_TERMS = [
   "pizza",
@@ -302,8 +304,42 @@ const LIKELY_FOOD_PROBE_TERMS = [
   "vegan",
   "seafood",
   "bbq",
+  "barbecue",
   "churrascaria",
   "brunch",
+  "coffee",
+  "coffee shop",
+  "sandwich",
+  "wings",
+  "burger",
+  "burgers",
+];
+const STRONG_FOOD_VENUE_TERMS = [
+  "pizza",
+  "pizzeria",
+  "restaurant",
+  "cafe",
+  "bakery",
+  "bagel",
+  "deli",
+  "bistro",
+  "diner",
+  "steakhouse",
+  "taqueria",
+  "sushi",
+  "ramen",
+  "halal",
+  "vegan",
+  "seafood",
+  "bbq",
+  "barbecue",
+  "churrascaria",
+  "brunch",
+  "coffee shop",
+  "sandwich",
+  "wings",
+  "burger",
+  "burgers",
 ];
 const SPECIFIC_AUTO_APPLY_CATEGORIES = [
   "bakery",
@@ -313,29 +349,41 @@ const SPECIFIC_AUTO_APPLY_CATEGORIES = [
   "mexican restaurant",
   "ramen spot",
   "bbq restaurant",
+  "barbecue restaurant",
   "steakhouse",
   "sushi restaurant",
   "pizzeria",
-  "pizza place",
-  "taqueria",
+  "pizza restaurant",
+  "deli",
+  "bagel shop",
   "seafood restaurant",
   "vegan restaurant",
   "halal restaurant",
+  "taqueria",
+  "churrascaria",
 ];
 const GENERIC_ONLY_AUTO_APPLY_TERMS = [
   "restaurant",
   "lounge",
   "pub",
+  "nightlife",
   "drinks",
   "cocktails",
   "beer",
   "wine",
   "happy hour",
+  "margaritas",
+  "mimosas",
   "games",
   "arcade",
   "pool",
+  "billiards",
   "karaoke",
   "live music",
+  "dj",
+  "dancing",
+  "takeout",
+  "delivery",
 ];
 
 type SuggestionPatch = {
@@ -583,71 +631,89 @@ function weak(row: any) {
   );
 }
 
-function foodProbeContext(row: any, place: any) {
+function arrayValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item || ""));
+  if (typeof value === "string") return [value];
+  return [];
+}
+
+function placeName(place: any) {
+  return typeof place?.displayName === "string"
+    ? place.displayName
+    : place?.displayName?.text || "";
+}
+
+function buildFoodProbeHaystack(row: any, place: any): string {
   return norm(
     [
       nameOf(row),
       addrOf(row),
       row.city,
       row.state,
-      row.cuisine,
       row.primary_category,
       row.category,
-      row.location_type,
+      ...arrayValues(row.categories),
+      row.cuisine,
+      row.cuisine_type,
+      row.description,
       row.search_document,
-      ...(row.search_keywords || []),
-      ...(row.semantic_tags || []),
-      ...(row.intent_tags || []),
-      place.displayName?.text,
-      place.formattedAddress,
-      place.primaryType,
-      ...(place.types || []),
-      place.editorialSummary?.text,
+      ...arrayValues(row.search_keywords),
+      ...arrayValues(row.semantic_tags),
+      ...arrayValues(row.intent_tags),
+      placeName(place),
+      place?.formattedAddress,
+      place?.primaryType,
+      ...arrayValues(place?.types),
     ]
       .filter(Boolean)
       .join(" "),
   );
 }
 
-function isActivityOnlyForFoodProbe(row: any, place: any) {
-  return hasAny(foodProbeContext(row, place), ACTIVITY_ONLY_PROBE_TERMS);
+function isActivityOnlyForFoodProbe(row: any, place: any): boolean {
+  const haystack = buildFoodProbeHaystack(row, place);
+  return (
+    hasAny(haystack, ACTIVITY_ONLY_PROBE_TERMS) &&
+    !hasAny(haystack, STRONG_FOOD_VENUE_TERMS)
+  );
 }
 
-function isLikelyFoodProbeCandidate(row: any, place: any) {
-  return hasAny(foodProbeContext(row, place), LIKELY_FOOD_PROBE_TERMS);
+function isLikelyFoodProbeCandidate(row: any, place: any): boolean {
+  return hasAny(buildFoodProbeHaystack(row, place), LIKELY_FOOD_PROBE_TERMS);
 }
 
-function buildFoodProbeQueries(row: any, place: any, maxProbes = 2) {
-  const context = foodProbeContext(row, place);
-  const name = nameOf(row) || place.displayName?.text || "";
-  const city = row.city || row.borough || row.neighborhood || "";
+function buildFoodProbeQueries(row: any, place: any, maxProbes = 2): string[] {
+  const context = buildFoodProbeHaystack(row, place);
+  const name = nameOf(row) || placeName(place);
+  const city = row.city || "";
+  const address = addrOf(row);
+  const base = (suffix: string) => [name, city, suffix].filter(Boolean).join(" ");
+  const addressBase = (suffix: string) => [name, address, suffix].filter(Boolean).join(" ");
   const queries: string[] = [];
   const add = (...items: string[]) =>
     queries.push(...items.map((item) => item.trim()).filter(Boolean));
 
-  if (hasAny(context, ["pizza", "pizzeria"]))
-    add(`${name} ${city} pizza`, `${name} ${city} pizzeria`);
-  else if (
+  if (hasAny(context, ["pizza", "pizzeria"])) {
+    add(base("pizza"), base("pizzeria"));
+  } else if (
     hasAny(context, ["bakery", "bagel", "cafe", "coffee shop", "coffee"])
-  )
-    add(
-      `${name} ${city} bakery`,
-      `${name} ${city} coffee`,
-      `${name} ${city} pastries`,
-    );
-  else if (has(context, "deli"))
-    add(`${name} ${city} deli`, `${name} ${city} sandwiches`);
-  else if (has(context, "bbq"))
-    add(`${name} ${city} bbq`, `${name} ${city} ribs`);
-  else if (has(context, "churrascaria"))
-    add(`${name} ${city} brazilian steakhouse`, `${name} ${city} churrascaria`);
-  else if (hasAny(context, ["bar", "pub", "lounge"]))
-    add(
-      `${name} ${city} bar food`,
-      `${name} ${city} wings`,
-      `${name} ${city} happy hour`,
-    );
-  else add(`${name} ${city} menu`, `${name} ${city} cuisine`);
+  ) {
+    add(base("bakery"), base("coffee"), base("pastries"));
+  } else if (has(context, "deli")) {
+    add(base("deli"), base("sandwiches"));
+  } else if (hasAny(context, ["bbq", "barbecue"])) {
+    add(base("bbq"), base("ribs"));
+  } else if (has(context, "churrascaria")) {
+    add(base("brazilian steakhouse"), base("churrascaria"));
+  } else if (hasAny(context, ["bar", "pub", "lounge"])) {
+    add(base("bar food"), base("wings"), base("happy hour"));
+  } else {
+    add(base("menu"), base("cuisine"));
+  }
+
+  if (address && queries.length < maxProbes) {
+    add(addressBase("menu"));
+  }
 
   const seen = new Set<string>();
   return queries
@@ -659,7 +725,47 @@ function buildFoodProbeQueries(row: any, place: any, maxProbes = 2) {
       seen.add(key);
       return true;
     })
-    .slice(0, maxProbes);
+    .slice(0, Math.max(0, maxProbes));
+}
+
+function inferFromProbeEvidence(query: string, candidate: any): SuggestionPatch {
+  const evidence = norm(
+    [
+      query,
+      placeName(candidate),
+      candidate?.formattedAddress,
+      candidate?.primaryType,
+      ...arrayValues(candidate?.types),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  const patch: SuggestionPatch = {
+    foodTerms: [],
+    cuisineTerms: [],
+    categoryTerms: [],
+    featureTerms: [],
+    searchKeywords: [],
+    semanticTags: [],
+    intentTags: [],
+  };
+
+  for (const type of [candidate?.primaryType, ...arrayValues(candidate?.types)].filter(Boolean)) {
+    const terms = TYPE_TERMS[type] || {};
+    for (const key of Object.keys(patch) as Array<keyof SuggestionPatch>) {
+      patch[key].push(...(terms[key] || []));
+    }
+  }
+
+  for (const config of Object.values(CANONICAL)) {
+    if (!(config as any).match.some((term: string) => has(evidence, term))) continue;
+    patch.foodTerms.push(...(config as any).foodTerms);
+    patch.cuisineTerms.push(...(config as any).cuisineTerms);
+    patch.categoryTerms.push(...(config as any).categoryTerms);
+    patch.featureTerms.push(...(config as any).featureTerms);
+  }
+
+  return finalizeSuggestion(patch);
 }
 
 function initialProbeDebug(): FoodProbeDebug {
@@ -708,10 +814,10 @@ function canAutoApply(matchConfidence: number, suggestion: SuggestionPatch) {
     SPECIFIC_AUTO_APPLY_CATEGORIES.includes(term),
   );
   if (!hasFoodOrCuisine && !hasSpecificCategory) return false;
-  return (
-    !terms.length ||
-    terms.some((term) => !GENERIC_ONLY_AUTO_APPLY_TERMS.includes(term))
-  );
+  if (!terms.length) return false;
+  if (terms.every((term) => GENERIC_ONLY_AUTO_APPLY_TERMS.includes(term)))
+    return false;
+  return true;
 }
 
 function probeSkipReason(
@@ -725,7 +831,7 @@ function probeSkipReason(
 ) {
   if (!enableFoodProbe) return "food_probe_disabled";
   if (!dryRun && limit > 25) return "not_allowed_for_batch_size";
-  if (!googleMatched) return "not_likely_food_candidate";
+  if (!googleMatched) return "no_google_match";
   if (suggestion.foodTerms.length > 0 || suggestion.cuisineTerms.length > 0)
     return "already_has_food_or_cuisine_terms";
   if (isActivityOnlyForFoodProbe(row, place)) return "activity_only";
@@ -739,10 +845,17 @@ function calculateMatchConfidence(row: any, place: any) {
   return confidence(row, place);
 }
 
-async function runFoodProbes(row: any, place: any, maxProbes: number) {
+async function runFoodProbes(
+  row: any,
+  place: any,
+  options: {
+    googleKey: string;
+    maxProbes: number;
+    currentGooglePlaceId: string;
+  },
+) {
   const debug = initialProbeDebug();
-  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
-  const queries = buildFoodProbeQueries(row, place, maxProbes);
+  const queries = buildFoodProbeQueries(row, place, options.maxProbes);
   debug.foodProbeQueries = queries;
   if (!queries.length) {
     debug.foodProbeSkippedReason = "no_queries";
@@ -750,21 +863,20 @@ async function runFoodProbes(row: any, place: any, maxProbes: number) {
   }
 
   let merged = infer(place, row);
+  let acceptedAny = false;
 
   for (const query of queries) {
     debug.foodProbeApiCalls++;
-    const candidates = key ? await searchText(query, key, row, 3) : [];
+    const candidates = await searchText(query, options.googleKey, row, 3);
     const accepted = candidates.find(
       (candidate: any) =>
-        candidate.place?.id === place.id ||
+        candidate.place?.id === options.currentGooglePlaceId ||
         calculateMatchConfidence(row, candidate.place) >= 85,
     );
     if (!accepted) continue;
 
-    const probeSuggestion = infer(accepted.place, {
-      ...row,
-      search_document: [row.search_document, query].filter(Boolean).join(" "),
-    });
+    acceptedAny = true;
+    const probeSuggestion = inferFromProbeEvidence(query, accepted.place);
     const before = new Set([
       ...merged.foodTerms,
       ...merged.cuisineTerms,
@@ -785,6 +897,9 @@ async function runFoodProbes(row: any, place: any, maxProbes: number) {
 
   debug.foodProbeMatchedTerms = clean(debug.foodProbeMatchedTerms);
   debug.foodProbeUsed = debug.foodProbeApiCalls > 0;
+  if (!acceptedAny || !debug.foodProbeMatchedTerms.length) {
+    debug.foodProbeSkippedReason = "probe_no_accepted_match";
+  }
   return { suggestion: merged, debug };
 }
 
@@ -804,6 +919,7 @@ serve(async (req) => {
   const limit = Math.min(100, Math.max(1, Number(body.limit || 25)));
   const dryRun = body.dryRun !== false;
   const applyHigh = parseBoolean(body.applyHighConfidence);
+  const force = parseBoolean(body.force);
   const enableFoodProbe = parseBoolean(body.enableFoodProbe);
   const maxFoodProbesPerRow = Math.min(
     3,
@@ -820,6 +936,9 @@ serve(async (req) => {
     scanned: 0,
     matched: 0,
     no_match: 0,
+    no_useful_terms: 0,
+    pending_review: 0,
+    auto_apply_ready: 0,
     suggestions_created: 0,
     auto_applied: 0,
     failed: 0,
@@ -834,8 +953,8 @@ serve(async (req) => {
   if (error) return json({ error: error.message }, 400);
 
   const eligible = (rows || [])
-    .filter((row: any) => !body.onlyMissingPlaceId || !row.google_place_id)
-    .filter((row: any) => !body.onlyWeakSearchTerms || weak(row))
+    .filter((row: any) => force || !body.onlyMissingPlaceId || !row.google_place_id)
+    .filter((row: any) => force || !body.onlyWeakSearchTerms || weak(row))
     .slice(0, limit);
   for (const row of eligible) {
     counters.scanned++;
@@ -856,7 +975,7 @@ serve(async (req) => {
           counters.no_match++;
           resultRow.status = "no_match";
           resultRow.foodProbeSkippedReason = enableFoodProbe
-            ? "not_likely_food_candidate"
+            ? "no_google_match"
             : "food_probe_disabled";
           counters.results.push(resultRow);
           if (!dryRun)
@@ -882,7 +1001,7 @@ serve(async (req) => {
         resultRow.googlePlaceId = place.id;
         resultRow.googleDisplayName = place.displayName?.text || null;
         resultRow.foodProbeSkippedReason = enableFoodProbe
-          ? "not_likely_food_candidate"
+          ? "no_google_match"
           : "food_probe_disabled";
         counters.results.push(resultRow);
         continue;
@@ -903,11 +1022,11 @@ serve(async (req) => {
       probeDebug.foodProbeSkippedReason = skipReason;
 
       if (!skipReason) {
-        const probeResult = await runFoodProbes(
-          row,
-          place,
-          maxFoodProbesPerRow,
-        );
+        const probeResult = await runFoodProbes(row, place, {
+          googleKey: key,
+          maxProbes: maxFoodProbesPerRow,
+          currentGooglePlaceId: place.id,
+        });
         counters.estimated_api_calls += probeResult.debug.foodProbeApiCalls;
         Object.assign(probeDebug, probeResult.debug);
         suggested = probeResult.suggestion;
@@ -916,11 +1035,13 @@ serve(async (req) => {
 
       const autoApplyReady = canAutoApply(matchConfidence, suggested);
       const suggestionStatus =
-        !dryRun && applyHigh && autoApplyReady
-          ? "auto_applied"
-          : autoApplyReady
-            ? "auto_apply_ready"
-            : "pending_review";
+        wouldStatus === "no_useful_terms"
+          ? "no_useful_terms"
+          : !dryRun && applyHigh && autoApplyReady
+            ? "auto_applied"
+            : autoApplyReady
+              ? "auto_apply_ready"
+              : "pending_review";
       const suggestion = {
         source_table: sourceTable,
         source_id: row.id,
@@ -961,14 +1082,24 @@ serve(async (req) => {
         matchConfidence,
         googlePlaceId: place.id,
         googleDisplayName: place.displayName?.text || null,
+        googleAddress: place.formattedAddress || null,
         hasStrongSuggestion: hasStrongSuggestion(suggested),
         wouldStatus,
+        foodTerms: suggested.foodTerms,
+        cuisineTerms: suggested.cuisineTerms,
+        categoryTerms: suggested.categoryTerms,
+        featureTerms: suggested.featureTerms,
+        searchKeywords: suggested.searchKeywords,
         suggestedFoodTerms: suggested.foodTerms,
         suggestedCuisineTerms: suggested.cuisineTerms,
         suggestedCategoryTerms: suggested.categoryTerms,
         suggestedFeatureTerms: suggested.featureTerms,
+        suggestedSearchKeywords: suggested.searchKeywords,
         ...probeDebug,
       });
+      if (suggestionStatus === "no_useful_terms") counters.no_useful_terms++;
+      else if (suggestionStatus === "pending_review") counters.pending_review++;
+      else if (suggestionStatus === "auto_apply_ready") counters.auto_apply_ready++;
       counters.results.push(resultRow);
 
       if (!dryRun && applyHigh && autoApplyReady) {
@@ -1026,6 +1157,16 @@ serve(async (req) => {
       counters.estimatedApiCalls = counters.estimated_api_calls;
     }
   }
+
+  counters.noMatch = counters.no_match;
+  counters.noUsefulTerms = counters.no_useful_terms;
+  counters.pendingReview = counters.pending_review;
+  counters.autoApplyReady = counters.auto_apply_ready;
+  counters.suggestionsCreated = counters.suggestions_created;
+  counters.autoApplied = counters.auto_applied;
+  counters.usefulResults = counters.results.filter((row: any) =>
+    ["pending_review", "auto_apply_ready", "auto_applied"].includes(row.status),
+  );
 
   return json(counters);
 });
