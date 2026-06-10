@@ -45,7 +45,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
   async function runEnrichment(dryRun: boolean, applyHighConfidence = false) {
     setLoading(true);
     setResult(null);
-    const response = await fetch("/api/admin/locations/google-enrichment/run", {
+    const response = await fetch("/api/admin/locations/google-enrichment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

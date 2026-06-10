@@ -6,13 +6,17 @@ export async function POST(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
   if (auth.error) return auth.error;
 
-  const body = await req.json();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
   const cronSecret = process.env.GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET || process.env.CRON_SECRET;
+
   if (!supabaseUrl || !cronSecret) {
-    return Response.json({ success: false, error: "Missing Supabase URL or cron secret configuration." }, { status: 500 });
+    return Response.json(
+      { success: false, error: "Missing Supabase URL or cron secret configuration." },
+      { status: 500 },
+    );
   }
 
+  const body = await req.json();
   const response = await fetch(`${supabaseUrl}/functions/v1/google-location-enrichment`, {
     method: "POST",
     headers: {
@@ -23,8 +27,18 @@ export async function POST(req: Request) {
   });
 
   const text = await response.text();
-  let payload: unknown = text;
-  if (text) payload = JSON.parse(text);
+  let result: unknown = text;
 
-  return Response.json({ success: response.ok, result: payload }, { status: response.ok ? 200 : 400 });
+  if (text) {
+    try {
+      result = JSON.parse(text);
+    } catch {
+      result = text;
+    }
+  }
+
+  return Response.json(
+    { success: response.ok, result },
+    { status: response.ok ? 200 : response.status },
+  );
 }
