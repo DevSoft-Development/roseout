@@ -166,70 +166,94 @@ function ClaimPageInner() {
   return (
     <main className="min-h-screen bg-[#050505] text-white">
       <TheOutHavenHeader />
-      <section className="relative overflow-hidden px-4 pb-20 pt-32 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden px-4 pb-20 pt-24 sm:px-6 lg:px-8 lg:pt-32">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(225,6,42,0.24),transparent_32%),linear-gradient(180deg,#090909,#050505)]" />
-        <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
-          <div>
-            <Link href="/business" className="text-sm font-black text-white/45 transition hover:text-white">
-              ← Back to business
-            </Link>
-            <p className="mt-8 text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-              Business owner claim
-            </p>
-            <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl md:text-6xl">
-              Scan QR code or enter claim code
-            </h1>
-            <p className="mt-6 max-w-2xl text-base leading-8 text-white/62 sm:text-lg">
-              Use your device camera to scan the QR code on your postcard, or enter the printed claim code manually.
-            </p>
+        <div className="relative mx-auto mb-6 max-w-7xl lg:hidden">
+          <Link href="/business" className="text-sm font-black text-white/45 transition hover:text-white">
+            ← Back to business
+          </Link>
+          <p className="mt-7 text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
+            Business owner claim
+          </p>
+          <h1 className="mt-4 text-3xl font-black leading-tight tracking-tight sm:text-5xl">
+            Claim Your Business Profile
+          </h1>
+          <p className="mt-4 max-w-2xl text-sm leading-7 text-white/62 sm:text-lg sm:leading-8">
+            Use the QR code and claim code printed on your TheOutHaven postcard label to verify your location.
+          </p>
+        </div>
+        <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
+          <div className="order-2 lg:order-1">
+            <div className="hidden lg:block">
+              <Link href="/business" className="text-sm font-black text-white/45 transition hover:text-white">
+                ← Back to business
+              </Link>
+              <p className="mt-8 text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
+                Business owner claim
+              </p>
+              <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight sm:text-5xl md:text-6xl">
+                Claim Your Business Profile
+              </h1>
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-white/62 sm:text-lg sm:leading-8">
+                Use the QR code and claim code printed on your TheOutHaven postcard label to verify your location.
+              </p>
+            </div>
 
-            <div className="mt-8 grid gap-4">
-              <OptionCard
-                title="Scan QR Code"
-                text="Use the QR code from your TheOutHaven claim mailer to start a pending review request."
-                scanLauncher
-                onCodeFound={(code) => {
-                  const normalized = normalizeClaimCode(code);
-                  setClaimCode(normalized);
-                  verifyCode(normalized);
-                }}
-              />
-              <OptionCard
-                title="Enter Claim Code"
-                text="Enter the printed claim code to verify the location connected to your request. Ownership remains pending until TheOutHaven approves it."
-                cta="Enter Code"
-                href="#claim-code"
-              />
-              <OptionCard
-                title="I Don’t Have a Code"
-                text="Didn’t receive a TheOutHaven claim mailer? Submit your business details and we’ll match your location in the background. If your location is already added, your claim will be connected for review."
-                cta="Submit My Location"
-                href="/business/claim/no-code"
-              />
+            <div className="mt-6 grid gap-4 lg:mt-8">
+              <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20">
+                <h2 className="text-lg font-black">How claiming works</h2>
+                <ol className="mt-4 grid gap-3 text-sm leading-6 text-white/62">
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">1</span>
+                    <span>Scan the QR code on your postcard label.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">2</span>
+                    <span>Enter the claim code printed on the label.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">3</span>
+                    <span>Confirm the matched location.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">4</span>
+                    <span>Submit your owner or manager details for review.</span>
+                  </li>
+                </ol>
+              </article>
+
+              <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-black">Don’t have your postcard?</h2>
+                <p className="mt-2 text-sm leading-6 text-white/55">
+                  If you lost your claim code or never received a postcard, request manual verification instead.
+                </p>
+                <Link href="/business/claim/no-code" className="mt-4 inline-flex w-full justify-center rounded-2xl border border-white/15 bg-white/[0.06] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-white hover:text-black sm:w-auto">
+                  Request Manual Verification
+                </Link>
+              </article>
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/40 sm:p-6">
+          <div className="order-1 rounded-[2rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/40 sm:p-6 lg:order-2">
             {step === "submitted" ? (
               <SubmittedState />
             ) : (
               <>
                 <div className="mb-5">
-                  <h2 className="text-2xl font-black">Scan QR code or enter claim code</h2>
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-[#e1062a]">
+                    Business owner claim
+                  </p>
+                  <h2 className="mt-3 text-2xl font-black sm:text-3xl">Enter Your Claim Code</h2>
                   <p className="mt-2 text-sm leading-6 text-white/55">
-                    Use your device camera to scan the QR code on your postcard, or enter the printed claim code manually.
+                    Your claim code is printed on the address label next to the QR code.
                   </p>
                 </div>
 
-                <ClaimQrScanLauncher
-                  className="mb-4"
-                  mode="inline"
-                  onCodeFound={(code) => {
-                    const normalized = normalizeClaimCode(code);
-                    setClaimCode(normalized);
-                    verifyCode(normalized);
-                  }}
-                />
+                {codeFromUrl && (
+                  <div className="mb-5 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4 text-sm font-bold leading-6 text-emerald-100">
+                    Claim code found from QR scan. Tap Verify Claim Code if it does not verify automatically.
+                  </div>
+                )}
 
                 <form
                   onSubmit={(event) => {
@@ -255,7 +279,7 @@ function ClaimPageInner() {
                     disabled={loading}
                     className="mt-4 w-full rounded-2xl bg-[#e1062a] px-6 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {loading ? "Verifying..." : "Verify"}
+                    {loading ? "Verifying..." : "Verify Claim Code"}
                   </button>
                 </form>
 
@@ -276,7 +300,7 @@ function ClaimPageInner() {
                     </p>
                     <h2 className="mt-3 text-2xl font-black">Submit your ownership details</h2>
                     <p className="mt-2 text-sm leading-6 text-white/50">
-                      The claim code confirms you have the postcard. Sign-in is required so TheOutHaven can place your request in review before any management access is granted.
+                      Your postcard code verifies access to the business mailer. TheOutHaven reviews owner or manager details before management access is approved.
                     </p>
                     <div className="mt-5 grid gap-4">
                       <Field label="Business email" value={form.businessEmail} onChange={(value) => setForm((prev) => ({ ...prev, businessEmail: value }))} type="email" required />
@@ -301,28 +325,27 @@ function ClaimPageInner() {
                     </button>
                   </form>
                 )}
+
+                <div className="my-6 h-px bg-white/10" />
+                <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-5">
+                  <p className="text-sm font-black text-white">Need to scan instead?</p>
+                  <ClaimQrScanLauncher
+                    className="mt-3"
+                    buttonLabel="Open Camera Scanner"
+                    mode="inline"
+                    onCodeFound={(code) => {
+                      const normalized = normalizeClaimCode(code);
+                      setClaimCode(normalized);
+                      verifyCode(normalized);
+                    }}
+                  />
+                </div>
               </>
             )}
           </div>
         </div>
       </section>
     </main>
-  );
-}
-
-function OptionCard({ title, text, cta, href, scanLauncher = false, onCodeFound }: { title: string; text: string; cta?: string; href?: string; scanLauncher?: boolean; onCodeFound?: (code: string) => void }) {
-  return (
-    <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20">
-      <h2 className="text-lg font-black">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-white/55">{text}</p>
-      {scanLauncher ? (
-        <ClaimQrScanLauncher className="mt-4" buttonLabel="Scan QR Code With Device Camera" mode="inline" onCodeFound={onCodeFound} />
-      ) : href && cta ? (
-        <Link href={href} className="mt-4 inline-flex rounded-full bg-white px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-black transition hover:bg-rose-100">
-          {cta}
-        </Link>
-      ) : null}
-    </article>
   );
 }
 
