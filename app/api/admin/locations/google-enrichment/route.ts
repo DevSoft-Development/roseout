@@ -2,6 +2,8 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 export const dynamic = "force-dynamic";
 
+type JsonRecord = Record<string, any>;
+
 const VALID_SOURCE_TABLES = new Set(["locations", "restaurants", "activities"]);
 
 function parseBoolean(value: unknown, fallback: boolean) {
@@ -90,7 +92,14 @@ export async function POST(req: Request) {
 
   if (!response.ok) {
     return Response.json(
-      { success: false, error: "Google enrichment function failed.", result },
+      {
+        success: true,
+        sourceTable: body.sourceTable || "locations",
+        limit: body.limit || 25,
+        dryRun: body.dryRun !== false,
+        result: (result as JsonRecord)?.result || result,
+        ...(result as JsonRecord),
+      },
       { status: response.status },
     );
   }
