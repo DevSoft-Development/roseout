@@ -177,6 +177,19 @@ export default function GoogleEnrichmentPanel() {
           <Checkbox label="Force recheck" checked={force} onChange={setForce} />
         </div>
 
+        <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+          <p className="text-sm font-black text-emerald-100">Review Pending Google Suggestions</p>
+          <p className="mt-1 text-xs font-bold text-white/60">
+            Approve or reject created suggestions from the review queue.
+          </p>
+          <a
+            href="/admin/dashboard/locations/google-enrichment"
+            className="mt-3 inline-flex rounded-full bg-emerald-500 px-4 py-2 text-xs font-black text-white"
+          >
+            Open Approve / Reject Queue
+          </a>
+        </div>
+
         <div className="mt-5 flex flex-wrap gap-3">
           <ActionButton disabled={loading} onClick={() => run({ dryRun: true })}>Preview</ActionButton>
           <ActionButton disabled={loading} onClick={() => run({ dryRun: true, forceFoodProbe: true })}>Preview with Food Probe</ActionButton>
