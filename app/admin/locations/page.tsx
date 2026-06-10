@@ -4,6 +4,7 @@ import Link from "next/link";
 import AdminLocationsSearchBox from "./AdminLocationsSearchBox";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import FoodTermBackfillPanel from "../dashboard/locations/FoodTermBackfillPanel";
+import GoogleEnrichmentPanel from "@/components/admin/locations/GoogleEnrichmentPanel";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
@@ -39,6 +40,7 @@ type SearchParams = {
   page?: string;
   pageSize?: string;
   review?: string;
+  tab?: string;
 };
 
 type AdminLocation = LocationScoreFields &
@@ -271,6 +273,48 @@ export default async function AdminLocationsPage({
   const canImpersonate = canAdmin(currentAdmin.role, "impersonation");
 
   const params = await searchParams;
+  const activeTab = params.tab || "locations";
+
+  if (activeTab === "google-enrichment") {
+    return (
+      <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-5 text-white sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1400px]">
+          <section className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">
+              Admin Locations
+            </p>
+            <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h1 className="text-4xl font-black tracking-tight">
+                  Locations
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
+                  Search, audit, and enrich TheOutHaven location metadata.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/admin/dashboard/locations"
+                  className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10"
+                >
+                  Locations
+                </Link>
+                <Link
+                  href="/admin/dashboard/locations?tab=google-enrichment"
+                  className="rounded-full border border-rose-300/40 bg-rose-500/20 px-5 py-3 text-sm font-black text-rose-100"
+                >
+                  Google Enrichment
+                </Link>
+              </div>
+            </div>
+          </section>
+          <div className="mt-5">
+            <GoogleEnrichmentPanel />
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const q = params.q?.trim() || "";
   const safeQ = q.replace(/[%_,]/g, " ").trim();
@@ -605,6 +649,12 @@ export default async function AdminLocationsPage({
                 className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
               >
                 Print Claim QRs
+              </Link>
+              <Link
+                href="/admin/dashboard/locations?tab=google-enrichment"
+                className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
+              >
+                Google Enrichment
               </Link>
               <Link
                 href={buildQueryUrl({
