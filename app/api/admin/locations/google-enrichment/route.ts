@@ -55,8 +55,18 @@ export async function POST(req: Request) {
     enableFoodProbe: parseBoolean(body.enableFoodProbe, false),
     maxFoodProbesPerRow: parseIntWithBounds(body.maxFoodProbesPerRow, 2, 1, 3),
     confirmApply,
-    applyHighConfidence: !dryRun && confirmApply,
+    applyHighConfidence: false,
   };
+
+  if (payload.applyHighConfidence) {
+    return Response.json(
+      {
+        success: false,
+        error: "Auto-apply is disabled from the admin dashboard. Use review-only suggestions.",
+      },
+      { status: 400 },
+    );
+  }
 
   const response = await fetch(`${supabaseUrl}/functions/v1/google-location-enrichment`, {
     method: "POST",

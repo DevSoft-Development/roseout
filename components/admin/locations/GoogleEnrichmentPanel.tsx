@@ -101,7 +101,7 @@ export default function GoogleEnrichmentPanel() {
   const [onlyWeakSearchTerms, setOnlyWeakSearchTerms] = useState(true);
   const [onlyMissingPlaceId, setOnlyMissingPlaceId] = useState(false);
   const [force, setForce] = useState(false);
-  const [enableFoodProbe, setEnableFoodProbe] = useState(false);
+  const [enableFoodProbe, setEnableFoodProbe] = useState(true);
   const [maxFoodProbesPerRow, setMaxFoodProbesPerRow] = useState(2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +131,7 @@ export default function GoogleEnrichmentPanel() {
         enableFoodProbe: options.forceFoodProbe ? true : enableFoodProbe,
         maxFoodProbesPerRow,
         confirmApply: !options.dryRun,
+        applyHighConfidence: false,
       };
       const response = await fetch("/api/admin/locations/google-enrichment", {
         method: "POST",
@@ -157,7 +158,7 @@ export default function GoogleEnrichmentPanel() {
             <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-200">Google Places</p>
             <h2 className="mt-1 text-2xl font-black text-white">Google Enrichment</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-              Preview Google Places enrichment before updating search terms. Dry runs do not write to the database.
+              Preview Google Places enrichment and create pending-review suggestions. Review-only runs do not auto-apply live metadata.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -179,7 +180,7 @@ export default function GoogleEnrichmentPanel() {
         <div className="mt-5 flex flex-wrap gap-3">
           <ActionButton disabled={loading} onClick={() => run({ dryRun: true })}>Preview</ActionButton>
           <ActionButton disabled={loading} onClick={() => run({ dryRun: true, forceFoodProbe: true })}>Preview with Food Probe</ActionButton>
-          <ActionButton disabled={loading} onClick={() => setConfirmOpen(true)} danger>Run Small Batch</ActionButton>
+          <ActionButton disabled={loading} onClick={() => setConfirmOpen(true)} danger>Create Review Suggestions</ActionButton>
           <ActionButton disabled={loading && !result} onClick={() => { setResult(null); setError(null); }}>Clear Results</ActionButton>
         </div>
         {error ? <div className="mt-4 rounded-2xl border border-red-300/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{error}</div> : null}
@@ -198,6 +199,7 @@ export default function GoogleEnrichmentPanel() {
             <Summary label="Failed" value={metric(edgeResult, "failed", "failed")} />
             <Summary label="Estimated API Calls" value={estimatedApiCalls} />
             <Summary label="Suggestions Created" value={metric(edgeResult, "suggestionsCreated", "suggestions_created")} />
+            <Summary label="Skipped Existing" value={metric(edgeResult, "suggestionsSkippedExisting", "suggestions_skipped_existing")} />
             <Summary label="Auto Applied" value={metric(edgeResult, "autoApplied", "auto_applied")} />
           </section>
 
@@ -214,15 +216,15 @@ export default function GoogleEnrichmentPanel() {
       {confirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-            <h3 className="text-2xl font-black text-white">Apply Google Enrichment?</h3>
-            <p className="mt-3 text-sm leading-6 text-white/65">This can update location search metadata for high-confidence results. Start with a small batch and review pending suggestions before larger runs.</p>
+            <h3 className="text-2xl font-black text-white">Create Review Suggestions?</h3>
+            <p className="mt-3 text-sm leading-6 text-white/65">This creates pending-review suggestions only. It will not auto-apply live location metadata.</p>
             <label className="mt-5 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.05] p-4 text-sm font-bold text-white/75">
               <input type="checkbox" checked={understandsApply} onChange={(event) => setUnderstandsApply(event.target.checked)} className="mt-1" />
-              I understand this can update location search metadata.
+              I understand this will create pending-review suggestions only.
             </label>
             <div className="mt-5 flex flex-wrap justify-end gap-3">
               <button type="button" onClick={() => setConfirmOpen(false)} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/75">Cancel</button>
-              <button type="button" disabled={!understandsApply || loading} onClick={() => run({ dryRun: false })} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-45">Confirm Run Small Batch</button>
+              <button type="button" disabled={!understandsApply || loading} onClick={() => run({ dryRun: false })} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-45">Confirm Create Review Suggestions</button>
             </div>
           </div>
         </div>
