@@ -75,6 +75,38 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
 
   return (
     <div className="space-y-8">
+        <div className="mb-5 rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/10 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-emerald-200">Pending Google Suggestions</p>
+              <p className="mt-1 text-sm font-bold text-white/70">
+                Select one or more pending suggestions below, then approve or reject them here.
+              </p>
+              <p className="mt-1 text-xs font-bold text-white/45">
+                Selected: {selected.size}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={loading || selected.size === 0}
+                onClick={() => apply("approve")}
+                className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Approve Selected
+              </button>
+              <button
+                type="button"
+                disabled={loading || selected.size === 0}
+                onClick={() => apply("reject")}
+                className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Reject Selected
+              </button>
+            </div>
+          </div>
+        </div>
+
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
         <div className="grid gap-4 md:grid-cols-4">
           <label className="text-sm font-bold text-white/70">
@@ -102,8 +134,8 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
         <div className="mt-5 flex flex-wrap gap-3">
           <button disabled={loading} onClick={() => runEnrichment(true)} className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-50">Preview 25</button>
           <button disabled={loading} onClick={() => runEnrichment(false)} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Run 25</button>
-          <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full bg-emerald-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Approve selected</button>
-          <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-zinc-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Reject selected</button>
+          <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">Approve Selected</button>
+          <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50">Reject Selected</button>
           <button disabled={loading} onClick={() => runEnrichment(false, true)} className="rounded-full bg-amber-400 px-5 py-3 text-sm font-black text-black disabled:opacity-50">Apply high confidence only</button>
         </div>
         {result ? <pre className="mt-5 overflow-x-auto rounded-2xl bg-black/50 p-4 text-xs text-white/70">{JSON.stringify(result, null, 2)}</pre> : null}
