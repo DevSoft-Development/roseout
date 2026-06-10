@@ -99,8 +99,8 @@ export async function POST(req: Request) {
     return Response.json(
       {
         success: false,
-        error: resultRecord.error || "Google enrichment function failed.",
-        details: resultRecord,
+        error: resultRecord.error || resultRecord.raw || `Google enrichment function failed. Status: ${response.status}`,
+        details: { status: response.status, statusText: response.statusText, payload, result: resultRecord },
       },
       { status: response.ok ? 500 : response.status },
     );

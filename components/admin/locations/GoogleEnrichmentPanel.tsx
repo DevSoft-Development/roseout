@@ -139,7 +139,16 @@ export default function GoogleEnrichmentPanel() {
         body: JSON.stringify(payload),
       });
       const json = (await response.json()) as EnrichmentResult & { error?: string };
-      if (!response.ok) throw new Error(json.error || "Google enrichment request failed.");
+      if (!response.ok) {
+        const errorJson = json as any;
+        const detailText =
+          errorJson?.error ||
+          errorJson?.details?.result?.error ||
+          errorJson?.details?.result?.raw ||
+          errorJson?.details?.statusText ||
+          JSON.stringify(errorJson);
+        throw new Error(detailText || "Google enrichment request failed.");
+      }
       setResult(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
