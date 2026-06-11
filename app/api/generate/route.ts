@@ -1,5 +1,12 @@
-import { firstImage, getLocationImage } from "@/lib/locationImage";
-import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
+import { getLocationImage } from "@/lib/locationImage";
+import {
+  normalizePublicCardImage,
+  hasPublicCardImage,
+} from "@/lib/publicCardImage";
+import {
+  isEdgeCreateSearchEnabled,
+  runCreateSearchWithEdgeFallback,
+} from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
@@ -59,7 +66,11 @@ function toCardRecord(item: any) {
       "Unknown location",
     location_type:
       item?.location_type ??
-      (item?.restaurant_name ? "restaurant" : item?.activity_name ? "activity" : null),
+      (item?.restaurant_name
+        ? "restaurant"
+        : item?.activity_name
+          ? "activity"
+          : null),
     primary_category: item?.primary_category ?? item?.category ?? null,
     cuisine: item?.cuisine ?? item?.cuisine_type ?? null,
     activity_type: item?.activity_type ?? null,
@@ -73,7 +84,10 @@ function toCardRecord(item: any) {
     price_level: item?.price_level ?? item?.price_range ?? null,
     phone_number: item?.phone_number ?? item?.phone ?? null,
     reservation_url:
-      item?.reservation_url ?? item?.reservation_link ?? item?.booking_url ?? null,
+      item?.reservation_url ??
+      item?.reservation_link ??
+      item?.booking_url ??
+      null,
     external_reservation_url: item?.external_reservation_url ?? null,
     tags: normalizeCardTags([
       item?.tags,
@@ -88,7 +102,6 @@ function toCardRecord(item: any) {
   };
 }
 
-
 function metadataString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -102,17 +115,19 @@ function sanitizeSearchMetadata(value: unknown): unknown {
     if (typeof value !== "string") return value;
     return value
       .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted_email]")
-      .replace(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/g, "[redacted_phone]");
+      .replace(
+        /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/g,
+        "[redacted_phone]",
+      );
   }
 
-  return Object.entries(value as Record<string, unknown>).reduce<Record<string, unknown>>(
-    (acc, [key, item]) => {
-      if (/email|phone|address/i.test(key)) return acc;
-      acc[key] = sanitizeSearchMetadata(item);
-      return acc;
-    },
-    {},
-  );
+  return Object.entries(value as Record<string, unknown>).reduce<
+    Record<string, unknown>
+  >((acc, [key, item]) => {
+    if (/email|phone|address/i.test(key)) return acc;
+    acc[key] = sanitizeSearchMetadata(item);
+    return acc;
+  }, {});
 }
 
 function emptySearchResponse(reply: string) {
@@ -177,23 +192,33 @@ export async function POST(request: Request) {
       typeof body?.timezone === "string" && body.timezone.trim()
         ? body.timezone.trim()
         : "America/New_York";
-    const manualConfidence = ["none", "date_only", "exact"].includes(body?.outingTimeConfidence)
+    const manualConfidence = ["none", "date_only", "exact"].includes(
+      body?.outingTimeConfidence,
+    )
       ? body.outingTimeConfidence
       : null;
     const parsedPlannedTime = parsePlannedTimeFromQuery(cleanInput, timezone);
     const plannedTime = manualConfidence
       ? {
-          plannedFor: typeof body?.plannedFor === "string" ? body.plannedFor : null,
+          plannedFor:
+            typeof body?.plannedFor === "string" ? body.plannedFor : null,
           timezone,
           matchedText: null,
-          dateContext: typeof body?.outingDateContext === "string" ? body.outingDateContext : null,
+          dateContext:
+            typeof body?.outingDateContext === "string"
+              ? body.outingDateContext
+              : null,
           confidence: manualConfidence,
           shouldSchedulePreOutingReminders:
-            manualConfidence === "exact" && typeof body?.plannedFor === "string",
+            manualConfidence === "exact" &&
+            typeof body?.plannedFor === "string",
           shouldScheduleNextMorningFollowup:
-            body?.nextMorningFollowupEnabled === true || typeof body?.nextMorningFollowupDate === "string",
+            body?.nextMorningFollowupEnabled === true ||
+            typeof body?.nextMorningFollowupDate === "string",
           nextMorningFollowupDate:
-            typeof body?.nextMorningFollowupDate === "string" ? body.nextMorningFollowupDate : null,
+            typeof body?.nextMorningFollowupDate === "string"
+              ? body.nextMorningFollowupDate
+              : null,
           source: "manual",
         }
       : {
@@ -201,26 +226,48 @@ export async function POST(request: Request) {
           source: parsedPlannedTime.confidence === "none" ? null : "query",
         };
 
-
-    const betaAssignmentId = body?.betaAssignmentId || body?.beta_assignment_id || new URL(request.url).searchParams.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
-    const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
-    const usedCustomPrompt = body?.usedCustomPrompt === true || body?.usedCustomPrompt === "true" || new URL(request.url).searchParams.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
-    const betaDebug = process.env.NODE_ENV !== "production" || Boolean(betaAssignmentId || betaTesterId || body?.betaDebug);
-    const betaFeedbackSubmitted = Boolean(betaTesterId && (body?.feedbackSubmitted === true || body?.feedback_submitted === true || body?.feedback || body?.feedback_type || body?.expected_result || body?.actual_result || body?.rating));
-    const legacySearch = () => runEnterpriseSearch(cleanInput, {
-      body,
-      useLLM: true,
-      source: betaTesterId ? "beta_tester_search" : "public_create_search",
-      route: "/api/generate",
-      logPerformance: true,
-      sessionId: request.headers.get("x-session-id") || null,
-      betaAssignmentId,
-      betaTesterId,
-      usedCustomPrompt,
-      betaDebug,
-      searchHealthDebug: betaDebug,
-      betaFeedbackSubmitted,
-    });
+    const betaAssignmentId =
+      body?.betaAssignmentId ||
+      body?.beta_assignment_id ||
+      new URL(request.url).searchParams.get("betaAssignmentId") ||
+      request.headers.get("x-beta-assignment-id");
+    const betaTesterId =
+      body?.betaTesterId ||
+      body?.beta_tester_id ||
+      request.headers.get("x-beta-tester-id");
+    const usedCustomPrompt =
+      body?.usedCustomPrompt === true ||
+      body?.usedCustomPrompt === "true" ||
+      new URL(request.url).searchParams.get("usedCustomPrompt") === "true" ||
+      request.headers.get("x-used-custom-prompt") === "true";
+    const betaDebug =
+      process.env.NODE_ENV !== "production" ||
+      Boolean(betaAssignmentId || betaTesterId || body?.betaDebug);
+    const betaFeedbackSubmitted = Boolean(
+      betaTesterId &&
+      (body?.feedbackSubmitted === true ||
+        body?.feedback_submitted === true ||
+        body?.feedback ||
+        body?.feedback_type ||
+        body?.expected_result ||
+        body?.actual_result ||
+        body?.rating),
+    );
+    const legacySearch = () =>
+      runEnterpriseSearch(cleanInput, {
+        body,
+        useLLM: true,
+        source: betaTesterId ? "beta_tester_search" : "public_create_search",
+        route: "/api/generate",
+        logPerformance: true,
+        sessionId: request.headers.get("x-session-id") || null,
+        betaAssignmentId,
+        betaTesterId,
+        usedCustomPrompt,
+        betaDebug,
+        searchHealthDebug: betaDebug,
+        betaFeedbackSubmitted,
+      });
 
     const result: any = await runCreateSearchWithEdgeFallback(
       {
@@ -230,44 +277,171 @@ export async function POST(request: Request) {
         debug: betaDebug || Boolean(body?.debug),
       },
       {
-        accessToken: request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? null,
+        accessToken:
+          request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ??
+          null,
         fallbackDisabled: body?.disableLegacyFallback === true,
         legacySearch,
       },
     );
 
-    const cards = [
-      ...(result.restaurants || []),
-      ...(result.activities || []),
-      ...(result.matched_locations || []),
+    const rawRestaurants = Array.isArray(result.restaurants)
+      ? result.restaurants
+      : [];
+    const rawActivities = Array.isArray(result.activities)
+      ? result.activities
+      : [];
+    const rawMatchedLocations = Array.isArray(result.matched_locations)
+      ? result.matched_locations
+      : Array.isArray(result.matchedLocations)
+        ? result.matchedLocations
+        : [];
+
+    const normalizeResultCard = (item: any) => {
+      const base =
+        typeof toCardRecord === "function" ? toCardRecord(item) : item;
+
+      return normalizePublicCardImage({
+        ...item,
+        ...base,
+      });
+    };
+
+    const publicRestaurants = rawRestaurants
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
+
+    const publicActivities = rawActivities
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
+
+    const publicMatchedLocations = rawMatchedLocations
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
+
+    const publicCards: any[] = [
+      ...publicRestaurants,
+      ...publicActivities,
+      ...publicMatchedLocations,
     ]
-      .map(toCardRecord)
-      .filter((card) => firstImage(card.main_image) || firstImage(card.image_url));
+      .map(normalizePublicCardImage)
+      .filter(hasPublicCardImage);
+
+    function normalizePairImages(pair: any) {
+      if (!pair || typeof pair !== "object") return pair;
+
+      return {
+        ...pair,
+        restaurant: pair.restaurant
+          ? normalizePublicCardImage(pair.restaurant)
+          : pair.restaurant,
+        activity: pair.activity
+          ? normalizePublicCardImage(pair.activity)
+          : pair.activity,
+        primary: pair.primary
+          ? normalizePublicCardImage(pair.primary)
+          : pair.primary,
+        secondary: pair.secondary
+          ? normalizePublicCardImage(pair.secondary)
+          : pair.secondary,
+      };
+    }
+
+    const publicPairs = Array.isArray(result.pairs)
+      ? result.pairs.map(normalizePairImages)
+      : result.pairs;
+    const publicMatchedPairs = Array.isArray(result.matched_pairs)
+      ? result.matched_pairs.map(normalizePairImages)
+      : result.matched_pairs;
+
+    if (process.env.NODE_ENV !== "production") {
+      const cardsWithoutImages = publicCards.filter(
+        (card: any) => !getLocationImage(card),
+      );
+
+      console.log("[generate] public image normalization", {
+        rawRestaurants: rawRestaurants.length,
+        publicRestaurants: publicRestaurants.length,
+        rawActivities: rawActivities.length,
+        publicActivities: publicActivities.length,
+        rawMatchedLocations: rawMatchedLocations.length,
+        publicMatchedLocations: publicMatchedLocations.length,
+        publicCards: publicCards.length,
+        cardsWithoutImages: cardsWithoutImages.length,
+        firstCard: publicCards[0]
+          ? {
+              name:
+                publicCards[0].name ||
+                publicCards[0].restaurant_name ||
+                publicCards[0].activity_name,
+              main_image: publicCards[0].main_image,
+              image_url: publicCards[0].image_url,
+              images: publicCards[0].images,
+              resolvedImage: getLocationImage(publicCards[0]),
+            }
+          : null,
+      });
+    }
 
     const response = {
       ...result,
       plannedTime,
-      cards,
-      render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
+      restaurants: publicRestaurants,
+      activities: publicActivities,
+      matched_locations: publicMatchedLocations,
+      matchedLocations: publicMatchedLocations,
+      cards: publicCards,
+      ...(Array.isArray(result.pairs) ? { pairs: publicPairs } : {}),
+      ...(Array.isArray(result.matched_pairs)
+        ? { matched_pairs: publicMatchedPairs }
+        : {}),
+      restaurantCount: publicRestaurants.length,
+      activityCount: publicActivities.length,
+      cardCount: publicCards.length,
+      card_counts: {
+        ...(result.card_counts || {}),
+        restaurants: publicRestaurants.length,
+        activities: publicActivities.length,
+        matched_locations: publicMatchedLocations.length,
+        pairs: Array.isArray(publicPairs) ? publicPairs.length : 0,
+        cards: publicCards.length,
+      },
+      cardCounts: {
+        ...(result.cardCounts || {}),
+        restaurants: publicRestaurants.length,
+        activities: publicActivities.length,
+        matched_locations: publicMatchedLocations.length,
+        pairs: Array.isArray(publicPairs) ? publicPairs.length : 0,
+        cards: publicCards.length,
+      },
+      render_mode:
+        result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
-      searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
+      searchPerformance:
+        betaDebug && (result.debug as any)?.performance
+          ? {
+              totalMs: (result.debug as any).performance.total_ms,
+              speedStatus: (result.debug as any).performance.speed_status,
+              resultCount: publicCards.length,
+            }
+          : undefined,
       debug: betaDebug ? { ...(result.debug || {}), plannedTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo
             ? [(result.debug as any).geo.raw].filter(Boolean)
             : [],
-        restaurant_search_input: ((result.debug as any)?.restaurantTerms ?? []).join(
-          " ",
-        ),
-        activity_search_input: ((result.debug as any)?.activityTerms ?? []).join(
-          " ",
-        ),
-        final_restaurants: result.restaurants?.length || 0,
-        final_activities: result.activities?.length || 0,
+        restaurant_search_input: (
+          (result.debug as any)?.restaurantTerms ?? []
+        ).join(" "),
+        activity_search_input: (
+          (result.debug as any)?.activityTerms ?? []
+        ).join(" "),
+        final_restaurants: publicRestaurants.length,
+        final_activities: publicActivities.length,
         fallback_used: Boolean(
           (result.debug as any)?.restaurantRecoveryUsed ||
-            (result.debug as any)?.activityRecoveryUsed,
+          (result.debug as any)?.activityRecoveryUsed,
         ),
         no_results_reason:
           result.render_mode === "empty" ? "no_strong_matches" : null,
@@ -278,14 +452,10 @@ export async function POST(request: Request) {
     const normalizedIntent =
       debug.normalizedIntent ?? debug.intent ?? result.normalizedIntent ?? null;
     const counts = debug.counts ?? {
-      restaurants: result.restaurants?.length ?? 0,
-      activities: result.activities?.length ?? 0,
+      restaurants: publicRestaurants.length,
+      activities: publicActivities.length,
       pairs: result.pairs?.length ?? 0,
-      finalDisplayedResultCount:
-        result.matched_locations?.length ??
-        result.matchedLocations?.length ??
-        result.cards?.length ??
-        0,
+      finalDisplayedResultCount: publicCards.length,
     };
     const noResultsReason =
       result.no_results_reason ??
@@ -374,7 +544,8 @@ export async function POST(request: Request) {
         (typeof body?.anonymousId === "string" ? body.anonymousId : null) ??
         request.headers.get("x-anonymous-id"),
       sessionId: request.headers.get("x-session-id"),
-      betaAssignmentId: typeof betaAssignmentId === "string" ? betaAssignmentId : null,
+      betaAssignmentId:
+        typeof betaAssignmentId === "string" ? betaAssignmentId : null,
       betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,
       geo: resolvedGeo,
       outingDate: resolvedOutingDate,
@@ -391,9 +562,9 @@ export async function POST(request: Request) {
       success: result?.success !== false,
       hadIssue: Boolean(
         noResultsReason ||
-          noPairsReason ||
-          debug?.event_type === "no_results" ||
-          debug?.event_type === "no_valid_pairs",
+        noPairsReason ||
+        debug?.event_type === "no_results" ||
+        debug?.event_type === "no_valid_pairs",
       ),
       issueType: noResultsReason
         ? "no_results"
@@ -435,11 +606,10 @@ export async function POST(request: Request) {
       JSON.stringify({
         route: "/api/generate",
         total_ms: Date.now() - startedAt,
-        cache_status: isEdgeCreateSearchEnabled() ? "edge-or-legacy-fallback" : "enterprise-rpc",
-        result_count:
-          (result.restaurants?.length || 0) +
-          (result.activities?.length || 0) +
-          (result.matched_locations?.length || 0),
+        cache_status: isEdgeCreateSearchEnabled()
+          ? "edge-or-legacy-fallback"
+          : "enterprise-rpc",
+        result_count: publicCards.length,
       }),
     );
 

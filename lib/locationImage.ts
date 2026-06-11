@@ -1,5 +1,7 @@
 function isBadImageValue(value: unknown) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
 
   return (
     !normalized ||
@@ -11,44 +13,29 @@ function isBadImageValue(value: unknown) {
       "missing",
       "no image",
       "no-image",
+      "photo coming soon",
+      "coming soon",
       "#",
       "?",
     ].includes(normalized) ||
     normalized.includes("placeholder") ||
     normalized.includes("default-image") ||
-    normalized.includes("/placeholder")
+    normalized.includes("/placeholder") ||
+    normalized.includes("photo-coming-soon")
   );
 }
 
-function isPotentialImageUrl(value: string) {
-  const src = value.trim();
-  const lower = src.toLowerCase();
+function isUsableImageUrl(value: string) {
+  const trimmed = value.trim();
 
-  if (!src) return false;
-  if (
-    [
-      "null",
-      "undefined",
-      "none",
-      "n/a",
-      "missing",
-      "no image",
-      "no-image",
-      "#",
-      "?",
-    ].includes(lower)
-  ) {
-    return false;
-  }
-  if (lower.includes("placeholder") || lower.includes("default-image")) {
-    return false;
-  }
+  if (isBadImageValue(trimmed)) return false;
+  if (trimmed.length <= 8) return false;
 
-  if (src.startsWith("/")) return src.length > 1;
-  if (src.startsWith("http://")) return src.length > "http://".length;
-  if (src.startsWith("https://")) return src.length > "https://".length;
-
-  return false;
+  return (
+    /^https?:\/\//i.test(trimmed) ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("data:image/")
+  );
 }
 
 export function firstImage(value: unknown): string | null {
@@ -73,30 +60,44 @@ export function firstImage(value: unknown): string | null {
       (trimmed.startsWith("{") && trimmed.endsWith("}"))
     ) {
       try {
-        return firstImage(JSON.parse(trimmed));
+        const parsed = JSON.parse(trimmed);
+        const image = firstImage(parsed);
+        if (image) return image;
       } catch {
-        return null;
+        // Continue and treat it as a plain URL/string below.
       }
     }
 
-    return (
-      trimmed
-        .split(/[\n,]+/)
-        .map((item) => item.trim())
-        .find((item) => !isBadImageValue(item) && isPotentialImageUrl(item)) || null
-    );
+    const directValue = trimmed.split(/[\n,]+/).find((item) => {
+      const candidate = item.trim();
+      return isUsableImageUrl(candidate);
+    });
+
+    return directValue?.trim() || null;
   }
 
   if (typeof value === "object") {
     const record = value as any;
 
-    return firstImage(
-      record.url ||
-        record.src ||
-        record.image_url ||
-        record.main_image ||
-        record.publicUrl ||
-        record.public_url,
+    return (
+      firstImage(record.url) ||
+      firstImage(record.src) ||
+      firstImage(record.image_url) ||
+      firstImage(record.main_image) ||
+      firstImage(record.photo_url) ||
+      firstImage(record.primary_photo_url) ||
+      firstImage(record.google_photo_url) ||
+      firstImage(record.image) ||
+      firstImage(record.publicUrl) ||
+      firstImage(record.public_url) ||
+      firstImage(record.secure_url) ||
+      firstImage(record.original_url) ||
+      firstImage(record.large_url) ||
+      firstImage(record.medium_url) ||
+      firstImage(record.thumbnail_url) ||
+      firstImage(record.photoReference) ||
+      firstImage(record.photo_reference) ||
+      null
     );
   }
 
@@ -104,14 +105,20 @@ export function firstImage(value: unknown): string | null {
 }
 
 export function getLocationImage(location: any) {
+  if (!location) return null;
+
   return (
-    firstImage(location?.main_image) ||
-    firstImage(location?.image_url) ||
-    firstImage(location?.gallery_images) ||
-    firstImage(location?.gallery) ||
-    firstImage(location?.photos) ||
-    firstImage(location?.image_gallery) ||
-    firstImage(location?.images) ||
+    firstImage(location.main_image) ||
+    firstImage(location.image_url) ||
+    firstImage(location.photo_url) ||
+    firstImage(location.primary_photo_url) ||
+    firstImage(location.google_photo_url) ||
+    firstImage(location.image) ||
+    firstImage(location.images) ||
+    firstImage(location.photos) ||
+    firstImage(location.gallery_images) ||
+    firstImage(location.gallery) ||
+    firstImage(location.image_gallery) ||
     null
   );
 }
