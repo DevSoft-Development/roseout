@@ -67,6 +67,14 @@ export async function GET(request: Request) {
     hasPhotos,
     needsPhoto,
     searchableWithPhotos,
+    missingPhotosTotal,
+    missingPhotosSearchable,
+    missingPhotosNotSearchable,
+    missingPhotosEligibleBackfill,
+    missingPhotosLowQuality,
+    missingPhotosDuplicates,
+    missingPhotosFailedBackfill,
+    missingPhotosWithBackfillError,
     lowLevelLocations,
     lowLevelStaged,
     nycUnverified,
@@ -147,6 +155,48 @@ export async function GET(request: Request) {
     safeCount("locations", (query) =>
       query.eq("is_searchable", true).eq("has_photos", true),
     ),
+    safeCount("locations", (query) =>
+      query.or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .eq("is_searchable", true)
+        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .not("is_searchable", "is", true)
+        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .gte("quality_score", 75)
+        .eq("duplicate_status", "unique")
+        .in("enrichment_status", ["queued", "not_started", "failed", "completed"])
+        .or(
+          "has_photos.eq.false,photo_status.eq.missing_photo,main_image.is.null,image_url.is.null",
+        ),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .lt("quality_score", 75)
+        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .neq("duplicate_status", "unique")
+        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .eq("enrichment_status", "failed")
+        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
+    safeCount("locations", (query) =>
+      query
+        .not("photo_backfill_error", "is", null)
+        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
+    ),
     safeCount("locations", (query) => query.eq("is_low_level", true)),
     safeCount("location_import_staging", (query) => query.eq("is_low_level", true)),
     safeCount("locations", (query) => query.eq("low_level_reason", "nyc_import_unverified")),
@@ -190,6 +240,14 @@ export async function GET(request: Request) {
     hasPhotos,
     needsPhoto,
     searchableWithPhotos,
+    missingPhotosTotal,
+    missingPhotosSearchable,
+    missingPhotosNotSearchable,
+    missingPhotosEligibleBackfill,
+    missingPhotosLowQuality,
+    missingPhotosDuplicates,
+    missingPhotosFailedBackfill,
+    missingPhotosWithBackfillError,
     lowLevelLocations,
     lowLevelStaged,
     nycUnverified,

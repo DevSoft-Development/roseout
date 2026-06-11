@@ -94,9 +94,37 @@ type GrowthSummary = {
   hasPhotos?: number | null;
   needsPhoto?: number | null;
   searchableWithPhotos?: number | null;
+  missingPhotosTotal?: number | null;
+  missingPhotosSearchable?: number | null;
+  missingPhotosNotSearchable?: number | null;
+  missingPhotosEligibleBackfill?: number | null;
+  missingPhotosLowQuality?: number | null;
+  missingPhotosDuplicates?: number | null;
+  missingPhotosFailedBackfill?: number | null;
+  missingPhotosWithBackfillError?: number | null;
   siteUrlConfigured?: boolean;
   siteUrl?: string | null;
   latestBatches?: LatestBatch[];
+};
+
+
+type MissingPhotoDiagnosticRow = {
+  id?: string | number | null;
+  name?: string | null;
+  restaurant_name?: string | null;
+  activity_name?: string | null;
+  location_type?: string | null;
+  city?: string | null;
+  quality_score?: number | null;
+  duplicate_status?: string | null;
+  enrichment_status?: string | null;
+  is_searchable?: boolean | null;
+  reason?: string | null;
+};
+
+type MissingPhotoDiagnostics = {
+  totalReturned: number;
+  rows: MissingPhotoDiagnosticRow[];
 };
 
 type ActionResult = Record<string, unknown> & {
@@ -1884,7 +1912,164 @@ function FixPicturesPanel({ summary, runningAction, progress, photoFixLimit, set
   const sectionProgress = getPictureProgress(summary);
   const isRunning = runningAction === "pictures";
   const disabled = Boolean(runningAction);
-  return <div className="space-y-6"><section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30"><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Fix Pictures</p><h2 className="mt-2 text-2xl font-black text-white">Photo Backfill & Repair</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Repair fake image values, migrate existing Google photos into Supabase Storage, and backfill only locations still missing photos.</p><TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} /><p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-4 text-xs leading-5 text-rose-100">Picture tools only process records that need repair, migration, or backfill. Already-good Supabase, owner, or admin photos are skipped.</p><div className="mt-5 grid gap-3 sm:grid-cols-4"><CompactStat label="Missing Photos" value={getNumber(summary?.missingPhotos)} /><CompactStat label="Has Photos" value={getNumber(summary?.hasPhotos)} /><CompactStat label="Needs Photo" value={getNumber(summary?.needsPhoto)} /><CompactStat label="Searchable Photos" value={getNumber(summary?.searchableWithPhotos)} /></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><NumberField label="Repair / migration limit" value={photoFixLimit} onChange={setPhotoFixLimit} min={1} max={250} /><NumberField label="Backfill limit" value={photoBackfillLimit} onChange={setPhotoBackfillLimit} min={1} max={100} /></div><div className="mt-6 grid gap-4 lg:grid-cols-2"><ActionMiniCard title="Repair Bad Photo Values" description="Clears placeholder, no-image, missing, default-image, null, and broken values." button="Repair Bad Values" disabled={disabled} running={isRunning} onClick={onRepairBadPlaceholders} /><ActionMiniCard title="Migrate Google Photos" description="Copies existing Google Places photo endpoint URLs into Supabase Storage without re-enriching." button="Migrate Google Photos" disabled={disabled} running={isRunning} onClick={onMigrateGooglePhotos} /><ActionMiniCard title="Retry Completed Missing Photos" description="Queues completed records that still have no usable photo for another photo attempt." button="Retry Missing Photos" disabled={disabled} running={isRunning} onClick={onRetryCompletedMissing} /><ActionMiniCard title="Backfill Missing Photos" description="Calls Google only for records that still need a photo and saves successful images to location-images." button="Backfill Missing Photos" disabled={disabled} running={isRunning} onClick={onBackfillMissingPhotos} /></div></section></div>;
+  const [diagnostics, setDiagnostics] = useState<MissingPhotoDiagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  const loadDiagnostics = async () => {
+    try {
+      setDiagnosticsLoading(true);
+      setDiagnosticsError(null);
+      const res = await fetch(
+        "/api/admin/location-growth/missing-photo-diagnostics",
+        { cache: "no-store" },
+      );
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || "Could not load missing-photo diagnostics");
+      }
+      setDiagnostics({
+        totalReturned: Number(data.totalReturned) || 0,
+        rows: data.rows || [],
+      });
+    } catch (error) {
+      setDiagnosticsError(error instanceof Error ? error.message : String(error));
+      setDiagnostics(null);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const breakdownStats = [
+    {
+      label: "Missing Searchable",
+      value: summary?.missingPhotosSearchable,
+    },
+    {
+      label: "Missing Not Searchable",
+      value: summary?.missingPhotosNotSearchable,
+    },
+    {
+      label: "Eligible Backfill",
+      value: summary?.missingPhotosEligibleBackfill,
+    },
+    {
+      label: "Failed Backfill",
+      value: summary?.missingPhotosFailedBackfill,
+    },
+    {
+      label: "Backfill Error",
+      value: summary?.missingPhotosWithBackfillError,
+    },
+    {
+      label: "Low Quality",
+      value: summary?.missingPhotosLowQuality,
+    },
+    {
+      label: "Duplicate/Not Unique",
+      value: summary?.missingPhotosDuplicates,
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-[2rem] border border-white/10 bg-[#0D0708] p-6 shadow-2xl shadow-black/30">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Fix Pictures</p>
+        <h2 className="mt-2 text-2xl font-black text-white">Photo Backfill & Repair</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Repair fake image values, migrate existing Google photos into Supabase Storage, and backfill only locations still missing photos.</p>
+        <TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} />
+        <p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-4 text-xs leading-5 text-rose-100">Picture tools only process records that need repair, migration, or backfill. Already-good Supabase, owner, or admin photos are skipped.</p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-4">
+          <CompactStat label="Missing Photos" value={getNumber(summary?.missingPhotos)} />
+          <CompactStat label="Has Photos" value={getNumber(summary?.hasPhotos)} />
+          <CompactStat label="Needs Photo" value={getNumber(summary?.needsPhoto)} />
+          <CompactStat label="Searchable Photos" value={getNumber(summary?.searchableWithPhotos)} />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {breakdownStats.map((stat) => (
+            <CompactStat key={stat.label} label={stat.label} value={getNumber(stat.value)} />
+          ))}
+        </div>
+        <p className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-xs leading-5 text-zinc-300">Missing Photos means the record has no usable image. Needs Photo means the quality status is specifically needs_photo. Some missing-photo records may not be eligible for automatic backfill because they are low quality, duplicates, hidden, not searchable, or Google did not return a photo.</p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <NumberField label="Repair / migration limit" value={photoFixLimit} onChange={setPhotoFixLimit} min={1} max={250} />
+          <NumberField label="Backfill limit" value={photoBackfillLimit} onChange={setPhotoBackfillLimit} min={1} max={100} />
+        </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <ActionMiniCard title="Repair Bad Photo Values" description="Clears placeholder, no-image, missing, default-image, null, and broken values." button="Repair Bad Values" disabled={disabled} running={isRunning} onClick={onRepairBadPlaceholders} />
+          <ActionMiniCard title="Migrate Google Photos" description="Copies existing Google Places photo endpoint URLs into Supabase Storage without re-enriching." button="Migrate Google Photos" disabled={disabled} running={isRunning} onClick={onMigrateGooglePhotos} />
+          <ActionMiniCard title="Retry Completed Missing Photos" description="Queues completed records that still have no usable photo for another photo attempt." button="Retry Missing Photos" disabled={disabled} running={isRunning} onClick={onRetryCompletedMissing} />
+          <ActionMiniCard title="Backfill Missing Photos" description="Calls Google only for records that still need a photo and saves successful images to location-images." button="Backfill Missing Photos" disabled={disabled} running={isRunning} onClick={onBackfillMissingPhotos} />
+        </div>
+        <section className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-black text-white">Missing Photo Diagnostics</h3>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">Load the first 100 missing-photo records with the likely reason each one is still missing an image.</p>
+            </div>
+            <button type="button" onClick={loadDiagnostics} disabled={diagnosticsLoading} className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300">
+              {diagnosticsLoading ? "Diagnosing..." : "Diagnose Missing Photos"}
+            </button>
+          </div>
+          {diagnosticsError ? (
+            <p className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4 text-sm text-rose-100">{diagnosticsError}</p>
+          ) : null}
+          {diagnostics ? (
+            <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
+              <div className="border-b border-white/10 bg-white/[0.03] px-4 py-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
+                Showing {diagnostics.totalReturned.toLocaleString()} missing-photo rows
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-white/10 text-left text-sm">
+                  <thead className="bg-black/40 text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                    <tr>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">City</th>
+                      <th className="px-4 py-3">Score</th>
+                      <th className="px-4 py-3">Searchable</th>
+                      <th className="px-4 py-3">Duplicate</th>
+                      <th className="px-4 py-3">Enrichment</th>
+                      <th className="px-4 py-3">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {diagnostics.rows.map((row, index) => {
+                      const name = row.name || row.restaurant_name || row.activity_name || "Unnamed";
+                      return (
+                        <tr key={`${row.id || name}-${index}`} className="text-zinc-300">
+                          <td className="max-w-[220px] px-4 py-3 font-semibold text-white">
+                            <span className="block truncate">{name}</span>
+                            {row.id ? (
+                              <button
+                                type="button"
+                                onClick={() => navigator.clipboard?.writeText(String(row.id))}
+                                className="block text-[10px] font-normal text-zinc-600 transition hover:text-zinc-300"
+                                title="Copy location ID"
+                              >
+                                ID: {row.id}
+                              </button>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">{row.location_type || "—"}</td>
+                          <td className="px-4 py-3">{row.city || "—"}</td>
+                          <td className="px-4 py-3">{row.quality_score ?? "—"}</td>
+                          <td className="px-4 py-3">{row.is_searchable === true ? "Yes" : "No"}</td>
+                          <td className="px-4 py-3">{row.duplicate_status || "—"}</td>
+                          <td className="px-4 py-3">{row.enrichment_status || "—"}</td>
+                          <td className="min-w-[280px] px-4 py-3 text-zinc-400">{row.reason || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      </section>
+    </div>
+  );
 }
 
 function FixDatabasePanel({ summary, runningAction, progress, cleanupOffset, setCleanupOffset, dbFixLimit, setDbFixLimit, onCleanup, onClassifyChains, onBackfillPhones, onBackfillCuisine }: { summary: GrowthSummary | null; runningAction: string | null; progress: number; cleanupOffset: string; setCleanupOffset: (value: string) => void; dbFixLimit: string; setDbFixLimit: (value: string) => void; onCleanup: () => void; onClassifyChains: () => void; onBackfillPhones: () => void; onBackfillCuisine: () => void; }) {
