@@ -1405,15 +1405,15 @@ export default function CreatePage() {
                             const restaurantId = String(restaurant.id);
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
+                            const restaurantImage = getLocationImage(restaurant);
+                            if (!restaurantImage) return null;
 
                             return (
                               <ResultCard
                                 key={restaurantId || restaurantIndex}
                                 index={restaurantIndex}
                                 type="restaurant"
-                                imageUrl={
-                                  getLocationImage(restaurant) || undefined
-                                }
+                                imageUrl={restaurantImage}
                                 title={getLocationName(restaurant)}
                                 eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
@@ -1470,6 +1470,8 @@ export default function CreatePage() {
                             const activityId = String(activity.id);
                             const isSelected =
                               selectedActivity?.id === activity.id;
+                            const activityImage = getLocationImage(activity);
+                            if (!activityImage) return null;
                             const distanceFromRestaurantLabel =
                               selectedRestaurant
                                 ? buildDistanceFromRestaurantLabel(
@@ -1496,9 +1498,7 @@ export default function CreatePage() {
                                 key={activityId || activityIndex}
                                 index={activityIndex}
                                 type="activity"
-                                imageUrl={
-                                  getLocationImage(activity) || undefined
-                                }
+                                imageUrl={activityImage}
                                 title={getLocationName(activity)}
                                 eyebrow={getPrimaryCategory(activity)}
                                 address={formatAddress(activity)}
@@ -2615,18 +2615,33 @@ function filterVisibleWalkingResults<T>(
   });
 }
 
+function withUsablePhoto<T extends RestaurantCard | ActivityCard>(items: T[]) {
+  return items.filter((item) => Boolean(getLocationImage(item)));
+}
+
 function normalizeApiCards(data: ApiResponse) {
-  const restaurants = Array.isArray(data.restaurants) ? data.restaurants : [];
-  const activities = Array.isArray(data.activities) ? data.activities : [];
-  const cards = Array.isArray(data.cards) ? data.cards : [];
+  const restaurants = Array.isArray(data.restaurants)
+    ? withUsablePhoto(data.restaurants as RestaurantCard[])
+    : [];
+
+  const activities = Array.isArray(data.activities)
+    ? withUsablePhoto(data.activities as ActivityCard[])
+    : [];
+
+  const cards = Array.isArray(data.cards)
+    ? withUsablePhoto(data.cards as Array<RestaurantCard | ActivityCard>)
+    : [];
+
   const matched = Array.isArray(data.matched_locations)
-    ? data.matched_locations
+    ? withUsablePhoto(data.matched_locations as Array<RestaurantCard | ActivityCard>)
     : [];
 
   const fallbackCards = cards.length ? cards : matched;
+
   const mappedRestaurants = fallbackCards.filter(
     (item: any) => getCardType(item) === "restaurant",
   ) as RestaurantCard[];
+
   const mappedActivities = fallbackCards.filter(
     (item: any) => getCardType(item) === "activity",
   ) as ActivityCard[];
