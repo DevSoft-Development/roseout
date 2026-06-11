@@ -1,13 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 function isUsableImageSrc(value?: string | null) {
   const src = String(value || "").trim();
   const lower = src.toLowerCase();
 
   if (!src) return false;
+  if (src.length <= 8) return false;
   if (
     [
       "null",
@@ -17,17 +18,24 @@ function isUsableImageSrc(value?: string | null) {
       "missing",
       "no image",
       "no-image",
+      "photo coming soon",
+      "coming soon",
       "#",
       "?",
     ].includes(lower)
   ) {
     return false;
   }
-  if (lower.includes("placeholder") || lower.includes("default-image")) {
+  if (
+    lower.includes("placeholder") ||
+    lower.includes("default-image") ||
+    lower.includes("photo-coming-soon")
+  ) {
     return false;
   }
 
   if (src.startsWith("/")) return src.length > 1;
+  if (src.startsWith("data:image/")) return true;
   if (src.startsWith("http://")) return src.length > "http://".length;
   if (src.startsWith("https://")) return src.length > "https://".length;
 
@@ -40,7 +48,7 @@ export default function LocationPhoto({
   priority = false,
   className = "",
   sizes = "(max-width: 768px) 100vw, 33vw",
-  fallbackLabel = "Photo coming soon",
+  fallbackLabel = "Photo Coming Soon",
 }: {
   src?: string | null;
   alt: string;
@@ -49,14 +57,17 @@ export default function LocationPhoto({
   sizes?: string;
   fallbackLabel?: string;
 }) {
-  const cleanedSrc = useMemo(() => String(src || "").trim(), [src]);
-  const [failed, setFailed] = useState(false);
+  const resolvedImageUrl = useMemo(() => {
+    const cleaned = String(src || "").trim();
+    return isUsableImageSrc(cleaned) ? cleaned : null;
+  }, [src]);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
-  useEffect(() => {
-    setFailed(false);
-  }, [cleanedSrc]);
-
-  const canRenderImage = isUsableImageSrc(cleanedSrc) && !failed;
+  const canRenderImage =
+    Boolean(resolvedImageUrl) && failedSrc !== resolvedImageUrl;
+  const isGooglePlacesPhoto = Boolean(
+    resolvedImageUrl?.includes("maps.googleapis.com/maps/api/place/photo"),
+  );
 
   if (!canRenderImage) {
     return (
@@ -83,19 +94,46 @@ export default function LocationPhoto({
     );
   }
 
+  if (isGooglePlacesPhoto) {
+    return (
+      <>
+        {/* Google Places photo endpoints are intentionally rendered with a native img. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={resolvedImageUrl || undefined}
+          alt={alt || "Location photo"}
+          loading={priority ? "eager" : "lazy"}
+          onError={() => {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn(
+                "[LocationPhoto] failed to load image",
+                resolvedImageUrl,
+              );
+            }
+            setFailedSrc(resolvedImageUrl);
+          }}
+          className={`h-full w-full object-cover transition duration-700 group-hover:scale-[1.06] ${className}`}
+        />
+      </>
+    );
+  }
+
   return (
     <Image
-      src={cleanedSrc}
-      alt={alt}
+      src={resolvedImageUrl || ""}
+      alt={alt || "Location photo"}
       fill
       unoptimized
       priority={priority}
       sizes={sizes}
       onError={() => {
         if (process.env.NODE_ENV !== "production") {
-          console.warn("[LocationPhoto] failed to load image", cleanedSrc);
+          console.warn(
+            "[LocationPhoto] failed to load image",
+            resolvedImageUrl,
+          );
         }
-        setFailed(true);
+        setFailedSrc(resolvedImageUrl);
       }}
       className={`object-cover transition duration-700 group-hover:scale-[1.06] ${className}`}
     />

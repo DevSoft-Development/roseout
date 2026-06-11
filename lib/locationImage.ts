@@ -1,5 +1,7 @@
 function isBadImageValue(value: unknown) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
 
   return (
     !normalized ||
@@ -45,9 +47,11 @@ export function firstImage(value: unknown): string | null {
       (trimmed.startsWith("{") && trimmed.endsWith("}"))
     ) {
       try {
-        return firstImage(JSON.parse(trimmed));
+        const parsed = JSON.parse(trimmed);
+        const image = firstImage(parsed);
+        if (image) return image;
       } catch {
-        return null;
+        // Continue and treat it as a plain URL/string below.
       }
     }
 
@@ -91,6 +95,8 @@ export function firstImage(value: unknown): string | null {
 }
 
 export function getLocationImage(location: any) {
+  if (!location) return null;
+
   return (
     firstImage(location?.main_image) ||
     firstImage(location?.image_url) ||

@@ -15,10 +15,18 @@ import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import {
+  normalizePublicCardImage,
+  hasPublicCardImage,
+} from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
-import { emptyOutingTimeValue, getBrowserTimezone, type OutingTimeValue } from "@/lib/outings/planned-time-client";
+import {
+  emptyOutingTimeValue,
+  getBrowserTimezone,
+  type OutingTimeValue,
+} from "@/lib/outings/planned-time-client";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
@@ -895,8 +903,12 @@ export default function CreatePage() {
             timezone: data.plannedTime.timezone || outingTime.timezone,
             outingDateContext: data.plannedTime.dateContext,
             outingTimeConfidence: data.plannedTime.confidence,
-            remindersEnabled: Boolean(data.plannedTime.shouldSchedulePreOutingReminders),
-            nextMorningFollowupEnabled: Boolean(data.plannedTime.shouldScheduleNextMorningFollowup),
+            remindersEnabled: Boolean(
+              data.plannedTime.shouldSchedulePreOutingReminders,
+            ),
+            nextMorningFollowupEnabled: Boolean(
+              data.plannedTime.shouldScheduleNextMorningFollowup,
+            ),
             nextMorningFollowupDate: data.plannedTime.nextMorningFollowupDate,
           },
           false,
@@ -981,6 +993,34 @@ export default function CreatePage() {
             ? previousActivities
             : responseActivities,
       });
+
+      if (process.env.NODE_ENV !== "production") {
+        const restaurants = dedupedResults.restaurants;
+        const activities = dedupedResults.activities;
+        const firstRestaurant = restaurants[0];
+        const firstActivity = activities[0];
+
+        console.log("[create] normalized image debug", {
+          firstRestaurant: firstRestaurant
+            ? {
+                name: firstRestaurant.name || firstRestaurant.restaurant_name,
+                main_image: firstRestaurant.main_image,
+                image_url: firstRestaurant.image_url,
+                images: firstRestaurant.images,
+                resolvedImage: getLocationImage(firstRestaurant),
+              }
+            : null,
+          firstActivity: firstActivity
+            ? {
+                name: firstActivity.name || firstActivity.activity_name,
+                main_image: firstActivity.main_image,
+                image_url: firstActivity.image_url,
+                images: firstActivity.images,
+                resolvedImage: getLocationImage(firstActivity),
+              }
+            : null,
+        });
+      }
 
       const assistantMessage: Message = {
         role: "assistant",
@@ -1147,7 +1187,9 @@ export default function CreatePage() {
     const plan: SavedPlan = {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
-      locations: [selectedRestaurant, selectedActivity].filter(Boolean) as Array<RestaurantCard | ActivityCard>,
+      locations: [selectedRestaurant, selectedActivity].filter(
+        Boolean,
+      ) as Array<RestaurantCard | ActivityCard>,
       distancePreference: latestDistancePreference,
       campaignSlug: currentParams.get("campaignSlug") || undefined,
       planExact: currentParams.get("planExact") === "true" || undefined,
@@ -1189,10 +1231,14 @@ export default function CreatePage() {
     if (sourceTable) params.set("sourceTable", sourceTable);
     if (outingTime.plannedFor) params.set("plannedFor", outingTime.plannedFor);
     if (outingTime.timezone) params.set("timezone", outingTime.timezone);
-    if (outingTime.outingDateContext) params.set("outingDateContext", outingTime.outingDateContext);
-    if (outingTime.outingTimeConfidence) params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
-    if (outingTime.nextMorningFollowupDate) params.set("nextMorningFollowupDate", outingTime.nextMorningFollowupDate);
-    if (outingTime.nextMorningFollowupEnabled) params.set("nextMorningFollowupEnabled", "true");
+    if (outingTime.outingDateContext)
+      params.set("outingDateContext", outingTime.outingDateContext);
+    if (outingTime.outingTimeConfidence)
+      params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
+    if (outingTime.nextMorningFollowupDate)
+      params.set("nextMorningFollowupDate", outingTime.nextMorningFollowupDate);
+    if (outingTime.nextMorningFollowupEnabled)
+      params.set("nextMorningFollowupEnabled", "true");
     if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
 
     router.push(`/plan?${params.toString()}`);
@@ -1402,7 +1448,16 @@ export default function CreatePage() {
                           subtitle="Food spots matched to cuisine, vibe, and location"
                         >
                           {restaurants.map((restaurant, restaurantIndex) => {
-                            const restaurantId = String(restaurant.id);
+                            const normalizedRestaurant =
+                              normalizePublicCardImage(restaurant);
+                            const restaurantImage =
+                              getLocationImage(normalizedRestaurant);
+
+                            if (!restaurantImage) return null;
+
+                            const restaurantId = String(
+                              normalizedRestaurant.id,
+                            );
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
                             const restaurantImage = getLocationImage(restaurant);
@@ -1432,7 +1487,9 @@ export default function CreatePage() {
                                 onSelect={() => {
                                   trackRestaurantClick(restaurantId);
                                   trackRestaurantSave(restaurantId);
-                                  selectRestaurantAndMaybeScroll(restaurant);
+                                  selectRestaurantAndMaybeScroll(
+                                    normalizedRestaurant,
+                                  );
                                 }}
                                 onCardClick={() =>
                                   trackRestaurantClick(restaurantId)
@@ -1467,7 +1524,14 @@ export default function CreatePage() {
                           subtitle="Activities matched to your outing plan"
                         >
                           {activities.map((activity, activityIndex) => {
-                            const activityId = String(activity.id);
+                            const normalizedActivity =
+                              normalizePublicCardImage(activity);
+                            const activityImage =
+                              getLocationImage(normalizedActivity);
+
+                            if (!activityImage) return null;
+
+                            const activityId = String(normalizedActivity.id);
                             const isSelected =
                               selectedActivity?.id === activity.id;
                             const activityImage = getLocationImage(activity);
@@ -1476,14 +1540,14 @@ export default function CreatePage() {
                               selectedRestaurant
                                 ? buildDistanceFromRestaurantLabel(
                                     selectedRestaurant,
-                                    activity,
+                                    normalizedActivity,
                                     latestDistancePreference,
                                   )
                                 : undefined;
                             const walkingDirectionsUrl = selectedRestaurant
                               ? buildGoogleDirectionsUrl({
                                   origin: selectedRestaurant,
-                                  destination: activity,
+                                  destination: normalizedActivity,
                                   travelMode: "walking",
                                 })
                               : undefined;
@@ -1523,7 +1587,7 @@ export default function CreatePage() {
                                 onSelect={() => {
                                   trackActivityClick(activityId);
                                   trackActivitySave(activityId);
-                                  selectActivity(activity);
+                                  selectActivity(normalizedActivity);
                                 }}
                                 onCardClick={() =>
                                   trackActivityClick(activityId)
@@ -1893,6 +1957,18 @@ function PlanSummarySheet({
 }) {
   const summaryDescription = getPlanSummaryDescription(restaurant, activity);
   const nextStepText = getPlanNextStepText(restaurant, activity);
+  const normalizedRestaurant = restaurant
+    ? normalizePublicCardImage(restaurant)
+    : null;
+  const normalizedActivity = activity
+    ? normalizePublicCardImage(activity)
+    : null;
+  const restaurantImage = normalizedRestaurant
+    ? getLocationImage(normalizedRestaurant)
+    : null;
+  const activityImage = normalizedActivity
+    ? getLocationImage(normalizedActivity)
+    : null;
 
   return (
     <div className="fixed inset-0 z-[999] flex items-end justify-center overflow-hidden bg-black/70 px-2 pb-2 backdrop-blur-sm sm:px-6 sm:pb-6">
@@ -1941,12 +2017,16 @@ function PlanSummarySheet({
               step="1"
               label="Restaurant"
               title={
-                restaurant ? getLocationName(restaurant) : "Choose a restaurant"
+                normalizedRestaurant
+                  ? getLocationName(normalizedRestaurant)
+                  : "Choose a restaurant"
               }
               meta={[
-                getCuisine(restaurant) || "Restaurant",
-                restaurant?.city || null,
-                restaurant?.rating ? `★ ${restaurant.rating}` : null,
+                getCuisine(normalizedRestaurant) || "Restaurant",
+                normalizedRestaurant?.city || null,
+                normalizedRestaurant?.rating
+                  ? `★ ${normalizedRestaurant.rating}`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" • ")}
@@ -1957,7 +2037,7 @@ function PlanSummarySheet({
                     ? "No restaurant selected yet — you can continue with the activity or add one later."
                     : "Select a restaurant to complete the first part of your TheOutHaven."
               }
-              imageUrl={restaurant ? getLocationImage(restaurant) : null}
+              imageUrl={restaurantImage}
               active={Boolean(restaurant)}
               actionLabel={
                 activity && !restaurant ? "Add Restaurant" : undefined
@@ -1980,12 +2060,16 @@ function PlanSummarySheet({
               step="2"
               label="Activity"
               title={
-                activity ? getLocationName(activity) : "Choose an activity"
+                normalizedActivity
+                  ? getLocationName(normalizedActivity)
+                  : "Choose an activity"
               }
               meta={[
-                getPrimaryCategory(activity),
-                activity?.city || null,
-                activity?.rating ? `★ ${activity.rating}` : null,
+                getPrimaryCategory(normalizedActivity),
+                normalizedActivity?.city || null,
+                normalizedActivity?.rating
+                  ? `★ ${normalizedActivity.rating}`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" • ")}
@@ -1998,7 +2082,7 @@ function PlanSummarySheet({
                     ? "Add an experience if you want to turn the restaurant into a full outing."
                     : "Select an experience to build the full restaurant-to-activity timeline."
               }
-              imageUrl={activity ? getLocationImage(activity) : null}
+              imageUrl={activityImage}
               active={Boolean(activity)}
               actionLabel={restaurant && !activity ? "Add Activity" : undefined}
               onAction={restaurant && !activity ? onAddActivity : undefined}
@@ -2285,6 +2369,10 @@ function ResultCard({
     analyticsMetadata,
   );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
+  const resolvedImageUrl =
+    typeof imageUrl === "string" && imageUrl.trim().length > 8
+      ? imageUrl.trim()
+      : null;
 
   return (
     <article
@@ -2305,11 +2393,11 @@ function ResultCard({
     >
       <div className="relative h-44 w-full overflow-hidden bg-neutral-950">
         <LocationPhoto
-          src={imageUrl}
+          src={resolvedImageUrl}
           alt={title}
           priority={priority}
           sizes="(max-width: 768px) 100vw, 33vw"
-          fallbackLabel="Photo coming soon"
+          fallbackLabel="Photo Coming Soon"
         />
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
