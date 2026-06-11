@@ -1459,8 +1459,9 @@ export default function CreatePage() {
                               normalizedRestaurant.id,
                             );
                             const isSelected =
-                              selectedRestaurant?.id ===
-                              normalizedRestaurant.id;
+                              selectedRestaurant?.id === restaurant.id;
+                            const restaurantImage = getLocationImage(restaurant);
+                            if (!restaurantImage) return null;
 
                             return (
                               <ResultCard
@@ -1468,21 +1469,14 @@ export default function CreatePage() {
                                 index={restaurantIndex}
                                 type="restaurant"
                                 imageUrl={restaurantImage}
-                                title={getLocationName(normalizedRestaurant)}
-                                eyebrow={
-                                  getCuisine(normalizedRestaurant) ||
-                                  "Restaurant"
-                                }
-                                address={formatAddress(normalizedRestaurant)}
-                                rating={normalizedRestaurant.rating}
-                                reviewKeywords={
-                                  normalizedRestaurant.review_keywords
-                                }
-                                reviewSnippet={
-                                  normalizedRestaurant.review_snippet
-                                }
-                                primaryTag={normalizedRestaurant.primary_tag}
-                                distance={normalizedRestaurant.distance_miles}
+                                title={getLocationName(restaurant)}
+                                eyebrow={getCuisine(restaurant) || "Restaurant"}
+                                address={formatAddress(restaurant)}
+                                rating={restaurant.rating}
+                                reviewKeywords={restaurant.review_keywords}
+                                reviewSnippet={restaurant.review_snippet}
+                                primaryTag={restaurant.primary_tag}
+                                distance={restaurant.distance_miles}
                                 selected={isSelected}
                                 priority={restaurantIndex === 0}
                                 selectLabel={
@@ -1539,7 +1533,9 @@ export default function CreatePage() {
 
                             const activityId = String(normalizedActivity.id);
                             const isSelected =
-                              selectedActivity?.id === normalizedActivity.id;
+                              selectedActivity?.id === activity.id;
+                            const activityImage = getLocationImage(activity);
+                            if (!activityImage) return null;
                             const distanceFromRestaurantLabel =
                               selectedRestaurant
                                 ? buildDistanceFromRestaurantLabel(
@@ -1567,18 +1563,14 @@ export default function CreatePage() {
                                 index={activityIndex}
                                 type="activity"
                                 imageUrl={activityImage}
-                                title={getLocationName(normalizedActivity)}
-                                eyebrow={getPrimaryCategory(normalizedActivity)}
-                                address={formatAddress(normalizedActivity)}
-                                rating={normalizedActivity.rating}
-                                reviewKeywords={
-                                  normalizedActivity.review_keywords
-                                }
-                                reviewSnippet={
-                                  normalizedActivity.review_snippet
-                                }
-                                primaryTag={normalizedActivity.primary_tag}
-                                distance={normalizedActivity.distance_miles}
+                                title={getLocationName(activity)}
+                                eyebrow={getPrimaryCategory(activity)}
+                                address={formatAddress(activity)}
+                                rating={activity.rating}
+                                reviewKeywords={activity.review_keywords}
+                                reviewSnippet={activity.review_snippet}
+                                primaryTag={activity.primary_tag}
+                                distance={activity.distance_miles}
                                 distanceLabel={distanceFromRestaurantLabel}
                                 distanceHref={
                                   shouldLinkWalkingDirections
@@ -2711,29 +2703,25 @@ function filterVisibleWalkingResults<T>(
   });
 }
 
+function withUsablePhoto<T extends RestaurantCard | ActivityCard>(items: T[]) {
+  return items.filter((item) => Boolean(getLocationImage(item)));
+}
+
 function normalizeApiCards(data: ApiResponse) {
   const restaurants = Array.isArray(data.restaurants)
-    ? data.restaurants
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+    ? withUsablePhoto(data.restaurants as RestaurantCard[])
     : [];
 
   const activities = Array.isArray(data.activities)
-    ? data.activities
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+    ? withUsablePhoto(data.activities as ActivityCard[])
     : [];
 
   const cards = Array.isArray(data.cards)
-    ? data.cards
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+    ? withUsablePhoto(data.cards as Array<RestaurantCard | ActivityCard>)
     : [];
 
   const matched = Array.isArray(data.matched_locations)
-    ? data.matched_locations
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+    ? withUsablePhoto(data.matched_locations as Array<RestaurantCard | ActivityCard>)
     : [];
 
   const fallbackCards = cards.length ? cards : matched;

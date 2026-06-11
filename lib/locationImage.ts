@@ -25,19 +25,6 @@ function isBadImageValue(value: unknown) {
   );
 }
 
-function isUsableImageUrl(value: string) {
-  const trimmed = value.trim();
-
-  if (isBadImageValue(trimmed)) return false;
-  if (trimmed.length <= 8) return false;
-
-  return (
-    /^https?:\/\//i.test(trimmed) ||
-    trimmed.startsWith("/") ||
-    trimmed.startsWith("data:image/")
-  );
-}
-
 export function firstImage(value: unknown): string | null {
   if (!value) return null;
 
@@ -68,36 +55,39 @@ export function firstImage(value: unknown): string | null {
       }
     }
 
-    const directValue = trimmed.split(/[\n,]+/).find((item) => {
-      const candidate = item.trim();
-      return isUsableImageUrl(candidate);
-    });
-
-    return directValue?.trim() || null;
+    return (
+      trimmed
+        .split(/[\n,]+/)
+        .map((item) => item.trim())
+        .find((item) => {
+          if (isBadImageValue(item)) return false;
+          if (item.length <= 8) return false;
+          return /^https?:\/\//i.test(item) || item.startsWith("/");
+        }) || null
+    );
   }
 
   if (typeof value === "object") {
     const record = value as any;
 
-    return (
-      firstImage(record.url) ||
-      firstImage(record.src) ||
-      firstImage(record.image_url) ||
-      firstImage(record.main_image) ||
-      firstImage(record.photo_url) ||
-      firstImage(record.primary_photo_url) ||
-      firstImage(record.google_photo_url) ||
-      firstImage(record.image) ||
-      firstImage(record.publicUrl) ||
-      firstImage(record.public_url) ||
-      firstImage(record.secure_url) ||
-      firstImage(record.original_url) ||
-      firstImage(record.large_url) ||
-      firstImage(record.medium_url) ||
-      firstImage(record.thumbnail_url) ||
-      firstImage(record.photoReference) ||
-      firstImage(record.photo_reference) ||
-      null
+    return firstImage(
+      record.url ||
+        record.src ||
+        record.image_url ||
+        record.main_image ||
+        record.photo_url ||
+        record.primary_photo_url ||
+        record.google_photo_url ||
+        record.image ||
+        record.publicUrl ||
+        record.public_url ||
+        record.secure_url ||
+        record.original_url ||
+        record.large_url ||
+        record.medium_url ||
+        record.thumbnail_url ||
+        record.photoReference ||
+        record.photo_reference,
     );
   }
 
@@ -108,17 +98,17 @@ export function getLocationImage(location: any) {
   if (!location) return null;
 
   return (
-    firstImage(location.main_image) ||
-    firstImage(location.image_url) ||
-    firstImage(location.photo_url) ||
-    firstImage(location.primary_photo_url) ||
-    firstImage(location.google_photo_url) ||
-    firstImage(location.image) ||
-    firstImage(location.images) ||
-    firstImage(location.photos) ||
-    firstImage(location.gallery_images) ||
-    firstImage(location.gallery) ||
-    firstImage(location.image_gallery) ||
+    firstImage(location?.main_image) ||
+    firstImage(location?.image_url) ||
+    firstImage(location?.photo_url) ||
+    firstImage(location?.primary_photo_url) ||
+    firstImage(location?.google_photo_url) ||
+    firstImage(location?.image) ||
+    firstImage(location?.gallery_images) ||
+    firstImage(location?.gallery) ||
+    firstImage(location?.photos) ||
+    firstImage(location?.image_gallery) ||
+    firstImage(location?.images) ||
     null
   );
 }

@@ -285,137 +285,81 @@ export async function POST(request: Request) {
       },
     );
 
-    const rawRestaurants = Array.isArray(result.restaurants)
-      ? result.restaurants
-      : [];
-    const rawActivities = Array.isArray(result.activities)
-      ? result.activities
-      : [];
+    const rawRestaurants = Array.isArray(result.restaurants) ? result.restaurants : [];
+    const rawActivities = Array.isArray(result.activities) ? result.activities : [];
     const rawMatchedLocations = Array.isArray(result.matched_locations)
       ? result.matched_locations
-      : Array.isArray(result.matchedLocations)
-        ? result.matchedLocations
-        : [];
+      : [];
 
-    const normalizeResultCard = (item: any) => {
-      const base =
-        typeof toCardRecord === "function" ? toCardRecord(item) : item;
-
-      return normalizePublicCardImage({
-        ...item,
-        ...base,
-      });
-    };
-
-    const publicRestaurants = rawRestaurants
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
-
-    const publicActivities = rawActivities
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
-
-    const publicMatchedLocations = rawMatchedLocations
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
-
-    const publicCards: any[] = [
-      ...publicRestaurants,
-      ...publicActivities,
-      ...publicMatchedLocations,
-    ]
-      .map(normalizePublicCardImage)
-      .filter(hasPublicCardImage);
-
-    function normalizePairImages(pair: any) {
-      if (!pair || typeof pair !== "object") return pair;
+    const hydratePhotoCard = (item: any) => {
+      const card = toCardRecord(item);
+      const image = getLocationImage(item) || getLocationImage(card);
 
       return {
-        ...pair,
-        restaurant: pair.restaurant
-          ? normalizePublicCardImage(pair.restaurant)
-          : pair.restaurant,
-        activity: pair.activity
-          ? normalizePublicCardImage(pair.activity)
-          : pair.activity,
-        primary: pair.primary
-          ? normalizePublicCardImage(pair.primary)
-          : pair.primary,
-        secondary: pair.secondary
-          ? normalizePublicCardImage(pair.secondary)
-          : pair.secondary,
+        ...item,
+        ...card,
+        image_url: image,
+        main_image: image,
+        has_photos: Boolean(image),
+        photo_status: image ? item?.photo_status || "has_photo" : "missing_photo",
       };
-    }
+    };
 
-    const publicPairs = Array.isArray(result.pairs)
-      ? result.pairs.map(normalizePairImages)
-      : result.pairs;
-    const publicMatchedPairs = Array.isArray(result.matched_pairs)
-      ? result.matched_pairs.map(normalizePairImages)
-      : result.matched_pairs;
+    const photoSafeRestaurants = rawRestaurants
+      .map(hydratePhotoCard)
+      .filter((card: any) => Boolean(getLocationImage(card)));
+
+    const photoSafeActivities = rawActivities
+      .map(hydratePhotoCard)
+      .filter((card: any) => Boolean(getLocationImage(card)));
+
+    const photoSafeMatchedLocations = rawMatchedLocations
+      .map(hydratePhotoCard)
+      .filter((card: any) => Boolean(getLocationImage(card)));
+
+    const cards = [
+      ...photoSafeRestaurants,
+      ...photoSafeActivities,
+      ...photoSafeMatchedLocations,
+    ].filter((card: any) => Boolean(getLocationImage(card)));
 
     if (process.env.NODE_ENV !== "production") {
-      const cardsWithoutImages = publicCards.filter(
-        (card: any) => !getLocationImage(card),
-      );
+      const removedRestaurants = rawRestaurants.length - photoSafeRestaurants.length;
+      const removedActivities = rawActivities.length - photoSafeActivities.length;
 
-      console.log("[generate] public image normalization", {
-        rawRestaurants: rawRestaurants.length,
-        publicRestaurants: publicRestaurants.length,
-        rawActivities: rawActivities.length,
-        publicActivities: publicActivities.length,
-        rawMatchedLocations: rawMatchedLocations.length,
-        publicMatchedLocations: publicMatchedLocations.length,
-        publicCards: publicCards.length,
-        cardsWithoutImages: cardsWithoutImages.length,
-        firstCard: publicCards[0]
-          ? {
-              name:
-                publicCards[0].name ||
-                publicCards[0].restaurant_name ||
-                publicCards[0].activity_name,
-              main_image: publicCards[0].main_image,
-              image_url: publicCards[0].image_url,
-              images: publicCards[0].images,
-              resolvedImage: getLocationImage(publicCards[0]),
-            }
-          : null,
-      });
+      if (removedRestaurants > 0 || removedActivities > 0) {
+        console.log("[generate] removed public cards without usable photos", {
+          removedRestaurants,
+          removedActivities,
+          finalCards: cards.length,
+        });
+      }
     }
 
     const response = {
       ...result,
       plannedTime,
-      restaurants: publicRestaurants,
-      activities: publicActivities,
-      matched_locations: publicMatchedLocations,
-      matchedLocations: publicMatchedLocations,
-      cards: publicCards,
-      ...(Array.isArray(result.pairs) ? { pairs: publicPairs } : {}),
-      ...(Array.isArray(result.matched_pairs)
-        ? { matched_pairs: publicMatchedPairs }
-        : {}),
-      restaurantCount: publicRestaurants.length,
-      activityCount: publicActivities.length,
-      cardCount: publicCards.length,
+      restaurants: photoSafeRestaurants,
+      activities: photoSafeActivities,
+      matched_locations: photoSafeMatchedLocations,
+      matchedLocations: photoSafeMatchedLocations,
+      cards,
+      restaurantCount: photoSafeRestaurants.length,
+      activityCount: photoSafeActivities.length,
+      cardCount: cards.length,
       card_counts: {
         ...(result.card_counts || {}),
-        restaurants: publicRestaurants.length,
-        activities: publicActivities.length,
-        matched_locations: publicMatchedLocations.length,
-        pairs: Array.isArray(publicPairs) ? publicPairs.length : 0,
-        cards: publicCards.length,
+        restaurants: photoSafeRestaurants.length,
+        activities: photoSafeActivities.length,
+        matched_locations: photoSafeMatchedLocations.length,
       },
       cardCounts: {
-        ...(result.cardCounts || {}),
-        restaurants: publicRestaurants.length,
-        activities: publicActivities.length,
-        matched_locations: publicMatchedLocations.length,
-        pairs: Array.isArray(publicPairs) ? publicPairs.length : 0,
-        cards: publicCards.length,
+        ...(result.cardCounts || result.card_counts || {}),
+        restaurants: photoSafeRestaurants.length,
+        activities: photoSafeActivities.length,
+        matched_locations: photoSafeMatchedLocations.length,
       },
-      render_mode:
-        result.render_mode === "empty" ? "empty" : result.render_mode,
+      render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance:
         betaDebug && (result.debug as any)?.performance
@@ -431,14 +375,14 @@ export async function POST(request: Request) {
           result.debug && (result.debug as any).geo
             ? [(result.debug as any).geo.raw].filter(Boolean)
             : [],
-        restaurant_search_input: (
-          (result.debug as any)?.restaurantTerms ?? []
-        ).join(" "),
-        activity_search_input: (
-          (result.debug as any)?.activityTerms ?? []
-        ).join(" "),
-        final_restaurants: publicRestaurants.length,
-        final_activities: publicActivities.length,
+        restaurant_search_input: ((result.debug as any)?.restaurantTerms ?? []).join(
+          " ",
+        ),
+        activity_search_input: ((result.debug as any)?.activityTerms ?? []).join(
+          " ",
+        ),
+        final_restaurants: photoSafeRestaurants.length,
+        final_activities: photoSafeActivities.length,
         fallback_used: Boolean(
           (result.debug as any)?.restaurantRecoveryUsed ||
           (result.debug as any)?.activityRecoveryUsed,
@@ -452,10 +396,10 @@ export async function POST(request: Request) {
     const normalizedIntent =
       debug.normalizedIntent ?? debug.intent ?? result.normalizedIntent ?? null;
     const counts = debug.counts ?? {
-      restaurants: publicRestaurants.length,
-      activities: publicActivities.length,
+      restaurants: photoSafeRestaurants.length,
+      activities: photoSafeActivities.length,
       pairs: result.pairs?.length ?? 0,
-      finalDisplayedResultCount: publicCards.length,
+      finalDisplayedResultCount: cards.length,
     };
     const noResultsReason =
       result.no_results_reason ??
@@ -606,10 +550,11 @@ export async function POST(request: Request) {
       JSON.stringify({
         route: "/api/generate",
         total_ms: Date.now() - startedAt,
-        cache_status: isEdgeCreateSearchEnabled()
-          ? "edge-or-legacy-fallback"
-          : "enterprise-rpc",
-        result_count: publicCards.length,
+        cache_status: isEdgeCreateSearchEnabled() ? "edge-or-legacy-fallback" : "enterprise-rpc",
+        result_count:
+          photoSafeRestaurants.length +
+          photoSafeActivities.length +
+          photoSafeMatchedLocations.length,
       }),
     );
 
