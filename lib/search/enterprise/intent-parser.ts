@@ -13,6 +13,8 @@ import {
   createEmptyActivityIntent,
   createEmptyRestaurantIntent,
   detectSingleVenueWithIntent,
+  ROOFTOP_RESTAURANT_FEATURE_TERMS,
+  userAskedForRooftopRestaurant,
 } from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
@@ -63,6 +65,8 @@ const FAST_PATH_RESTAURANT_SIGNAL_TERMS = [
   "hot chicken",
   "wings",
   "rooftop dinner",
+  "rooftop dining",
+  "rooftop restaurant",
   "cocktails with dinner",
 ];
 
@@ -363,7 +367,7 @@ function hasActivityVenueOrActivityTerm(query: string) {
 
 function connectorIsRestaurantFeature(query: string) {
   const q = String(query || "").toLowerCase();
-  return /\bwith\s+(?:skyline views|scenic views|views|rooftop|terrace|outdoor dining|cocktails|good drinks|live music)\b/.test(q);
+  return userAskedForRooftopRestaurant(q) || /\bwith\s+(?:skyline views|scenic views|views|rooftop|terrace|outdoor dining|cocktails|good drinks|live music)\b/.test(q);
 }
 
 function hasExplicitDateNightMixedFastPathIntent(query: string) {
@@ -681,8 +685,8 @@ function hasRestaurantFeatureWithConnector(query: string) {
 
 function hasRestaurantOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
-  const restaurantFeature = /\b(rooftop restaurant|restaurant with (?:a )?rooftop|restaurant with skyline views|restaurant with views|restaurant with outdoor dining|restaurant with terrace|dinner on (?:a )?rooftop)\b/.test(q) || hasRestaurantFeatureWithConnector(q);
-  const hasActivity = /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|watch|game)\b/.test(q) || (/\brooftop\b/.test(q) && !restaurantFeature);
+  const restaurantFeature = userAskedForRooftopRestaurant(q) || hasRestaurantFeatureWithConnector(q);
+  const hasActivity = /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|cocktails|nightlife|watch|game)\b/.test(q) || (/\brooftop\b/.test(q) && !restaurantFeature);
   const hasRestaurant = restaurantFeature || /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|chicken|fried chicken|hot chicken|wings|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
   return hasRestaurant && !hasActivity;
 }
@@ -699,9 +703,9 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
   if (/\bdinner\b/.test(q)) mealTerms.push("dinner");
   if (mealTerms.length === 0 && /\brestaurant|steakhouse|food|spot\b/.test(q)) mealTerms.push("dinner");
   const featureTerms: string[] = [];
-  if (/\b(rooftop restaurant|restaurant with (?:a )?rooftop|dinner on (?:a )?rooftop)\b/.test(q)) {
-    foodTerms.push("restaurant", "rooftop restaurant", "rooftop", "skyline", "skyline views", "scenic views", "terrace", "outdoor dining");
-    featureTerms.push("rooftop", "skyline views", "scenic views", "terrace", "outdoor dining");
+  if (userAskedForRooftopRestaurant(q)) {
+    mealTerms.push("dinner");
+    featureTerms.push(...ROOFTOP_RESTAURANT_FEATURE_TERMS);
   }
   if (/\bsteak|steakhouse\b/.test(q)) { cuisineTerms.push("steak"); foodTerms.push("steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "sirloin"); }
   if (/\bseafood\b/.test(q)) { cuisineTerms.push("seafood"); foodTerms.push("seafood", "fish", "lobster", "crab", "shrimp", "oyster", "raw bar"); }
@@ -723,7 +727,7 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
     vibe: uniqueTerms(vibeTerms),
     partySize: null,
     geo: emptyGeoIntent(),
-    restaurantIntent: { mealTerms: uniqueTerms(mealTerms), foodTerms: uniqueTerms(foodTerms), cuisineTerms: uniqueTerms(cuisineTerms), categoryTerms: [], vibeTerms: uniqueTerms(vibeTerms), featureTerms: uniqueTerms(featureTerms), negativeTerms: [], alternativeGroups: [] },
+    restaurantIntent: { mealTerms: uniqueTerms(mealTerms), foodTerms: uniqueTerms(foodTerms), cuisineTerms: uniqueTerms(cuisineTerms), categoryTerms: userAskedForRooftopRestaurant(q) ? ["restaurant"] : [], vibeTerms: uniqueTerms(vibeTerms), featureTerms: uniqueTerms(featureTerms), negativeTerms: [], alternativeGroups: [] },
     activityIntent: createEmptyActivityIntent(),
     pairingPreference: { requiresPairing: false, distanceMode: "any", maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false },
   } satisfies Partial<SearchIntent>;

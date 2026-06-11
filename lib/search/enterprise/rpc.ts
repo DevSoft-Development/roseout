@@ -34,6 +34,8 @@ type RpcDebug = {
   restaurantRpcCount?: number;
   activityRpcCount?: number;
   restaurantRecoveryUsed?: boolean;
+  restaurantRecoveryReason?: "rooftop_restaurant_zero_results" | string | null;
+  restaurantRecoveryTermsTried?: string[][];
   activityRecoveryUsed?: boolean;
   recoveryTerms?: string[];
   activityRecoveryReason?: string | null;
@@ -269,6 +271,8 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
   return {
     rpcCalls: [],
     restaurantRecoveryUsed: false,
+    restaurantRecoveryReason: null,
+    restaurantRecoveryTermsTried: [],
     activityRecoveryUsed: false,
     relaxedActivityPruningApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedForRelaxedIntent: [],

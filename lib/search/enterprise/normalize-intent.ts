@@ -22,7 +22,9 @@ import {
   hasGenericActivitySignal,
   hasOnlyGenericActivityTerms,
   PLACE_OF_WORSHIP_TERMS,
+  ROOFTOP_RESTAURANT_FEATURE_TERMS,
   userAskedForPlaceOfWorship,
+  userAskedForRooftopRestaurant,
 } from "./taxonomy";
 
 export const uniq = (items: string[]) =>
@@ -669,10 +671,6 @@ function activityForbiddenRestaurantTerms() {
   );
 }
 
-function userAskedForRooftopRestaurant(query: string) {
-  return /\b(rooftop restaurant|restaurant with (?:a )?rooftop|dinner on (?:a )?rooftop)\b/i.test(query);
-}
-
 function rooftopDrinksBelongToActivity(query: string) {
   return (
     /\brooftop\s+(?:drinks?|cocktails?|bars?|lounges?)\b/i.test(query) ||
@@ -888,12 +886,12 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     restaurantIntent: {
       ...createEmptyRestaurantIntent(),
       mealTerms: meals,
-      foodTerms: rooftopActivity ? stripRooftopFeatureTerms(food) : food,
-      cuisineTerms: cuisine,
-      categoryTerms: /restaurant|dining/i.test(query) ? ["restaurant"] : [],
+      foodTerms: stripRooftopFeatureTerms(food),
+      cuisineTerms: stripRooftopFeatureTerms(cuisine),
+      categoryTerms: /restaurant|dining/i.test(query) || userAskedForRooftopRestaurant(query) ? ["restaurant"] : [],
       featureTerms:
         !rooftopActivity && userAskedForRooftopRestaurant(query)
-          ? ["rooftop"]
+          ? ROOFTOP_RESTAURANT_FEATURE_TERMS
           : [],
       alternativeGroups: restaurantAlternativeGroups,
     },
@@ -984,36 +982,39 @@ export function normalizeIntent(
     ),
     foodTerms: stripBlockedTerms(
       stripCrossTerms(
-        rooftopActivity ? stripRooftopFeatureTerms(foodExpanded) : foodExpanded,
+        stripRooftopFeatureTerms(foodExpanded),
         ACTIVITY_TERMS,
       ),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     cuisineTerms: stripBlockedTerms(
-      stripCrossTerms(cuisine, ACTIVITY_TERMS),
+      stripCrossTerms(stripRooftopFeatureTerms(cuisine), ACTIVITY_TERMS),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     categoryTerms: stripBlockedTerms(
       stripCrossTerms(
-        uniq(merged.restaurantIntent.categoryTerms ?? []),
+        uniq([
+          ...(merged.restaurantIntent.categoryTerms ?? []),
+          ...(userAskedForRooftopRestaurant(query) ? ["restaurant"] : []),
+        ]),
         ACTIVITY_TERMS,
       ),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     featureTerms: stripBlockedTerms(
-      stripCrossTerms(
-        rooftopActivity
-          ? stripRooftopFeatureTerms(
-              uniq(merged.restaurantIntent.featureTerms ?? []),
-            )
-          : uniq([
-              ...(merged.restaurantIntent.featureTerms ?? []),
-              ...(userAskedForRooftopRestaurant(query)
-                ? ["rooftop", "terrace", "skyline", "view"]
-                : []),
-            ]),
-        ACTIVITY_TERMS,
-      ),
+      userAskedForRooftopRestaurant(query) && !rooftopActivity
+        ? uniq([
+            ...(merged.restaurantIntent.featureTerms ?? []),
+            ...ROOFTOP_RESTAURANT_FEATURE_TERMS,
+          ])
+        : stripCrossTerms(
+            rooftopActivity
+              ? stripRooftopFeatureTerms(
+                  uniq(merged.restaurantIntent.featureTerms ?? []),
+                )
+              : uniq(merged.restaurantIntent.featureTerms ?? []),
+            ACTIVITY_TERMS,
+          ),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     negativeTerms: uniq(merged.restaurantIntent.negativeTerms ?? []),
@@ -1234,7 +1235,20 @@ export function mergeLlmIntentWithPreIntent(args: {
 export function restaurantSearchTerms(intent: SearchIntent) {
   if (!intent.needsRestaurant) return [];
   const rooftopRestaurantTerms = userAskedForRooftopRestaurant(intent.rawQuery)
-    ? ["restaurant", "rooftop restaurant", "rooftop", "skyline", "skyline views", "scenic views", "terrace", "outdoor dining"]
+    ? [
+        "restaurant",
+        "dinner",
+        "rooftop",
+        "rooftop restaurant",
+        "rooftop dining",
+        "terrace",
+        "outdoor dining",
+        "skyline",
+        "skyline views",
+        "scenic views",
+        "views",
+        "roof deck",
+      ]
     : [];
   return finalCleanTermList(stripBlockedTerms(
     uniq([
