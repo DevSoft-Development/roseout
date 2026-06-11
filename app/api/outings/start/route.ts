@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
-import { trackEvent } from "@/lib/analytics/trackEvent";
+import { isUuid as isTrackUuid, trackEvent } from "@/lib/analytics/trackEvent";
 import { generateConfirmToken, generatePlanAccessToken, createSecureToken } from "@/lib/tokens/secure-token";
 
 const CONTACT_METHODS = new Set(["external_reservation", "phone"]);
@@ -37,11 +37,17 @@ export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
     const sourceLocationId = asString(payload?.source_location_id) ?? asString(payload?.sourceLocationId);
-    const locationId = asString(payload?.location_id) ?? asString(payload?.locationId) ?? asString(payload?.restaurantLocationId) ?? asString(payload?.activityLocationId);
+    const restaurantLocationId = asString(payload?.restaurantLocationId);
+    const activityLocationId = asString(payload?.activityLocationId);
+    const locationId = asString(payload?.location_id) ?? asString(payload?.locationId) ?? restaurantLocationId ?? activityLocationId;
     const contactMethod = asString(payload?.contact_method) ?? (payload?.external_reservation_url ? "external_reservation" : payload?.phone_number ? "phone" : "external_reservation");
     const reservationUrl = asString(payload?.external_reservation_url) ?? asString(payload?.externalReservationUrl);
     const phoneNumber = asString(payload?.phone_number) ?? asString(payload?.phoneNumber);
     const selectedLocationId = sourceLocationId ?? locationId;
+    const planTitle = asString(payload?.planTitle);
+    const sourceQuery = asString(payload?.sourceQuery);
+    const clientSessionId = asString(payload?.session_id) ?? asString(payload?.sessionId);
+    const anonymousId = asString(payload?.anonymous_id) ?? asString(payload?.anonymousId);
 
     if (!selectedLocationId) {
       return NextResponse.json({ ok: false, error: "missing_location_id", message: "A location id is required." }, { status: 400 });
@@ -98,21 +104,40 @@ export async function POST(req: NextRequest) {
     const planAccessToken = isGuest ? generatePlanAccessToken() : null;
     const confirmToken = remindersEnabled || nextMorningFollowupEnabled ? generateConfirmToken() : null;
 
+    await trackEvent({
+      event_name: "plan_save_started",
+      event_type: "save",
+      user_id: userId,
+      anonymous_id: anonymousId,
+      session_id: clientSessionId,
+      location_id: locationId,
+      source_location_id: sourceLocationId ?? locationId,
+      query: sourceQuery,
+      page_path: asString(payload?.page_path),
+      source: asString(payload?.source) ?? "plan_page",
+      conversion_step: "viewed_plan",
+      metadata: { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId },
+    });
+
     const insertPayload = {
       user_id: userId,
       source_location_id: sourceLocationId ?? locationId,
       location_id: isUuid(locationId) ? locationId : null,
       location_type: asString(payload?.location_type),
-      status: "planned",
+      status: "saved",
       reservation_type: asString(payload?.reservation_type) ?? "external",
       external_reservation_url: reservationUrl,
       phone_number: phoneNumber,
       contact_method: contactMethod,
       reservation_clicked_at: contactMethod === "external_reservation" ? new Date().toISOString() : null,
       call_clicked_at: contactMethod === "phone" ? new Date().toISOString() : null,
-      source: asString(payload?.source) ?? "unknown",
+      source: asString(payload?.source) ?? "plan_page",
       source_search_id: asString(payload?.sourceSearchId),
-      source_query: asString(payload?.sourceQuery),
+      source_query: sourceQuery,
+      plan_title: planTitle,
+      restaurant_location_id: isTrackUuid(restaurantLocationId) ? restaurantLocationId : null,
+      activity_location_id: isTrackUuid(activityLocationId) ? activityLocationId : null,
+      saved_at: new Date().toISOString(),
       created_by_type: isGuest ? "guest" : "user",
       guest_session_id: guestSessionId,
       guest_email: isGuest ? guestEmail : null,
@@ -138,15 +163,31 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error: error.message, location_id: selectedLocationId });
-      return NextResponse.json({ ok: false, error: "outing_create_failed", message: error.message }, { status: 500 });
+      await trackEvent({
+        event_name: "plan_save_failed",
+        event_type: "save",
+        user_id: userId,
+        anonymous_id: anonymousId,
+        session_id: clientSessionId,
+        location_id: locationId,
+        source_location_id: sourceLocationId ?? locationId,
+        query: sourceQuery,
+        page_path: asString(payload?.page_path),
+        source: asString(payload?.source) ?? "plan_page",
+        metadata: { error_code: error.code, error_message: error.message, plan_title: planTitle },
+      });
+      return NextResponse.json({ ok: false, error: "outing_create_failed", message: "We could not save your outing yet." }, { status: 500 });
     }
 
     const outingId = data.id;
     const planUrl = isGuest ? `/outings/guest/${planAccessToken}` : `/outings/${outingId}`;
 
+    const saveEventMetadata = { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId, selected_locations: payload?.selectedLocations ?? payload?.planLocations ?? null, contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, reminders_enabled: remindersEnabled, next_morning_followup_enabled: nextMorningFollowupEnabled, next_morning_followup_date: nextMorningFollowupDate };
+
     await Promise.allSettled([
-      trackEvent({ event_name: isGuest ? "guest_plan_created" : "outing_plan_created", user_id: userId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "unknown", metadata: { contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, next_morning_followup_date: nextMorningFollowupDate } }),
-      outingTimeConfidence === "date_only" ? trackEvent({ event_name: "outing_date_context_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, source_query: asString(payload?.sourceQuery), outing_date_context: outingDateContext } }) : Promise.resolve(),
+      trackEvent({ event_name: isGuest ? "guest_plan_saved" : "plan_saved", event_type: "save", conversion_step: "saved_plan", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: saveEventMetadata }),
+      trackEvent({ event_name: isGuest ? "guest_plan_created" : "outing_plan_created", event_type: "save", conversion_step: "saved_plan", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: saveEventMetadata }),
+      outingTimeConfidence === "date_only" ? trackEvent({ event_name: "outing_date_context_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, source_query: sourceQuery, outing_date_context: outingDateContext } }) : Promise.resolve(),
       outingTimeConfidence === "exact" ? trackEvent({ event_name: "outing_exact_time_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, planned_for: plannedFor } }) : Promise.resolve(),
     ]);
 

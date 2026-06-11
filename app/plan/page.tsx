@@ -119,7 +119,8 @@ type ExternalPlanEvent =
   | "phone_click"
   | "website_click"
   | "share_click"
-  | "directions_click";
+  | "directions_click"
+  | "search_click";
 
 function trackPlanExternalAction(
   locationId: string | null | undefined,
@@ -140,6 +141,45 @@ function trackPlanExternalAction(
       source_section: "outing_actions",
       metadata,
     }),
+  }).catch(() => undefined);
+}
+
+function buildTrackedOutboundHref({
+  to,
+  outingId,
+  locationId,
+  sourceLocationId,
+  type,
+  locationType,
+  planTitle,
+}: {
+  to: string;
+  outingId?: string | null;
+  locationId?: string | null;
+  sourceLocationId?: string | null;
+  type: "details" | "directions" | "reservation" | "phone" | "website" | "share" | "replace" | "add_stop" | "other";
+  locationType?: "restaurant" | "activity" | "mixed" | "unknown";
+  planTitle?: string | null;
+}) {
+  const params = new URLSearchParams({
+    to,
+    type,
+    locationType: locationType || "unknown",
+    source: "plan_page",
+  });
+  if (outingId) params.set("outingId", outingId);
+  if (locationId) params.set("locationId", locationId);
+  if (sourceLocationId) params.set("sourceLocationId", sourceLocationId);
+  if (planTitle) params.set("planTitle", planTitle);
+  return `/api/track/outbound?${params.toString()}`;
+}
+
+function trackPlanAnalyticsEvent(payload: Record<string, unknown>) {
+  fetch("/api/analytics/plan-event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    keepalive: true,
+    body: JSON.stringify({ page_path: "/plan", source: "plan_page", ...payload }),
   }).catch(() => undefined);
 }
 
@@ -173,6 +213,9 @@ function PlanPageInner() {
   const [emailOptIn, setEmailOptIn] = useState(true);
   const [smsOptIn, setSmsOptIn] = useState(false);
   const [startStatus, setStartStatus] = useState("");
+  const [activeOutingId, setActiveOutingId] = useState<string | null>(null);
+  const [activePlanUrl, setActivePlanUrl] = useState<string | null>(null);
+  const [confirmationTrackedFor, setConfirmationTrackedFor] = useState<string | null>(null);
 
   function toPlanLocation(location: ExactCampaignLocation): PlanLocation {
     return {
@@ -270,6 +313,12 @@ function PlanPageInner() {
       const planExact = searchParams.get("planExact") === "true";
 
       try {
+        const active = localStorage.getItem("theouthaven_active_outing");
+        if (active) {
+          const parsedActive = JSON.parse(active) as { outingId?: string; planUrl?: string };
+          setActiveOutingId(parsedActive.outingId || null);
+          setActivePlanUrl(parsedActive.planUrl || null);
+        }
         const saved = localStorage.getItem(PLAN_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as SavedPlan;
@@ -321,6 +370,21 @@ function PlanPageInner() {
 
     return names.length ? names.join(" + ") : "Your TheOutHaven Plan";
   }, [restaurant, activity]);
+
+  useEffect(() => {
+    if (!activeOutingId || confirmationTrackedFor === activeOutingId) return;
+    setConfirmationTrackedFor(activeOutingId);
+    trackPlanAnalyticsEvent({
+      event_name: "plan_confirmation_viewed",
+      event_type: "conversion",
+      conversion_step: "saved_plan",
+      outing_id: activeOutingId,
+      location_id: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null,
+      source_location_id: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null,
+      query: planTitle,
+      metadata: { plan_title: planTitle, plan_url: activePlanUrl },
+    });
+  }, [activeOutingId, activePlanUrl, activity, confirmationTrackedFor, planTitle, restaurant]);
 
   const completionPrompt =
     restaurant && activity
@@ -380,14 +444,14 @@ function PlanPageInner() {
     if (!plan) return;
     const primaryLocation = restaurant || activity;
     if (!primaryLocation?.id) {
-      setStartStatus("Choose a location before saving a follow-up plan.");
+      setStartStatus("Choose a location before saving your outing.");
       return;
     }
     if ((outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) && !guestEmail.trim()) {
-      setStartStatus("Add an email so we can send your follow-up.");
+      setStartStatus("Add an email so we can save reminders and check in after.");
       return;
     }
-    setStartStatus("Saving your plan…");
+    setStartStatus("Saving your outing...");
     try {
       const response = await fetch("/api/outings/start", {
         method: "POST",
@@ -397,7 +461,10 @@ function PlanPageInner() {
           restaurantLocationId: restaurant?.id ? String(restaurant.id) : null,
           activityLocationId: activity?.id ? String(activity.id) : null,
           source: "plan_page",
-          sourceQuery: planTitle,
+          planTitle,
+          sourceQuery: searchParams.get("q") || planTitle,
+          page_path: "/plan",
+          selectedLocations: { restaurant, activity },
           plannedFor: outingTime.plannedFor,
           timezone: outingTime.timezone,
           outingDateContext: outingTime.outingDateContext,
@@ -414,13 +481,16 @@ function PlanPageInner() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.ok) {
-        setStartStatus(data.message || "We could not save follow-up for this plan yet.");
+        setStartStatus(data.message || "We could not save your outing yet.");
         return;
       }
-      localStorage.setItem("theouthaven_active_outing", JSON.stringify({ outingId: data.outing?.id, planUrl: data.planUrl }));
-      setStartStatus(data.planUrl ? "Plan saved. Secure plan link created." : "Plan saved.");
+      const nextOutingId = data.outing?.id || data.outing_id || null;
+      localStorage.setItem("theouthaven_active_outing", JSON.stringify({ outingId: nextOutingId, planUrl: data.planUrl }));
+      setActiveOutingId(nextOutingId);
+      setActivePlanUrl(data.planUrl || null);
+      setStartStatus("Your outing is saved.");
     } catch {
-      setStartStatus("We could not save follow-up for this plan yet.");
+      setStartStatus("We could not save your outing yet.");
     }
   }
 
@@ -436,6 +506,20 @@ function PlanPageInner() {
           "booking",
           PLAN_ANALYTICS_METADATA,
         );
+    });
+  }
+
+  function trackPlanClick(eventName: string, linkType: string) {
+    const primaryLocation = restaurant || activity;
+    trackPlanAnalyticsEvent({
+      event_name: eventName,
+      event_type: "plan_click",
+      conversion_step: "clicked_outbound_link",
+      outing_id: activeOutingId,
+      location_id: primaryLocation?.id ? String(primaryLocation.id) : null,
+      source_location_id: primaryLocation?.id ? String(primaryLocation.id) : null,
+      query: planTitle,
+      metadata: { plan_title: planTitle, link_type: linkType },
     });
   }
 
@@ -489,10 +573,10 @@ function PlanPageInner() {
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={saveCurrentPlan}
+                  onClick={savePlanAndFollowUp}
                   className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-5 py-3 text-xs font-black uppercase tracking-[0.12em] text-emerald-100 transition hover:bg-emerald-400/15"
                 >
-                  Save Plan
+                  Save My Outing
                 </button>
 
                 <button
@@ -560,10 +644,25 @@ function PlanPageInner() {
                   </div>
                 ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save outing time</button>
-                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Save plan</button>
+                  <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save Time</button>
+                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Save My Outing</button>
                 </div>
                 {startStatus ? <p className="text-xs font-bold leading-5 text-white/50">{startStatus}</p> : null}
+                {activeOutingId ? (
+                  <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4">
+                    <p className="text-sm font-black text-emerald-100">Your outing is saved</p>
+                    <p className="mt-1 text-xs font-bold leading-5 text-white/65">We saved your plan. Use the buttons below when you’re ready.</p>
+                    {outingTime.outingTimeConfidence === "exact" && outingTime.plannedFor ? (
+                      <p className="mt-2 text-xs font-bold text-white/55">Time: {new Date(outingTime.plannedFor).toLocaleString()}</p>
+                    ) : null}
+                    {(outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) ? (
+                      <p className="mt-2 text-xs font-bold text-white/55">We’ll check in after to see how everything went.</p>
+                    ) : null}
+                    {activePlanUrl ? (
+                      <Link href={activePlanUrl} className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-black">Open secure plan link</Link>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="mt-5 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-4">
@@ -587,6 +686,7 @@ function PlanPageInner() {
                           `add restaurant near ${getLocationName(activity)}`,
                         )
                   }
+                  onClick={() => trackPlanClick(restaurant ? "outing_replace_location_clicked" : "outing_add_stop_clicked", restaurant ? "replace" : "add_stop")}
                   className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
                 >
                   {restaurant ? "Replace Restaurant" : "Add Restaurant"}
@@ -602,6 +702,7 @@ function PlanPageInner() {
                           `add activity near ${getLocationName(restaurant)}`,
                         )
                   }
+                  onClick={() => trackPlanClick(activity ? "outing_replace_location_clicked" : "outing_add_stop_clicked", activity ? "replace" : "add_stop")}
                   className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
                 >
                   {activity ? "Replace Activity" : "Add Activity"}
@@ -609,6 +710,7 @@ function PlanPageInner() {
 
                 <Link
                   href={buildCreateHref(`add another stop to ${planTitle}`)}
+                  onClick={() => trackPlanClick("outing_add_stop_clicked", "add_stop")}
                   className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
                 >
                   Add Another Stop
@@ -623,7 +725,7 @@ function PlanPageInner() {
                       : "bg-white px-4 py-3 text-black hover:bg-red-100"
                   }`}
                 >
-                  {outingComplete ? "Outing Complete" : "Mark Outing Complete"}
+                  {outingComplete ? "Outing Complete" : "I already went"}
                 </button>
 
                 <Link
@@ -642,7 +744,7 @@ function PlanPageInner() {
                   <div className="mt-3 grid gap-2">
                     {walkingRouteUrl ? (
                       <a
-                        href={walkingRouteUrl}
+                        href={buildTrackedOutboundHref({ to: walkingRouteUrl, outingId: activeOutingId, locationId: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null, type: "directions", locationType: "mixed", planTitle })}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
@@ -653,7 +755,7 @@ function PlanPageInner() {
 
                     {drivingRouteUrl ? (
                       <a
-                        href={drivingRouteUrl}
+                        href={buildTrackedOutboundHref({ to: drivingRouteUrl, outingId: activeOutingId, locationId: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null, type: "directions", locationType: "mixed", planTitle })}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
@@ -728,6 +830,8 @@ function PlanPageInner() {
                   destination: restaurant,
                   travelMode: "driving",
                 })}
+                activeOutingId={activeOutingId}
+                planTitle={planTitle}
               />
             )}
 
@@ -740,6 +844,8 @@ function PlanPageInner() {
                   destination: activity,
                   travelMode: "driving",
                 })}
+                activeOutingId={activeOutingId}
+                planTitle={planTitle}
               />
             )}
           </div>
@@ -898,11 +1004,15 @@ function PlanActionCard({
   type,
   location,
   directionsUrl,
+  activeOutingId,
+  planTitle,
 }: {
   label: string;
   type: "restaurant" | "activity";
   location: PlanLocation;
-  directionsUrl?: string;
+  directionsUrl?: string | null;
+  activeOutingId?: string | null;
+  planTitle?: string | null;
 }) {
   const title = getLocationName(
     location,
@@ -921,6 +1031,10 @@ function PlanActionCard({
   const phoneHref = location.phone
     ? `tel:${String(location.phone).replace(/[^+\d]/g, "")}`
     : null;
+  const trackedDirectionsUrl = directionsUrl && locationId ? buildTrackedOutboundHref({ to: directionsUrl, outingId: activeOutingId, locationId, type: "directions", locationType: type, planTitle }) : directionsUrl;
+  const trackedReservationUrl = reservationUrl && locationId ? buildTrackedOutboundHref({ to: reservationUrl, outingId: activeOutingId, locationId, type: "reservation", locationType: type, planTitle }) : reservationUrl;
+  const trackedPhoneHref = phoneHref && locationId ? buildTrackedOutboundHref({ to: phoneHref, outingId: activeOutingId, locationId, type: "phone", locationType: type, planTitle }) : phoneHref;
+  const trackedWebsiteUrl = location.website && locationId ? buildTrackedOutboundHref({ to: String(location.website), outingId: activeOutingId, locationId, type: "website", locationType: type, planTitle }) : location.website;
   const viewRef = useTrackLocationView<HTMLElement>(
     locationId,
     PLAN_ANALYTICS_METADATA,
@@ -1014,7 +1128,7 @@ function PlanActionCard({
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Link
             href={detailHref}
-            onClick={trackClick}
+            onClick={() => { trackClick(); trackPlanAnalyticsEvent({ event_name: "outing_details_clicked", event_type: "click", conversion_step: "clicked_outbound_link", outing_id: activeOutingId, location_id: locationId, source_location_id: locationId, query: planTitle, metadata: { plan_title: planTitle, link_type: "details", location_type: type } }); }}
             className="rounded-full bg-white px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-black transition hover:bg-red-100"
           >
             Details
@@ -1022,7 +1136,7 @@ function PlanActionCard({
 
           {directionsUrl ? (
             <a
-              href={directionsUrl}
+              href={trackedDirectionsUrl || directionsUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={trackDirections}
@@ -1042,7 +1156,7 @@ function PlanActionCard({
             </Link>
           ) : reservationUrl ? (
             <a
-              href={reservationUrl}
+              href={trackedReservationUrl || reservationUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={trackReserve}
@@ -1054,7 +1168,7 @@ function PlanActionCard({
 
           {phoneHref ? (
             <a
-              href={phoneHref}
+              href={trackedPhoneHref || phoneHref}
               onClick={trackPhone}
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
             >
@@ -1064,7 +1178,7 @@ function PlanActionCard({
 
           {location.website ? (
             <a
-              href={location.website}
+              href={trackedWebsiteUrl || location.website}
               target="_blank"
               rel="noopener noreferrer"
               onClick={trackWebsite}
