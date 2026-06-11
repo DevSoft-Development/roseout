@@ -20,6 +20,37 @@ function isBadImageValue(value: unknown) {
   );
 }
 
+function isPotentialImageUrl(value: string) {
+  const src = value.trim();
+  const lower = src.toLowerCase();
+
+  if (!src) return false;
+  if (
+    [
+      "null",
+      "undefined",
+      "none",
+      "n/a",
+      "missing",
+      "no image",
+      "no-image",
+      "#",
+      "?",
+    ].includes(lower)
+  ) {
+    return false;
+  }
+  if (lower.includes("placeholder") || lower.includes("default-image")) {
+    return false;
+  }
+
+  if (src.startsWith("/")) return src.length > 1;
+  if (src.startsWith("http://")) return src.length > "http://".length;
+  if (src.startsWith("https://")) return src.length > "https://".length;
+
+  return false;
+}
+
 export function firstImage(value: unknown): string | null {
   if (!value) return null;
 
@@ -52,7 +83,7 @@ export function firstImage(value: unknown): string | null {
       trimmed
         .split(/[\n,]+/)
         .map((item) => item.trim())
-        .find((item) => !isBadImageValue(item) && item.length > 8) || null
+        .find((item) => !isBadImageValue(item) && isPotentialImageUrl(item)) || null
     );
   }
 
