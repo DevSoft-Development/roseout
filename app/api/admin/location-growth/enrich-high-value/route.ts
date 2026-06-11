@@ -221,11 +221,18 @@ export async function POST(request: NextRequest) {
       }
 
       const place = await googleFind(row);
+      const checkedAt = new Date().toISOString();
       const updates: Record<string, unknown> = {
         enrichment_status: "completed",
-        last_enriched_at: new Date().toISOString(),
+        last_enriched_at: checkedAt,
       };
-      if (place) {
+      if (!place) {
+        updates.photo_status = "missing_photo";
+        updates.has_photos = false;
+        updates.photo_backfill_error =
+          "No Google Places match found for this location.";
+        updates.photo_backfill_checked_at = checkedAt;
+      } else {
         if (missing(row.google_place_id) && place.place_id) updates.google_place_id = place.place_id;
         if (missing(row.phone)) {
           updates.phone = place.formatted_phone_number || place.international_phone_number || null;
@@ -247,8 +254,15 @@ export async function POST(request: NextRequest) {
           updates.photo_status = "google_photo";
           updates.photo_source = "google_places";
           updates.photo_storage_path = stored.storagePath;
-          updates.photo_backfilled_at = new Date().toISOString();
+          updates.photo_backfilled_at = checkedAt;
+          updates.photo_backfill_checked_at = checkedAt;
           updates.photo_backfill_error = null;
+        } else if (!photoRef && !hasGoodPhoto({ ...row, ...updates })) {
+          updates.photo_status = "missing_photo";
+          updates.has_photos = false;
+          updates.photo_backfill_error =
+            "Google Places returned no photo for this location.";
+          updates.photo_backfill_checked_at = checkedAt;
         }
       }
       const recalculated = buildLocationCleanupUpdates({ ...row, ...updates });
@@ -267,6 +281,7 @@ export async function POST(request: NextRequest) {
           enrichment_status: "failed",
           last_enriched_at: new Date().toISOString(),
           photo_backfill_error: error instanceof Error ? error.message : String(error),
+          photo_backfill_checked_at: new Date().toISOString(),
         })
         .eq("id", row.id);
     }
