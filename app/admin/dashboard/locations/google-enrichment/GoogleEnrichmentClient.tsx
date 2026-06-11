@@ -2,6 +2,38 @@
 
 import { useMemo, useState } from "react";
 
+
+type AdminApiResult = {
+  success?: boolean;
+  error?: string;
+  debug?: {
+    edgePayload?: { error?: string; raw?: unknown };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+async function parseJsonResponse(response: Response): Promise<AdminApiResult> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text, debug: { edgePayload: { raw: text } } };
+  }
+}
+
+function googleEnrichmentErrorMessage(json: AdminApiResult) {
+  return String(
+    json.error ||
+      json.debug?.edgePayload?.error ||
+      json.debug?.edgePayload?.raw ||
+      (json.debug ? JSON.stringify(json.debug) : "") ||
+      JSON.stringify(json) ||
+      "Google enrichment request failed.",
+  );
+}
+
 type Suggestion = {
   id: string;
   source_table: string;
@@ -25,6 +57,7 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
   const [status, setStatus] = useState("pending_review");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const visible = useMemo(() => initialSuggestions.filter((suggestion) => {
@@ -42,28 +75,40 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
     });
   }
 
-  async function runEnrichment(dryRun: boolean, applyHighConfidence = false) {
+  async function runEnrichment(dryRun: boolean) {
     setLoading(true);
     setResult(null);
-    const response = await fetch("/api/admin/locations/google-enrichment", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sourceTable,
-        limit: 25,
-        dryRun,
-        onlyMissingPlaceId: false,
-        onlyWeakSearchTerms: true,
-        applyHighConfidence,
-      }),
-    });
-    setResult(await response.json());
-    setLoading(false);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/locations/google-enrichment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceTable,
+          limit: 25,
+          dryRun,
+          onlyMissingPlaceId: false,
+          onlyWeakSearchTerms: true,
+          confirmApply: !dryRun,
+          applyHighConfidence: false,
+        }),
+      });
+      const json = await parseJsonResponse(response);
+      setResult(json);
+      if (!response.ok || json.success === false) {
+        setError(googleEnrichmentErrorMessage(json));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function apply(action: "approve" | "reject") {
     setLoading(true);
     setResult(null);
+    setError(null);
     const response = await fetch("/api/admin/locations/google-food-suggestions/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -136,8 +181,8 @@ export function GoogleEnrichmentClient({ initialSuggestions }: { initialSuggesti
           <button disabled={loading} onClick={() => runEnrichment(false)} className="rounded-full bg-rose-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50">Create Review Suggestions</button>
           <button disabled={loading || selected.size === 0} onClick={() => apply("approve")} className="rounded-full bg-emerald-500 px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">Approve Selected</button>
           <button disabled={loading || selected.size === 0} onClick={() => apply("reject")} className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-600/20 disabled:cursor-not-allowed disabled:opacity-50">Reject Selected</button>
-          <button disabled={loading} onClick={() => runEnrichment(false, true)} className="rounded-full bg-amber-400 px-5 py-3 text-sm font-black text-black disabled:opacity-50">Apply high confidence only</button>
         </div>
+        {error ? <div className="mt-5 rounded-2xl border border-red-300/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{error}</div> : null}
         {result ? <pre className="mt-5 overflow-x-auto rounded-2xl bg-black/50 p-4 text-xs text-white/70">{JSON.stringify(result, null, 2)}</pre> : null}
       </section>
 

@@ -946,13 +946,39 @@ serve(async (req) => {
     estimatedApiCalls: 0,
     results: [],
   };
+  const candidateLimit = Math.min(1000, Math.max(limit * 10, limit + 50));
   const { data: rows, error } = await supabase
     .from(sourceTable)
     .select("*")
-    .limit(limit * 3);
+    .limit(candidateLimit);
   if (error) return json({ error: stringifyError(error) }, 400);
 
+  const candidateIds = clean((rows || []).map((row: any) => row.id));
+  const processedSuggestionStatuses = [
+    "pending_review",
+    "approved",
+    "rejected",
+    "auto_apply_ready",
+    "auto_applied",
+  ];
+  let processedSourceIds = new Set<string>();
+  if (candidateIds.length) {
+    const { data: existingSuggestions, error: existingError } = await supabase
+      .from("location_google_food_term_suggestions")
+      .select("source_id")
+      .eq("source_table", sourceTable)
+      .in("source_id", candidateIds)
+      .in("status", processedSuggestionStatuses);
+    if (existingError) return json({ error: stringifyError(existingError) }, 400);
+    processedSourceIds = new Set(
+      (existingSuggestions || []).map((suggestion: any) =>
+        String(suggestion.source_id),
+      ),
+    );
+  }
+
   const eligible = (rows || [])
+    .filter((row: any) => !processedSourceIds.has(String(row.id)))
     .filter((row: any) => force || !body.onlyMissingPlaceId || !row.google_place_id)
     .filter((row: any) => force || !body.onlyWeakSearchTerms || weak(row))
     .slice(0, limit);
@@ -1069,13 +1095,20 @@ serve(async (req) => {
         status: suggestionStatus,
       };
 
-      const { data: inserted, error: insertError } = await supabase
-        .from("location_google_food_term_suggestions")
-        .insert(suggestion)
-        .select("id")
-        .single();
-      if (insertError) throw insertError;
-      if (dryRun) counters.suggestions_would_create = (counters.suggestions_would_create || 0) + 1; else counters.suggestions_created++;
+      let insertedId: string | null = null;
+      if (dryRun) {
+        counters.suggestions_would_create =
+          (counters.suggestions_would_create || 0) + 1;
+      } else {
+        const { data: inserted, error: insertError } = await supabase
+          .from("location_google_food_term_suggestions")
+          .insert(suggestion)
+          .select("id")
+          .single();
+        if (insertError) throw insertError;
+        insertedId = inserted.id;
+        counters.suggestions_created++;
+      }
 
       Object.assign(resultRow, {
         status: suggestionStatus,
@@ -1135,7 +1168,7 @@ serve(async (req) => {
         await supabase
           .from("location_google_food_term_suggestions")
           .update({ applied_at: new Date().toISOString() })
-          .eq("id", inserted.id);
+          .eq("id", insertedId);
         counters.auto_applied++;
       }
     } catch (error) {

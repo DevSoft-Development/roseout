@@ -83,6 +83,29 @@ function terms(row: EnrichmentRow, key: "food" | "cuisine" | "category" | "featu
   return Array.isArray(map[key]) ? map[key] || [] : [];
 }
 
+
+function parseJsonResponse(response: Response) {
+  return response.text().then((text) => {
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: text, debug: { edgePayload: { raw: text } } };
+    }
+  });
+}
+
+function googleEnrichmentErrorMessage(json: any) {
+  return String(
+    json?.error ||
+      json?.debug?.edgePayload?.error ||
+      json?.debug?.edgePayload?.raw ||
+      (json?.debug ? JSON.stringify(json.debug) : "") ||
+      JSON.stringify(json) ||
+      "Google enrichment request failed.",
+  );
+}
+
 async function copyJson(value: unknown) {
   if (
     typeof window !== "undefined" &&
@@ -138,16 +161,9 @@ export default function GoogleEnrichmentPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = (await response.json()) as EnrichmentResult & { error?: string };
-      if (!response.ok) {
-        const errorJson = json as any;
-        const detailText =
-          errorJson?.error ||
-          errorJson?.details?.result?.error ||
-          errorJson?.details?.result?.raw ||
-          errorJson?.details?.statusText ||
-          JSON.stringify(errorJson);
-        throw new Error(detailText || "Google enrichment request failed.");
+      const json = (await parseJsonResponse(response)) as EnrichmentResult & { error?: string; debug?: any };
+      if (!response.ok || json.success === false) {
+        throw new Error(googleEnrichmentErrorMessage(json));
       }
       setResult(json);
     } catch (err) {

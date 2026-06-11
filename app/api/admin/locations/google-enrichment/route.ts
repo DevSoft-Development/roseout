@@ -35,27 +35,40 @@ function safeError(error: unknown) {
   };
 }
 
+function parseMaybeJson(text: string): unknown {
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+function readableEdgeError(edgePayload: JsonRecord, fallback: string) {
+  return String(
+    edgePayload.error ||
+      edgePayload.message ||
+      asRecord(edgePayload.result).error ||
+      asRecord(edgePayload.result).raw ||
+      edgePayload.raw ||
+      fallback,
+  );
+}
+
+function normalizeEdgeResult(edgePayload: JsonRecord): JsonRecord {
+  if (edgePayload.success === true && edgePayload.result !== undefined) {
+    return asRecord(edgePayload.result);
+  }
+
+  return edgePayload;
+}
+
 async function handleGoogleEnrichmentPost(req: Request) {
   const auth = await requireAdminApiRole(["superadmin", "admin", "manager"]);
   if (auth.error) return auth.error;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
   const cronSecret = process.env.GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET || process.env.CRON_SECRET;
-
-  if (!supabaseUrl || !cronSecret) {
-    return Response.json(
-      {
-        success: false,
-        error: "Missing Supabase URL or cron secret configuration.",
-        debug: {
-          hasSupabaseUrl: Boolean(supabaseUrl),
-          hasGoogleLocationEnrichmentCronSecret: Boolean(process.env.GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET),
-          hasCronSecret: Boolean(process.env.CRON_SECRET),
-        },
-      },
-      { status: 500 },
-    );
-  }
 
   const body = await req.json().catch(() => ({}));
   const sourceTable = VALID_SOURCE_TABLES.has(String(body.sourceTable))
@@ -66,13 +79,6 @@ async function handleGoogleEnrichmentPost(req: Request) {
   const requestedLimit = parseIntWithBounds(body.limit, 10, 1, dryRun ? 100 : 25);
   const limit = dryRun ? requestedLimit : Math.min(25, requestedLimit);
   const confirmApply = parseBoolean(body.confirmApply, false);
-
-  if (!dryRun && !confirmApply) {
-    return Response.json(
-      { success: false, error: "confirmApply must be true before running a write batch." },
-      { status: 400 },
-    );
-  }
 
   const payload = {
     sourceTable,
@@ -87,6 +93,42 @@ async function handleGoogleEnrichmentPost(req: Request) {
     applyHighConfidence: false,
   };
 
+  if (!supabaseUrl || !cronSecret) {
+    return Response.json(
+      {
+        success: false,
+        error: "Missing Supabase URL or cron secret configuration.",
+        debug: {
+          edgeStatus: null,
+          edgeStatusText: null,
+          edgePayload: null,
+          requestPayload: payload,
+          hasSupabaseUrl: Boolean(supabaseUrl),
+          hasCronSecret: Boolean(cronSecret),
+        },
+      },
+      { status: 500 },
+    );
+  }
+
+  if (!dryRun && !confirmApply) {
+    return Response.json(
+      {
+        success: false,
+        error: "confirmApply must be true before running a write batch.",
+        debug: {
+          edgeStatus: null,
+          edgeStatusText: null,
+          edgePayload: null,
+          requestPayload: payload,
+          hasSupabaseUrl: Boolean(supabaseUrl),
+          hasCronSecret: Boolean(cronSecret),
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   const response = await fetch(`${supabaseUrl}/functions/v1/google-location-enrichment`, {
     method: "POST",
     headers: {
@@ -96,32 +138,21 @@ async function handleGoogleEnrichmentPost(req: Request) {
     body: JSON.stringify(payload),
   });
 
-  const text = await response.text();
+  const edgePayload = asRecord(parseMaybeJson(await response.text()));
+  const normalizedResult = normalizeEdgeResult(edgePayload);
+  const hasExplicitFailure =
+    edgePayload.success === false || Boolean(edgePayload.error) || Boolean(normalizedResult.error);
 
-  let parsed: unknown = text;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-
-  const resultRecord = asRecord(parsed);
-
-  if (!response.ok || resultRecord.success === false || resultRecord.error) {
+  if (!response.ok || hasExplicitFailure) {
+    const fallback = `Google enrichment function failed. Status: ${response.status}`;
     return Response.json(
       {
         success: false,
-        error:
-          resultRecord.error ||
-          resultRecord.message ||
-          resultRecord.raw ||
-          `Google enrichment function failed. Status: ${response.status}`,
+        error: readableEdgeError(edgePayload, fallback),
         debug: {
           edgeStatus: response.status,
           edgeStatusText: response.statusText,
-          edgePayload: resultRecord,
+          edgePayload,
           requestPayload: payload,
           hasSupabaseUrl: Boolean(supabaseUrl),
           hasCronSecret: Boolean(cronSecret),
@@ -134,8 +165,9 @@ async function handleGoogleEnrichmentPost(req: Request) {
   return Response.json({
     success: true,
     ...payload,
-    ...resultRecord,
-    result: resultRecord.result || resultRecord,
+    ...normalizedResult,
+    result: normalizedResult,
+    edgePayload,
     debug: {
       edgeStatus: response.status,
       edgeStatusText: response.statusText,
@@ -156,7 +188,15 @@ export async function POST(req: Request) {
       {
         success: false,
         error: safe.message || "Google enrichment admin route crashed.",
-        debug: safe,
+        debug: {
+          edgeStatus: null,
+          edgeStatusText: null,
+          edgePayload: null,
+          requestPayload: null,
+          hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+          hasCronSecret: Boolean(process.env.GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET || process.env.CRON_SECRET),
+          ...safe,
+        },
       },
       { status: 500 },
     );
