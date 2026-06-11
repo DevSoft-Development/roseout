@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import LocationPhoto from "@/components/location/LocationPhoto";
 import Link from "next/link";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -2253,7 +2254,7 @@ function ResultCard({
 }: {
   index: number;
   type: "restaurant" | "activity";
-  imageUrl?: string;
+  imageUrl?: string | null;
   title: string;
   eyebrow: string;
   address: string;
@@ -2303,21 +2304,13 @@ function ResultCard({
       }}
     >
       <div className="relative h-44 w-full overflow-hidden bg-neutral-950">
-        {imageUrl ? (
-          <Image
-            src={imageUrl}
-            alt={title}
-            fill
-            unoptimized
-            priority={priority}
-            sizes="(max-width: 768px) 100vw, 33vw"
-            className="object-cover transition duration-700 group-hover:scale-[1.06]"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs font-bold text-white/30">
-            No image available
-          </div>
-        )}
+        <LocationPhoto
+          src={imageUrl}
+          alt={title}
+          priority={priority}
+          sizes="(max-width: 768px) 100vw, 33vw"
+          fallbackLabel="Photo coming soon"
+        />
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
