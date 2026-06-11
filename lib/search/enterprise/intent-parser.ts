@@ -13,7 +13,6 @@ import {
   createEmptyActivityIntent,
   createEmptyRestaurantIntent,
   detectSingleVenueWithIntent,
-  ROOFTOP_RESTAURANT_FEATURE_TERMS,
   userAskedForRooftopRestaurant,
 } from "./taxonomy";
 import {
@@ -462,7 +461,10 @@ function fastPathDistanceMode(query: string): "walking" | "nearby" | "any" {
 function createDateNightMixedFastPathIntent(rawQuery: string) {
   const q = rawQuery.toLowerCase();
   const mealTerms = detectMealTerms(q);
-  const restaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const baseRestaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const restaurantIntent = hasRooftopActivityPhrase(q)
+    ? { ...baseRestaurantIntent, featureTerms: [] }
+    : baseRestaurantIntent;
   const activityIntent = createActivityOnlyFastPathIntent(rawQuery).activityIntent ?? createEmptyActivityIntent();
   const detectedActivityTerms = detectFastPathActivityIntentTerms(q);
   const genericDateActivityTerms = hasGenericDateNightActivitySignal(q)
@@ -519,7 +521,10 @@ function createDateNightMixedFastPathIntent(rawQuery: string) {
 
 function createExplicitMixedFastPathIntent(rawQuery: string) {
   const q = rawQuery.toLowerCase();
-  const restaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const baseRestaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const restaurantIntent = hasRooftopActivityPhrase(q)
+    ? { ...baseRestaurantIntent, featureTerms: [] }
+    : baseRestaurantIntent;
   const activityIntent = createActivityOnlyFastPathIntent(rawQuery).activityIntent ?? createEmptyActivityIntent();
   const detectedActivityTerms = detectFastPathActivityIntentTerms(q);
   return {
@@ -685,9 +690,21 @@ function hasRestaurantFeatureWithConnector(query: string) {
 
 function hasRestaurantOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
-  const restaurantFeature = userAskedForRooftopRestaurant(q) || hasRestaurantFeatureWithConnector(q);
-  const hasActivity = /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|cocktails|nightlife|watch|game)\b/.test(q) || (/\brooftop\b/.test(q) && !restaurantFeature);
-  const hasRestaurant = restaurantFeature || /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|chicken|fried chicken|hot chicken|wings|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
+  const restaurantFeature =
+    /\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|skyline views|scenic views|waterfront|waterfront views|views|live music)\b/.test(q) &&
+    /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|food|spot|eat|eats|dining)\b/.test(q);
+  const explicitRooftopActivity =
+    /\brooftop\s+(drinks?|cocktails?|bar|lounge)\b/.test(q) ||
+    /\b(rooftop drinks|rooftop cocktails|rooftop bar|rooftop lounge)\b/.test(q);
+  const hasActivity =
+    explicitRooftopActivity ||
+    (
+      /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|cocktails|watch|game)\b/.test(q) &&
+      !restaurantFeature
+    );
+  const hasRestaurant =
+    restaurantFeature ||
+    /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|chinese|japanese|thai|indian|caribbean|jamaican|haitian|dominican|latin|spanish|korean|bbq|barbecue|mediterranean|greek|turkish|middle eastern|soul food|vegan|vegetarian|pizza|pasta|tacos|taco|burgers?|chicken|fried chicken|hot chicken|wings|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
   return hasRestaurant && !hasActivity;
 }
 
@@ -697,22 +714,56 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
   const cuisineTerms: string[] = [];
   const foodTerms: string[] = [];
   const vibeTerms: string[] = [];
+  const cuisineFoodMap: { pattern: RegExp; cuisine: string[]; food: string[] }[] = [
+    { pattern: /\b(?:steak|steakhouse)\b/, cuisine: ["steak"], food: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "sirloin"] },
+    { pattern: /\b(?:seafood|fish|lobster|crab|shrimp|oysters?|raw bar)\b/, cuisine: ["seafood"], food: ["seafood", "fish", "lobster", "crab", "shrimp", "oyster", "oysters", "raw bar"] },
+    { pattern: /\b(?:sushi|omakase|sashimi)\b/, cuisine: ["sushi", "japanese"], food: ["sushi", "sashimi", "omakase", "nigiri", "maki", "rolls"] },
+    { pattern: /\b(?:mexican|tacos?|birria|taqueria|tex-mex)\b/, cuisine: ["mexican"], food: ["mexican", "tacos", "taco", "burritos", "birria", "taqueria", "tex-mex"] },
+    { pattern: /\b(?:italian|pasta|pizza|trattoria|osteria|ristorante)\b/, cuisine: ["italian"], food: ["italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"] },
+    { pattern: /\b(?:chinese|dim sum|noodles?|dumplings?)\b/, cuisine: ["chinese"], food: ["chinese", "dim sum", "noodles", "dumplings"] },
+    { pattern: /\b(?:japanese|ramen|udon|yakitori)\b/, cuisine: ["japanese"], food: ["japanese", "ramen", "udon", "yakitori"] },
+    { pattern: /\b(?:thai|pad thai|drunken noodles?|tom yum)\b/, cuisine: ["thai"], food: ["thai", "pad thai", "drunken noodles", "tom yum"] },
+    { pattern: /\b(?:indian|curry|biryani|tandoori)\b/, cuisine: ["indian"], food: ["indian", "curry", "biryani", "tandoori"] },
+    { pattern: /\b(?:caribbean|jamaican|haitian|dominican|oxtail|jerk chicken)\b/, cuisine: ["caribbean"], food: ["caribbean", "jamaican", "haitian", "dominican", "oxtail", "jerk chicken"] },
+    { pattern: /\b(?:latin|spanish|peruvian|colombian|puerto rican|cuban)\b/, cuisine: ["latin"], food: ["latin", "spanish", "peruvian", "colombian", "puerto rican", "cuban"] },
+    { pattern: /\b(?:korean|korean bbq|bbq|barbecue)\b/, cuisine: ["korean", "bbq"], food: ["korean", "korean bbq", "bbq", "barbecue"] },
+    { pattern: /\b(?:mediterranean|greek|turkish|middle eastern|falafel|kebab)\b/, cuisine: ["mediterranean"], food: ["mediterranean", "greek", "turkish", "middle eastern", "falafel", "kebab"] },
+    { pattern: /\b(?:soul food|southern|mac and cheese|catfish|collard greens)\b/, cuisine: ["soul food"], food: ["soul food", "southern", "mac and cheese", "catfish", "collard greens"] },
+    { pattern: /\b(?:vegan|vegetarian|plant based|plant-based)\b/, cuisine: ["vegan"], food: ["vegan", "vegetarian", "plant based", "plant-based"] },
+    { pattern: /\b(?:chicken|fried chicken|hot chicken|wings?)\b/, cuisine: ["chicken"], food: ["chicken", "fried chicken", "hot chicken", "wings"] },
+    { pattern: /\b(?:burgers?|burger joint)\b/, cuisine: ["burgers"], food: ["burger", "burgers", "burger joint"] },
+  ];
   if (/\bbrunch\b/.test(q)) mealTerms.push("brunch");
   if (/\bbreakfast\b/.test(q)) mealTerms.push("breakfast");
   if (/\blunch\b/.test(q)) mealTerms.push("lunch");
   if (/\bdinner\b/.test(q)) mealTerms.push("dinner");
-  if (mealTerms.length === 0 && /\brestaurant|steakhouse|food|spot\b/.test(q)) mealTerms.push("dinner");
+  if (mealTerms.length === 0 && /\b(restaurant|steakhouse|food|spot|dining|eat|eats|rooftop|terrace|patio|outdoor dining|outdoor seating)\b/.test(q)) mealTerms.push("dinner");
   const featureTerms: string[] = [];
-  if (userAskedForRooftopRestaurant(q)) {
-    mealTerms.push("dinner");
-    featureTerms.push(...ROOFTOP_RESTAURANT_FEATURE_TERMS);
+  if (/\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|skyline views|scenic views|waterfront|waterfront views|views|live music)\b/.test(q)) {
+    featureTerms.push(
+      "rooftop",
+      "rooftop restaurant",
+      "rooftop dining",
+      "roof deck",
+      "terrace",
+      "patio",
+      "outdoor dining",
+      "outdoor seating",
+      "skyline",
+      "skyline views",
+      "scenic views",
+      "waterfront",
+      "waterfront views",
+      "views",
+      "live music"
+    );
   }
-  if (/\bsteak|steakhouse\b/.test(q)) { cuisineTerms.push("steak"); foodTerms.push("steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "sirloin"); }
-  if (/\bseafood\b/.test(q)) { cuisineTerms.push("seafood"); foodTerms.push("seafood", "fish", "lobster", "crab", "shrimp", "oyster", "raw bar"); }
-  if (/\bsushi\b/.test(q)) { cuisineTerms.push("sushi", "japanese"); foodTerms.push("sushi", "sashimi", "omakase", "nigiri", "maki", "rolls"); }
-  if (/\bmexican\b/.test(q)) { cuisineTerms.push("mexican"); foodTerms.push("mexican", "tacos", "taco", "burritos", "birria", "taqueria", "tex-mex"); }
-  if (/\bitalian\b/.test(q)) { cuisineTerms.push("italian"); foodTerms.push("italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"); }
-  if (/\b(chicken|fried chicken|hot chicken|wings?)\b/.test(q)) { cuisineTerms.push("chicken"); foodTerms.push("chicken", "fried chicken", "hot chicken", "wings"); }
+  for (const item of cuisineFoodMap) {
+    if (item.pattern.test(q)) {
+      cuisineTerms.push(...item.cuisine);
+      foodTerms.push(...item.food);
+    }
+  }
   if (/\bromantic|date night\b/.test(q)) vibeTerms.push("romantic", "date night");
   if (/\bcasual\b/.test(q)) vibeTerms.push("casual");
   if (/\bbirthday\b/.test(q)) vibeTerms.push("birthday");

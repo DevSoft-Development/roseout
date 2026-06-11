@@ -863,6 +863,25 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const needsRestaurant = restaurantContext && !hookahOnly;
   const needsActivity = activityContext || hookahOnly;
   const mixed = needsRestaurant && needsActivity;
+  const deterministicRestaurantFeatureTerms = restaurantContext && !rooftopActivity
+    ? uniq([
+        /\b(rooftop|roof top|roof deck)\b/i.test(query) ? "rooftop" : "",
+        /\brooftop\b/i.test(query) ? "rooftop restaurant" : "",
+        /\brooftop|rooftop dining\b/i.test(query) ? "rooftop dining" : "",
+        /\broof deck\b/i.test(query) ? "roof deck" : "",
+        /\bterrace\b/i.test(query) ? "terrace" : "",
+        /\bpatio\b/i.test(query) ? "patio" : "",
+        /\boutdoor dining\b/i.test(query) ? "outdoor dining" : "",
+        /\boutdoor seating\b/i.test(query) ? "outdoor seating" : "",
+        /\bskyline\b/i.test(query) ? "skyline" : "",
+        /\bskyline views\b/i.test(query) ? "skyline views" : "",
+        /\bscenic views\b/i.test(query) ? "scenic views" : "",
+        /\bwaterfront\b/i.test(query) ? "waterfront" : "",
+        /\bwaterfront views\b/i.test(query) ? "waterfront views" : "",
+        /\bviews\b/i.test(query) ? "views" : "",
+        /\blive music\b/i.test(query) ? "live music" : "",
+      ])
+    : [];
   return {
     rawQuery: query,
     searchType: mixed
@@ -891,8 +910,8 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
       categoryTerms: /restaurant|dining/i.test(query) || userAskedForRooftopRestaurant(query) ? ["restaurant"] : [],
       featureTerms:
         !rooftopActivity && userAskedForRooftopRestaurant(query)
-          ? ROOFTOP_RESTAURANT_FEATURE_TERMS
-          : [],
+          ? uniq([...ROOFTOP_RESTAURANT_FEATURE_TERMS, ...deterministicRestaurantFeatureTerms])
+          : deterministicRestaurantFeatureTerms,
       alternativeGroups: restaurantAlternativeGroups,
     },
     activityIntent: {
@@ -955,6 +974,25 @@ export function normalizeIntent(
     ]),
   );
   const rooftopActivity = rooftopDrinksBelongToActivity(query);
+  const restaurantOnlyFeatureTerms = merged.needsRestaurant && !merged.needsActivity
+    ? uniq([
+        /\b(rooftop|roof top|roof deck)\b/.test(query) ? "rooftop" : "",
+        /\brooftop\b/.test(query) ? "rooftop restaurant" : "",
+        /\brooftop|rooftop dining\b/.test(query) ? "rooftop dining" : "",
+        /\broof deck\b/.test(query) ? "roof deck" : "",
+        /\bterrace\b/.test(query) ? "terrace" : "",
+        /\bpatio\b/.test(query) ? "patio" : "",
+        /\boutdoor dining\b/.test(query) ? "outdoor dining" : "",
+        /\boutdoor seating\b/.test(query) ? "outdoor seating" : "",
+        /\bskyline\b/.test(query) ? "skyline" : "",
+        /\bskyline views\b/.test(query) ? "skyline views" : "",
+        /\bscenic views\b/.test(query) ? "scenic views" : "",
+        /\bwaterfront\b/.test(query) ? "waterfront" : "",
+        /\bwaterfront views\b/.test(query) ? "waterfront views" : "",
+        /\bviews\b/.test(query) ? "views" : "",
+        /\blive music\b/.test(query) ? "live music" : "",
+      ])
+    : [];
   const foodExpanded = expandFoodSynonyms(food);
   const actExpanded = stripDistanceTerms(expandActivitySynonyms(acts));
   const restaurantAlternativeGroups = mergeAlternativeGroups(
@@ -1007,14 +1045,19 @@ export function normalizeIntent(
             ...(merged.restaurantIntent.featureTerms ?? []),
             ...ROOFTOP_RESTAURANT_FEATURE_TERMS,
           ])
-        : stripCrossTerms(
-            rooftopActivity
-              ? stripRooftopFeatureTerms(
-                  uniq(merged.restaurantIntent.featureTerms ?? []),
-                )
-              : uniq(merged.restaurantIntent.featureTerms ?? []),
-            ACTIVITY_TERMS,
-          ),
+        : merged.needsRestaurant && !merged.needsActivity
+          ? uniq([
+              ...(merged.restaurantIntent.featureTerms ?? []),
+              ...restaurantOnlyFeatureTerms,
+            ])
+          : stripCrossTerms(
+              rooftopActivity
+                ? stripRooftopFeatureTerms(
+                    uniq(merged.restaurantIntent.featureTerms ?? []),
+                  )
+                : uniq(merged.restaurantIntent.featureTerms ?? []),
+              ACTIVITY_TERMS,
+            ),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     negativeTerms: uniq(merged.restaurantIntent.negativeTerms ?? []),
@@ -1158,6 +1201,22 @@ export function normalizeIntent(
           ...(singleVenueWithIntent.restaurantIntent.mealTerms ?? []),
           ...(finalIntent.restaurantIntent.mealTerms ?? []),
         ]),
+        foodTerms: uniq([
+          ...(singleVenueWithIntent.restaurantIntent.foodTerms ?? []),
+          ...(finalIntent.restaurantIntent.foodTerms ?? []),
+        ]),
+        cuisineTerms: uniq([
+          ...(singleVenueWithIntent.restaurantIntent.cuisineTerms ?? []),
+          ...(finalIntent.restaurantIntent.cuisineTerms ?? []),
+        ]),
+        categoryTerms: uniq([
+          ...(singleVenueWithIntent.restaurantIntent.categoryTerms ?? []),
+          ...(finalIntent.restaurantIntent.categoryTerms ?? []),
+        ]),
+        featureTerms: uniq([
+          ...(singleVenueWithIntent.restaurantIntent.featureTerms ?? []),
+          ...(finalIntent.restaurantIntent.featureTerms ?? []),
+        ]),
       },
       activityIntent: createEmptyActivityIntent(),
       pairingPreference: resetPairingPreference(),
@@ -1234,18 +1293,19 @@ export function mergeLlmIntentWithPreIntent(args: {
 
 export function restaurantSearchTerms(intent: SearchIntent) {
   if (!intent.needsRestaurant) return [];
-  const rooftopRestaurantTerms = userAskedForRooftopRestaurant(intent.rawQuery)
+  const rooftopRestaurantTerms = intent.needsRestaurant && !intent.needsActivity && userAskedForRooftopRestaurant(intent.rawQuery)
     ? [
         "restaurant",
-        "dinner",
-        "rooftop",
         "rooftop restaurant",
         "rooftop dining",
-        "terrace",
-        "outdoor dining",
+        "rooftop",
         "skyline",
         "skyline views",
         "scenic views",
+        "terrace",
+        "patio",
+        "outdoor dining",
+        "outdoor seating",
         "views",
         "roof deck",
       ]

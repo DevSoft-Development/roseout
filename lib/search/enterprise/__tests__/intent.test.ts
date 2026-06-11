@@ -944,3 +944,43 @@ describe("single-venue with intent regressions", () => {
     });
   }
 });
+
+describe("restaurant cuisine feature fast path", () => {
+  const cases = [
+    "Seafood rooftop restaurant",
+    "Italian rooftop restaurant",
+    "Mexican restaurant with outdoor dining",
+    "Sushi restaurant with skyline views",
+    "Steakhouse with rooftop dining",
+    "Caribbean restaurant with terrace",
+    "Thai restaurant with patio",
+    "Mediterranean restaurant with outdoor seating",
+    "Soul food restaurant with live music",
+  ];
+
+  it.each(cases)("keeps %s as restaurant-only", async (query) => {
+    const parsed = await parseEnterpriseIntent(query, { useFastPath: true });
+
+    expect(parsed.intent.searchType).toBe("restaurant");
+    expect(parsed.intent.primaryDomain).toBe("restaurant");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+    expect(parsed.intent.wantsPairing).toBe(false);
+    expect(parsed.intent.restaurantIntent.featureTerms.length).toBeGreaterThan(0);
+    expect(parsed.intent.activityIntent.activityTerms).toEqual([]);
+  });
+
+  it("keeps rooftop drinks as activity intent", async () => {
+    const parsed = await parseEnterpriseIntent("rooftop drinks", { useFastPath: true });
+
+    expect(parsed.intent.needsActivity).toBe(true);
+    expect(parsed.intent.primaryDomain).not.toBe("restaurant");
+  });
+
+  it("keeps rooftop bar as activity intent", async () => {
+    const parsed = await parseEnterpriseIntent("rooftop bar", { useFastPath: true });
+
+    expect(parsed.intent.needsActivity).toBe(true);
+    expect(parsed.intent.primaryDomain).not.toBe("restaurant");
+  });
+});
