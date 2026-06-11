@@ -24,6 +24,116 @@ async function authorize(request: Request) {
   return error;
 }
 
+
+type LocationPhotoStats = {
+  hasPhotos: number;
+  searchableWithPhotos: number;
+  searchableMissingPhotos: number;
+  nonSearchableMissingPhotos: number;
+  photoBacklogNoGooglePlaceId: number;
+  photoBacklogLowQuality: number;
+  totalTrueMissingPhotos: number;
+  missingPhotosDuplicates: number;
+  missingPhotosFailedBackfill: number;
+  missingPhotosWithBackfillError: number;
+};
+
+type LocationPhotoRow = {
+  main_image?: string | null;
+  image_url?: string | null;
+  has_photos?: boolean | null;
+  photo_status?: string | null;
+  quality_status?: string | null;
+  is_searchable?: boolean | null;
+  google_place_id?: string | null;
+  quality_score?: number | null;
+  duplicate_status?: string | null;
+  enrichment_status?: string | null;
+  photo_backfill_error?: string | null;
+};
+
+function hasUsableImageValue(value: unknown) {
+  return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
+}
+
+function rowHasPhotos(row: LocationPhotoRow) {
+  return (
+    hasUsableImageValue(row.main_image) ||
+    hasUsableImageValue(row.image_url) ||
+    row.has_photos === true
+  );
+}
+
+function rowIsTrueMissingPhoto(row: LocationPhotoRow) {
+  const hasMainImage = hasUsableImageValue(row.main_image);
+  const hasImageUrl = hasUsableImageValue(row.image_url);
+  const hasMissingSignal =
+    row.has_photos === false ||
+    row.photo_status === "missing_photo" ||
+    row.quality_status === "needs_photo";
+
+  return !hasMainImage && !hasImageUrl && hasMissingSignal;
+}
+
+async function getLocationPhotoStats(): Promise<LocationPhotoStats> {
+  const stats: LocationPhotoStats = {
+    hasPhotos: 0,
+    searchableWithPhotos: 0,
+    searchableMissingPhotos: 0,
+    nonSearchableMissingPhotos: 0,
+    photoBacklogNoGooglePlaceId: 0,
+    photoBacklogLowQuality: 0,
+    totalTrueMissingPhotos: 0,
+    missingPhotosDuplicates: 0,
+    missingPhotosFailedBackfill: 0,
+    missingPhotosWithBackfillError: 0,
+  };
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("locations")
+      .select(
+        "main_image,image_url,has_photos,photo_status,quality_status,is_searchable,google_place_id,quality_score,duplicate_status,enrichment_status,photo_backfill_error",
+      )
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.warn("summary photo stats failed for locations", error.message);
+      return stats;
+    }
+
+    for (const row of (data || []) as LocationPhotoRow[]) {
+      const hasPhotos = rowHasPhotos(row);
+      const isTrueMissingPhoto = rowIsTrueMissingPhoto(row);
+
+      if (hasPhotos) stats.hasPhotos += 1;
+      if (row.is_searchable === true && hasPhotos) stats.searchableWithPhotos += 1;
+      if (!isTrueMissingPhoto) continue;
+
+      stats.totalTrueMissingPhotos += 1;
+      if (row.is_searchable === true) {
+        stats.searchableMissingPhotos += 1;
+      } else {
+        stats.nonSearchableMissingPhotos += 1;
+      }
+      if (row.google_place_id === null) stats.photoBacklogNoGooglePlaceId += 1;
+      if (row.quality_score === null || Number(row.quality_score) < 75) {
+        stats.photoBacklogLowQuality += 1;
+      }
+      if (row.duplicate_status !== "unique") stats.missingPhotosDuplicates += 1;
+      if (row.enrichment_status === "failed") stats.missingPhotosFailedBackfill += 1;
+      if (row.photo_backfill_error !== null) {
+        stats.missingPhotosWithBackfillError += 1;
+      }
+    }
+
+    if (!data || data.length < pageSize) break;
+  }
+
+  return stats;
+}
+
 async function safeCount(
   table: string,
   filter?: (query: QueryBuilder) => QueryBuilder,
@@ -63,18 +173,8 @@ export async function GET(request: Request) {
     missingPublicQrs,
     chains,
     utilityChains,
-    missingPhotos,
-    hasPhotos,
+    photoStats,
     needsPhoto,
-    searchableWithPhotos,
-    missingPhotosTotal,
-    missingPhotosSearchable,
-    missingPhotosNotSearchable,
-    missingPhotosEligibleBackfill,
-    missingPhotosLowQuality,
-    missingPhotosDuplicates,
-    missingPhotosFailedBackfill,
-    missingPhotosWithBackfillError,
     lowLevelLocations,
     lowLevelStaged,
     nycUnverified,
@@ -140,10 +240,7 @@ export async function GET(request: Request) {
     safeCount("locations", (query) =>
       query.eq("is_chain", true).eq("curation_tier", "utility"),
     ),
-    safeCount("locations", (query) =>
-      query.or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) => query.eq("has_photos", true)),
+    getLocationPhotoStats(),
     Promise.all([
       safeCount("locations", (query) =>
         query.eq("quality_status", "needs_photo"),
@@ -152,55 +249,32 @@ export async function GET(request: Request) {
         query.eq("quality_status", "needs_photo"),
       ),
     ]).then(([live, staging]) => live + staging),
-    safeCount("locations", (query) =>
-      query.eq("is_searchable", true).eq("has_photos", true),
-    ),
-    safeCount("locations", (query) =>
-      query.or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .eq("is_searchable", true)
-        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .not("is_searchable", "is", true)
-        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .gte("quality_score", 75)
-        .eq("duplicate_status", "unique")
-        .in("enrichment_status", ["queued", "not_started", "failed", "completed"])
-        .or(
-          "has_photos.eq.false,photo_status.eq.missing_photo,main_image.is.null,image_url.is.null",
-        ),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .lt("quality_score", 75)
-        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .neq("duplicate_status", "unique")
-        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .eq("enrichment_status", "failed")
-        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
-    safeCount("locations", (query) =>
-      query
-        .not("photo_backfill_error", "is", null)
-        .or("has_photos.eq.false,photo_status.eq.missing_photo"),
-    ),
     safeCount("locations", (query) => query.eq("is_low_level", true)),
     safeCount("location_import_staging", (query) => query.eq("is_low_level", true)),
     safeCount("locations", (query) => query.eq("low_level_reason", "nyc_import_unverified")),
   ]);
+
+  const {
+    hasPhotos,
+    searchableWithPhotos,
+    searchableMissingPhotos,
+    nonSearchableMissingPhotos,
+    photoBacklogNoGooglePlaceId,
+    photoBacklogLowQuality,
+    totalTrueMissingPhotos,
+    missingPhotosDuplicates,
+    missingPhotosFailedBackfill,
+    missingPhotosWithBackfillError,
+  } = photoStats;
+  const missingPhotos = searchableMissingPhotos;
+  const missingPhotosTotal = totalTrueMissingPhotos;
+  const missingPhotosSearchable = searchableMissingPhotos;
+  const missingPhotosNotSearchable = nonSearchableMissingPhotos;
+  const missingPhotosEligibleBackfill = Math.max(
+    totalTrueMissingPhotos - photoBacklogNoGooglePlaceId - photoBacklogLowQuality,
+    0,
+  );
+  const missingPhotosLowQuality = photoBacklogLowQuality;
 
   const { data: latestBatches } = await supabaseAdmin
     .from("location_import_batches")
@@ -245,6 +319,12 @@ export async function GET(request: Request) {
     missingPhotosNotSearchable,
     missingPhotosEligibleBackfill,
     missingPhotosLowQuality,
+    searchableMissingPhotos,
+    nonSearchableMissingPhotos,
+    photoBacklogNoGooglePlaceId,
+    photoBacklogLowQuality,
+    totalTrueMissingPhotos,
+    photoStats,
     missingPhotosDuplicates,
     missingPhotosFailedBackfill,
     missingPhotosWithBackfillError,

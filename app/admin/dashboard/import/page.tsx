@@ -99,6 +99,11 @@ type GrowthSummary = {
   missingPhotosNotSearchable?: number | null;
   missingPhotosEligibleBackfill?: number | null;
   missingPhotosLowQuality?: number | null;
+  searchableMissingPhotos?: number | null;
+  nonSearchableMissingPhotos?: number | null;
+  photoBacklogNoGooglePlaceId?: number | null;
+  photoBacklogLowQuality?: number | null;
+  totalTrueMissingPhotos?: number | null;
   missingPhotosDuplicates?: number | null;
   missingPhotosFailedBackfill?: number | null;
   missingPhotosWithBackfillError?: number | null;
@@ -349,19 +354,27 @@ function getOsmProgress(summary: GrowthSummary | null) {
 }
 
 function getPictureProgress(summary: GrowthSummary | null) {
-  const hasPhotos = getNumber(summary?.hasPhotos);
-  const missingPhotos = getNumber(summary?.missingPhotos);
-  const total = hasPhotos + missingPhotos;
+  const searchableWithPhotos = getNumber(summary?.searchableWithPhotos);
+  const searchableMissingPhotos = getNumber(
+    summary?.searchableMissingPhotos ?? summary?.missingPhotosSearchable,
+  );
+  const total = searchableWithPhotos + searchableMissingPhotos;
 
   return {
-    percent: total > 0 ? percentFromParts(hasPhotos, total) : 0,
-    label: "Photo coverage",
+    percent: total > 0 ? percentFromParts(searchableWithPhotos, total) : 0,
+    label: "Searchable photo coverage",
     detail:
       total > 0
-        ? "Tracks locations with real usable photos versus missing-photo records."
-        : "No photo coverage data available yet.",
-    doneLabel: total > 0 ? progressLabel(hasPhotos, total) : "No data",
-    tone: missingPhotos > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
+        ? "Tracks public/searchable records with usable photos versus searchable missing-photo records."
+        : "No searchable photo coverage data available yet.",
+    doneLabel:
+      searchableMissingPhotos === 0
+        ? "Searchable photo coverage is complete."
+        : total > 0
+          ? progressLabel(searchableWithPhotos, total)
+          : "No data",
+    tone:
+      searchableMissingPhotos > 0 ? ("rose" as ProgressTone) : ("zinc" as ProgressTone),
   };
 }
 
@@ -894,9 +907,27 @@ function ImportPageContent() {
         body: JSON.stringify(body),
       });
       const data = await parseActionResponse(res);
+      let actionData = data;
+      if (key === "pictures") {
+        const summaryRes = await fetch("/api/admin/location-growth/summary", {
+          cache: "no-store",
+        });
+        const latestSummary = await summaryRes.json();
+        if (summaryRes.ok) {
+          actionData = {
+            ...data,
+            searchableMissingPhotosRemaining: getNumber(
+              latestSummary.searchableMissingPhotos ?? latestSummary.missingPhotosSearchable,
+            ),
+            totalNonSearchablePhotoBacklog: getNumber(
+              latestSummary.nonSearchableMissingPhotos ?? latestSummary.missingPhotosNotSearchable,
+            ),
+          };
+        }
+      }
       setProgress(100);
       setActionResult({
-        ...data,
+        ...actionData,
         actionKey: key,
         actionLabel: getActionLabel(key),
       });
@@ -1940,35 +1971,26 @@ function FixPicturesPanel({ summary, runningAction, progress, photoFixLimit, set
     }
   };
 
-  const breakdownStats = [
-    {
-      label: "Missing Searchable",
-      value: summary?.missingPhotosSearchable,
-    },
-    {
-      label: "Missing Not Searchable",
-      value: summary?.missingPhotosNotSearchable,
-    },
-    {
-      label: "Eligible Backfill",
-      value: summary?.missingPhotosEligibleBackfill,
-    },
-    {
-      label: "Failed Backfill",
-      value: summary?.missingPhotosFailedBackfill,
-    },
-    {
-      label: "Backfill Error",
-      value: summary?.missingPhotosWithBackfillError,
-    },
-    {
-      label: "Low Quality",
-      value: summary?.missingPhotosLowQuality,
-    },
-    {
-      label: "Duplicate/Not Unique",
-      value: summary?.missingPhotosDuplicates,
-    },
+  const searchableMissingPhotos = getNumber(
+    summary?.searchableMissingPhotos ?? summary?.missingPhotosSearchable,
+  );
+  const totalPhotoBacklog = getNumber(
+    summary?.totalTrueMissingPhotos ?? summary?.missingPhotosTotal,
+  );
+  const nonSearchableMissingPhotos = getNumber(
+    summary?.nonSearchableMissingPhotos ?? summary?.missingPhotosNotSearchable,
+  );
+  const photoBacklogNoGooglePlaceId = getNumber(summary?.photoBacklogNoGooglePlaceId);
+  const photoBacklogLowQuality = getNumber(
+    summary?.photoBacklogLowQuality ?? summary?.missingPhotosLowQuality,
+  );
+  const searchablePhotoCoverageComplete = searchableMissingPhotos === 0;
+  const backfillDisabled = disabled || searchablePhotoCoverageComplete;
+  const secondaryPhotoStats = [
+    { label: "Total Photo Backlog", value: totalPhotoBacklog },
+    { label: "Non-searchable Missing", value: nonSearchableMissingPhotos },
+    { label: "No Google Place ID", value: photoBacklogNoGooglePlaceId },
+    { label: "Low Quality Missing", value: photoBacklogLowQuality },
   ];
 
   return (
@@ -1979,18 +2001,16 @@ function FixPicturesPanel({ summary, runningAction, progress, photoFixLimit, set
         <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">Repair fake image values, migrate existing Google photos into Supabase Storage, and backfill only locations still missing photos.</p>
         <TabProcessBar {...sectionProgress} percent={getRunningProgress({ basePercent: sectionProgress.percent, running: isRunning, progress })} doneLabel={isRunning ? `${progress}% running` : sectionProgress.doneLabel} running={isRunning} />
         <p className="mt-4 rounded-2xl border border-rose-300/15 bg-rose-500/10 p-4 text-xs leading-5 text-rose-100">Picture tools only process records that need repair, migration, or backfill. Already-good Supabase, owner, or admin photos are skipped.</p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-4">
-          <CompactStat label="Missing Photos" value={getNumber(summary?.missingPhotos)} />
-          <CompactStat label="Has Photos" value={getNumber(summary?.hasPhotos)} />
-          <CompactStat label="Needs Photo" value={getNumber(summary?.needsPhoto)} />
-          <CompactStat label="Searchable Photos" value={getNumber(summary?.searchableWithPhotos)} />
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {breakdownStats.map((stat) => (
-            <CompactStat key={stat.label} label={stat.label} value={getNumber(stat.value)} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <CompactStat label="Searchable Missing" value={searchableMissingPhotos} tone="attention" />
+          {secondaryPhotoStats.map((stat) => (
+            <CompactStat key={stat.label} label={stat.label} value={stat.value} />
           ))}
         </div>
-        <p className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-xs leading-5 text-zinc-300">Missing Photos means the record has no usable image. Needs Photo means the quality status is specifically needs_photo. Some missing-photo records may not be eligible for automatic backfill because they are low quality, duplicates, hidden, not searchable, or Google did not return a photo.</p>
+        {searchablePhotoCoverageComplete ? (
+          <p className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4 text-sm font-black text-emerald-100">Searchable photo coverage is complete.</p>
+        ) : null}
+        <p className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-xs leading-5 text-zinc-300">Searchable Missing counts public/searchable locations with no usable image. Total Photo Backlog includes hidden, low-quality, duplicate, or non-searchable records that do not affect public search results.</p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <NumberField label="Repair / migration limit" value={photoFixLimit} onChange={setPhotoFixLimit} min={1} max={250} />
           <NumberField label="Backfill limit" value={photoBackfillLimit} onChange={setPhotoBackfillLimit} min={1} max={100} />
@@ -1998,8 +2018,8 @@ function FixPicturesPanel({ summary, runningAction, progress, photoFixLimit, set
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <ActionMiniCard title="Repair Bad Photo Values" description="Clears placeholder, no-image, missing, default-image, null, and broken values." button="Repair Bad Values" disabled={disabled} running={isRunning} onClick={onRepairBadPlaceholders} />
           <ActionMiniCard title="Migrate Google Photos" description="Copies existing Google Places photo endpoint URLs into Supabase Storage without re-enriching." button="Migrate Google Photos" disabled={disabled} running={isRunning} onClick={onMigrateGooglePhotos} />
-          <ActionMiniCard title="Retry Completed Missing Photos" description="Queues completed records that still have no usable photo for another photo attempt." button="Retry Missing Photos" disabled={disabled} running={isRunning} onClick={onRetryCompletedMissing} />
-          <ActionMiniCard title="Backfill Missing Photos" description="Calls Google only for records that still need a photo and saves successful images to location-images." button="Backfill Missing Photos" disabled={disabled} running={isRunning} onClick={onBackfillMissingPhotos} />
+          <ActionMiniCard title="Retry Completed Missing Photos" description="Queues completed records that still have no usable photo for another photo attempt." button="Retry Missing Photos" disabled={backfillDisabled} running={isRunning} onClick={onRetryCompletedMissing} />
+          <ActionMiniCard title="Backfill Missing Photos" description="Calls Google only for records that still need a photo and saves successful images to location-images." button="Backfill Missing Photos" disabled={backfillDisabled} running={isRunning} onClick={onBackfillMissingPhotos} />
         </div>
         <section className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2808,6 +2828,8 @@ function ResultBanner({
     "generatedPublicQrs",
     "skippedAlreadyComplete",
     "failed",
+    "searchableMissingPhotosRemaining",
+    "totalNonSearchablePhotoBacklog",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
   const isOsmTimeout =
@@ -2846,6 +2868,16 @@ function ResultBanner({
           {String(result.message).startsWith("OSM records staged.")
             ? "OSM records staged. Next step: run Score Chunk, then run Dedupe Chunk."
             : result.message}
+        </p>
+      ) : null}
+      {ok && result.searchableMissingPhotosRemaining !== undefined ? (
+        <p className="mt-2 font-bold">
+          Searchable missing photos remaining: {Number(result.searchableMissingPhotosRemaining).toLocaleString()}
+        </p>
+      ) : null}
+      {ok && result.totalNonSearchablePhotoBacklog !== undefined ? (
+        <p className="mt-2 font-bold">
+          Total non-searchable photo backlog: {Number(result.totalNonSearchablePhotoBacklog).toLocaleString()}
         </p>
       ) : null}
       {ok && result.hasMore === true ? (
@@ -2919,6 +2951,8 @@ function ResultBanner({
             ["Generated public QRs", result.generatedPublicQrs],
             ["Skipped complete", result.skippedAlreadyComplete],
             ["Failed", result.failed],
+            ["Searchable missing photos remaining", result.searchableMissingPhotosRemaining],
+            ["Total non-searchable photo backlog", result.totalNonSearchablePhotoBacklog],
           ]
             .filter(([, value]) => value !== undefined && value !== null)
             .map(([label, value]) => (
@@ -3114,13 +3148,16 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 function CompactStat({
   label,
   value,
+  tone = "default",
 }: {
   label: string;
   value: string | number;
+  tone?: "default" | "attention";
 }) {
+  const attention = tone === "attention";
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">
+    <div className={`rounded-2xl border p-4 ${attention ? "border-rose-300/30 bg-rose-500/10" : "border-white/10 bg-black/30"}`}>
+      <p className={`text-[11px] font-black uppercase tracking-[0.2em] ${attention ? "text-rose-200" : "text-zinc-500"}`}>
         {label}
       </p>
       <p className="mt-2 text-2xl font-black text-white">
