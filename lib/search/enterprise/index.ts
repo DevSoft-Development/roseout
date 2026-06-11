@@ -2,7 +2,7 @@ import { supabaseAdmin } from "../../supabaseAdmin";
 import type { EnterpriseLocation, EnterpriseSearchResult, SearchIntent } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
 import { activitySearchTerms, isBroadGenericActivityIntent, restaurantSearchTerms } from "./normalize-intent";
-import { detectSingleVenueWithIntent } from "./taxonomy";
+import { detectSingleVenueWithIntent, userAskedForRooftopRestaurant } from "./taxonomy";
 import { explainRejection, filterActivityResults, filterRestaurantResults, rankActivityResults, rankRestaurantResults, scoreSingleVenueWithMatch } from "./ranking";
 import { createPairingDebug, createSearchPairs, getPairCityState, getPairGeoPriority } from "./pairing";
 import { formatDistanceFromRestaurant, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, shouldHidePairForWalkingLimit, userAskedForWalking } from "./distance";
@@ -139,8 +139,21 @@ function hasPairConstraint(intent: SearchIntent) { return Boolean(intent.pairing
 function isRooftopDrinksIntent(intent: SearchIntent) { return /\brooftop\s+(drinks?|cocktails?|bar|lounge)|\b(rooftop drinks|rooftop bar|rooftop lounge)\b/i.test(intent.rawQuery) || intent.activityIntent.activityTerms.some((term) => ["rooftop drinks", "rooftop bar", "rooftop lounge"].includes(term.toLowerCase())); }
 const ROOFTOP_ACTIVITY_RECOVERY_TERMS = ["rooftop", "rooftop bar", "rooftop lounge", "drinks", "cocktails", "bar", "lounge"];
 const BAR_ACTIVITY_RECOVERY_TERMS = ["bar", "lounge", "cocktails", "drinks"];
-const ROOFTOP_RESTAURANT_RECOVERY_TERMS = ["restaurant", "rooftop", "views", "terrace", "outdoor dining"];
-function isRooftopRestaurantIntent(intent: SearchIntent) { return intent.needsRestaurant && !intent.needsActivity && /\b(rooftop restaurant|restaurant with (?:skyline views|views|outdoor dining|terrace)|skyline views|scenic views|terrace|outdoor dining)\b/i.test(intent.rawQuery); }
+const ROOFTOP_RESTAURANT_RECOVERY_TERMS = [
+  "restaurant",
+  "dinner",
+  "rooftop",
+  "rooftop restaurant",
+  "rooftop dining",
+  "terrace",
+  "outdoor dining",
+  "skyline",
+  "skyline views",
+  "scenic views",
+  "views",
+  "roof deck",
+];
+function isRooftopRestaurantIntent(intent: SearchIntent) { return intent.needsRestaurant && !intent.needsActivity && userAskedForRooftopRestaurant(intent.rawQuery); }
 
 
 function hasExactNeighborhoodOnlyLanguage(rawQuery: string): boolean {
@@ -329,12 +342,17 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       let filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
       if (!filtered.length && restaurantSearchTerms(effectiveIntent).length) {
         usedFallback = true;
+        const rooftopRestaurantRecovery = isRooftopRestaurantIntent(effectiveIntent);
+        if (rooftopRestaurantRecovery) {
+          debug.restaurantRecoveryReason = "rooftop_restaurant_zero_results";
+          debug.restaurantRecoveryTermsTried = [ROOFTOP_RESTAURANT_RECOVERY_TERMS];
+        }
         restaurantRaw=await recoverEnterpriseLane(
           supabase,
           effectiveIntent,
           "restaurant",
           debug,
-          isRooftopRestaurantIntent(effectiveIntent) ? ROOFTOP_RESTAURANT_RECOVERY_TERMS : undefined,
+          rooftopRestaurantRecovery ? ROOFTOP_RESTAURANT_RECOVERY_TERMS : undefined,
         );
         filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
       }

@@ -755,6 +755,104 @@ describe("final cleanup architecture regressions", () => {
     expect(restaurantSearchTerms(parsed.intent)).toEqual(expect.arrayContaining(["restaurant", "rooftop restaurant", "rooftop", "skyline", "skyline views", "scenic views", "terrace", "outdoor dining"]));
     expect(activitySearchTerms(parsed.intent)).toEqual([]);
   });
+
+  describe("rooftop restaurant dinner intent", () => {
+    for (const query of [
+      "rooftop restaurant in queens",
+      "rooftop dining queens",
+      "restaurant with rooftop views in queens",
+      "outdoor rooftop dinner queens",
+      "dinner with skyline views queens",
+    ]) {
+      it(`fast-paths ${query} as restaurant-only rooftop dining`, async () => {
+        const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+
+        expect(parsed.intentParserSource).toBe("fast_path");
+        expect(parsed.fastPathReason).toBe("matched restaurant-only fast path");
+        expect(parsed.intent.searchType).toBe("restaurant");
+        expect(parsed.intent.needsRestaurant).toBe(true);
+        expect(parsed.intent.needsActivity).toBe(false);
+        expect(parsed.intent.wantsPairing).toBe(false);
+        expect(parsed.debug.llm_ms).toBe(0);
+        expect(restaurantSearchTerms(parsed.intent)).toEqual(expect.arrayContaining([
+          "restaurant",
+          "rooftop",
+          "rooftop restaurant",
+          "rooftop dining",
+          "terrace",
+          "outdoor dining",
+          "skyline views",
+          "views",
+          "roof deck",
+        ]));
+        expect(activitySearchTerms(parsed.intent)).toEqual([]);
+      });
+    }
+
+    it("fast-paths rooftop dinner in Queens as restaurant-only without waiting on the LLM", async () => {
+      const parsed = await parseEnterpriseIntent("rooftop dinner in queens", { useLLM: true });
+      const terms = restaurantSearchTerms(parsed.intent);
+
+      expect(parsed.intentParserSource).toBe("fast_path");
+      expect(parsed.fastPathReason).toBe("matched restaurant-only fast path");
+      expect(parsed.intent.searchType).toBe("restaurant");
+      expect(parsed.intent.primaryDomain).toBe("restaurant");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(false);
+      expect(parsed.intent.wantsPairing).toBe(false);
+      expect(parsed.debug.llm_ms).toBe(0);
+      expect(parsed.intent.geo.borough).toBe("Queens");
+      expect(terms).toEqual(expect.arrayContaining([
+        "restaurant",
+        "dinner",
+        "rooftop",
+        "rooftop restaurant",
+        "rooftop dining",
+        "terrace",
+        "outdoor dining",
+        "skyline",
+        "skyline views",
+        "scenic views",
+      ]));
+      expect(activitySearchTerms(parsed.intent)).toEqual([]);
+    });
+
+    it("normalizes dinner on a rooftop in Queens as restaurant features, not food or activity", () => {
+      const intent = normalizeIntent("dinner on a rooftop in queens");
+
+      expect(intent.searchType).toBe("restaurant");
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(false);
+      expect(intent.restaurantIntent.mealTerms).toContain("dinner");
+      expect(intent.restaurantIntent.featureTerms).toEqual(expect.arrayContaining([
+        "rooftop",
+        "terrace",
+        "skyline",
+        "views",
+      ]));
+      expect(intent.restaurantIntent.foodTerms).not.toContain("rooftop");
+      expect(activitySearchTerms(intent)).toEqual([]);
+    });
+
+    it("keeps steak dinner and rooftop drinks after as mixed outing with rooftop on the activity side", async () => {
+      const parsed = await parseEnterpriseIntent("steak dinner and rooftop drinks after", { useLLM: true });
+      const restaurantTerms = restaurantSearchTerms(parsed.intent);
+      const activityTerms = activitySearchTerms(parsed.intent);
+
+      expect(parsed.intent.searchType).toBe("mixed_outing");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(true);
+      expect(restaurantTerms).toEqual(expect.arrayContaining(["steak", "dinner"]));
+      expect(activityTerms).toEqual(expect.arrayContaining([
+        "rooftop drinks",
+        "rooftop bar",
+        "rooftop lounge",
+      ]));
+      expect(restaurantTerms).not.toContain("rooftop restaurant");
+      expect(restaurantTerms).not.toContain("rooftop dining");
+      expect(restaurantTerms).not.toContain("roof deck");
+    });
+  });
 });
 
 describe("single-venue with intent regressions", () => {

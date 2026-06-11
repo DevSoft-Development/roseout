@@ -14,9 +14,35 @@ export const FOOD_SYNONYMS: Record<string, string[]> = {
   italian: ["italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"],
   mexican: ["mexican", "tacos", "taco", "burritos", "birria", "tequila", "taqueria", "tex-mex"],
   caribbean: ["caribbean", "jamaican", "jerk", "oxtail", "curry goat", "roti", "doubles", "patties", "trinidadian", "haitian", "dominican", "puerto rican", "cuban"],
-  rooftop: ["rooftop", "roof top", "terrace", "patio", "outdoor dining", "skyline", "city views", "scenic views", "view", "roof deck"],
   american: ["american", "new american", "southern", "soul food"], latin: ["latin", "colombian", "peruvian", "brazilian", "argentinian"], mediterranean: ["mediterranean", "greek", "turkish", "lebanese", "middle eastern", "israeli", "moroccan"], french: ["french"], spanish: ["spanish", "tapas"], portuguese: ["portuguese"], german: ["german"], irish: ["irish"], british: ["british"], indian: ["indian"], pakistani: ["pakistani"], bangladeshi: ["bangladeshi"], nepalese: ["nepalese"], thai: ["thai"], vietnamese: ["vietnamese"], chinese: ["chinese", "cantonese", "szechuan", "sichuan", "shanghainese", "taiwanese", "dim sum", "hot pot"], korean: ["korean"], japanese: ["japanese", "ramen", "izakaya", "teppanyaki", "hibachi"], filipino: ["filipino"], indonesian: ["indonesian"], malaysian: ["malaysian"], singaporean: ["singaporean"], african: ["african", "nigerian", "ethiopian", "senegalese", "ghanaian", "south african"], vegan: ["vegan", "plant-based"], vegetarian: ["vegetarian"], "gluten-free": ["gluten-free"], kosher: ["kosher"], halal: ["halal"], bbq: ["bbq", "barbecue"], burger: ["burger"], chicken: ["chicken", "wings", "fried chicken"], bakery: ["bakery"], cafe: ["cafe"], "wine bar": ["wine bar"], "cocktail bar": ["cocktail bar"], lounge: ["lounge restaurant"]
 };
+
+
+export const ROOFTOP_RESTAURANT_FEATURE_TERMS = [
+  "rooftop",
+  "rooftop restaurant",
+  "rooftop dining",
+  "terrace",
+  "outdoor dining",
+  "skyline",
+  "skyline views",
+  "scenic views",
+  "views",
+  "roof deck",
+];
+
+export function userAskedForRooftopRestaurant(query: string) {
+  const q = String(query || "").toLowerCase();
+  const rooftopRestaurant =
+    /\b(rooftop|roof top)\s+(restaurant|dinner|dining|brunch|lunch|breakfast)\b/i.test(q) ||
+    /\b(restaurant|dinner|dining|brunch|lunch|breakfast)\s+(on|at|with|inside)?\s*(a\s+)?(rooftop|roof top)\b/i.test(q) ||
+    /\brestaurant with (?:a )?(rooftop|roof top|skyline views|views|outdoor dining|terrace)\b/i.test(q) ||
+    /\b(skyline views|scenic views|terrace|outdoor dining|roof deck)\b/i.test(q);
+  const rooftopActivity =
+    /\b(rooftop|roof top)\s+(drinks?|cocktails?|bars?|lounges?|nightlife)\b/i.test(q) ||
+    /\b(drinks?|cocktails?|bars?|lounges?|nightlife)\b[^.?!]{0,50}\b(rooftop|roof top)\b/i.test(q);
+  return rooftopRestaurant && !rooftopActivity;
+}
 
 export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   bowling: ["bowling", "bowling alley", "bowling lanes"],
