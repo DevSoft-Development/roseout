@@ -27,6 +27,15 @@ type AnalyticsEvent = {
   created_at?: string | null;
 };
 
+type OutingAnalyticsRow = {
+  id?: string | null;
+  status?: string | null;
+  saved_at?: string | null;
+  completed_no_feedback_at?: string | null;
+  completed_at?: string | null;
+  attendance_confirmed_at?: string | null;
+};
+
 type DailyAnalytics = {
   location_id?: string | null;
   analytics_date?: string | null;
@@ -208,12 +217,13 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
     safeCount("open support", unavailable, "support_tickets", (q) => q.not("status", "in", "(closed,resolved)")),
   ]);
 
-  const [events, legacySearchEvents, dailyRows, locations, reservationsRows, logs] = await Promise.all([
+  const [events, legacySearchEvents, dailyRows, locations, reservationsRows, outingRows, logs] = await Promise.all([
     safeSelect("analytics events", unavailable, "analytics_events", "id,event_name,event_type,query,normalized_query,result_count,conversion_step,location_id,source_location_id,user_id,anonymous_id,session_id,metadata,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
     safeSelect("legacy search events", unavailable, "search_events", "id,search_query,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
     safeSelect("location daily analytics", unavailable, "location_daily_analytics", "location_id,analytics_date,profile_views,search_appearances,reservation_starts,reservation_completions,phone_clicks,website_clicks,search_clicks,share_clicks", (q) => q.gte("analytics_date", sinceDate).limit(10000)),
     safeSelect("locations", unavailable, "locations", "*", (q) => q.limit(5000)),
     safeSelect("location reservations", unavailable, "location_reservations", "id,created_at", (q) => q.gte("created_at", since).limit(10000)),
+    safeSelect("outings", unavailable, "outings", "id,status,saved_at,completed_at,completed_no_feedback_at,attendance_confirmed_at", (q) => q.gte("created_at", since).limit(10000)),
     safeSelect("admin system logs", unavailable, "admin_system_logs", "*", (q) => q.order("created_at", { ascending: false }).limit(10)),
   ]);
 
@@ -237,6 +247,20 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
   const phoneClicks = analyticsEvents.filter((event) => hasAny(eventName(event), ["phone", "call"])).length + daily.phoneClicks;
   const websiteClicks = analyticsEvents.filter((event) => hasAny(eventName(event), ["website"])).length + daily.websiteClicks;
   const completedOutings = analyticsEvents.filter((event) => hasAny(eventName(event), ["outing_complete", "outing completed", "completed_outing"])).length;
+  const outings = outingRows as OutingAnalyticsRow[];
+  const savedPlanEvents = analyticsEvents.filter((event) => ["plan_saved", "guest_plan_saved", "outing_plan_created", "guest_plan_created"].includes(text(event.event_name))).length;
+  const savedPlans = Math.max(savedPlanEvents, outings.filter((outing) => Boolean(outing.saved_at)).length);
+  const outboundClicks = analyticsEvents.filter((event) => text(event.event_name).startsWith("outing_") && text(event.event_name).endsWith("_clicked")).length;
+  const reservationClicks = analyticsEvents.filter((event) => text(event.event_name) === "outing_reservation_clicked" || text(event.event_type) === "reservation_started").length;
+  const directionsClicks = analyticsEvents.filter((event) => text(event.event_name) === "outing_directions_clicked" || text(event.event_type) === "directions_click").length;
+  const planPhoneClicks = analyticsEvents.filter((event) => text(event.event_name) === "outing_phone_clicked" || text(event.event_type) === "phone_click").length;
+  const planWebsiteClicks = analyticsEvents.filter((event) => text(event.event_name) === "outing_website_clicked" || text(event.event_type) === "website_click").length;
+  const completedByFeedback = analyticsEvents.filter((event) => text(event.conversion_step) === "completed_by_feedback" || ["outing_attendance_confirmed", "guest_attendance_confirmed", "outing_completed"].includes(text(event.event_name))).length + outings.filter((outing) => Boolean(outing.attendance_confirmed_at || outing.completed_at) || outing.status === "completed").length;
+  const completedNoFeedback = analyticsEvents.filter((event) => text(event.event_name) === "outing_completed_no_feedback").length + outings.filter((outing) => Boolean(outing.completed_no_feedback_at) || outing.status === "completed_no_feedback").length;
+  const completionSignals = completedByFeedback + completedNoFeedback;
+  const planConversionRate = totalSearches ? (savedPlans / totalSearches) * 100 : 0;
+  const linkClickRate = savedPlans ? (outboundClicks / savedPlans) * 100 : 0;
+  const completionRate = savedPlans ? (completionSignals / savedPlans) * 100 : 0;
 
   const topSearchMap = new Map<string, number>();
   for (const event of analyticsEvents) {
@@ -284,6 +308,18 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
       phoneClicks,
       websiteClicks,
       completedOutings,
+      savedPlans,
+      outboundClicks,
+      reservationClicks,
+      directionsClicks,
+      planPhoneClicks,
+      planWebsiteClicks,
+      completionSignals,
+      completedByFeedback,
+      completedNoFeedback,
+      planConversionRate,
+      linkClickRate,
+      completionRate,
       supportTicketsOpen: openSupport,
       pendingClaims,
       dataQualityIssues,
