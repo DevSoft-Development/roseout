@@ -2,7 +2,7 @@ import { supabaseAdmin } from "../../supabaseAdmin";
 import type { EnterpriseLocation, EnterpriseSearchResult, SearchIntent } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
 import { activitySearchTerms, isBroadGenericActivityIntent, restaurantSearchTerms } from "./normalize-intent";
-import { detectSingleVenueWithIntent, userAskedForRooftopRestaurant } from "./taxonomy";
+import { detectSingleVenueWithIntent } from "./taxonomy";
 import { explainRejection, filterActivityResults, filterRestaurantResults, rankActivityResults, rankRestaurantResults, scoreSingleVenueWithMatch } from "./ranking";
 import { createPairingDebug, createSearchPairs, getPairCityState, getPairGeoPriority } from "./pairing";
 import { formatDistanceFromRestaurant, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, shouldHidePairForWalkingLimit, userAskedForWalking } from "./distance";
@@ -139,21 +139,187 @@ function hasPairConstraint(intent: SearchIntent) { return Boolean(intent.pairing
 function isRooftopDrinksIntent(intent: SearchIntent) { return /\brooftop\s+(drinks?|cocktails?|bar|lounge)|\b(rooftop drinks|rooftop bar|rooftop lounge)\b/i.test(intent.rawQuery) || intent.activityIntent.activityTerms.some((term) => ["rooftop drinks", "rooftop bar", "rooftop lounge"].includes(term.toLowerCase())); }
 const ROOFTOP_ACTIVITY_RECOVERY_TERMS = ["rooftop", "rooftop bar", "rooftop lounge", "drinks", "cocktails", "bar", "lounge"];
 const BAR_ACTIVITY_RECOVERY_TERMS = ["bar", "lounge", "cocktails", "drinks"];
-const ROOFTOP_RESTAURANT_RECOVERY_TERMS = [
+const RESTAURANT_FEATURE_RECOVERY_TERMS = [
   "restaurant",
   "dinner",
+  "brunch",
+  "lunch",
   "rooftop",
+  "roof top",
   "rooftop restaurant",
   "rooftop dining",
+  "roof deck",
   "terrace",
+  "patio",
   "outdoor dining",
+  "outdoor seating",
   "skyline",
   "skyline views",
   "scenic views",
   "views",
-  "roof deck",
+  "waterfront",
+  "waterfront views",
+  "live music",
 ];
-function isRooftopRestaurantIntent(intent: SearchIntent) { return intent.needsRestaurant && !intent.needsActivity && userAskedForRooftopRestaurant(intent.rawQuery); }
+
+const RESTAURANT_GENERIC_RECOVERY_TERMS = [
+  "restaurant",
+  "dinner",
+  "brunch",
+  "lunch",
+  "food",
+];
+
+function uniqueStrings(values: unknown[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function restaurantFoodCuisineTerms(intent: SearchIntent): string[] {
+  return uniqueStrings([
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+  ]);
+}
+
+function restaurantFeatureTerms(intent: SearchIntent): string[] {
+  return uniqueStrings([
+    ...(intent.restaurantIntent?.featureTerms ?? []),
+    ...(intent.restaurantIntent?.vibeTerms ?? []),
+  ]);
+}
+
+function hasRestaurantFeatureIntent(intent: SearchIntent): boolean {
+  if (!intent.needsRestaurant || intent.needsActivity) return false;
+
+  const q = String(intent.rawQuery || "").toLowerCase();
+  const features = restaurantFeatureTerms(intent).join(" ");
+
+  return (
+    /\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|skyline views|scenic views|waterfront|waterfront views|views|live music)\b/i.test(q) ||
+    /\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|scenic views|waterfront|views|live music)\b/i.test(features)
+  );
+}
+
+function cloneIntentForRestaurantRecovery(
+  intent: SearchIntent,
+  options: {
+    relaxFood?: boolean;
+    relaxFeature?: boolean;
+    strictness?: SearchIntent["strictness"];
+  },
+): SearchIntent {
+  return {
+    ...intent,
+    strictness: options.strictness ?? intent.strictness,
+    restaurantIntent: {
+      ...intent.restaurantIntent,
+      foodTerms: options.relaxFood ? [] : intent.restaurantIntent.foodTerms,
+      cuisineTerms: options.relaxFood ? [] : intent.restaurantIntent.cuisineTerms,
+      featureTerms: options.relaxFeature ? [] : intent.restaurantIntent.featureTerms,
+    },
+  } as SearchIntent;
+}
+
+function buildGenericRestaurantRecoveryAttempts(intent: SearchIntent) {
+  if (!intent.needsRestaurant || intent.needsActivity) return [];
+
+  const foodCuisineTerms = restaurantFoodCuisineTerms(intent);
+  const featureTerms = restaurantFeatureTerms(intent);
+  const hasFoodCuisine = foodCuisineTerms.length > 0;
+  const hasFeature = hasRestaurantFeatureIntent(intent);
+
+  if (!hasFoodCuisine && !hasFeature) return [];
+
+  const attempts: {
+    reason: string;
+    terms: string[];
+    relaxFood?: boolean;
+    relaxFeature?: boolean;
+    strictness?: SearchIntent["strictness"];
+  }[] = [];
+
+  if (hasFoodCuisine && hasFeature) {
+    attempts.push({
+      reason: "restaurant_food_feature_combined_zero_results",
+      terms: uniqueStrings([
+        ...RESTAURANT_GENERIC_RECOVERY_TERMS,
+        ...foodCuisineTerms,
+        ...featureTerms,
+      ]),
+      strictness: "medium",
+    });
+
+    attempts.push({
+      reason: "restaurant_food_first_recovery",
+      terms: uniqueStrings([
+        ...RESTAURANT_GENERIC_RECOVERY_TERMS,
+        ...foodCuisineTerms,
+      ]),
+      relaxFeature: true,
+      strictness: "medium",
+    });
+
+    attempts.push({
+      reason: "restaurant_feature_first_recovery",
+      terms: uniqueStrings([
+        ...RESTAURANT_GENERIC_RECOVERY_TERMS,
+        ...featureTerms,
+        ...RESTAURANT_FEATURE_RECOVERY_TERMS.filter((term) =>
+          featureTerms.some((feature) => term.includes(feature) || feature.includes(term)),
+        ),
+      ]),
+      relaxFood: true,
+      strictness: "medium",
+    });
+
+    attempts.push({
+      reason: "restaurant_generic_feature_recovery",
+      terms: uniqueStrings([
+        ...RESTAURANT_GENERIC_RECOVERY_TERMS,
+        ...featureTerms,
+        ...RESTAURANT_FEATURE_RECOVERY_TERMS,
+      ]),
+      relaxFood: true,
+      strictness: "medium",
+    });
+
+    return attempts;
+  }
+
+  if (hasFeature) {
+    attempts.push({
+      reason: "restaurant_feature_zero_results",
+      terms: uniqueStrings([
+        ...RESTAURANT_GENERIC_RECOVERY_TERMS,
+        ...featureTerms,
+        ...RESTAURANT_FEATURE_RECOVERY_TERMS,
+      ]),
+      relaxFood: true,
+      strictness: "medium",
+    });
+  }
+
+  if (hasFoodCuisine) {
+    attempts.push({
+      reason: "restaurant_food_cuisine_zero_results",
+      terms: uniqueStrings([
+        ...RESTAURANT_GENERIC_RECOVERY_TERMS,
+        ...foodCuisineTerms,
+      ]),
+      relaxFeature: true,
+      strictness: "medium",
+    });
+  }
+
+  return attempts;
+}
 
 
 function hasExactNeighborhoodOnlyLanguage(rawQuery: string): boolean {
@@ -335,6 +501,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     const effectiveIntent: SearchIntent = { ...intent, geo: marketResolution.effectiveGeo };
     parsedIntent = effectiveIntent;
     const debug=createRpcDebug(effectiveIntent); const supabase=options?.supabase ?? supabaseAdmin; const displayLimit=options?.displayLimit ?? 12;
+    let restaurantRankingIntent = effectiveIntent;
     let restaurantRaw: EnterpriseLocation[]=[]; let activityRaw: EnterpriseLocation[]=[]; let activityRpcCountBeforeRecovery = 0;
     const searchRestaurantLane = async () => {
       const rpcStarted = Date.now();
@@ -342,19 +509,70 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       let filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
       if (!filtered.length && restaurantSearchTerms(effectiveIntent).length) {
         usedFallback = true;
-        const rooftopRestaurantRecovery = isRooftopRestaurantIntent(effectiveIntent);
-        if (rooftopRestaurantRecovery) {
-          debug.restaurantRecoveryReason = "rooftop_restaurant_zero_results";
-          debug.restaurantRecoveryTermsTried = [ROOFTOP_RESTAURANT_RECOVERY_TERMS];
+
+        const restaurantRecoveryAttempts = buildGenericRestaurantRecoveryAttempts(effectiveIntent);
+
+        if (restaurantRecoveryAttempts.length) {
+          for (const attempt of restaurantRecoveryAttempts) {
+            const recoveryIntent = cloneIntentForRestaurantRecovery(effectiveIntent, {
+              relaxFood: attempt.relaxFood,
+              relaxFeature: attempt.relaxFeature,
+              strictness: attempt.strictness,
+            });
+
+            debug.restaurantRecoveryUsed = true;
+            debug.restaurantRecoveryReason = attempt.reason;
+            debug.restaurantRecoveryTermsTried = [
+              ...(debug.restaurantRecoveryTermsTried ?? []),
+              attempt.terms,
+            ];
+            debug.restaurantRecoveryRelaxedFood =
+              Boolean(debug.restaurantRecoveryRelaxedFood) || Boolean(attempt.relaxFood);
+            debug.restaurantRecoveryRelaxedFeature =
+              Boolean(debug.restaurantRecoveryRelaxedFeature) || Boolean(attempt.relaxFeature);
+
+            const recoveredRaw = await recoverEnterpriseLane(
+              supabase,
+              recoveryIntent,
+              "restaurant",
+              debug,
+              attempt.terms,
+            );
+
+            const recoveredFiltered = filterRestaurantResults(recoveredRaw, recoveryIntent);
+
+            debug.restaurantRecoveryAttemptResults = [
+              ...(debug.restaurantRecoveryAttemptResults ?? []),
+              {
+                reason: attempt.reason,
+                terms: attempt.terms,
+                resultCount: recoveredRaw.length,
+                filteredCount: recoveredFiltered.length,
+                relaxedFood: Boolean(attempt.relaxFood),
+                relaxedFeature: Boolean(attempt.relaxFeature),
+              },
+            ];
+
+            if (recoveredFiltered.length) {
+              restaurantRaw = uniqueById([...restaurantRaw, ...recoveredFiltered]);
+              filtered = recoveredFiltered;
+              restaurantRankingIntent = recoveryIntent;
+              debug.restaurantRecoverySucceeded = true;
+              break;
+            }
+          }
         }
-        restaurantRaw=await recoverEnterpriseLane(
-          supabase,
-          effectiveIntent,
-          "restaurant",
-          debug,
-          rooftopRestaurantRecovery ? ROOFTOP_RESTAURANT_RECOVERY_TERMS : undefined,
-        );
-        filtered=filterRestaurantResults(restaurantRaw,effectiveIntent);
+
+        if (!filtered.length) {
+          restaurantRaw = await recoverEnterpriseLane(
+            supabase,
+            effectiveIntent,
+            "restaurant",
+            debug,
+            undefined,
+          );
+          filtered = filterRestaurantResults(restaurantRaw,effectiveIntent);
+        }
       }
       if (shouldRunNeighborhoodRestaurantFallback({
         rawQuery: effectiveIntent.rawQuery,
@@ -432,9 +650,9 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       await searchActivityLane();
     }
     perf.rpc_ms = perf.restaurant_rpc_ms + perf.activity_rpc_ms;
-    const restaurantRejectedReasons=restaurantRaw.map(r=>explainRejection(r,effectiveIntent,"restaurant")).filter(Boolean); const activityRejectedReasons=activityRaw.map(r=>explainRejection(r,effectiveIntent,"activity")).filter(Boolean); const restaurantRejectedSummary=rejectionSummary(restaurantRaw,effectiveIntent,"restaurant"); const activityRejectedSummary=rejectionSummary(activityRaw,effectiveIntent,"activity");
+    const restaurantRejectedReasons=restaurantRaw.map(r=>explainRejection(r,restaurantRankingIntent,"restaurant")).filter(Boolean); const activityRejectedReasons=activityRaw.map(r=>explainRejection(r,effectiveIntent,"activity")).filter(Boolean); const restaurantRejectedSummary=rejectionSummary(restaurantRaw,restaurantRankingIntent,"restaurant"); const activityRejectedSummary=rejectionSummary(activityRaw,effectiveIntent,"activity");
     const rankStarted = Date.now();
-    let rankedRestaurants = rankRestaurantResults(uniqueById(restaurantRaw), effectiveIntent);
+    let rankedRestaurants = rankRestaurantResults(uniqueById(restaurantRaw), restaurantRankingIntent);
     const rankedActivities = rankActivityResults(uniqueById(activityRaw), effectiveIntent);
     const singleVenueWith = detectSingleVenueWithIntent(effectiveIntent.rawQuery);
     if (singleVenueWith.matched) {
@@ -579,7 +797,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     const locationArea = effectiveIntent.geo.neighborhood ?? effectiveIntent.geo.borough ?? effectiveIntent.geo.city ?? effectiveIntent.geo.county ?? effectiveIntent.geo.raw ?? null;
     const speedStatus = getSearchSpeedStatus({ totalMs: perf.total_ms, success: true });
     const performanceDebug = { ...perf, speed_status: speedStatus, result_count: matched_locations.length, restaurant_count: restaurants.length, activity_count: activities.length, pair_count: pairs.length, source: options?.source ?? "enterprise_search", route: options?.route ?? null, used_custom_prompt: Boolean(options?.usedCustomPrompt), intentParserSource: parserDebug.intentParserSource ?? intentParserSource, fastPathMatched, fastPathReason, beta_assignment_id: options?.betaAssignmentId ?? null, beta_tester_id: options?.betaTesterId ?? null };
-    const fullDebug={ search_system:"enterprise-search-v1", rawQuery:query, llmIntentRaw, intentParserSource: parserDebug.intentParserSource ?? intentParserSource, fastPathMatched, fastPathReason, preIntentSource: parserDebug.preIntentSource, preIntentMatched: parserDebug.preIntentMatched, preIntentReason: parserDebug.preIntentReason, intentLlmModel: parserDebug.intentLlmModel, intentLlmFastModel: parserDebug.intentLlmFastModel, intentLlmFallbackModel: parserDebug.intentLlmFallbackModel, llmEnhancementUsed: parserDebug.llmEnhancementUsed, llmFallbackUsed: parserDebug.llmFallbackUsed, llmTimedOut: parserDebug.llmTimedOut, fallbackIntentUsed: parserDebug.fallbackIntentUsed, intentCacheHit: parserDebug.intentCacheHit, intentCacheVersion: parserDebug.intentCacheVersion, normalizedIntent:effectiveIntent, restaurantTerms:restaurantSearchTerms(effectiveIntent), activityTerms:activitySearchTerms(effectiveIntent), geo:marketResolution.effectiveGeo, originalGeo:marketResolution.originalGeo, effectiveGeo:marketResolution.effectiveGeo, defaultMarketApplied:marketResolution.marketApplied, defaultMarketId:marketResolution.market?.id ?? null, defaultMarketLabel:marketResolution.market?.label ?? null, defaultMarketRadiusMiles:marketResolution.market?.radiusMiles ?? null, marketReason:marketResolution.marketReason, rpcGeoLatitude:marketResolution.effectiveGeo.latitude ?? null, rpcGeoLongitude:marketResolution.effectiveGeo.longitude ?? null, rpcRadiusMiles:marketResolution.effectiveGeo.radiusMiles ?? null, ...parserDebug, ...debug, restaurantRejectedReasons, activityRejectedReasons, restaurantRejectedSummary, activityRejectedSummary, distanceScoringUsed:Boolean(effectiveIntent.geo.latitude&&effectiveIntent.geo.longitude), pairDistanceMiles:pairs.map(p=>p.pairDistanceMiles), pairGeoPriorities, pairGeoSummary, restaurantQualityScoringApplied:true, activityQualityScoringApplied:true, pairQualityScoringApplied:true, restaurantQualityScorePreview, activityQualityScorePreview, pairQualityScorePreview:pairingDebug.pairQualityScorePreview, restaurantOutingFitScorePreview, weakOutingFitRestaurantCount:pairingDebug.weakOutingFitRestaurantCount, suppressedWeakOutingFitPairCount:pairingDebug.suppressedWeakOutingFitPairCount, pairQualityTierCounts:pairingDebug.pairQualityTierCounts, suppressedLowQualityRestaurantCount, suppressedLowQualityActivityCount, suppressedLowQualityPairCount:pairingDebug.suppressedLowQualityPairCount, finalPairSortReason:pairingDebug.finalPairSortReason, renderedPairSort:{ primary:"default_market_pair_priority", secondary:"geo_priority", tertiary:"pair_quality_tier", quaternary:"pair_distance_miles", quinary:"safe_walking_minutes", senary:"pair_quality_score" }, walkingPolicy:{ shortWalkMaxPairDistanceMiles:0.75, shortWalkMaxPairWalkingMinutes:15, walkingMaxPairDistanceMiles:1.5, walkingMaxPairWalkingMinutes:30, walkingMinutesToMilesBasis:"20_minutes_per_mile", explicitWalkingMinutesSupported:true, explicitWalkingMinutesMax:45, missingCoordinateFallback:true, googleWalkingRouteAuthoritative:true, extremeWalkingRouteMinuteCutoff:180 }, pairingPreference:effectiveIntent.pairingPreference, activityRpcCountBeforePairing:activities.length, activityRpcCountAfterRecovery:activityRaw.length, activityRpcCountBeforeRecovery:activityRpcCountBeforeRecovery, pairCandidatesEvaluated:pairingDebug.pairCandidatesEvaluated, validPairCountBeforeRender:pairingDebug.validPairCountBeforeRender, pair_count:pairs.length, pairsRejectedForDistance:pairingDebug.pairsRejectedForDistance, pairsRejectedForWalkingMinutes:pairingDebug.pairsRejectedForWalkingMinutes, walkingPairsHiddenOverLimit:pairingDebug.walkingPairsHiddenOverLimit, walkingPairRejectReasons:pairingDebug.walkingPairRejectReasons, extremeWalkingRoutesRejected:pairingDebug.extremeWalkingRoutesRejected, walkingMinutesEstimatedFromMiles, pairsWithGoogleWalkingMinutes, pairsMissingGoogleWalkingMinutes, displayedWalkingMinuteLabels, displayedMilesLabels, invalidWalkingRoutesHiddenFromDisplay:pairingDebug.invalidWalkingRoutesHiddenFromDisplay, pairsRejectedForMissingCoordinates:pairingDebug.pairsRejectedForMissingCoordinates, rejectedPairs:pairingDebug.rejectedPairs, walkablePairsFound:pairingDebug.walkablePairsFound, noPairsReason, requiredPairingSuppressedFallback, requiredPairingFailureReason:requiredPairingFailureReasonValue, candidateRestaurantCountBeforeRequiredPairSuppression, candidateActivityCountBeforeRequiredPairSuppression, candidatePairCountBeforeRequiredPairSuppression, finalDisplayedResultCount:matched_locations.length, maxPairDistanceMiles:effectiveIntent.pairingPreference?.maxPairDistanceMiles ?? null, maxPairWalkingMinutes:effectiveIntent.pairingPreference?.maxPairWalkingMinutes ?? null, requireWalkablePair:effectiveIntent.pairingPreference?.requireWalkablePair ?? false, distanceMode:effectiveIntent.pairingPreference?.distanceMode ?? "any", renderMode:render_mode, timingMs:perf.total_ms, performance: performanceDebug, restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed), activityRecoveryUsed: Boolean(debug.activityRecoveryUsed), llmError };
+    const fullDebug={ search_system:"enterprise-search-v1", rawQuery:query, llmIntentRaw, intentParserSource: parserDebug.intentParserSource ?? intentParserSource, fastPathMatched, fastPathReason, preIntentSource: parserDebug.preIntentSource, preIntentMatched: parserDebug.preIntentMatched, preIntentReason: parserDebug.preIntentReason, intentLlmModel: parserDebug.intentLlmModel, intentLlmFastModel: parserDebug.intentLlmFastModel, intentLlmFallbackModel: parserDebug.intentLlmFallbackModel, llmEnhancementUsed: parserDebug.llmEnhancementUsed, llmFallbackUsed: parserDebug.llmFallbackUsed, llmTimedOut: parserDebug.llmTimedOut, fallbackIntentUsed: parserDebug.fallbackIntentUsed, intentCacheHit: parserDebug.intentCacheHit, intentCacheVersion: parserDebug.intentCacheVersion, normalizedIntent:effectiveIntent, restaurantRankingIntent, restaurantRecoveryReason: debug.restaurantRecoveryReason ?? null, restaurantRecoveryTermsTried: debug.restaurantRecoveryTermsTried ?? [], restaurantRecoveryAttemptResults: debug.restaurantRecoveryAttemptResults ?? [], restaurantRecoveryRelaxedFood: Boolean(debug.restaurantRecoveryRelaxedFood), restaurantRecoveryRelaxedFeature: Boolean(debug.restaurantRecoveryRelaxedFeature), restaurantRecoverySucceeded: Boolean(debug.restaurantRecoverySucceeded), restaurantTerms:restaurantSearchTerms(effectiveIntent), activityTerms:activitySearchTerms(effectiveIntent), geo:marketResolution.effectiveGeo, originalGeo:marketResolution.originalGeo, effectiveGeo:marketResolution.effectiveGeo, defaultMarketApplied:marketResolution.marketApplied, defaultMarketId:marketResolution.market?.id ?? null, defaultMarketLabel:marketResolution.market?.label ?? null, defaultMarketRadiusMiles:marketResolution.market?.radiusMiles ?? null, marketReason:marketResolution.marketReason, rpcGeoLatitude:marketResolution.effectiveGeo.latitude ?? null, rpcGeoLongitude:marketResolution.effectiveGeo.longitude ?? null, rpcRadiusMiles:marketResolution.effectiveGeo.radiusMiles ?? null, ...parserDebug, ...debug, restaurantRejectedReasons, activityRejectedReasons, restaurantRejectedSummary, activityRejectedSummary, distanceScoringUsed:Boolean(effectiveIntent.geo.latitude&&effectiveIntent.geo.longitude), pairDistanceMiles:pairs.map(p=>p.pairDistanceMiles), pairGeoPriorities, pairGeoSummary, restaurantQualityScoringApplied:true, activityQualityScoringApplied:true, pairQualityScoringApplied:true, restaurantQualityScorePreview, activityQualityScorePreview, pairQualityScorePreview:pairingDebug.pairQualityScorePreview, restaurantOutingFitScorePreview, weakOutingFitRestaurantCount:pairingDebug.weakOutingFitRestaurantCount, suppressedWeakOutingFitPairCount:pairingDebug.suppressedWeakOutingFitPairCount, pairQualityTierCounts:pairingDebug.pairQualityTierCounts, suppressedLowQualityRestaurantCount, suppressedLowQualityActivityCount, suppressedLowQualityPairCount:pairingDebug.suppressedLowQualityPairCount, finalPairSortReason:pairingDebug.finalPairSortReason, renderedPairSort:{ primary:"default_market_pair_priority", secondary:"geo_priority", tertiary:"pair_quality_tier", quaternary:"pair_distance_miles", quinary:"safe_walking_minutes", senary:"pair_quality_score" }, walkingPolicy:{ shortWalkMaxPairDistanceMiles:0.75, shortWalkMaxPairWalkingMinutes:15, walkingMaxPairDistanceMiles:1.5, walkingMaxPairWalkingMinutes:30, walkingMinutesToMilesBasis:"20_minutes_per_mile", explicitWalkingMinutesSupported:true, explicitWalkingMinutesMax:45, missingCoordinateFallback:true, googleWalkingRouteAuthoritative:true, extremeWalkingRouteMinuteCutoff:180 }, pairingPreference:effectiveIntent.pairingPreference, activityRpcCountBeforePairing:activities.length, activityRpcCountAfterRecovery:activityRaw.length, activityRpcCountBeforeRecovery:activityRpcCountBeforeRecovery, pairCandidatesEvaluated:pairingDebug.pairCandidatesEvaluated, validPairCountBeforeRender:pairingDebug.validPairCountBeforeRender, pair_count:pairs.length, pairsRejectedForDistance:pairingDebug.pairsRejectedForDistance, pairsRejectedForWalkingMinutes:pairingDebug.pairsRejectedForWalkingMinutes, walkingPairsHiddenOverLimit:pairingDebug.walkingPairsHiddenOverLimit, walkingPairRejectReasons:pairingDebug.walkingPairRejectReasons, extremeWalkingRoutesRejected:pairingDebug.extremeWalkingRoutesRejected, walkingMinutesEstimatedFromMiles, pairsWithGoogleWalkingMinutes, pairsMissingGoogleWalkingMinutes, displayedWalkingMinuteLabels, displayedMilesLabels, invalidWalkingRoutesHiddenFromDisplay:pairingDebug.invalidWalkingRoutesHiddenFromDisplay, pairsRejectedForMissingCoordinates:pairingDebug.pairsRejectedForMissingCoordinates, rejectedPairs:pairingDebug.rejectedPairs, walkablePairsFound:pairingDebug.walkablePairsFound, noPairsReason, requiredPairingSuppressedFallback, requiredPairingFailureReason:requiredPairingFailureReasonValue, candidateRestaurantCountBeforeRequiredPairSuppression, candidateActivityCountBeforeRequiredPairSuppression, candidatePairCountBeforeRequiredPairSuppression, finalDisplayedResultCount:matched_locations.length, maxPairDistanceMiles:effectiveIntent.pairingPreference?.maxPairDistanceMiles ?? null, maxPairWalkingMinutes:effectiveIntent.pairingPreference?.maxPairWalkingMinutes ?? null, requireWalkablePair:effectiveIntent.pairingPreference?.requireWalkablePair ?? false, distanceMode:effectiveIntent.pairingPreference?.distanceMode ?? "any", renderMode:render_mode, timingMs:perf.total_ms, performance: performanceDebug, restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed), activityRecoveryUsed: Boolean(debug.activityRecoveryUsed), llmError };
     if (options?.logPerformance) {
       void logSearchPerformance({
         userId: options.userId,

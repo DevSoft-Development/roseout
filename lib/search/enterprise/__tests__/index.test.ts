@@ -247,3 +247,94 @@ describe("runEnterpriseSearch single-venue with behavior", () => {
     expect(calls.some((call) => call.params.p_domain === "activity")).toBe(false);
   });
 });
+
+describe("runEnterpriseSearch restaurant cuisine + feature recovery", () => {
+  function makeRecoverySupabase(handler: (name: string, params: Record<string, any>, index: number) => EnterpriseLocation[]) {
+    const calls: RpcCall[] = [];
+    return {
+      calls,
+      supabase: {
+        rpc: async (name: string, params: Record<string, any>) => {
+          calls.push({ name, params });
+          return { data: handler(name, params, calls.length - 1), error: null };
+        },
+      },
+    };
+  }
+
+  it("recovers restaurant cards with food-first terms when combined food + feature matching is empty", async () => {
+    const seafoodRows = [
+      restaurant({ id: "seafood-1", name: "Harbor Seafood", cuisine: "Seafood", tags: ["seafood", "fish", "restaurant"] }),
+      restaurant({ id: "seafood-2", name: "Lobster House", cuisine: "Seafood", tags: ["lobster", "crab", "restaurant"] }),
+    ];
+    const { supabase } = makeRecoverySupabase((name, params) => {
+      if (name !== "enterprise_search_recovery") return [];
+      const terms = params.p_search_terms as string[];
+      const foodFirst = terms.includes("seafood") && !terms.includes("rooftop");
+      return foodFirst ? seafoodRows : [];
+    });
+
+    const result = await runEnterpriseSearch("Seafood rooftop restaurant", {
+      supabase,
+      useLLM: false,
+      betaDebug: true,
+    });
+
+    expect(result.restaurants).toHaveLength(2);
+    expect(result.activities).toHaveLength(0);
+    expect(result.renderMode).toBe("restaurant_cards");
+    expect(result.debug?.restaurantRecoveryUsed).toBe(true);
+    expect(result.debug?.restaurantRecoverySucceeded).toBe(true);
+    expect(result.debug?.restaurantRecoveryReason).toBe("restaurant_food_first_recovery");
+    expect((result.debug?.restaurantRecoveryTermsTried as string[][] | undefined)?.length).toBeGreaterThan(1);
+    expect(result.debug?.restaurantRecoveryAttemptResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: "restaurant_food_first_recovery",
+          filteredCount: 2,
+          relaxedFeature: true,
+        }),
+      ]),
+    );
+  });
+
+  it("recovers restaurant cards with feature-first terms when food-first recovery is empty", async () => {
+    const rooftopRows = [
+      restaurant({
+        id: "rooftop-1",
+        name: "Sky Terrace Dining",
+        cuisine: "American",
+        tags: ["rooftop", "terrace", "skyline views", "restaurant"],
+        description: "Restaurant with rooftop terrace and skyline views.",
+      }),
+    ];
+    const { supabase } = makeRecoverySupabase((name, params) => {
+      if (name !== "enterprise_search_recovery") return [];
+      const terms = params.p_search_terms as string[];
+      const featureFirst = terms.includes("rooftop") && !terms.includes("seafood");
+      return featureFirst ? rooftopRows : [];
+    });
+
+    const result = await runEnterpriseSearch("Seafood rooftop restaurant", {
+      supabase,
+      useLLM: false,
+      betaDebug: true,
+    });
+
+    expect(result.restaurants).toHaveLength(1);
+    expect(result.activities).toHaveLength(0);
+    expect(result.renderMode).toBe("restaurant_cards");
+    expect(result.debug?.restaurantRecoveryUsed).toBe(true);
+    expect(result.debug?.restaurantRecoverySucceeded).toBe(true);
+    expect(result.debug?.restaurantRecoveryReason).toBe("restaurant_feature_first_recovery");
+    expect(result.debug?.restaurantRecoveryAttemptResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: "restaurant_feature_first_recovery",
+          filteredCount: 1,
+          relaxedFood: true,
+        }),
+      ]),
+    );
+  });
+});
