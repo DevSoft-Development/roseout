@@ -11,44 +11,16 @@ function isBadImageValue(value: unknown) {
       "missing",
       "no image",
       "no-image",
+      "photo coming soon",
+      "coming soon",
       "#",
       "?",
     ].includes(normalized) ||
     normalized.includes("placeholder") ||
     normalized.includes("default-image") ||
-    normalized.includes("/placeholder")
+    normalized.includes("/placeholder") ||
+    normalized.includes("photo-coming-soon")
   );
-}
-
-function isPotentialImageUrl(value: string) {
-  const src = value.trim();
-  const lower = src.toLowerCase();
-
-  if (!src) return false;
-  if (
-    [
-      "null",
-      "undefined",
-      "none",
-      "n/a",
-      "missing",
-      "no image",
-      "no-image",
-      "#",
-      "?",
-    ].includes(lower)
-  ) {
-    return false;
-  }
-  if (lower.includes("placeholder") || lower.includes("default-image")) {
-    return false;
-  }
-
-  if (src.startsWith("/")) return src.length > 1;
-  if (src.startsWith("http://")) return src.length > "http://".length;
-  if (src.startsWith("https://")) return src.length > "https://".length;
-
-  return false;
 }
 
 export function firstImage(value: unknown): string | null {
@@ -83,7 +55,11 @@ export function firstImage(value: unknown): string | null {
       trimmed
         .split(/[\n,]+/)
         .map((item) => item.trim())
-        .find((item) => !isBadImageValue(item) && isPotentialImageUrl(item)) || null
+        .find((item) => {
+          if (isBadImageValue(item)) return false;
+          if (item.length <= 8) return false;
+          return /^https?:\/\//i.test(item) || item.startsWith("/");
+        }) || null
     );
   }
 
@@ -95,8 +71,19 @@ export function firstImage(value: unknown): string | null {
         record.src ||
         record.image_url ||
         record.main_image ||
+        record.photo_url ||
+        record.primary_photo_url ||
+        record.google_photo_url ||
+        record.image ||
         record.publicUrl ||
-        record.public_url,
+        record.public_url ||
+        record.secure_url ||
+        record.original_url ||
+        record.large_url ||
+        record.medium_url ||
+        record.thumbnail_url ||
+        record.photoReference ||
+        record.photo_reference,
     );
   }
 
@@ -107,6 +94,10 @@ export function getLocationImage(location: any) {
   return (
     firstImage(location?.main_image) ||
     firstImage(location?.image_url) ||
+    firstImage(location?.photo_url) ||
+    firstImage(location?.primary_photo_url) ||
+    firstImage(location?.google_photo_url) ||
+    firstImage(location?.image) ||
     firstImage(location?.gallery_images) ||
     firstImage(location?.gallery) ||
     firstImage(location?.photos) ||

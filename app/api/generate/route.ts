@@ -236,18 +236,80 @@ export async function POST(request: Request) {
       },
     );
 
+    const rawRestaurants = Array.isArray(result.restaurants) ? result.restaurants : [];
+    const rawActivities = Array.isArray(result.activities) ? result.activities : [];
+    const rawMatchedLocations = Array.isArray(result.matched_locations)
+      ? result.matched_locations
+      : [];
+
+    const hydratePhotoCard = (item: any) => {
+      const card = toCardRecord(item);
+      const image = getLocationImage(item) || getLocationImage(card);
+
+      return {
+        ...item,
+        ...card,
+        image_url: image,
+        main_image: image,
+        has_photos: Boolean(image),
+        photo_status: image ? item?.photo_status || "has_photo" : "missing_photo",
+      };
+    };
+
+    const photoSafeRestaurants = rawRestaurants
+      .map(hydratePhotoCard)
+      .filter((card: any) => Boolean(getLocationImage(card)));
+
+    const photoSafeActivities = rawActivities
+      .map(hydratePhotoCard)
+      .filter((card: any) => Boolean(getLocationImage(card)));
+
+    const photoSafeMatchedLocations = rawMatchedLocations
+      .map(hydratePhotoCard)
+      .filter((card: any) => Boolean(getLocationImage(card)));
+
     const cards = [
-      ...(result.restaurants || []),
-      ...(result.activities || []),
-      ...(result.matched_locations || []),
-    ]
-      .map(toCardRecord)
-      .filter((card) => firstImage(card.main_image) || firstImage(card.image_url));
+      ...photoSafeRestaurants,
+      ...photoSafeActivities,
+      ...photoSafeMatchedLocations,
+    ].filter((card: any) => Boolean(getLocationImage(card)));
+
+    if (process.env.NODE_ENV !== "production") {
+      const removedRestaurants = rawRestaurants.length - photoSafeRestaurants.length;
+      const removedActivities = rawActivities.length - photoSafeActivities.length;
+
+      if (removedRestaurants > 0 || removedActivities > 0) {
+        console.log("[generate] removed public cards without usable photos", {
+          removedRestaurants,
+          removedActivities,
+          finalCards: cards.length,
+        });
+      }
+    }
 
     const response = {
       ...result,
       plannedTime,
+      restaurants: photoSafeRestaurants,
+      activities: photoSafeActivities,
+      matched_locations: photoSafeMatchedLocations,
+      matchedLocations: photoSafeMatchedLocations,
       cards,
+      restaurantCount: photoSafeRestaurants.length,
+      activityCount: photoSafeActivities.length,
+      cardCount: cards.length,
+      card_counts: {
+        ...(result.card_counts || {}),
+        restaurants: photoSafeRestaurants.length,
+        activities: photoSafeActivities.length,
+        matched_locations: photoSafeMatchedLocations.length,
+      },
+      cardCounts: {
+        ...(result.cardCounts || result.card_counts || {}),
+        restaurants: photoSafeRestaurants.length,
+        activities: photoSafeActivities.length,
+        matched_locations: photoSafeMatchedLocations.length,
+      },
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
@@ -263,8 +325,8 @@ export async function POST(request: Request) {
         activity_search_input: ((result.debug as any)?.activityTerms ?? []).join(
           " ",
         ),
-        final_restaurants: result.restaurants?.length || 0,
-        final_activities: result.activities?.length || 0,
+        final_restaurants: photoSafeRestaurants.length,
+        final_activities: photoSafeActivities.length,
         fallback_used: Boolean(
           (result.debug as any)?.restaurantRecoveryUsed ||
             (result.debug as any)?.activityRecoveryUsed,
@@ -278,14 +340,10 @@ export async function POST(request: Request) {
     const normalizedIntent =
       debug.normalizedIntent ?? debug.intent ?? result.normalizedIntent ?? null;
     const counts = debug.counts ?? {
-      restaurants: result.restaurants?.length ?? 0,
-      activities: result.activities?.length ?? 0,
+      restaurants: photoSafeRestaurants.length,
+      activities: photoSafeActivities.length,
       pairs: result.pairs?.length ?? 0,
-      finalDisplayedResultCount:
-        result.matched_locations?.length ??
-        result.matchedLocations?.length ??
-        result.cards?.length ??
-        0,
+      finalDisplayedResultCount: cards.length,
     };
     const noResultsReason =
       result.no_results_reason ??
@@ -437,9 +495,9 @@ export async function POST(request: Request) {
         total_ms: Date.now() - startedAt,
         cache_status: isEdgeCreateSearchEnabled() ? "edge-or-legacy-fallback" : "enterprise-rpc",
         result_count:
-          (result.restaurants?.length || 0) +
-          (result.activities?.length || 0) +
-          (result.matched_locations?.length || 0),
+          photoSafeRestaurants.length +
+          photoSafeActivities.length +
+          photoSafeMatchedLocations.length,
       }),
     );
 
