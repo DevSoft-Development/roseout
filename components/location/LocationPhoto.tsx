@@ -65,8 +65,15 @@ export default function LocationPhoto({
         aria-label={fallbackLabel}
       >
         <div className="px-5 text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 text-sm font-black text-[#e1062a]">
-            TOH
+          <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-[#e1062a]/35 bg-black/70 shadow-[0_0_24px_rgba(225,6,42,0.22)]">
+            <Image
+              src="/toh_logo.png"
+              alt="TheOutHaven"
+              width={34}
+              height={34}
+              unoptimized
+              className="h-8 w-8 object-contain"
+            />
           </div>
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
             {fallbackLabel}
