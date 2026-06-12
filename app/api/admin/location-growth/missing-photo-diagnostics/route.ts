@@ -2,18 +2,21 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { firstImage } from "@/lib/locationImage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function authorize(request: Request) {
   if (process.env.NODE_ENV === "development") return null;
+
   if (
     process.env.IMPORT_SECRET &&
     request.headers.get("x-internal-import-secret") === process.env.IMPORT_SECRET
   ) {
     return null;
   }
+
   const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
   return error;
 }
@@ -22,7 +25,19 @@ function isMissing(value: unknown) {
   return value == null || String(value).trim().length === 0;
 }
 
+function hasUsablePhoto(row: Record<string, unknown>) {
+  return Boolean(
+    firstImage(row.main_image) ||
+      firstImage(row.image_url) ||
+      firstImage(row.images),
+  );
+}
+
 function getMissingPhotoReason(row: Record<string, unknown>) {
+  if (hasUsablePhoto(row)) {
+    return "Has usable photo field, but photo flags/status may be stale";
+  }
+
   if (row.has_photos === true && row.photo_status === "missing_photo") {
     return "Status mismatch: has_photos is true but photo_status is missing_photo";
   }
@@ -58,7 +73,31 @@ export async function GET(request: Request) {
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select(
-      "id,name,restaurant_name,activity_name,location_type,address,city,state,quality_score,quality_status,duplicate_status,enrichment_status,is_searchable,is_hidden,status,has_photos,photo_status,photo_backfill_error,google_place_id,main_image,image_url,photo_url,updated_at",
+      [
+        "id",
+        "name",
+        "restaurant_name",
+        "activity_name",
+        "location_type",
+        "address",
+        "city",
+        "state",
+        "quality_score",
+        "quality_status",
+        "duplicate_status",
+        "enrichment_status",
+        "is_searchable",
+        "is_hidden",
+        "status",
+        "has_photos",
+        "photo_status",
+        "photo_backfill_error",
+        "google_place_id",
+        "main_image",
+        "image_url",
+        "images",
+        "updated_at",
+      ].join(","),
     )
     .or("has_photos.eq.false,photo_status.eq.missing_photo")
     .order("is_searchable", { ascending: false, nullsFirst: false })
@@ -68,14 +107,21 @@ export async function GET(request: Request) {
 
   if (error) {
     return NextResponse.json(
-      { success: false, error: error.message, totalReturned: 0, rows: [] },
+      {
+        success: false,
+        error: error.message,
+        totalReturned: 0,
+        rows: [],
+      },
       { status: 500 },
     );
   }
 
-  const rows = (data || []).map((row) => ({
+  const rows = ((data || []) as unknown as Array<Record<string, unknown>>).map((row) => ({
     ...row,
-    reason: getMissingPhotoReason(row as Record<string, unknown>),
+    resolved_photo: firstImage(row.main_image) || firstImage(row.image_url) || firstImage(row.images),
+    has_usable_photo_field: hasUsablePhoto(row),
+    reason: getMissingPhotoReason(row),
   }));
 
   return NextResponse.json({

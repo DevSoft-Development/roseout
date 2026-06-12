@@ -384,7 +384,7 @@ export async function GET(request: NextRequest) {
         address: getAddress(location),
         main_image: location.main_image || null,
         image_url:
-          location.image_url || location.photo_url || location.image || null,
+          location.image_url || location.main_image || location.image || null,
         images: Array.isArray(location.images) ? location.images : null,
         category: getPrimaryCategory(location),
         operating_hours: location.operating_hours || null,
