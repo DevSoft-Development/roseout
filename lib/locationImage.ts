@@ -57,21 +57,27 @@ function extractGooglePhotoReference(value: string) {
   return null;
 }
 
+function extractGooglePhotoMaxwidth(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.searchParams.get("maxwidth") || "1200";
+  } catch {
+    return "1200";
+  }
+}
+
 export function normalizeImageUrlForPublic(value: unknown): string | null {
   const image = firstImage(value);
   if (!image) return null;
 
+  if (image.startsWith("/api/public/google-place-photo")) {
+    return image;
+  }
+
   const photoReference = extractGooglePhotoReference(image);
 
   if (photoReference) {
-    const maxwidth = (() => {
-      try {
-        const parsed = new URL(image);
-        return parsed.searchParams.get("maxwidth") || "1200";
-      } catch {
-        return "1200";
-      }
-    })();
+    const maxwidth = extractGooglePhotoMaxwidth(image);
 
     return `/api/public/google-place-photo?ref=${encodeURIComponent(
       photoReference,
@@ -150,7 +156,14 @@ export function firstImage(value: unknown): string | null {
 export function getLocationImage(location: any) {
   if (!location) return null;
 
+  const projectImageFromImages = Array.isArray(location.images)
+    ? location.images.find((item: unknown) =>
+        String(item || "").includes("/storage/v1/object/public/location-images/"),
+      )
+    : null;
+
   const rawImage =
+    firstImage(projectImageFromImages) ||
     firstImage(location.main_image) ||
     firstImage(location.image_url) ||
     firstImage(location.photo_url) ||
