@@ -337,4 +337,51 @@ describe("runEnterpriseSearch restaurant cuisine + feature recovery", () => {
       ]),
     );
   });
+
+
+  it("recovers restaurant cards for rooftop vibes with rooftop feature-only recovery", async () => {
+    const rooftopRows = Array.from({ length: 12 }, (_, index) =>
+      restaurant({
+        id: `rooftop-vibes-${index + 1}`,
+        name: `Rooftop Vibes ${index + 1}`,
+        cuisine: "American",
+        tags: ["rooftop", "terrace", "skyline views", "restaurant", "dinner"],
+        description: "Restaurant with rooftop terrace and skyline views.",
+      }),
+    );
+    const { supabase } = makeRecoverySupabase((name, params) => {
+      if (name !== "enterprise_search_recovery") return [];
+      const terms = params.p_search_terms as string[];
+      const rooftopFeatureRecovery =
+        terms.includes("restaurant") &&
+        terms.includes("dinner") &&
+        terms.includes("rooftop restaurant") &&
+        terms.includes("skyline views") &&
+        terms.includes("outdoor dining");
+      return rooftopFeatureRecovery ? rooftopRows : [];
+    });
+
+    const result = await runEnterpriseSearch("rooftop vibes", {
+      supabase,
+      useLLM: false,
+      betaDebug: true,
+    });
+
+    expect(result.restaurants).toHaveLength(12);
+    expect(result.activities).toHaveLength(0);
+    expect(result.renderMode).toBe("restaurant_cards");
+    expect(result.debug?.restaurantRecoveryUsed).toBe(true);
+    expect(result.debug?.restaurantRecoverySucceeded).toBe(true);
+    expect(result.debug?.restaurantRecoveryReason).toBe(
+      "restaurant_rooftop_feature_only_recovery",
+    );
+    expect(result.debug?.restaurantRecoveryAttemptResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: "restaurant_rooftop_feature_only_recovery",
+          filteredCount: 12,
+        }),
+      ]),
+    );
+  });
 });

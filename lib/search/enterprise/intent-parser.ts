@@ -14,6 +14,8 @@ import {
   createEmptyRestaurantIntent,
   detectSingleVenueWithIntent,
   userAskedForRooftopRestaurant,
+  hasRooftopRestaurantFeatureLanguage,
+  ROOFTOP_RESTAURANT_FEATURE_TERMS,
 } from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
@@ -694,16 +696,22 @@ function hasRestaurantOnlyFastPathIntent(query: string) {
     /\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|skyline views|scenic views|waterfront|waterfront views|views|live music)\b/.test(q) &&
     /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|food|spot|eat|eats|dining)\b/.test(q);
   const explicitRooftopActivity =
-    /\brooftop\s+(drinks?|cocktails?|bar|lounge)\b/.test(q) ||
-    /\b(rooftop drinks|rooftop cocktails|rooftop bar|rooftop lounge)\b/.test(q);
+    /\brooftop\s+(drinks?|cocktails?|bars?|lounges?)\b/.test(q) ||
+    /\b(drinks?|cocktails?|bars?|lounges?)\b[^.?!]{0,50}\b(rooftop|roof top)\b/.test(q);
+  const restaurantFeatureOnly =
+    hasRooftopRestaurantFeatureLanguage(q) &&
+    !explicitRooftopActivity &&
+    /\b(vibes?|views?|scenic|skyline|terrace|patio|outdoor dining|outdoor seating|roof deck|rooftop|roof top)\b/.test(q);
   const hasActivity =
     explicitRooftopActivity ||
     (
       /\b(activity|things to do|karaoke|comedy|bowling|arcade|museum|hookah|lounge|bar|drinks|cocktails|watch|game)\b/.test(q) &&
-      !restaurantFeature
+      !restaurantFeature &&
+      !restaurantFeatureOnly
     );
   const hasRestaurant =
     restaurantFeature ||
+    restaurantFeatureOnly ||
     /\b(restaurant|dinner|brunch|lunch|breakfast|steakhouse|steak|seafood|sushi|mexican|italian|chinese|japanese|thai|indian|caribbean|jamaican|haitian|dominican|latin|spanish|korean|bbq|barbecue|mediterranean|greek|turkish|middle eastern|soul food|vegan|vegetarian|pizza|pasta|tacos|taco|burgers?|chicken|fried chicken|hot chicken|wings|food|casual dinner|birthday dinner|romantic italian|brunch spot)\b/.test(q);
   return hasRestaurant && !hasActivity;
 }
@@ -737,26 +745,16 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
   if (/\bbreakfast\b/.test(q)) mealTerms.push("breakfast");
   if (/\blunch\b/.test(q)) mealTerms.push("lunch");
   if (/\bdinner\b/.test(q)) mealTerms.push("dinner");
-  if (mealTerms.length === 0 && /\b(restaurant|steakhouse|food|spot|dining|eat|eats|rooftop|terrace|patio|outdoor dining|outdoor seating)\b/.test(q)) mealTerms.push("dinner");
+  const restaurantFeatureOnly = hasRooftopRestaurantFeatureLanguage(q) &&
+    !(/\brooftop\s+(drinks?|cocktails?|bars?|lounges?)\b/.test(q) || /\b(drinks?|cocktails?|bars?|lounges?)\b[^.?!]{0,50}\b(rooftop|roof top)\b/.test(q));
+  if (mealTerms.length === 0 && (/\b(restaurant|steakhouse|food|spot|dining|eat|eats|rooftop|terrace|patio|outdoor dining|outdoor seating)\b/.test(q) || restaurantFeatureOnly)) mealTerms.push("dinner");
   const featureTerms: string[] = [];
-  if (/\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|skyline views|scenic views|waterfront|waterfront views|views|live music)\b/.test(q)) {
-    featureTerms.push(
-      "rooftop",
-      "rooftop restaurant",
-      "rooftop dining",
-      "roof deck",
-      "terrace",
-      "patio",
-      "outdoor dining",
-      "outdoor seating",
-      "skyline",
-      "skyline views",
-      "scenic views",
-      "waterfront",
-      "waterfront views",
-      "views",
-      "live music"
-    );
+  if (hasRooftopRestaurantFeatureLanguage(q)) {
+    featureTerms.push(...ROOFTOP_RESTAURANT_FEATURE_TERMS);
+    if (/\bpatio\b/.test(q)) featureTerms.push("patio");
+    if (/\boutdoor seating\b/.test(q)) featureTerms.push("outdoor seating");
+    if (/\bwaterfront\b/.test(q)) featureTerms.push("waterfront", "waterfront views");
+    if (/\blive music\b/.test(q)) featureTerms.push("live music");
   }
   for (const item of cuisineFoodMap) {
     if (item.pattern.test(q)) {
