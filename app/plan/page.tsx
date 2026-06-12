@@ -202,7 +202,7 @@ function PlanPageInner() {
   const [plan, setPlan] = useState<SavedPlan | null>(null);
   const [mounted, setMounted] = useState(false);
   const [loadingExactCampaign, setLoadingExactCampaign] = useState(false);
-  const [saveStatus, setSaveStatus] = useState("Plan saved on this device.");
+  const [saveStatus, setSaveStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [outingComplete, setOutingComplete] = useState(false);
   const [outingTime, setOutingTime] = useState<OutingTimeValue>(() =>
@@ -213,6 +213,10 @@ function PlanPageInner() {
   const [guestPhone, setGuestPhone] = useState("");
   const [emailOptIn, setEmailOptIn] = useState(true);
   const [smsOptIn, setSmsOptIn] = useState(false);
+  const [contactMethod, setContactMethod] = useState<"text" | "email">("text");
+  const [showTimingAdjustments, setShowTimingAdjustments] = useState(false);
+  const [mainEventMinutes, setMainEventMinutes] = useState(120);
+  const [afterPlanMinutes, setAfterPlanMinutes] = useState<number | null>(90);
   const [startStatus, setStartStatus] = useState("");
   const [activeOutingId, setActiveOutingId] = useState<string | null>(null);
   const [activePlanUrl, setActivePlanUrl] = useState<string | null>(null);
@@ -448,8 +452,12 @@ function PlanPageInner() {
       setStartStatus("Choose a location before saving your outing.");
       return;
     }
-    if ((outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) && !guestEmail.trim()) {
-      setStartStatus("Add an email so we can save reminders and check in after.");
+    if (contactMethod === "email" && !guestEmail.trim()) {
+      setStartStatus("Add an email so we can send your outing plan.");
+      return;
+    }
+    if (contactMethod === "text" && !guestPhone.trim()) {
+      setStartStatus("Add a phone number so we can text your outing plan.");
       return;
     }
     setStartStatus("Saving your outing...");
@@ -476,8 +484,8 @@ function PlanPageInner() {
           guestEmail,
           guestPhone,
           guestName,
-          emailOptIn,
-          smsOptIn,
+          emailOptIn: contactMethod === "email" ? true : emailOptIn,
+          smsOptIn: contactMethod === "text" ? true : smsOptIn,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -540,14 +548,13 @@ function PlanPageInner() {
             </h1>
 
             <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:text-base">
-              Review your dinner-to-activity flow, then continue with
-              reservation links, websites, or listing details.
+              Review your selected places, timeline, and travel details before making your plan official.
             </p>
           </div>
 
           <div className="rounded-[1.2rem] border border-white/10 bg-[#111]/90 p-4 shadow-2xl shadow-black/50 backdrop-blur-xl sm:rounded-[1.35rem] sm:p-5">
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">
-              Selected Flow
+              Your Outing Picks
             </p>
 
             <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em] sm:text-3xl">
@@ -559,7 +566,7 @@ function PlanPageInner() {
                 href="/create"
                 className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-center text-xs font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
               >
-                Replace Location
+                Edit Picks
               </Link>
 
               <a
@@ -570,34 +577,57 @@ function PlanPageInner() {
               </a>
             </div>
 
-            {hasPlan ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={savePlanAndFollowUp}
-                  className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-5 py-3 text-xs font-black uppercase tracking-[0.12em] text-emerald-100 transition hover:bg-emerald-400/15"
-                >
-                  Save My Outing
-                </button>
-
-                <button
-                  type="button"
-                  onClick={shareCurrentPlan}
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-xs font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
-                >
-                  Share Plan
-                </button>
-              </div>
-            ) : null}
-
-            {(saveStatus || shareStatus) && hasPlan ? (
-              <p className="mt-3 text-xs font-bold leading-5 text-white/40">
-                {shareStatus || saveStatus}
-              </p>
-            ) : null}
           </div>
         </div>
       </section>
+
+      {hasPlan && (
+        <section className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
+          <div className="mb-4 max-w-3xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
+              Your Outing Picks
+            </p>
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white">
+              Your Outing Picks
+            </h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
+              Review your selected places, check the details, and make changes before making your plan official.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {restaurant && (
+              <PlanActionCard
+                label="The Main Event"
+                chipLabel="Restaurant pick"
+                type="restaurant"
+                location={restaurant}
+                directionsUrl={buildGooglePlaceDirectionsUrl({
+                  destination: restaurant,
+                  travelMode: "driving",
+                })}
+                activeOutingId={activeOutingId}
+                planTitle={planTitle}
+              />
+            )}
+
+            {activity && (
+              <PlanActionCard
+                label="The After Plan"
+                chipLabel="Activity pick"
+                type="activity"
+                location={activity}
+                directionsUrl={buildGooglePlaceDirectionsUrl({
+                  destination: activity,
+                  travelMode: "driving",
+                })}
+                activeOutingId={activeOutingId}
+                planTitle={planTitle}
+              />
+            )}
+          </div>
+        </section>
+      )}
 
       <section
         id="plan-timeline"
@@ -610,61 +640,23 @@ function PlanPageInner() {
             <EmptyPlan />
           )
         ) : (
-          <div className="grid gap-5 lg:grid-cols-[0.82fr_1.18fr]">
-            <aside className="h-fit rounded-[1.2rem] border border-white/10 bg-[#080808] p-4 shadow-2xl shadow-black/40 sm:p-5">
+          <div className="grid gap-5 lg:grid-cols-[1.18fr_0.82fr]">
+            <aside className="order-2 h-fit rounded-[1.2rem] border border-white/10 bg-[#080808] p-4 shadow-2xl shadow-black/40 sm:p-5">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
-                Plan Summary
+                Review Your Outing
               </p>
 
               <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">
                 {restaurant && activity
-                  ? "Dinner → Activity"
+                  ? "Main Event → After Plan"
                   : restaurant
-                    ? "Dinner selected"
-                    : "Activity selected"}
+                    ? "Main event selected"
+                    : "After plan selected"}
               </h2>
 
               <p className="mt-2 text-sm font-semibold leading-6 text-white/45">
-                {buildPlanSummaryText(restaurant, activity, distancePreference)}
+                Make sure your picks, timing, and travel details look right before making your plan official. {buildPlanSummaryText(restaurant, activity, distancePreference)}
               </p>
-
-              <div className="mt-5 space-y-3">
-                <h3 className="text-sm font-black">Outing time & follow-up</h3>
-                <OutingTimeSelector value={outingTime} onChange={setOutingTime} variant="panel" />
-                {(outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-                    <p className="text-sm font-black">No account needed. We’ll send you a secure link to your plan.</p>
-                    <p className="mt-1 text-xs font-semibold text-white/50">We’ll ask how everything went.</p>
-                    <div className="mt-3 grid gap-2">
-                      <input type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="Email" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
-                      <input type="text" value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
-                      <input type="tel" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} placeholder="Phone optional" className="rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-semibold text-white outline-none" />
-                      <label className="flex gap-2 text-xs font-bold text-white/70"><input type="checkbox" checked={emailOptIn} onChange={(event) => setEmailOptIn(event.target.checked)} />Email me my plan and follow-up</label>
-                      <label className="flex gap-2 text-xs font-bold text-white/70"><input type="checkbox" checked={smsOptIn} onChange={(event) => setSmsOptIn(event.target.checked)} />Text me reminders and follow-up</label>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save Time</button>
-                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Save My Outing</button>
-                </div>
-                {startStatus ? <p className="text-xs font-bold leading-5 text-white/50">{startStatus}</p> : null}
-                {activeOutingId ? (
-                  <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4">
-                    <p className="text-sm font-black text-emerald-100">Your outing is saved</p>
-                    <p className="mt-1 text-xs font-bold leading-5 text-white/65">We saved your plan. Use the buttons below when you’re ready.</p>
-                    {outingTime.outingTimeConfidence === "exact" && outingTime.plannedFor ? (
-                      <p className="mt-2 text-xs font-bold text-white/55">Time: {new Date(outingTime.plannedFor).toLocaleString()}</p>
-                    ) : null}
-                    {(outingTime.nextMorningFollowupEnabled || outingTime.remindersEnabled) ? (
-                      <p className="mt-2 text-xs font-bold text-white/55">We’ll check in after to see how everything went.</p>
-                    ) : null}
-                    {activePlanUrl ? (
-                      <Link href={activePlanUrl} className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-black">Open secure plan link</Link>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
 
               <div className="mt-5 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/10 p-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-100/70">
@@ -761,7 +753,7 @@ function PlanPageInner() {
                         rel="noopener noreferrer"
                         className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
                       >
-                        Drive Dinner → Activity
+                        Drive Main Event → After Plan
                       </a>
                     ) : null}
                   </div>
@@ -769,28 +761,43 @@ function PlanPageInner() {
               )}
             </aside>
 
-            <div className="rounded-[1.2rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:p-4">
+            <div className="order-1 rounded-[1.2rem] border border-white/10 bg-[#080808] p-3 shadow-2xl shadow-black/40 sm:p-4">
               <div className="mb-4 border-b border-white/10 pb-4">
                 <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#e1062a] sm:text-[10px]">
                   Timeline
                 </p>
                 <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] sm:text-3xl">
-                  Your TheOutHaven flow
+                  Your Timeline
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-white/40">
-                  Start with dinner, then continue into the experience.
+                  Start with your main pick, then continue into the after plan.
                 </p>
               </div>
+
+              <OutingTimeSelector value={outingTime} onChange={setOutingTime} variant="panel" />
+
+              <TimelineTimingSummary
+                outingTime={outingTime}
+                restaurant={restaurant}
+                activity={activity}
+                distancePreference={distancePreference}
+                mainEventMinutes={mainEventMinutes}
+                afterPlanMinutes={afterPlanMinutes}
+                showTimingAdjustments={showTimingAdjustments}
+                onToggleTimingAdjustments={() => setShowTimingAdjustments((value) => !value)}
+                onMainEventMinutesChange={setMainEventMinutes}
+                onAfterPlanMinutesChange={setAfterPlanMinutes}
+              />
 
               <div className="relative">
                 <div className="absolute left-[17px] top-8 h-[calc(100%-64px)] w-px bg-gradient-to-b from-[#e1062a] via-white/15 to-fuchsia-400/40 sm:left-[19px]" />
 
                 <TimelineLocation
                   step="1"
-                  label="Dinner"
+                  label="The Main Event"
                   location={restaurant}
-                  fallbackTitle="Choose a dinner spot"
-                  fallbackMeta="Restaurant"
+                  fallbackTitle="Choose your main pick"
+                  fallbackMeta="Main pick"
                   type="restaurant"
                 />
 
@@ -801,16 +808,16 @@ function PlanPageInner() {
                   <p className="mt-1 text-xs font-bold leading-5 text-white/60 sm:text-sm">
                     {restaurant && activity
                       ? buildFlowText(restaurant, activity, distancePreference)
-                      : "Add the second stop to complete the night."}
+                      : "Add the second stop to complete the outing."}
                   </p>
                 </div>
 
                 <TimelineLocation
                   step="2"
-                  label="Activity"
+                  label="The After Plan"
                   location={activity}
-                  fallbackTitle="Choose an activity"
-                  fallbackMeta="Experience"
+                  fallbackTitle="Choose your after plan"
+                  fallbackMeta="After plan"
                   type="activity"
                 />
               </div>
@@ -821,34 +828,67 @@ function PlanPageInner() {
 
       {hasPlan && (
         <section className="mx-auto max-w-7xl px-3 pb-10 sm:px-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            {restaurant && (
-              <PlanActionCard
-                label="Dinner Pick"
-                type="restaurant"
-                location={restaurant}
-                directionsUrl={buildGooglePlaceDirectionsUrl({
-                  destination: restaurant,
-                  travelMode: "driving",
-                })}
-                activeOutingId={activeOutingId}
-                planTitle={planTitle}
-              />
-            )}
+          <div className="rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.16),transparent_34%),#080808] p-4 shadow-2xl shadow-black/40 sm:p-6">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
+              Make My Plan Official
+            </p>
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white">
+              Send this outing to yourself.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/45">
+              Send this outing to yourself so you have it when you’re ready to go.
+            </p>
 
-            {activity && (
-              <PlanActionCard
-                label="Activity Pick"
-                type="activity"
-                location={activity}
-                directionsUrl={buildGooglePlaceDirectionsUrl({
-                  destination: activity,
-                  travelMode: "driving",
-                })}
-                activeOutingId={activeOutingId}
-                planTitle={planTitle}
-              />
-            )}
+            <div className="mt-5 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+              <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
+                <p className="text-sm font-black text-white">Choose how to receive it</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setContactMethod("text"); setSmsOptIn(true); setEmailOptIn(false); }}
+                    className={`rounded-full border px-4 py-3 text-xs font-black uppercase tracking-[0.1em] transition ${contactMethod === "text" ? "border-[#e1062a]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"}`}
+                  >
+                    Text Me
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setContactMethod("email"); setEmailOptIn(true); setSmsOptIn(false); }}
+                    className={`rounded-full border px-4 py-3 text-xs font-black uppercase tracking-[0.1em] transition ${contactMethod === "email" ? "border-[#e1062a]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"}`}
+                  >
+                    Email Me
+                  </button>
+                </div>
+                <p className="mt-3 text-xs font-semibold leading-5 text-white/45">
+                  We’ll only use this to send your outing plan and helpful follow-up reminders.
+                </p>
+              </div>
+
+              <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                {contactMethod === "text" ? (
+                  <input type="tel" value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} placeholder="Phone number" className="rounded-xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#e1062a]/70" />
+                ) : (
+                  <input type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="Email address" className="rounded-xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#e1062a]/70" />
+                )}
+                <input type="text" value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold text-white/80 outline-none focus:border-[#e1062a]/70" />
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Send My Plan</button>
+                  <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save on this device instead</button>
+                </div>
+
+                {startStatus ? <p className="text-xs font-bold leading-5 text-white/55">{startStatus}</p> : null}
+                {saveStatus ? <p className="text-xs font-bold leading-5 text-white/45">{saveStatus}</p> : null}
+                {activeOutingId ? (
+                  <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4">
+                    <p className="text-sm font-black text-emerald-100">Your outing is saved</p>
+                    <p className="mt-1 text-xs font-bold leading-5 text-white/65">We saved your plan. Use the buttons above when you’re ready.</p>
+                    {activePlanUrl ? (
+                      <Link href={activePlanUrl} className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-black">Open secure plan link</Link>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </section>
       )}
@@ -904,6 +944,191 @@ function PlanPageInner() {
       `}</style>
     </main>
   );
+}
+
+
+function TimelineTimingSummary({
+  outingTime,
+  restaurant,
+  activity,
+  distancePreference,
+  mainEventMinutes,
+  afterPlanMinutes,
+  showTimingAdjustments,
+  onToggleTimingAdjustments,
+  onMainEventMinutesChange,
+  onAfterPlanMinutesChange,
+}: {
+  outingTime: OutingTimeValue;
+  restaurant: PlanLocation | null;
+  activity: PlanLocation | null;
+  distancePreference: "walking" | "miles";
+  mainEventMinutes: number;
+  afterPlanMinutes: number | null;
+  showTimingAdjustments: boolean;
+  onToggleTimingAdjustments: () => void;
+  onMainEventMinutesChange: (minutes: number) => void;
+  onAfterPlanMinutesChange: (minutes: number | null) => void;
+}) {
+  const travelMinutes = getEstimatedTravelMinutes(restaurant, activity, distancePreference);
+  const schedule = buildEstimatedSchedule({
+    outingTime,
+    mainEventMinutes,
+    afterPlanMinutes,
+    travelMinutes,
+  });
+  const mainOptions = [60, 90, 120, 150, 180];
+  const afterOptions: Array<number | null> = [60, 90, 120, null];
+
+  return (
+    <div className="my-4 rounded-2xl border border-white/10 bg-black/35 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
+            Estimated Schedule
+          </p>
+          <h3 className="mt-1 text-lg font-black text-white">
+            {schedule ? "Auto-estimated from your start time" : "Timing not set yet"}
+          </h3>
+          <p className="mt-1 text-xs font-semibold leading-5 text-white/50">
+            {schedule
+              ? "We’ll use your start time, default durations, and travel details to shape the timeline."
+              : "Add a start time if you want a full timeline."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggleTimingAdjustments}
+          className="w-full rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-black uppercase tracking-[0.1em] text-white/70 transition hover:text-white sm:w-auto"
+        >
+          Adjust timing
+        </button>
+      </div>
+
+      {schedule ? (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {schedule.map((item) => (
+            <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#e1062a]">{item.time}</p>
+              <p className="mt-1 text-sm font-black text-white">{item.label}</p>
+              <p className="mt-1 text-xs font-semibold text-white/45">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showTimingAdjustments ? (
+        <div className="mt-4 grid gap-4 border-t border-white/10 pt-4 md:grid-cols-2">
+          <DurationChipGroup
+            label="Main Event length"
+            options={mainOptions}
+            value={mainEventMinutes}
+            onChange={(value) => value && onMainEventMinutesChange(value)}
+          />
+          <DurationChipGroup
+            label="After Plan length"
+            options={afterOptions}
+            value={afterPlanMinutes}
+            onChange={onAfterPlanMinutesChange}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DurationChipGroup({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: Array<number | null>;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">{label}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={option ?? "open"}
+            type="button"
+            onClick={() => onChange(option)}
+            className={`rounded-full border px-3 py-2 text-[11px] font-black transition ${value === option ? "border-[#e1062a]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"}`}
+          >
+            {formatDurationOption(option)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function buildEstimatedSchedule({
+  outingTime,
+  mainEventMinutes,
+  afterPlanMinutes,
+  travelMinutes,
+}: {
+  outingTime: OutingTimeValue;
+  mainEventMinutes: number;
+  afterPlanMinutes: number | null;
+  travelMinutes: number | null;
+}) {
+  if (outingTime.outingTimeConfidence !== "exact" || !outingTime.plannedFor) return null;
+  const start = new Date(outingTime.plannedFor);
+  if (Number.isNaN(start.getTime())) return null;
+  const mainEnds = addMinutes(start, mainEventMinutes);
+  const afterStarts = addMinutes(mainEnds, travelMinutes ?? 0);
+  const afterEnds = afterPlanMinutes ? addMinutes(afterStarts, afterPlanMinutes) : null;
+  return [
+    { label: "The Main Event", time: formatScheduleTime(start, outingTime.timezone), detail: `Plan for ${formatDurationOption(mainEventMinutes)}.` },
+    { label: "Travel", time: formatScheduleTime(mainEnds, outingTime.timezone), detail: travelMinutes ? `About ${travelMinutes} min between picks.` : "Travel time will depend on the route." },
+    { label: "The After Plan", time: formatScheduleTime(afterStarts, outingTime.timezone), detail: afterEnds ? `Arrive around ${formatScheduleTime(afterStarts, outingTime.timezone)}.` : "Arrive when you’re ready." },
+    { label: "Wrap", time: afterEnds ? formatScheduleTime(afterEnds, outingTime.timezone) : "Open", detail: afterPlanMinutes ? `After about ${formatDurationOption(afterPlanMinutes)}.` : "Open-ended after plan." },
+  ];
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function formatScheduleTime(date: Date, timezone: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: timezone,
+  }).format(date);
+}
+
+function formatDurationOption(minutes: number | null) {
+  if (minutes === null) return "Open-ended";
+  if (minutes === 60) return "1 hr";
+  if (minutes % 60 === 0) return `${minutes / 60} hr`;
+  return `${Math.floor(minutes / 60)}.5 hr`;
+}
+
+function getEstimatedTravelMinutes(
+  restaurant: PlanLocation | null,
+  activity: PlanLocation | null,
+  distancePreference: "walking" | "miles",
+) {
+  if (!restaurant || !activity) return null;
+  const explicit =
+    activity.routeDurationMinutes ??
+    activity.googleWalkingDurationMinutes ??
+    activity.walkingDurationMinutes ??
+    activity.walking_route_minutes ??
+    activity.pair_walking_minutes ??
+    null;
+  if (typeof explicit === "number" && Number.isFinite(explicit) && explicit > 0) return Math.round(explicit);
+  const distance = activity.pair_distance_miles ?? distanceBetweenLocations(restaurant, activity);
+  if (!distance) return null;
+  const speedMilesPerHour = distancePreference === "walking" ? 3 : 18;
+  return Math.max(5, Math.round((distance / speedMilesPerHour) * 60));
 }
 
 function TimelineLocation({
@@ -987,11 +1212,11 @@ function TimelineLocation({
             <p className="mt-1.5 line-clamp-2 text-[11px] font-semibold leading-4 text-white/55 sm:mt-2 sm:text-xs sm:leading-5">
               {active
                 ? type === "restaurant"
-                  ? "Start with the food pick that matches your outing."
-                  : "Continue into the experience that completes the night."
+                  ? "Start with the pick that anchors your outing."
+                  : "Continue into the after plan that completes the outing."
                 : type === "restaurant"
-                  ? "Go back to Create and select a dinner spot."
-                  : "Go back to Create and select an activity."}
+                  ? "Go back to Create and choose your main pick."
+                  : "Go back to Create and choose your after plan."}
             </p>
           </div>
         </div>
@@ -1002,6 +1227,7 @@ function TimelineLocation({
 
 function PlanActionCard({
   label,
+  chipLabel,
   type,
   location,
   directionsUrl,
@@ -1009,6 +1235,7 @@ function PlanActionCard({
   planTitle,
 }: {
   label: string;
+  chipLabel?: string;
   type: "restaurant" | "activity";
   location: PlanLocation;
   directionsUrl?: string | null;
@@ -1098,7 +1325,7 @@ function PlanActionCard({
 
         <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/75 px-3 py-1.5 backdrop-blur-xl">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
-            {label}
+            {chipLabel || label}
           </p>
         </div>
 
@@ -1111,6 +1338,9 @@ function PlanActionCard({
 
       <div className="p-4">
         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">
+          {label}
+        </p>
+        <p className="mt-1 text-[11px] font-bold text-white/45">
           {titleCase(
             type === "restaurant"
               ? getCuisine(location) || "Restaurant"
@@ -1320,14 +1550,14 @@ function buildFlowText(
   activity: PlanLocation | null,
   distancePreference: "walking" | "miles",
 ) {
-  if (!restaurant || !activity) return "Dinner → Activity";
+  if (!restaurant || !activity) return "Main Event → After Plan";
 
   const distance =
     activity.pair_distance_miles ??
     distanceBetweenLocations(restaurant, activity) ??
     null;
-  const restaurantName = getLocationName(restaurant, "dinner");
-  const activityName = getLocationName(activity, "activity");
+  const restaurantName = getLocationName(restaurant, "main pick");
+  const activityName = getLocationName(activity, "after plan");
 
   if (distance !== null) {
     if (restaurantName) {
@@ -1347,8 +1577,8 @@ function buildFlowText(
       if (label) return label;
     }
 
-    return `${distance} mi between ${restaurantName || "dinner"} and ${
-      activityName || "activity"
+    return `${distance} mi between ${restaurantName || "main pick"} and ${
+      activityName || "after plan"
     }`;
   }
 
@@ -1356,7 +1586,7 @@ function buildFlowText(
     return `Same city flow • ${restaurant.city}`;
   }
 
-  return "Dinner → Activity timeline";
+  return "Main Event → After Plan timeline";
 }
 
 function buildPlanSummaryText(
@@ -1369,11 +1599,11 @@ function buildPlanSummaryText(
   }
 
   if (restaurant) {
-    return `${getLocationName(restaurant)} is saved as your dinner pick. Add an activity nearby or use the action buttons to reserve, call, or view details.`;
+    return `${getLocationName(restaurant)} is saved as your main event. Add an after plan nearby or use the action buttons to reserve, call, or view details.`;
   }
 
   if (activity) {
-    return `${getLocationName(activity)} is saved as your activity pick. Add a restaurant nearby or use the action buttons to call, open the website, or view details.`;
+    return `${getLocationName(activity)} is saved as your after plan. Add a main pick nearby or use the action buttons to call, open the website, or view details.`;
   }
 
   return "Start by choosing a restaurant, activity, or both from Create.";

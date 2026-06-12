@@ -1632,7 +1632,7 @@ export default function CreatePage() {
           <div className="mx-auto flex max-w-7xl flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
             <div className="min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.2em]">
-                Your TheOutHaven Plan
+                Your Outing Picks
               </p>
 
               <p className="max-w-full truncate text-sm font-bold text-white sm:max-w-[52vw]">
@@ -1640,7 +1640,7 @@ export default function CreatePage() {
               </p>
 
               <p className="hidden text-xs font-semibold text-white/40 sm:block">
-                Review your restaurant-to-activity timeline before continuing.
+                Review your selected places before making your plan official.
               </p>
             </div>
 
@@ -1649,7 +1649,7 @@ export default function CreatePage() {
               onClick={() => setShowPlanSummary(true)}
               className="w-full shrink-0 rounded-full bg-[#e1062a] px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-900/40 transition hover:bg-[#ff1744] sm:w-auto sm:px-5 sm:text-xs sm:tracking-[0.12em]"
             >
-              Review Your TheOutHaven →
+              Review Your Outing →
             </button>
           </div>
         </div>
@@ -1960,7 +1960,7 @@ function PlanSummarySheet({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.24em]">
-                Plan Summary
+                Review Your Outing
               </p>
               <h3 className="mt-1 break-words text-xl font-black tracking-[-0.04em] text-white sm:text-2xl">
                 Your plan is coming together.
@@ -3079,12 +3079,12 @@ function buildDistanceText(
       return `Same city flow • ${restaurant.city}`;
     }
 
-    return "Restaurant → Activity timeline";
+    return "Main Event → After Plan timeline";
   }
 
   if (restaurant)
-    return "Restaurant selected • Add an activity if you want one.";
-  if (activity) return "Activity selected • Add a restaurant if you want one.";
+    return "Main event selected • Add an after plan if you want one.";
+  if (activity) return "After plan selected • Add a main pick if you want one.";
 
   return "Choose a restaurant or activity to start your outing.";
 }
