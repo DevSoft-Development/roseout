@@ -1,4 +1,5 @@
-import { firstImage, getLocationImage } from "@/lib/locationImage";
+import { getLocationImage } from "@/lib/locationImage";
+import { normalizePublicCardImage, hasPublicCardImage } from "@/lib/publicCardImage";
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
@@ -242,73 +243,84 @@ export async function POST(request: Request) {
       ? result.matched_locations
       : [];
 
-    const hydratePhotoCard = (item: any) => {
-      const card = toCardRecord(item);
-      const image = getLocationImage(item) || getLocationImage(card);
+    const normalizeResultCard = (item: any) => {
+      const base =
+        typeof toCardRecord === "function"
+          ? toCardRecord(item)
+          : item;
 
-      return {
+      return normalizePublicCardImage({
         ...item,
-        ...card,
-        image_url: image,
-        main_image: image,
-        has_photos: Boolean(image),
-        photo_status: image ? item?.photo_status || "has_photo" : "missing_photo",
-      };
+        ...base,
+      });
     };
 
-    const photoSafeRestaurants = rawRestaurants
-      .map(hydratePhotoCard)
-      .filter((card: any) => Boolean(getLocationImage(card)));
+    const publicRestaurants = rawRestaurants
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
 
-    const photoSafeActivities = rawActivities
-      .map(hydratePhotoCard)
-      .filter((card: any) => Boolean(getLocationImage(card)));
+    const publicActivities = rawActivities
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
 
-    const photoSafeMatchedLocations = rawMatchedLocations
-      .map(hydratePhotoCard)
-      .filter((card: any) => Boolean(getLocationImage(card)));
+    const publicMatchedLocations = rawMatchedLocations
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
 
-    const cards = [
-      ...photoSafeRestaurants,
-      ...photoSafeActivities,
-      ...photoSafeMatchedLocations,
-    ].filter((card: any) => Boolean(getLocationImage(card)));
+    const publicCards = [
+      ...publicRestaurants,
+      ...publicActivities,
+      ...publicMatchedLocations,
+    ]
+      .map(normalizePublicCardImage)
+      .filter(hasPublicCardImage);
 
     if (process.env.NODE_ENV !== "production") {
-      const removedRestaurants = rawRestaurants.length - photoSafeRestaurants.length;
-      const removedActivities = rawActivities.length - photoSafeActivities.length;
-
-      if (removedRestaurants > 0 || removedActivities > 0) {
-        console.log("[generate] removed public cards without usable photos", {
-          removedRestaurants,
-          removedActivities,
-          finalCards: cards.length,
-        });
-      }
+      console.log("[generate] public image normalization", {
+        rawRestaurants: rawRestaurants.length,
+        publicRestaurants: publicRestaurants.length,
+        rawActivities: rawActivities.length,
+        publicActivities: publicActivities.length,
+        rawMatchedLocations: rawMatchedLocations.length,
+        publicMatchedLocations: publicMatchedLocations.length,
+        publicCards: publicCards.length,
+        firstCard: publicCards[0]
+          ? {
+              name:
+                publicCards[0].name ||
+                publicCards[0].restaurant_name ||
+                publicCards[0].activity_name,
+              main_image: publicCards[0].main_image,
+              image_url: publicCards[0].image_url,
+              images: publicCards[0].images,
+              resolvedImage: getLocationImage(publicCards[0]),
+            }
+          : null,
+      });
     }
 
     const response = {
       ...result,
       plannedTime,
-      restaurants: photoSafeRestaurants,
-      activities: photoSafeActivities,
-      matched_locations: photoSafeMatchedLocations,
-      matchedLocations: photoSafeMatchedLocations,
-      cards,
-      restaurantCount: photoSafeRestaurants.length,
-      activityCount: photoSafeActivities.length,
-      cardCount: cards.length,
+      restaurants: publicRestaurants,
+      activities: publicActivities,
+      matched_locations: publicMatchedLocations,
+      matchedLocations: publicMatchedLocations,
+      cards: publicCards,
+      restaurantCount: publicRestaurants.length,
+      activityCount: publicActivities.length,
+      cardCount: publicCards.length,
       card_counts: {
         ...(result.card_counts || {}),
-        restaurants: photoSafeRestaurants.length,
-        activities: photoSafeActivities.length,
-        matched_locations: photoSafeMatchedLocations.length,
+        restaurants: publicRestaurants.length,
+        activities: publicActivities.length,
+        matched_locations: publicMatchedLocations.length,
       },
       cardCounts: {
         ...(result.cardCounts || result.card_counts || {}),
-        restaurants: photoSafeRestaurants.length,
-        activities: photoSafeActivities.length,
-        matched_locations: photoSafeMatchedLocations.length,
+        restaurants: publicRestaurants.length,
+        activities: publicActivities.length,
+        matched_locations: publicMatchedLocations.length,
       },
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
@@ -325,8 +337,8 @@ export async function POST(request: Request) {
         activity_search_input: ((result.debug as any)?.activityTerms ?? []).join(
           " ",
         ),
-        final_restaurants: photoSafeRestaurants.length,
-        final_activities: photoSafeActivities.length,
+        final_restaurants: publicRestaurants.length,
+        final_activities: publicActivities.length,
         fallback_used: Boolean(
           (result.debug as any)?.restaurantRecoveryUsed ||
             (result.debug as any)?.activityRecoveryUsed,
@@ -340,10 +352,10 @@ export async function POST(request: Request) {
     const normalizedIntent =
       debug.normalizedIntent ?? debug.intent ?? result.normalizedIntent ?? null;
     const counts = debug.counts ?? {
-      restaurants: photoSafeRestaurants.length,
-      activities: photoSafeActivities.length,
+      restaurants: publicRestaurants.length,
+      activities: publicActivities.length,
       pairs: result.pairs?.length ?? 0,
-      finalDisplayedResultCount: cards.length,
+      finalDisplayedResultCount: publicCards.length,
     };
     const noResultsReason =
       result.no_results_reason ??
@@ -495,9 +507,9 @@ export async function POST(request: Request) {
         total_ms: Date.now() - startedAt,
         cache_status: isEdgeCreateSearchEnabled() ? "edge-or-legacy-fallback" : "enterprise-rpc",
         result_count:
-          photoSafeRestaurants.length +
-          photoSafeActivities.length +
-          photoSafeMatchedLocations.length,
+          publicRestaurants.length +
+          publicActivities.length +
+          publicMatchedLocations.length,
       }),
     );
 

@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import LocationPhoto from "@/components/location/LocationPhoto";
 import Link from "next/link";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +14,7 @@ import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { normalizePublicCardImage, hasPublicCardImage } from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
@@ -1405,7 +1405,9 @@ export default function CreatePage() {
                             const restaurantId = String(restaurant.id);
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
-                            const restaurantImage = getLocationImage(restaurant);
+                            const normalizedRestaurant = normalizePublicCardImage(restaurant);
+                            const restaurantImage = getLocationImage(normalizedRestaurant);
+
                             if (!restaurantImage) return null;
 
                             return (
@@ -1470,8 +1472,11 @@ export default function CreatePage() {
                             const activityId = String(activity.id);
                             const isSelected =
                               selectedActivity?.id === activity.id;
-                            const activityImage = getLocationImage(activity);
+                            const normalizedActivity = normalizePublicCardImage(activity);
+                            const activityImage = getLocationImage(normalizedActivity);
+
                             if (!activityImage) return null;
+
                             const distanceFromRestaurantLabel =
                               selectedRestaurant
                                 ? buildDistanceFromRestaurantLabel(
@@ -2285,6 +2290,10 @@ function ResultCard({
     analyticsMetadata,
   );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
+  const resolvedImageUrl =
+    typeof imageUrl === "string" && imageUrl.trim().length > 8
+      ? imageUrl.trim()
+      : null;
 
   return (
     <article
@@ -2304,13 +2313,30 @@ function ResultCard({
       }}
     >
       <div className="relative h-44 w-full overflow-hidden bg-neutral-950">
-        <LocationPhoto
-          src={imageUrl}
-          alt={title}
-          priority={priority}
-          sizes="(max-width: 768px) 100vw, 33vw"
-          fallbackLabel="Photo coming soon"
-        />
+        {resolvedImageUrl ? (
+          resolvedImageUrl.includes("maps.googleapis.com/maps/api/place/photo") ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolvedImageUrl}
+              alt={title || "Location photo"}
+              className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
+              loading={priority ? "eager" : "lazy"}
+            />
+          ) : (
+            <Image
+              src={resolvedImageUrl}
+              alt={title || "Location photo"}
+              fill
+              className="object-cover transition duration-700 group-hover:scale-[1.06]"
+              priority={priority}
+              sizes="(max-width: 768px) 100vw, 360px"
+            />
+          )
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-neutral-100 text-xs text-neutral-500">
+            Photo Coming Soon
+          </div>
+        )}
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
@@ -2615,25 +2641,29 @@ function filterVisibleWalkingResults<T>(
   });
 }
 
-function withUsablePhoto<T extends RestaurantCard | ActivityCard>(items: T[]) {
-  return items.filter((item) => Boolean(getLocationImage(item)));
-}
-
 function normalizeApiCards(data: ApiResponse) {
   const restaurants = Array.isArray(data.restaurants)
-    ? withUsablePhoto(data.restaurants as RestaurantCard[])
+    ? data.restaurants
+        .map((item: any) => normalizePublicCardImage(item))
+        .filter(hasPublicCardImage)
     : [];
 
   const activities = Array.isArray(data.activities)
-    ? withUsablePhoto(data.activities as ActivityCard[])
+    ? data.activities
+        .map((item: any) => normalizePublicCardImage(item))
+        .filter(hasPublicCardImage)
     : [];
 
   const cards = Array.isArray(data.cards)
-    ? withUsablePhoto(data.cards as Array<RestaurantCard | ActivityCard>)
+    ? data.cards
+        .map((item: any) => normalizePublicCardImage(item))
+        .filter(hasPublicCardImage)
     : [];
 
   const matched = Array.isArray(data.matched_locations)
-    ? withUsablePhoto(data.matched_locations as Array<RestaurantCard | ActivityCard>)
+    ? data.matched_locations
+        .map((item: any) => normalizePublicCardImage(item))
+        .filter(hasPublicCardImage)
     : [];
 
   const fallbackCards = cards.length ? cards : matched;
