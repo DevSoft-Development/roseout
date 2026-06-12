@@ -67,6 +67,24 @@ describe("enterprise Search Health classification", () => {
     ).toBe(false);
   });
 
+  it("does not log clean successful public searches with results", () => {
+    expect(
+      shouldLogSearchHealthEvent({
+        source: "public_create_search",
+        restaurant_count: 12,
+        activity_count: 0,
+        pair_count: 0,
+        needsRestaurant: true,
+        needsActivity: false,
+        wantsPairing: false,
+        timing_ms: 4000,
+        speed_status: "slow",
+        errors: [],
+        warnings: [],
+      }),
+    ).toBe(false);
+  });
+
   it("logs admin Search Lab debug runs", () => {
     const input = {
       source: "admin_search_lab",
@@ -102,12 +120,49 @@ describe("enterprise Search Health classification", () => {
     });
   });
 
-  it("classifies slow search", () => {
+  it("does not classify healthy 4000ms slow-labeled searches as slow_search", () => {
+    const input = {
+      source: "public_create_search",
+      restaurant_count: 12,
+      activity_count: 0,
+      pair_count: 0,
+      timing_ms: 4000,
+      speed_status: "slow",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      errors: [],
+      warnings: [],
+    };
+
+    expect(classifySearchHealthEvent(input)).toEqual({
+      eventType: "search_event",
+      severity: "info",
+      eventLabel: "Search event",
+    });
+    expect(shouldLogSearchHealthEvent(input)).toBe(false);
+  });
+
+  it("classifies searches over 5000ms as slow_search", () => {
     expect(
       classifySearchHealthEvent({
         restaurant_count: 3,
-        timing_ms: 4000,
+        timing_ms: 5500,
         speed_status: "slow",
+      }),
+    ).toEqual({
+      eventType: "slow_search",
+      severity: "warning",
+      eventLabel: "Slow search",
+    });
+  });
+
+  it("classifies critical speed status as slow_search", () => {
+    expect(
+      classifySearchHealthEvent({
+        restaurant_count: 3,
+        timing_ms: 1000,
+        speed_status: "critical",
       }),
     ).toEqual({
       eventType: "slow_search",

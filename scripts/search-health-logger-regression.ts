@@ -50,10 +50,10 @@ async function main() {
   assert.equal(
     shouldLogSearchHealthEvent({
       ...cleanPublicSearch,
-      debug: { ...cleanPublicSearch.debug, performance: { total_ms: 3501, speed_status: "slow" } },
+      debug: { ...cleanPublicSearch.debug, performance: { total_ms: 5501, speed_status: "slow" } },
     }),
     true,
-    "public slow search should log",
+    "public very slow search should log",
   );
 
   assert.equal(
@@ -120,10 +120,26 @@ async function main() {
     "strict walking low pair searches should classify as info",
   );
 
+
   assert.equal(
-    classifySearchHealthEvent({ result: { restaurants: [{}], activities: [{}], pairs: [{}] }, debug: { performance: { total_ms: 3501, speed_status: "slow" } } }).eventType,
+    shouldLogSearchHealthEvent({
+      ...cleanPublicSearch,
+      debug: { ...cleanPublicSearch.debug, performance: { total_ms: 4000, speed_status: "slow" } },
+    }),
+    false,
+    "healthy public searches around 4000ms should not log",
+  );
+
+  assert.equal(
+    classifySearchHealthEvent({ result: { restaurants: [{}], activities: [{}], pairs: [{}] }, debug: { performance: { total_ms: 4000, speed_status: "slow" } } }).eventType,
+    "search_event",
+    "4000ms slow-labeled searches should not classify as slow_search",
+  );
+
+  assert.equal(
+    classifySearchHealthEvent({ result: { restaurants: [{}], activities: [{}], pairs: [{}] }, debug: { performance: { total_ms: 5501, speed_status: "slow" } } }).eventType,
     "slow_search",
-    "slow searches should classify correctly",
+    "very slow searches should classify correctly",
   );
 }
 

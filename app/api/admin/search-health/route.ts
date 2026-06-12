@@ -13,6 +13,24 @@ const RANGE_MS: Record<RangeKey, number> = {
   "30d": 30 * 24 * 60 * 60 * 1000,
 };
 
+const SEARCH_HEALTH_SLOW_WARNING_MS = 5000;
+const SEARCH_HEALTH_SLOW_STATUSES = new Set([
+  "degraded",
+  "critical",
+  "timeout",
+  "failed",
+]);
+
+function isTrueSlowSearch(row: any) {
+  const speedStatus = String(row.speed_status ?? "").toLowerCase();
+  return (
+    row.event_type === "slow_search" ||
+    SEARCH_HEALTH_SLOW_STATUSES.has(speedStatus) ||
+    Number(row.timing_ms ?? getPerformance(row).total_ms ?? 0) >
+      SEARCH_HEALTH_SLOW_WARNING_MS
+  );
+}
+
 const RECENT_COLUMNS =
   "id,created_at,source,raw_query,normalized_search_type,primary_domain,event_type,severity,event_label,pair_count,restaurant_count,activity_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,default_market_id,review_status,distance_mode,max_pair_walking_minutes,debug";
 
@@ -73,11 +91,20 @@ function applyHealthFilters(
   toIso?: string | null,
   q?: string | null,
   exactQuery?: boolean,
+  trueSlowOnly = false,
 ) {
   let next = applyTimeRange(query, fromIso, toIso);
 
   for (const [key, value] of Object.entries(filters)) {
     if (value) next = next.eq(key, value);
+  }
+
+  if (trueSlowOnly) {
+    next = next.or(
+      `event_type.eq.slow_search,speed_status.in.(${Array.from(
+        SEARCH_HEALTH_SLOW_STATUSES,
+      ).join(",")}),timing_ms.gt.${SEARCH_HEALTH_SLOW_WARNING_MS}`,
+    );
   }
 
   if (q) {
@@ -294,7 +321,10 @@ function problemFlags(row: any) {
     ) > 0
   )
     flags.push("distance_unavailable_for_walking_request");
-  if (Number(row.timing_ms ?? getPerformance(row).total_ms ?? 0) > 5000)
+  if (
+    Number(row.timing_ms ?? getPerformance(row).total_ms ?? 0) >
+    SEARCH_HEALTH_SLOW_WARNING_MS
+  )
     flags.push("slow_search_over_5000ms");
   return flags;
 }
@@ -401,9 +431,10 @@ export async function GET(req: Request) {
       event_type: cleanFilter(searchParams.get("event_type")),
     };
 
-    if (view === "slow" && !healthFilters.speed_status) {
-      healthFilters.speed_status = "slow";
-    }
+    const slowViewUsesTrueSlowFilter =
+      view === "slow" &&
+      !healthFilters.speed_status &&
+      !healthFilters.event_type;
     if (view === "no_results" && !healthFilters.event_type) {
       healthFilters.event_type = "no_results";
     }
@@ -458,6 +489,7 @@ export async function GET(req: Request) {
         toIso,
         q,
         exactQuery,
+        slowViewUsesTrueSlowFilter,
       ),
       applyHealthFilters(
         supabaseAdmin
@@ -470,6 +502,7 @@ export async function GET(req: Request) {
         toIso,
         q,
         exactQuery,
+        slowViewUsesTrueSlowFilter,
       ),
       supabaseAdmin
         .from("search_health_digest_runs")
@@ -528,14 +561,7 @@ export async function GET(req: Request) {
       lowPairCountSearches: aggregateRows.filter(
         (row: any) => row.event_type === "low_pair_count",
       ).length,
-      slowSearches: aggregateRows.filter(
-        (row: any) =>
-          row.event_type === "slow_search" ||
-          ["slow", "degraded", "critical", "timeout"].includes(
-            String(row.speed_status ?? ""),
-          ) ||
-          Number(row.timing_ms ?? 0) > 3000,
-      ).length,
+      slowSearches: aggregateRows.filter(isTrueSlowSearch).length,
       unresolvedEvents,
       latestEventCreatedAt: aggregateRows[0]?.created_at ?? null,
     };
