@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { normalizeRole } from "@/lib/users/roles";
 import { getLocationName } from "@/lib/locationName";
+import { formatFullAddress } from "@/lib/address-utils";
 
 export default function AdminLabelsPage() {
   const supabase = createClient();
@@ -76,11 +77,12 @@ export default function AdminLabelsPage() {
           <h2>${getLocationName(r, "")}</h2>
 
           <p class="address">
-            ${r.address || ""}
-          </p>
-
-          <p class="address">
-            ${r.city || ""}, ${r.state || ""} ${r.zip_code || ""}
+            ${formatFullAddress({
+              address: r.address,
+              city: r.city,
+              state: r.state,
+              zip_code: r.zip_code,
+            })}
           </p>
 
           <p class="brand">Powered by TheOutHaven</p>
@@ -241,7 +243,12 @@ export default function AdminLabelsPage() {
               <div>
                 <h2 className="font-bold">{getLocationName(r, "Restaurant")}</h2>
                 <p className="text-sm text-neutral-600">
-                  {r.address}, {r.city}, {r.state} {r.zip_code}
+                  {formatFullAddress({
+                    address: r.address,
+                    city: r.city,
+                    state: r.state,
+                    zip_code: r.zip_code,
+                  })}
                 </p>
                 <p className="text-xs text-neutral-500">
                   Status: {r.status}

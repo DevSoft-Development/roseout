@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { formatFullAddress } from "@/lib/address-utils";
 import ReservationStatusBadge from "@/components/reservations/status-badge";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ type LocationRow = {
   address?: string | null;
   city?: string | null;
   state?: string | null;
+  zip_code?: string | null;
 };
 
 type ReservationRow = {
@@ -65,7 +67,7 @@ export default async function MyReservationsPage() {
   const rows = (reservations || []) as ReservationRow[];
   const locationIds = Array.from(new Set(rows.map((row) => row.location_id).filter(Boolean)));
   const { data: locations } = locationIds.length
-    ? await supabaseAdmin.from("locations").select("id, name, restaurant_name, activity_name, business_name, main_image, image_url, photo_url, images, address, city, state").in("id", locationIds)
+    ? await supabaseAdmin.from("locations").select("id, name, restaurant_name, activity_name, business_name, main_image, image_url, photo_url, images, address, city, state, zip_code").in("id", locationIds)
     : { data: [] };
 
   const locationMap = new Map(((locations || []) as LocationRow[]).map((location) => [location.id, location]));
@@ -91,7 +93,13 @@ export default async function MyReservationsPage() {
                     {items.map((reservation) => {
                       const location = locationMap.get(reservation.location_id) || ({} as LocationRow);
                       const image = getLocationImage(location) || "/placeholder.jpg";
-                      const directions = [location.address, location.city, location.state].filter(Boolean).join(", ");
+                      const directions = formatFullAddress({
+                        address: location.address,
+                        city: location.city,
+                        state: location.state,
+                        zip_code: location.zip_code,
+                        fallback: "",
+                      });
                       return (
                         <article key={reservation.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] shadow-2xl">
                           <div className="relative h-40 bg-white/10">

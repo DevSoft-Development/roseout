@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { normalizeAddressForSave } from "@/lib/address-utils";
 
 export type GoogleAddressFields = {
   address: string;
@@ -175,11 +176,21 @@ export default function GoogleAddressAutocomplete({
         return;
       }
 
-      emitAddressSelect({
+      const selectedCity = data.city || city || "";
+      const selectedState = data.state || state || "";
+      const selectedZip = data.zip_code || zip_code || "";
+      const selectedAddress = normalizeAddressForSave({
         address: data.address || prediction.description,
-        city: data.city || city || "",
-        state: data.state || state || "",
-        zip_code: data.zip_code || zip_code || "",
+        city: selectedCity,
+        state: selectedState,
+        zip_code: selectedZip,
+      });
+
+      emitAddressSelect({
+        address: selectedAddress,
+        city: selectedCity,
+        state: selectedState,
+        zip_code: selectedZip,
         neighborhood: data.neighborhood || neighborhood || "",
         latitude: data.latitude ?? "",
         longitude: data.longitude ?? "",
@@ -216,11 +227,21 @@ export default function GoogleAddressAutocomplete({
         return;
       }
 
-      emitAddressSelect({
+      const repairedCity = data.city || city || "";
+      const repairedState = data.state || state || "";
+      const repairedZip = data.zip_code || zip_code || "";
+      const repairedAddress = normalizeAddressForSave({
         address: data.address || inputValue,
-        city: data.city || city || "",
-        state: data.state || state || "",
-        zip_code: data.zip_code || zip_code || "",
+        city: repairedCity,
+        state: repairedState,
+        zip_code: repairedZip,
+      });
+
+      emitAddressSelect({
+        address: repairedAddress,
+        city: repairedCity,
+        state: repairedState,
+        zip_code: repairedZip,
         neighborhood: data.neighborhood || neighborhood || "",
         latitude: data.latitude ?? "",
         longitude: data.longitude ?? "",

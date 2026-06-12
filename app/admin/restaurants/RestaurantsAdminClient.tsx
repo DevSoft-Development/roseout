@@ -5,6 +5,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getCuisine, getLocationTags } from "@/lib/locationFields";
 import { getLocationScore, type LocationScoreFields } from "@/lib/locationScore";
+import { formatFullAddress } from "@/lib/address-utils";
 import GoogleAddressAutocomplete, {
   type GoogleAddressFields,
 } from "@/components/GoogleAddressAutocomplete";
@@ -293,8 +294,12 @@ export default function RestaurantsAdminClient({
                       </div>
 
                       <p className="text-sm text-[#6f5c50]">
-                        {restaurant.address}, {restaurant.city},{" "}
-                        {restaurant.state} {restaurant.zip_code}
+                        {formatFullAddress({
+                          address: restaurant.address,
+                          city: restaurant.city,
+                          state: restaurant.state,
+                          zip_code: restaurant.zip_code,
+                        })}
                       </p>
 
                       <p className="mt-2 text-sm text-[#6f5c50]">

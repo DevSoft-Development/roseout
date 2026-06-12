@@ -1,3 +1,7 @@
+import {
+  formatFullAddress as sharedFormatFullAddress,
+  stripCityStateZipFromAddress,
+} from "@/lib/address-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type CRMStatus =
@@ -1477,34 +1481,13 @@ export function getLocationGalleryImages(
   ]);
 }
 
-function escapeAddressPart(value?: string | null) {
-  return String(value || "")
-    .trim()
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export function stripCityStateZipFromStreetAddress(
   address?: string | null,
   city?: string | null,
   state?: string | null,
   zip?: string | null,
 ) {
-  let street = String(address || "").trim();
-  const parts = [city, state, zip].map(escapeAddressPart).filter(Boolean);
-  if (!street || parts.length === 0) return street;
-
-  const cityStateZip = [city, state, zip]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join("\\s*,?\\s*");
-  if (cityStateZip)
-    street = street.replace(
-      new RegExp(`\\s*,?\\s*${cityStateZip}\\s*$`, "i"),
-      "",
-    );
-  for (const part of parts)
-    street = street.replace(new RegExp(`\\s*,?\\s*${part}\\s*$`, "i"), "");
-  return street.replace(/\s*,\s*$/, "").trim();
+  return stripCityStateZipFromAddress(address, city, state, zip);
 }
 
 export function formatFullAddress({
@@ -1518,11 +1501,13 @@ export function formatFullAddress({
   state?: string | null;
   zip?: string | null;
 }) {
-  const street = stripCityStateZipFromStreetAddress(address, city, state, zip);
-  return [street, city, state, zip]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean)
-    .join(", ");
+  return sharedFormatFullAddress({
+    address,
+    city,
+    state,
+    zip,
+    fallback: "",
+  });
 }
 
 export async function safeUpdateLocationPhotos(

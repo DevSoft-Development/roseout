@@ -21,6 +21,7 @@ import { toDisplayLabel } from "@/lib/displayLabel";
 import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
 import { emptyOutingTimeValue, getBrowserTimezone, type OutingTimeValue } from "@/lib/outings/planned-time-client";
 import { formatDistanceFromRestaurant } from "@/lib/search/enterprise/distance";
+import { formatFullAddress } from "@/lib/address-utils";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import {
   getExternalReservationUrl,
@@ -1252,9 +1253,13 @@ function formatAddress(item: {
   state?: string | null;
   zip_code?: string | null;
 }) {
-  return [item.address, item.city, item.state, item.zip_code]
-    .filter(Boolean)
-    .join(", ");
+  return formatFullAddress({
+    address: item.address,
+    city: item.city,
+    state: item.state,
+    zip_code: item.zip_code,
+    fallback: "",
+  });
 }
 
 function titleCase(value?: string | null) {

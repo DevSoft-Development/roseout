@@ -6,6 +6,7 @@ import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import FoodTermBackfillPanel from "../dashboard/locations/FoodTermBackfillPanel";
 import GoogleEnrichmentPanel from "@/components/admin/locations/GoogleEnrichmentPanel";
 import { requireAdminRole } from "@/lib/admin-auth";
+import { formatFullAddress as formatSharedFullAddress } from "@/lib/address-utils";
 import { supabase } from "@/lib/supabase";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
@@ -201,16 +202,13 @@ function formatFullAddress(item: {
   state?: string | null;
   zip_code?: string | null;
 }) {
-  const street = item.address?.trim();
-  const city = item.city?.trim();
-  const state = item.state?.trim();
-  const zip = item.zip_code?.trim();
-
-  const cityStateZip = [city, state, zip].filter(Boolean).join(", ");
-
-  return (
-    [street, cityStateZip].filter(Boolean).join(" • ") || "Address not listed"
-  );
+  return formatSharedFullAddress({
+    address: item.address,
+    city: item.city,
+    state: item.state,
+    zip_code: item.zip_code,
+    fallback: "Address not listed",
+  });
 }
 
 function statusBadge(status?: string | null) {
