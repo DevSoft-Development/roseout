@@ -2332,20 +2332,19 @@ function ResultCard({
     analyticsMetadata,
   );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
+  const [, setFailedImageUrl] = useState<string | null>(null);
   const resolvedImageUrl =
     typeof imageUrl === "string" && imageUrl.trim().length > 8
       ? imageUrl.trim()
       : null;
+  const displayImageUrl = resolvedImageUrl;
 
-  if (
-    process.env.NODE_ENV !== "production" &&
-    ((title || "").toLowerCase().includes("stk") ||
-      (Boolean(imageUrl) && !resolvedImageUrl))
-  ) {
-    console.log("[ResultCard] imageUrl", {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[ResultCard] display image check", {
       title,
       imageUrl,
       resolvedImageUrl,
+      displayImageUrl,
     });
   }
 
@@ -2367,19 +2366,18 @@ function ResultCard({
       }}
     >
       <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
-        {resolvedImageUrl ? (
+        {displayImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={resolvedImageUrl}
+            src={displayImageUrl}
             alt={title || "Location photo"}
             className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
             loading={priority ? "eager" : "lazy"}
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-            }}
+            referrerPolicy="no-referrer"
+            onError={() => setFailedImageUrl(resolvedImageUrl)}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-xs text-neutral-500">
+          <div className="flex h-full w-full items-center justify-center bg-neutral-950 text-xs text-neutral-500">
             Photo Coming Soon
           </div>
         )}

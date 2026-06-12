@@ -9,9 +9,9 @@ function clean(value: unknown) {
 
 export async function GET(request: Request) {
   try {
-    const url = new URL(request.url);
-    const photoReference = clean(url.searchParams.get("ref"));
-    const maxwidth = clean(url.searchParams.get("maxwidth")) || "1200";
+    const requestUrl = new URL(request.url);
+    const photoReference = clean(requestUrl.searchParams.get("ref"));
+    const maxwidth = clean(requestUrl.searchParams.get("maxwidth")) || "1200";
 
     if (!photoReference) {
       return NextResponse.json(
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
     if (!key) {
       return NextResponse.json(
-        { error: "Missing Google Places API key." },
+        { error: "Missing GOOGLE_PLACES_API_KEY or GOOGLE_API_KEY." },
         { status: 500 },
       );
     }
@@ -36,25 +36,36 @@ export async function GET(request: Request) {
 
     const response = await fetch(googleUrl.toString(), {
       redirect: "follow",
+      headers: {
+        "User-Agent": "TheOutHaven/1.0",
+      },
       cache: "force-cache",
       next: { revalidate: 60 * 60 * 24 * 14 },
     });
 
-    if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+
+    if (!response.ok || !contentType.startsWith("image/")) {
+      const text = await response.text().catch(() => "");
       return NextResponse.json(
-        { error: "Google photo request failed." },
-        { status: response.status },
+        {
+          error: "Google photo request failed.",
+          status: response.status,
+          contentType,
+          details: text.slice(0, 500),
+        },
+        { status: response.ok ? 502 : response.status },
       );
     }
 
-    const contentType = response.headers.get("content-type") || "image/jpeg";
     const body = await response.arrayBuffer();
 
     return new NextResponse(body, {
       status: 200,
       headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=1209600, s-maxage=1209600, stale-while-revalidate=86400",
+        "Content-Type": contentType || "image/jpeg",
+        "Cache-Control":
+          "public, max-age=1209600, s-maxage=1209600, stale-while-revalidate=86400",
       },
     });
   } catch (error) {
