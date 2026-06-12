@@ -52,6 +52,31 @@ export function userAskedForRooftopRestaurant(query: string) {
   return rooftopRestaurant && !rooftopActivity;
 }
 
+
+export function hasBroadOutingOccasionLanguage(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  return /\b(date night|first date|romantic date|anniversary date|couples night|double date|girls night|girls night out|birthday night out|night out)\b/i.test(q);
+}
+
+export function hasRestaurantOnlyLanguage(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  return /\b(restaurant|restaurants|dinner only|food only|just dinner|only dinner|romantic restaurant|date night restaurant|date night dinner)\b/i.test(q);
+}
+
+export function hasActivityOnlyLanguage(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  return /\b(activity only|activities only|things to do only|just activities|only activities|date ideas|date activities)\b/i.test(q);
+}
+
+export function detectBroadOutingOccasion(query: string): string | null {
+  const q = String(query || "").toLowerCase();
+  const match = q.match(/\b(date night|first date|romantic date|anniversary date|couples night|double date|girls night out|girls night|birthday night out|night out)\b/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
 export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   bowling: ["bowling", "bowling alley", "bowling lanes"],
   karaoke: ["karaoke"],

@@ -1022,3 +1022,81 @@ describe("restaurant cuisine feature fast path", () => {
     expect(parsed.intent.primaryDomain).not.toBe("restaurant");
   });
 });
+
+
+describe("broad occasion outing intent", () => {
+  it("fast-paths date night in nyc as a mixed outing without LLM wait", async () => {
+    const parsed = await parseEnterpriseIntent("date night in nyc", { useLLM: true });
+
+    expect(parsed.intentParserSource).toBe("fast_path");
+    expect(parsed.usedLlm).toBe(false);
+    expect(parsed.fastPathMatched).toBe(true);
+    expect(parsed.fastPathReason).toBe("broad_occasion_mixed_outing");
+    expect(parsed.debug.llm_ms).toBe(0);
+    expect(parsed.intent.searchType).toBe("mixed_outing");
+    expect(parsed.intent.primaryDomain).toBe("mixed");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(true);
+    expect(parsed.intent.wantsPairing).toBe(true);
+    expect(parsed.intent.occasion).toBe("date night");
+    expect(parsed.intent.timeContext).toBe("date night");
+    expect(parsed.intent.restaurantIntent.mealTerms).toEqual(
+      expect.arrayContaining(["date night", "dinner"]),
+    );
+    expect(parsed.intent.activityIntent.activityTerms).toEqual(
+      expect.arrayContaining(["activity", "things to do"]),
+    );
+  });
+
+  it("keeps date night in nyc restaurant-only when the restaurant lane is explicit", async () => {
+    const parsed = await parseEnterpriseIntent("date night in nyc", {
+      useLLM: false,
+      body: { selectedSearchLane: "restaurant" },
+    });
+
+    expect(parsed.debug.selectedSearchLane).toBe("restaurant");
+    expect(parsed.intent.searchType).toBe("restaurant");
+    expect(parsed.intent.primaryDomain).toBe("restaurant");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+    expect(parsed.intent.wantsPairing).toBe(false);
+  });
+
+  it("keeps explicit date night restaurant searches restaurant-only", async () => {
+    const parsed = await parseEnterpriseIntent("date night restaurant in nyc", {
+      useLLM: false,
+    });
+
+    expect(parsed.intent.searchType).toBe("restaurant");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+  });
+
+  it("allows date ideas with no food signal to stay activity-only", async () => {
+    const parsed = await parseEnterpriseIntent("date ideas in nyc", {
+      useLLM: false,
+    });
+
+    expect(parsed.intent.searchType).toBe("activity");
+    expect(parsed.intent.needsRestaurant).toBe(false);
+    expect(parsed.intent.needsActivity).toBe(true);
+  });
+
+  for (const query of [
+    "girls night in queens",
+    "birthday night out in manhattan",
+    "steak dinner date night",
+  ]) {
+    it(`parses ${query} as a mixed outing`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+
+      expect(parsed.intentParserSource).toBe("fast_path");
+      expect(parsed.fastPathReason).toBe("broad_occasion_mixed_outing");
+      expect(parsed.intent.searchType).toBe("mixed_outing");
+      expect(parsed.intent.primaryDomain).toBe("mixed");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(true);
+      expect(parsed.intent.wantsPairing).toBe(true);
+    });
+  }
+});

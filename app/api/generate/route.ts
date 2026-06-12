@@ -94,6 +94,30 @@ function toCardRecord(item: any) {
 }
 
 
+
+function normalizeSelectedSearchLane(value: unknown): "auto" | "restaurant" | "activity" | "mixed" | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase().trim().replace(/_/g, "-");
+  if (["restaurant", "restaurants", "food", "dining", "restaurant-only", "restaurant only"].includes(normalized)) return "restaurant";
+  if (["activity", "activities", "things-to-do", "things to do", "activity-only", "activity only"].includes(normalized)) return "activity";
+  if (["mixed", "mixed-outing", "mixed outing", "outing", "pairing"].includes(normalized)) return "mixed";
+  if (["auto", "any", "all", "default"].includes(normalized)) return "auto";
+  return null;
+}
+
+function selectedSearchLaneFromRequestBody(body: any): "auto" | "restaurant" | "activity" | "mixed" {
+  return (
+    normalizeSelectedSearchLane(body?.selectedSearchLane) ??
+    normalizeSelectedSearchLane(body?.selected_search_lane) ??
+    normalizeSelectedSearchLane(body?.searchLane) ??
+    normalizeSelectedSearchLane(body?.search_lane) ??
+    normalizeSelectedSearchLane(body?.lane) ??
+    normalizeSelectedSearchLane(body?.searchType) ??
+    normalizeSelectedSearchLane(body?.search_type) ??
+    "auto"
+  );
+}
+
 function metadataString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -207,13 +231,20 @@ export async function POST(request: Request) {
         };
 
 
+    const selectedSearchLane = selectedSearchLaneFromRequestBody(body);
+    const searchBody = {
+      ...body,
+      selectedSearchLane,
+      ...(selectedSearchLane === "auto" ? { searchType: "auto" } : { searchType: selectedSearchLane }),
+    };
+
     const betaAssignmentId = body?.betaAssignmentId || body?.beta_assignment_id || new URL(request.url).searchParams.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
     const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
     const usedCustomPrompt = body?.usedCustomPrompt === true || body?.usedCustomPrompt === "true" || new URL(request.url).searchParams.get("usedCustomPrompt") === "true" || request.headers.get("x-used-custom-prompt") === "true";
     const betaDebug = process.env.NODE_ENV !== "production" || Boolean(betaAssignmentId || betaTesterId || body?.betaDebug);
     const betaFeedbackSubmitted = Boolean(betaTesterId && (body?.feedbackSubmitted === true || body?.feedback_submitted === true || body?.feedback || body?.feedback_type || body?.expected_result || body?.actual_result || body?.rating));
     const legacySearch = () => runEnterpriseSearch(cleanInput, {
-      body,
+      body: searchBody,
       useLLM: true,
       source: betaTesterId ? "beta_tester_search" : "public_create_search",
       route: "/api/generate",
@@ -229,7 +260,7 @@ export async function POST(request: Request) {
 
     const result: any = await runCreateSearchWithEdgeFallback(
       {
-        ...body,
+        ...searchBody,
         prompt: cleanInput,
         limit: body?.limit ?? 12,
         debug: betaDebug || Boolean(body?.debug),
@@ -382,7 +413,7 @@ export async function POST(request: Request) {
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? { ...(result.debug || {}), plannedTime } : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo
@@ -541,6 +572,7 @@ export async function POST(request: Request) {
         searchType: resolvedSearchType,
         primaryDomain: resolvedPrimaryDomain,
         intentParserSource: resolvedIntentParserSource,
+        selectedSearchLane,
       }) as Record<string, any>,
     });
 

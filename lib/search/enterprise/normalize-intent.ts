@@ -22,6 +22,10 @@ import {
   hasGenericActivitySignal,
   hasOnlyGenericActivityTerms,
   hasRooftopRestaurantFeatureLanguage,
+  detectBroadOutingOccasion,
+  hasActivityOnlyLanguage,
+  hasBroadOutingOccasionLanguage,
+  hasRestaurantOnlyLanguage,
   PLACE_OF_WORSHIP_TERMS,
   ROOFTOP_RESTAURANT_FEATURE_TERMS,
   userAskedForPlaceOfWorship,
@@ -275,6 +279,10 @@ export const ACTIVITY_ALLOWED_SINGLE_WORDS = new Set([
   "hockey",
   "quiet",
   "romantic",
+  "fun",
+  "social",
+  "cozy",
+  "intimate",
   "club",
   "nightclub",
   "dancing",
@@ -318,6 +326,10 @@ export const RESTAURANT_ALLOWED_SINGLE_WORDS = new Set([
   "fried chicken",
   "hot chicken",
   "romantic",
+  "cozy",
+  "intimate",
+  "fun",
+  "social",
   "casual",
   "birthday",
   "anniversary",
@@ -451,6 +463,88 @@ function applyForceActivityOnlyVenue(intent: SearchIntent): SearchIntent {
     pairingPreference: resetPairingPreference(),
   };
 }
+
+function broadOutingHasActivityFollowup(query: string) {
+  const q = String(query || "").toLowerCase();
+  return /\b(and|after|afterward|afterwards|then|plus|with)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|drinks|cocktails|bar|lounge|karaoke|comedy|bowling|arcade|museum)\b/i.test(q);
+}
+
+function shouldProtectBroadOccasionMixedIntent(query: string, explicitSearchLane?: "auto" | "restaurant" | "activity" | "mixed" | null) {
+  return (
+    explicitSearchLane !== "restaurant" &&
+    explicitSearchLane !== "activity" &&
+    hasBroadOutingOccasionLanguage(query) &&
+    !hasActivityOnlyLanguage(query) &&
+    (!hasRestaurantOnlyLanguage(query) || broadOutingHasActivityFollowup(query))
+  );
+}
+
+function broadOccasionRestaurantVibes(occasion: string) {
+  return /date|couples|anniversary/i.test(occasion)
+    ? ["romantic", "cozy", "intimate"]
+    : ["fun", "social"];
+}
+
+function broadOccasionActivityVibes(occasion: string) {
+  return /date|couples|anniversary/i.test(occasion)
+    ? ["date night", "romantic", "fun"]
+    : ["fun", "social", "night out"];
+}
+
+function protectBroadOccasionMixedIntent(intent: SearchIntent, explicitSearchLane?: "auto" | "restaurant" | "activity" | "mixed" | null): SearchIntent {
+  if (!shouldProtectBroadOccasionMixedIntent(intent.rawQuery, explicitSearchLane)) return intent;
+
+  const detectedOccasion = detectBroadOutingOccasion(intent.rawQuery) ?? "night out";
+  const restaurantIntent = intent.restaurantIntent ?? createEmptyRestaurantIntent();
+  const activityIntent = intent.activityIntent ?? createEmptyActivityIntent();
+
+  return {
+    ...intent,
+    searchType: "mixed_outing",
+    primaryDomain: "mixed",
+    needsRestaurant: true,
+    needsActivity: true,
+    wantsPairing: true,
+    strictness: "medium",
+    occasion: intent.occasion ?? detectedOccasion,
+    timeContext: intent.timeContext ?? detectedOccasion,
+    restaurantIntent: {
+      ...restaurantIntent,
+      mealTerms: uniq([
+        ...(restaurantIntent.mealTerms ?? []),
+        detectedOccasion,
+        "dinner",
+      ]),
+      vibeTerms: uniq([
+        ...(restaurantIntent.vibeTerms ?? []),
+        ...broadOccasionRestaurantVibes(detectedOccasion),
+      ]),
+    },
+    activityIntent: {
+      ...activityIntent,
+      activityTerms: uniq([
+        ...(activityIntent.activityTerms ?? []),
+        "activity",
+        "things to do",
+      ]),
+      vibeTerms: uniq([
+        ...(activityIntent.vibeTerms ?? []),
+        ...broadOccasionActivityVibes(detectedOccasion),
+      ]),
+    },
+    pairingPreference: {
+      ...(intent.pairingPreference ?? resetPairingPreference()),
+      distanceMode: intent.pairingPreference?.requiresPairing === true
+        ? (intent.pairingPreference.distanceMode ?? "any")
+        : "nearby",
+      requiresPairing: true,
+      requireWalkablePair: intent.pairingPreference?.requireWalkablePair ?? false,
+      maxPairDistanceMiles: intent.pairingPreference?.maxPairDistanceMiles ?? 8,
+      maxPairWalkingMinutes: intent.pairingPreference?.maxPairWalkingMinutes ?? null,
+    },
+  };
+}
+
 function finalDomainCleanup(intent: SearchIntent): SearchIntent {
   if (!intent.needsActivity || intent.searchType === "restaurant") return { ...intent, searchType: "restaurant", primaryDomain: "restaurant", needsActivity: false, needsRestaurant: true, activityIntent: createEmptyActivityIntent(), wantsPairing: false, pairingPreference: resetPairingPreference() };
   if (!intent.needsRestaurant || intent.searchType === "activity") return { ...intent, searchType: "activity", primaryDomain: "activity", needsRestaurant: false, needsActivity: true, restaurantIntent: createEmptyRestaurantIntent(), wantsPairing: false, pairingPreference: resetPairingPreference() };
@@ -990,6 +1084,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
 export function normalizeIntent(
   query: string,
   llmIntent?: Partial<SearchIntent> | null,
+  options?: { explicitSearchLane?: "auto" | "restaurant" | "activity" | "mixed" | null },
 ): SearchIntent {
   const base = deterministicIntentFromQuery(query);
   const merged: SearchIntent = {
@@ -1222,7 +1317,8 @@ export function normalizeIntent(
       : Array.isArray(base.vibe)
         ? base.vibe
         : [];
-  let finalIntent = applyForceActivityOnlyVenue(merged);
+  let finalIntent = protectBroadOccasionMixedIntent(merged, options?.explicitSearchLane ?? null);
+  finalIntent = applyForceActivityOnlyVenue(finalIntent);
   finalIntent = cleanupSportsWatchIntentTerms(finalIntent);
   finalIntent = cleanupRelaxedIntent(finalIntent);
   finalIntent = finalDomainCleanup(finalIntent);
