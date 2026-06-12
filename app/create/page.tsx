@@ -2371,8 +2371,15 @@ function ResultCard({
       <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
         {displayImageUrl ? (
           <>
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">
-              Photo unavailable
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+                <img
+                  src="/toh_logo.png"
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain opacity-60"
+                />
+              </div>
             </div>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
