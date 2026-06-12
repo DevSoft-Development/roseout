@@ -12,6 +12,14 @@ export type SearchHealthSource =
 
 export type SearchHealthSeverity = "info" | "warning" | "error" | "critical";
 
+const SEARCH_HEALTH_SLOW_WARNING_MS = 5000;
+const SEARCH_HEALTH_SLOW_STATUSES = new Set([
+  "degraded",
+  "critical",
+  "failed",
+  "timeout",
+]);
+
 export type LoggerArgs = {
   source?: SearchHealthSource | null;
   environment?: string | null;
@@ -737,7 +745,10 @@ function classifyWithReason(args: LoggerArgs, payload: any) {
       noPairsReason: payload.no_pairs_reason,
     };
   }
-  if (timingMs > 3000 || ["slow", "degraded"].includes(speedStatus))
+  if (
+    timingMs > SEARCH_HEALTH_SLOW_WARNING_MS ||
+    SEARCH_HEALTH_SLOW_STATUSES.has(speedStatus)
+  )
     return {
       eventType: "slow_search",
       severity: "warning" as const,
@@ -975,10 +986,9 @@ export function shouldLogSearchHealthEvent(input: LoggerArgs | any): boolean {
     payload.required_pairing_suppressed_fallback === true ||
     Boolean(payload.no_results_reason) ||
     Boolean(payload.no_pairs_reason) ||
-    timingMs > 3000 ||
-    ["slow", "degraded", "critical", "failed", "timeout"].includes(
-      speedStatus,
-    ) ||
+    // search_events tracks all speed data; search_health_events is only for actionable issues.
+    timingMs > SEARCH_HEALTH_SLOW_WARNING_MS ||
+    SEARCH_HEALTH_SLOW_STATUSES.has(speedStatus) ||
     counters.extremeWalkingRoutesRejected > 0 ||
     counters.invalidWalkingRoutesHiddenFromDisplay > 0 ||
     counters.suppressedLowQualityPairCount > 0;

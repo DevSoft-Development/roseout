@@ -5,6 +5,18 @@ import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 type EventRow = Record<string, unknown>;
 
+const SEARCH_HEALTH_SLOW_WARNING_MS = 5000;
+const SEARCH_HEALTH_SLOW_STATUSES = new Set(["degraded", "critical", "timeout", "failed"]);
+
+function isTrueSlowSearch(row: EventRow) {
+  const speedStatus = String(row.speed_status ?? "").toLowerCase();
+  return (
+    row.event_type === "slow_search" ||
+    SEARCH_HEALTH_SLOW_STATUSES.has(speedStatus) ||
+    Number(row.timing_ms ?? 0) > SEARCH_HEALTH_SLOW_WARNING_MS
+  );
+}
+
 type DigestRunClient = {
   from: (table: "search_health_digest_runs") => {
     insert: (row: Record<string, unknown>) => Promise<{ error?: Error | null }>;
@@ -108,7 +120,7 @@ function summaryFor(rows: EventRow[]) {
     noResultCount: rows.filter((row) => row.no_results_reason || ["no_restaurant_results", "no_activity_results", "no_results"].includes(String(row.event_type))).length,
     noPairCount: rows.filter((row) => row.no_pairs_reason || row.event_type === "no_valid_pairs").length,
     lowPairCount: rows.filter((row) => row.event_type === "low_pair_count").length,
-    slowCount: rows.filter((row) => row.event_type === "slow_search" || Number(row.timing_ms ?? 0) > 3000 || ["slow", "degraded"].includes(String(row.speed_status))).length,
+    slowCount: rows.filter(isTrueSlowSearch).length,
     unresolvedCount: rows.filter((row) => ["new", "reviewing"].includes(String(row.review_status))).length,
     publicEventCount: rows.filter((row) => String(row.source).startsWith("public_") || row.source === "search_api").length,
     searchLabEventCount: rows.filter((row) => row.source === "admin_search_lab").length,

@@ -33,9 +33,9 @@ async function main() {
     shouldLogSearchHealthEvent({
       source: "public_create_search",
       result: { restaurants: [{}], activities: [{}], pairs: [{}] },
-      debug: { ...baseDebug, performance: { total_ms: 3501, speed_status: "slow" } },
+      debug: { ...baseDebug, performance: { total_ms: 5501, speed_status: "slow" } },
     }),
-    "slow searches should be logged",
+    "very slow searches should be logged",
   );
 
   assert(
@@ -55,6 +55,19 @@ async function main() {
       debug: baseDebug,
     }),
     "clean successful public searches should not be logged",
+  );
+
+  assert(
+    !shouldLogSearchHealthEvent({
+      source: "public_create_search",
+      result: { restaurants: [{}], activities: [], pairs: [], render_mode: "restaurant_only" },
+      debug: {
+        ...baseDebug,
+        normalizedIntent: { rawQuery: "date night in queens", needsRestaurant: true, needsActivity: false, wantsPairing: false },
+        performance: { total_ms: 4000, speed_status: "slow" },
+      },
+    }),
+    "healthy public searches around 4000ms should not be logged to search health",
   );
 
   const payload = buildSearchHealthEventPayload({
