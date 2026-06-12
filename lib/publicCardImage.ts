@@ -17,7 +17,9 @@ export function normalizePublicCardImage<T extends Record<string, any>>(item: T)
     firstImage(item?.primary_photo_url) ||
     firstImage(item?.image);
 
-  const image = normalizeImageUrlForPublic(rawImage);
+  const image =
+    getLocationImage(item) ||
+    normalizeImageUrlForPublic(rawImage);
 
   return {
     ...item,

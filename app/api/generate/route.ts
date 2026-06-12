@@ -68,6 +68,7 @@ function toCardRecord(item: any) {
     city: item?.city ?? null,
     borough: item?.borough ?? null,
     neighborhood: item?.neighborhood ?? null,
+    google_place_id: item?.google_place_id ?? null,
     image_url: usableImage,
     main_image: usableImage,
     rating: item?.rating ?? null,
