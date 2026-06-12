@@ -105,7 +105,14 @@ export function firstImage(value: unknown): string | null {
 export function getLocationImage(location: any) {
   if (!location) return null;
 
+  const projectImageFromImages = Array.isArray(location.images)
+    ? location.images.find((item: unknown) =>
+        String(item || "").includes("/storage/v1/object/public/location-images/"),
+      )
+    : null;
+
   return (
+    firstImage(projectImageFromImages) ||
     firstImage(location.main_image) ||
     firstImage(location.image_url) ||
     firstImage(location.photo_url) ||
