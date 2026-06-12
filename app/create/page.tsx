@@ -14,11 +14,18 @@ import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
-import { normalizePublicCardImage, hasPublicCardImage } from "@/lib/publicCardImage";
+import {
+  normalizePublicCardImage,
+  hasPublicCardImage,
+} from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
-import { emptyOutingTimeValue, getBrowserTimezone, type OutingTimeValue } from "@/lib/outings/planned-time-client";
+import {
+  emptyOutingTimeValue,
+  getBrowserTimezone,
+  type OutingTimeValue,
+} from "@/lib/outings/planned-time-client";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
@@ -353,6 +360,7 @@ export default function CreatePage() {
     emptyOutingTimeValue(getBrowserTimezone()),
   );
   const outingTimeManuallySet = useRef(false);
+  const createImageDebugLogged = useRef(false);
   function setOutingTime(value: OutingTimeValue, manual = true) {
     if (manual) outingTimeManuallySet.current = true;
     setOutingTimeState(value);
@@ -895,8 +903,12 @@ export default function CreatePage() {
             timezone: data.plannedTime.timezone || outingTime.timezone,
             outingDateContext: data.plannedTime.dateContext,
             outingTimeConfidence: data.plannedTime.confidence,
-            remindersEnabled: Boolean(data.plannedTime.shouldSchedulePreOutingReminders),
-            nextMorningFollowupEnabled: Boolean(data.plannedTime.shouldScheduleNextMorningFollowup),
+            remindersEnabled: Boolean(
+              data.plannedTime.shouldSchedulePreOutingReminders,
+            ),
+            nextMorningFollowupEnabled: Boolean(
+              data.plannedTime.shouldScheduleNextMorningFollowup,
+            ),
             nextMorningFollowupDate: data.plannedTime.nextMorningFollowupDate,
           },
           false,
@@ -1147,7 +1159,9 @@ export default function CreatePage() {
     const plan: SavedPlan = {
       restaurant: selectedRestaurant,
       activity: selectedActivity,
-      locations: [selectedRestaurant, selectedActivity].filter(Boolean) as Array<RestaurantCard | ActivityCard>,
+      locations: [selectedRestaurant, selectedActivity].filter(
+        Boolean,
+      ) as Array<RestaurantCard | ActivityCard>,
       distancePreference: latestDistancePreference,
       campaignSlug: currentParams.get("campaignSlug") || undefined,
       planExact: currentParams.get("planExact") === "true" || undefined,
@@ -1189,10 +1203,14 @@ export default function CreatePage() {
     if (sourceTable) params.set("sourceTable", sourceTable);
     if (outingTime.plannedFor) params.set("plannedFor", outingTime.plannedFor);
     if (outingTime.timezone) params.set("timezone", outingTime.timezone);
-    if (outingTime.outingDateContext) params.set("outingDateContext", outingTime.outingDateContext);
-    if (outingTime.outingTimeConfidence) params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
-    if (outingTime.nextMorningFollowupDate) params.set("nextMorningFollowupDate", outingTime.nextMorningFollowupDate);
-    if (outingTime.nextMorningFollowupEnabled) params.set("nextMorningFollowupEnabled", "true");
+    if (outingTime.outingDateContext)
+      params.set("outingDateContext", outingTime.outingDateContext);
+    if (outingTime.outingTimeConfidence)
+      params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
+    if (outingTime.nextMorningFollowupDate)
+      params.set("nextMorningFollowupDate", outingTime.nextMorningFollowupDate);
+    if (outingTime.nextMorningFollowupEnabled)
+      params.set("nextMorningFollowupEnabled", "true");
     if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
 
     router.push(`/plan?${params.toString()}`);
@@ -1344,6 +1362,26 @@ export default function CreatePage() {
               messages[index - 1]?.role === "user" &&
               messages[index - 1]?.content.startsWith("Add-on search:");
 
+            if (
+              process.env.NODE_ENV !== "production" &&
+              !isUser &&
+              !createImageDebugLogged.current
+            ) {
+              createImageDebugLogged.current = true;
+              console.log("[create] image render debug", {
+                firstRestaurant: restaurants[0]
+                  ? {
+                      name:
+                        restaurants[0].name || restaurants[0].restaurant_name,
+                      image_url: restaurants[0].image_url,
+                      main_image: restaurants[0].main_image,
+                      images: restaurants[0].images,
+                      resolvedImage: getLocationImage(restaurants[0]),
+                    }
+                  : null,
+              });
+            }
+
             if (isUser) {
               return (
                 <div key={index} className="flex justify-end">
@@ -1405,8 +1443,10 @@ export default function CreatePage() {
                             const restaurantId = String(restaurant.id);
                             const isSelected =
                               selectedRestaurant?.id === restaurant.id;
-                            const normalizedRestaurant = normalizePublicCardImage(restaurant);
-                            const restaurantImage = getLocationImage(normalizedRestaurant);
+                            const normalizedRestaurant =
+                              normalizePublicCardImage(restaurant);
+                            const restaurantImage =
+                              getLocationImage(normalizedRestaurant);
 
                             if (!restaurantImage) return null;
 
@@ -1472,8 +1512,10 @@ export default function CreatePage() {
                             const activityId = String(activity.id);
                             const isSelected =
                               selectedActivity?.id === activity.id;
-                            const normalizedActivity = normalizePublicCardImage(activity);
-                            const activityImage = getLocationImage(normalizedActivity);
+                            const normalizedActivity =
+                              normalizePublicCardImage(activity);
+                            const activityImage =
+                              getLocationImage(normalizedActivity);
 
                             if (!activityImage) return null;
 
@@ -2290,10 +2332,35 @@ function ResultCard({
     analyticsMetadata,
   );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
-  const resolvedImageUrl =
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const candidateImageUrl =
     typeof imageUrl === "string" && imageUrl.trim().length > 8
       ? imageUrl.trim()
       : null;
+  const resolvedImageUrl =
+    candidateImageUrl && candidateImageUrl !== failedImageUrl
+      ? candidateImageUrl
+      : null;
+  const isGooglePlacesPhoto =
+    resolvedImageUrl?.includes("maps.googleapis.com/maps/api/place/photo") ??
+    false;
+  const displayImageUrl =
+    isGooglePlacesPhoto && resolvedImageUrl
+      ? `/api/image-proxy?url=${encodeURIComponent(resolvedImageUrl)}`
+      : resolvedImageUrl;
+
+  if (
+    process.env.NODE_ENV !== "production" &&
+    ((title || "").toLowerCase().includes("stk") ||
+      (Boolean(imageUrl) && !resolvedImageUrl))
+  ) {
+    console.log("[ResultCard] imageUrl", {
+      title,
+      imageUrl,
+      resolvedImageUrl,
+      isGooglePlacesPhoto,
+    });
+  }
 
   return (
     <article
@@ -2312,24 +2379,27 @@ function ResultCard({
         animation: `cardReveal 360ms ease-out ${index * 70}ms both`,
       }}
     >
-      <div className="relative h-44 w-full overflow-hidden bg-neutral-950">
-        {resolvedImageUrl ? (
-          resolvedImageUrl.includes("maps.googleapis.com/maps/api/place/photo") ? (
+      <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
+        {displayImageUrl ? (
+          isGooglePlacesPhoto ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={resolvedImageUrl}
+              src={displayImageUrl}
               alt={title || "Location photo"}
               className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
               loading={priority ? "eager" : "lazy"}
+              referrerPolicy="no-referrer"
+              onError={() => setFailedImageUrl(resolvedImageUrl)}
             />
           ) : (
             <Image
-              src={resolvedImageUrl}
+              src={displayImageUrl}
               alt={title || "Location photo"}
               fill
               className="object-cover transition duration-700 group-hover:scale-[1.06]"
               priority={priority}
-              sizes="(max-width: 768px) 100vw, 360px"
+              sizes="(max-width: 768px) 100vw, 380px"
+              onError={() => setFailedImageUrl(resolvedImageUrl)}
             />
           )
         ) : (
