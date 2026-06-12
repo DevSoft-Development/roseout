@@ -16,6 +16,10 @@ import {
   userAskedForRooftopRestaurant,
   hasRooftopRestaurantFeatureLanguage,
   ROOFTOP_RESTAURANT_FEATURE_TERMS,
+  detectBroadOutingOccasion,
+  hasActivityOnlyLanguage,
+  hasBroadOutingOccasionLanguage,
+  hasRestaurantOnlyLanguage,
 } from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
@@ -212,6 +216,75 @@ const SPORTS_TEAM_TERMS = uniqueTerms([
 const SPORTS_LEAGUE_TERMS = [
   "nba", "nfl", "mlb", "nhl", "wnba", "ufc", "boxing", "soccer", "football", "basketball", "baseball", "hockey", "college basketball", "college football", "march madness", "final four",
 ];
+
+
+type ExplicitSearchLane = "auto" | "restaurant" | "activity" | "mixed";
+
+function normalizeSearchLaneValue(value: unknown): ExplicitSearchLane | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase().trim().replace(/_/g, "-");
+  if (["restaurant", "restaurants", "food", "dining", "restaurant-only", "restaurant only"].includes(normalized)) return "restaurant";
+  if (["activity", "activities", "things-to-do", "things to do", "activity-only", "activity only"].includes(normalized)) return "activity";
+  if (["mixed", "mixed-outing", "mixed outing", "outing", "pairing"].includes(normalized)) return "mixed";
+  if (["auto", "any", "all", "default"].includes(normalized)) return "auto";
+  return null;
+}
+
+function selectedSearchLaneFromBody(body: unknown): ExplicitSearchLane {
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  return (
+    normalizeSearchLaneValue(record.selectedSearchLane) ??
+    normalizeSearchLaneValue(record.selected_search_lane) ??
+    normalizeSearchLaneValue(record.searchLane) ??
+    normalizeSearchLaneValue(record.search_lane) ??
+    normalizeSearchLaneValue(record.lane) ??
+    normalizeSearchLaneValue(record.searchType) ??
+    normalizeSearchLaneValue(record.search_type) ??
+    "auto"
+  );
+}
+
+function applyExplicitSearchLane(intent: SearchIntent, lane: ExplicitSearchLane): SearchIntent {
+  if (lane === "restaurant") {
+    return {
+      ...intent,
+      searchType: "restaurant",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      activityIntent: createEmptyActivityIntent(),
+      pairingPreference: {
+        requiresPairing: false,
+        distanceMode: "any",
+        maxPairDistanceMiles: null,
+        maxPairWalkingMinutes: null,
+        requireWalkablePair: false,
+      },
+    };
+  }
+
+  if (lane === "activity") {
+    return {
+      ...intent,
+      searchType: "activity",
+      primaryDomain: "activity",
+      needsRestaurant: false,
+      needsActivity: true,
+      wantsPairing: false,
+      restaurantIntent: createEmptyRestaurantIntent(),
+      pairingPreference: {
+        requiresPairing: false,
+        distanceMode: "any",
+        maxPairDistanceMiles: null,
+        maxPairWalkingMinutes: null,
+        requireWalkablePair: false,
+      },
+    };
+  }
+
+  return intent;
+}
 
 type EnterpriseIntentFastPathResult = {
   intent: Partial<SearchIntent> | null;
@@ -460,6 +533,84 @@ function fastPathDistanceMode(query: string): "walking" | "nearby" | "any" {
   return "any";
 }
 
+
+function broadOutingHasActivityFollowup(query: string) {
+  const q = String(query || "").toLowerCase();
+  return /\b(and|after|afterward|afterwards|then|plus|with)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|drinks|cocktails|bar|lounge|karaoke|comedy|bowling|arcade|museum)\b/i.test(q);
+}
+
+function shouldUseBroadOccasionMixedFastPath(query: string) {
+  return (
+    hasBroadOutingOccasionLanguage(query) &&
+    !hasActivityOnlyLanguage(query) &&
+    (!hasRestaurantOnlyLanguage(query) || broadOutingHasActivityFollowup(query))
+  );
+}
+
+function broadOccasionVibeTerms(occasion: string) {
+  return /date|couples|anniversary/i.test(occasion)
+    ? ["romantic", "cozy", "intimate"]
+    : ["fun", "social"];
+}
+
+function broadOccasionActivityVibeTerms(occasion: string) {
+  return /date|couples|anniversary/i.test(occasion)
+    ? ["date night", "romantic", "fun"]
+    : ["fun", "social", "night out"];
+}
+
+function createBroadOccasionMixedFastPathIntent(rawQuery: string) {
+  const detectedOccasion = detectBroadOutingOccasion(rawQuery) ?? "night out";
+  const q = rawQuery.toLowerCase();
+  const baseRestaurantIntent = createRestaurantOnlyFastPathIntent(rawQuery).restaurantIntent ?? createEmptyRestaurantIntent();
+  const detectedActivityTerms = detectFastPathActivityIntentTerms(q);
+
+  return {
+    rawQuery,
+    searchType: "mixed_outing",
+    primaryDomain: "mixed",
+    needsRestaurant: true,
+    needsActivity: true,
+    wantsPairing: true,
+    occasion: detectedOccasion,
+    timeContext: detectedOccasion,
+    strictness: "medium",
+    restaurantIntent: {
+      ...baseRestaurantIntent,
+      foodTerms: baseRestaurantIntent.foodTerms ?? [],
+      mealTerms: uniqueTerms([
+        detectedOccasion,
+        "dinner",
+        ...(baseRestaurantIntent.mealTerms ?? []),
+        ...detectMealTerms(q),
+      ]),
+      vibeTerms: uniqueTerms([
+        ...(baseRestaurantIntent.vibeTerms ?? []),
+        ...broadOccasionVibeTerms(detectedOccasion),
+      ]),
+      cuisineTerms: baseRestaurantIntent.cuisineTerms ?? [],
+      featureTerms: baseRestaurantIntent.featureTerms ?? [],
+      categoryTerms: baseRestaurantIntent.categoryTerms ?? [],
+    },
+    activityIntent: {
+      ...createEmptyActivityIntent(),
+      activityTerms: uniqueTerms(["activity", "things to do", ...detectedActivityTerms]),
+      vibeTerms: broadOccasionActivityVibeTerms(detectedOccasion),
+      featureTerms: [],
+      categoryTerms: [],
+    },
+    pairingPreference: {
+      distanceMode: "nearby",
+      requiresPairing: true,
+      requireWalkablePair: false,
+      maxPairDistanceMiles: 8,
+      maxPairWalkingMinutes: null,
+    },
+    geo: emptyGeoIntent(),
+    vibe: broadOccasionActivityVibeTerms(detectedOccasion),
+  } satisfies Partial<SearchIntent>;
+}
+
 function createDateNightMixedFastPathIntent(rawQuery: string) {
   const q = rawQuery.toLowerCase();
   const mealTerms = detectMealTerms(q);
@@ -649,7 +800,7 @@ function createRelaxedMixedFastPathIntent(rawQuery: string) {
 function hasActivityOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
   const hasRestaurantMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|steak|seafood|sushi|mexican|italian)\b/.test(q);
-  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|wine bar|chill drinks spot|bar with good music|lounge|speakeasy|karaoke bar|karaoke|comedy club|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live jazz spot|live jazz|live music|bowling|arcade|museum|mini golf|paint and sip|things to do|fun indoor activity|fun activity|date idea|football bar|watch basketball|where can i watch basketball)\b/.test(q);
+  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|wine bar|chill drinks spot|bar with good music|lounge|speakeasy|karaoke bar|karaoke|comedy club|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live jazz spot|live jazz|live music|bowling|arcade|museum|mini golf|paint and sip|things to do|fun indoor activity|fun activity|date ideas|date idea|football bar|watch basketball|where can i watch basketball)\b/.test(q);
   return hasActivity && !hasRestaurantMeal;
 }
 
@@ -821,24 +972,6 @@ function createEnterpriseIntentFastPathResult(
   }
 
 
-  if (hasRestaurantOnlyFastPathIntent(query)) {
-    return {
-      intent: createRestaurantOnlyFastPathIntent(rawQuery),
-      reason: "matched restaurant-only fast path",
-      confidence: 0.9,
-    };
-  }
-
-
-  const singleVenueWith = detectSingleVenueWithIntent(query);
-  if (singleVenueWith.matched) {
-    return {
-      intent: deterministicIntentFromQuery(rawQuery),
-      reason: "with_connector_single_venue",
-      confidence: 0.94,
-    };
-  }
-
   if (hasSportsWatchFastPathIntent(query)) {
     return {
       intent: createSportsWatchFastPathIntent(rawQuery),
@@ -862,11 +995,28 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
+  if (shouldUseBroadOccasionMixedFastPath(query)) {
+    return {
+      intent: createBroadOccasionMixedFastPathIntent(rawQuery),
+      reason: "broad_occasion_mixed_outing",
+      confidence: 0.94,
+    };
+  }
+
   if (hasRestaurantOnlyFastPathIntent(query)) {
     return {
       intent: createRestaurantOnlyFastPathIntent(rawQuery),
       reason: "matched restaurant-only fast path",
       confidence: 0.9,
+    };
+  }
+
+  const singleVenueWith = detectSingleVenueWithIntent(query);
+  if (singleVenueWith.matched) {
+    return {
+      intent: deterministicIntentFromQuery(rawQuery),
+      reason: "with_connector_single_venue",
+      confidence: 0.94,
     };
   }
 
@@ -1450,6 +1600,8 @@ export async function parseEnterpriseIntent(
 }> {
   const startedAt = Date.now();
   const debug = options?.debug ?? {};
+  const selectedSearchLane = selectedSearchLaneFromBody(options?.body);
+  debug.selectedSearchLane = selectedSearchLane;
   const baseline = deterministicIntentFromQuery(query);
   const singleVenueDebug = detectSingleVenueWithIntent(query);
   if (singleVenueDebug.matched) {
@@ -1479,6 +1631,7 @@ export async function parseEnterpriseIntent(
     "matched sports-watch activity fast path",
     "matched explicit mixed outing fast path",
     "matched date-night mixed outing fast path",
+    "broad_occasion_mixed_outing",
     "matched relaxed mixed outing fast path",
     "matched activity-only fast path",
     "matched activity-only venue fast path",
@@ -1494,6 +1647,7 @@ export async function parseEnterpriseIntent(
     const normalized = normalizeIntent(
       query,
       preIntent as Partial<SearchIntent>,
+      { explicitSearchLane: selectedSearchLane },
     );
 
     debug.intentParserSource = "fast_path";
@@ -1509,7 +1663,7 @@ export async function parseEnterpriseIntent(
     debug.intent_parse_ms = Date.now() - startedAt;
 
     return {
-      intent: normalized,
+      intent: applyExplicitSearchLane(normalized, selectedSearchLane),
       llmIntentRaw: null,
       llmError: undefined,
       intentParserSource: "fast_path",
@@ -1521,14 +1675,14 @@ export async function parseEnterpriseIntent(
   }
 
   if (options?.useLLM === false) {
-    const intent = normalizeIntent(query, preIntent ?? baseline);
+    const intent = normalizeIntent(query, preIntent ?? baseline, { explicitSearchLane: selectedSearchLane });
     debug.intentParserSource = preIntent ? "fast_path" : "deterministic";
     debug.llmEnhancementUsed = false;
     debug.llmFallbackUsed = false;
     debug.fallbackIntentUsed = !preIntent;
     debug.intent_parse_ms = Date.now() - startedAt;
     return {
-      intent,
+      intent: applyExplicitSearchLane(intent, selectedSearchLane),
       llmIntentRaw: null,
       llmError: undefined,
       intentParserSource: debug.intentParserSource,
@@ -1555,7 +1709,7 @@ export async function parseEnterpriseIntent(
     debug.llmEnhancementUsed = Boolean(cached.llmEnhancementUsed ?? true);
     debug.intentLlmModel = cached.modelUsed ?? SEARCH_INTENT_FAST_MODEL;
     return {
-      intent: cached.intent,
+      intent: applyExplicitSearchLane(cached.intent, selectedSearchLane),
       llmIntentRaw: null,
       intentParserSource: "cache",
       fastPathMatched: Boolean(preIntent),
@@ -1588,7 +1742,7 @@ export async function parseEnterpriseIntent(
       preIntent,
       llmIntent: fastIntent,
     });
-    const normalized = normalizeIntent(query, merged);
+    const normalized = normalizeIntent(query, merged, { explicitSearchLane: selectedSearchLane });
 
     debug.intentParserSource = hasPreIntent
       ? "fast_path_plus_llm"
@@ -1609,7 +1763,7 @@ export async function parseEnterpriseIntent(
       llmEnhancementUsed: true,
     });
     return {
-      intent: normalized,
+      intent: applyExplicitSearchLane(normalized, selectedSearchLane),
       llmIntentRaw,
       intentParserSource: debug.intentParserSource,
       fastPathMatched: Boolean(preIntent),
@@ -1625,7 +1779,7 @@ export async function parseEnterpriseIntent(
     debug.llmTimedOut = String(debug.llmError || "").includes("timeout");
 
     if (hasPreIntent) {
-      const normalizedPreIntent = normalizeIntent(query, preIntent);
+      const normalizedPreIntent = normalizeIntent(query, preIntent, { explicitSearchLane: selectedSearchLane });
       debug.intentParserSource = "fast_path_timeout_fallback";
       debug.intentLlmModel = SEARCH_INTENT_FAST_MODEL;
       debug.llmEnhancementUsed = false;
@@ -1639,7 +1793,7 @@ export async function parseEnterpriseIntent(
         llmEnhancementUsed: false,
       });
       return {
-        intent: normalizedPreIntent,
+        intent: applyExplicitSearchLane(normalizedPreIntent, selectedSearchLane),
         llmIntentRaw: null,
         llmError: debug.llmError,
         intentParserSource: debug.intentParserSource,
@@ -1676,7 +1830,7 @@ export async function parseEnterpriseIntent(
         preIntent,
         llmIntent: fallbackIntent,
       });
-      const normalized = normalizeIntent(query, merged);
+      const normalized = normalizeIntent(query, merged, { explicitSearchLane: selectedSearchLane });
       debug.intentParserSource = "llm_fallback_model";
       debug.intentLlmModel = SEARCH_INTENT_FALLBACK_MODEL;
       debug.llmEnhancementUsed = true;
@@ -1693,7 +1847,7 @@ export async function parseEnterpriseIntent(
         fallbackUsed: true,
       });
       return {
-        intent: normalized,
+        intent: applyExplicitSearchLane(normalized, selectedSearchLane),
         llmIntentRaw,
         intentParserSource: "llm_fallback_model",
         fastPathMatched: Boolean(preIntent),
@@ -1710,7 +1864,7 @@ export async function parseEnterpriseIntent(
     }
   }
 
-  const deterministicIntent = normalizeIntent(query, preIntent ?? baseline);
+  const deterministicIntent = normalizeIntent(query, preIntent ?? baseline, { explicitSearchLane: selectedSearchLane });
   debug.intentParserSource = preIntent
     ? "preintent_fallback"
     : "deterministic_fallback";
@@ -1721,7 +1875,7 @@ export async function parseEnterpriseIntent(
   debug.intent_parse_ms = Date.now() - startedAt;
 
   return {
-    intent: deterministicIntent,
+    intent: applyExplicitSearchLane(deterministicIntent, selectedSearchLane),
     llmIntentRaw,
     llmError: debug.llmError,
     intentParserSource: debug.intentParserSource,

@@ -385,3 +385,35 @@ describe("runEnterpriseSearch restaurant cuisine + feature recovery", () => {
     );
   });
 });
+
+
+describe("runEnterpriseSearch broad occasion outings", () => {
+  it("runs both lanes for date night in nyc on the automatic create flow", async () => {
+    const calls: RpcCall[] = [];
+    const supabase = {
+      rpc: async (name: string, params: Record<string, any>) => {
+        calls.push({ name, params });
+        return { data: [], error: null };
+      },
+    };
+
+    const result = await runEnterpriseSearch("date night in nyc", {
+      supabase,
+      useLLM: true,
+      betaDebug: true,
+      body: { selectedSearchLane: "auto" },
+    });
+
+    const normalizedIntent = result.debug?.normalizedIntent as any;
+
+    expect(result.debug?.intentParserSource).toBe("fast_path");
+    expect(result.debug?.fastPathReason).toBe("broad_occasion_mixed_outing");
+    expect(result.debug?.selectedSearchLane).toBe("auto");
+    expect(normalizedIntent?.searchType).toBe("mixed_outing");
+    expect(normalizedIntent?.needsRestaurant).toBe(true);
+    expect(normalizedIntent?.needsActivity).toBe(true);
+    expect(normalizedIntent?.wantsPairing).toBe(true);
+    expect(calls.some((call) => call.params.p_domain === "restaurant")).toBe(true);
+    expect(calls.some((call) => call.params.p_domain === "activity")).toBe(true);
+  });
+});
