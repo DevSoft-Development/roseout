@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { formatFullAddress } from "@/lib/address-utils";
 
 type ClaimQrLocation = {
   id: string;
@@ -28,12 +29,21 @@ function getLocationName(location: ClaimQrLocation) {
 }
 
 function getCityStateZip(location: ClaimQrLocation) {
-  const city = location.city?.trim();
-  const state = location.state?.trim();
-  const zip = location.zip_code?.trim();
-  const cityState = [city, state].filter(Boolean).join(", ");
+  return formatFullAddress({
+    city: location.city,
+    state: location.state,
+    zip_code: location.zip_code,
+    fallback: "",
+  });
+}
 
-  return [cityState, zip].filter(Boolean).join(" ");
+function getLocationAddress(location: ClaimQrLocation) {
+  return formatFullAddress({
+    address: location.address,
+    city: location.city,
+    state: location.state,
+    zip_code: location.zip_code,
+  });
 }
 
 function getSearchText(location: ClaimQrLocation) {
@@ -242,7 +252,7 @@ export default function ClaimQrPrintClient({ locations }: { locations: ClaimQrLo
                   {getLocationName(location)}
                 </h2>
                 <div className="mt-3 space-y-1 text-sm font-bold leading-5 text-black/65">
-                  <p>{location.address?.trim() || "Address not listed"}</p>
+                  <p>{getLocationAddress(location)}</p>
                   {cityStateZip && <p>{cityStateZip}</p>}
                 </div>
                 <p className="mt-3 text-[10px] font-black uppercase tracking-[0.16em] text-black/45">

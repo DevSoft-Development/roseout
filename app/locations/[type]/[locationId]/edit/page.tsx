@@ -11,6 +11,7 @@ import GoogleAddressAutocomplete, {
 import { getIsClaimed } from "@/lib/locationClaim";
 import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
+import { formatFullAddress } from "@/lib/address-utils";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
@@ -699,7 +700,13 @@ export default function EditLocationPage() {
                 {form.name || "Untitled Location"}
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
-                {[form.address, form.city, form.state, form.zip_code].filter(Boolean).join(", ") || "Address not added"}
+                {formatFullAddress({
+                  address: form.address,
+                  city: form.city,
+                  state: form.state,
+                  zip_code: form.zip_code,
+                  fallback: "",
+                }) || "Address not added"}
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <StatusPill tone="dark">{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>

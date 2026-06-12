@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
 import { normalizeClaimCode } from "@/lib/claimQr";
+import { normalizeAddressForSave } from "@/lib/address-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +127,12 @@ export async function POST(req: Request) {
     const city = clean(body.city);
     const state = clean(body.state);
     const zip_code = clean(body.zip_code);
+    const normalizedAddress = normalizeAddressForSave({
+      address,
+      city,
+      state,
+      zip_code,
+    });
     const neighborhood = clean(body.neighborhood);
     const latitude = clean(body.latitude);
     const longitude = clean(body.longitude);
@@ -196,7 +203,7 @@ export async function POST(req: Request) {
         location_type,
         request_type,
         website: website || null,
-        address: address || null,
+        address: normalizedAddress || null,
         city: city || null,
         state: state || null,
         zip_code: zip_code || null,

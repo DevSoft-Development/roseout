@@ -4,6 +4,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { formatDateTime, labelize } from "@/lib/team-tools";
+import { formatFullAddress } from "@/lib/address-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function DemoReservationPreview({ params }: Props) {
             <article key={location.id} className="rounded-3xl border border-white/10 bg-[#111] p-5">
               <p className="text-xs font-black uppercase tracking-widest text-rose-300">Editable demo copy</p>
               <h2 className="mt-1 text-xl font-black">{location.display_name}</h2>
-              <p className="mt-2 text-sm text-white/55">{location.address}, {location.city}, {location.state} {location.zip_code}</p>
+              <p className="mt-2 text-sm text-white/55">{formatFullAddress({ address: location.address, city: location.city, state: location.state, zip_code: location.zip_code })}</p>
               <p className="mt-3 rounded-2xl border border-white/10 bg-black/35 p-3 text-xs font-bold text-white/55">
                 Reservation layout edits for this demo should use location_source=demo_session and demo_session_id={session.id}. This page intentionally does not write to public.locations.
               </p>

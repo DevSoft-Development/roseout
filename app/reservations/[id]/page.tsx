@@ -4,6 +4,7 @@ import { CalendarDays, Clock, MapPin, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
+import { formatFullAddress } from "@/lib/address-utils";
 import ReservationStatusBadge from "@/components/reservations/status-badge";
 
 export const dynamic = "force-dynamic";
@@ -41,12 +42,18 @@ export default async function ReservationDetailsPage({ params }: Props) {
 
   const { data: location } = await supabaseAdmin
     .from("locations")
-    .select("id, name, restaurant_name, activity_name, business_name, address, city, state")
+    .select("id, name, restaurant_name, activity_name, business_name, address, city, state, zip_code")
     .eq("id", reservation.location_id)
     .maybeSingle();
 
   const locationName = getLocationName(location || {}, "TheOutHaven location");
-  const address = [location?.address, location?.city, location?.state].filter(Boolean).join(", ");
+  const address = formatFullAddress({
+    address: location?.address,
+    city: location?.city,
+    state: location?.state,
+    zip_code: location?.zip_code,
+    fallback: "",
+  });
   const timeline = [
     { label: "Requested", value: reservation.created_at },
     { label: "Confirmed", value: reservation.status === "confirmed" ? reservation.updated_at : null },

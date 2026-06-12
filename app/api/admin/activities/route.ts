@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQrServer";
+import { normalizeAddressForSave } from "@/lib/address-utils";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +20,12 @@ export async function POST(request: NextRequest) {
     }
 
     const claimQr = await createClaimQr("activity");
+    const normalizedAddress = normalizeAddressForSave({
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      zip_code: body.zip_code,
+    });
 
     const { data, error } = await supabaseAdmin
       .from("activities")
@@ -26,7 +33,7 @@ export async function POST(request: NextRequest) {
         activity_name: body.activity_name,
         activity_type: body.activity_type || null,
         description: body.description || null,
-        address: body.address || null,
+        address: normalizedAddress || null,
         city: body.city || null,
         state: body.state || null,
         zip_code: body.zip_code || null,

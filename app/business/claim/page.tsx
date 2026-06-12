@@ -7,6 +7,7 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import ClaimQrScanLauncher from "@/components/business/ClaimQrScanLauncher";
 import { normalizeClaimCode } from "@/lib/claimQr";
 import { createClient } from "@/lib/supabase-browser";
+import { formatFullAddress } from "@/lib/address-utils";
 
 type VerifiedLocation = {
   id: string;
@@ -350,7 +351,13 @@ function ClaimPageInner() {
 }
 
 function LocationPreview({ location, onContinue, isSignedIn }: { location: VerifiedLocation; onContinue: () => void; isSignedIn: boolean }) {
-  const details = [location.address, location.borough || location.city, location.state, location.zipCode].filter(Boolean).join(", ");
+  const details = formatFullAddress({
+    address: location.address,
+    city: location.borough || location.city,
+    state: location.state,
+    zip_code: location.zipCode,
+    fallback: "",
+  });
   const category = [location.locationType, location.primaryCategory].filter(Boolean).join(" • ");
 
   return (

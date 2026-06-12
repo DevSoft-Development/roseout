@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { formatFullAddress } from "@/lib/address-utils";
 
 type ClaimToolResult = {
   id: string;
@@ -21,9 +22,12 @@ type ClaimToolResult = {
 };
 
 function getAddress(result: ClaimToolResult) {
-  return [result.address, [result.city, result.state].filter(Boolean).join(", ")]
-    .filter(Boolean)
-    .join(" • ");
+  return formatFullAddress({
+    address: result.address,
+    city: result.city,
+    state: result.state,
+    fallback: "Address not listed",
+  });
 }
 
 export default function ClaimToolsClient() {

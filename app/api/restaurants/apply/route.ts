@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { supabase } from "@/lib/supabase";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { normalizeAddressForSave } from "@/lib/address-utils";
 
 export async function POST(req: Request) {
   try {
@@ -41,10 +42,16 @@ export async function POST(req: Request) {
 
     const qrLink = `${siteUrl}/restaurants/dashboard`;
     const qrCodeDataUrl = await QRCode.toDataURL(qrLink);
+    const normalizedAddress = normalizeAddressForSave({
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      zip_code: body.zip_code,
+    });
 
     const { error } = await supabase.from("restaurants").insert({
       restaurant_name: body.restaurant_name,
-      address: body.address,
+      address: normalizedAddress || null,
       city: body.city,
       state: body.state,
       zip_code: body.zip_code,

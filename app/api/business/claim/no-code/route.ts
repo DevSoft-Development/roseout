@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyCaptcha } from "@/lib/security/verifyCaptcha";
 import { createClient } from "@/lib/supabase-server";
+import { normalizeAddressForSave } from "@/lib/address-utils";
 import {
   sendAdminNewClaimEmail,
   sendNoCodeMatchedClaimEmail,
@@ -360,6 +361,12 @@ export async function POST(req: Request) {
     const cityRaw = clean(body.city);
     const stateRaw = clean(body.state);
     const zipCode = clean(body.zipCode);
+    const normalizedAddress = normalizeAddressForSave({
+      address: addressRaw,
+      city: cityRaw,
+      state: stateRaw,
+      zip_code: zipCode,
+    });
     const phoneRaw = clean(body.phone);
     const ownerPhone = phoneDigits(phoneRaw);
     const locationTypeRaw = clean(body.locationType);
@@ -412,7 +419,7 @@ export async function POST(req: Request) {
         .select("id, created_at, location_id")
         .eq("status", "pending")
         .eq("location_name", locationNameRaw)
-        .eq("address", addressRaw)
+        .eq("address", normalizedAddress)
         .eq("owner_phone", ownerPhone || phoneRaw)
         .limit(1),
     ];
@@ -468,7 +475,7 @@ export async function POST(req: Request) {
         location_type: locationType,
         request_type: "No-code business claim",
         website: websiteRaw || null,
-        address: addressRaw,
+        address: normalizedAddress || null,
         city: cityRaw,
         state: stateRaw,
         zip_code: zipCode,
@@ -493,7 +500,7 @@ export async function POST(req: Request) {
         matched_location_snapshot: matchedLocationSnapshot,
         submission_payload: {
           locationName: locationNameRaw,
-          address: addressRaw,
+          address: normalizedAddress || null,
           city: cityRaw,
           state: stateRaw,
           zipCode,

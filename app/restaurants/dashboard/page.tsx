@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase-browser";
 import RestaurantTopBar from "@/app/restaurants/components/RestaurantTopBar";
 import { getLocationName } from "@/lib/locationName";
 import { getPublicVisibilityWarning } from "@/lib/locationVisibility";
+import { formatFullAddress } from "@/lib/address-utils";
 
 export default function RestaurantDashboardPage() {
   const supabase = createClient();
@@ -121,8 +122,12 @@ export default function RestaurantDashboardPage() {
           )}
 
           <p className="mt-4">
-            {restaurant.address}, {restaurant.city}, {restaurant.state}{" "}
-            {restaurant.zip_code}
+            {formatFullAddress({
+              address: restaurant.address,
+              city: restaurant.city,
+              state: restaurant.state,
+              zip_code: restaurant.zip_code,
+            })}
           </p>
 
           {restaurant.description && (

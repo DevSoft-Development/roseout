@@ -1,4 +1,5 @@
 import { createClaimQr } from "@/lib/claimQrServer";
+import { normalizeAddressForSave } from "@/lib/address-utils";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseAdmin = createClient(
@@ -18,13 +19,19 @@ export async function POST(req: Request) {
     }
 
     const claimQr = await createClaimQr("restaurant");
+    const normalizedAddress = normalizeAddressForSave({
+      address: body.address || body.mailing_address,
+      city: body.city,
+      state: body.state,
+      zip_code: body.zip_code,
+    });
 
     const { data, error } = await supabaseAdmin
       .from("restaurants")
       .insert({
         restaurant_name: body.restaurant_name,
         contact_name: body.contact_name,
-        address: body.address || body.mailing_address,
+        address: normalizedAddress || null,
         city: body.city,
         state: body.state,
         zip_code: body.zip_code,
