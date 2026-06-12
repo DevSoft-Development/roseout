@@ -136,9 +136,9 @@ export default function OutingTimeSelector({
   );
 
   const panelStateCopy = useMemo(() => {
-    if (safeValue.outingTimeConfidence === "exact") return "Your plan time is set.";
-    if (safeValue.outingTimeConfidence === "date_only") return "Follow-up will be set for the next morning.";
-    return "Choose a date or time to organize this outing.";
+    if (safeValue.outingTimeConfidence === "exact") return "Timing set — we’ll estimate the rest of your timeline.";
+    if (safeValue.outingTimeConfidence === "date_only") return "Timing not set yet — add a start time if you want a full timeline.";
+    return "Timing not set yet — add a start time if you want a full timeline.";
   }, [safeValue.outingTimeConfidence]);
 
   const isTonightActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "tonight";
@@ -222,7 +222,7 @@ export default function OutingTimeSelector({
   }
 
   const picker = (
-    <div className={variant === "compact" ? "mt-2 grid gap-2 sm:grid-cols-[1fr_0.8fr]" : "mt-3 grid gap-2 sm:grid-cols-2"}>
+    <div className={variant === "compact" ? "mt-2 grid gap-2 sm:grid-cols-[1fr_0.8fr]" : "mt-3 grid gap-2 md:grid-cols-2"}>
       <label>
         <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Pick date</span>
         <input type="date" value={date} onChange={(event) => handleDateChange(event.target.value)} className={`${inputClass} mt-1`} />
@@ -267,8 +267,8 @@ export default function OutingTimeSelector({
     <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-white">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <label className="text-sm font-black text-white">When are you going?</label>
-          <p className="mt-1 text-xs font-semibold text-white/50">Optional — this helps us organize your plan.</p>
+          <label className="text-sm font-black text-white">When does your outing start?</label>
+          <p className="mt-1 text-xs font-semibold text-white/50">Optional — choose a start time and we’ll estimate the rest of your timeline.</p>
         </div>
         {safeValue.outingTimeConfidence !== "none" ? (
           <button type="button" onClick={clearValue} className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35 transition hover:text-white">
