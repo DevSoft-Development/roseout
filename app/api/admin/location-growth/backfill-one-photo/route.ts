@@ -35,10 +35,10 @@ async function findGooglePlacePhoto(row: any) {
     throw new Error("Missing GOOGLE_PLACES_API_KEY or GOOGLE_API_KEY");
   }
 
-  const placeId = clean(row.google_place_id || row.place_id);
+  const placeId = clean(row.google_place_id);
 
   if (!placeId) {
-    throw new Error("Location has no google_place_id/place_id");
+    throw new Error("Location has no google_place_id");
   }
 
   const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     let query = supabaseAdmin
       .from("locations")
       .select(
-        "id,name,restaurant_name,activity_name,address,city,state,google_place_id,place_id,main_image,image_url,images,has_photos,photo_status",
+        "id,name,restaurant_name,activity_name,address,city,state,google_place_id,main_image,image_url,images,has_photos,photo_status",
       )
       .limit(1);
 
@@ -140,7 +140,7 @@ export async function POST(request: Request) {
       success: true,
       location_id: data.id,
       name: data.name || data.restaurant_name || data.activity_name,
-      photo_url: photoUrl,
+      resolved_photo: photoUrl,
     });
   } catch (error) {
     return NextResponse.json(

@@ -18,7 +18,6 @@ type LocationRow = {
   business_name?: string | null;
   main_image?: string | null;
   image_url?: string | null;
-  photo_url?: string | null;
   images?: string[] | null;
   address?: string | null;
   city?: string | null;
@@ -65,7 +64,7 @@ export default async function MyReservationsPage() {
   const rows = (reservations || []) as ReservationRow[];
   const locationIds = Array.from(new Set(rows.map((row) => row.location_id).filter(Boolean)));
   const { data: locations } = locationIds.length
-    ? await supabaseAdmin.from("locations").select("id, name, restaurant_name, activity_name, business_name, main_image, image_url, photo_url, images, address, city, state").in("id", locationIds)
+    ? await supabaseAdmin.from("locations").select("id, name, restaurant_name, activity_name, business_name, main_image, image_url, images, address, city, state").in("id", locationIds)
     : { data: [] };
 
   const locationMap = new Map(((locations || []) as LocationRow[]).map((location) => [location.id, location]));
