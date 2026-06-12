@@ -31,13 +31,21 @@ export const ROOFTOP_RESTAURANT_FEATURE_TERMS = [
   "roof deck",
 ];
 
+export function hasRooftopRestaurantFeatureLanguage(query: string) {
+  const q = String(query || "").toLowerCase();
+
+  return /\b(rooftop|roof top|roof deck|terrace|patio|outdoor dining|outdoor seating|skyline|skyline views|scenic views|city views|waterfront views|views)\b/i.test(q);
+}
+
 export function userAskedForRooftopRestaurant(query: string) {
   const q = String(query || "").toLowerCase();
   const rooftopRestaurant =
-    /\b(rooftop|roof top)\s+(restaurant|dinner|dining|brunch|lunch|breakfast)\b/i.test(q) ||
+    /\b(rooftop|roof top)\s+(restaurant|dinner|dining|brunch|lunch|breakfast|vibes?|with views)\b/i.test(q) ||
+    /\b(rooftop|roof top)\s+(?:in|near|around)\s+[a-z][a-z\s-]+\b/i.test(q) ||
     /\b(restaurant|dinner|dining|brunch|lunch|breakfast)\s+(on|at|with|inside)?\s*(a\s+)?(rooftop|roof top)\b/i.test(q) ||
     /\brestaurant with (?:a )?(rooftop|roof top|skyline views|views|outdoor dining|terrace)\b/i.test(q) ||
-    /\b(skyline views|scenic views|terrace|outdoor dining|roof deck)\b/i.test(q);
+    /\b(skyline views|scenic views|terrace|outdoor dining|roof deck)\b/i.test(q) ||
+    /\b(skyline views|terrace|outdoor dining)\s+vibes?\b/i.test(q);
   const rooftopActivity =
     /\b(rooftop|roof top)\s+(drinks?|cocktails?|bars?|lounges?|nightlife)\b/i.test(q) ||
     /\b(drinks?|cocktails?|bars?|lounges?|nightlife)\b[^.?!]{0,50}\b(rooftop|roof top)\b/i.test(q);

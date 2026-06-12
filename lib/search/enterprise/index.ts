@@ -2,7 +2,7 @@ import { supabaseAdmin } from "../../supabaseAdmin";
 import type { EnterpriseLocation, EnterpriseSearchResult, SearchIntent } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
 import { activitySearchTerms, isBroadGenericActivityIntent, restaurantSearchTerms } from "./normalize-intent";
-import { detectSingleVenueWithIntent } from "./taxonomy";
+import { detectSingleVenueWithIntent, hasRooftopRestaurantFeatureLanguage } from "./taxonomy";
 import { explainRejection, filterActivityResults, filterRestaurantResults, rankActivityResults, rankRestaurantResults, scoreSingleVenueWithMatch } from "./ranking";
 import { createPairingDebug, createSearchPairs, getPairCityState, getPairGeoPriority } from "./pairing";
 import { formatDistanceFromRestaurant, getPairDistanceMiles, getRawWalkingMinutes, getSafeWalkingMinutes, shouldHidePairForWalkingLimit, userAskedForWalking } from "./distance";
@@ -170,6 +170,19 @@ const RESTAURANT_GENERIC_RECOVERY_TERMS = [
   "food",
 ];
 
+const RESTAURANT_ROOFTOP_FEATURE_ONLY_RECOVERY_TERMS = [
+  "restaurant",
+  "dinner",
+  "rooftop",
+  "rooftop restaurant",
+  "rooftop dining",
+  "terrace",
+  "skyline",
+  "skyline views",
+  "views",
+  "outdoor dining",
+];
+
 function uniqueStrings(values: unknown[]): string[] {
   return Array.from(
     new Set(
@@ -235,7 +248,16 @@ function buildGenericRestaurantRecoveryAttempts(intent: SearchIntent) {
   const hasFoodCuisine = foodCuisineTerms.length > 0;
   const hasFeature = hasRestaurantFeatureIntent(intent);
 
-  if (!hasFoodCuisine && !hasFeature) return [];
+  const hasOnlyGenericRestaurantFoodCuisine =
+    foodCuisineTerms.length === 0 ||
+    foodCuisineTerms.every((term) => ["restaurant"].includes(term));
+  const hasRooftopFeatureOnlySafety =
+    intent.primaryDomain === "restaurant" &&
+    intent.needsRestaurant === true &&
+    hasOnlyGenericRestaurantFoodCuisine &&
+    hasRooftopRestaurantFeatureLanguage(intent.rawQuery || "");
+
+  if (!hasFoodCuisine && !hasFeature && !hasRooftopFeatureOnlySafety) return [];
 
   const attempts: {
     reason: string;
@@ -244,6 +266,15 @@ function buildGenericRestaurantRecoveryAttempts(intent: SearchIntent) {
     relaxFeature?: boolean;
     strictness?: SearchIntent["strictness"];
   }[] = [];
+
+  if (hasRooftopFeatureOnlySafety) {
+    attempts.push({
+      reason: "restaurant_rooftop_feature_only_recovery",
+      terms: uniqueStrings(RESTAURANT_ROOFTOP_FEATURE_ONLY_RECOVERY_TERMS),
+      relaxFood: true,
+      strictness: "medium",
+    });
+  }
 
   if (hasFoodCuisine && hasFeature) {
     attempts.push({

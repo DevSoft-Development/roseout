@@ -156,6 +156,44 @@ describe("enterprise search intent", () => {
     });
   }
 
+
+  it("normalizes rooftop vibes in the restaurant lane with rooftop feature terms", () => {
+    const intent = normalizeIntent("rooftop vibes", {
+      searchType: "restaurant",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+    });
+
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(false);
+    expect(intent.restaurantIntent.featureTerms).toEqual(
+      expect.arrayContaining(["rooftop", "rooftop restaurant"]),
+    );
+    expect(
+      intent.restaurantIntent.featureTerms.some((term) =>
+        ["skyline", "views"].includes(term),
+      ),
+    ).toBe(true);
+    expect(restaurantSearchTerms(intent)).not.toContain("vibes");
+  });
+
+  it("keeps rooftop drinks after dinner on the activity side", () => {
+    const intent = normalizeIntent("rooftop drinks after dinner");
+    const restaurantTerms = restaurantSearchTerms(intent);
+    const activityTerms = [
+      ...intent.activityIntent.activityTerms,
+      ...intent.activityIntent.categoryTerms,
+      ...intent.activityIntent.featureTerms,
+    ];
+
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(true);
+    expect(activityTerms).toEqual(expect.arrayContaining(["rooftop", "cocktails"]));
+    expect(restaurantTerms).not.toContain("rooftop restaurant");
+    expect(restaurantTerms).not.toContain("skyline views");
+  });
+
   it("parses rooftop drinks after steak dinner as a mixed outing", () => {
     const intent = normalizeIntent("steak dinner and rooftop drinks after");
     expect(intent.searchType).toBe("mixed_outing");

@@ -21,6 +21,7 @@ import {
   MEAL_TERMS,
   hasGenericActivitySignal,
   hasOnlyGenericActivityTerms,
+  hasRooftopRestaurantFeatureLanguage,
   PLACE_OF_WORSHIP_TERMS,
   ROOFTOP_RESTAURANT_FEATURE_TERMS,
   userAskedForPlaceOfWorship,
@@ -677,6 +678,66 @@ function rooftopDrinksBelongToActivity(query: string) {
     /\b(?:drinks?|cocktails?)\b[^.?!]*\brooftop\b/i.test(query)
   );
 }
+
+function restaurantLaneFeatureOnlyQuery(query: string, intent?: Partial<SearchIntent>) {
+  const q = String(query || "").toLowerCase();
+
+  const selectedRestaurantLane =
+    intent?.searchType === "restaurant" ||
+    intent?.primaryDomain === "restaurant" ||
+    intent?.needsRestaurant === true;
+
+  const mixedOrActivity =
+    intent?.searchType === "mixed_outing" ||
+    intent?.primaryDomain === "mixed" ||
+    intent?.needsActivity === true;
+
+  const explicitActivityRooftop =
+    /\brooftop\s+(drinks?|cocktails?|bars?|lounges?)\b/i.test(q) ||
+    /\b(drinks?|cocktails?|bars?|lounges?)\b[^.?!]{0,50}\b(rooftop|roof top)\b/i.test(q);
+
+  return (
+    selectedRestaurantLane &&
+    !mixedOrActivity &&
+    !explicitActivityRooftop &&
+    hasRooftopRestaurantFeatureLanguage(q)
+  );
+}
+
+function rooftopRestaurantFeatureTermsFromQuery(query: string, includeRooftopCluster = false) {
+  const q = String(query || "").toLowerCase();
+  const terms = [
+    /\b(rooftop|roof top)\b/.test(q) ? "rooftop" : "",
+    /\b(rooftop|roof top)\b/.test(q) ? "rooftop restaurant" : "",
+    /\b(rooftop|roof top)\b/.test(q) ? "rooftop dining" : "",
+    /\b(rooftop|roof top|roof deck)\b/.test(q) ? "roof deck" : "",
+    /\b(rooftop|roof top|terrace)\b/.test(q) ? "terrace" : "",
+    /\bpatio\b/.test(q) ? "patio" : "",
+    /\b(outdoor dining|outdoor seating)\b/.test(q) ? "outdoor dining" : "",
+    /\boutdoor seating\b/.test(q) ? "outdoor seating" : "",
+    /\b(rooftop|roof top|skyline|skyline views)\b/.test(q) ? "skyline" : "",
+    /\b(rooftop|roof top|skyline|skyline views)\b/.test(q) ? "skyline views" : "",
+    /\bscenic views\b/.test(q) ? "scenic views" : "",
+    /\bwaterfront\b/.test(q) ? "waterfront" : "",
+    /\bwaterfront views\b/.test(q) ? "waterfront views" : "",
+    /\b(rooftop|roof top|views|skyline views|scenic views|city views|waterfront views)\b/.test(q) ? "views" : "",
+    /\blive music\b/.test(q) ? "live music" : "",
+  ];
+
+  return uniq(includeRooftopCluster && /\b(rooftop|roof top)\b/.test(q)
+    ? [
+        ...terms,
+        "rooftop",
+        "rooftop restaurant",
+        "rooftop dining",
+        "terrace",
+        "skyline",
+        "skyline views",
+        "views",
+        "roof deck",
+      ]
+    : terms);
+}
 function cleanPlaceOfWorshipTerms(terms: string[], query: string) {
   if (userAskedForPlaceOfWorship(query)) return terms;
 
@@ -840,9 +901,16 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     "activity",
   );
   const restaurantFood = food.filter((t) => t !== "rooftop" && t !== "lounge");
+  const baselineRestaurantLane = {
+    searchType: userAskedForRooftopRestaurant(query) ? "restaurant" : undefined,
+    primaryDomain: userAskedForRooftopRestaurant(query) ? "restaurant" : undefined,
+    needsRestaurant: userAskedForRooftopRestaurant(query) || undefined,
+  } satisfies Partial<SearchIntent>;
+  const restaurantLaneFeatureOnly = restaurantLaneFeatureOnlyQuery(query, baselineRestaurantLane);
   const restaurantContext =
     meals.length > 0 ||
     restaurantFood.length > 0 ||
+    restaurantLaneFeatureOnly ||
     /restaurant|dinner|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse/i.test(
       query,
     );
@@ -864,23 +932,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const needsActivity = activityContext || hookahOnly;
   const mixed = needsRestaurant && needsActivity;
   const deterministicRestaurantFeatureTerms = restaurantContext && !rooftopActivity
-    ? uniq([
-        /\b(rooftop|roof top|roof deck)\b/i.test(query) ? "rooftop" : "",
-        /\brooftop\b/i.test(query) ? "rooftop restaurant" : "",
-        /\brooftop|rooftop dining\b/i.test(query) ? "rooftop dining" : "",
-        /\broof deck\b/i.test(query) ? "roof deck" : "",
-        /\bterrace\b/i.test(query) ? "terrace" : "",
-        /\bpatio\b/i.test(query) ? "patio" : "",
-        /\boutdoor dining\b/i.test(query) ? "outdoor dining" : "",
-        /\boutdoor seating\b/i.test(query) ? "outdoor seating" : "",
-        /\bskyline\b/i.test(query) ? "skyline" : "",
-        /\bskyline views\b/i.test(query) ? "skyline views" : "",
-        /\bscenic views\b/i.test(query) ? "scenic views" : "",
-        /\bwaterfront\b/i.test(query) ? "waterfront" : "",
-        /\bwaterfront views\b/i.test(query) ? "waterfront views" : "",
-        /\bviews\b/i.test(query) ? "views" : "",
-        /\blive music\b/i.test(query) ? "live music" : "",
-      ])
+    ? rooftopRestaurantFeatureTermsFromQuery(query, restaurantLaneFeatureOnly)
     : [];
   return {
     rawQuery: query,
@@ -974,24 +1026,9 @@ export function normalizeIntent(
     ]),
   );
   const rooftopActivity = rooftopDrinksBelongToActivity(query);
+  const restaurantLaneFeatureOnly = restaurantLaneFeatureOnlyQuery(query, merged);
   const restaurantOnlyFeatureTerms = merged.needsRestaurant && !merged.needsActivity
-    ? uniq([
-        /\b(rooftop|roof top|roof deck)\b/.test(query) ? "rooftop" : "",
-        /\brooftop\b/.test(query) ? "rooftop restaurant" : "",
-        /\brooftop|rooftop dining\b/.test(query) ? "rooftop dining" : "",
-        /\broof deck\b/.test(query) ? "roof deck" : "",
-        /\bterrace\b/.test(query) ? "terrace" : "",
-        /\bpatio\b/.test(query) ? "patio" : "",
-        /\boutdoor dining\b/.test(query) ? "outdoor dining" : "",
-        /\boutdoor seating\b/.test(query) ? "outdoor seating" : "",
-        /\bskyline\b/.test(query) ? "skyline" : "",
-        /\bskyline views\b/.test(query) ? "skyline views" : "",
-        /\bscenic views\b/.test(query) ? "scenic views" : "",
-        /\bwaterfront\b/.test(query) ? "waterfront" : "",
-        /\bwaterfront views\b/.test(query) ? "waterfront views" : "",
-        /\bviews\b/.test(query) ? "views" : "",
-        /\blive music\b/.test(query) ? "live music" : "",
-      ])
+    ? rooftopRestaurantFeatureTermsFromQuery(query, restaurantLaneFeatureOnly)
     : [];
   const foodExpanded = expandFoodSynonyms(food);
   const actExpanded = stripDistanceTerms(expandActivitySynonyms(acts));
@@ -1033,7 +1070,7 @@ export function normalizeIntent(
       stripCrossTerms(
         uniq([
           ...(merged.restaurantIntent.categoryTerms ?? []),
-          ...(userAskedForRooftopRestaurant(query) ? ["restaurant"] : []),
+          ...(userAskedForRooftopRestaurant(query) || restaurantLaneFeatureOnly ? ["restaurant"] : []),
         ]),
         ACTIVITY_TERMS,
       ),
@@ -1128,6 +1165,7 @@ export function normalizeIntent(
     (merged.restaurantIntent.alternativeGroups ?? []).some((group) =>
       group.some((t) => !FEATURE_ONLY_FOOD_TERMS.has(t)),
     ) ||
+    restaurantLaneFeatureOnly ||
     /restaurant|dinner|brunch|lunch|breakfast|dining|date night|romantic/i.test(
       query,
     );
