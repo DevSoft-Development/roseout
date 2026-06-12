@@ -91,11 +91,11 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    const limit = Math.min(Math.max(Number(body.limit || 250), 1), 300);
-    const concurrency = Math.min(Math.max(Number(body.concurrency || 8), 1), 8);
+    const limit = Math.min(Math.max(Number(body.limit || 150), 1), 300);
+    const concurrency = Math.min(Math.max(Number(body.concurrency || 6), 1), 8);
     const includeResults = body.includeResults === true;
 
-    const query = supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("locations")
       .select(
         "id,name,restaurant_name,activity_name,address,city,state,google_place_id,main_image,image_url,images,has_photos,photo_status,quality_status,is_searchable,rating,review_count",
@@ -106,8 +106,6 @@ export async function POST(request: Request) {
       .order("rating", { ascending: false, nullsFirst: false })
       .order("review_count", { ascending: false, nullsFirst: false })
       .limit(Math.min(limit * 8, 2000));
-
-    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json(
@@ -137,8 +135,8 @@ export async function POST(request: Request) {
       results.push(...chunkResults);
     }
 
-    const durationMs = Date.now() - startedAt;
     const failures = results.filter((r) => !r.success);
+    const durationMs = Date.now() - startedAt;
 
     return NextResponse.json({
       success: true,
