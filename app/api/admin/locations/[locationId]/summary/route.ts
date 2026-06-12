@@ -65,7 +65,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     layoutResourceCount === 0 ? "no layout resources" : null,
     !location.email ? "no email" : null,
     !location.phone ? "no phone" : null,
-    !(location.image_url || location.logo_url || location.main_image || location.photo_url) ? "no image" : null,
+    !(location.image_url || location.logo_url || location.main_image) ? "no image" : null,
   ].filter(Boolean);
 
   await logAdminLocationAction({

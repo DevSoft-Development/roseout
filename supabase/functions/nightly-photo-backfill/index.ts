@@ -14,7 +14,7 @@ const corsHeaders = {
 };
 
 const PREFERRED_LOCATION_SELECT =
-  "id,name,restaurant_name,activity_name,address,city,state,zip_code,image_url,photo_url,has_photos,photo_status,google_place_id,place_id,rating,review_count,is_low_level,is_searchable,quality_status,public_visibility_tier,curation_tier,primary_category,category,location_type,activity_type,cuisine,cuisine_type,description,google_types,search_document";
+  "id,name,restaurant_name,activity_name,address,city,state,zip_code,image_url,main_image,images,has_photos,photo_status,google_rating,review_count,is_low_level,is_searchable,quality_status,public_visibility_tier,curation_tier,primary_category,category,location_type,activity_type,cuisine,cuisine_type,description,google_types,search_document";
 const MINIMAL_LOCATION_SELECT =
   "id,name,address,city,state,zip_code,image_url,has_photos,photo_status";
 const MISSING_PHOTO_FILTER =
@@ -341,7 +341,7 @@ function hasValidPhoto(item: LocationRow): boolean {
     return true;
   return (
     validPhotoUrl(item?.image_url) ||
-    validPhotoUrl(item?.photo_url) ||
+    validPhotoUrl(item?.image_url || item?.main_image) ||
     validPhotoUrl(item?.main_image)
   );
 }
@@ -902,8 +902,7 @@ async function updateLocationPhoto(
 ): Promise<UpdateLocationPhotoResult> {
   const preferredUpdate = {
     image_url: photoUrl,
-    photo_url: photoUrl,
-    google_place_id: placeId,
+        google_place_id: placeId,
     has_photos: true,
     photo_status: "has_photo",
     updated_at: new Date().toISOString(),

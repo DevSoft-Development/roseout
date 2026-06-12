@@ -338,7 +338,7 @@ export default function LocationDetailPage() {
         getLocationImage(location),
         location?.main_image,
         location?.image_url,
-        location?.photo_url,
+        
         location?.cover_image,
         location?.hero_image,
         location?.thumbnail_url,
@@ -349,7 +349,7 @@ export default function LocationDetailPage() {
         ...toArray(location?.photos),
         ...toArray(location?.gallery_images),
         ...toArray(location?.image_urls),
-        ...toArray(location?.photo_urls),
+        ...toArray(location?.image_url || location?.main_images),
       ]
         .map((image) => String(image || "").trim())
         .filter((image) => image && image !== "null" && image !== "undefined"),
