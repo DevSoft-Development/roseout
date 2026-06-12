@@ -51,7 +51,7 @@ function toCardRecord(item: any) {
   const usableImage = getLocationImage(item);
 
   return {
-    id: item?.id ?? item?.source_id ?? item?.place_id ?? null,
+    id: item?.id ?? item?.source_id ?? item?.google_place_id ?? null,
     name:
       item?.name ??
       item?.restaurant_name ??
@@ -71,6 +71,9 @@ function toCardRecord(item: any) {
     google_place_id: item?.google_place_id ?? null,
     image_url: usableImage,
     main_image: usableImage,
+    images: item?.images ?? (usableImage ? [usableImage] : []),
+    has_photos: item?.has_photos ?? Boolean(usableImage),
+    photo_status: item?.photo_status ?? null,
     rating: item?.rating ?? null,
     price_level: item?.price_level ?? item?.price_range ?? null,
     phone_number: item?.phone_number ?? item?.phone ?? null,
@@ -249,15 +252,23 @@ export async function POST(request: Request) {
     const rawPairs = Array.isArray(result.pairs) ? result.pairs : [];
 
     const normalizeResultCard = (item: any) => {
-      const base =
+      const card =
         typeof toCardRecord === "function"
           ? toCardRecord(item)
           : item;
 
-      return normalizePublicCardImage({
+      const mergedCard = {
         ...item,
-        ...base,
-      });
+        ...card,
+        google_place_id: item?.google_place_id ?? card?.google_place_id ?? null,
+        main_image: item?.main_image ?? card?.main_image ?? null,
+        image_url: item?.image_url ?? card?.image_url ?? null,
+        images: item?.images ?? card?.images ?? [],
+        has_photos: item?.has_photos ?? card?.has_photos ?? false,
+        photo_status: item?.photo_status ?? card?.photo_status ?? null,
+      };
+
+      return normalizePublicCardImage(mergedCard);
     };
 
     const publicRestaurants = rawRestaurants
@@ -290,7 +301,7 @@ export async function POST(request: Request) {
         const key = String(
           card.id ??
             card.source_id ??
-            card.place_id ??
+            card.google_place_id ??
             `${card.location_type || "card"}:${
               card.name || card.restaurant_name || card.activity_name || card.image_url
             }`,

@@ -2336,6 +2336,7 @@ function ResultCard({
     typeof imageUrl === "string" && imageUrl.trim().length > 8
       ? imageUrl.trim()
       : null;
+  const displayImageUrl = resolvedImageUrl;
 
   if (
     process.env.NODE_ENV !== "production" &&
@@ -2346,6 +2347,7 @@ function ResultCard({
       title,
       imageUrl,
       resolvedImageUrl,
+      displayImageUrl,
     });
   }
 
@@ -2367,17 +2369,27 @@ function ResultCard({
       }}
     >
       <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
-        {resolvedImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={resolvedImageUrl}
-            alt={title || "Location photo"}
-            className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
-            loading={priority ? "eager" : "lazy"}
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-            }}
-          />
+        {displayImageUrl ? (
+          <>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">
+              Photo unavailable
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={displayImageUrl}
+              alt={title || "Location photo"}
+              className="relative z-[1] h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
+              loading={priority ? "eager" : "lazy"}
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                console.warn("[ResultCard] image failed to load", {
+                  title,
+                  imageUrl: displayImageUrl,
+                });
+                event.currentTarget.style.opacity = "0";
+              }}
+            />
+          </>
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-xs text-neutral-500">
             Photo Coming Soon

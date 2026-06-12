@@ -36,6 +36,22 @@ function isUsableImageUrl(value: string) {
   );
 }
 
+function isSupabaseStorageImage(value: string) {
+  return value.includes("/storage/v1/object/public/location-images/");
+}
+
+function isGooglePlacesPhotoUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.hostname === "maps.googleapis.com" &&
+      parsed.pathname.includes("/maps/api/place/photo")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function extractGooglePhotoReference(value: string) {
   try {
     const parsed = new URL(value);
@@ -57,28 +73,13 @@ function extractGooglePhotoReference(value: string) {
   return null;
 }
 
-export function normalizeImageUrlForPublic(value: unknown): string | null {
-  const image = firstImage(value);
-  if (!image) return null;
-
-  const photoReference = extractGooglePhotoReference(image);
-
-  if (photoReference) {
-    const maxwidth = (() => {
-      try {
-        const parsed = new URL(image);
-        return parsed.searchParams.get("maxwidth") || "1200";
-      } catch {
-        return "1200";
-      }
-    })();
-
-    return `/api/public/google-place-photo?ref=${encodeURIComponent(
-      photoReference,
-    )}&maxwidth=${encodeURIComponent(maxwidth)}`;
+function extractGooglePhotoMaxwidth(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.searchParams.get("maxwidth") || "1200";
+  } catch {
+    return "1200";
   }
-
-  return image;
 }
 
 export function firstImage(value: unknown): string | null {
@@ -107,7 +108,7 @@ export function firstImage(value: unknown): string | null {
         const image = firstImage(parsed);
         if (image) return image;
       } catch {
-        // Continue and treat it as a plain string/URL below.
+        // Continue and treat it as a plain URL/string below.
       }
     }
 
@@ -127,7 +128,6 @@ export function firstImage(value: unknown): string | null {
       firstImage(record.src) ||
       firstImage(record.image_url) ||
       firstImage(record.main_image) ||
-      firstImage(record.photo_url) ||
       firstImage(record.primary_photo_url) ||
       firstImage(record.google_photo_url) ||
       firstImage(record.image) ||
@@ -147,8 +147,52 @@ export function firstImage(value: unknown): string | null {
   return null;
 }
 
+export function normalizeImageUrlForPublic(value: unknown): string | null {
+  const image = firstImage(value);
+  if (!image) return null;
+
+  if (image.startsWith("/api/public/google-place-photo")) {
+    return image;
+  }
+
+  const photoReference = extractGooglePhotoReference(image);
+
+  if (photoReference) {
+    const maxwidth = extractGooglePhotoMaxwidth(image);
+
+    return `/api/public/google-place-photo?ref=${encodeURIComponent(
+      photoReference,
+    )}&maxwidth=${encodeURIComponent(maxwidth)}`;
+  }
+
+  return image;
+}
+
+function collectLocationImageCandidates(location: any) {
+  return [
+    firstImage(location?.images),
+    firstImage(location?.main_image),
+    firstImage(location?.image_url),
+    firstImage(location?.primary_photo_url),
+    firstImage(location?.google_photo_url),
+    firstImage(location?.image),
+    firstImage(location?.photos),
+    firstImage(location?.gallery_images),
+    firstImage(location?.gallery),
+    firstImage(location?.image_gallery),
+  ].filter(Boolean) as string[];
+}
+
 export function getLocationImage(location: any) {
   if (!location) return null;
+
+  const candidates = collectLocationImageCandidates(location);
+
+  const storageImage = candidates.find(isSupabaseStorageImage);
+  if (storageImage) return normalizeImageUrlForPublic(storageImage);
+
+  const stableNonGoogleImage = candidates.find((image) => !isGooglePlacesPhotoUrl(image));
+  if (stableNonGoogleImage) return normalizeImageUrlForPublic(stableNonGoogleImage);
 
   const placeId =
     typeof location.google_place_id === "string" && location.google_place_id.trim()
@@ -159,21 +203,10 @@ export function getLocationImage(location: any) {
     return `/api/public/google-place-photo?placeId=${encodeURIComponent(placeId)}&maxwidth=1200`;
   }
 
-  const rawImage =
-    firstImage(location.main_image) ||
-    firstImage(location.image_url) ||
-    firstImage(location.photo_url) ||
-    firstImage(location.primary_photo_url) ||
-    firstImage(location.google_photo_url) ||
-    firstImage(location.image) ||
-    firstImage(location.images) ||
-    firstImage(location.photos) ||
-    firstImage(location.gallery_images) ||
-    firstImage(location.gallery) ||
-    firstImage(location.image_gallery) ||
-    null;
+  const storedGoogleImage = candidates.find(isGooglePlacesPhotoUrl);
+  if (storedGoogleImage) return normalizeImageUrlForPublic(storedGoogleImage);
 
-  return normalizeImageUrlForPublic(rawImage);
+  return null;
 }
 
 export function hasUsableLocationImage(location: any) {

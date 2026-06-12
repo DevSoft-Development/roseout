@@ -20,7 +20,7 @@ async function fetchFreshPhotoReference(placeId: string, key: string) {
 
   const json = await response.json().catch(() => null);
 
-  if (!response.ok || json?.status === "REQUEST_DENIED" || json?.status === "INVALID_REQUEST") {
+  if (!response.ok || json?.status !== "OK") {
     throw new Error(
       json?.error_message ||
         `Google Place Details failed with status ${json?.status || response.status}`,
