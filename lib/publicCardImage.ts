@@ -1,8 +1,11 @@
-import { firstImage, getLocationImage } from "@/lib/locationImage";
+import {
+  firstImage,
+  getLocationImage,
+  normalizeImageUrlForPublic,
+} from "@/lib/locationImage";
 
 export function normalizePublicCardImage<T extends Record<string, any>>(item: T): T {
-  const image =
-    getLocationImage(item) ||
+  const rawImage =
     firstImage(item?.main_image) ||
     firstImage(item?.image_url) ||
     firstImage(item?.images) ||
@@ -14,19 +17,15 @@ export function normalizePublicCardImage<T extends Record<string, any>>(item: T)
     firstImage(item?.primary_photo_url) ||
     firstImage(item?.image);
 
+  const image = normalizeImageUrlForPublic(rawImage);
+
   return {
     ...item,
-    image_url: image || item?.image_url || null,
-    main_image: image || item?.main_image || null,
-    images: Array.isArray(item?.images)
-      ? item.images
-      : image
-        ? [image]
-        : item?.images || [],
-    has_photos: Boolean(image || item?.has_photos),
-    photo_status: image
-      ? item?.photo_status || "has_photo"
-      : item?.photo_status || "missing_photo",
+    image_url: image || null,
+    main_image: image || null,
+    images: image ? [image] : [],
+    has_photos: Boolean(image),
+    photo_status: image ? item?.photo_status || "has_photo" : "missing_photo",
   };
 }
 

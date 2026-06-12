@@ -2332,22 +2332,10 @@ function ResultCard({
     analyticsMetadata,
   );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
-  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
-  const candidateImageUrl =
+  const resolvedImageUrl =
     typeof imageUrl === "string" && imageUrl.trim().length > 8
       ? imageUrl.trim()
       : null;
-  const resolvedImageUrl =
-    candidateImageUrl && candidateImageUrl !== failedImageUrl
-      ? candidateImageUrl
-      : null;
-  const isGooglePlacesPhoto =
-    resolvedImageUrl?.includes("maps.googleapis.com/maps/api/place/photo") ??
-    false;
-  const displayImageUrl =
-    isGooglePlacesPhoto && resolvedImageUrl
-      ? `/api/image-proxy?url=${encodeURIComponent(resolvedImageUrl)}`
-      : resolvedImageUrl;
 
   if (
     process.env.NODE_ENV !== "production" &&
@@ -2358,7 +2346,6 @@ function ResultCard({
       title,
       imageUrl,
       resolvedImageUrl,
-      isGooglePlacesPhoto,
     });
   }
 
@@ -2380,30 +2367,19 @@ function ResultCard({
       }}
     >
       <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
-        {displayImageUrl ? (
-          isGooglePlacesPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={displayImageUrl}
-              alt={title || "Location photo"}
-              className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
-              loading={priority ? "eager" : "lazy"}
-              referrerPolicy="no-referrer"
-              onError={() => setFailedImageUrl(resolvedImageUrl)}
-            />
-          ) : (
-            <Image
-              src={displayImageUrl}
-              alt={title || "Location photo"}
-              fill
-              className="object-cover transition duration-700 group-hover:scale-[1.06]"
-              priority={priority}
-              sizes="(max-width: 768px) 100vw, 380px"
-              onError={() => setFailedImageUrl(resolvedImageUrl)}
-            />
-          )
+        {resolvedImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolvedImageUrl}
+            alt={title || "Location photo"}
+            className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.06]"
+            loading={priority ? "eager" : "lazy"}
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-100 text-xs text-neutral-500">
+          <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-xs text-neutral-500">
             Photo Coming Soon
           </div>
         )}

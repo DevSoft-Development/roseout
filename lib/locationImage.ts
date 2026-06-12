@@ -36,6 +36,51 @@ function isUsableImageUrl(value: string) {
   );
 }
 
+function extractGooglePhotoReference(value: string) {
+  try {
+    const parsed = new URL(value);
+
+    if (
+      parsed.hostname === "maps.googleapis.com" &&
+      parsed.pathname.includes("/maps/api/place/photo")
+    ) {
+      return (
+        parsed.searchParams.get("photo_reference") ||
+        parsed.searchParams.get("photoreference") ||
+        parsed.searchParams.get("ref")
+      );
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export function normalizeImageUrlForPublic(value: unknown): string | null {
+  const image = firstImage(value);
+  if (!image) return null;
+
+  const photoReference = extractGooglePhotoReference(image);
+
+  if (photoReference) {
+    const maxwidth = (() => {
+      try {
+        const parsed = new URL(image);
+        return parsed.searchParams.get("maxwidth") || "1200";
+      } catch {
+        return "1200";
+      }
+    })();
+
+    return `/api/public/google-place-photo?ref=${encodeURIComponent(
+      photoReference,
+    )}&maxwidth=${encodeURIComponent(maxwidth)}`;
+  }
+
+  return image;
+}
+
 export function firstImage(value: unknown): string | null {
   if (!value) return null;
 
@@ -105,14 +150,7 @@ export function firstImage(value: unknown): string | null {
 export function getLocationImage(location: any) {
   if (!location) return null;
 
-  const projectImageFromImages = Array.isArray(location.images)
-    ? location.images.find((item: unknown) =>
-        String(item || "").includes("/storage/v1/object/public/location-images/"),
-      )
-    : null;
-
-  return (
-    firstImage(projectImageFromImages) ||
+  const rawImage =
     firstImage(location.main_image) ||
     firstImage(location.image_url) ||
     firstImage(location.photo_url) ||
@@ -124,8 +162,9 @@ export function getLocationImage(location: any) {
     firstImage(location.gallery_images) ||
     firstImage(location.gallery) ||
     firstImage(location.image_gallery) ||
-    null
-  );
+    null;
+
+  return normalizeImageUrlForPublic(rawImage);
 }
 
 export function hasUsableLocationImage(location: any) {

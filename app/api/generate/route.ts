@@ -241,7 +241,11 @@ export async function POST(request: Request) {
     const rawActivities = Array.isArray(result.activities) ? result.activities : [];
     const rawMatchedLocations = Array.isArray(result.matched_locations)
       ? result.matched_locations
-      : [];
+      : Array.isArray(result.matchedLocations)
+        ? result.matchedLocations
+        : [];
+    const rawCards = Array.isArray(result.cards) ? result.cards : [];
+    const rawPairs = Array.isArray(result.pairs) ? result.pairs : [];
 
     const normalizeResultCard = (item: any) => {
       const base =
@@ -267,13 +271,52 @@ export async function POST(request: Request) {
       .map(normalizeResultCard)
       .filter(hasPublicCardImage);
 
-    const publicCards = [
+    const publicResultCards = rawCards
+      .map(normalizeResultCard)
+      .filter(hasPublicCardImage);
+
+    const publicCardsByKey = new Map<string, any>();
+
+    [
       ...publicRestaurants,
       ...publicActivities,
       ...publicMatchedLocations,
+      ...publicResultCards,
     ]
       .map(normalizePublicCardImage)
-      .filter(hasPublicCardImage);
+      .filter(hasPublicCardImage)
+      .forEach((card) => {
+        const key = String(
+          card.id ??
+            card.source_id ??
+            card.place_id ??
+            `${card.location_type || "card"}:${
+              card.name || card.restaurant_name || card.activity_name || card.image_url
+            }`,
+        );
+        if (!publicCardsByKey.has(key)) publicCardsByKey.set(key, card);
+      });
+
+    const publicCards = Array.from(publicCardsByKey.values());
+
+    const normalizeNestedPublicImages = (value: any): any => {
+      if (Array.isArray(value)) return value.map(normalizeNestedPublicImages);
+
+      if (!value || typeof value !== "object") return value;
+
+      const normalizedChildren = Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [
+          key,
+          normalizeNestedPublicImages(item),
+        ]),
+      );
+
+      return getLocationImage(normalizedChildren)
+        ? normalizePublicCardImage(normalizedChildren)
+        : normalizedChildren;
+    };
+
+    const publicPairs = rawPairs.map(normalizeNestedPublicImages);
 
     if (process.env.NODE_ENV !== "production") {
       console.log("[generate] public image normalization", {
@@ -284,16 +327,17 @@ export async function POST(request: Request) {
         rawMatchedLocations: rawMatchedLocations.length,
         publicMatchedLocations: publicMatchedLocations.length,
         publicCards: publicCards.length,
+      });
+      console.log("[generate] public image url check", {
         firstCard: publicCards[0]
           ? {
               name:
                 publicCards[0].name ||
                 publicCards[0].restaurant_name ||
                 publicCards[0].activity_name,
-              main_image: publicCards[0].main_image,
               image_url: publicCards[0].image_url,
+              main_image: publicCards[0].main_image,
               images: publicCards[0].images,
-              resolvedImage: getLocationImage(publicCards[0]),
             }
           : null,
       });
@@ -307,6 +351,7 @@ export async function POST(request: Request) {
       matched_locations: publicMatchedLocations,
       matchedLocations: publicMatchedLocations,
       cards: publicCards,
+      pairs: publicPairs,
       restaurantCount: publicRestaurants.length,
       activityCount: publicActivities.length,
       cardCount: publicCards.length,
