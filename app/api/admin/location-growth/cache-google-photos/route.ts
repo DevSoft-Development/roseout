@@ -91,24 +91,21 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    const limit = Math.min(Math.max(Number(body.limit || 250), 1), 500);
-    const concurrency = Math.min(Math.max(Number(body.concurrency || 8), 1), 12);
-    const onlyMissing = body.onlyMissing !== false;
+    const limit = Math.min(Math.max(Number(body.limit || 250), 1), 300);
+    const concurrency = Math.min(Math.max(Number(body.concurrency || 8), 1), 8);
+    const includeResults = body.includeResults === true;
 
-    let query = supabaseAdmin
+    const query = supabaseAdmin
       .from("locations")
       .select(
         "id,name,restaurant_name,activity_name,address,city,state,google_place_id,main_image,image_url,images,has_photos,photo_status,quality_status,is_searchable,rating,review_count",
       )
       .not("google_place_id", "is", null)
+      .order("photo_status", { ascending: true, nullsFirst: true })
       .order("is_searchable", { ascending: false, nullsFirst: false })
       .order("rating", { ascending: false, nullsFirst: false })
       .order("review_count", { ascending: false, nullsFirst: false })
-      .limit(limit * 4);
-
-    if (onlyMissing) {
-      query = query.or("main_image.is.null,image_url.is.null,photo_status.neq.storage_cached");
-    }
+      .limit(Math.min(limit * 8, 2000));
 
     const { data, error } = await query;
 
@@ -119,7 +116,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const candidates = (data || []).filter(needsStorageCache).slice(0, limit);
+    const fetchedRows = data || [];
+    const needsCacheRows = fetchedRows.filter(needsStorageCache);
+    const candidates = needsCacheRows.slice(0, limit);
     const chunks = chunkArray(candidates, concurrency);
 
     const results: any[] = [];
@@ -139,18 +138,22 @@ export async function POST(request: Request) {
     }
 
     const durationMs = Date.now() - startedAt;
+    const failures = results.filter((r) => !r.success);
 
     return NextResponse.json({
       success: true,
       requestedLimit: limit,
       concurrency,
+      fetchedCount: fetchedRows.length,
+      needsCacheCount: needsCacheRows.length,
       candidateCount: candidates.length,
       processedCount: results.length,
       successCount: results.filter((r) => r.success).length,
-      failureCount: results.filter((r) => !r.success).length,
+      failureCount: failures.length,
       stoppedEarly,
       durationMs,
-      results,
+      failures: failures.slice(0, 10),
+      results: includeResults ? results : undefined,
     });
   } catch (error) {
     return NextResponse.json(
