@@ -150,6 +150,15 @@ export function firstImage(value: unknown): string | null {
 export function getLocationImage(location: any) {
   if (!location) return null;
 
+  const placeId =
+    typeof location.google_place_id === "string" && location.google_place_id.trim()
+      ? location.google_place_id.trim()
+      : null;
+
+  if (placeId) {
+    return `/api/public/google-place-photo?placeId=${encodeURIComponent(placeId)}&maxwidth=1200`;
+  }
+
   const rawImage =
     firstImage(location.main_image) ||
     firstImage(location.image_url) ||
