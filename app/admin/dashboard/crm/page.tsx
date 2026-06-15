@@ -191,13 +191,13 @@ export default async function CRMPage({
   };
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_30%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
+    <main className="min-h-screen overflow-x-hidden bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1500px] min-w-0 space-y-6">
+        <section className="max-w-full overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_30%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
           <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">
             Location Operations · SaaS CRM
           </p>
-          <div className="mt-3 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="mt-3 flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <h1 className="text-4xl font-black tracking-tight">
                 TheOutHaven CRM
@@ -244,9 +244,9 @@ export default async function CRMPage({
           <div className="mt-6 rounded-3xl border border-rose-200/15 bg-black/25 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Partner Launch Dashboard</p><h2 className="mt-2 text-2xl font-black">Partner Launch Dashboard</h2></div>
-              <div className="flex flex-wrap gap-2">{[["View Partner Launch","partner-launch"],["View Launch Pilot","launch-pilot"],["View Claim Not Sent","claim-not-sent"],["View Payment Pending","payment-pending"],["View Reservation Ready","reservation-ready"],["View Embed Needed","embed-needed"],["View Follow-Ups Due","follow-ups-due"]].map(([label, view]) => <Link key={view} href={`/admin/dashboard/crm?view=${view}`} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-black text-white/75 hover:bg-rose-600 hover:text-white">{label}</Link>)}</div>
+              <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-wrap">{[["View Partner Launch","partner-launch"],["View Launch Pilot","launch-pilot"],["View Claim Not Sent","claim-not-sent"],["View Payment Pending","payment-pending"],["View Reservation Ready","reservation-ready"],["View Embed Needed","embed-needed"],["View Follow-Ups Due","follow-ups-due"]].map(([label, view]) => <Link key={view} href={`/admin/dashboard/crm?view=${view}`} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-black text-white/75 hover:bg-rose-600 hover:text-white">{label}</Link>)}</div>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             {[
               ["Active Partners", summary.activePartners],
               ["Monthly Partner Revenue", `$${fmt((summary.mrrCents || 0) / 100)}`],
@@ -277,7 +277,7 @@ export default async function CRMPage({
           </div>
         </section>
 
-        <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
+        <nav className="flex max-w-full gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
           {[
             ["All", "all", summary.total],
             ["Partner Launch", "partner-launch", summary.partnerLaunchTotal],
@@ -313,7 +313,7 @@ export default async function CRMPage({
           })}
         </nav>
 
-        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+        <section className="min-w-0 max-w-full rounded-3xl border border-white/10 bg-white/[0.04] p-4">
           {filter === "pending-claims" && pendingClaims.length > 0 ? (
             <PendingClaimsPanel claims={pendingClaims} />
           ) : businesses.length === 0 ? (
@@ -342,16 +342,16 @@ export default async function CRMPage({
                   </Link>
                 ) : null}
                 <Link
-                  href="/admin/dashboard/locations/new"
+                  href="/admin/dashboard/my-workspace/assign-locations"
                   className="inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white"
                 >
-                  Add location
+                  Assign locations
                 </Link>
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1150px] table-fixed text-left text-sm">
+            <div className="max-w-full overflow-x-auto">
+              <table className="w-full min-w-[1200px] table-fixed text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.2em] text-white/55">
                   <tr>
                     {[
@@ -427,7 +427,7 @@ export default async function CRMPage({
                           )}
                         </td>
                         <td className="px-3 py-4 align-top">
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-col gap-2">
                             <Link
                               href={`/admin/dashboard/crm/${business.id}`}
                               className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white"

@@ -85,6 +85,7 @@ export default async function AdminTeamPage() {
   const links = [
     ["Overview", ""],
     ["Members", "members"],
+    ["Assign Locations", "../my-workspace/assign-locations"],
     ["Work Sessions", "work-sessions"],
     ["Manager Review", "review"],
     ["Site Visits", "site-visits"],
@@ -180,9 +181,7 @@ export default async function AdminTeamPage() {
           {links.map(([label, path]) => (
             <Link
               key={path}
-              href={
-                path ? `/admin/dashboard/team/${path}` : "/admin/dashboard/team"
-              }
+              href={path?.startsWith("../") ? `/admin/dashboard/${path.slice(3)}` : path ? `/admin/dashboard/team/${path}` : "/admin/dashboard/team"}
               className="rounded-3xl border border-white/10 bg-[#111] p-5 font-black hover:bg-white/[0.08]"
             >
               {label} →
