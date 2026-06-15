@@ -30,7 +30,7 @@ export default async function AdminMyWorkspacePage() {
 
   const data = await loadWorkspaceDashboardData(admin.user_id, profile);
   const adminActions = [
-    ...(["superadmin", "admin"].includes(admin.role) ? [{ label: "Assign Locations", href: "/admin/dashboard/my-workspace/assign-locations", enabled: true, description: "Add locations to your queue or assign them to ambassadors by neighborhood, category, or status.", cta: "Assign Locations", explanation: "Admin access is required." }] : []),
+    ...(["superadmin", "admin"].includes(admin.role) ? [{ label: "Assign Locations", href: "/admin/dashboard/my-workspace/assign-locations", enabled: true, description: "Add locations to your queue or assign them by neighborhood, category, or status.", cta: "Assign Locations", explanation: "Admin access is required." }] : []),
     ...workspaceActions(profile, "/admin/dashboard/my-workspace"),
   ];
   const metrics = data.metrics.map((metric) => metric.href ? { ...metric, href: metric.href.replace("/my-workspace", "/admin/dashboard/my-workspace") } : metric);
