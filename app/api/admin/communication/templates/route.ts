@@ -6,7 +6,7 @@ const DEFAULT_TEMPLATES = [
   { name: "Welcome Business Owner", channel: "email", subject: "Welcome to TheOutHaven", body: "Hi {{name}},\n\nWelcome to TheOutHaven...", category: "onboarding", is_system: true },
   { name: "Reservation Help", channel: "email", subject: "Help with your reservation", body: "Hi {{name}},\n\nWe can help with your reservation...", category: "reservations", is_system: true },
   { name: "Profile Update Request", channel: "email", subject: "Please review your profile details", body: "Hi {{name}},\n\nPlease review your profile...", category: "profile", is_system: true },
-  { name: "Pro Upgrade Offer", channel: "email", subject: "Unlock Pro features", body: "Hi {{name}},\n\nUpgrade to Pro...", category: "sales", is_system: true },
+  { name: "TheOutHaven Partner Plan Offer", channel: "email", subject: "Activate TheOutHaven Partner Plan", body: "Hi {{name}},\n\nActivate Partner Plan...", category: "sales", is_system: true },
   { name: "Support Ticket Reply", channel: "email", subject: "Update from TheOutHaven Support", body: "Hi {{name}},\n\nWe have an update on your ticket...", category: "support", is_system: true },
   { name: "Partnership Outreach", channel: "email", subject: "Partnership opportunity with TheOutHaven", body: "Hi {{name}},\n\nWe'd love to partner...", category: "partnership", is_system: true },
   { name: "Claim Reminder", channel: "sms", body: "TheOutHaven: Friendly reminder to claim your listing.", category: "claims", is_system: true },

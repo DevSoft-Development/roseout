@@ -4,6 +4,19 @@ import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Template = { id: string; name?: string; channel?: string; subject?: string | null; body?: string | null };
+
+const partnerTemplates: Template[] = [
+  { id: "partner-claim-invite", name: "Partner Claim Invite", channel: "email", subject: "Claim your TheOutHaven business profile", body: "Hi, I’m reaching out from TheOutHaven. We help local businesses manage reservations with a standalone reservation portal and website embed, while also helping customers discover places through TheOutHaven’s outing planner. TheOutHaven Partner Plan is $99/month and includes your reservation portal, website embed, owner dashboard, reminders, waitlist, and discovery profile. Here is your claim link: [link]" },
+  { id: "claim-follow-up", name: "Claim Follow-Up", channel: "email", subject: "Checking on your TheOutHaven claim link", body: "Just checking if you had a chance to review your TheOutHaven claim link. I can help you activate your reservation portal, website embed, and business profile." },
+  { id: "reservation-demo", name: "Reservation Portal Demo Invite", channel: "email", subject: "See your TheOutHaven reservation portal", body: "I’d love to show you how your TheOutHaven reservation portal and website embed work. You’ll be able to accept reservations through your own website and manage them from your dashboard." },
+  { id: "payment-pending", name: "Payment Pending Follow-Up", channel: "email", subject: "Activate your TheOutHaven Partner Plan", body: "Your profile and reservation setup are ready to activate. TheOutHaven Partner Plan is $99/month and includes your standalone reservation portal, website embed, owner dashboard, reminders, waitlist, and discovery inside TheOutHaven." },
+  { id: "embed-code", name: "Embed Code Email", channel: "email", subject: "Your TheOutHaven reservation widget", body: "Here is your TheOutHaven reservation widget. Paste this embed code into your website where you want guests to reserve. Reservations will connect to your TheOutHaven reservation portal and dashboard." },
+  { id: "welcome-active", name: "Welcome Active Partner", channel: "email", subject: "Welcome to TheOutHaven Partner Plan", body: "Welcome to TheOutHaven Partner Plan. Next, we’ll make sure your reservation portal, website embed, and discovery profile are fully ready. Your own reservation system, plus new customers from TheOutHaven." },
+  { id: "setup-needed", name: "Reservation Setup Needed", channel: "email", subject: "Finish your reservation setup", body: "Your own reservation system, plus new customers from TheOutHaven. Next we need to finish your reservation portal setup so customers can reserve from your website and TheOutHaven." },
+  { id: "embed-follow-up", name: "Embed Install Follow-Up", channel: "email", subject: "Can we help install your reservation widget?", body: "Following up on your website embed. Paste the TheOutHaven reservation widget where guests should reserve, then test a booking so we can confirm it appears in your dashboard." },
+  { id: "first-week", name: "First Week Check-In", channel: "email", subject: "Checking in on your first week", body: "Checking in on your first week with TheOutHaven Partner Plan. We can review your reservation portal, website embed, and discovery profile to make sure everything is ready." },
+  { id: "at-risk", name: "At Risk / Improve Profile", channel: "email", subject: "Improve your TheOutHaven profile", body: "We can help improve your TheOutHaven setup by reviewing your reservation portal, website embed, photos, tags, hours, and discovery profile." },
+];
 type Log = { id: string; channel?: string; subject?: string | null; body?: string | null; to_address?: string | null; recipient?: string | null; status?: string | null; created_at?: string | null };
 
 export default function CommunicationPanel({ locationId, defaultEmail, defaultPhone, templates, logs, canSend }: { locationId: string; defaultEmail?: string | null; defaultPhone?: string | null; templates: Template[]; logs: Log[]; canSend: boolean }) {
@@ -19,7 +32,8 @@ export default function CommunicationPanel({ locationId, defaultEmail, defaultPh
   const [templateName, setTemplateName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const filteredTemplates = useMemo(() => templates.filter((template) => (template.channel || "email") === channel), [templates, channel]);
+  const allTemplates = useMemo(() => [...partnerTemplates, ...templates], [templates]);
+  const filteredTemplates = useMemo(() => allTemplates.filter((template) => (template.channel || "email") === channel), [allTemplates, channel]);
 
   function switchChannel(next: "email" | "sms") {
     setChannel(next);
@@ -29,7 +43,7 @@ export default function CommunicationPanel({ locationId, defaultEmail, defaultPh
 
   function applyTemplate(id: string) {
     setTemplateId(id);
-    const template = templates.find((item) => item.id === id);
+    const template = allTemplates.find((item) => item.id === id);
     if (!template) return;
     setSubject(template.subject || "");
     setBody(template.body || "");

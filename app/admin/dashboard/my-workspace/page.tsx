@@ -33,9 +33,9 @@ export default async function AdminMyWorkspacePage() {
 
   return (
     <WorkspaceDashboard
-      title="Admin My Workspace"
+      title="Partner Launch Dashboard"
       eyebrow="Admin Dashboard / My Workspace"
-      description="Perform Ambassador and Experience Team workspace actions inside the admin shell while preserving the existing CRM, ticket system, AdminTopBar, and admin login destination. Every action remains server-validated and audited."
+      description="Partner Sales Today: work Partner Launch locations, claim invitations, follow-ups, reservation setup, website embeds, discovery readiness, and active partner onboarding inside the admin dashboard shell."
       profile={profile}
       allowedWorkTypes={data.allowedWorkTypes}
       activeSession={data.activeSession}

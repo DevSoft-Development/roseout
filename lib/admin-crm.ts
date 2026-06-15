@@ -27,7 +27,28 @@ export type BusinessCRMFilter =
   | "owner-accounts"
   | "location-tasks"
   | "follow-ups"
-  | "qr-codes";
+  | "qr-codes"
+  | "partner-launch"
+  | "launch-pilot"
+  | "claim-not-sent"
+  | "claim-sent"
+  | "claim-started"
+  | "claim-approved"
+  | "payment-pending"
+  | "active-partners"
+  | "reservation-ready"
+  | "embed-needed"
+  | "embed-sent"
+  | "embed-installed"
+  | "discovery-needed"
+  | "follow-ups-due"
+  | "owner-contact-missing";
+
+export type PartnerSalesStatus = "target" | "needs_outreach" | "contacted" | "interested" | "claim_link_sent" | "claim_pending" | "claim_approved" | "demo_setup" | "payment_pending" | "active_partner" | "reservation_ready" | "at_risk" | "not_interested" | "churned";
+export type ClaimOutreachStatus = "not_sent" | "sent" | "viewed" | "started" | "submitted" | "approved" | "rejected" | "expired";
+export type ReservationPortalStatus = "not_enabled" | "needs_setup" | "enabled" | "tested" | "live" | "paused" | "issue";
+export type ReservationEmbedStatus = "not_sent" | "generated" | "sent" | "installed" | "tested" | "needs_help" | "not_needed";
+export type DiscoveryProfileStatus = "needs_review" | "needs_photos" | "needs_tags" | "needs_hours" | "ready" | "paused" | "issue";
 
 export type PendingCRMClaim = {
   id: string;
@@ -131,6 +152,59 @@ export type BusinessCRMRow = {
   conversion_rate_30d: number;
   created_at?: string | null;
   updated_at?: string | null;
+  sales_campaign?: string | null;
+  sales_campaign_stage?: string | null;
+  partner_launch_selected?: boolean | null;
+  partner_launch_pilot?: boolean | null;
+  launch_partner_position?: number | null;
+  claim_outreach_status?: ClaimOutreachStatus | string | null;
+  claim_outreach_channel?: string | null;
+  claim_sent_at?: string | null;
+  claim_viewed_at?: string | null;
+  claim_started_at?: string | null;
+  claim_submitted_at?: string | null;
+  claim_approved_at?: string | null;
+  claim_last_follow_up_at?: string | null;
+  claim_outreach_notes?: string | null;
+  partner_sales_status?: PartnerSalesStatus | string | null;
+  next_action?: string | null;
+  next_action_type?: string | null;
+  next_action_due_at?: string | null;
+  payment_link_sent_at?: string | null;
+  demo_scheduled_at?: string | null;
+  demo_completed_at?: string | null;
+  owner_objection?: string | null;
+  lost_reason?: string | null;
+  sales_notes?: string | null;
+  partner_plan_name?: string | null;
+  partner_plan_price_cents?: number | null;
+  partner_activated_at?: string | null;
+  partner_canceled_at?: string | null;
+  reservation_portal_status?: ReservationPortalStatus | string | null;
+  reservation_portal_enabled_at?: string | null;
+  reservation_portal_tested_at?: string | null;
+  reservation_portal_notes?: string | null;
+  reservation_portal_url?: string | null;
+  reservation_embed_status?: ReservationEmbedStatus | string | null;
+  reservation_embed_code_generated_at?: string | null;
+  reservation_embed_sent_at?: string | null;
+  reservation_embed_installed_at?: string | null;
+  reservation_embed_tested_at?: string | null;
+  reservation_embed_install_url?: string | null;
+  reservation_embed_notes?: string | null;
+  discovery_profile_status?: DiscoveryProfileStatus | string | null;
+  discovery_profile_ready_at?: string | null;
+  discovery_profile_notes?: string | null;
+  partner_setup_checklist?: Record<string, any> | null;
+  partner_setup_score?: number | null;
+  reservation_portal_readiness_score?: number | null;
+  embed_readiness_score?: number | null;
+  discovery_readiness_score?: number | null;
+  sales_readiness_score?: number | null;
+  owner_contact_missing?: boolean | null;
+  owner_instagram?: string | null;
+  webmaster_email?: string | null;
+  webmaster_phone?: string | null;
 };
 
 export type BusinessCRMSummary = {
@@ -149,6 +223,7 @@ export type BusinessCRMSummary = {
   searchAppearances: number;
   followUps: number;
   qrCodes: number;
+  partnerLaunchTotal: number; launchPilotTotal: number; claimNotSent: number; claimSent: number; claimStarted: number; claimApproved: number; paymentPending: number; activePartners: number; reservationReady: number; embedNeeded: number; embedSent: number; embedInstalled: number; discoveryNeeded: number; ownerContactMissing: number; followUpsDueToday: number; mrrCents: number;
 };
 
 const CRM_SELECT = "*";
@@ -217,6 +292,9 @@ export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
       "is_searchable",
       "plan_status",
       "subscription_status",
+      "sales_campaign", "partner_launch_selected", "partner_launch_pilot", "claim_outreach_status",
+      "partner_sales_status", "next_action_due_at", "reservation_portal_status", "reservation_embed_status",
+      "discovery_profile_status", "partner_activated_at", "owner_contact_missing",
     ],
     orderFields: ["updated_at", "created_at", "name"],
   },
@@ -246,6 +324,9 @@ export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
       "is_searchable",
       "plan_status",
       "subscription_status",
+      "sales_campaign", "partner_launch_selected", "partner_launch_pilot", "claim_outreach_status",
+      "partner_sales_status", "next_action_due_at", "reservation_portal_status", "reservation_embed_status",
+      "discovery_profile_status", "partner_activated_at", "owner_contact_missing",
     ],
     orderFields: ["updated_at", "created_at", "name"],
   },
@@ -285,6 +366,9 @@ export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
       "qr_code_data_url",
       "active",
       "is_searchable",
+      "sales_campaign", "partner_launch_selected", "partner_launch_pilot", "claim_outreach_status",
+      "partner_sales_status", "next_action_due_at", "reservation_portal_status", "reservation_embed_status",
+      "discovery_profile_status", "partner_activated_at", "owner_contact_missing",
     ],
     orderFields: ["updated_at", "created_at", "name"],
   },
@@ -508,6 +592,37 @@ export function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
   };
 }
 
+
+const PARTNER_PLAN_VALUES = new Set(["pro", "reserve", "pro-reserve", "pro-reserve", "partner-99", "partner", "theouthaven-partner"]);
+export function getPartnerPlanDisplay(row: Partial<BusinessCRMRow>) {
+  const plan = normalizeStatus(row.plan ?? row.subscription_plan ?? row.partner_plan_name);
+  const status = normalizeStatus(row.plan_status ?? row.subscription_status);
+  if (["canceled", "cancelled"].includes(status)) return "Canceled";
+  if (status === "comped") return "Comped Partner";
+  if (PARTNER_PLAN_VALUES.has(plan) || row.is_pro || isPartnerActive(row)) return "TheOutHaven Partner Plan — $99/month";
+  return "Free Discovery";
+}
+export function isPartnerActive(row: Partial<BusinessCRMRow>) {
+  const plan = normalizeStatus(row.plan ?? row.subscription_plan);
+  const status = normalizeStatus(row.plan_status ?? row.subscription_status);
+  const sales = normalizeStatus(row.partner_sales_status);
+  if (["active-partner", "reservation-ready"].includes(sales)) return true;
+  if (["active", "comped"].includes(status) && !["free", "free-discovery", "inactive"].includes(plan)) return true;
+  return Boolean(row.is_pro && ["active", "comped"].includes(status));
+}
+export function getPartnerSalesStatus(row: Partial<BusinessCRMRow>) { return normalizeStatus(row.partner_sales_status || (isPartnerActive(row) ? "active_partner" : "target")).replace(/-/g, "_"); }
+export function getClaimOutreachStatus(row: Partial<BusinessCRMRow>) { return normalizeStatus(row.claim_outreach_status || (row.claim_sent_at ? "sent" : "not_sent")).replace(/-/g, "_"); }
+export function getReservationPortalStatus(row: Partial<BusinessCRMRow>) { return normalizeStatus(row.reservation_portal_status || ((row as any).reservation_enabled || (row as any).internal_reservations_enabled || (row as any).uses_internal_reservations ? "enabled" : "not_enabled")).replace(/-/g, "_"); }
+export function getEmbedStatus(row: Partial<BusinessCRMRow>) { return normalizeStatus(row.reservation_embed_status || ((row as any).reservation_embed_enabled ? "generated" : "not_sent")).replace(/-/g, "_"); }
+export function getDiscoveryStatus(row: Partial<BusinessCRMRow>) { return normalizeStatus(row.discovery_profile_status || (row.is_searchable && hasImage(row) ? "ready" : "needs_review")).replace(/-/g, "_"); }
+export function getNextActionLabel(row: Partial<BusinessCRMRow>) { return cleanStatus(row.next_action) || (row.next_action_due_at ? "Follow up" : "Set next action"); }
+function pct(parts: boolean[]) { return Math.round((parts.filter(Boolean).length / Math.max(parts.length, 1)) * 100); }
+export function getSalesReadinessScore(row: Partial<BusinessCRMRow>) { return toNumber(row.sales_readiness_score) || pct([hasText(row.name), hasText(row.address), hasText(row.category ?? row.primary_category), hasText(row.phone) || hasText(row.website), hasImage(row), hasText(row.claim_code) || hasText(row.claim_url), normalizeStatus(row.outreach_status) !== "do-not-contact", row.is_searchable !== false]); }
+export function getReservationPortalReadinessScore(row: Partial<BusinessCRMRow>) { const c=(row.partner_setup_checklist||{}) as any; return toNumber(row.reservation_portal_readiness_score) || pct([isPartnerActive(row), ["enabled","tested","live"].includes(getReservationPortalStatus(row)), Boolean(c.reservation_availability_set), Boolean(c.party_size_rules_set), hasText(row.owner_email)||hasText(row.webmaster_email)||hasText(row.phone), Boolean(c.test_reservation_completed)||hasText(row.reservation_portal_tested_at)]); }
+export function getEmbedReadinessScore(row: Partial<BusinessCRMRow>) { const s=getEmbedStatus(row), c=(row.partner_setup_checklist||{}) as any; return toNumber(row.embed_readiness_score) || pct([s!=="not_sent"||c.embed_code_generated, ["sent","installed","tested"].includes(s)||c.embed_code_sent, ["installed","tested"].includes(s)||c.embed_installed, s==="tested"||c.embed_tested]); }
+export function getDiscoveryReadinessScore(row: Partial<BusinessCRMRow>) { return toNumber(row.discovery_readiness_score) || pct([row.is_searchable!==false, hasImage(row), hasText(row.category)||hasText(row.cuisine), Boolean((row as any).hours)||Boolean((row as any).opening_hours), ["enabled","tested","live"].includes(getReservationPortalStatus(row))]); }
+export function getPartnerSetupScore(row: Partial<BusinessCRMRow>) { return toNumber(row.partner_setup_score) || Math.round((getSalesReadinessScore(row)+getReservationPortalReadinessScore(row)+getEmbedReadinessScore(row)+getDiscoveryReadinessScore(row))/4); }
+
 function normalizeCRMRows(
   rows: Record<string, any>[] | null | undefined,
 ): BusinessCRMRow[] {
@@ -617,6 +732,21 @@ function matchesBusinessFilter(row: BusinessCRMRow, filter?: string) {
         row.claim_code,
         row.claim_url,
       ].some(hasText);
+    case "partner-launch": return Boolean(row.partner_launch_selected) || normalizeStatus(row.sales_campaign) === "partner-launch";
+    case "launch-pilot": return Boolean(row.partner_launch_pilot);
+    case "claim-not-sent": return getClaimOutreachStatus(row) === "not_sent";
+    case "claim-sent": return getClaimOutreachStatus(row) === "sent";
+    case "claim-started": return getClaimOutreachStatus(row) === "started";
+    case "claim-approved": return getClaimOutreachStatus(row) === "approved";
+    case "payment-pending": return getPartnerSalesStatus(row) === "payment_pending";
+    case "active-partners": return isPartnerActive(row);
+    case "reservation-ready": return getPartnerSalesStatus(row) === "reservation_ready" || getReservationPortalStatus(row) === "live";
+    case "embed-needed": return !["sent","installed","tested","not_needed"].includes(getEmbedStatus(row));
+    case "embed-sent": return getEmbedStatus(row) === "sent";
+    case "embed-installed": return ["installed","tested"].includes(getEmbedStatus(row));
+    case "discovery-needed": return getDiscoveryStatus(row) !== "ready";
+    case "follow-ups-due": return Boolean(row.next_action_due_at && !isOverdueDate(null) && new Date(row.next_action_due_at).getTime() <= Date.now() + 86400000);
+    case "owner-contact-missing": return Boolean(row.owner_contact_missing) || (!hasText(row.owner_email) && !hasText(row.phone) && !hasText(row.owner_instagram));
     case "all":
     default:
       return true;
@@ -752,6 +882,21 @@ function buildCRMViewFilterForSource(source: CRMSourceConfig, filter?: string) {
         if (has(clause[0])) clauses.push(clause[1]);
       }
       break;
+    case "partner-launch": if (has("partner_launch_selected")) clauses.push("partner_launch_selected.eq.true"); if (has("sales_campaign")) clauses.push("sales_campaign.eq.partner_launch"); break;
+    case "launch-pilot": if (has("partner_launch_pilot")) clauses.push("partner_launch_pilot.eq.true"); break;
+    case "claim-not-sent": if (has("claim_outreach_status")) clauses.push("claim_outreach_status.eq.not_sent"); break;
+    case "claim-sent": if (has("claim_outreach_status")) clauses.push("claim_outreach_status.eq.sent"); break;
+    case "claim-started": if (has("claim_outreach_status")) clauses.push("claim_outreach_status.eq.started"); break;
+    case "claim-approved": if (has("claim_outreach_status")) clauses.push("claim_outreach_status.eq.approved"); break;
+    case "payment-pending": if (has("partner_sales_status")) clauses.push("partner_sales_status.eq.payment_pending"); break;
+    case "active-partners": if (has("partner_sales_status")) clauses.push("partner_sales_status.in.(active_partner,reservation_ready)"); if (has("plan_status")) clauses.push("plan_status.in.(active,comped)"); break;
+    case "reservation-ready": if (has("partner_sales_status")) clauses.push("partner_sales_status.eq.reservation_ready"); if (has("reservation_portal_status")) clauses.push("reservation_portal_status.in.(live,tested)"); break;
+    case "embed-needed": if (has("reservation_embed_status")) clauses.push("reservation_embed_status.in.(not_sent,generated,needs_help)"); break;
+    case "embed-sent": if (has("reservation_embed_status")) clauses.push("reservation_embed_status.eq.sent"); break;
+    case "embed-installed": if (has("reservation_embed_status")) clauses.push("reservation_embed_status.in.(installed,tested)"); break;
+    case "discovery-needed": if (has("discovery_profile_status")) clauses.push("discovery_profile_status.neq.ready"); break;
+    case "follow-ups-due": if (has("next_action_due_at")) clauses.push(`next_action_due_at.lte.${new Date(Date.now()+86400000).toISOString()}`); break;
+    case "owner-contact-missing": if (has("owner_contact_missing")) clauses.push("owner_contact_missing.eq.true"); break;
     case "all":
     default:
       break;
@@ -837,7 +982,7 @@ export async function fetchCRMRowsFromSource(
     }
 
     if (searchFilter) queryBuilder = queryBuilder.or(searchFilter);
-    if (viewFilter) queryBuilder = queryBuilder.or(viewFilter);
+    if (viewFilter) queryBuilder = queryBuilder.or(String(viewFilter));
     queryBuilder = applyCRMOrderingForSource(queryBuilder, source).range(
       from,
       to,
@@ -935,7 +1080,7 @@ async function countCRMRowsFromSource(
       .select("id", { count: "exact", head: true });
     const viewFilter = buildCRMViewFilterForSource(source, filter);
     if (normalizeStatus(filter || "all") !== "all" && !viewFilter) return 0;
-    if (viewFilter) queryBuilder = queryBuilder.or(viewFilter);
+    if (viewFilter) queryBuilder = queryBuilder.or(String(viewFilter));
 
     const { count, error } = await queryBuilder;
     if (!error) return count || 0;
@@ -1150,7 +1295,7 @@ export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
     followUps,
     qrCodes,
     reservationIntent,
-    searchAppearances,
+    searchAppearances, partnerLaunchTotal, launchPilotTotal, claimNotSent, claimSent, claimStarted, claimApproved, paymentPending, activePartners, reservationReady, embedNeeded, embedSent, embedInstalled, discoveryNeeded, ownerContactMissing, followUpsDueToday,
   ] = await Promise.all([
     countCRMRowsWithFallback("all"),
     countFromLocations((q) => q.eq("is_searchable", true)),
@@ -1163,6 +1308,7 @@ export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
     countCRMRowsWithFallback("qr-codes"),
     sumFromLocations("reservation_completions_30d"),
     sumFromLocations("search_appearances_30d"),
+    countCRMRowsWithFallback("partner-launch"), countCRMRowsWithFallback("launch-pilot"), countCRMRowsWithFallback("claim-not-sent"), countCRMRowsWithFallback("claim-sent"), countCRMRowsWithFallback("claim-started"), countCRMRowsWithFallback("claim-approved"), countCRMRowsWithFallback("payment-pending"), countCRMRowsWithFallback("active-partners"), countCRMRowsWithFallback("reservation-ready"), countCRMRowsWithFallback("embed-needed"), countCRMRowsWithFallback("embed-sent"), countCRMRowsWithFallback("embed-installed"), countCRMRowsWithFallback("discovery-needed"), countCRMRowsWithFallback("owner-contact-missing"), countCRMRowsWithFallback("follow-ups-due"),
   ]);
 
   return {
@@ -1180,7 +1326,7 @@ export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
     followUps,
     qrCodes,
     reservationIntent,
-    searchAppearances,
+    searchAppearances, partnerLaunchTotal, launchPilotTotal, claimNotSent, claimSent, claimStarted, claimApproved, paymentPending, activePartners, reservationReady, embedNeeded, embedSent, embedInstalled, discoveryNeeded, ownerContactMissing, followUpsDueToday, mrrCents: activePartners * 9900,
   };
 }
 

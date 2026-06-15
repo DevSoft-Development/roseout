@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@/lib/admin-auth";
-import { dedupeUrls, formatFullAddress, getBusinessCRM, getClaimStatus, getDisplayCRMStatus, getLocationCrmRelatedData, getUpgradeFlags, safeUpdateLocationPhotos, stripCityStateZipFromStreetAddress, type BusinessCRMRow } from "@/lib/admin-crm";
+import { dedupeUrls, formatFullAddress, getBusinessCRM, getClaimStatus, getDisplayCRMStatus, getLocationCrmRelatedData, getUpgradeFlags, getPartnerPlanDisplay, getPartnerSalesStatus, getClaimOutreachStatus, getReservationPortalStatus, getEmbedStatus, getDiscoveryStatus, getNextActionLabel, getSalesReadinessScore, getPartnerSetupScore, safeUpdateLocationPhotos, stripCityStateZipFromStreetAddress, type BusinessCRMRow } from "@/lib/admin-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 import CommunicationPanel from "./CommunicationPanel";
@@ -140,12 +140,77 @@ async function savePlanBilling(formData: FormData) {
   const trialDays = { "7_days": 7, "14_days": 14, "30_days": 30, "60_days": 60, "90_days": 90 }[trialType] as number | undefined;
   const trialEnds = trialDays ? new Date(Date.now() + trialDays * 86400000).toISOString() : null;
   const note = String(formData.get("billing_notes") || "").trim() || null;
-  const error = await safeUpdateLocation(locationId, { plan, plan_status: status, subscription_plan: plan, subscription_status: status, trial_ends_at: trialEnds, promo_code: String(formData.get("promo_code") || "").trim() || null, promo_campaign: String(formData.get("promo_campaign") || "").trim() || null, billing_notes: note, is_pro: plan !== "free_discovery", updated_at: new Date().toISOString() });
+  const billingUpdates: Record<string, any> = { plan, plan_status: status, subscription_plan: plan, subscription_status: status, trial_ends_at: trialEnds, promo_code: String(formData.get("promo_code") || "").trim() || null, promo_campaign: String(formData.get("promo_campaign") || "").trim() || null, billing_notes: note, is_pro: plan !== "free_discovery", partner_plan_name: plan === "free_discovery" ? null : "TheOutHaven Partner", partner_plan_price_cents: plan === "free_discovery" ? null : 9900, updated_at: new Date().toISOString() }; if (plan !== "free_discovery" && ["active","comped"].includes(status)) { billingUpdates.partner_activated_at = new Date().toISOString(); billingUpdates.partner_sales_status = "active_partner"; } const error = await safeUpdateLocation(locationId, billingUpdates);
   await supabaseAdmin.from("location_plan_change_logs").insert({ location_id: locationId, new_plan: plan, new_status: status, trial_ends_at: trialEnds, promo_code: String(formData.get("promo_code") || "") || null, promo_campaign: String(formData.get("promo_campaign") || "") || null, note, actor_user_id: admin.user_id, actor_email: admin.email });
   await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: `Plan updated to ${plan} / ${status}${note ? ` — ${note}` : ""}`, note_type: "billing", created_by: admin.user_id });
   await logAdminEvent({ level: error ? "error" : "info", category: "crm", action: "location_plan_updated", message: `Plan updated for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId, metadata: { plan, status, error } });
   revalidatePath(`/admin/dashboard/crm/${locationId}`);
   redirect(`/admin/dashboard/crm/${locationId}?tab=plan`);
+}
+
+async function updatePartnerLaunchStatus(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const locationId = String(formData.get("location_id") || "");
+  const mode = String(formData.get("mode") || "launch");
+  const updates: Record<string, any> = { sales_campaign: "partner_launch", partner_launch_selected: true, updated_at: new Date().toISOString() };
+  if (mode === "pilot") updates.partner_launch_pilot = true;
+  const error = await safeUpdateLocation(locationId, updates);
+  await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: mode === "pilot" ? "Added to Launch Pilot." : "Added to Partner Launch.", note_type: "onboarding", created_by: admin.user_id }).then(undefined, () => undefined);
+  await logAdminEvent({ level: error ? "error" : "info", category: "crm", action: "partner_launch_updated", message: `Partner Launch updated for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId, metadata: { mode, error } });
+  revalidatePath(`/admin/dashboard/crm/${locationId}`);
+  redirect(`/admin/dashboard/crm/${locationId}`);
+}
+
+async function updatePartnerSalesStatus(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const locationId = String(formData.get("location_id") || "");
+  const status = String(formData.get("partner_sales_status") || "target");
+  const updates: Record<string, any> = { partner_sales_status: status, sales_campaign: "partner_launch", partner_launch_selected: true, updated_at: new Date().toISOString() };
+  if (status === "active_partner") Object.assign(updates, { plan: "partner_99", subscription_plan: "partner_99", plan_status: "active", subscription_status: "active", is_pro: true, partner_plan_name: "TheOutHaven Partner", partner_plan_price_cents: 9900, partner_activated_at: new Date().toISOString() });
+  const error = await safeUpdateLocation(locationId, updates);
+  await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: `Partner sales status updated to ${status}.`, note_type: "onboarding", created_by: admin.user_id }).then(undefined, () => undefined);
+  await logAdminEvent({ level: error ? "error" : "info", category: "crm", action: "partner_sales_status_updated", message: `Partner sales status updated for ${locationId}`, actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "location", entity_id: locationId, metadata: { status, error } });
+  revalidatePath(`/admin/dashboard/crm/${locationId}`);
+  redirect(`/admin/dashboard/crm/${locationId}`);
+}
+
+async function updateClaimOutreachStatus(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const locationId = String(formData.get("location_id") || "");
+  const status = String(formData.get("claim_outreach_status") || "not_sent");
+  const now = new Date().toISOString();
+  const updates: Record<string, any> = { claim_outreach_status: status, updated_at: now };
+  if (status === "sent") Object.assign(updates, { claim_sent_at: now, partner_sales_status: "claim_link_sent", next_action: "Follow up on claim link", next_action_type: "follow_up_claim", next_action_due_at: new Date(Date.now()+2*86400000).toISOString() });
+  if (status === "started") updates.claim_started_at = now;
+  if (status === "approved") updates.claim_approved_at = now;
+  const error = await safeUpdateLocation(locationId, updates);
+  await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: `Claim outreach status updated to ${status}.`, note_type: "claim", created_by: admin.user_id }).then(undefined, () => undefined);
+  revalidatePath(`/admin/dashboard/crm/${locationId}`);
+  redirect(`/admin/dashboard/crm/${locationId}`);
+}
+
+async function updateNextAction(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const locationId = String(formData.get("location_id") || "");
+  const updates = { next_action: String(formData.get("next_action") || "").trim() || null, next_action_type: String(formData.get("next_action_type") || "").trim() || null, next_action_due_at: String(formData.get("next_action_due_at") || "") || null, updated_at: new Date().toISOString() };
+  await safeUpdateLocation(locationId, updates);
+  await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: `Next action set: ${updates.next_action || "none"}.`, note_type: "follow_up", created_by: admin.user_id }).then(undefined, () => undefined);
+  revalidatePath(`/admin/dashboard/crm/${locationId}`);
+  redirect(`/admin/dashboard/crm/${locationId}`);
+}
+
+async function logFounderNote(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const locationId = String(formData.get("location_id") || "");
+  const note = String(formData.get("note") || "").trim();
+  if (note) await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note, note_type: String(formData.get("note_type") || "follow_up"), created_by: admin.user_id }).then(undefined, () => undefined);
+  revalidatePath(`/admin/dashboard/crm/${locationId}`);
+  redirect(`/admin/dashboard/crm/${locationId}`);
 }
 
 async function saveLocationSettings(formData: FormData) {
@@ -277,6 +342,8 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
         </div>
       </section>
 
+      <PartnerLaunchPanel business={business} canEdit={canEdit} />
+
       <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
         {tabs.map((tab) => <Link key={tab} href={`/admin/dashboard/crm/${business.id}?tab=${tab}`} className={`whitespace-nowrap rounded-full px-4 py-2 capitalize ${activeTab === tab ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>{tab === "qr" ? "QR Codes" : tab === "communication" ? "Communication" : tab}</Link>)}
       </nav>
@@ -303,6 +370,15 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
     </div>
   </main>;
+}
+
+function PartnerLaunchPanel({ business, canEdit }: { business: BusinessCRMRow; canEdit: boolean }) {
+  const stats = [
+    ["Selected for Partner Launch", business.partner_launch_selected ? "Yes" : "No"], ["Launch Pilot", business.partner_launch_pilot ? "Yes" : "No"], ["Partner sales status", getPartnerSalesStatus(business).replace(/_/g," ")], ["Claim outreach status", getClaimOutreachStatus(business).replace(/_/g," ")], ["Plan display", getPartnerPlanDisplay(business)], ["Reservation portal status", getReservationPortalStatus(business).replace(/_/g," ")], ["Embed status", getEmbedStatus(business).replace(/_/g," ")], ["Discovery status", getDiscoveryStatus(business).replace(/_/g," ")], ["Next action", getNextActionLabel(business)], ["Follow-up date", formatDate(business.next_action_due_at || business.follow_up_date)], ["Owner contact missing", business.owner_contact_missing ? "Yes" : "No"], ["Sales readiness", `${getSalesReadinessScore(business)}%`], ["Partner setup score", `${getPartnerSetupScore(business)}%`],
+  ];
+  const salesStatuses = [["Mark Interested","interested"],["Mark Demo/Setup","demo_setup"],["Mark Payment Pending","payment_pending"],["Mark Active Partner","active_partner"],["Mark Reservation Ready","reservation_ready"],["Mark At Risk","at_risk"]];
+  const claimStatuses = [["Mark Claim Not Sent","not_sent"],["Mark Claim Invitation Sent","sent"],["Mark Claim Started","started"],["Mark Claim Approved","approved"]];
+  return <section className="rounded-3xl border border-rose-200/15 bg-white/[0.03] p-5"><div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Partner Launch</p><h2 className="mt-2 text-2xl font-black">Partner Launch</h2><p className="mt-2 text-sm text-white/55">Track claim outreach, setup, payment, reservation portal, website embed, and discovery readiness.</p></div><div className="flex flex-wrap gap-2"><form action={updatePartnerLaunchStatus}><input type="hidden" name="location_id" value={business.id}/><input type="hidden" name="mode" value="launch"/><button disabled={!canEdit} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">Add to Partner Launch</button></form><form action={updatePartnerLaunchStatus}><input type="hidden" name="location_id" value={business.id}/><input type="hidden" name="mode" value="pilot"/><button disabled={!canEdit} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75 disabled:opacity-50">Add to Launch Pilot</button></form></div></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">{stats.map(([label,value])=><StatCard key={label} label={label} value={value}/>)}</div><div className="mt-4 flex flex-wrap gap-2">{claimStatuses.map(([label,status])=><form key={status} action={updateClaimOutreachStatus}><input type="hidden" name="location_id" value={business.id}/><input type="hidden" name="claim_outreach_status" value={status}/><button disabled={!canEdit} className="rounded-full border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-white/75 disabled:opacity-50">{label}</button></form>)}{salesStatuses.map(([label,status])=><form key={status} action={updatePartnerSalesStatus}><input type="hidden" name="location_id" value={business.id}/><input type="hidden" name="partner_sales_status" value={status}/><button disabled={!canEdit} className="rounded-full border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-white/75 disabled:opacity-50">{label}</button></form>)}</div><div className="mt-5 grid gap-4 lg:grid-cols-2"><form action={updateNextAction} className="rounded-2xl border border-white/10 bg-black/20 p-4"><input type="hidden" name="location_id" value={business.id}/><h3 className="font-black">Next Action</h3><input name="next_action" defaultValue={business.next_action || ""} placeholder="Next action" className={`${inputClass()} mt-3`}/><select name="next_action_type" defaultValue={business.next_action_type || "follow_up_claim"} className={`${selectClass()} mt-3`}>{["call_owner","send_instagram_dm","send_email","send_claim_link","follow_up_claim","schedule_demo","send_payment_link","activate_partner","setup_reservation_portal","send_embed_code","confirm_embed_install","test_reservation","complete_discovery_profile","owner_dashboard_walkthrough","first_week_checkin"].map(v=><option key={v}>{v}</option>)}</select><input type="datetime-local" name="next_action_due_at" className={`${inputClass()} mt-3`}/><button disabled={!canEdit} className="mt-3 rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Schedule Follow-Up</button></form><form action={logFounderNote} className="rounded-2xl border border-white/10 bg-black/20 p-4"><input type="hidden" name="location_id" value={business.id}/><h3 className="font-black">Founder Notes</h3><select name="note_type" defaultValue="follow_up" className={`${selectClass()} mt-3`}>{["call","instagram_dm","email","owner_objection","follow_up","claim","reservation_setup","embed_setup","billing","onboarding","retention"].map(v=><option key={v}>{v}</option>)}</select><textarea name="note" rows={4} placeholder="Log founder note, objection, lost reason, or outreach detail." className={`${inputClass()} mt-3`}/><button disabled={!canEdit} className="mt-3 rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Log Founder Note</button></form></div></section>;
 }
 
 function NextRecommendedActions({ business, flags, isAdmin }: { business: BusinessCRMRow; flags: string[]; isAdmin: boolean }) {
@@ -338,7 +414,7 @@ function ClaimsPanel({ business, claims }: { business: BusinessCRMRow; claims: a
 }
 
 function PlanBillingPanel({ business, canEdit, isSuperadmin }: { business: BusinessCRMRow; canEdit: boolean; isSuperadmin: boolean }) {
-  return <form action={savePlanBilling} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><input type="hidden" name="location_id" value={business.id} /><h2 className="text-xl font-black">Plan and billing</h2><p className="mt-2 text-sm text-white/55">Use this to upgrade a location manually, comp a partner account, start a trial, or track a promo-driven upgrade.</p><div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3"><label className="space-y-2 text-sm font-bold text-white/65"><span>Plan</span><select name="plan" defaultValue={business.plan || "free_discovery"} disabled={!canEdit} className={selectClass()}>{["free_discovery","pro","reserve","pro_reserve","enterprise"].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Billing status</span><select name="plan_status" defaultValue={business.plan_status || "inactive"} disabled={!canEdit} className={selectClass()}>{["inactive","trialing","active","comped","past_due","canceled"].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Trial type</span><select name="trial_type" defaultValue="none" disabled={!canEdit} className={selectClass()}>{["none","7_days","14_days","30_days","60_days","90_days",...(isSuperadmin ? ["forever_comped"] : [])].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Promo code</span><input name="promo_code" defaultValue={business.promo_code || ""} disabled={!canEdit} className={inputClass()} /></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Promo campaign</span><input name="promo_campaign" defaultValue={business.promo_campaign || ""} disabled={!canEdit} className={inputClass()} /></label><label className="space-y-2 text-sm font-bold text-white/65 xl:col-span-3"><span>Internal billing note</span><textarea name="billing_notes" defaultValue={business.billing_notes || ""} disabled={!canEdit} rows={4} className={inputClass()} /></label></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><StatCard label="Upgrade score" value={fmt(business.opportunity_score)} /><StatCard label="Churn risk" value={fmt(business.churn_risk_score)} /></div><button disabled={!canEdit} className="mt-5 rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Save plan and billing</button>{!canEdit ? <p className="mt-3 text-sm text-white/45">Only superadmins can update plan and billing.</p> : null}</form>;
+  return <form action={savePlanBilling} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><input type="hidden" name="location_id" value={business.id} /><h2 className="text-xl font-black">Plan and billing</h2><p className="mt-2 text-sm text-white/55">Use this to upgrade a location manually, comp a partner account, start a trial, or track a promo-driven upgrade.</p><div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3"><label className="space-y-2 text-sm font-bold text-white/65"><span>Plan</span><select name="plan" defaultValue={business.plan || "free_discovery"} disabled={!canEdit} className={selectClass()}>{[ ["free_discovery","Free Discovery"], ["partner_99","TheOutHaven Partner Plan — $99/month"], ["pro_reserve","TheOutHaven Partner Plan — $99/month"], ["enterprise","Enterprise"] ].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Billing status</span><select name="plan_status" defaultValue={business.plan_status || "inactive"} disabled={!canEdit} className={selectClass()}>{["inactive","trialing","active","comped","past_due","canceled"].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Trial type</span><select name="trial_type" defaultValue="none" disabled={!canEdit} className={selectClass()}>{["none","7_days","14_days","30_days","60_days","90_days",...(isSuperadmin ? ["forever_comped"] : [])].map((v)=><option key={v}>{v}</option>)}</select></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Promo code</span><input name="promo_code" defaultValue={business.promo_code || ""} disabled={!canEdit} className={inputClass()} /></label><label className="space-y-2 text-sm font-bold text-white/65"><span>Promo campaign</span><input name="promo_campaign" defaultValue={business.promo_campaign || ""} disabled={!canEdit} className={inputClass()} /></label><label className="space-y-2 text-sm font-bold text-white/65 xl:col-span-3"><span>Internal billing note</span><textarea name="billing_notes" defaultValue={business.billing_notes || ""} disabled={!canEdit} rows={4} className={inputClass()} /></label></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><StatCard label="Upgrade score" value={fmt(business.opportunity_score)} /><StatCard label="Churn risk" value={fmt(business.churn_risk_score)} /></div><button disabled={!canEdit} className="mt-5 rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Save plan and billing</button>{!canEdit ? <p className="mt-3 text-sm text-white/45">Only superadmins can update plan and billing.</p> : null}</form>;
 }
 
 function QRCodePanel({ business, qrCodes, canRegenerate }: { business: BusinessCRMRow; qrCodes: any[]; canRegenerate: boolean }) {

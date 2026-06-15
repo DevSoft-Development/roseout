@@ -278,12 +278,12 @@ export function locationFreePlanWelcomeEmail(input: CommonTemplateInput = {}): R
 
 export type LocationProPlanWelcomeEmailInput = CommonTemplateInput;
 export function locationProPlanWelcomeEmail(input: CommonTemplateInput = {}): RenderedEmail {
-  return createStandardEmail("location_pro_plan_welcome", { department: "plans", recipientType: "location_owner", subject: "TheOutHaven: Location Pro Plan Welcome", heading: "Location Pro Plan Welcome", intro: "Here is the latest TheOutHaven update for location pro plan welcome.", cta: "Open Dashboard", marketing: false }, input);
+  return createStandardEmail("location_pro_plan_welcome", { department: "plans", recipientType: "location_owner", subject: "TheOutHaven: TheOutHaven Partner Plan Welcome", heading: "TheOutHaven Partner Plan Welcome", intro: "Here is the latest TheOutHaven update for TheOutHaven Partner Plan welcome.", cta: "Open Dashboard", marketing: false }, input);
 }
 
 export type LocationUpgradeOpportunityEmailInput = CommonTemplateInput;
 export function locationUpgradeOpportunityEmail(input: CommonTemplateInput = {}): RenderedEmail {
-  return createStandardEmail("location_upgrade_opportunity", { department: "upsell", recipientType: "location_owner", subject: "Unlock more from TheOutHaven Pro", heading: "Upgrade opportunity", intro: "Your location is already discoverable on TheOutHaven. Pro helps you turn that attention into action with stronger visibility, reservation tools, analytics, and promotional opportunities.", cta: "Upgrade to Pro", marketing: true }, input);
+  return createStandardEmail("location_upgrade_opportunity", { department: "upsell", recipientType: "location_owner", subject: "Unlock more from TheOutHaven Partner Plan", heading: "Partner Plan opportunity", intro: "Your location is already discoverable on TheOutHaven. TheOutHaven Partner Plan helps you turn that attention into action with a standalone reservation portal, website embed, analytics, and discovery.", cta: "Activate Partner Plan", marketing: true }, input);
 }
 
 export type LocationTrialEndingEmailInput = CommonTemplateInput;
