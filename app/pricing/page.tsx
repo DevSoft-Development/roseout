@@ -88,7 +88,7 @@ export default function PricingPage() {
             <form action="/api/checkout" method="POST">
               <input type="hidden" name="plan" value="pro" />
               <button className="px-6 py-3 border border-white/10 rounded-full hover:bg-white/10">
-                Upgrade to Pro
+                Activate Partner Plan
               </button>
             </form>
           </div>
@@ -128,7 +128,7 @@ export default function PricingPage() {
               MOST POPULAR
             </div>
 
-            <h2 className="text-2xl font-bold">TheOutHaven Pro</h2>
+            <h2 className="text-2xl font-bold">TheOutHaven Partner Plan</h2>
             <p className="text-4xl mt-2">$99</p>
 
             <form action="/api/checkout" method="POST">
@@ -137,7 +137,7 @@ export default function PricingPage() {
   href="/checkout"
   className="block rounded-2xl bg-rose-600 px-5 py-4 text-center text-sm font-black text-white shadow-[0_0_35px_rgba(225,29,72,0.35)] transition hover:bg-rose-500"
 >
-  Upgrade to Pro
+  Activate Partner Plan
 </Link>
             </form>
 

@@ -5,7 +5,7 @@ const steps = [
   ["1. Confirm basics", "Confirm business name, address, city or borough, category, phone number, and website."],
   ["2. Add guest actions", "Add phone, website, social, and reservation links so guests can call, reserve, save, share, and visit."],
   ["3. Add profile details", "Add a short description, photos, hours, tags, vibes, cuisine, or activity details when available."],
-  ["4. Choose plan", "Stay on Free Discovery or choose Pro Plan. Pro includes Reserve features for reservations, waitlists, guest management, SMS reminders, analytics, and advanced tools."],
+  ["4. Choose plan", "Choose TheOutHaven Partner Plan. It includes a standalone reservation portal, website embed, owner dashboard, reminders, waitlist, and discovery."],
   ["5. Go to dashboard", "Review your setup checklist and keep improving your claimed profile."],
 ];
 
@@ -18,7 +18,7 @@ export default function LocationOwnerOnboardingPage() {
           <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">Profile setup</p>
           <h1 className="mt-5 text-4xl font-black tracking-tight sm:text-6xl">Complete your business profile</h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-white/62">
-            Confirm your listing details, choose Free Discovery or Pro Plan, then manage your location from the owner dashboard.
+            Confirm your listing details, review TheOutHaven Partner Plan, then manage your location from the owner dashboard.
           </p>
           <div className="mt-10 grid gap-4">
             {steps.map(([title, text]) => (
@@ -30,7 +30,7 @@ export default function LocationOwnerOnboardingPage() {
           </div>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
             <PlanCard title="Free Discovery" text="Keep your business visible on TheOutHaven with a claimed profile, accurate contact details, guest actions, and basic discovery." cta="Continue Free Discovery" href="/location-owner/dashboard" />
-            <PlanCard title="Pro Plan" text="Pro includes Reserve features for reservations, waitlists, guest management, SMS reminders, analytics, and advanced business tools." cta="Start Pro" href="/business#plans" highlighted />
+            <PlanCard title="TheOutHaven Partner Plan — $99/month" text="Includes a standalone reservation portal, website embed, owner dashboard, reminders, waitlist, and outing discovery." cta="Activate Partner Plan" href="/business#plans" highlighted />
           </div>
         </div>
       </section>

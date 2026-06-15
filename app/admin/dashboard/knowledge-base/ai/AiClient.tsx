@@ -9,7 +9,7 @@ type Msg = { q: string; a: string; sources: { id: string; title: string; slug: s
 const prompts = [
   "When is a $75 Ambassador commission earned?",
   "What should Ambassadors never promise?",
-  "How do I explain the $99 Pro Plan?",
+  "How do I explain TheOutHaven Partner Plan — $99/month?",
   "What do I do if a QR claim code is wrong?",
   "When should the Experience Team escalate a support issue?",
   "Why should locations without photos not show in live results?",

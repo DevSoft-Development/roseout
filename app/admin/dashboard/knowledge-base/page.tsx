@@ -8,7 +8,7 @@ import KbTabs from "./KbTabs";
 
 const featuredTitles = new Set([
   "Partner Ambassador Commission Rules",
-  "Pro Plan Sales Script",
+  "TheOutHaven Partner Plan Sales Script",
   "CRM Lead Status Definitions",
   "Claim Code and QR Mailer Process",
   "Support Escalation Rules",

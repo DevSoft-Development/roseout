@@ -4,7 +4,15 @@ import {
   getBusinessCRMSummary,
   getClaimStatus,
   getDisplayCRMStatus,
-  getUpgradeFlags,
+  getPartnerPlanDisplay,
+  getPartnerSalesStatus,
+  getClaimOutreachStatus,
+  getReservationPortalStatus,
+  getEmbedStatus,
+  getDiscoveryStatus,
+  getNextActionLabel,
+  getSalesReadinessScore,
+  getReservationPortalReadinessScore,
   listBusinessCRMPage,
   normalizeStatus,
   type PendingCRMClaim,
@@ -45,6 +53,11 @@ function badgeClass(value?: string | null) {
 
 function emptyCopy(filter: string) {
   switch (normalizeStatus(filter)) {
+    case "partner-launch": return "No Partner Launch locations match this view yet.";
+    case "launch-pilot": return "No Launch Pilot locations match this view yet.";
+    case "claim-not-sent": return "No locations are waiting for claim invitations.";
+    case "payment-pending": return "No partner leads are waiting on payment right now.";
+    case "embed-needed": return "No locations need website embed work right now.";
     case "upgrade-opportunities":
       return "No upgrade opportunities match the current filters yet. Free searchable locations with strong engagement, claimed free listings, or missing Reserve setup will appear here.";
     case "at-risk":
@@ -121,7 +134,7 @@ function PendingClaimsPanel({ claims }: { claims: PendingCRMClaim[] }) {
                       href={`/admin/dashboard/crm/${claim.location_id}`}
                       className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70"
                     >
-                      View CRM
+                      Open CRM
                     </Link>
                   ) : null}
                   <Link
@@ -228,18 +241,27 @@ export default async function CRMPage({
               </div>
             </form>
           </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-6 rounded-3xl border border-rose-200/15 bg-black/25 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Partner Launch Dashboard</p><h2 className="mt-2 text-2xl font-black">Partner Launch Dashboard</h2></div>
+              <div className="flex flex-wrap gap-2">{[["View Partner Launch","partner-launch"],["View Launch Pilot","launch-pilot"],["View Claim Not Sent","claim-not-sent"],["View Payment Pending","payment-pending"],["View Reservation Ready","reservation-ready"],["View Embed Needed","embed-needed"],["View Follow-Ups Due","follow-ups-due"]].map(([label, view]) => <Link key={view} href={`/admin/dashboard/crm?view=${view}`} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-black text-white/75 hover:bg-rose-600 hover:text-white">{label}</Link>)}</div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             {[
-              ["Total locations", summary.total],
-              ["Searchable", summary.searchable],
-              ["Claimed", summary.claimed],
-              ["Unclaimed", summary.unclaimed],
-              ["Pending claims", summary.pendingClaims],
-              ["Upgrade opportunities", summary.upgradeCandidates],
-              ["At-risk locations", summary.atRisk],
-              ["Open CRM tasks", summary.openTasks],
-              ["Reservation intent 30d", summary.reservationIntent],
-              ["Search appearances 30d", summary.searchAppearances],
+              ["Active Partners", summary.activePartners],
+              ["Monthly Partner Revenue", `$${fmt((summary.mrrCents || 0) / 100)}`],
+              ["Launch Pilot Selected", summary.launchPilotTotal],
+              ["Claim Invitations Not Sent", summary.claimNotSent],
+              ["Claim Invitations Sent", summary.claimSent],
+              ["Claims Started", summary.claimStarted],
+              ["Claims Approved", summary.claimApproved],
+              ["Payment Pending", summary.paymentPending],
+              ["Reservation Ready", summary.reservationReady],
+              ["Website Embed Sent", summary.embedSent],
+              ["Website Embed Installed", summary.embedInstalled],
+              ["Discovery Profile Needed", summary.discoveryNeeded],
+              ["Follow-Ups Due Today", summary.followUpsDueToday],
+              ["Owner Contact Missing", summary.ownerContactMissing],
             ].map(([label, value]) => (
               <div
                 key={String(label)}
@@ -248,30 +270,30 @@ export default async function CRMPage({
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
                   {label}
                 </p>
-                <p className="mt-2 text-3xl font-black">{fmt(Number(value))}</p>
+                <p className="mt-2 text-3xl font-black">{typeof value === "string" ? value : fmt(Number(value))}</p>
               </div>
             ))}
+          </div>
           </div>
         </section>
 
         <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
           {[
             ["All", "all", summary.total],
-            ["Owner Accounts", "owner-accounts", summary.claimed],
-            [
-              "Upgrade Opportunities",
-              "upgrade-opportunities",
-              summary.upgradeOpportunitiesCount ?? summary.upgradeCandidates,
-            ],
-            ["At Risk", "at-risk", summary.atRiskCount ?? summary.atRisk],
-            [
-              "Pending Claims",
-              "pending-claims",
-              summary.pendingClaimsCount ?? summary.pendingClaims,
-            ],
-            ["Location Tasks", "location-tasks", summary.openTasks],
-            ["Follow Ups", "follow-ups", summary.followUps],
-            ["QR Codes", "qr-codes", summary.qrCodes],
+            ["Partner Launch", "partner-launch", summary.partnerLaunchTotal],
+            ["Launch Pilot", "launch-pilot", summary.launchPilotTotal],
+            ["Claim Not Sent", "claim-not-sent", summary.claimNotSent],
+            ["Claim Sent", "claim-sent", summary.claimSent],
+            ["Claim Started", "claim-started", summary.claimStarted],
+            ["Claim Approved", "claim-approved", summary.claimApproved],
+            ["Payment Pending", "payment-pending", summary.paymentPending],
+            ["Active Partners", "active-partners", summary.activePartners],
+            ["Reservation Ready", "reservation-ready", summary.reservationReady],
+            ["Embed Needed", "embed-needed", summary.embedNeeded],
+            ["Discovery Needed", "discovery-needed", summary.discoveryNeeded],
+            ["Follow-Ups Due", "follow-ups-due", summary.followUpsDueToday],
+            ["Owner Contact Missing", "owner-contact-missing", summary.ownerContactMissing],
+            ["Pending Claims", "pending-claims", summary.pendingClaimsCount ?? summary.pendingClaims],
           ].map(([label, value, count]) => {
             const next = new URLSearchParams();
             if (value !== "all") next.set("view", String(value));
@@ -334,12 +356,14 @@ export default async function CRMPage({
                   <tr>
                     {[
                       ["LOCATION", "w-[245px]"],
-                      ["CRM STATUS", "w-[105px]"],
-                      ["CLAIM STATUS", "w-[105px]"],
-                      ["OWNER", "w-[120px]"],
-                      ["PLAN", "w-[95px]"],
+                      ["SALES", "w-[130px]"],
+                      ["CLAIM", "w-[110px]"],
+                      ["PLAN", "w-[150px]"],
+                      ["PORTAL / EMBED", "w-[150px]"],
+                      ["DISCOVERY", "w-[115px]"],
+                      ["NEXT ACTION", "w-[150px]"],
+                      ["READINESS", "w-[115px]"],
                       ["ANALYTICS 30D", "w-[120px]"],
-                      ["TASKS / ALERTS", "w-[120px]"],
                       ["LAST ACTIVITY", "w-[95px]"],
                       ["ACTIONS", "w-[145px]"],
                     ].map(([header, width]) => (
@@ -354,7 +378,6 @@ export default async function CRMPage({
                 </thead>
                 <tbody>
                   {businesses.map((business) => {
-                    const flags = getUpgradeFlags(business);
                     return (
                       <tr
                         key={business.id}
@@ -379,34 +402,13 @@ export default async function CRMPage({
                               "Location profile"}
                           </p>
                         </td>
-                        <td className="px-3 py-4 align-top">
-                          <span
-                            className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getDisplayCRMStatus(business))}`}
-                          >
-                            {getDisplayCRMStatus(business)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 align-top">
-                          <span
-                            className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getClaimStatus(business))}`}
-                          >
-                            {getClaimStatus(business)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 align-top text-xs text-white/70 break-words">
-                          {business.owner_email ||
-                            business.owner_status ||
-                            (business.owner_user_id
-                              ? "Linked owner"
-                              : "No owner")}
-                        </td>
-                        <td className="px-3 py-4 align-top text-xs text-white/70 whitespace-nowrap">
-                          {business.plan ||
-                            business.plan_status ||
-                            (business.opportunity_score >= 70
-                              ? "Upgrade"
-                              : "Free")}
-                        </td>
+                        <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getPartnerSalesStatus(business))}`}>{getPartnerSalesStatus(business).replace(/_/g, " ")}</span></td>
+                        <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getClaimOutreachStatus(business))}`}>{getClaimOutreachStatus(business).replace(/_/g, " ")}</span></td>
+                        <td className="px-3 py-4 align-top text-xs font-bold text-white/70">{getPartnerPlanDisplay(business)}</td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70"><div>{getReservationPortalStatus(business).replace(/_/g, " ")}</div><div className="mt-1 text-white/45">Embed: {getEmbedStatus(business).replace(/_/g, " ")}</div></td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70">{getDiscoveryStatus(business).replace(/_/g, " ")}</td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70"><div>{getNextActionLabel(business)}</div><div className="mt-1 text-white/45">{dateLabel(business.next_action_due_at || business.follow_up_date)}</div></td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70"><div>Sales {getSalesReadinessScore(business)}%</div><div>Reservations {getReservationPortalReadinessScore(business)}%</div></td>
                         <td className="px-3 py-4 align-top text-xs text-white/70 whitespace-nowrap">
                           <div>Views: {fmt(business.profile_views_30d)}</div>
                           <div>
@@ -415,23 +417,6 @@ export default async function CRMPage({
                           <div>
                             Reservations:{" "}
                             {fmt(business.reservation_completions_30d)}
-                          </div>
-                        </td>
-                        <td className="px-3 py-4 align-top">
-                          <div className="flex flex-wrap gap-1">
-                            {flags.slice(0, 3).map((flag) => (
-                              <span
-                                key={flag}
-                                className="rounded-full border border-rose-200/30 bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-100"
-                              >
-                                {flag}
-                              </span>
-                            ))}
-                            {!flags.length ? (
-                              <span className="text-xs text-white/45">
-                                No active alerts
-                              </span>
-                            ) : null}
                           </div>
                         </td>
                         <td className="px-3 py-4 align-top text-xs text-white/60 whitespace-nowrap">
@@ -447,19 +432,19 @@ export default async function CRMPage({
                               href={`/admin/dashboard/crm/${business.id}`}
                               className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white"
                             >
-                              View CRM
+                              Open CRM
                             </Link>
                             <Link
                               href={`/admin/dashboard/crm/${business.id}?tab=profile`}
                               className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70"
                             >
-                              Edit
+                              Set Follow-Up
                             </Link>
                             <Link
                               href={`/admin/dashboard/crm/${business.id}?tab=qr`}
                               className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70"
                             >
-                              QR
+                              View Embed
                             </Link>
                             <Link
                               href={`/admin/dashboard/crm/${business.id}?tab=logs`}

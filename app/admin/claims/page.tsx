@@ -433,7 +433,7 @@ export default function AdminClaimsPage() {
                             </Badge>
                           )}
                           {claim.plan_interest === "pro" ? (
-                            <Badge tone="rose">Pro Plan</Badge>
+                            <Badge tone="rose">TheOutHaven Partner Plan</Badge>
                           ) : claim.plan_interest ? (
                             <Badge tone="slate">Free Discovery</Badge>
                           ) : null}

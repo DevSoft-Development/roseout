@@ -9,7 +9,7 @@ const audienceCards = [
   { title: "For Location Owners", text: "Learn how to claim, update, and upgrade your business profile.", icon: Building2 },
   { title: "Reservations", text: "Get help with reservation links, booking flows, and guest questions.", icon: CalendarDays },
   { title: "Claims", text: "Learn how business profile claims and claim codes work.", icon: ShieldCheck },
-  { title: "Billing", text: "Understand Pro Plan billing, upgrades, and cancellations.", icon: BookOpen },
+  { title: "Billing", text: "Understand TheOutHaven Partner Plan billing, activation, and cancellations.", icon: BookOpen },
   { title: "Contact Support", text: "Find the right support contact for your issue.", icon: LifeBuoy },
 ];
 

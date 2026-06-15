@@ -31,8 +31,8 @@ const howItWorks = [
     text: "Confirm your business details, add photos, update links, and make sure guests see the right information.",
   },
   {
-    title: "3. Upgrade to Pro when ready",
-    text: "Pro includes Reserve features like reservations, guest management, waitlist tools, SMS reminders, analytics, and business insights.",
+    title: "3. Activate Partner Plan when ready",
+    text: "TheOutHaven Partner Plan includes a standalone reservation portal, website embed, guest management, waitlist tools, reminders, analytics, and discovery.",
   },
 ];
 
@@ -132,8 +132,8 @@ export default function BusinessPage() {
       <Section id="plans" className="border-y border-white/10 bg-[#080808]">
         <SectionHeader
           eyebrow="Plans"
-          title="Choose Free Discovery or Pro Plan"
-          text="Claim your profile first. Upgrade to Pro when you are ready for Reserve features, reservations, guest tools, analytics, and advanced business workflows."
+          title="Choose TheOutHaven Partner Plan"
+          text="Claim your profile first. Activate TheOutHaven Partner Plan when you are ready for a standalone reservation portal, website embed, owner dashboard, guest tools, analytics, and discovery."
           centered
         />
         <div className="mt-10 grid gap-5 lg:grid-cols-2">
@@ -146,10 +146,10 @@ export default function BusinessPage() {
             href={claimCta}
           />
           <PricingCard
-            title="Pro Plan"
+            title="TheOutHaven Partner Plan — $99/month"
             price="$99"
             period="/month"
-            description="Pro includes Reserve features for reservations, waitlists, guest management, SMS reminders, analytics, and advanced business tools."
+            description="Includes a standalone reservation portal, website embed, waitlist, guest management, reminders, analytics, and owner tools."
             features={proFeatures}
             cta="Start Pro"
             href={claimCta}
@@ -280,7 +280,7 @@ function VenueCard({ title }: { title: string }) {
 function PricingCard({ title, price, period, description, features, cta, href, highlighted = false }: { title: string; price: string; period?: string; description: string; features: string[]; cta: string; href: string; highlighted?: boolean }) {
   return (
     <article className={`relative flex h-full flex-col rounded-[2rem] border p-6 shadow-2xl sm:p-8 ${highlighted ? "border-[#e1062a]/70 bg-[linear-gradient(180deg,rgba(225,6,42,0.2),rgba(255,255,255,0.045))] shadow-red-500/15" : "border-white/10 bg-black shadow-black/40"}`}>
-      {highlighted && <span className="mb-5 w-fit rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">Pro includes Reserve</span>}
+      {highlighted && <span className="mb-5 w-fit rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">Partner Plan includes reservations</span>}
       <h3 className="text-3xl font-black tracking-tight">{title}</h3>
       <p className="mt-3 text-sm leading-6 text-white/55">{description}</p>
       <div className="mt-6 flex items-end gap-1"><p className="text-5xl font-black">{price}</p>{period && <p className="pb-2 text-sm font-black text-white/45">{period}</p>}</div>

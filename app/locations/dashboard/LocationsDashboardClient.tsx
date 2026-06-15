@@ -210,7 +210,7 @@ export default function LocationsDashboardClient({
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
                 <Sparkles size={14} />
-                TheOutHaven Pro
+                TheOutHaven Partner Plan
               </div>
 
               <h1 className="max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
@@ -493,7 +493,7 @@ export default function LocationsDashboardClient({
                       <div>
                         <p className="text-sm font-black">Owner dashboard ready</p>
                         <p className="mt-1 text-xs leading-5 text-white/50">
-                          Free Discovery keeps your claimed profile visible. Pro includes Reserve, reservation settings, and deeper demand tools.
+                          Free Discovery keeps your claimed profile visible. Partner Plan includes reservations, reservation settings, and deeper demand tools.
                         </p>
                       </div>
                     </div>
@@ -533,12 +533,12 @@ function ReservationEmbedCard({ location }: { location: LocationItem }) {
 function formatPlanName(location: LocationItem) {
   const raw = String(location.subscription_plan || location.plan || "free_discovery").toLowerCase();
 
-  if (Boolean(location.is_pro) || raw.includes("pro")) return "Pro Plan";
+  if (Boolean(location.is_pro) || raw.includes("pro")) return "TheOutHaven Partner Plan — $99/month";
   return "Free Discovery";
 }
 
 function OwnerPlanOverview({ location }: { location: LocationItem }) {
-  const isPro = formatPlanName(location) === "Pro Plan";
+  const isPro = formatPlanName(location) === "TheOutHaven Partner Plan — $99/month";
   const reservationLink = location.reservation_link || location.reservation_url || location.external_reservation_url;
   const reservationSettings = location.reservation_settings || {};
   const analytics = [
@@ -559,7 +559,7 @@ function OwnerPlanOverview({ location }: { location: LocationItem }) {
             <h3 className="mt-2 text-2xl font-black">{formatPlanName(location)}</h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
               {isPro
-                ? "Pro includes Reserve for reservations, waitlists, guest tools, and deeper analytics."
+                ? "Partner Plan includes reservations for reservations, waitlists, guest tools, and deeper analytics."
                 : "Free Discovery keeps your claimed profile visible with basic contact, tracking, and discovery tools."}
             </p>
           </div>
@@ -569,7 +569,7 @@ function OwnerPlanOverview({ location }: { location: LocationItem }) {
               isPro ? "border border-black/10 bg-white text-black" : "bg-[#e1062a] text-white"
             }`}
           >
-            {isPro ? "Manage Pro" : "Upgrade to Pro"}
+            {isPro ? "Manage Pro" : "Activate Partner Plan"}
           </Link>
         </div>
 
@@ -632,7 +632,7 @@ function BusinessSetupChecklist({ location }: { location: LocationItem }) {
     ["Add photos", hasPhotos, `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
     ["Review guest actions", Boolean(location.website || location.phone || hasReservationLink), `/locations/${locationTypePathSegment[location.location_type]}/${location.id}`],
     ["View analytics", isPro, "/business/dashboard/analytics"],
-    ["Upgrade to Pro", isPro, "/business#plans"],
+    ["Activate Partner Plan", isPro, "/business#plans"],
   ] as const;
 
   return (
@@ -645,7 +645,7 @@ function BusinessSetupChecklist({ location }: { location: LocationItem }) {
           <h3 className="mt-2 text-2xl font-black">Keep your listing moving</h3>
         </div>
         <Link href="/business#plans" className="rounded-full bg-black px-4 py-2 text-xs font-black text-white">
-          Upgrade to Pro
+          Activate Partner Plan
         </Link>
       </div>
       {pending && (
@@ -670,7 +670,7 @@ function BusinessSetupChecklist({ location }: { location: LocationItem }) {
             </div>
             {!done && (
               <Link href={href} className="rounded-full border border-black/10 bg-white px-4 py-2 text-center text-xs font-black text-black hover:bg-black hover:text-white">
-                {label === "View analytics" ? "View analytics" : label === "Upgrade to Pro" ? "Upgrade to Pro" : label.includes("reservation") ? "Add reservation link" : "Complete profile"}
+                {label === "View analytics" ? "View analytics" : label === "Activate Partner Plan" ? "Activate Partner Plan" : label.includes("reservation") ? "Add reservation portal" : "Complete profile"}
               </Link>
             )}
           </div>

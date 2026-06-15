@@ -85,7 +85,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                 {!isPro ? (
                   <form action="/api/business/billing/checkout" method="POST">
                     <input type="hidden" name="location_id" value={selected.id} />
-                    <button className="w-full rounded-full bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Upgrade to Pro</button>
+                    <button className="w-full rounded-full bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Activate Partner Plan</button>
                   </form>
                 ) : (
                   <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Business Pro active</div>

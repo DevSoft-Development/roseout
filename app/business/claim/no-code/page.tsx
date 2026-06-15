@@ -32,7 +32,7 @@ const initialForm = {
   contactName: "",
   roleAtBusiness: "",
   website: "",
-  planInterest: "free_discovery",
+  planInterest: "partner_99",
   notes: "",
 };
 
@@ -156,14 +156,11 @@ export default function NoCodeClaimPage() {
                   Location claim
                 </p>
                 <h1 className="mt-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl">
-                  Submit Your Location Claim
+                  Claim your business and activate your reservation portal
                 </h1>
                 <div className="mt-6 text-base leading-8 text-white/62 sm:text-lg">
                   <p>
-                    Tell us about your location and our team will review your
-                    claim. Once approved, you’ll be able to access your location
-                    dashboard, update business details, add photos, and choose
-                    the plan that works best for your location.
+                    TheOutHaven gives your business a standalone reservation system with a website embed, plus discovery inside TheOutHaven where customers plan complete outings.
                   </p>
                 </div>
               </div>
@@ -291,8 +288,8 @@ export default function NoCodeClaimPage() {
                       }
                       className="mt-2 w-full rounded-2xl border border-white/10 bg-[#0d0d0d] px-4 py-4 text-sm font-bold text-white outline-none focus:border-[#e1062a]"
                     >
+                      <option value="partner_99">TheOutHaven Partner Plan — $99/month</option>
                       <option value="free_discovery">Free Discovery</option>
-                      <option value="pro">Pro Plan with Reserve</option>
                     </select>
                   </label>
                   <label className="block sm:col-span-2">
@@ -337,7 +334,7 @@ export default function NoCodeClaimPage() {
                 >
                   {submitting
                     ? "Submitting your claim..."
-                    : "Submit for Review"}
+                    : "Claim and Review My Reservation Setup"}
                 </button>
               </form>
             </div>
