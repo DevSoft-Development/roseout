@@ -234,30 +234,103 @@ export async function getWorkspaceLocationSearchScope(userId: string, role?: str
   return { all: canSearchAllWorkspaceLocations(adminRole) || currentProfile?.team_type === "superadmin", profile: currentProfile };
 }
 
-const LOCATION_SEARCH_COLUMNS = "id,name,location_name,restaurant_name,activity_name,address,city,state,borough,neighborhood,category,location_type,cuisine_type,activity_type,phone,phone_number,contact_phone,website,instagram,owner_instagram,claim_status,claim_outreach_status,partner_sales_status,reservation_portal_status,reservation_embed_status,discovery_profile_status,plan_status,updated_at,created_at";
+const LOCATION_SEARCH_COLUMNS = "id,name,location_name,restaurant_name,activity_name,address,city,state,borough,neighborhood,category,location_type,cuisine_type,activity_type,phone,phone_number,contact_phone,website,instagram,owner_instagram,claim_status,claim_outreach_status,partner_sales_status,reservation_portal_status,reservation_embed_status,discovery_profile_status,plan_status,sales_campaign,partner_launch_selected,partner_launch_pilot,updated_at,created_at";
+
+const FILTER_FIELD_MAP: Record<string, string> = {
+  partnerSalesStatus: "partner_sales_status",
+  claimOutreachStatus: "claim_outreach_status",
+  reservationPortalStatus: "reservation_portal_status",
+  reservationEmbedStatus: "reservation_embed_status",
+  discoveryProfileStatus: "discovery_profile_status",
+  planStatus: "plan_status",
+  claimStatus: "claim_status",
+};
+
+function cleanFilter(value: unknown) {
+  const clean = String(value || "").trim();
+  return clean && clean !== "all" ? clean : "";
+}
 
 function locationMatches(row: any, query: string) {
   if (!query) return true;
-  const haystack = [row.name,row.location_name,row.restaurant_name,row.activity_name,row.address,row.city,row.state,row.borough,row.neighborhood,row.category,row.location_type,row.cuisine_type,row.activity_type,row.phone,row.phone_number,row.contact_phone,row.website,row.instagram,row.owner_instagram].filter(Boolean).join(" ").toLowerCase();
+  const haystack = [row.name,row.location_name,row.restaurant_name,row.activity_name,row.address,row.city,row.state,row.borough,row.neighborhood,row.category,row.location_type,row.cuisine_type,row.activity_type,row.phone,row.phone_number,row.contact_phone,row.website,row.instagram,row.owner_instagram,row.claim_status,row.claim_outreach_status,row.partner_sales_status,row.plan_status].filter(Boolean).join(" ").toLowerCase();
   return haystack.includes(query.toLowerCase());
 }
 
+function locationMatchesFilters(row: any, filters: Record<string, any>, assignedIds = new Set<string>()) {
+  for (const [filterKey, column] of Object.entries(FILTER_FIELD_MAP)) {
+    const value = cleanFilter(filters[filterKey]);
+    if (value && String(row[column] || "").toLowerCase() !== value.toLowerCase()) return false;
+  }
+  const assigned = cleanFilter(filters.assigned);
+  if (assigned === "assigned" && !assignedIds.has(String(row.id))) return false;
+  if (assigned === "unassigned" && assignedIds.has(String(row.id))) return false;
+  const launchPilot = cleanFilter(filters.launchPilot);
+  if (launchPilot === "yes" && row.partner_launch_pilot !== true) return false;
+  if (launchPilot === "no" && row.partner_launch_pilot === true) return false;
+  const partnerLaunchSelected = cleanFilter(filters.partnerLaunchSelected);
+  if (partnerLaunchSelected === "yes" && row.partner_launch_selected !== true) return false;
+  if (partnerLaunchSelected === "no" && row.partner_launch_selected === true) return false;
+  return true;
+}
+
+async function getActiveAssignmentMap(locationIds?: string[]) {
+  try {
+    let q = supabaseAdmin.from("team_location_assignments").select("location_id,team_member_id,priority,status,assignment_type,team_member_profiles(display_name,full_name,email,team_type)").eq("status", "active").limit(1000);
+    if (locationIds?.length) q = q.in("location_id", locationIds);
+    const { data, error } = await q;
+    if (error) return new Map<string, any>();
+    return new Map((data || []).map((row: any) => [String(row.location_id), row]));
+  } catch (error) {
+    console.warn("Workspace assignment lookup skipped", error);
+    return new Map<string, any>();
+  }
+}
+
+function normalizeWorkspaceLocation(row: any, assignment?: any) {
+  const profile = Array.isArray(assignment?.team_member_profiles) ? assignment.team_member_profiles[0] : assignment?.team_member_profiles;
+  return {
+    ...row,
+    display_name: row.name || row.location_name || row.restaurant_name || row.activity_name || "Untitled location",
+    display_phone: row.phone || row.phone_number || row.contact_phone || null,
+    display_category: row.category || row.cuisine_type || row.activity_type || row.location_type || null,
+    assigned_to: assignment?.team_member_id || null,
+    assignment: assignment ? {
+      team_member_id: assignment.team_member_id,
+      label: profile?.display_name || profile?.full_name || profile?.email || assignment.team_member_id,
+      team_type: profile?.team_type || null,
+      priority: assignment.priority || null,
+    } : null,
+  };
+}
+
 export async function searchWorkspaceLocationsForUser(userId: string, role: string | null | undefined, query: string, filters: Record<string, any> = {}) {
-  const limit = Math.min(Math.max(Number(filters.limit || 15), 1), 50);
+  const limit = Math.min(Math.max(Number(filters.limit || 50), 1), 50);
   const scope = await getWorkspaceLocationSearchScope(userId, role);
   const q = String(query || "").trim();
   const selectCols = filters.columns || LOCATION_SEARCH_COLUMNS;
   let rows: any[] = [];
   if (scope.all) {
-    let dbq = supabaseAdmin.from("locations").select(selectCols).limit(limit * 3);
-    if (q) dbq = dbq.or(`name.ilike.%${q}%,location_name.ilike.%${q}%,restaurant_name.ilike.%${q}%,activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,borough.ilike.%${q}%,neighborhood.ilike.%${q}%,category.ilike.%${q}%,phone.ilike.%${q}%`);
+    let dbq = supabaseAdmin.from("locations").select(selectCols).limit(limit * 8);
+    if (q) dbq = dbq.or(`name.ilike.%${q}%,location_name.ilike.%${q}%,restaurant_name.ilike.%${q}%,activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,borough.ilike.%${q}%,neighborhood.ilike.%${q}%,category.ilike.%${q}%,location_type.ilike.%${q}%,cuisine_type.ilike.%${q}%,activity_type.ilike.%${q}%,phone.ilike.%${q}%,phone_number.ilike.%${q}%,contact_phone.ilike.%${q}%`);
+    for (const [filterKey, column] of Object.entries(FILTER_FIELD_MAP)) {
+      const value = cleanFilter(filters[filterKey]);
+      if (value) dbq = dbq.eq(column, value);
+    }
     const { data, error } = await dbq.order("updated_at", { ascending: false });
     if (!error) rows = data || [];
+    if (error) {
+      console.warn("Workspace DB search fell back to in-memory filtering", error.message);
+      const fallback = await supabaseAdmin.from("locations").select(selectCols).order("updated_at", { ascending: false }).limit(500);
+      rows = fallback.data || [];
+    }
   } else {
     rows = await listPermittedWorkspaceLocations(scope.profile, selectCols, 1000);
-    rows = rows.filter((row) => locationMatches(row, q));
   }
-  return rows.slice(0, limit).map((row) => ({ ...row, display_name: row.name || row.location_name || row.restaurant_name || row.activity_name || "Untitled location", display_phone: row.phone || row.phone_number || row.contact_phone || null, display_category: row.category || row.cuisine_type || row.activity_type || row.location_type || null }));
+  rows = rows.filter((row) => locationMatches(row, q));
+  const assignments = await getActiveAssignmentMap(rows.map((row) => row.id).filter(Boolean));
+  rows = rows.filter((row) => locationMatchesFilters(row, filters, new Set(assignments.keys())));
+  return rows.slice(0, limit).map((row) => normalizeWorkspaceLocation(row, assignments.get(String(row.id))));
 }
 
 export async function listAssignableTeamMembers() {
@@ -277,15 +350,41 @@ export async function listWorkspaceLocationAssignments(filters: Record<string, a
 
 export async function assignLocationsToWorkspaceUser(locationIds: string[], assignedTo: string | null, options: Record<string, any> = {}) {
   const cleanIds = Array.from(new Set(locationIds.map(String).filter(Boolean)));
-  if (!cleanIds.length) return { count: 0 };
+  if (!cleanIds.length) return { ok: true, count: 0 };
   if (!assignedTo || assignedTo === "unassigned") {
-    await supabaseAdmin.from("team_location_assignments").update({ status: "inactive", updated_at: new Date().toISOString() }).in("location_id", cleanIds).eq("status", "active").then(undefined, () => undefined);
-    return { count: cleanIds.length };
+    try {
+      await supabaseAdmin.from("team_location_assignments").update({ status: "inactive", updated_at: new Date().toISOString() }).in("location_id", cleanIds).eq("status", "active");
+    } catch (error) {
+      console.warn("Could not clear workspace assignments", error);
+    }
+    return { ok: true, count: cleanIds.length };
   }
   const rows = cleanIds.map((location_id) => ({ location_id, team_member_id: assignedTo, assigned_by: options.assignedBy || null, status: "active", assignment_type: options.assignmentType || "partner_launch", priority: options.priority || "normal", reason: options.reason || null, notes: options.notes || null, campaign: options.campaign || "partner_launch", next_action_type: options.nextActionType || null, next_action_note: options.nextActionNote || null, next_action_due_at: options.nextActionDueAt || null }));
-  await supabaseAdmin.from("team_location_assignments").upsert(rows, { onConflict: "location_id,team_member_id,assignment_type" });
-  const updates: any = { sales_campaign: options.campaign || "partner_launch", partner_launch_selected: true, next_action_type: options.nextActionType || null, next_action: options.nextActionNote || null, next_action_due_at: options.nextActionDueAt || null };
+  const { error: assignmentError } = await supabaseAdmin.from("team_location_assignments").upsert(rows, { onConflict: "location_id,team_member_id,assignment_type" });
+  if (assignmentError) throw assignmentError;
+
+  const generatedNextAction = options.nextActionNote || (options.nextActionType ? labelize(options.nextActionType) : "Partner Launch follow-up");
+  const updates: any = {
+    sales_campaign: options.campaign || "partner_launch",
+    partner_launch_selected: true,
+    next_action_type: options.nextActionType || null,
+    next_action: generatedNextAction,
+    next_action_due_at: options.nextActionDueAt || null,
+    updated_at: new Date().toISOString(),
+  };
   if (options.tag === "launch_pilot") updates.partner_launch_pilot = true;
-  await supabaseAdmin.from("locations").update(updates).in("id", cleanIds).then(undefined, () => undefined);
-  return { count: cleanIds.length };
+  try {
+    const { data: current } = await supabaseAdmin.from("locations").select("id,partner_sales_status").in("id", cleanIds);
+    const targetIds = (current || []).filter((row: any) => !row.partner_sales_status || row.partner_sales_status === "target").map((row: any) => row.id);
+    await supabaseAdmin.from("locations").update(updates).in("id", cleanIds);
+    if (targetIds.length) await supabaseAdmin.from("locations").update({ partner_sales_status: "needs_outreach" }).in("id", targetIds);
+  } catch (error) {
+    console.warn("Workspace assignment CRM field update skipped", error);
+  }
+  try {
+    await supabaseAdmin.from("crm_notes").insert(cleanIds.map((location_id) => ({ location_id, note: options.notes || generatedNextAction, note_type: "workspace_assignment", created_by: options.assignedBy || null })));
+  } catch {
+    // Optional audit table may not exist in every deployment.
+  }
+  return { ok: true, count: cleanIds.length };
 }
