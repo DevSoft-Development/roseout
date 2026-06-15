@@ -23,6 +23,8 @@ export async function POST(req: Request) {
     let locationId = String(form.get("locationId") || "").trim();
     const locationName = String(form.get("businessName") || "").trim();
     const address = String(form.get("address") || "").trim();
+    const matchedLocationId = String(form.get("matchedLocationId") || locationId || "").trim();
+    const correctionNotes = String(form.get("correctionNotes") || "").trim();
     const city = String(form.get("city") || "").trim();
     const state = String(form.get("state") || "").trim();
     const zipCode = String(form.get("zipCode") || "").trim();
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
     if (!Number.isFinite(checkLat) || !Number.isFinite(checkLng)) return Response.json({ error: "GPS/location verification is required only for physical site visit check-ins." }, { status: 400 });
     const dist = Number.isFinite(businessLat) && Number.isFinite(businessLng) ? distanceMeters(checkLat, checkLng, businessLat, businessLng) : null;
     const verification = siteVisitVerification(dist, Number.isFinite(accuracy) ? accuracy : null);
-    const { data: visit, error } = await supabaseAdmin.from("ambassador_site_visits").insert({ team_member_id: profile.id, ambassador_id: profile.id, user_id: user.id, work_session_id: active.id, location_id: locationId, visit_type: form.get("visitType") || "initial_visit", visit_outcome: form.get("visitOutcome") || "needs_admin_review", notes: form.get("notes") || null, follow_up_required: Boolean(form.get("followUpAt")), follow_up_at: form.get("followUpAt") || null, check_in_latitude: checkLat, check_in_longitude: checkLng, check_in_accuracy_meters: Number.isFinite(accuracy) ? accuracy : null, check_in_reverse_geocoded_address: form.get("checkedInAddress") || null, business_latitude: Number.isFinite(businessLat) ? businessLat : null, business_longitude: Number.isFinite(businessLng) ? businessLng : null, distance_from_business_meters: dist, location_verification_status: verification, photo_uploaded: false }).select("*").single();
+    const { data: visit, error } = await supabaseAdmin.from("ambassador_site_visits").insert({ team_member_id: profile.id, ambassador_id: profile.id, user_id: user.id, work_session_id: active.id, location_id: locationId, matched_location_id: matchedLocationId || null, matched_location_snapshot: matchedLocationId ? { name: locationName, address, phone: String(form.get("phone") || ""), category: String(form.get("category") || ""), city, state } : {}, correction_requested: Boolean(correctionNotes), correction_notes: correctionNotes || null, visit_type: form.get("visitType") || "initial_visit", visit_outcome: form.get("visitOutcome") || "needs_admin_review", notes: form.get("notes") || null, follow_up_required: Boolean(form.get("followUpAt")), follow_up_at: form.get("followUpAt") || null, check_in_latitude: checkLat, check_in_longitude: checkLng, check_in_accuracy_meters: Number.isFinite(accuracy) ? accuracy : null, check_in_reverse_geocoded_address: form.get("checkedInAddress") || null, business_latitude: Number.isFinite(businessLat) ? businessLat : null, business_longitude: Number.isFinite(businessLng) ? businessLng : null, distance_from_business_meters: dist, location_verification_status: verification, photo_uploaded: false }).select("*").single();
     if (error) throw error;
     const proof = form.get("proof") as File | null;
     if (!proof || proof.size === 0) return Response.json({ error: "Storefront proof photo is required for real field visits." }, { status: 400 });
