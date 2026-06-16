@@ -35,6 +35,43 @@ function addDays(days: number) {
   return d.toISOString();
 }
 
+function determineNextMorningFollowup(input: {
+  plannedFor?: string | null;
+  outingDateContext?: string | null;
+  outingTimeConfidence?: string | null;
+  timezone?: string | null;
+}) {
+  const context = String(input.outingDateContext || "").toLowerCase();
+
+  if (input.plannedFor && input.outingTimeConfidence === "exact") {
+    return true;
+  }
+
+  if (context.includes("tonight") || context.includes("today")) {
+    return true;
+  }
+
+  return false;
+}
+
+function calculateNextMorningFollowupDate(input: {
+  plannedFor?: string | null;
+  outingDateContext?: string | null;
+  timezone?: string | null;
+}) {
+  const base = input.plannedFor ? new Date(input.plannedFor) : new Date();
+
+  if (Number.isNaN(base.getTime())) {
+    return null;
+  }
+
+  const nextMorning = new Date(base);
+  nextMorning.setDate(nextMorning.getDate() + 1);
+  nextMorning.setHours(10, 0, 0, 0);
+
+  return nextMorning.toISOString();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
@@ -77,11 +114,15 @@ export async function POST(req: NextRequest) {
     let remindersEnabled = Boolean(payload?.remindersEnabled) && Boolean(plannedFor);
     if (Boolean(payload?.remindersEnabled) && !plannedFor) remindersEnabled = false;
 
-    const nextMorningFollowupEnabled = Boolean(payload?.nextMorningFollowupEnabled);
-    const nextMorningFollowupDate = asString(payload?.nextMorningFollowupDate);
-    if (nextMorningFollowupEnabled && outingTimeConfidence === "date_only" && !nextMorningFollowupDate) {
-      return NextResponse.json({ ok: false, error: "followup_date_required", message: "A follow-up date is required for date-only outings." }, { status: 400 });
-    }
+    const shouldEnableNextMorningFollowup = determineNextMorningFollowup({
+      plannedFor,
+      outingDateContext,
+      outingTimeConfidence,
+      timezone,
+    });
+    const nextMorningFollowupDate = shouldEnableNextMorningFollowup
+      ? calculateNextMorningFollowupDate({ plannedFor, outingDateContext, timezone })
+      : null;
 
     const guestEmail = normalizeEmail(payload?.guestEmail);
     const guestPhone = normalizePhone(payload?.guestPhone);
@@ -112,14 +153,14 @@ export async function POST(req: NextRequest) {
     const userId = authData?.user?.id ?? null;
     const isGuest = !userId;
 
-    if (nextMorningFollowupEnabled && isGuest && (!guestEmail || !emailOptIn)) {
-      return NextResponse.json({ ok: false, error: "contact_required_for_followup", message: "Add an email so we can send your follow-up." }, { status: 400 });
+    if (shouldEnableNextMorningFollowup && isGuest && !guestEmail && !guestPhone) {
+      return NextResponse.json({ ok: false, error: "contact_required_for_followup", message: "Add an email or phone number so we can send your follow-up." }, { status: 400 });
     }
 
     const existingGuestSession = req.cookies.get("theouthaven_guest_session")?.value || null;
     const guestSessionId = isGuest ? existingGuestSession ?? `guest_${createSecureToken(24)}` : null;
     const planAccessToken = isGuest ? generatePlanAccessToken() : null;
-    const confirmToken = remindersEnabled || nextMorningFollowupEnabled ? generateConfirmToken() : null;
+    const confirmToken = remindersEnabled || shouldEnableNextMorningFollowup ? generateConfirmToken() : null;
 
     await trackEvent({
       event_name: "plan_save_started",
@@ -171,8 +212,8 @@ export async function POST(req: NextRequest) {
       outing_date_context: outingDateContext,
       outing_time_confidence: outingTimeConfidence,
       reminders_enabled: remindersEnabled,
-      next_morning_followup_enabled: nextMorningFollowupEnabled,
-      next_morning_followup_date: nextMorningFollowupEnabled ? nextMorningFollowupDate : null,
+      next_morning_followup_enabled: shouldEnableNextMorningFollowup,
+      next_morning_followup_date: nextMorningFollowupDate,
       visit_verification_level: "planned",
     };
 
@@ -222,7 +263,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const saveEventMetadata = { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId, selected_locations: payload?.selectedLocations ?? payload?.planLocations ?? null, contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, reminders_enabled: remindersEnabled, next_morning_followup_enabled: nextMorningFollowupEnabled, next_morning_followup_date: nextMorningFollowupDate };
+    const saveEventMetadata = { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId, selected_locations: payload?.selectedLocations ?? payload?.planLocations ?? null, contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, reminders_enabled: remindersEnabled, next_morning_followup_enabled: shouldEnableNextMorningFollowup, next_morning_followup_date: nextMorningFollowupDate };
 
     await Promise.allSettled([
       trackEvent({ event_name: isGuest ? "guest_plan_saved" : "plan_saved", event_type: "save", conversion_step: "saved_plan", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: saveEventMetadata }),

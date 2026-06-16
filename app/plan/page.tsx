@@ -209,7 +209,6 @@ function PlanPageInner() {
     emptyOutingTimeValue(getBrowserTimezone()),
   );
   const [guestEmail, setGuestEmail] = useState("");
-  const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [emailOptIn, setEmailOptIn] = useState(true);
   const [smsOptIn, setSmsOptIn] = useState(false);
@@ -303,8 +302,8 @@ function PlanPageInner() {
           ? confidence
           : base.outingTimeConfidence,
       remindersEnabled: searchParams.get("remindersEnabled") === "true",
-      nextMorningFollowupEnabled: searchParams.get("nextMorningFollowupEnabled") === "true",
-      nextMorningFollowupDate: searchParams.get("nextMorningFollowupDate"),
+      nextMorningFollowupEnabled: false,
+      nextMorningFollowupDate: null,
     } as OutingTimeValue;
   }
 
@@ -479,11 +478,8 @@ function PlanPageInner() {
           outingDateContext: outingTime.outingDateContext,
           outingTimeConfidence: outingTime.outingTimeConfidence,
           remindersEnabled: outingTime.remindersEnabled,
-          nextMorningFollowupEnabled: outingTime.nextMorningFollowupEnabled,
-          nextMorningFollowupDate: outingTime.nextMorningFollowupDate,
           guestEmail,
           guestPhone,
-          guestName,
           contact_method: contactMethod,
           emailOptIn: contactMethod === "email" ? true : emailOptIn,
           smsOptIn: contactMethod === "text" ? true : smsOptIn,
@@ -835,7 +831,7 @@ function PlanPageInner() {
 
             <div className="mt-5 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
               <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
-                <p className="text-sm font-black text-white">Choose how to receive it</p>
+                <p className="text-sm font-black text-white">Send Your Plan</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -853,7 +849,7 @@ function PlanPageInner() {
                   </button>
                 </div>
                 <p className="mt-3 text-xs font-semibold leading-5 text-white/45">
-                  We’ll only use this to send your outing plan and helpful follow-up reminders.
+                  Send yourself a secure link so you can open your outing details anytime.
                 </p>
               </div>
 
@@ -863,7 +859,7 @@ function PlanPageInner() {
                 ) : (
                   <input type="email" value={guestEmail} onChange={(event) => setGuestEmail(event.target.value)} placeholder="Email address" className="rounded-xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold text-white outline-none focus:border-[#e1062a]/70" />
                 )}
-                <input type="text" value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold text-white/80 outline-none focus:border-[#e1062a]/70" />
+                <p className="text-xs font-semibold leading-5 text-white/40">If your outing has a clear date or time, we may check in after to see how it went.</p>
 
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">{contactMethod === "email" ? "Email My Outing" : "Text My Outing"}</button>
