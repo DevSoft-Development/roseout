@@ -204,7 +204,7 @@ function PlanPageInner() {
   const [loadingExactCampaign, setLoadingExactCampaign] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
-  const [outingComplete, setOutingComplete] = useState(false);
+  const [showBookingDetails, setShowBookingDetails] = useState(false);
   const [outingTime, setOutingTime] = useState<OutingTimeValue>(() =>
     emptyOutingTimeValue(getBrowserTimezone()),
   );
@@ -213,7 +213,7 @@ function PlanPageInner() {
   const [guestPhone, setGuestPhone] = useState("");
   const [emailOptIn, setEmailOptIn] = useState(true);
   const [smsOptIn, setSmsOptIn] = useState(false);
-  const [contactMethod, setContactMethod] = useState<"text" | "email">("text");
+  const [contactMethod, setContactMethod] = useState<"text" | "email">("email");
   const [showTimingAdjustments, setShowTimingAdjustments] = useState(false);
   const [mainEventMinutes, setMainEventMinutes] = useState(120);
   const [afterPlanMinutes, setAfterPlanMinutes] = useState<number | null>(90);
@@ -484,6 +484,7 @@ function PlanPageInner() {
           guestEmail,
           guestPhone,
           guestName,
+          contact_method: contactMethod,
           emailOptIn: contactMethod === "email" ? true : emailOptIn,
           smsOptIn: contactMethod === "text" ? true : smsOptIn,
         }),
@@ -497,26 +498,19 @@ function PlanPageInner() {
       localStorage.setItem("theouthaven_active_outing", JSON.stringify({ outingId: nextOutingId, planUrl: data.planUrl }));
       setActiveOutingId(nextOutingId);
       setActivePlanUrl(data.planUrl || null);
-      setStartStatus("Your outing is saved.");
+      if (contactMethod === "email") {
+        if (data.emailStatus === "sent") setStartStatus("Your outing is saved. Check your email for the plan.");
+        else if (data.emailStatus === "skipped") setStartStatus("Your outing is saved. Email sending is not configured in this environment.");
+        else if (data.emailStatus === "error") setStartStatus("Your outing is saved, but the email could not be sent. You can still open your secure plan link.");
+        else setStartStatus("Your outing is saved.");
+      } else {
+        setStartStatus("Your outing is saved.");
+      }
     } catch {
       setStartStatus("We could not save your outing yet.");
     }
   }
 
-  function markOutingComplete() {
-    setOutingComplete(true);
-    setSaveStatus(
-      "Outing marked complete. Need another idea when you are ready?",
-    );
-    [restaurant, activity].forEach((location) => {
-      if (location?.id)
-        trackLocationEvent(
-          String(location.id),
-          "booking",
-          PLAN_ANALYTICS_METADATA,
-        );
-    });
-  }
 
   function trackPlanClick(eventName: string, linkType: string) {
     const primaryLocation = restaurant || activity;
@@ -566,15 +560,29 @@ function PlanPageInner() {
                 href="/create"
                 className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-center text-xs font-black uppercase tracking-[0.12em] text-white/70 transition hover:text-white"
               >
-                Edit Picks
+                Edit Outing
               </Link>
 
-              <a
-                href="#plan-timeline"
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBookingDetails(true);
+                  trackPlanAnalyticsEvent({
+                    event_name: "book_my_outing_clicked",
+                    event_type: "plan_click",
+                    conversion_step: "booking_details_opened",
+                    outing_id: activeOutingId,
+                    location_id: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null,
+                    source_location_id: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null,
+                    query: planTitle,
+                    metadata: { plan_title: planTitle },
+                  });
+                  window.setTimeout(() => document.getElementById("booking-details")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                }}
                 className="rounded-full bg-[#e1062a] px-5 py-3 text-center text-xs font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744]"
               >
-                View Timeline
-              </a>
+                Book My Outing
+              </button>
             </div>
 
           </div>
@@ -608,6 +616,7 @@ function PlanPageInner() {
                 })}
                 activeOutingId={activeOutingId}
                 planTitle={planTitle}
+                showActions={false}
               />
             )}
 
@@ -623,6 +632,7 @@ function PlanPageInner() {
                 })}
                 activeOutingId={activeOutingId}
                 planTitle={planTitle}
+                showActions={false}
               />
             )}
           </div>
@@ -663,73 +673,48 @@ function PlanPageInner() {
                   Next Step
                 </p>
                 <p className="mt-1 text-sm font-bold leading-6 text-white">
-                  Reserve, call, or open the website for either pick. If it is
-                  not right, replace a location or add another stop.
+                  Review your timeline, then book your outing when you are ready. Booking actions stay tucked away until you open them.
                 </p>
               </div>
 
               <div className="mt-4 grid gap-2">
-                <Link
-                  href={
-                    restaurant
-                      ? buildCreateHref(
-                          `replace restaurant near ${getLocationName(activity || restaurant)}`,
-                        )
-                      : buildCreateHref(
-                          `add restaurant near ${getLocationName(activity)}`,
-                        )
-                  }
-                  onClick={() => trackPlanClick(restaurant ? "outing_replace_location_clicked" : "outing_add_stop_clicked", restaurant ? "replace" : "add_stop")}
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
-                >
-                  {restaurant ? "Replace Restaurant" : "Add Restaurant"}
-                </Link>
-
-                <Link
-                  href={
-                    activity
-                      ? buildCreateHref(
-                          `replace activity near ${getLocationName(restaurant || activity)}`,
-                        )
-                      : buildCreateHref(
-                          `add activity near ${getLocationName(restaurant)}`,
-                        )
-                  }
-                  onClick={() => trackPlanClick(activity ? "outing_replace_location_clicked" : "outing_add_stop_clicked", activity ? "replace" : "add_stop")}
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
-                >
-                  {activity ? "Replace Activity" : "Add Activity"}
-                </Link>
-
-                <Link
-                  href={buildCreateHref(`add another stop to ${planTitle}`)}
-                  onClick={() => trackPlanClick("outing_add_stop_clicked", "add_stop")}
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
-                >
-                  Add Another Stop
-                </Link>
-
                 <button
                   type="button"
-                  onClick={markOutingComplete}
-                  className={`rounded-full px-4 py-3 text-xs font-black uppercase tracking-[0.1em] transition ${
-                    outingComplete
-                      ? "border border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
-                      : "bg-white px-4 py-3 text-black hover:bg-red-100"
-                  }`}
+                  onClick={() => {
+                    setShowBookingDetails(true);
+                    trackPlanAnalyticsEvent({
+                      event_name: "book_my_outing_clicked",
+                      event_type: "plan_click",
+                      conversion_step: "booking_details_opened",
+                      outing_id: activeOutingId,
+                      location_id: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null,
+                      source_location_id: restaurant?.id ? String(restaurant.id) : activity?.id ? String(activity.id) : null,
+                      query: planTitle,
+                      metadata: { plan_title: planTitle },
+                    });
+                    window.setTimeout(() => document.getElementById("booking-details")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                  }}
+                  className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
                 >
-                  {outingComplete ? "Outing Complete" : "I already went"}
+                  Book My Outing
                 </button>
 
                 <Link
+                  href="/create"
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
+                >
+                  Edit Outing
+                </Link>
+
+                <Link
                   href={buildCreateHref(completionPrompt)}
-                  className="rounded-full bg-[#e1062a] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]"
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-center text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white"
                 >
                   Need Another Idea?
                 </Link>
               </div>
 
-              {(walkingRouteUrl || drivingRouteUrl) && (
+              {showBookingDetails && (walkingRouteUrl || drivingRouteUrl) && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
                   <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
                     Google Routes
@@ -826,18 +811,27 @@ function PlanPageInner() {
         )}
       </section>
 
-      {hasPlan && (
-        <section className="mx-auto max-w-7xl px-3 pb-10 sm:px-6">
+      {hasPlan && showBookingDetails && (
+        <section id="booking-details" className="mx-auto max-w-7xl px-3 pb-10 sm:px-6">
           <div className="rounded-[1.2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.16),transparent_34%),#080808] p-4 shadow-2xl shadow-black/40 sm:p-6">
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
-              Make My Plan Official
+              Booking Details
             </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white">
-              Send this outing to yourself.
+              Booking Details
             </h2>
             <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/45">
-              Send this outing to yourself so you have it when you’re ready to go.
+              Everything you need to lock in your outing is here.
             </p>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {restaurant && (
+                <PlanActionCard label="The Main Event" chipLabel="Restaurant pick" type="restaurant" location={restaurant} directionsUrl={buildGooglePlaceDirectionsUrl({ destination: restaurant, travelMode: "driving" })} activeOutingId={activeOutingId} planTitle={planTitle} showActions />
+              )}
+              {activity && (
+                <PlanActionCard label="The After Plan" chipLabel="Activity pick" type="activity" location={activity} directionsUrl={buildGooglePlaceDirectionsUrl({ destination: activity, travelMode: "driving" })} activeOutingId={activeOutingId} planTitle={planTitle} showActions />
+              )}
+            </div>
 
             <div className="mt-5 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
               <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
@@ -848,14 +842,14 @@ function PlanPageInner() {
                     onClick={() => { setContactMethod("text"); setSmsOptIn(true); setEmailOptIn(false); }}
                     className={`rounded-full border px-4 py-3 text-xs font-black uppercase tracking-[0.1em] transition ${contactMethod === "text" ? "border-[#e1062a]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"}`}
                   >
-                    Text Me
+                    Text My Outing
                   </button>
                   <button
                     type="button"
                     onClick={() => { setContactMethod("email"); setEmailOptIn(true); setSmsOptIn(false); }}
                     className={`rounded-full border px-4 py-3 text-xs font-black uppercase tracking-[0.1em] transition ${contactMethod === "email" ? "border-[#e1062a]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"}`}
                   >
-                    Email Me
+                    Email My Outing
                   </button>
                 </div>
                 <p className="mt-3 text-xs font-semibold leading-5 text-white/45">
@@ -872,7 +866,7 @@ function PlanPageInner() {
                 <input type="text" value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Name optional" className="rounded-xl border border-white/10 bg-black px-3 py-3 text-sm font-semibold text-white/80 outline-none focus:border-[#e1062a]/70" />
 
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">Send My Plan</button>
+                  <button type="button" onClick={savePlanAndFollowUp} className="rounded-full bg-[#e1062a] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#ff1744]">{contactMethod === "email" ? "Email My Outing" : "Text My Outing"}</button>
                   <button type="button" onClick={saveCurrentPlan} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 text-xs font-black uppercase tracking-[0.1em] text-white/75 transition hover:text-white">Save on this device instead</button>
                 </div>
 
@@ -897,7 +891,7 @@ function PlanPageInner() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xl font-black">
-              Rose<span className="text-[#e1062a]">Out</span>
+              The<span className="text-[#e1062a]">Out</span>Haven
             </p>
             <p className="mt-1 text-sm font-semibold text-white/40">
               AI outing plans for food, activities, and better nights out.
@@ -1233,6 +1227,7 @@ function PlanActionCard({
   directionsUrl,
   activeOutingId,
   planTitle,
+  showActions = true,
 }: {
   label: string;
   chipLabel?: string;
@@ -1241,6 +1236,7 @@ function PlanActionCard({
   directionsUrl?: string | null;
   activeOutingId?: string | null;
   planTitle?: string | null;
+  showActions?: boolean;
 }) {
   const title = getLocationName(
     location,
@@ -1356,7 +1352,8 @@ function PlanActionCard({
           {formatAddress(location) || "Location details available on listing."}
         </p>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        {showActions ? (
+          <div className="mt-4 grid grid-cols-2 gap-2">
           <Link
             href={detailHref}
             onClick={() => { trackClick(); trackPlanAnalyticsEvent({ event_name: "outing_details_clicked", event_type: "click", conversion_step: "clicked_outbound_link", outing_id: activeOutingId, location_id: locationId, source_location_id: locationId, query: planTitle, metadata: { plan_title: planTitle, link_type: "details", location_type: type } }); }}
@@ -1425,7 +1422,8 @@ function PlanActionCard({
               Edit
             </Link>
           ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </article>
   );
