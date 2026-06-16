@@ -629,29 +629,52 @@ function normalizeCRMRows(
   return (rows ?? []).map((row) => normalizeCRMRow(row));
 }
 
-function rowMatchesSearch(row: Partial<BusinessCRMRow>, q?: string) {
-  const term = String(q || "")
-    .trim()
-    .toLowerCase();
-  if (!term) return true;
+export function normalizeCRMSearchText(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[’'`]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildCRMSearchHaystack(row: Partial<BusinessCRMRow>) {
   return [
     row.name,
     row.location_name,
     (row as any).restaurant_name,
     (row as any).activity_name,
+    (row as any).business_name,
     row.address,
     row.city,
     row.borough,
+    (row as any).neighborhood,
     row.state,
     row.owner_email,
     (row as any).claimed_by_email,
+    (row as any).claimed_email,
+    row.phone,
     row.category,
+    row.primary_category,
     row.cuisine,
-  ].some((value) =>
-    String(value ?? "")
-      .toLowerCase()
-      .includes(term),
-  );
+    row.cuisine_type,
+    row.location_type,
+    row.website,
+    row.owner_instagram,
+    row.claim_code,
+  ].filter(Boolean).join(" ");
+}
+
+function rowMatchesSearch(row: Partial<BusinessCRMRow>, q?: string) {
+  const rawTerm = String(q || "").trim().toLowerCase();
+  if (!rawTerm) return true;
+  const normalizedTerm = normalizeCRMSearchText(rawTerm);
+  if (!normalizedTerm) return true;
+  const rawHaystack = buildCRMSearchHaystack(row).toLowerCase();
+  const normalizedHaystack = normalizeCRMSearchText(rawHaystack);
+  if (rawHaystack.includes(rawTerm) || normalizedHaystack.includes(normalizedTerm)) return true;
+  const tokens = normalizedTerm.split(" ").filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => normalizedHaystack.includes(token));
 }
 
 function claimMatchesSearch(claim: PendingCRMClaim, q?: string) {
@@ -961,24 +984,7 @@ export async function fetchCRMRowsFromSource(
     const searchFilter = buildCRMSearchFilterForSource(source, options.query);
     const viewFilter = buildCRMViewFilterForSource(source, options.filter);
     if (String(options.query || "").trim() && !searchFilter) {
-      return {
-        rows: [],
-        total: 0,
-        page: safePage,
-        pageSize: safePageSize,
-        totalPages: 1,
-        source: source.name,
-      };
-    }
-    if (normalizeStatus(options.filter || "all") !== "all" && !viewFilter) {
-      return {
-        rows: [],
-        total: 0,
-        page: safePage,
-        pageSize: safePageSize,
-        totalPages: 1,
-        source: source.name,
-      };
+      // Continue without a DB OR search; the in-memory fallback below will apply robust matching.
     }
 
     if (searchFilter) queryBuilder = queryBuilder.or(searchFilter);
@@ -1023,6 +1029,32 @@ export async function fetchCRMRowsFromSource(
   );
 }
 
+async function fetchCRMRowsForInMemorySearch(sourceConfig: CRMSourceConfig, filter?: string) {
+  let source = {
+    ...sourceConfig,
+    searchableFields: [...sourceConfig.searchableFields],
+    filterFields: [...sourceConfig.filterFields],
+    orderFields: [...sourceConfig.orderFields],
+  };
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    let queryBuilder = supabaseAdmin.from(source.name).select(CRM_SELECT).limit(5000);
+    const viewFilter = buildCRMViewFilterForSource(source, filter);
+    if (viewFilter) queryBuilder = queryBuilder.or(String(viewFilter));
+    queryBuilder = applyCRMOrderingForSource(queryBuilder, source);
+    const { data, error } = await queryBuilder;
+    if (!error) return normalizeCRMRows(data || []);
+    const missingColumn = missingColumnFromError(error);
+    if (!missingColumn) throw error;
+    source = {
+      ...source,
+      searchableFields: source.searchableFields.filter((field) => field !== missingColumn),
+      filterFields: source.filterFields.filter((field) => field !== missingColumn),
+      orderFields: source.orderFields.filter((field) => field !== missingColumn),
+    };
+  }
+  return [];
+}
+
 export async function fetchCRMRowsWithFallback(
   options: CRMPageOptions,
 ): Promise<CRMRowsResult> {
@@ -1036,6 +1068,18 @@ export async function fetchCRMRowsWithFallback(
         page: safePage,
         pageSize: safePageSize,
       });
+      if (String(options.query || "").trim() && result.rows.length === 0) {
+        const fallback = await fetchCRMRowsForInMemorySearch(source, normalizeStatus(options.filter || "all") === "all" ? "all" : options.filter);
+        let matched = fallback.filter((row) => rowMatchesSearch(row, options.query));
+        if (!matched.length && normalizeStatus(options.filter || "all") !== "all") {
+          const allFallback = await fetchCRMRowsForInMemorySearch(source, "all");
+          matched = allFallback.filter((row) => rowMatchesSearch(row, options.query));
+        }
+        if (matched.length) {
+          const from = (safePage - 1) * safePageSize;
+          return { rows: matched.slice(from, from + safePageSize), total: matched.length, page: safePage, pageSize: safePageSize, totalPages: Math.max(1, Math.ceil(matched.length / safePageSize)), source: source.name };
+        }
+      }
       if (
         result.rows.length > 0 ||
         result.total > 0 ||

@@ -234,7 +234,46 @@ export async function getWorkspaceLocationSearchScope(userId: string, role?: str
   return { all: canSearchAllWorkspaceLocations(adminRole) || currentProfile?.team_type === "superadmin", profile: currentProfile };
 }
 
-const LOCATION_SEARCH_COLUMNS = "id,name,location_name,restaurant_name,activity_name,address,city,state,borough,neighborhood,category,location_type,cuisine_type,activity_type,phone,phone_number,contact_phone,website,instagram,owner_instagram,claim_status,claim_outreach_status,partner_sales_status,reservation_portal_status,reservation_embed_status,discovery_profile_status,plan_status,sales_campaign,partner_launch_selected,partner_launch_pilot,updated_at,created_at";
+const WORKSPACE_LOCATION_SEARCH_COLUMNS = [
+  "id",
+  "name",
+  "location_name",
+  "restaurant_name",
+  "activity_name",
+  "business_name",
+  "address",
+  "city",
+  "state",
+  "borough",
+  "neighborhood",
+  "category",
+  "primary_category",
+  "location_type",
+  "cuisine",
+  "cuisine_type",
+  "activity_type",
+  "phone",
+  "phone_number",
+  "contact_phone",
+  "website",
+  "instagram",
+  "owner_instagram",
+  "claim_status",
+  "claim_outreach_status",
+  "partner_sales_status",
+  "reservation_portal_status",
+  "reservation_embed_status",
+  "discovery_profile_status",
+  "plan",
+  "plan_status",
+  "subscription_plan",
+  "subscription_status",
+  "sales_campaign",
+  "partner_launch_selected",
+  "partner_launch_pilot",
+  "updated_at",
+  "created_at",
+];
 
 const FILTER_FIELD_MAP: Record<string, string> = {
   partnerSalesStatus: "partner_sales_status",
@@ -246,29 +285,116 @@ const FILTER_FIELD_MAP: Record<string, string> = {
   claimStatus: "claim_status",
 };
 
+const STATUS_ALIASES: Record<string, Record<string, string[]>> = {
+  partnerSalesStatus: {
+    active: ["active_partner"],
+    ready: ["reservation_ready"],
+    in_progress: ["contacted", "interested", "demo_setup"],
+  },
+  reservationPortalStatus: {
+    not_started: ["not_enabled", "needs_setup"],
+    ready: ["tested", "live"],
+    active: ["enabled", "live"],
+  },
+  reservationEmbedStatus: {
+    needed: ["not_sent", "generated", "needs_help"],
+    complete: ["installed", "tested"],
+  },
+  discoveryProfileStatus: {
+    needed: ["needs_review", "needs_photos", "needs_tags", "needs_hours"],
+    in_progress: ["needs_photos", "needs_tags", "needs_hours"],
+    complete: ["ready"],
+  },
+  planStatus: {
+    free: ["inactive"],
+    payment_pending: ["past_due", "trialing"],
+  },
+};
+
 function cleanFilter(value: unknown) {
-  const clean = String(value || "").trim();
-  return clean && clean !== "all" ? clean : "";
+  const clean = String(value ?? "").trim();
+  return clean && clean.toLowerCase() !== "all" ? clean : "";
 }
 
-function locationMatches(row: any, query: string) {
-  if (!query) return true;
-  const haystack = [row.name,row.location_name,row.restaurant_name,row.activity_name,row.address,row.city,row.state,row.borough,row.neighborhood,row.category,row.location_type,row.cuisine_type,row.activity_type,row.phone,row.phone_number,row.contact_phone,row.website,row.instagram,row.owner_instagram,row.claim_status,row.claim_outreach_status,row.partner_sales_status,row.plan_status].filter(Boolean).join(" ").toLowerCase();
-  return haystack.includes(query.toLowerCase());
+export function normalizeSearchText(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[’'`]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function locationMatchesFilters(row: any, filters: Record<string, any>, assignedIds = new Set<string>()) {
+export function buildWorkspaceLocationHaystack(row: any): string {
+  return [
+    row.name,
+    row.location_name,
+    row.restaurant_name,
+    row.activity_name,
+    row.business_name,
+    row.address,
+    row.city,
+    row.state,
+    row.borough,
+    row.neighborhood,
+    row.category,
+    row.primary_category,
+    row.location_type,
+    row.cuisine,
+    row.cuisine_type,
+    row.activity_type,
+    row.phone,
+    row.phone_number,
+    row.contact_phone,
+    row.website,
+    row.instagram,
+    row.owner_instagram,
+    row.claim_status,
+    row.claim_outreach_status,
+    row.partner_sales_status,
+    row.reservation_portal_status,
+    row.reservation_embed_status,
+    row.discovery_profile_status,
+    row.plan,
+    row.plan_status,
+    row.subscription_plan,
+    row.subscription_status,
+    row.sales_campaign,
+  ].filter(Boolean).join(" ");
+}
+
+export function workspaceLocationMatchesQuery(row: any, query: string): boolean {
+  const rawQuery = String(query || "").trim().toLowerCase();
+  if (!rawQuery) return true;
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return true;
+  const rawHaystack = buildWorkspaceLocationHaystack(row).toLowerCase();
+  const normalizedHaystack = normalizeSearchText(rawHaystack);
+  if (rawHaystack.includes(rawQuery) || normalizedHaystack.includes(normalizedQuery)) return true;
+  const tokens = normalizedQuery.split(" ").filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => normalizedHaystack.includes(token));
+}
+
+function filterValueMatches(filterKey: string, rowValue: unknown, requested: string) {
+  const actual = normalizeSearchText(rowValue).replace(/ /g, "_");
+  const wanted = normalizeSearchText(requested).replace(/ /g, "_");
+  if (!wanted) return true;
+  if (actual === wanted) return true;
+  return (STATUS_ALIASES[filterKey]?.[wanted] || []).some((alias) => actual === alias);
+}
+
+export function workspaceLocationMatchesFilters(row: any, filters: Record<string, any>, assignedIds: Set<string>): boolean {
   for (const [filterKey, column] of Object.entries(FILTER_FIELD_MAP)) {
     const value = cleanFilter(filters[filterKey]);
-    if (value && String(row[column] || "").toLowerCase() !== value.toLowerCase()) return false;
+    if (value && !filterValueMatches(filterKey, row[column], value)) return false;
   }
-  const assigned = cleanFilter(filters.assigned);
+  const assigned = cleanFilter(filters.assigned).toLowerCase();
   if (assigned === "assigned" && !assignedIds.has(String(row.id))) return false;
   if (assigned === "unassigned" && assignedIds.has(String(row.id))) return false;
-  const launchPilot = cleanFilter(filters.launchPilot);
+  const launchPilot = cleanFilter(filters.launchPilot).toLowerCase();
   if (launchPilot === "yes" && row.partner_launch_pilot !== true) return false;
   if (launchPilot === "no" && row.partner_launch_pilot === true) return false;
-  const partnerLaunchSelected = cleanFilter(filters.partnerLaunchSelected);
+  const partnerLaunchSelected = cleanFilter(filters.partnerLaunchSelected).toLowerCase();
   if (partnerLaunchSelected === "yes" && row.partner_launch_selected !== true) return false;
   if (partnerLaunchSelected === "no" && row.partner_launch_selected === true) return false;
   return true;
@@ -276,7 +402,7 @@ function locationMatchesFilters(row: any, filters: Record<string, any>, assigned
 
 async function getActiveAssignmentMap(locationIds?: string[]) {
   try {
-    let q = supabaseAdmin.from("team_location_assignments").select("location_id,team_member_id,priority,status,assignment_type,team_member_profiles(display_name,full_name,email,team_type)").eq("status", "active").limit(1000);
+    let q = supabaseAdmin.from("team_location_assignments").select("location_id,team_member_id,priority,status,assignment_type,team_member_profiles(display_name,full_name,email,team_type)").eq("status", "active").limit(5000);
     if (locationIds?.length) q = q.in("location_id", locationIds);
     const { data, error } = await q;
     if (error) return new Map<string, any>();
@@ -287,13 +413,13 @@ async function getActiveAssignmentMap(locationIds?: string[]) {
   }
 }
 
-function normalizeWorkspaceLocation(row: any, assignment?: any) {
+export function normalizeWorkspaceLocation(row: any, assignment?: any) {
   const profile = Array.isArray(assignment?.team_member_profiles) ? assignment.team_member_profiles[0] : assignment?.team_member_profiles;
   return {
     ...row,
-    display_name: row.name || row.location_name || row.restaurant_name || row.activity_name || "Untitled location",
+    display_name: row.name || row.location_name || row.restaurant_name || row.activity_name || row.business_name || "Untitled location",
     display_phone: row.phone || row.phone_number || row.contact_phone || null,
-    display_category: row.category || row.cuisine_type || row.activity_type || row.location_type || null,
+    display_category: row.category || row.primary_category || row.cuisine || row.cuisine_type || row.activity_type || row.location_type || null,
     assigned_to: assignment?.team_member_id || null,
     assignment: assignment ? {
       team_member_id: assignment.team_member_id,
@@ -304,32 +430,52 @@ function normalizeWorkspaceLocation(row: any, assignment?: any) {
   };
 }
 
+function missingColumnFromWorkspaceError(error: any) {
+  const message = String(error?.message || error?.details || "");
+  return message.match(/Could not find the '([^']+)' column/i)?.[1] || message.match(/column [^.]*[."]?([a-zA-Z0-9_]+)(?:")? does not exist/i)?.[1] || null;
+}
+
+async function fetchWorkspaceLocationRows(columns: string[], limit: number, ids?: string[]) {
+  let available = [...columns];
+  for (let attempt = 0; attempt < columns.length + 2; attempt += 1) {
+    let query = supabaseAdmin.from("locations").select(available.join(",")).order("updated_at", { ascending: false }).limit(limit);
+    if (ids?.length) query = query.in("id", ids);
+    const { data, error } = await query;
+    if (!error) return data || [];
+    const missing = missingColumnFromWorkspaceError(error);
+    if (!missing || !available.includes(missing)) throw error;
+    available = available.filter((column) => column !== missing);
+  }
+  return [];
+}
+
 export async function searchWorkspaceLocationsForUser(userId: string, role: string | null | undefined, query: string, filters: Record<string, any> = {}) {
-  const limit = Math.min(Math.max(Number(filters.limit || 50), 1), 50);
+  const limit = Math.min(Math.max(Number(filters.limit || 50), 1), 5000);
+  const fetchLimit = canSearchAllWorkspaceLocations(role) ? Math.max(limit, String(query || "").trim() ? 5000 : 500) : 1000;
   const scope = await getWorkspaceLocationSearchScope(userId, role);
   const q = String(query || "").trim();
-  const selectCols = filters.columns || LOCATION_SEARCH_COLUMNS;
   let rows: any[] = [];
+
   if (scope.all) {
-    let dbq = supabaseAdmin.from("locations").select(selectCols).limit(limit * 8);
-    if (q) dbq = dbq.or(`name.ilike.%${q}%,location_name.ilike.%${q}%,restaurant_name.ilike.%${q}%,activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,borough.ilike.%${q}%,neighborhood.ilike.%${q}%,category.ilike.%${q}%,location_type.ilike.%${q}%,cuisine_type.ilike.%${q}%,activity_type.ilike.%${q}%,phone.ilike.%${q}%,phone_number.ilike.%${q}%,contact_phone.ilike.%${q}%`);
-    for (const [filterKey, column] of Object.entries(FILTER_FIELD_MAP)) {
-      const value = cleanFilter(filters[filterKey]);
-      if (value) dbq = dbq.eq(column, value);
-    }
-    const { data, error } = await dbq.order("updated_at", { ascending: false });
-    if (!error) rows = data || [];
-    if (error) {
-      console.warn("Workspace DB search fell back to in-memory filtering", error.message);
-      const fallback = await supabaseAdmin.from("locations").select(selectCols).order("updated_at", { ascending: false }).limit(500);
-      rows = fallback.data || [];
+    try {
+      rows = await fetchWorkspaceLocationRows(WORKSPACE_LOCATION_SEARCH_COLUMNS, fetchLimit);
+    } catch (error: any) {
+      console.warn("Workspace location fetch failed", error?.message || error);
+      rows = [];
     }
   } else {
-    rows = await listPermittedWorkspaceLocations(scope.profile, selectCols, 1000);
+    const permitted = await listPermittedWorkspaceLocations(scope.profile, "id", 5000);
+    const ids = permitted.map((row: any) => row.id).filter(Boolean);
+    rows = ids.length ? await fetchWorkspaceLocationRows(WORKSPACE_LOCATION_SEARCH_COLUMNS, Math.min(fetchLimit, ids.length), ids) : [];
   }
-  rows = rows.filter((row) => locationMatches(row, q));
+
   const assignments = await getActiveAssignmentMap(rows.map((row) => row.id).filter(Boolean));
-  rows = rows.filter((row) => locationMatchesFilters(row, filters, new Set(assignments.keys())));
+  const before = rows.length;
+  rows = rows.filter((row) => workspaceLocationMatchesQuery(row, q));
+  rows = rows.filter((row) => workspaceLocationMatchesFilters(row, filters, new Set(assignments.keys())));
+  if (process.env.NODE_ENV !== "production") {
+    console.warn("assign-location search", { query: q, filters, fetched: before, matched: rows.length });
+  }
   return rows.slice(0, limit).map((row) => normalizeWorkspaceLocation(row, assignments.get(String(row.id))));
 }
 
