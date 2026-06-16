@@ -987,6 +987,10 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
+  if (/^things to do(?:\s|$)/i.test(query)) {
+    return { intent: null, reason: "generic_activity_query_uses_normal_parser" };
+  }
+
   if (hasActivityOnlyFastPathIntent(query)) {
     return {
       intent: createActivityOnlyFastPathIntent(rawQuery),

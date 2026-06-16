@@ -207,7 +207,6 @@ export const FINAL_TERM_STOPWORDS = new Set([
   "open",
   "mic",
   "house",
-  "filet",
   "mignon",
   "prime",
   "rib",
@@ -304,6 +303,12 @@ export const RESTAURANT_ALLOWED_SINGLE_WORDS = new Set([
   "restaurant",
   "steak",
   "steakhouse",
+  "ribeye",
+  "porterhouse",
+  "filet",
+  "sirloin",
+  "tomahawk",
+  "churrasco",
   "seafood",
   "sushi",
   "japanese",
@@ -977,13 +982,18 @@ export function detectPairingPreference(
 }
 
 export function deterministicIntentFromQuery(query: string): SearchIntent {
+  const rawActivitySignals = stripDistanceTerms(detectActivityTerms(query));
+  const hasMixedPairingLanguage =
+    rawActivitySignals.length > 0 ||
+    hasGenericActivitySignal(query) ||
+    /\b(and|with|then|after|before|plus)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|bowling|karaoke|hookah|museum|arcade|drinks|cocktails|bar|lounge)\b/i.test(query);
   const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
-  if (singleVenueWithIntent) return singleVenueWithIntent;
+  if (singleVenueWithIntent && !hasMixedPairingLanguage) return singleVenueWithIntent;
 
   const food = detectFoodTerms(query);
   const cuisine = detectCuisineTerms(query);
   const meals = detectMealTerms(query);
-  const acts = stripDistanceTerms(detectActivityTerms(query));
+  const acts = rawActivitySignals;
   const geo = detectGeoIntent(query);
   const rooftopActivity = rooftopDrinksBelongToActivity(query);
   const restaurantAlternativeGroups = detectAlternativeGroupsForLane(
@@ -1012,13 +1022,14 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     acts.length > 0 ||
     activityAlternativeGroups.length > 0 ||
     hasGenericActivitySignal(query) ||
-    /things to do|fun things|something to do|something fun|date idea|date activity|outing|experience|entertainment|then|with|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(
+    /things to do|fun things|something to do|something fun|date idea|date activity|outing|experience|entertainment|then|with|after|before|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(
       query,
     ) ||
     (/date night/i.test(query) &&
       /walkable|walking distance|everything|outing|plan|activity|things to do|something fun/i.test(
         query,
-      ));
+      )) ||
+    /\b(drinks|cocktails)\b[^.?!]{0,40}\b(after|then|before)\b|\b(after|then|before)\b[^.?!]{0,40}\b(drinks|cocktails)\b/i.test(query);
   const hookahOnly =
     acts.includes("hookah") &&
     !/dinner|restaurant|food|eat|dining/i.test(query);
@@ -1126,7 +1137,14 @@ export function normalizeIntent(
     ? rooftopRestaurantFeatureTermsFromQuery(query, restaurantLaneFeatureOnly)
     : [];
   const foodExpanded = expandFoodSynonyms(food);
-  const actExpanded = stripDistanceTerms(expandActivitySynonyms(acts));
+  const actExpanded = stripDistanceTerms(expandActivitySynonyms(
+    uniq([
+      ...acts,
+      ...(merged.needsRestaurant && /\brooftop\b/i.test(query) && /\b(with|after|then|and|before)\b/i.test(query)
+        ? ["rooftop", "rooftop bar", "rooftop lounge"]
+        : []),
+    ]),
+  ));
   const restaurantAlternativeGroups = mergeAlternativeGroups(
     base.restaurantIntent.alternativeGroups,
     merged.restaurantIntent.alternativeGroups,
@@ -1172,7 +1190,7 @@ export function normalizeIntent(
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
     ),
     featureTerms: stripBlockedTerms(
-      userAskedForRooftopRestaurant(query) && !rooftopActivity
+      userAskedForRooftopRestaurant(query) && !rooftopActivity && !merged.needsActivity
         ? uniq([
             ...(merged.restaurantIntent.featureTerms ?? []),
             ...ROOFTOP_RESTAURANT_FEATURE_TERMS,
@@ -1183,11 +1201,7 @@ export function normalizeIntent(
               ...restaurantOnlyFeatureTerms,
             ])
           : stripCrossTerms(
-              rooftopActivity
-                ? stripRooftopFeatureTerms(
-                    uniq(merged.restaurantIntent.featureTerms ?? []),
-                  )
-                : uniq(merged.restaurantIntent.featureTerms ?? []),
+              stripRooftopFeatureTerms(uniq(merged.restaurantIntent.featureTerms ?? [])),
               ACTIVITY_TERMS,
             ),
       RESTAURANT_SEARCH_TERM_BLOCKLIST,
@@ -1264,14 +1278,19 @@ export function normalizeIntent(
     /restaurant|dinner|brunch|lunch|breakfast|dining|date night|romantic/i.test(
       query,
     );
+  const activityTermsForDomain = (merged.activityIntent.activityTerms ?? []).filter((term) =>
+    !["drinks", "cocktails", "cocktail bar", "bar", "wine bar", "lounge", "speakeasy"].includes(term.toLowerCase()) ||
+    /\b(drinks|cocktails)\b[^.?!]{0,40}\b(after|then|before)\b|\b(after|then|before)\b[^.?!]{0,40}\b(drinks|cocktails)\b/i.test(query),
+  );
   const hasActivity =
-    merged.activityIntent.activityTerms.length > 0 ||
+    activityTermsForDomain.length > 0 ||
     (merged.activityIntent.alternativeGroups ?? []).length > 0 ||
-    /things to do|fun things|\bactivity\b|after|before|drinks|cocktails|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(
+    /things to do|fun things|\bactivity\b|after|before|girls night|girls' night|lounge|bar|relaxed activity|chill activity|easy activity/i.test(
       query,
     ) ||
     (/date night/i.test(query) &&
-      /walkable|walking distance|everything|outing|plan/i.test(query));
+      /walkable|walking distance|everything|outing|plan/i.test(query)) ||
+    /\b(drinks|cocktails)\b[^.?!]{0,40}\b(after|then|before)\b|\b(after|then|before)\b[^.?!]{0,40}\b(drinks|cocktails)\b/i.test(query);
   merged.needsRestaurant =
     hasRestaurant && !/^\s*hookah\s+(in|near)/i.test(query);
   merged.needsActivity = hasActivity;
@@ -1323,8 +1342,13 @@ export function normalizeIntent(
   finalIntent = cleanupRelaxedIntent(finalIntent);
   finalIntent = finalDomainCleanup(finalIntent);
   finalIntent = finalCleanIntentTerms(finalIntent);
+  const finalActivitySignals = stripDistanceTerms(detectActivityTerms(query));
+  const finalHasMixedPairingLanguage =
+    finalActivitySignals.length > 0 ||
+    hasGenericActivitySignal(query) ||
+    /\b(and|with|then|after|before|plus)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|bowling|karaoke|hookah|museum|arcade|drinks|cocktails|bar|lounge)\b/i.test(query);
   const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
-  if (singleVenueWithIntent) {
+  if (singleVenueWithIntent && !finalHasMixedPairingLanguage) {
     return {
       ...finalIntent,
       ...singleVenueWithIntent,
@@ -1445,7 +1469,8 @@ export function restaurantSearchTerms(intent: SearchIntent) {
       ]
     : [];
   return finalCleanTermList(stripBlockedTerms(
-    uniq([
+    stripBlockedTerms(
+      uniq([
       ...intent.restaurantIntent.mealTerms,
       ...intent.restaurantIntent.foodTerms,
       ...intent.restaurantIntent.cuisineTerms,
@@ -1453,7 +1478,9 @@ export function restaurantSearchTerms(intent: SearchIntent) {
       ...intent.restaurantIntent.featureTerms,
       ...(intent.restaurantIntent.alternativeGroups ?? []).flat(),
       ...rooftopRestaurantTerms,
-    ]),
+      ]),
+      new Set(["dinner"]),
+    ),
     RESTAURANT_SEARCH_TERM_BLOCKLIST,
   ), RESTAURANT_ALLOWED_SINGLE_WORDS);
 }
@@ -1517,7 +1544,11 @@ export function activitySearchTerms(intent: SearchIntent) {
     ACTIVITY_SEARCH_TERM_BLOCKLIST,
   );
 
-  return finalCleanTermList(cleanPlaceOfWorshipTerms(cleaned, intent.rawQuery), ACTIVITY_ALLOWED_SINGLE_WORDS);
+  const finalTerms = finalCleanTermList(cleanPlaceOfWorshipTerms(cleaned, intent.rawQuery), ACTIVITY_ALLOWED_SINGLE_WORDS);
+  if (/\bhookah\b/i.test(intent.rawQuery) && !/\bdrinks?|cocktails?|wine\b/i.test(intent.rawQuery)) {
+    return finalTerms.filter((term) => !["lounge", "bar", "cocktail bar"].includes(term));
+  }
+  return finalTerms;
 }
 
 export function restaurantSearchTermsOriginal(intent: SearchIntent) {

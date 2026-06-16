@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locations);
+  if (auth.error) return auth.error;
+  const supabaseAdmin = getSupabaseAdminClient();
   const { id } = await params;
 
   const { data, error } = await supabaseAdmin
@@ -29,6 +29,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
+  if (auth.error) return auth.error;
+  const supabaseAdmin = getSupabaseAdminClient();
   const { id } = await params;
   const body = await request.json();
 
