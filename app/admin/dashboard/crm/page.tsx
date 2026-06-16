@@ -167,7 +167,7 @@ export default async function CRMPage({
   await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const params = await searchParams;
   const q = String(params.q || "").trim();
-  const filter = normalizeStatus(params.view || params.filter || "all");
+  const filter = q && !params.view && !params.filter ? "all" : normalizeStatus(params.view || params.filter || "all");
   const page = Math.max(Number(params.page || 1), 1);
   const parsedPageSize = Number(params.pageSize || 25);
   const pageSize = [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 25;
@@ -191,8 +191,8 @@ export default async function CRMPage({
   };
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] min-w-0 max-w-full space-y-6">
+    <main className="min-h-screen max-w-full overflow-x-hidden bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1500px] min-w-0 space-y-6">
         <section className="max-w-full overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_30%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
           <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">
             Location Operations · SaaS CRM
@@ -220,15 +220,12 @@ export default async function CRMPage({
                   placeholder="Search by location name, owner, email, phone, claim code, city, cuisine..."
                   className="min-h-14 flex-1 rounded-2xl border border-white/10 bg-[#12090b] px-5 text-base font-semibold text-white outline-none ring-rose-300/20 transition placeholder:text-white/35 focus:border-rose-200/40 focus:ring-4"
                 />
-                {filter !== "all" ? (
-                  <input type="hidden" name="view" value={filter} />
-                ) : null}
                 <input type="hidden" name="page" value="1" />
                 <input type="hidden" name="pageSize" value={pageSize} />
                 <div className="flex flex-wrap gap-2">
                   {q ? (
                     <Link
-                      href={`/admin/dashboard/crm?${new URLSearchParams({ ...(filter !== "all" ? { view: filter } : {}), page: "1", pageSize: String(pageSize) }).toString()}`}
+                      href={`/admin/dashboard/crm?${new URLSearchParams({ page: "1", pageSize: String(pageSize) }).toString()}`}
                       className="inline-flex min-h-14 items-center rounded-2xl border border-white/10 px-4 text-sm font-black text-white/75 hover:text-white"
                     >
                       Clear
@@ -313,7 +310,7 @@ export default async function CRMPage({
           })}
         </nav>
 
-        <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+        <section className="min-w-0 max-w-full rounded-3xl border border-white/10 bg-white/[0.04] p-4">
           {filter === "pending-claims" && pendingClaims.length > 0 ? (
             <PendingClaimsPanel claims={pendingClaims} />
           ) : businesses.length === 0 ? (
@@ -327,7 +324,7 @@ export default async function CRMPage({
               <div className="mt-5 flex flex-wrap justify-center gap-3">
                 {q ? (
                   <Link
-                    href={`/admin/dashboard/crm?${new URLSearchParams({ ...(filter !== "all" ? { view: filter } : {}), page: "1", pageSize: String(pageSize) }).toString()}`}
+                    href={`/admin/dashboard/crm?${new URLSearchParams({ page: "1", pageSize: String(pageSize) }).toString()}`}
                     className="inline-flex rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white/80"
                   >
                     Clear search
@@ -352,7 +349,7 @@ export default async function CRMPage({
           ) : (
             <>
             <div className="hidden max-w-full min-w-0 overflow-x-auto rounded-2xl md:block">
-              <table className="w-full min-w-[1180px] table-fixed text-left text-sm">
+              <table className="min-w-[1280px] text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.2em] text-white/55">
                   <tr>
                     {[
@@ -428,31 +425,16 @@ export default async function CRMPage({
                           )}
                         </td>
                         <td className="px-3 py-4 align-top">
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              href={`/admin/dashboard/crm/${business.id}`}
-                              className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white"
-                            >
-                              Open CRM
-                            </Link>
-                            <Link
-                              href={`/admin/dashboard/crm/${business.id}?tab=profile`}
-                              className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70"
-                            >
-                              Set Follow-Up
-                            </Link>
-                            <Link
-                              href={`/admin/dashboard/crm/${business.id}?tab=qr`}
-                              className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70"
-                            >
-                              Embed
-                            </Link>
-                            <Link
-                              href={`/admin/dashboard/crm/${business.id}?tab=logs`}
-                              className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70"
-                            >
-                              Logs
-                            </Link>
+                          <div className="flex max-w-[145px] flex-wrap gap-2">
+                            <Link href={`/admin/dashboard/crm/${business.id}`} className="rounded-full bg-rose-600 px-3 py-1 text-xs font-black text-white">Open CRM</Link>
+                            <details className="relative">
+                              <summary className="cursor-pointer rounded-full border border-white/10 px-3 py-1 text-xs font-bold text-white/70">Actions</summary>
+                              <div className="mt-2 grid gap-1 rounded-xl border border-white/10 bg-[#12090b] p-2">
+                                <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="whitespace-nowrap px-2 py-1 text-xs font-bold text-white/70">Set Follow-Up</Link>
+                                <Link href={`/admin/dashboard/crm/${business.id}?tab=qr`} className="whitespace-nowrap px-2 py-1 text-xs font-bold text-white/70">Embed</Link>
+                                <Link href={`/admin/dashboard/crm/${business.id}?tab=logs`} className="whitespace-nowrap px-2 py-1 text-xs font-bold text-white/70">Logs</Link>
+                              </div>
+                            </details>
                           </div>
                         </td>
                       </tr>
@@ -498,9 +480,6 @@ export default async function CRMPage({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <form className="flex items-center gap-2">
                 {q ? <input type="hidden" name="q" value={q} /> : null}
-                {filter !== "all" ? (
-                  <input type="hidden" name="view" value={filter} />
-                ) : null}
                 <input type="hidden" name="page" value="1" />
                 <label
                   htmlFor="crm-page-size"
