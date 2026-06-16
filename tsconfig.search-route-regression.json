@@ -9,7 +9,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "isolatedModules": false,
-    "strict": false
+    "strict": false,
+    "baseUrl": "."
   },
   "include": [
     "scripts/search-route-regression.ts",
@@ -17,6 +18,12 @@
     "lib/search/enterprise/**/*.ts",
     "lib/search/**/*.ts",
     "lib/supabaseAdmin.ts",
-    "lib/locationImage.ts"
+    "lib/locationImage.ts",
+    "lib/publicCardImage.ts",
+    "lib/search/createSearch.ts",
+    "lib/search/enterprise/searchEventLogger.ts",
+    "lib/search/enterprise/searchHealthLogger.ts",
+    "lib/outings/parse-planned-time.ts",
+    "lib/search/performance.ts"
   ]
 }
