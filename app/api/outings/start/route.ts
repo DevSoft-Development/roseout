@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { isUuid as isTrackUuid, trackEvent } from "@/lib/analytics/trackEvent";
 import { generateConfirmToken, generatePlanAccessToken, createSecureToken } from "@/lib/tokens/secure-token";
+import { sendRenderedEmail } from "@/lib/email/sender";
+import { renderOutingPlanEmail } from "@/lib/email/templates/outingPlanEmail";
 
-const CONTACT_METHODS = new Set(["external_reservation", "phone"]);
+const CONTACT_METHODS = new Set(["external_reservation", "phone", "email", "text"]);
 const CONFIDENCE = new Set(["none", "date_only", "exact"]);
 
 function asString(value: unknown): string | null {
@@ -40,9 +42,16 @@ export async function POST(req: NextRequest) {
     const restaurantLocationId = asString(payload?.restaurantLocationId);
     const activityLocationId = asString(payload?.activityLocationId);
     const locationId = asString(payload?.location_id) ?? asString(payload?.locationId) ?? restaurantLocationId ?? activityLocationId;
-    const contactMethod = asString(payload?.contact_method) ?? (payload?.external_reservation_url ? "external_reservation" : payload?.phone_number ? "phone" : "external_reservation");
     const reservationUrl = asString(payload?.external_reservation_url) ?? asString(payload?.externalReservationUrl);
     const phoneNumber = asString(payload?.phone_number) ?? asString(payload?.phoneNumber);
+    const requestedContactMethod = asString(payload?.contact_method) ?? asString(payload?.contactMethod);
+    const contactMethod =
+      requestedContactMethod ??
+      (payload?.external_reservation_url ? "external_reservation" :
+       payload?.phone_number || payload?.phoneNumber ? "phone" :
+       payload?.guestEmail ? "email" :
+       payload?.guestPhone ? "text" :
+       "external_reservation");
     const selectedLocationId = sourceLocationId ?? locationId;
     const planTitle = asString(payload?.planTitle);
     const sourceQuery = asString(payload?.sourceQuery);
@@ -53,7 +62,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "missing_location_id", message: "A location id is required." }, { status: 400 });
     }
     if (contactMethod && !CONTACT_METHODS.has(contactMethod)) {
-      return NextResponse.json({ ok: false, error: "invalid_contact_method", message: "A valid contact method is required." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "invalid_contact_method", message: "Choose email, text, call, or reservation before saving your outing." }, { status: 400 });
     }
 
     const outingTimeConfidence = CONFIDENCE.has(asString(payload?.outingTimeConfidence) || "") ? asString(payload?.outingTimeConfidence) as "none" | "date_only" | "exact" : "none";
@@ -79,16 +88,24 @@ export async function POST(req: NextRequest) {
     const guestName = asString(payload?.guestName);
     const emailOptIn = Boolean(payload?.emailOptIn);
     const smsOptIn = Boolean(payload?.smsOptIn);
+    if (contactMethod === "email" && !guestEmail) {
+      return NextResponse.json({ ok: false, error: "email_required", message: "Add a valid email so we can send your outing plan." }, { status: 400 });
+    }
+    if (contactMethod === "text" && !guestPhone) {
+      return NextResponse.json({ ok: false, error: "phone_required", message: "Add a valid phone number so we can text your outing plan." }, { status: 400 });
+    }
     if (smsOptIn && !guestPhone) {
       return NextResponse.json({ ok: false, error: "phone_required_for_sms", message: "Add a phone number and SMS opt-in to receive text reminders." }, { status: 400 });
     }
+    if (emailOptIn && !guestEmail) {
+      return NextResponse.json({ ok: false, error: "email_required_for_save", message: "Add a valid email so we can save and email your outing plan." }, { status: 400 });
+    }
 
     const supabase = await createClient();
+    let canonicalLocationId: string | null = null;
     if (isUuid(locationId)) {
       const { data: locationExists } = await supabase.from("locations").select("id").eq("id", locationId).maybeSingle();
-      if (!locationExists) {
-        return NextResponse.json({ ok: false, error: "location_not_found", message: "Location could not be found." }, { status: 404 });
-      }
+      canonicalLocationId = locationExists?.id ?? null;
     }
 
     const { data: authData } = await supabase.auth.getUser();
@@ -122,7 +139,7 @@ export async function POST(req: NextRequest) {
     const insertPayload = {
       user_id: userId,
       source_location_id: sourceLocationId ?? locationId,
-      location_id: isUuid(locationId) ? locationId : null,
+      location_id: canonicalLocationId,
       location_type: asString(payload?.location_type),
       status: "saved",
       reservation_type: asString(payload?.reservation_type) ?? "external",
@@ -162,7 +179,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase.from("outings").insert(insertPayload).select("*").single();
 
     if (error) {
-      console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error: error.message, location_id: selectedLocationId });
+      console.error("THEOUTHAVEN_OUTING_TRACKING_FAILED", { error, location_id: selectedLocationId, insertPayload });
       await trackEvent({
         event_name: "plan_save_failed",
         event_type: "save",
@@ -176,11 +193,34 @@ export async function POST(req: NextRequest) {
         source: asString(payload?.source) ?? "plan_page",
         metadata: { error_code: error.code, error_message: error.message, plan_title: planTitle },
       });
-      return NextResponse.json({ ok: false, error: "outing_create_failed", message: "We could not save your outing yet." }, { status: 500 });
+      return NextResponse.json({ ok: false, error: "outing_create_failed", message: "We could not save your outing yet. Please check your contact info and try again." }, { status: 500 });
     }
 
     const outingId = data.id;
     const planUrl = isGuest ? `/outings/guest/${planAccessToken}` : `/outings/${outingId}`;
+    let emailStatus: "sent" | "skipped" | "error" = "skipped";
+    if (contactMethod === "email" && guestEmail) {
+      try {
+        const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
+        const absolutePlanUrl = `${siteUrl}${planUrl.startsWith("/") ? planUrl : `/${planUrl}`}`;
+        const selectedLocations = payload?.selectedLocations || {};
+        const rendered = renderOutingPlanEmail({
+          planTitle,
+          planUrl: absolutePlanUrl,
+          restaurant: selectedLocations?.restaurant || null,
+          activity: selectedLocations?.activity || null,
+          plannedFor,
+          timezone,
+          outingDateContext,
+        });
+        const emailResult = await sendRenderedEmail({ to: guestEmail, rendered, department: "plans", templateKey: "outing_plan" });
+        emailStatus = emailResult.status;
+        if (emailResult.status === "error") console.error("OUTING_PLAN_EMAIL_FAILED", emailResult.error);
+      } catch (emailError) {
+        emailStatus = "error";
+        console.error("OUTING_PLAN_EMAIL_FAILED", emailError);
+      }
+    }
 
     const saveEventMetadata = { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId, selected_locations: payload?.selectedLocations ?? payload?.planLocations ?? null, contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, reminders_enabled: remindersEnabled, next_morning_followup_enabled: nextMorningFollowupEnabled, next_morning_followup_date: nextMorningFollowupDate };
 
@@ -191,7 +231,7 @@ export async function POST(req: NextRequest) {
       outingTimeConfidence === "exact" ? trackEvent({ event_name: "outing_exact_time_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, planned_for: plannedFor } }) : Promise.resolve(),
     ]);
 
-    const response = NextResponse.json({ ok: true, outing: data, outing_id: outingId, planUrl });
+    const response = NextResponse.json({ ok: true, outing: data, outing_id: outingId, planUrl, emailStatus });
     if (guestSessionId && !existingGuestSession) {
       response.cookies.set("theouthaven_guest_session", guestSessionId, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 60 });
     }

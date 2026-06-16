@@ -4,7 +4,7 @@ type TrackOutingPayload = {
   source_location_id?: string | null;
   location_id?: string | null;
   location_type?: string | null;
-  contact_method: "external_reservation" | "phone";
+  contact_method: "external_reservation" | "phone" | "email" | "text";
   reservation_type?: string | null;
   external_reservation_url?: string | null;
   phone_number?: string | null;
