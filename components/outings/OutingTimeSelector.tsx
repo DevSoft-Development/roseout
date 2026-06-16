@@ -4,8 +4,6 @@ import { useMemo, useState } from "react";
 import {
   buildExactPlannedForIso,
   emptyOutingTimeValue,
-  getDateContextFollowupDate,
-  getNextMorningFollowupDateForDate,
   type OutingTimeValue,
 } from "@/lib/outings/planned-time-client";
 
@@ -100,18 +98,6 @@ function inputTimeFromIso(iso: string | null, timezone: string) {
 }
 
 
-function getFollowupDateForValue(value: OutingTimeValue, selectedDate: string) {
-  if (selectedDate) return getNextMorningFollowupDateForDate(selectedDate, value.timezone);
-  if (
-    value.outingDateContext === "tonight" ||
-    value.outingDateContext === "tomorrow" ||
-    value.outingDateContext === "this_weekend"
-  ) {
-    return getDateContextFollowupDate(value.outingDateContext, value.timezone);
-  }
-  return value.nextMorningFollowupDate;
-}
-
 function inputDateFromValue(value: OutingTimeValue) {
   if (value.plannedFor) return inputDateFromIso(value.plannedFor, value.timezone);
   if (value.outingDateContext && /^\d{4}-\d{2}-\d{2}$/.test(value.outingDateContext)) {
@@ -173,8 +159,8 @@ export default function OutingTimeSelector({
       outingDateContext: context,
       outingTimeConfidence: "date_only",
       remindersEnabled: false,
-      nextMorningFollowupEnabled: true,
-      nextMorningFollowupDate: getDateContextFollowupDate(context, safeValue.timezone),
+      nextMorningFollowupEnabled: false,
+      nextMorningFollowupDate: null,
     });
   }
 
@@ -185,8 +171,8 @@ export default function OutingTimeSelector({
       outingDateContext: nextDate,
       outingTimeConfidence: "date_only",
       remindersEnabled: false,
-      nextMorningFollowupEnabled: true,
-      nextMorningFollowupDate: getNextMorningFollowupDateForDate(nextDate, safeValue.timezone),
+      nextMorningFollowupEnabled: false,
+      nextMorningFollowupDate: null,
     });
   }
 
@@ -199,8 +185,8 @@ export default function OutingTimeSelector({
       outingDateContext: nextDate,
       outingTimeConfidence: "exact",
       remindersEnabled: Boolean(safeValue.remindersEnabled),
-      nextMorningFollowupEnabled: true,
-      nextMorningFollowupDate: getNextMorningFollowupDateForDate(nextDate, safeValue.timezone),
+      nextMorningFollowupEnabled: false,
+      nextMorningFollowupDate: null,
     });
   }
 
@@ -298,27 +284,6 @@ export default function OutingTimeSelector({
               Keep this plan handy before I head out
             </label>
           ) : null}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={safeValue.nextMorningFollowupEnabled}
-            onClick={() =>
-              onChange({
-                ...safeValue,
-                nextMorningFollowupEnabled: !safeValue.nextMorningFollowupEnabled,
-                nextMorningFollowupDate: safeValue.nextMorningFollowupEnabled ? null : getFollowupDateForValue(safeValue, date),
-              })
-            }
-            className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-left transition hover:border-white/20"
-          >
-            <span>
-              <span className="block text-xs font-black text-white/80">Next-morning check-in</span>
-              <span className="mt-0.5 block text-[11px] font-semibold text-white/45">Ask how everything went.</span>
-            </span>
-            <span className={`h-5 w-9 rounded-full border p-0.5 transition ${safeValue.nextMorningFollowupEnabled ? "border-[#e1062a]/60 bg-[#e1062a]/40" : "border-white/10 bg-white/10"}`}>
-              <span className={`block h-3.5 w-3.5 rounded-full bg-white transition ${safeValue.nextMorningFollowupEnabled ? "translate-x-4" : "translate-x-0"}`} />
-            </span>
-          </button>
         </div>
       ) : null}
 
