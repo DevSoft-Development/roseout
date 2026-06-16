@@ -139,17 +139,12 @@ export default function AdminTopBar({
           "/admin/dashboard/claims",
           "/admin/dashboard/data-quality",
         ],
-        activePrefixes: ["/admin/dashboard/crm", "/admin/dashboard/locations"],
+        activePrefixes: ["/admin/dashboard/crm"],
         items: [
           {
             label: "CRM Overview",
             href: "/admin/dashboard/crm",
             visible: canAdmin(adminRole, "crm"),
-          },
-          {
-            label: "Locations",
-            href: "/admin/dashboard/locations",
-            visible: canAdmin(adminRole, "locations"),
           },
           {
             label: "Claims",

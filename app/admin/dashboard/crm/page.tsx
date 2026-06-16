@@ -207,6 +207,9 @@ export default async function CRMPage({
                 codes, support, emails, SEO, and upgrade opportunities from one
                 place.
               </p>
+              <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm font-bold leading-6 text-white/60">
+                CRM is now the admin home for updating location details, search tags, vibes, hours, booking links, and listing quality.
+              </p>
             </div>
             <form className="w-full max-w-3xl rounded-[2rem] border border-rose-200/15 bg-black/35 p-3 shadow-2xl shadow-rose-950/20 backdrop-blur xl:max-w-[620px]">
               <div className="flex flex-col gap-3 md:flex-row md:items-center">
