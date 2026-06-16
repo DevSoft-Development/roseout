@@ -8,6 +8,8 @@ import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 import CommunicationPanel from "./CommunicationPanel";
 import PhotosPanelClient from "./PhotosPanel";
 import ReservationsPanel from "./ReservationPanel";
+import ListingEnhancementEditor from "./ListingEnhancementEditor";
+import type { LocationTableName } from "@/lib/listing-enhancement";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 
@@ -28,6 +30,7 @@ const tabs = [
   "support",
   "logs",
   "seo",
+  "enhancement",
   "settings",
 ] as const;
 
@@ -311,6 +314,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const flags = getUpgradeFlags(business);
   const canEdit = canAdmin(admin.role, "crmEdit");
   const publicHref = business.location_type === "activities" ? `/activities/${business.id}` : `/restaurants/${business.id}`;
+  const enhancementTable: LocationTableName = business.location_type === "restaurants" || business.location_type === "activities" ? business.location_type : "locations";
   const qualityScore = business.profile_quality_score || Math.round([business.name, business.address, business.city, business.phone, business.website, business.description].filter(Boolean).length / 6 * 100);
   const seoScore = business.seo_score || Math.round([business.name, business.description, business.category, business.city, business.is_searchable].filter(Boolean).length / 5 * 100);
 
@@ -325,7 +329,8 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
             <div className="mt-4 flex flex-wrap gap-2">{badge(business.status || "active")}{badge(business.is_searchable ? "Searchable" : "Not searchable", business.is_searchable ? "good" : "danger")}{badge(getClaimStatus(business), business.is_claimed ? "good" : "danger")}{badge(business.plan_status || "Free Discovery")}{badge(getDisplayCRMStatus(business))}</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Edit profile</Link>
+            <Link href={`/admin/dashboard/crm/${business.id}?tab=enhancement`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Edit Listing Enhancement</Link>
+            <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Edit profile</Link>
             <Link href={publicHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">View public page</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=claims`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open claims</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=qr`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print QR</Link>
@@ -345,7 +350,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       <PartnerLaunchPanel business={business} canEdit={canEdit} />
 
       <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
-        {tabs.map((tab) => <Link key={tab} href={`/admin/dashboard/crm/${business.id}?tab=${tab}`} className={`whitespace-nowrap rounded-full px-4 py-2 capitalize ${activeTab === tab ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>{tab === "qr" ? "QR Codes" : tab === "communication" ? "Communication" : tab}</Link>)}
+        {tabs.map((tab) => <Link key={tab} href={`/admin/dashboard/crm/${business.id}?tab=${tab}`} className={`whitespace-nowrap rounded-full px-4 py-2 capitalize ${activeTab === tab ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>{tab === "qr" ? "QR Codes" : tab === "communication" ? "Communication" : tab === "enhancement" ? "Listing Enhancement" : tab}</Link>)}
       </nav>
 
       {activeTab === "overview" ? <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -366,7 +371,8 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "owner" ? <OwnerPanel business={business} owners={related.owners} /> : null}
       {activeTab === "plan" ? <PlanBillingPanel business={business} canEdit={admin.role === "superadmin"} isSuperadmin={admin.role === "superadmin"} /> : null}
       {activeTab === "qr" ? <QRCodePanel business={business} qrCodes={related.qrCodes} canRegenerate={canAdmin(admin.role, "claimQrsGenerate")} /> : null}
-      {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use the profile and settings tabs to improve location-level search visibility.`} /> : null}
+      {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use Listing Enhancement, profile, and settings to improve location-level search visibility.`} /> : null}
+      {activeTab === "enhancement" ? <ListingEnhancementEditor table={enhancementTable} id={business.id} record={business} canEdit={canEdit} /> : null}
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
     </div>
   </main>;
