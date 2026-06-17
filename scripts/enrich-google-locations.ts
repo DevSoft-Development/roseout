@@ -19,10 +19,33 @@ type Options = {
 
 function parseArgs(): Options {
   const args = new Map<string, string | boolean>();
-  for (const arg of process.argv.slice(2)) {
+  const argv = process.argv.slice(2);
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (!arg.startsWith("--")) continue;
-    const [key, value] = arg.slice(2).split("=");
-    args.set(key, value ?? true);
+    const equalsIndex = arg.indexOf("=");
+    if (equalsIndex >= 0) {
+      args.set(arg.slice(2, equalsIndex), arg.slice(equalsIndex + 1));
+    } else if (argv[index + 1] && !argv[index + 1].startsWith("--")) {
+      args.set(arg.slice(2), argv[++index]);
+    } else {
+      args.set(arg.slice(2), true);
+    }
+  }
+
+  if (args.has("help")) {
+    console.log(`Usage: npx dotenv -e .env.local -- npx tsx scripts/enrich-google-locations.ts [options]
+
+Options:
+  --table locations|restaurants|activities  Table to enrich (default: locations)
+  --limit 10 / --limit=10                 Maximum rows to process (default: 25, max: 100)
+  --dry-run                               Do not update source rows or apply suggestions
+  --apply-high-confidence                 Apply matches with confidence >= 85
+  --only-missing-place-id                 Only process rows without google_place_id
+  --only-weak-search-terms                Only process rows with weak search/search tag fields
+  --force                                 Ignore freshness/status filters
+  --help                                  Show this help and exit`);
+    process.exit(0);
   }
 
   const table = String(args.get("table") || "locations") as Options["table"];
@@ -71,6 +94,7 @@ async function main() {
     no_match: 0,
     suggestions_created: 0,
     auto_applied: 0,
+    skipped_duplicate: 0,
     failed: 0,
     estimated_api_calls: 0,
   };
@@ -99,11 +123,27 @@ async function main() {
       counters.matched += 1;
       const suggestionStatus = !options.dryRun && options.applyHighConfidence && result.confidence >= 85 ? "auto_applied" : result.confidence >= 85 ? "pending" : "pending_review";
       const suggestionRow = buildGoogleSuggestionRow(options.table, row, result.place, result.confidence, result.suggestion, result.evidence, suggestionStatus);
-      const { data: inserted, error: insertError } = await supabase
+      const { data: existingSuggestion, error: existingSuggestionError } = await supabase
         .from("location_google_food_term_suggestions")
-        .insert(suggestionRow)
-        .select("id")
-        .single();
+        .select("id,status")
+        .eq("source_table", options.table)
+        .eq("source_id", row.id)
+        .eq("google_place_id", result.place.id)
+        .in("status", ["pending", "pending_review", "auto_applied"])
+        .limit(1)
+        .maybeSingle();
+      if (existingSuggestionError) throw existingSuggestionError;
+      if (existingSuggestion) {
+        counters.skipped_duplicate += 1;
+        continue;
+      }
+      const { data: inserted, error: insertError } = options.dryRun
+        ? { data: null, error: null }
+        : await supabase
+          .from("location_google_food_term_suggestions")
+          .insert(suggestionRow)
+          .select("id")
+          .single();
       if (insertError) throw insertError;
       counters.suggestions_created += 1;
 
@@ -135,7 +175,16 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify({ options, ...counters }, null, 2));
+  console.log(JSON.stringify({
+    options: {
+      ...options,
+      dryRun: options.dryRun,
+      createSuggestions: !options.dryRun,
+      applyHighConfidence: options.applyHighConfidence && !options.dryRun,
+    },
+    mode: options.dryRun ? "dry-run" : options.applyHighConfidence ? "apply-high-confidence" : "suggestions-only",
+    ...counters,
+  }, null, 2));
 }
 
 main().catch((error) => {
