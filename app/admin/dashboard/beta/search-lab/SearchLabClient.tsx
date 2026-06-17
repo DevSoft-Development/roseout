@@ -227,6 +227,13 @@ function PerformanceSummary({ result }: { result: SearchLabResult }) {
     ["intentParserSource", result.intentParserSource],
     ["fastPathMatched", result.fastPathMatched],
     ["fastPathReason", result.fastPathReason],
+    ["restaurantRpcTimedOut", pickFirst((result as any).restaurantRpcTimedOut, debug.restaurantRpcTimedOut)],
+    ["restaurantRpcTimeoutMs", pickFirst((result as any).restaurantRpcTimeoutMs, debug.restaurantRpcTimeoutMs)],
+    ["restaurantRpcFallbackUsed", pickFirst((result as any).restaurantRpcFallbackUsed, debug.restaurantRpcFallbackUsed)],
+    ["restaurantRpcFallbackReason", pickFirst((result as any).restaurantRpcFallbackReason, debug.restaurantRpcFallbackReason)],
+    ["outOfBoroughSuppressedCount", pickFirst((result as any).outOfBoroughSuppressedCount, debug.outOfBoroughSuppressedCount)],
+    ["featureRelaxed", pickFirst((result as any).featureRelaxed, debug.featureRelaxed)],
+    ["featureRelaxedReason", pickFirst((result as any).featureRelaxedReason, debug.featureRelaxedReason)],
   ];
   return (
     <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-4">
@@ -234,6 +241,8 @@ function PerformanceSummary({ result }: { result: SearchLabResult }) {
         {speedStatus === "critical" ? <span className="rounded-full bg-red-500 px-3 py-1 text-xs font-black text-white">Critical speed</span> : null}
         {totalMs > 5000 ? <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-black">Over 5s</span> : null}
         {totalMs > 8000 ? <span className="rounded-full bg-red-300 px-3 py-1 text-xs font-black text-black">Over 8s</span> : null}
+        {Number(performance.restaurant_rpc_ms || 0) > 3000 ? <span className="rounded-full bg-orange-300 px-3 py-1 text-xs font-black text-black">Slow restaurant RPC</span> : null}
+        {Number(performance.restaurant_rpc_ms || 0) > 8000 ? <span className="rounded-full bg-red-500 px-3 py-1 text-xs font-black text-white">Restaurant RPC is blocking response</span> : null}
       </div>
       <div className="mt-3 grid gap-2 md:grid-cols-4">
         {fields.map(([label, value]) => (

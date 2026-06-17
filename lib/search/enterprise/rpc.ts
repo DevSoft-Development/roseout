@@ -15,6 +15,13 @@ import {
 } from "./normalize-intent";
 import { userAskedForPlaceOfWorship } from "./taxonomy";
 
+type RestaurantRpcCacheEntry = { expiresAt: number; rows: EnterpriseLocation[] };
+const restaurantRpcCache = new Map<string, RestaurantRpcCacheEntry>();
+
+function restaurantRpcCacheKey(intent: SearchIntent, terms: string[]) {
+  return `restaurant-search:v2:${String(intent.rawQuery || "").trim().toLowerCase()}:${intent.geo.latitude ?? ""}:${intent.geo.longitude ?? ""}:${intent.geo.radiusMiles ?? ""}:${terms.join("|")}`;
+}
+
 type RpcDebug = {
   rpcCalls: string[];
   // RPC-safe terms after deterministic pruning.
@@ -24,6 +31,10 @@ type RpcDebug = {
   activityRpcTermsOriginal?: string[];
   restaurantRpcTermsPruned?: string[];
   activityRpcTermsPruned?: string[];
+  restaurantRpcTimedOut?: boolean;
+  restaurantRpcTimeoutMs?: number;
+  restaurantRpcFallbackUsed?: boolean;
+  restaurantRpcFallbackReason?: string | null;
   relaxedActivityPruningApplied?: boolean;
   activityTermsRemovedForRelaxedIntent?: string[];
   relaxedActivityRpcSlimmingApplied?: boolean;
@@ -92,13 +103,22 @@ function originalTermsFor(intent: SearchIntent, domain: SearchDomain) {
       : [...restaurantSearchTermsOriginal(intent), ...activitySearchTermsOriginal(intent)];
 }
 
+function compactRestaurantRpcTerms(intent: SearchIntent) {
+  const foodTerms = intent?.restaurantIntent?.foodTerms || [];
+  const cuisineTerms = intent?.restaurantIntent?.cuisineTerms || [];
+  const featureTerms = intent?.restaurantIntent?.featureTerms || [];
+  const categoryTerms = intent?.restaurantIntent?.categoryTerms || [];
+  const preferredFood = [...cuisineTerms, ...foodTerms].filter(Boolean);
+  const preferredFeatures = featureTerms.filter((term: string) =>
+    ["rooftop", "terrace", "outdoor dining", "skyline", "views", "roof deck", "outdoor seating"].includes(term.toLowerCase()),
+  );
+  const compact = [...preferredFood.slice(0, 4), ...preferredFeatures.slice(0, 4), ...categoryTerms.slice(0, 1)];
+  return Array.from(new Set(compact.map((term) => String(term).toLowerCase()))).slice(0, 8);
+}
+
 function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
   if (domain === "restaurant") {
-    if (intent.strictness === "high") {
-      return hasSpecificRestaurantFoodOrCuisine(intent) ? 24 : 16;
-    }
-
-    return 40;
+    return intent.strictness === "high" ? (hasSpecificRestaurantFoodOrCuisine(intent) ? 18 : 16) : 18;
   }
 
   if (domain === "activity") {
@@ -117,7 +137,7 @@ function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
 }
 
 function params(intent: SearchIntent, domain: SearchDomain, limit: number, overrideTerms?: string[]) {
-  const terms = overrideTerms ?? termsFor(intent, domain);
+  const terms = overrideTerms ?? (domain === "restaurant" ? compactRestaurantRpcTerms(intent) : termsFor(intent, domain));
   const allowPlacesOfWorship = userAskedForPlaceOfWorship(intent.rawQuery);
 
   return {
@@ -161,6 +181,21 @@ export async function searchEnterpriseLane(
 
     debug?.rpcCalls.push(`enterprise_search_locations:${domain}`);
 
+    const cacheKey = domain === "restaurant" ? restaurantRpcCacheKey(intent, p.p_search_terms) : null;
+    if (cacheKey) {
+      const cached = restaurantRpcCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        if (debug) {
+          debug.restaurantRpcTerms = p.p_search_terms;
+          debug.restaurantRpcTermsOriginal = originalTermsFor(intent, domain);
+          debug.restaurantRpcTermsPruned = p.p_search_terms;
+          debug.restaurantRpcCount = cached.rows.length;
+          (debug as any).restaurantRpcCacheHit = true;
+        }
+        return cached.rows;
+      }
+    }
+
     if (domain === "restaurant" && debug) {
       debug.restaurantRpcTerms = p.p_search_terms;
       debug.restaurantRpcTermsOriginal = originalTermsFor(intent, domain);
@@ -192,7 +227,11 @@ export async function searchEnterpriseLane(
         : [];
     }
 
-    const { data, error } = await supabase.rpc("enterprise_search_locations", p);
+    const timeoutMs = domain === "restaurant" ? 3500 : 10000;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`RPC_TIMEOUT_${timeoutMs}`)), timeoutMs),
+    );
+    const { data, error } = await Promise.race([supabase.rpc("enterprise_search_locations", p), timeout]);
 
     if (error) {
       const message = addDebugError(debug, error.message);
@@ -206,6 +245,9 @@ export async function searchEnterpriseLane(
     }
 
     const rows = (data ?? []).map(mapRpcLocation);
+    if (cacheKey && !error) {
+      restaurantRpcCache.set(cacheKey, { expiresAt: Date.now() + 10 * 60 * 1000, rows });
+    }
 
     if (domain === "restaurant" && debug) {
       debug.restaurantRpcCount = rows.length;
@@ -218,6 +260,16 @@ export async function searchEnterpriseLane(
     return rows;
   } catch (error) {
     const message = addDebugError(debug, error);
+    if (domain === "restaurant" && message.includes("RPC_TIMEOUT")) {
+      if (debug) {
+        debug.restaurantRpcTimedOut = true;
+        debug.restaurantRpcTimeoutMs = 3500;
+        debug.restaurantRpcFallbackUsed = true;
+        debug.restaurantRpcFallbackReason = "restaurant_rpc_timeout";
+        debug.restaurantRpcCount = 0;
+      }
+      return [];
+    }
 
     console.error("[enterprise_search_locations] RPC crashed", {
       domain,
@@ -236,7 +288,7 @@ export async function recoverEnterpriseLane(
   overrideTerms?: string[],
 ) {
   try {
-    const p = params(intent, domain, 80, overrideTerms);
+    const p = params(intent, domain, domain === "restaurant" ? 12 : 80, overrideTerms);
 
     debug?.rpcCalls.push(`enterprise_search_recovery:${domain}`);
 
@@ -288,6 +340,10 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     restaurantRecoveryRelaxedFood: false,
     restaurantRecoveryRelaxedFeature: false,
     restaurantRecoverySucceeded: false,
+    restaurantRpcTimedOut: false,
+    restaurantRpcTimeoutMs: 3500,
+    restaurantRpcFallbackUsed: false,
+    restaurantRpcFallbackReason: null,
     activityRecoveryUsed: false,
     relaxedActivityPruningApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedForRelaxedIntent: [],

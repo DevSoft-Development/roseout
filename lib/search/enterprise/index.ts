@@ -15,6 +15,37 @@ import { logSearchHealthEvent } from "./searchHealthLogger";
 import { parseOutingDateTime } from "../parse-outing-date-time";
 
 
+function inferBoroughFromResult(result: any) {
+  const borough = String(result?.borough || "").toLowerCase();
+  const city = String(result?.city || "").toLowerCase();
+  const searchText = [result?.address, result?.search_document, result?.semantic_search_text, result?.search_keywords, result?.semantic_tags, result?.intent_tags]
+    .flat()
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (borough) return borough;
+  if (city === "brooklyn" || searchText.includes("brooklyn")) return "brooklyn";
+  if (city === "bronx" || searchText.includes("bronx")) return "bronx";
+  if (city === "queens" || searchText.includes("queens")) return "queens";
+  if (["astoria", "flushing", "sunnyside", "long island city", "forest hills", "jamaica", "corona", "elmhurst", "woodside", "bayside", "jackson heights", "richmond hill"].includes(city)) return "queens";
+  if (city === "new york" || city === "manhattan" || searchText.includes("manhattan")) return "manhattan";
+  return null;
+}
+
+function featureScore(result: any) {
+  const haystack = ["tags", "search_keywords", "semantic_tags", "intent_tags", "primary_category", "description", "search_document", "semantic_search_text", "vibe_tags", "date_style_tags", "best_for_tags"]
+    .map((field) => { const value = result?.[field]; return Array.isArray(value) ? value.join(" ") : String(value ?? ""); })
+    .join(" ")
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+  if (/\b(rooftop|rooftop dining|roof deck)\b/.test(haystack)) return 60;
+  if (/\b(terrace|outdoor dining|skyline|views|outdoor seating|scenic views)\b/.test(haystack)) return 45;
+  if (/\b(roof|patio|deck|view)\b/.test(haystack)) return 25;
+  return 0;
+}
+
 function serializeErrorForDebug(error: unknown) {
   if (error instanceof Error) {
     return {
@@ -689,7 +720,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
     const requestedBorough = restaurantRankingIntent.geo?.borough ?? null;
     const boroughStrictnessApplied = Boolean(requestedBorough && ["medium", "strict"].includes(String(restaurantRankingIntent.geo?.geoStrictness)));
     if (boroughStrictnessApplied) {
-      const isInRequestedBorough = (item: EnterpriseLocation) => String(item.borough || item.city || item.neighborhood || "").toLowerCase().includes(String(requestedBorough).toLowerCase());
+      const isInRequestedBorough = (item: EnterpriseLocation) => inferBoroughFromResult(item) === String(requestedBorough).toLowerCase();
       const inBorough = rankedRestaurants.filter(isInRequestedBorough);
       const outBorough = rankedRestaurants.filter((item) => !isInRequestedBorough(item));
       (debug as any).boroughStrictnessApplied = true;
@@ -697,6 +728,7 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       (debug as any).inBoroughResultCount = inBorough.length;
       (debug as any).outOfBoroughResultCount = outBorough.length;
       (debug as any).outOfBoroughPenaltyApplied = outBorough.length > 0;
+      (debug as any).outOfBoroughSuppressedCount = inBorough.length >= 3 ? outBorough.length : 0;
       (debug as any).outOfBoroughRecoveryAllowed = inBorough.length < 3;
       (debug as any).outOfBoroughRecoveryReason = inBorough.length < 3 ? "fewer_than_3_in_borough_matches" : null;
       rankedRestaurants = inBorough.length >= 3 ? inBorough : [...inBorough, ...outBorough.map((item) => ({ ...item, search_recovery_reason: "out_of_borough_recovery" }))];
@@ -707,20 +739,23 @@ export async function runEnterpriseSearch(query: string, options?: EnterpriseSea
       (debug as any).outOfBoroughResultCount = 0;
       (debug as any).outOfBoroughPenaltyApplied = false;
       (debug as any).outOfBoroughRecoveryAllowed = false;
+      (debug as any).outOfBoroughSuppressedCount = 0;
       (debug as any).outOfBoroughRecoveryReason = null;
     }
     const requestedFeatureTerms = restaurantFeatureTerms(restaurantRankingIntent).filter((term) => /rooftop|roof|terrace|outdoor|skyline|scenic|views?|deck/i.test(term));
     if (requestedFeatureTerms.length) {
       const fields = ["tags", "search_keywords", "semantic_tags", "intent_tags", "primary_category", "cuisine_type", "description", "search_document", "semantic_search_text", "vibe_tags", "date_style_tags", "best_for_tags"];
       const matchesFeature = (item: EnterpriseLocation) => fields.map((field) => { const value = (item as any)[field]; return Array.isArray(value) ? value.join(" ") : String(value ?? ""); }).join(" ").toLowerCase().replaceAll("_", " ").replaceAll("-", " ").match(/rooftop|roof top|roof deck|terrace|outdoor dining|outdoor seating|skyline|scenic views|views/) !== null || requestedFeatureTerms.some((term) => fields.map((field) => { const value = (item as any)[field]; return Array.isArray(value) ? value.join(" ") : String(value ?? ""); }).join(" ").toLowerCase().includes(term.toLowerCase()));
-      const featureMatches = rankedRestaurants.filter(matchesFeature);
-      const featureMissing = rankedRestaurants.filter((item) => !matchesFeature(item));
+      const featureMatches = rankedRestaurants.filter((item) => featureScore(item) > 0 || matchesFeature(item));
+      const featureMissing = rankedRestaurants.filter((item) => !featureMatches.some((match) => match.id === item.id));
+      featureMatches.sort((a, b) => featureScore(b) - featureScore(a));
+      featureMissing.forEach((item) => { (item as any).featureMissingPenalty = -40; });
       (debug as any).featureStrictnessApplied = true;
       (debug as any).requestedFeatureTerms = requestedFeatureTerms;
       (debug as any).featureMatchedResultCount = featureMatches.length;
       (debug as any).featureMissingPenaltyApplied = featureMissing.length > 0;
       (debug as any).featureRelaxed = featureMatches.length === 0;
-      (debug as any).featureRelaxedReason = featureMatches.length === 0 ? "no_matching_feature_results" : null;
+      (debug as any).featureRelaxedReason = featureMatches.length === 0 ? "no_requested_feature_matches_found" : null;
       rankedRestaurants = featureMatches.length ? [...featureMatches, ...featureMissing] : rankedRestaurants;
     }
     const rankedActivities = rankActivityResults(uniqueById(activityRaw), effectiveIntent);

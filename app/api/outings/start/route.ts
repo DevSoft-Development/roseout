@@ -6,7 +6,7 @@ import { sendRenderedEmail } from "@/lib/email/sender";
 import { renderOutingPlanEmail } from "@/lib/email/templates/outingPlanEmail";
 
 const CONTACT_METHODS = new Set(["external_reservation", "phone", "email", "text"]);
-const CONFIDENCE = new Set(["none", "date_only", "exact"]);
+const CONFIDENCE = new Set(["none", "date_only", "exact", "vague", "explicit"]);
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -43,7 +43,7 @@ function determineNextMorningFollowup(input: {
 }) {
   const context = String(input.outingDateContext || "").toLowerCase();
 
-  if (input.plannedFor && input.outingTimeConfidence === "exact") {
+  if (input.plannedFor && (input.outingTimeConfidence === "exact" || input.outingTimeConfidence === "explicit")) {
     return true;
   }
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "invalid_contact_method", message: "Choose email, text, call, or reservation before saving your outing." }, { status: 400 });
     }
 
-    const outingTimeConfidence = CONFIDENCE.has(asString(payload?.outingTimeConfidence) || "") ? asString(payload?.outingTimeConfidence) as "none" | "date_only" | "exact" : "none";
+    const outingTimeConfidence = CONFIDENCE.has(asString(payload?.outingTimeConfidence) || "") ? asString(payload?.outingTimeConfidence) as "none" | "date_only" | "exact" | "vague" | "explicit" : "none";
     const timezone = asString(payload?.timezone) ?? "America/New_York";
     const outingDateContext = asString(payload?.outingDateContext);
     const outingTiming = payload?.outingTiming && typeof payload.outingTiming === "object" ? payload.outingTiming : {};
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     if (plannedFor && Number.isNaN(Date.parse(plannedFor))) {
       return NextResponse.json({ ok: false, error: "invalid_planned_for", message: "plannedFor must be a valid date/time." }, { status: 400 });
     }
-    if (outingTimeConfidence !== "exact") plannedFor = null;
+    if (outingTimeConfidence !== "exact" && outingTimeConfidence !== "explicit") plannedFor = null;
 
     let remindersEnabled = Boolean(payload?.remindersEnabled) && Boolean(plannedFor);
     if (Boolean(payload?.remindersEnabled) && !plannedFor) remindersEnabled = false;
@@ -272,7 +272,7 @@ export async function POST(req: NextRequest) {
       trackEvent({ event_name: isGuest ? "guest_plan_saved" : "plan_saved", event_type: "save", conversion_step: "saved_plan", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: saveEventMetadata }),
       trackEvent({ event_name: isGuest ? "guest_plan_created" : "outing_plan_created", event_type: "save", conversion_step: "saved_plan", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: saveEventMetadata }),
       outingTimeConfidence === "date_only" ? trackEvent({ event_name: "outing_date_context_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, source_query: sourceQuery, outing_date_context: outingDateContext } }) : Promise.resolve(),
-      outingTimeConfidence === "exact" ? trackEvent({ event_name: "outing_exact_time_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, planned_for: plannedFor } }) : Promise.resolve(),
+      (outingTimeConfidence === "exact" || outingTimeConfidence === "explicit") ? trackEvent({ event_name: "outing_exact_time_detected", outing_id: outingId, user_id: userId, location_id: locationId, metadata: { guest_session_id: guestSessionId, planned_for: plannedFor } }) : Promise.resolve(),
     ]);
 
     const response = NextResponse.json({ ok: true, outing: data, outing_id: outingId, planUrl, emailStatus });

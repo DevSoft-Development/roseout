@@ -37,7 +37,7 @@ function formatTiming(input: RenderOutingPlanEmailInput) {
       return input.plannedFor;
     }
   }
-  return input.outingDateContext || "Not set";
+  return input.outingDateContext || null;
 }
 
 export function renderOutingPlanEmail(input: RenderOutingPlanEmailInput) {
@@ -53,7 +53,7 @@ export function renderOutingPlanEmail(input: RenderOutingPlanEmailInput) {
         { label: "Plan", value: input.planTitle || "Your TheOutHaven Plan" },
         { label: "Restaurant", value: locationName(input.restaurant || null, "Not selected") },
         { label: "Activity", value: locationName(input.activity || null, "Not selected") },
-        { label: "Outing time", value: formatTiming(input) },
+        ...(formatTiming(input) ? [{ label: "Outing time", value: formatTiming(input) as string }] : []),
       ],
     },
     {
