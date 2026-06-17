@@ -1,5 +1,6 @@
 import { isExactRequestedNeighborhoodMatch, isSameRequestedBoroughMatch } from "./geo-matching";
 import type { CanonicalSearchIntent } from "./types";
+import { areMarketsPairable, inferMarketFromCityStateCounty, type MarketKey } from "../location-markets";
 
 function textField(record: any, field: string) {
   return String(record?.[field] ?? "").toLowerCase().trim();
@@ -11,8 +12,13 @@ function sameField(a: any, b: any, field: string) {
   return Boolean(av && bv && av === bv);
 }
 
+function recordMarket(record: any): MarketKey {
+  return inferMarketFromCityStateCounty(record) as MarketKey;
+}
+
 function pairScore(restaurant: any, activity: any, intent: CanonicalSearchIntent) {
   let score = 0;
+  if (areMarketsPairable(recordMarket(restaurant), recordMarket(activity))) score += 500;
   if (sameField(restaurant, activity, "neighborhood")) score += 300;
   if (sameField(restaurant, activity, "borough")) score += 150;
   if (intent.geoIntent) {
@@ -36,11 +42,12 @@ export function buildOutingPairs(restaurants: any[], activities: any[], intent: 
 
   const mustStayLocal = localResultsExist(restaurants, activities, intent);
   const combos = restaurants.flatMap((restaurant) => activities.map((activity) => ({ restaurant, activity })));
+  const marketCompatible = combos.filter(({ restaurant, activity }) => areMarketsPairable(recordMarket(restaurant), recordMarket(activity)));
   const eligible = mustStayLocal
-    ? combos.filter(({ restaurant, activity }) =>
+    ? marketCompatible.filter(({ restaurant, activity }) =>
         isSameRequestedBoroughMatch(restaurant, intent.geoIntent) && isSameRequestedBoroughMatch(activity, intent.geoIntent)
       )
-    : combos;
+    : marketCompatible;
 
   return eligible
     .sort((a, b) => pairScore(b.restaurant, b.activity, intent) - pairScore(a.restaurant, a.activity, intent))

@@ -1,3 +1,5 @@
+import { detectRequestedMarket } from "../location-markets";
+
 export type GeoIntent = {
   raw: string;
   normalized: string;
@@ -13,6 +15,12 @@ export type GeoIntent = {
   area?: string;
   areaGroup?: string;
   aliases: string[];
+  requestedMarket?: string | null;
+  resolvedMarket?: string | null;
+  marketIntent?: string | null;
+  allowedMarkets?: string[];
+  outerAreaAllowed?: boolean;
+  radiusMiles?: number | null;
 };
 
 export const NYC_BOROUGH_ALIASES: Record<string, string[]> = {
@@ -89,6 +97,11 @@ export function detectRequestedGeo(query: string): GeoIntent | null {
   if (!normalized) return null;
   const nycNeighborhood = firstMatch(normalized, NYC_NEIGHBORHOOD_ALIASES);
   if (nycNeighborhood) return { raw: query, normalized, terms: [nycNeighborhood.alias], geoType: "neighborhood", neighborhood: nycNeighborhood.key, borough: NEIGHBORHOOD_TO_BOROUGH[nycNeighborhood.key], city: "new york", state: "NY", aliases: NYC_NEIGHBORHOOD_ALIASES[nycNeighborhood.key] };
+  const marketDetection = detectRequestedMarket(query);
+  if (marketDetection.requestedMarket && !["NYC_CORE", "UNKNOWN"].includes(marketDetection.requestedMarket)) {
+    const base = { raw: query, normalized, terms: [marketDetection.matchedAlias ?? marketDetection.locationDisplayName ?? marketDetection.requestedMarket], aliases: marketDetection.requestedMarket === "OUTER_NYC" ? ["outside nyc"] : [], requestedMarket: marketDetection.requestedMarket, resolvedMarket: marketDetection.resolvedMarket, marketIntent: marketDetection.marketIntent, allowedMarkets: marketDetection.allowedMarkets, outerAreaAllowed: marketDetection.outerAreaAllowed, radiusMiles: marketDetection.radiusMiles };
+    return { ...base, geoType: marketDetection.geoStrictness === "city" ? "city" : marketDetection.requestedMarket === "OUTER_NYC" ? "area_group" : "region", region: marketDetection.requestedMarket.toLowerCase(), city: marketDetection.city?.toLowerCase(), state: marketDetection.state, county: marketDetection.county?.toLowerCase(), borough: marketDetection.borough?.toLowerCase(), area: marketDetection.city?.toLowerCase() } as GeoIntent;
+  }
   const liRegion = LONG_ISLAND_REGION_ALIASES.find((a) => hasPhrase(normalized, a));
   if (liRegion) return { raw: query, normalized, terms: [liRegion], geoType: "region", region: "long_island", counties: ["nassau", "suffolk"], state: "NY", aliases: LONG_ISLAND_REGION_ALIASES };
   const areaGroup = firstMatch(normalized, LONG_ISLAND_AREA_GROUPS);
