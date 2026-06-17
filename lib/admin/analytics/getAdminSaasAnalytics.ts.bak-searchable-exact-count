@@ -292,13 +292,12 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
   const since = new Date(Date.now() - THIRTY_DAYS_MS).toISOString();
   const sinceDate = since.slice(0, 10);
 
-  const [profilesCount, userProfilesCount, newProfiles, newUserProfiles, totalLocations, searchableLocationsExact, pendingClaims, openSupportTickets] = await Promise.all([
+  const [profilesCount, userProfilesCount, newProfiles, newUserProfiles, totalLocations, pendingClaims, openSupportTickets] = await Promise.all([
     safeCount("profiles", unavailable, "profiles"),
     safeCount("user profiles", unavailable, "user_profiles"),
     safeCount("new profiles", unavailable, "profiles", (q) => q.gte("created_at", since)),
     safeCount("new user profiles", unavailable, "user_profiles", (q) => q.gte("created_at", since)),
     safeCount("locations", unavailable, "locations"),
-    safeCount("searchable locations", unavailable, "locations", (q) => q.eq("is_searchable", true)),
     safeCount("pending claims", unavailable, "business_claims", (q) => q.or("status.eq.pending,verification_status.eq.pending")),
     safeCount("open support", unavailable, "support_tickets", (q) => q.not("status", "in", "(closed,resolved)")),
   ]);
@@ -391,7 +390,7 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
     return { ...merged, opportunity_score: opportunityScore(merged) };
   });
 
-  const searchableLocations = searchableLocationsExact || locationRows.filter((row) => row.is_searchable === true).length;
+  const searchableLocations = locationRows.filter((row) => row.is_searchable === true).length;
   const claimedLocations = locationRows.filter((row) => row.is_claimed === true || Boolean(row.claimed_by || row.owner_user_id || row.owner_email)).length;
   const proLocations = locationRows.filter(isProLocation).length;
   const dataQualityIssues = locationRows.filter((row) => row.is_searchable !== true || !text(row.description) || !text(row.phone)).length;

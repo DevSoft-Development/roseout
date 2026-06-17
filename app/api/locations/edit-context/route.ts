@@ -215,8 +215,26 @@ export async function PATCH(req: Request) {
         .eq("id", existingLocation.data.id);
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
+        const schemaCacheHint =
+          typeof error.message === "string" &&
+          error.message.toLowerCase().includes("schema cache")
+            ? " Run the latest Supabase migrations and reload the PostgREST schema cache."
+            : "";
+
+        return NextResponse.json(
+          { error: `${error.message}${schemaCacheHint}` },
+          { status: 400 }
+        );
       }
+
+      return NextResponse.json({
+        success: true,
+        effectiveId: String(existingLocation.data.source_id || finalId),
+        canonicalId: existingLocation.data.id,
+        savedTo: "locations",
+        skippedLegacySync: true,
+        isImpersonating: Boolean(isLocationImpersonation),
+      });
     }
 
     const legacyId = String(existingLocation.data?.source_id || finalId);

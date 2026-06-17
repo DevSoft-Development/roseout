@@ -1,20 +1,17 @@
 import Link from "next/link";
-import { unstable_noStore as noStore } from "next/cache";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getAdminSaasAnalytics } from "@/lib/admin/analytics/getAdminSaasAnalytics";
 import { logAdminEvent } from "@/lib/admin/logAdminEvent";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 function fmt(n: number) {
   return Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(n || 0);
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
-  const lowerLabel = label.toLowerCase();
-  const formatted = lowerLabel.includes("rate") ? `${fmt(value)}%` : lowerLabel.includes("speed") ? `${fmt(value)}ms` : fmt(value);
+  const formatted = label.toLowerCase().includes("rate") ? `${fmt(value)}%` : fmt(value);
   return <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">{label}</p><p className="mt-2 text-3xl font-black">{formatted}</p></div>;
 }
 
@@ -23,7 +20,6 @@ function Empty({ text }: { text: string }) {
 }
 
 export default async function AdminAnalyticsPage() {
-  noStore();
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
   const analytics = await getAdminSaasAnalytics();
   await logAdminEvent({ category: "analytics", action: "analytics_dashboard_viewed", message: "Platform analytics dashboard viewed", actor_user_id: admin.user_id, actor_email: admin.email, entity_type: "platform", entity_id: "analytics" });
@@ -39,9 +35,6 @@ export default async function AdminAnalyticsPage() {
     proLocations: "Pro locations",
     totalSearches: "Total searches 30d",
     noResultSearches: "No-result searches 30d",
-    averageSearchMs: "Avg search speed 30d",
-    slowSearches30d: "Slow searches 30d",
-    failedSearches30d: "Failed searches 30d",
     reservations: "Reservations/clicks 30d",
     phoneClicks: "Phone clicks 30d",
     websiteClicks: "Website clicks 30d",
@@ -78,7 +71,7 @@ export default async function AdminAnalyticsPage() {
 
       <section className="grid gap-4 xl:grid-cols-3">
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Growth analytics</h2><div className="mt-4 grid gap-3 sm:grid-cols-2"><Stat label="User growth" value={analytics.overview.newUsers} /><Stat label="Owner growth" value={analytics.overview.claimedLocations || analytics.overview.pendingClaims} /><Stat label="Location growth" value={analytics.overview.totalLocations} /><Stat label="Pro conversion rate" value={analytics.overview.totalLocations ? (analytics.overview.proLocations / analytics.overview.totalLocations) * 100 : 0} /></div><p className="mt-4 text-sm text-white/50">Connect dated signup and billing events to populate weekly/monthly trend charts.</p></article>
-        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Search analytics</h2>{analytics.search.topSearches.length ? <ul className="mt-4 space-y-2 text-sm text-white/70">{analytics.search.topSearches.map((item) => <li key={item.label} className="flex justify-between rounded-2xl border border-white/10 bg-black/20 p-3"><span>{item.label}</span><b>{fmt(item.count)}</b></li>)}</ul> : <Empty text="Top searches will appear after analytics_events or search_events records include raw_query, normalized_query, or search_query." />}</article>
+        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Search analytics</h2>{analytics.search.topSearches.length ? <ul className="mt-4 space-y-2 text-sm text-white/70">{analytics.search.topSearches.map((item) => <li key={item.label} className="flex justify-between rounded-2xl border border-white/10 bg-black/20 p-3"><span>{item.label}</span><b>{fmt(item.count)}</b></li>)}</ul> : <Empty text="Top searches will appear after analytics_events store query metadata." />}</article>
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Operations analytics</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{Object.entries(analytics.operations).map(([key, value]) => <Stat key={key} label={key.replace(/([A-Z])/g, " $1")} value={value} />)}</div></article>
       </section>
 

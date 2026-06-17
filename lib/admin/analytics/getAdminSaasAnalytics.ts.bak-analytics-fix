@@ -10,7 +10,6 @@ export type AdminSaasAnalytics = {
 };
 
 type QueryBuilder = any;
-
 type AnalyticsEvent = {
   id?: string | null;
   event_name?: string | null;
@@ -18,7 +17,6 @@ type AnalyticsEvent = {
   query?: string | null;
   normalized_query?: string | null;
   result_count?: number | string | null;
-  response_time_ms?: number | string | null;
   conversion_step?: string | null;
   location_id?: string | null;
   source_location_id?: string | null;
@@ -27,27 +25,6 @@ type AnalyticsEvent = {
   session_id?: string | null;
   metadata?: Record<string, any> | null;
   created_at?: string | null;
-};
-
-type SearchEvent = {
-  id?: string | null;
-  created_at?: string | null;
-  raw_query?: string | null;
-  normalized_query?: string | null;
-  search_query?: string | null;
-  search_type?: string | null;
-  primary_domain?: string | null;
-  result_count?: number | string | null;
-  restaurant_count?: number | string | null;
-  activity_count?: number | string | null;
-  pair_count?: number | string | null;
-  timing_ms?: number | string | null;
-  success?: boolean | null;
-  had_issue?: boolean | null;
-  issue_type?: string | null;
-  no_results_reason?: string | null;
-  no_pairs_reason?: string | null;
-  metadata?: Record<string, any> | null;
 };
 
 type OutingAnalyticsRow = {
@@ -98,12 +75,6 @@ function isMissingOptionalTable(error: any) {
   return code === "42P01" || message.includes("does not exist") || message.includes("could not find the table");
 }
 
-function isColumnMissing(error: any) {
-  const code = String(error?.code || "");
-  const message = String(error?.message || "").toLowerCase();
-  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("schema cache");
-}
-
 async function count(table: string, filter?: (query: QueryBuilder) => QueryBuilder) {
   let query = supabaseAdmin.from(table).select("*", { count: "exact", head: true });
   if (filter) query = filter(query);
@@ -123,45 +94,19 @@ async function safeSelect(label: string, unavailable: string[], table: string, c
   const { data, error } = await query;
   if (error) {
     unavailable.push(label);
-    if (!isMissingOptionalTable(error)) {
-      console.error(`ADMIN_ANALYTICS_${label.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_FAILED`, error.message || error);
-    }
+    if (!isMissingOptionalTable(error)) console.error(`ADMIN_ANALYTICS_${label.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_FAILED`, error.message || error);
     return [];
   }
   return data || [];
 }
 
-async function safeSelectFirstAvailable(
-  label: string,
-  unavailable: string[],
-  table: string,
-  columnOptions: string[],
-  configure?: (query: QueryBuilder) => QueryBuilder,
-) {
-  let lastError: any = null;
-
-  for (const columns of columnOptions) {
-    let query = supabaseAdmin.from(table).select(columns);
-    if (configure) query = configure(query);
-    const { data, error } = await query;
-
-    if (!error) return data || [];
-
-    lastError = error;
-
-    if (isMissingOptionalTable(error)) break;
-    if (!isColumnMissing(error)) break;
-  }
-
-  unavailable.push(label);
-  if (lastError && !isMissingOptionalTable(lastError)) {
-    console.error(`ADMIN_ANALYTICS_${label.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_FAILED`, lastError.message || lastError);
-  }
-  return [];
-}
-
 function eventName(event: AnalyticsEvent) {
   return `${event.event_name || ""} ${event.event_type || ""} ${event.conversion_step || ""}`.toLowerCase();
+}
+
+function isSearchEvent(event: AnalyticsEvent) {
+  const name = eventName(event);
+  return name.includes("search") || Boolean(searchLabel(event));
 }
 
 function metadataResultCount(metadata: Record<string, any> | null | undefined) {
@@ -171,44 +116,14 @@ function metadataResultCount(metadata: Record<string, any> | null | undefined) {
   return n(value);
 }
 
-function resultCount(event: AnalyticsEvent | SearchEvent) {
+function resultCount(event: AnalyticsEvent) {
   if (event.result_count !== undefined && event.result_count !== null && event.result_count !== "") return n(event.result_count);
   return metadataResultCount(event.metadata);
 }
 
-function searchLabel(event: AnalyticsEvent | SearchEvent) {
+function searchLabel(event: AnalyticsEvent) {
   const metadata = event.metadata || {};
-  return (
-    text((event as SearchEvent).raw_query) ||
-    text(event.normalized_query) ||
-    text((event as SearchEvent).search_query) ||
-    text((event as AnalyticsEvent).query) ||
-    text(metadata.query) ||
-    text(metadata.search) ||
-    text(metadata.search_query) ||
-    text(metadata.raw_query) ||
-    text(metadata.normalized_query)
-  );
-}
-
-function isSearchEvent(event: AnalyticsEvent) {
-  const name = eventName(event);
-  return name.includes("search") || Boolean(searchLabel(event));
-}
-
-function isSearchNoResult(event: SearchEvent) {
-  const explicitCount = event.result_count !== undefined && event.result_count !== null && event.result_count !== "";
-  if (explicitCount && n(event.result_count) === 0) return true;
-
-  const hasBreakoutCounts =
-    event.restaurant_count !== undefined ||
-    event.activity_count !== undefined ||
-    event.pair_count !== undefined;
-
-  if (hasBreakoutCounts && n(event.restaurant_count) + n(event.activity_count) + n(event.pair_count) === 0) return true;
-
-  const issueText = `${event.issue_type || ""} ${event.no_results_reason || ""} ${event.no_pairs_reason || ""}`.toLowerCase();
-  return issueText.includes("no_result") || issueText.includes("no result") || issueText.includes("zero_result") || issueText.includes("no_match");
+  return text(event.query) || text(event.normalized_query) || text(metadata.query) || text(metadata.search) || text(metadata.search_query);
 }
 
 function isReservationEvent(event: AnalyticsEvent) {
@@ -292,30 +207,19 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
   const since = new Date(Date.now() - THIRTY_DAYS_MS).toISOString();
   const sinceDate = since.slice(0, 10);
 
-  const [profilesCount, userProfilesCount, newProfiles, newUserProfiles, totalLocations, searchableLocationsExact, pendingClaims, openSupportTickets] = await Promise.all([
+  const [profilesCount, userProfilesCount, newProfiles, newUserProfiles, totalLocations, pendingClaims, openSupportTickets] = await Promise.all([
     safeCount("profiles", unavailable, "profiles"),
     safeCount("user profiles", unavailable, "user_profiles"),
     safeCount("new profiles", unavailable, "profiles", (q) => q.gte("created_at", since)),
     safeCount("new user profiles", unavailable, "user_profiles", (q) => q.gte("created_at", since)),
     safeCount("locations", unavailable, "locations"),
-    safeCount("searchable locations", unavailable, "locations", (q) => q.eq("is_searchable", true)),
     safeCount("pending claims", unavailable, "business_claims", (q) => q.or("status.eq.pending,verification_status.eq.pending")),
     safeCount("open support", unavailable, "support_tickets", (q) => q.not("status", "in", "(closed,resolved)")),
   ]);
 
-  const [events, searchEvents, dailyRows, locations, reservationsRows, outingRows, logs] = await Promise.all([
-    safeSelect("analytics events", unavailable, "analytics_events", "id,event_name,event_type,query,normalized_query,result_count,response_time_ms,conversion_step,location_id,source_location_id,user_id,anonymous_id,session_id,metadata,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
-    safeSelectFirstAvailable(
-      "search events",
-      unavailable,
-      "search_events",
-      [
-        "id,created_at,raw_query,normalized_query,search_query,search_type,primary_domain,result_count,restaurant_count,activity_count,pair_count,timing_ms,success,had_issue,issue_type,no_results_reason,no_pairs_reason,metadata",
-        "id,created_at,raw_query,normalized_query,search_type,result_count,restaurant_count,activity_count,pair_count,timing_ms,success,had_issue,issue_type,no_results_reason,no_pairs_reason,metadata",
-        "id,search_query,created_at",
-      ],
-      (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000),
-    ),
+  const [events, legacySearchEvents, dailyRows, locations, reservationsRows, outingRows, logs] = await Promise.all([
+    safeSelect("analytics events", unavailable, "analytics_events", "id,event_name,event_type,query,normalized_query,result_count,conversion_step,location_id,source_location_id,user_id,anonymous_id,session_id,metadata,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
+    safeSelect("legacy search events", unavailable, "search_events", "id,search_query,created_at", (q) => q.gte("created_at", since).order("created_at", { ascending: false }).limit(10000)),
     safeSelect("location daily analytics", unavailable, "location_daily_analytics", "location_id,analytics_date,profile_views,search_appearances,reservation_starts,reservation_completions,phone_clicks,website_clicks,search_clicks,share_clicks", (q) => q.gte("analytics_date", sinceDate).limit(10000)),
     safeSelect("locations", unavailable, "locations", "*", (q) => q.limit(5000)),
     safeSelect("location reservations", unavailable, "location_reservations", "id,created_at", (q) => q.gte("created_at", since).limit(10000)),
@@ -324,7 +228,6 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
   ]);
 
   const analyticsEvents = events as AnalyticsEvent[];
-  const searchRows = searchEvents as SearchEvent[];
   const dailyAnalyticsRows = dailyRows as DailyAnalytics[];
   const daily = dailyTotals(dailyAnalyticsRows);
   const dailyByLocation = aggregateDailyByLocation(dailyAnalyticsRows);
@@ -336,18 +239,9 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
   }
 
   const analyticsSearchCount = analyticsEvents.filter(isSearchEvent).length;
-  const searchEventCount = searchRows.length;
-  const totalSearches = Math.max(analyticsSearchCount, searchEventCount);
-
-  const analyticsNoResults = analyticsEvents.filter((event) => isSearchEvent(event) && resultCount(event) === 0).length;
-  const searchNoResults = searchRows.filter(isSearchNoResult).length;
-  const noResultSearches = Math.max(analyticsNoResults, searchNoResults);
-
-  const timingRows = searchRows.map((row) => n(row.timing_ms)).filter((value) => value > 0);
-  const averageSearchMs = timingRows.length ? Math.round(timingRows.reduce((sum, value) => sum + value, 0) / timingRows.length) : 0;
-  const slowSearches30d = timingRows.filter((value) => value >= 3000).length;
-  const failedSearches30d = searchRows.filter((row) => row.success === false || row.had_issue === true || Boolean(text(row.issue_type))).length;
-
+  const legacySearchCount = legacySearchEvents.length;
+  const totalSearches = Math.max(analyticsSearchCount, legacySearchCount);
+  const noResultSearches = analyticsEvents.filter((event) => isSearchEvent(event) && resultCount(event) === 0).length;
   const analyticsReservations = analyticsEvents.filter(isReservationEvent).length;
   const reservations = Math.max(analyticsReservations, reservationsRows.length, daily.reservationCompletions);
   const phoneClicks = analyticsEvents.filter((event) => hasAny(eventName(event), ["phone", "call"])).length + daily.phoneClicks;
@@ -373,8 +267,8 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
     const label = searchLabel(event).toLowerCase();
     if (label) topSearchMap.set(label, (topSearchMap.get(label) || 0) + 1);
   }
-  for (const event of searchRows) {
-    const label = searchLabel(event).toLowerCase();
+  for (const event of legacySearchEvents as any[]) {
+    const label = text(event.search_query).toLowerCase();
     if (label) topSearchMap.set(label, (topSearchMap.get(label) || 0) + 1);
   }
 
@@ -391,7 +285,7 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
     return { ...merged, opportunity_score: opportunityScore(merged) };
   });
 
-  const searchableLocations = searchableLocationsExact || locationRows.filter((row) => row.is_searchable === true).length;
+  const searchableLocations = locationRows.filter((row) => row.is_searchable === true).length;
   const claimedLocations = locationRows.filter((row) => row.is_claimed === true || Boolean(row.claimed_by || row.owner_user_id || row.owner_email)).length;
   const proLocations = locationRows.filter(isProLocation).length;
   const dataQualityIssues = locationRows.filter((row) => row.is_searchable !== true || !text(row.description) || !text(row.phone)).length;
@@ -410,9 +304,6 @@ export async function getAdminSaasAnalytics(): Promise<AdminSaasAnalytics> {
       proLocations,
       totalSearches,
       noResultSearches,
-      averageSearchMs,
-      slowSearches30d,
-      failedSearches30d,
       reservations,
       phoneClicks,
       websiteClicks,

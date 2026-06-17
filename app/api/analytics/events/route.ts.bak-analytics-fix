@@ -12,20 +12,10 @@ function cleanString(value: unknown, max = 256): string | null {
   return v.slice(0, max);
 }
 
-function cleanNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function sanitizeObject(value: unknown, maxEntries = 40): Record<string, any> {
+function sanitizeMetadata(value: unknown): Record<string, any> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const entries = Object.entries(value as Record<string, unknown>).slice(0, maxEntries);
-  const safe = Object.fromEntries(
-    entries
-      .map(([k, v]) => [cleanString(k, 64) ?? "", typeof v === "string" ? cleanString(v, 256) : v])
-      .filter(([k]) => k),
-  );
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, 40);
+  const safe = Object.fromEntries(entries.map(([k, v]) => [cleanString(k, 64) ?? "", typeof v === "string" ? cleanString(v, 256) : v]).filter(([k]) => k));
   const serialized = JSON.stringify(safe);
   return serialized.length <= MAX_METADATA_BYTES ? safe : {};
 }
@@ -47,12 +37,9 @@ export async function POST(req: Request) {
       user_id: auth?.user?.id ?? null,
       anonymous_id: cleanString(body?.anonymous_id),
       session_id: cleanString(body?.session_id),
-      outing_id: cleanString(body?.outing_id),
       location_id: cleanString(body?.location_id),
       source_location_id: cleanString(body?.source_location_id),
       query: cleanString(body?.query),
-      normalized_query: cleanString(body?.normalized_query),
-      search_intent: sanitizeObject(body?.search_intent),
       page_path: cleanString(body?.page_path),
       referrer: cleanString(body?.referrer),
       source: cleanString(body?.source),
@@ -64,14 +51,8 @@ export async function POST(req: Request) {
       neighborhood: cleanString(body?.neighborhood),
       location_type: cleanString(body?.location_type),
       category: cleanString(body?.category),
-      cuisine: cleanString(body?.cuisine),
-      activity_type: cleanString(body?.activity_type),
-      ranking_position: cleanNumber(body?.ranking_position),
-      result_count: cleanNumber(body?.result_count),
-      response_time_ms: cleanNumber(body?.response_time_ms),
-      conversion_step: cleanString(body?.conversion_step),
-      revenue_impact: cleanNumber(body?.revenue_impact),
-      metadata: sanitizeObject(body?.metadata),
+      ranking_position: typeof body?.ranking_position === "number" ? body.ranking_position : null,
+      metadata: sanitizeMetadata(body?.metadata),
     });
 
     return NextResponse.json({ ok: true });

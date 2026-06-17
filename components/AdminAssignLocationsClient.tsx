@@ -1,38 +1,388 @@
 "use client";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
 
-const filterFields = [
-  ["partnerSalesStatus", "Partner sales", ["target", "needs_outreach", "contacted", "interested", "claim_link_sent", "claim_pending", "claim_approved", "demo_setup", "payment_pending", "active_partner", "reservation_ready", "at_risk", "not_interested", "churned"]],
-  ["claimOutreachStatus", "Claim outreach", ["not_sent", "sent", "viewed", "started", "submitted", "approved", "rejected", "expired"]],
-  ["reservationPortalStatus", "Portal", ["not_enabled", "needs_setup", "enabled", "tested", "live", "paused", "issue"]],
-  ["reservationEmbedStatus", "Embed", ["not_sent", "generated", "sent", "installed", "tested", "needs_help", "not_needed"]],
-  ["discoveryProfileStatus", "Discovery", ["needs_review", "needs_photos", "needs_tags", "needs_hours", "ready", "paused", "issue"]],
-  ["planStatus", "Plan", ["active", "trialing", "past_due", "canceled", "inactive", "comped"]],
-  ["assigned", "Assigned", ["assigned", "unassigned"]],
-  ["launchPilot", "Launch Pilot", ["yes", "no"]],
-  ["partnerLaunchSelected", "Partner Launch", ["yes", "no"]],
-] as const;
-function locName(l:any){return l.display_name||l.name||l.location_name||l.restaurant_name||l.activity_name||"Untitled"}
-function pretty(v:any){return String(v||"—").replace(/_/g," ")}
-function Pill({children}:{children:React.ReactNode}){return <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-black capitalize text-white/70">{children}</span>}
-export default function AdminAssignLocationsClient({ initialLocations, teamMembers, initialFilters }: { initialLocations:any[]; teamMembers:any[]; initialFilters?:Record<string,string> }){
-  const router=useRouter(); const searchParams=useSearchParams();
-  const [locations,setLocations]=useState(initialLocations); const [q,setQ]=useState(initialFilters?.q??searchParams.get("q")??""); const [filters,setFilters]=useState<Record<string,string>>(()=>Object.fromEntries(filterFields.map(([k])=>[k,initialFilters?.[k]??searchParams.get(k)??"all"])));
-  const [selected,setSelected]=useState<string[]>([]); const [msg,setMsg]=useState(""); const [error,setError]=useState(""); const [loading,setLoading]=useState(false); const [assigning,setAssigning]=useState(false);
-  const stats=useMemo(()=>({results:locations.length,selected:selected.length,assigned:locations.filter(l=>l.assigned_to).length,unassigned:locations.filter(l=>!l.assigned_to).length,partnerLaunch:locations.filter(l=>l.partner_launch_selected).length,launchPilot:locations.filter(l=>l.partner_launch_pilot).length,claimNotSent:locations.filter(l=>["not_sent",""].includes(String(l.claim_outreach_status||""))).length,paymentPending:locations.filter(l=>String(l.plan_status||l.partner_sales_status).includes("payment_pending")).length}),[locations,selected.length]);
-  async function runSearch(e?:FormEvent, overrides?:{q?:string;filters?:Record<string,string>}){e?.preventDefault(); setLoading(true); setError(""); setMsg(""); const nextQ=overrides?.q??q; const nextFilters=overrides?.filters??filters; const params=new URLSearchParams(); if(nextQ.trim())params.set("q",nextQ.trim()); for(const [k,v] of Object.entries(nextFilters)) if(v&&v!=="all") params.set(k,v); const urlParams=new URLSearchParams(params); const fetchParams=new URLSearchParams(params); fetchParams.set("limit","50"); const qs=urlParams.toString(); router.replace(qs?`/admin/dashboard/my-workspace/assign-locations?${qs}`:"/admin/dashboard/my-workspace/assign-locations",{scroll:false}); try{const r=await fetch(`/api/admin/workspace/assign-locations/search?${fetchParams.toString()}`,{cache:"no-store"}); const d=await r.json(); if(!r.ok) throw new Error(d.error||"Search failed"); const nextLocations=d.locations||[]; setLocations(nextLocations); const visible=new Set(nextLocations.map((l:any)=>String(l.id))); setSelected(s=>s.filter(id=>visible.has(String(id)))); setMsg(`Results updated · ${d.count??nextLocations.length} locations`);}catch(err){setError(err instanceof Error?err.message:"Search failed")}finally{setLoading(false)}}
-  async function resetFilters(){const reset=Object.fromEntries(filterFields.map(([k])=>[k,"all"])); setQ(""); setFilters(reset); await runSearch(undefined,{q:"",filters:reset});}
-  async function assign(fd:FormData){setAssigning(true); setMsg("Assigning..."); setError(""); const r=await fetch('/api/admin/workspace/assign-locations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({locationIds:selected,assignedTo:fd.get('assignedTo'),priority:fd.get('priority'),reason:fd.get('reason'),notes:fd.get('notes'),tag:fd.get('tag'),campaign:fd.get('campaign'),nextActionType:fd.get('nextActionType'),nextActionNote:fd.get('nextActionNote'),nextActionDueAt:fd.get('nextActionDueAt')})}); const d=await r.json(); setAssigning(false); setMsg(r.ok?`Assigned ${d.count||selected.length} locations.`:""); if(!r.ok)setError(d.error||'Assignment failed'); if(r.ok){setSelected([]); await runSearch();}}
-  const activeChips=[q&&`Search: ${q}`,...Object.entries(filters).filter(([,v])=>v&&v!=="all").map(([k,v])=>`${filterFields.find(f=>f[0]===k)?.[1]||k}: ${pretty(v)}`)].filter(Boolean);
-  return <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-    <section className="min-w-0 space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Stat label="Results" value={stats.results}/><Stat label="Selected" value={stats.selected}/><Stat label="Assigned" value={stats.assigned}/><Stat label="Unassigned" value={stats.unassigned}/><Stat label="Partner Launch" value={stats.partnerLaunch}/><Stat label="Launch Pilot" value={stats.launchPilot}/><Stat label="Claim Not Sent" value={stats.claimNotSent}/><Stat label="Payment Pending" value={stats.paymentPending}/></div>
-      <form onSubmit={runSearch} className="sticky top-3 z-10 rounded-3xl border border-white/10 bg-[#120d0b]/95 p-4 shadow-2xl backdrop-blur"><div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search name, address, phone, city, borough, neighborhood, category..." className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-rose-300/50"/><button disabled={loading} className="rounded-2xl bg-rose-600 px-5 py-3 text-sm font-black text-white disabled:opacity-60">{loading?"Searching...":"Search / Filter"}</button><button type="button" onClick={resetFilters} className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-black text-white/75">Reset filters</button><button type="button" className="rounded-2xl border border-rose-300/20 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100">Save view</button></div><div className="mt-3 grid gap-2 md:grid-cols-3">{filterFields.map(([key,label,opts])=><label key={key} className="text-xs font-black uppercase tracking-widest text-white/45">{label}<select value={filters[key]} onChange={e=>setFilters(f=>({...f,[key]:e.target.value}))} className="mt-1 w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-sm normal-case tracking-normal text-white"><option value="all">All</option>{opts.map(o=><option key={o} value={o}>{pretty(o)}</option>)}</select></label>)}</div>{activeChips.length?<div className="mt-3 flex flex-wrap gap-2">{activeChips.map(c=><Pill key={String(c)}>{c}</Pill>)}</div>:null}</form>
-      {error?<div className="rounded-2xl border border-red-300/20 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div>:null}{msg?<div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">{msg}</div>:null}
-      {locations.length===0?<div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] p-10 text-center"><h2 className="text-2xl font-black">No locations match these filters</h2><p className="mt-2 text-sm text-white/55">No locations match these filters. Try clearing filters or searching a broader term.</p></div>:<div className="grid gap-3 md:grid-cols-2">{locations.map(l=><article key={l.id} className="rounded-3xl border border-white/10 bg-white/[0.04] p-4"><div className="flex gap-3"><input type="checkbox" className="mt-1" checked={selected.includes(l.id)} onChange={e=>setSelected(s=>e.target.checked?[...s,l.id]:s.filter(id=>id!==l.id))}/><div className="min-w-0 flex-1"><h3 className="truncate text-lg font-black text-rose-100">{locName(l)}</h3><p className="mt-1 text-sm text-white/55">{l.address||"No address"}</p><p className="mt-1 text-xs text-white/45">{[l.display_phone,l.display_category,[l.neighborhood,l.borough,l.city].filter(Boolean).join(" / ")].filter(Boolean).join(" · ")||"Profile details pending"}</p><div className="mt-3 flex flex-wrap gap-2"><Pill>{pretty(l.claim_status||l.claim_outreach_status)}</Pill><Pill>{pretty(l.partner_sales_status)}</Pill><Pill>{pretty(l.plan_status)}</Pill><Pill>Portal {pretty(l.reservation_portal_status)}</Pill><Pill>Embed {pretty(l.reservation_embed_status)}</Pill><Pill>Discovery {pretty(l.discovery_profile_status)}</Pill></div><p className="mt-3 text-xs font-bold text-white/45">Assignee: {l.assignment?.label||"Unassigned"} · Updated {l.updated_at?new Date(l.updated_at).toLocaleDateString():"—"}</p><div className="mt-3 flex flex-wrap gap-2"><Link href={`/admin/dashboard/crm/${l.id}`} className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-black text-white">View CRM</Link>{l.website?<Link href={l.website} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-white/70">Public profile</Link>:null}<button onClick={()=>setSelected(s=>s.includes(l.id)?s.filter(id=>id!==l.id):[...s,l.id])} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-white/70">{selected.includes(l.id)?"Unselect":"Select"}</button></div></div></div></article>)}</div>}
-    </section>
-    <form action={assign} className="h-fit rounded-3xl border border-rose-300/20 bg-[#13090b] p-5 xl:sticky xl:top-3"><h2 className="text-xl font-black">Selected locations</h2><p className="mt-1 text-sm text-white/55">{selected.length} selected</p><div className="mt-3 max-h-32 space-y-1 overflow-auto text-xs text-white/55">{selected.map(id=><p key={id} className="truncate">{locName(locations.find(l=>l.id===id)||{})}</p>)}</div><button type="button" onClick={()=>setSelected([])} className="mt-3 text-xs font-black text-rose-200">Clear selected</button><div className="mt-4 grid gap-3"><select name="assignedTo" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white"><option value="unassigned">Unassigned queue</option>{teamMembers.map(m=><option key={m.id} value={m.id}>{m.label} · {m.team_type}</option>)}</select><select name="priority" defaultValue="normal" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">{["low","normal","high","urgent"].map(v=><option key={v}>{v}</option>)}</select><input name="campaign" defaultValue="partner_launch" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white"/><select name="tag" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">{["partner_launch","launch_pilot","reservation_setup","embed_follow_up","discovery_cleanup"].map(v=><option key={v}>{v}</option>)}</select><select name="nextActionType" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">{["call_owner","send_instagram_dm","send_email","send_claim_link","follow_up_claim","schedule_demo","setup_reservation_portal","send_embed_code","complete_discovery_profile"].map(v=><option key={v}>{v}</option>)}</select><input name="nextActionDueAt" type="datetime-local" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white"/><input name="reason" placeholder="Assignment reason" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white"/><textarea name="nextActionNote" placeholder="Next action note" className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"/><textarea name="notes" placeholder="Assignment notes" className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"/></div><button disabled={!selected.length||assigning} className="mt-4 w-full rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">{assigning?"Assigning...":`Bulk assign (${selected.length})`}</button></form>
-  </div>}
-function Stat({label,value}:{label:string;value:number}){return <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-[10px] font-black uppercase tracking-widest text-white/45">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div>}
+import { useMemo, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+type LocationRow = Record<string, any>;
+
+function locName(location: LocationRow) {
+  return (
+    location.display_name ||
+    location.name ||
+    location.location_name ||
+    location.restaurant_name ||
+    location.activity_name ||
+    "Untitled location"
+  );
+}
+
+function normalize(value: unknown) {
+  return String(value || "").trim();
+}
+
+function statusLabel(value: unknown) {
+  const raw = normalize(value);
+  return raw ? raw.replace(/_/g, " ") : "—";
+}
+
+function buildQuery(params: Record<string, string>) {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    const clean = normalize(value);
+    if (clean && clean !== "all") searchParams.set(key, clean);
+  });
+
+  return searchParams.toString();
+}
+
+export default function AdminAssignLocationsClient({
+  initialLocations,
+  teamMembers,
+  initialFilters,
+}: {
+  initialLocations: LocationRow[];
+  teamMembers: any[];
+  initialFilters?: Record<string, string>;
+}) {
+  const router = useRouter();
+  const currentSearchParams = useSearchParams();
+
+  const [locations, setLocations] = useState<LocationRow[]>(initialLocations || []);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [msg, setMsg] = useState("");
+  const [searchMsg, setSearchMsg] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  const [filters, setFilters] = useState({
+    q: initialFilters?.q || currentSearchParams.get("q") || "",
+    partnerSalesStatus:
+      initialFilters?.partnerSalesStatus || currentSearchParams.get("partnerSalesStatus") || "all",
+    claimOutreachStatus:
+      initialFilters?.claimOutreachStatus || currentSearchParams.get("claimOutreachStatus") || "all",
+    reservationPortalStatus:
+      initialFilters?.reservationPortalStatus || currentSearchParams.get("reservationPortalStatus") || "all",
+    reservationEmbedStatus:
+      initialFilters?.reservationEmbedStatus || currentSearchParams.get("reservationEmbedStatus") || "all",
+    discoveryProfileStatus:
+      initialFilters?.discoveryProfileStatus || currentSearchParams.get("discoveryProfileStatus") || "all",
+    planStatus: initialFilters?.planStatus || currentSearchParams.get("planStatus") || "all",
+  });
+
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  function updateFilter(key: keyof typeof filters, value: string) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  async function searchLocations() {
+    setSearchMsg("Searching...");
+    setSelected([]);
+
+    const query = buildQuery({ ...filters, limit: "50" });
+
+    try {
+      const response = await fetch(`/api/admin/workspace/assign-locations/search?${query}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Search failed.");
+      }
+
+      setLocations(Array.isArray(data.locations) ? data.locations : []);
+      setSearchMsg(`${Array.isArray(data.locations) ? data.locations.length : 0} location(s) found.`);
+
+      startTransition(() => {
+        router.replace(`/admin/dashboard/my-workspace/assign-locations${query ? `?${query}` : ""}`, {
+          scroll: false,
+        });
+      });
+    } catch (error) {
+      setSearchMsg(error instanceof Error ? error.message : "Search failed.");
+    }
+  }
+
+  async function assign(formData: FormData) {
+    setMsg("Assigning...");
+
+    const response = await fetch("/api/admin/workspace/assign-locations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        locationIds: selected,
+        assignedTo: formData.get("assignedTo"),
+        priority: formData.get("priority"),
+        reason: formData.get("reason"),
+        notes: formData.get("notes"),
+        tag: formData.get("tag"),
+        campaign: formData.get("campaign"),
+        nextActionType: formData.get("nextActionType"),
+        nextActionNote: formData.get("nextActionNote"),
+        nextActionDueAt: formData.get("nextActionDueAt"),
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    setMsg(response.ok ? `Assigned ${data.count || selected.length} location(s).` : data.error || "Assignment failed.");
+
+    if (response.ok) setSelected([]);
+  }
+
+  function toggleLocation(locationId: string, checked: boolean) {
+    setSelected((current) => {
+      if (checked) return Array.from(new Set([...current, locationId]));
+      return current.filter((id) => id !== locationId);
+    });
+  }
+
+  function selectAllVisible() {
+    setSelected(Array.from(new Set(locations.map((location) => String(location.id)).filter(Boolean))));
+  }
+
+  function clearSelected() {
+    setSelected([]);
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
+          <input
+            value={filters.q}
+            onChange={(event) => updateFilter("q", event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                searchLocations();
+              }
+            }}
+            placeholder="Search name, address, phone, borough, neighborhood, city, category"
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-rose-300/60"
+          />
+
+          <select
+            value={filters.partnerSalesStatus}
+            onChange={(event) => updateFilter("partnerSalesStatus", event.target.value)}
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"
+          >
+            <option value="all">All sales statuses</option>
+            {[
+              "target",
+              "needs_outreach",
+              "contacted",
+              "interested",
+              "claim_link_sent",
+              "claim_pending",
+              "claim_approved",
+              "demo_setup",
+              "payment_pending",
+              "active_partner",
+              "reservation_ready",
+              "at_risk",
+              "not_interested",
+              "churned",
+            ].map((value) => (
+              <option key={value} value={value}>
+                {statusLabel(value)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.claimOutreachStatus}
+            onChange={(event) => updateFilter("claimOutreachStatus", event.target.value)}
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"
+          >
+            <option value="all">All claim statuses</option>
+            {["not_sent", "sent", "viewed", "started", "submitted", "approved", "rejected", "expired"].map((value) => (
+              <option key={value} value={value}>
+                {statusLabel(value)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.planStatus}
+            onChange={(event) => updateFilter("planStatus", event.target.value)}
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"
+          >
+            <option value="all">All plan statuses</option>
+            {["active", "trialing", "past_due", "canceled", "inactive", "comped"].map((value) => (
+              <option key={value} value={value}>
+                {statusLabel(value)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.reservationPortalStatus}
+            onChange={(event) => updateFilter("reservationPortalStatus", event.target.value)}
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"
+          >
+            <option value="all">All portal statuses</option>
+            {["not_enabled", "needs_setup", "enabled", "tested", "live", "paused", "issue"].map((value) => (
+              <option key={value} value={value}>
+                {statusLabel(value)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.reservationEmbedStatus}
+            onChange={(event) => updateFilter("reservationEmbedStatus", event.target.value)}
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"
+          >
+            <option value="all">All embed statuses</option>
+            {["not_sent", "generated", "sent", "installed", "tested", "needs_help", "not_needed"].map((value) => (
+              <option key={value} value={value}>
+                {statusLabel(value)}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.discoveryProfileStatus}
+            onChange={(event) => updateFilter("discoveryProfileStatus", event.target.value)}
+            className="min-w-0 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white"
+          >
+            <option value="all">All discovery statuses</option>
+            {["needs_review", "needs_photos", "needs_tags", "needs_hours", "ready", "paused", "issue"].map((value) => (
+              <option key={value} value={value}>
+                {statusLabel(value)}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={searchLocations}
+            disabled={isPending}
+            className="rounded-2xl bg-rose-600 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+          >
+            {isPending ? "Searching..." : "Search / Filter"}
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-white/55">
+          <button type="button" onClick={selectAllVisible} className="rounded-full bg-white/10 px-3 py-2 text-white">
+            Select visible
+          </button>
+          <button type="button" onClick={clearSelected} className="rounded-full bg-white/10 px-3 py-2 text-white">
+            Clear selected
+          </button>
+          {searchMsg ? <span className="px-1 py-2">{searchMsg}</span> : null}
+        </div>
+      </section>
+
+      <form action={assign} className="rounded-3xl border border-rose-300/20 bg-rose-500/10 p-5">
+        <div className="grid gap-3 md:grid-cols-3">
+          <select name="assignedTo" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">
+            <option value="unassigned">Unassigned queue</option>
+            {teamMembers.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label} · {member.team_type}
+              </option>
+            ))}
+          </select>
+
+          <select name="priority" defaultValue="normal" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">
+            {["low", "normal", "high", "urgent"].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+
+          <select name="nextActionType" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">
+            {[
+              "call_owner",
+              "send_instagram_dm",
+              "send_email",
+              "send_claim_link",
+              "follow_up_claim",
+              "schedule_demo",
+              "setup_reservation_portal",
+              "send_embed_code",
+              "complete_discovery_profile",
+            ].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+
+          <input name="campaign" defaultValue="partner_launch" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white" />
+
+          <select name="tag" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white">
+            {["partner_launch", "launch_pilot", "reservation_setup", "embed_follow_up", "discovery_cleanup"].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+
+          <input name="nextActionDueAt" type="datetime-local" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white" />
+
+          <input name="reason" placeholder="Assignment reason" className="rounded-full border border-white/10 bg-black px-4 py-3 text-white md:col-span-3" />
+
+          <textarea name="nextActionNote" placeholder="Next action note" className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white md:col-span-3" />
+
+          <textarea name="notes" placeholder="Internal assignment notes" className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white md:col-span-3" />
+        </div>
+
+        <button disabled={!selected.length} className="mt-4 rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">
+          Bulk assign selected ({selected.length})
+        </button>
+
+        {msg ? <p className="mt-3 text-sm font-bold text-white/70">{msg}</p> : null}
+      </form>
+
+      <section className="max-w-full overflow-x-auto rounded-3xl border border-white/10 bg-white/[0.04] p-3">
+        <table className="w-full min-w-[1200px] text-left text-sm">
+          <thead className="text-xs uppercase tracking-widest text-white/45">
+            <tr>
+              {["Select", "Location", "Address", "Phone", "Category", "Area", "Claim", "Partner", "Plan / Portal", "Last activity"].map((heading) => (
+                <th className="px-3 py-3" key={heading}>
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {locations.map((location) => (
+              <tr key={location.id} className="border-t border-white/10">
+                <td className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedSet.has(String(location.id))}
+                    onChange={(event) => toggleLocation(String(location.id), event.target.checked)}
+                  />
+                </td>
+                <td className="px-3 py-3 font-black text-rose-100">{locName(location)}</td>
+                <td className="px-3 py-3 text-white/60">{location.address || "—"}</td>
+                <td className="px-3 py-3 text-white/60">{location.display_phone || location.phone || location.phone_number || "—"}</td>
+                <td className="px-3 py-3 text-white/60">{location.display_category || location.category || location.location_type || "—"}</td>
+                <td className="px-3 py-3 text-white/60">
+                  {[location.neighborhood, location.borough, location.city].filter(Boolean).join(" / ") || "—"}
+                </td>
+                <td className="px-3 py-3 text-white/60">{statusLabel(location.claim_status || location.claim_outreach_status)}</td>
+                <td className="px-3 py-3 text-white/60">{statusLabel(location.partner_sales_status)}</td>
+                <td className="px-3 py-3 text-white/60">
+                  {statusLabel(location.plan_status)} / {statusLabel(location.reservation_portal_status)}
+                </td>
+                <td className="px-3 py-3 text-white/60">
+                  {location.updated_at ? new Date(location.updated_at).toLocaleDateString() : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {!locations.length ? (
+          <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm font-bold text-white/50">
+            No locations found for these filters.
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
