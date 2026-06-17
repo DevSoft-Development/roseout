@@ -5,6 +5,7 @@ import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
+import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -209,6 +210,7 @@ export async function POST(request: Request) {
     const manualConfidence = ["none", "date_only", "exact"].includes(body?.outingTimeConfidence)
       ? body.outingTimeConfidence
       : null;
+    const parsedOutingDateTime = parseOutingDateTime(cleanInput);
     const parsedPlannedTime = parsePlannedTimeFromQuery(cleanInput, timezone);
     const plannedTime = manualConfidence
       ? {
@@ -389,6 +391,8 @@ export async function POST(request: Request) {
     const response = {
       ...result,
       plannedTime,
+      outingTiming: parsedOutingDateTime,
+      ...parsedOutingDateTime,
       restaurants: publicRestaurants,
       activities: publicActivities,
       matched_locations: publicMatchedLocations,
@@ -413,7 +417,7 @@ export async function POST(request: Request) {
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? { ...(result.debug || {}), routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime } : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo

@@ -105,6 +105,8 @@ export async function POST(req: NextRequest) {
     const outingTimeConfidence = CONFIDENCE.has(asString(payload?.outingTimeConfidence) || "") ? asString(payload?.outingTimeConfidence) as "none" | "date_only" | "exact" : "none";
     const timezone = asString(payload?.timezone) ?? "America/New_York";
     const outingDateContext = asString(payload?.outingDateContext);
+    const outingTiming = payload?.outingTiming && typeof payload.outingTiming === "object" ? payload.outingTiming : {};
+    const outingDateTimeText = asString(outingTiming?.outingDateTimeText) ?? asString(payload?.outingDateTimeText);
     let plannedFor = asString(payload?.plannedFor);
     if (plannedFor && Number.isNaN(Date.parse(plannedFor))) {
       return NextResponse.json({ ok: false, error: "invalid_planned_for", message: "plannedFor must be a valid date/time." }, { status: 400 });
@@ -253,6 +255,7 @@ export async function POST(req: NextRequest) {
           plannedFor,
           timezone,
           outingDateContext,
+          outingDateTimeText,
         });
         const emailResult = await sendRenderedEmail({ to: guestEmail, rendered, department: "plans", templateKey: "outing_plan" });
         emailStatus = emailResult.status;
@@ -263,7 +266,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const saveEventMetadata = { plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId, selected_locations: payload?.selectedLocations ?? payload?.planLocations ?? null, contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, reminders_enabled: remindersEnabled, next_morning_followup_enabled: shouldEnableNextMorningFollowup, next_morning_followup_date: nextMorningFollowupDate };
+    const saveEventMetadata = { outing_timing: outingTiming, outing_date_time_text: outingDateTimeText, plan_title: planTitle, restaurant_location_id: restaurantLocationId, activity_location_id: activityLocationId, selected_locations: payload?.selectedLocations ?? payload?.planLocations ?? null, contact_method: contactMethod, created_by_type: isGuest ? "guest" : "user", guest_session_id: guestSessionId, outing_time_confidence: outingTimeConfidence, outing_date_context: outingDateContext, planned_for: plannedFor, reminders_enabled: remindersEnabled, next_morning_followup_enabled: shouldEnableNextMorningFollowup, next_morning_followup_date: nextMorningFollowupDate };
 
     await Promise.allSettled([
       trackEvent({ event_name: isGuest ? "guest_plan_saved" : "plan_saved", event_type: "save", conversion_step: "saved_plan", user_id: userId, anonymous_id: anonymousId, session_id: clientSessionId, location_id: locationId, source_location_id: sourceLocationId ?? locationId, outing_id: outingId, query: sourceQuery, page_path: asString(payload?.page_path), source: asString(payload?.source) ?? "plan_page", metadata: saveEventMetadata }),
