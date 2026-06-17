@@ -2,8 +2,6 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import {
   getBusinessCRMSummary,
-  getClaimStatus,
-  getDisplayCRMStatus,
   getPartnerPlanDisplay,
   getPartnerSalesStatus,
   getClaimOutreachStatus,
@@ -17,8 +15,8 @@ import {
   normalizeStatus,
   type PendingCRMClaim,
 } from "@/lib/admin-crm";
+import { MARKET_KEYS, getMarketDisplayName, inferMarketFromCityStateCounty } from "@/lib/location-markets";
 
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 function fmt(n: number) {
@@ -162,17 +160,19 @@ export default async function CRMPage({
     filter?: string;
     page?: string;
     pageSize?: string;
+    market?: string;
   }>;
 }) {
   await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
   const params = await searchParams;
   const q = String(params.q || "").trim();
   const filter = q && !params.view && !params.filter ? "all" : normalizeStatus(params.view || params.filter || "all");
+  const market = MARKET_KEYS.includes(params.market as any) ? String(params.market) : "all";
   const page = Math.max(Number(params.page || 1), 1);
   const parsedPageSize = Number(params.pageSize || 25);
   const pageSize = [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 25;
   const [pageData, summary] = await Promise.all([
-    listBusinessCRMPage({ page, pageSize, query: q, filter }),
+    listBusinessCRMPage({ page, pageSize, query: q, filter, market }),
     getBusinessCRMSummary(),
   ]);
   const businesses = pageData.rows;
@@ -183,6 +183,7 @@ export default async function CRMPage({
   const baseParams = new URLSearchParams();
   if (q) baseParams.set("q", q);
   if (filter !== "all") baseParams.set("view", filter);
+  if (market !== "all") baseParams.set("market", market);
   baseParams.set("pageSize", String(pageSize));
   const pageHref = (nextPage: number) => {
     const next = new URLSearchParams(baseParams);
@@ -225,6 +226,7 @@ export default async function CRMPage({
                 />
                 <input type="hidden" name="page" value="1" />
                 <input type="hidden" name="pageSize" value={pageSize} />
+                {filter !== "all" ? <input type="hidden" name="view" value={filter} /> : null}
                 <div className="flex flex-wrap gap-2">
                   {q ? (
                     <Link
@@ -238,6 +240,16 @@ export default async function CRMPage({
                     Search
                   </button>
                 </div>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <label className="sr-only" htmlFor="crm-market">Market</label>
+                <select id="crm-market" name="market" defaultValue={market} className="min-h-12 rounded-2xl border border-white/10 bg-[#12090b] px-4 text-sm font-black text-white outline-none">
+                  <option value="all">All markets</option>
+                  {MARKET_KEYS.filter((m) => m !== "OUTER_NYC").map((m) => (
+                    <option key={m} value={m}>{getMarketDisplayName(m)}</option>
+                  ))}
+                </select>
+                <button className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/80">Apply market</button>
               </div>
             </form>
           </div>
@@ -262,6 +274,13 @@ export default async function CRMPage({
               ["Discovery Profile Needed", summary.discoveryNeeded],
               ["Follow-Ups Due Today", summary.followUpsDueToday],
               ["Owner Contact Missing", summary.ownerContactMissing],
+              ["Searchable", summary.searchable],
+              ["Not Searchable", summary.notSearchable],
+              ["Missing Coordinates", summary.missingCoordinates],
+              ["Missing Photos", summary.missingPhotos],
+              ["Missing Google Place ID", summary.missingGooglePlaceId],
+              ["Restaurants", summary.restaurants],
+              ["Activities", summary.activities],
             ].map(([label, value]) => (
               <div
                 key={String(label)}
@@ -313,6 +332,16 @@ export default async function CRMPage({
           })}
         </nav>
 
+        <nav className="flex max-w-full min-w-0 gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
+          {["all", ...MARKET_KEYS.filter((m) => m !== "OUTER_NYC")].map((value) => {
+            const next = new URLSearchParams(baseParams);
+            next.set("page", "1");
+            if (value === "all") next.delete("market"); else next.set("market", value);
+            const count = value === "all" ? summary.total : summary.marketCounts[value as keyof typeof summary.marketCounts];
+            return <Link key={value} href={`/admin/dashboard/crm?${next.toString()}`} className={`whitespace-nowrap rounded-full px-4 py-2 ${market === value ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>{value === "all" ? "All markets" : getMarketDisplayName(value as any)}{typeof count === "number" ? ` (${fmt(count)})` : ""}</Link>;
+          })}
+        </nav>
+
         <section className="min-w-0 max-w-full rounded-3xl border border-white/10 bg-white/[0.04] p-4">
           {filter === "pending-claims" && pendingClaims.length > 0 ? (
             <PendingClaimsPanel claims={pendingClaims} />
@@ -357,8 +386,10 @@ export default async function CRMPage({
                   <tr>
                     {[
                       ["LOCATION", "w-[245px]"],
-                      ["SALES", "w-[130px]"],
-                      ["CLAIM", "w-[110px]"],
+                      ["TYPE", "w-[115px]"],
+                      ["MARKET", "w-[140px]"],
+                      ["CITY / STATE", "w-[135px]"],
+                      ["STATUS", "w-[145px]"],
                       ["PLAN", "w-[150px]"],
                       ["PORTAL / EMBED", "w-[150px]"],
                       ["DISCOVERY", "w-[115px]"],
@@ -403,8 +434,10 @@ export default async function CRMPage({
                               "Location profile"}
                           </p>
                         </td>
-                        <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getPartnerSalesStatus(business))}`}>{getPartnerSalesStatus(business).replace(/_/g, " ")}</span></td>
-                        <td className="px-3 py-4 align-top"><span className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs font-bold ${badgeClass(getClaimOutreachStatus(business))}`}>{getClaimOutreachStatus(business).replace(/_/g, " ")}</span></td>
+                        <td className="px-3 py-4 align-top text-xs font-bold text-white/70">{business.location_type || business.category || business.primary_category || "Location"}</td>
+                        <td className="px-3 py-4 align-top"><span className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-xs font-bold text-white/75">{getMarketDisplayName(inferMarketFromCityStateCounty(business))}</span></td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70"><div>{business.city || business.borough || "—"}, {business.state || "—"}</div><div className="mt-1 text-white/45">{business.county || business.borough || "—"}</div></td>
+                        <td className="px-3 py-4 align-top text-xs text-white/70"><div>Searchable: {business.is_searchable ? "Yes" : "No"}</div><div className="mt-1">Photo: {business.image_url || business.main_image || (Array.isArray(business.images) && business.images.length) ? "Yes" : "Missing"}</div><div className="mt-1">Google ID: {business.google_place_id ? "Yes" : "Missing"}</div></td>
                         <td className="px-3 py-4 align-top text-xs font-bold text-white/70">{getPartnerPlanDisplay(business)}</td>
                         <td className="px-3 py-4 align-top text-xs text-white/70"><div>{getReservationPortalStatus(business).replace(/_/g, " ")}</div><div className="mt-1 text-white/45">Embed: {getEmbedStatus(business).replace(/_/g, " ")}</div></td>
                         <td className="px-3 py-4 align-top text-xs text-white/70">{getDiscoveryStatus(business).replace(/_/g, " ")}</td>
@@ -454,7 +487,7 @@ export default async function CRMPage({
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold capitalize">
                       <span className={`rounded-full border px-2 py-1 ${badgeClass(getClaimOutreachStatus(business))}`}>{getClaimOutreachStatus(business).replace(/_/g, " ")}</span>
                       <span className={`rounded-full border px-2 py-1 ${badgeClass(getPartnerSalesStatus(business))}`}>{getPartnerSalesStatus(business).replace(/_/g, " ")}</span>
-                      <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-white/70">{getPartnerPlanDisplay(business)}</span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-white/70">{getMarketDisplayName(inferMarketFromCityStateCounty(business))}</span>
                     </div>
                     <div className="mt-3 grid gap-2 text-xs text-white/60">
                       <p>Portal: {getReservationPortalStatus(business).replace(/_/g, " ")} · Embed: {getEmbedStatus(business).replace(/_/g, " ")}</p>
@@ -483,6 +516,7 @@ export default async function CRMPage({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <form className="flex items-center gap-2">
                 {q ? <input type="hidden" name="q" value={q} /> : null}
+                {market !== "all" ? <input type="hidden" name="market" value={market} /> : null}
                 <input type="hidden" name="page" value="1" />
                 <label
                   htmlFor="crm-page-size"

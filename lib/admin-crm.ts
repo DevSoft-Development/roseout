@@ -3,6 +3,7 @@ import {
   stripCityStateZipFromAddress,
 } from "@/lib/address-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { inferMarketFromCityStateCounty, type MarketKey } from "@/lib/location-markets";
 
 export type CRMStatus =
   | "New Lead"
@@ -103,6 +104,12 @@ export type BusinessCRMRow = {
   qr_link?: string | null;
   qr_code_data_url?: string | null;
   location_type?: "restaurants" | "activities" | null;
+  market?: string | null;
+  region?: string | null;
+  county?: string | null;
+  google_place_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   owner_user_id?: string | null;
   owner_email?: string | null;
   claim_status?: string | null;
@@ -247,6 +254,7 @@ export type BusinessCRMSummary = {
   searchAppearances: number;
   followUps: number;
   qrCodes: number;
+  notSearchable: number; missingCoordinates: number; missingPhotos: number; missingGooglePlaceId: number; restaurants: number; activities: number; marketCounts: Partial<Record<MarketKey, number>>;
   partnerLaunchTotal: number; launchPilotTotal: number; claimNotSent: number; claimSent: number; claimStarted: number; claimApproved: number; paymentPending: number; activePartners: number; reservationReady: number; embedNeeded: number; embedSent: number; embedInstalled: number; discoveryNeeded: number; ownerContactMissing: number; followUpsDueToday: number; mrrCents: number;
 };
 
@@ -287,6 +295,9 @@ const ALL_CRM_SEARCH_FIELDS = [
   "cuisine",
   "cuisine_type",
   "location_type",
+  "market",
+  "region",
+  "county",
 ];
 
 export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
@@ -318,7 +329,7 @@ export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
       "subscription_status",
       "sales_campaign", "partner_launch_selected", "partner_launch_pilot", "claim_outreach_status",
       "partner_sales_status", "next_action_due_at", "reservation_portal_status", "reservation_embed_status",
-      "discovery_profile_status", "partner_activated_at", "owner_contact_missing",
+      "discovery_profile_status", "partner_activated_at", "owner_contact_missing", "market", "county", "city", "state",
     ],
     orderFields: ["updated_at", "created_at", "name"],
   },
@@ -350,7 +361,7 @@ export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
       "subscription_status",
       "sales_campaign", "partner_launch_selected", "partner_launch_pilot", "claim_outreach_status",
       "partner_sales_status", "next_action_due_at", "reservation_portal_status", "reservation_embed_status",
-      "discovery_profile_status", "partner_activated_at", "owner_contact_missing",
+      "discovery_profile_status", "partner_activated_at", "owner_contact_missing", "market", "county", "city", "state",
     ],
     orderFields: ["updated_at", "created_at", "name"],
   },
@@ -392,7 +403,7 @@ export const CRM_SOURCE_CONFIGS: CRMSourceConfig[] = [
       "is_searchable",
       "sales_campaign", "partner_launch_selected", "partner_launch_pilot", "claim_outreach_status",
       "partner_sales_status", "next_action_due_at", "reservation_portal_status", "reservation_embed_status",
-      "discovery_profile_status", "partner_activated_at", "owner_contact_missing",
+      "discovery_profile_status", "partner_activated_at", "owner_contact_missing", "market", "county", "city", "state",
     ],
     orderFields: ["updated_at", "created_at", "name"],
   },
@@ -576,6 +587,12 @@ export function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {
     is_pro: Boolean(
       row.is_pro || row.plan === "pro" || row.subscription_plan === "pro",
     ),
+    market: row.market ?? inferMarketFromCityStateCounty(row),
+    region: row.region ?? row.market ?? null,
+    county: row.county ?? null,
+    google_place_id: row.google_place_id ?? row.place_id ?? null,
+    latitude: row.latitude ?? row.lat ?? null,
+    longitude: row.longitude ?? row.lng ?? row.lon ?? null,
     location_type:
       row.location_type === "activities"
         ? "activities"
@@ -686,6 +703,9 @@ function buildCRMSearchHaystack(row: Partial<BusinessCRMRow>) {
     row.website,
     row.owner_instagram,
     row.claim_code,
+    row.market,
+    row.region,
+    row.county,
   ].filter(Boolean).join(" ");
 }
 
@@ -824,6 +844,7 @@ type CRMPageOptions = {
   pageSize?: number;
   query?: string;
   filter?: string;
+  market?: string;
 };
 
 type CRMRowsResult = {
@@ -867,6 +888,12 @@ export function buildCRMSearchFilterForSource(
   return source.searchableFields
     .map((field) => `${field}.ilike.${like}`)
     .join(",");
+}
+
+function buildCRMMarketFilter(market?: string) {
+  const normalized = String(market || "").trim();
+  if (!normalized || normalized === "all") return "";
+  return `market.eq.${normalized}`;
 }
 
 function buildCRMViewFilterForSource(source: CRMSourceConfig, filter?: string) {
@@ -1007,12 +1034,14 @@ export async function fetchCRMRowsFromSource(
       .select(CRM_SELECT, { count: "exact" });
     const searchFilter = buildCRMSearchFilterForSource(source, options.query);
     const viewFilter = buildCRMViewFilterForSource(source, options.filter);
+    const marketFilter = buildCRMMarketFilter(options.market);
     if (String(options.query || "").trim() && !searchFilter) {
       // Continue without a DB OR search; the in-memory fallback below will apply robust matching.
     }
 
     if (searchFilter) queryBuilder = queryBuilder.or(searchFilter);
     if (viewFilter) queryBuilder = queryBuilder.or(String(viewFilter));
+    if (marketFilter && source.filterFields.includes("market")) queryBuilder = queryBuilder.filter("market", "eq", options.market);
     queryBuilder = applyCRMOrderingForSource(queryBuilder, source).range(
       from,
       to,
@@ -1094,7 +1123,7 @@ export async function fetchCRMRowsWithFallback(
       });
       if (String(options.query || "").trim() && result.rows.length === 0) {
         const fallback = await fetchCRMRowsForInMemorySearch(source, normalizeStatus(options.filter || "all") === "all" ? "all" : options.filter);
-        let matched = fallback.filter((row) => rowMatchesSearch(row, options.query));
+        let matched = fallback.filter((row) => rowMatchesSearch(row, options.query) && (!options.market || options.market === "all" || row.market === options.market));
         if (!matched.length && normalizeStatus(options.filter || "all") !== "all") {
           const allFallback = await fetchCRMRowsForInMemorySearch(source, "all");
           matched = allFallback.filter((row) => rowMatchesSearch(row, options.query));
@@ -1298,11 +1327,13 @@ export async function listBusinessCRMPage({
   pageSize = 25,
   query,
   filter,
+  market,
 }: {
   page?: number;
   pageSize?: number;
   query?: string;
   filter?: string;
+  market?: string;
 }) {
   const safePageSize = getSafePageSize(pageSize);
   const safePage = getSafePage(page);
@@ -1329,6 +1360,7 @@ export async function listBusinessCRMPage({
     pageSize: safePageSize,
     query,
     filter: normalizedFilter,
+    market,
   });
 
   return {
@@ -1379,9 +1411,21 @@ export async function getBusinessCRMSummary(): Promise<BusinessCRMSummary> {
     countCRMRowsWithFallback("partner-launch"), countCRMRowsWithFallback("launch-pilot"), countCRMRowsWithFallback("claim-not-sent"), countCRMRowsWithFallback("claim-sent"), countCRMRowsWithFallback("claim-started"), countCRMRowsWithFallback("claim-approved"), countCRMRowsWithFallback("payment-pending"), countCRMRowsWithFallback("active-partners"), countCRMRowsWithFallback("reservation-ready"), countCRMRowsWithFallback("embed-needed"), countCRMRowsWithFallback("embed-sent"), countCRMRowsWithFallback("embed-installed"), countCRMRowsWithFallback("discovery-needed"), countCRMRowsWithFallback("owner-contact-missing"), countCRMRowsWithFallback("follow-ups-due"),
   ]);
 
+  const [notSearchable, missingCoordinates, missingPhotos, missingGooglePlaceId, restaurants, activities, marketRows] = await Promise.all([
+    countFromLocations((q) => q.eq("is_searchable", false)),
+    countFromLocations((q) => q.or("latitude.is.null,longitude.is.null")),
+    countFromLocations((q) => q.or("image_url.is.null,main_image.is.null")),
+    countFromLocations((q) => q.is("google_place_id", null)),
+    countFromLocations((q) => q.eq("location_type", "restaurants")),
+    countFromLocations((q) => q.eq("location_type", "activities")),
+    safeSelect("locations", (q) => q.select("market").limit(5000)),
+  ]);
+  const marketCounts = (marketRows as any[]).reduce((acc, row) => { const m = inferMarketFromCityStateCounty(row); acc[m] = (acc[m] || 0) + 1; return acc; }, {} as Partial<Record<MarketKey, number>>);
+
   return {
     total,
     searchable,
+    notSearchable, missingCoordinates, missingPhotos, missingGooglePlaceId, restaurants, activities, marketCounts,
     claimed,
     unclaimed: Math.max(total - claimed, 0),
     pendingClaims: pendingClaims.length,
