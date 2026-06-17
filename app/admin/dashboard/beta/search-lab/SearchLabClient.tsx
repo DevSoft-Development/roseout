@@ -34,6 +34,48 @@ function safeStringify(value: unknown) {
   }
 }
 
+
+function getPerformance(result: SearchLabBatchResult) {
+  return (result.data?.performance as SearchLabResult | undefined) || ((result.data?.debug as SearchLabResult | undefined)?.performance as SearchLabResult | undefined) || null;
+}
+
+function getTotalMs(result: SearchLabBatchResult) {
+  return Number(result.data?.total_ms || (result.data?.performance as any)?.total_ms || ((result.data?.debug as any)?.performance)?.total_ms || 0);
+}
+
+function isCriticalSpeed(result: SearchLabBatchResult) {
+  const speedStatus = result.data?.speed_status || result.data?.speedStatus || (result.data?.performance as any)?.speed_status || ((result.data?.debug as any)?.performance)?.speed_status;
+  return speedStatus === "critical";
+}
+
+function getOutingTimeConfidence(result: SearchLabBatchResult) {
+  return ((result.data?.parsedIntent as any)?.outingTimeConfidence || ((result.data?.debug as any)?.normalizedIntent)?.outingTimeConfidence || result.data?.outingTimeConfidence || "none") as string;
+}
+
+function getBatchPerformanceSummary(results: SearchLabBatchResult[]) {
+  const successfulResults = results.filter((result) => result.success);
+  const totalMsValues = successfulResults.map(getTotalMs).filter((value) => value > 0);
+  const averageTotalMs = totalMsValues.length > 0 ? Math.round(totalMsValues.reduce((sum, value) => sum + value, 0) / totalMsValues.length) : 0;
+  const slowestResult = successfulResults.reduce<SearchLabBatchResult | null>((slowest, result) => (!slowest || getTotalMs(result) > getTotalMs(slowest) ? result : slowest), null);
+  return {
+    total: results.length,
+    successful: successfulResults.length,
+    failed: results.filter((result) => !result.success).length,
+    criticalSpeedCount: successfulResults.filter(isCriticalSpeed).length,
+    averageTotalMs,
+    slowestQuery: slowestResult?.query || null,
+    slowestTotalMs: slowestResult ? getTotalMs(slowestResult) : 0,
+    overFiveSecondsCount: successfulResults.filter((result) => getTotalMs(result) > 5000).length,
+    overEightSecondsCount: successfulResults.filter((result) => getTotalMs(result) > 8000).length,
+    fallbackUsedCount: successfulResults.filter((result) => Boolean(result.data?.fallbackUsed)).length,
+    outOfBoroughCount: successfulResults.filter((result) => Boolean((result.data?.debug as any)?.boroughStrictnessApplied && (result.data?.debug as any)?.outOfBoroughResultCount > 0)).length,
+    relaxedFeatureCount: successfulResults.filter((result) => Boolean((result.data?.debug as any)?.restaurantRecoveryRelaxedFeature || (result.data?.debug as any)?.featureMissingPenaltyApplied)).length,
+    explicitTimeCount: successfulResults.filter((result) => getOutingTimeConfidence(result) === "explicit").length,
+    vagueTimeCount: successfulResults.filter((result) => getOutingTimeConfidence(result) === "vague").length,
+    noTimeCount: successfulResults.filter((result) => getOutingTimeConfidence(result) === "none").length,
+  };
+}
+
 function formatBatchResultForCopy(result: SearchLabBatchResult) {
   const status = result.success ? "Success" : "Failed";
 
@@ -55,11 +97,25 @@ function formatAllBatchResultsForCopy(results: SearchLabBatchResult[]) {
   const successfulCount = results.filter((result) => result.success).length;
   const failedCount = results.length - successfulCount;
 
+  const performanceSummary = getBatchPerformanceSummary(results);
+
   return [
     "TheOutHaven Search Lab Batch Results",
     `Total searches: ${results.length}`,
     `Successful: ${successfulCount}`,
     `Failed: ${failedCount}`,
+    `Critical speed: ${performanceSummary.criticalSpeedCount}`,
+    `Average total_ms: ${performanceSummary.averageTotalMs}`,
+    `Slowest query: ${performanceSummary.slowestQuery || "N/A"}`,
+    `Slowest total_ms: ${performanceSummary.slowestTotalMs}`,
+    `Over 5000ms: ${performanceSummary.overFiveSecondsCount}`,
+    `Over 8000ms: ${performanceSummary.overEightSecondsCount}`,
+    `Fallback used: ${performanceSummary.fallbackUsedCount}`,
+    `Out-of-borough results: ${performanceSummary.outOfBoroughCount}`,
+    `Relaxed feature matching: ${performanceSummary.relaxedFeatureCount}`,
+    `Explicit time: ${performanceSummary.explicitTimeCount}`,
+    `Vague time: ${performanceSummary.vagueTimeCount}`,
+    `No time: ${performanceSummary.noTimeCount}`,
     "",
     results.map(formatBatchResultForCopy).join("\n\n---\n\n"),
   ].join("\n");
@@ -126,6 +182,13 @@ function SearchDebugFields({ result }: { result: SearchLabResult }) {
     ["Geo neighborhood", pickFirst(geo.neighborhood, intent.neighborhood)],
     ["Geo state", pickFirst(geo.state, intent.state)],
     ["Time context", pickFirst(intent.timeContext, intent.time_context, intent.time, intent.when)],
+    ["Outing date label", pickFirst(intent.outingDateLabel, result.outingDateLabel)],
+    ["Outing time label", pickFirst(intent.outingTimeLabel, result.outingTimeLabel)],
+    ["Outing date/time", pickFirst(intent.outingDateTimeText, result.outingDateTimeText)],
+    ["Time confidence", pickFirst(intent.outingTimeConfidence, result.outingTimeConfidence)],
+    ["Parsed date text", pickFirst(intent.parsedDateText, result.parsedDateText)],
+    ["Parsed time text", pickFirst(intent.parsedTimeText, result.parsedTimeText)],
+    ["Parsed ISO", pickFirst(intent.parsedDateTimeISO, result.parsedDateTimeISO)],
     ["Occasion", pickFirst(intent.occasion, intent.occasionType, intent.occasion_type)],
     ["Restaurant intent terms", pickFirst(intent.restaurantIntentTerms, intent.restaurant_intent_terms, result.restaurantRpcTerms, result.restaurantRpcTermsPruned)],
     ["Activity intent terms", pickFirst(intent.activityIntentTerms, intent.activity_intent_terms, result.activityRpcTerms, result.activityRpcTermsPruned)],
@@ -143,9 +206,51 @@ function SearchDebugFields({ result }: { result: SearchLabResult }) {
   );
 }
 
+
+function PerformanceSummary({ result }: { result: SearchLabResult }) {
+  const performance = (result.performance as SearchLabResult | undefined) || ((result.debug as any)?.performance as SearchLabResult | undefined) || {};
+  const totalMs = Number(result.total_ms || performance.total_ms || 0);
+  const speedStatus = result.speed_status || result.speedStatus || performance.speed_status;
+  const debug = (result.debug as any) || {};
+  const fields = [
+    ["total_ms", totalMs || performance.total_ms],
+    ["speed_status", speedStatus],
+    ["intent_parse_ms", performance.intent_parse_ms],
+    ["restaurant_rpc_ms", performance.restaurant_rpc_ms],
+    ["activity_rpc_ms", performance.activity_rpc_ms],
+    ["rpc_ms", performance.rpc_ms],
+    ["ranking_ms", performance.ranking_ms],
+    ["pair_count", result.pair_count || debug.pair_count],
+    ["restaurant_count", result.restaurants],
+    ["activity_count", result.activities],
+    ["fallbackUsed", result.fallbackUsed],
+    ["intentParserSource", result.intentParserSource],
+    ["fastPathMatched", result.fastPathMatched],
+    ["fastPathReason", result.fastPathReason],
+  ];
+  return (
+    <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-wrap gap-2">
+        {speedStatus === "critical" ? <span className="rounded-full bg-red-500 px-3 py-1 text-xs font-black text-white">Critical speed</span> : null}
+        {totalMs > 5000 ? <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-black">Over 5s</span> : null}
+        {totalMs > 8000 ? <span className="rounded-full bg-red-300 px-3 py-1 text-xs font-black text-black">Over 8s</span> : null}
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-4">
+        {fields.map(([label, value]) => (
+          <div key={String(label)} className="rounded-2xl bg-white/[.04] p-2">
+            <p className="text-[10px] text-white/45">{String(label)}</p>
+            <p className="break-words text-xs font-black text-white/85">{formatValue(value)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ResultDetails({ result }: { result: SearchLabResult }) {
   return (
     <>
+      <PerformanceSummary result={result} />
       <div className="mt-3 grid gap-3 md:grid-cols-5">
         {[
           ["Restaurants", result.restaurants],
@@ -292,6 +397,14 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
             >
               {copiedAllBatchResults ? "Copied all results" : "Copy all results"}
             </button>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            {Object.entries(getBatchPerformanceSummary(batchResults)).map(([label, value]) => (
+              <div key={label} className="rounded-2xl bg-white/[.04] p-3">
+                <p className="text-xs text-white/50">{label}</p>
+                <p className="break-words font-black">{formatValue(value)}</p>
+              </div>
+            ))}
           </div>
           <div className="mt-5 space-y-4">
             {batchResults.map((batchResult, index) => (

@@ -4,6 +4,7 @@ import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/li
 import { getSearchSpeedStatus } from "@/lib/search/performance";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import { requireBetaAdmin, safeError } from "../_shared";
+import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 
 export async function POST(req: NextRequest) {
   const auth = await requireBetaAdmin();
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
     );
     const debug = result.debug as any;
     const perf = debug?.performance || {};
+    const outingTiming = { ...parseOutingDateTime(query), ...(debug?.normalizedIntent ? { outingDateLabel: debug.normalizedIntent.outingDateLabel, outingTimeLabel: debug.normalizedIntent.outingTimeLabel, outingDateTimeText: debug.normalizedIntent.outingDateTimeText, outingTimeConfidence: debug.normalizedIntent.outingTimeConfidence, parsedDateText: debug.normalizedIntent.parsedDateText, parsedTimeText: debug.normalizedIntent.parsedTimeText, parsedDateTimeISO: debug.normalizedIntent.parsedDateTimeISO } : {}) };
 
     const responseBody = {
       success: true,
@@ -73,6 +75,13 @@ export async function POST(req: NextRequest) {
       total_ms: perf.total_ms,
       speed_status: perf.speed_status,
       parsedIntent: debug?.normalizedIntent || (result as any).normalizedIntent,
+      outingDateLabel: outingTiming.outingDateLabel ?? null,
+      outingTimeLabel: outingTiming.outingTimeLabel ?? null,
+      outingDateTimeText: outingTiming.outingDateTimeText ?? null,
+      outingTimeConfidence: outingTiming.outingTimeConfidence ?? "none",
+      parsedDateText: outingTiming.parsedDateText ?? null,
+      parsedTimeText: outingTiming.parsedTimeText ?? null,
+      parsedDateTimeISO: outingTiming.parsedDateTimeISO ?? null,
       performance: perf,
       defaultMarketApplied: debug?.defaultMarketApplied ?? false,
       defaultMarketId: debug?.defaultMarketId ?? null,

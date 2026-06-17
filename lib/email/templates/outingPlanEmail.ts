@@ -16,6 +16,7 @@ type RenderOutingPlanEmailInput = {
   plannedFor?: string | null;
   timezone?: string | null;
   outingDateContext?: string | null;
+  outingDateTimeText?: string | null;
 };
 
 function locationName(location: OutingEmailLocation, fallback: string) {
@@ -24,6 +25,7 @@ function locationName(location: OutingEmailLocation, fallback: string) {
 }
 
 function formatTiming(input: RenderOutingPlanEmailInput) {
+  if (input.outingDateTimeText) return input.outingDateTimeText;
   if (input.plannedFor) {
     try {
       return new Intl.DateTimeFormat("en-US", {
@@ -51,7 +53,7 @@ export function renderOutingPlanEmail(input: RenderOutingPlanEmailInput) {
         { label: "Plan", value: input.planTitle || "Your TheOutHaven Plan" },
         { label: "Restaurant", value: locationName(input.restaurant || null, "Not selected") },
         { label: "Activity", value: locationName(input.activity || null, "Not selected") },
-        { label: "Timing", value: formatTiming(input) },
+        { label: "Outing time", value: formatTiming(input) },
       ],
     },
     {

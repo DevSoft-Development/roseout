@@ -304,6 +304,9 @@ function PlanPageInner() {
       remindersEnabled: searchParams.get("remindersEnabled") === "true",
       nextMorningFollowupEnabled: false,
       nextMorningFollowupDate: null,
+      outingDateTimeText: searchParams.get("outingDateTimeText"),
+      outingDateLabel: searchParams.get("outingDateLabel"),
+      outingTimeLabel: searchParams.get("outingTimeLabel"),
     } as OutingTimeValue;
   }
 
@@ -478,6 +481,7 @@ function PlanPageInner() {
           outingDateContext: outingTime.outingDateContext,
           outingTimeConfidence: outingTime.outingTimeConfidence,
           remindersEnabled: outingTime.remindersEnabled,
+          outingTiming: { outingDateLabel: outingTime.outingDateLabel ?? null, outingTimeLabel: outingTime.outingTimeLabel ?? null, outingDateTimeText: outingTime.outingDateTimeText ?? null, outingTimeConfidence: outingTime.outingTimeConfidence, parsedDateText: outingTime.parsedDateText ?? null, parsedTimeText: outingTime.parsedTimeText ?? null, parsedDateTimeISO: outingTime.parsedDateTimeISO ?? null },
           guestEmail,
           guestPhone,
           contact_method: contactMethod,
@@ -753,6 +757,14 @@ function PlanPageInner() {
                 <p className="mt-1 text-sm font-semibold text-white/40">
                   Start with your main pick, then continue into the after plan.
                 </p>
+              </div>
+
+              <div className="mb-3 rounded-2xl border border-white/10 bg-white/[.04] p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">Outing time</p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <p className="text-sm font-black text-white">{outingTime.outingDateTimeText || outingTime.outingDateLabel || (outingTime.plannedFor ? "Exact time selected" : "Time not selected")}</p>
+                  <span className="text-xs font-black text-rose-200">{outingTime.outingDateTimeText || outingTime.outingDateLabel || outingTime.plannedFor ? "Change" : "Add time"}</span>
+                </div>
               </div>
 
               <OutingTimeSelector value={outingTime} onChange={setOutingTime} variant="panel" />

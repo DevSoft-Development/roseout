@@ -62,6 +62,13 @@ export type SearchIntent = {
   occasion?: string | null;
   partySize?: number | null;
   timeContext?: string | null;
+  outingDateLabel?: string | null;
+  outingTimeLabel?: string | null;
+  outingDateTimeText?: string | null;
+  outingTimeConfidence?: "explicit" | "vague" | "none";
+  parsedDateText?: string | null;
+  parsedTimeText?: string | null;
+  parsedDateTimeISO?: string | null;
   budget?: string | null;
   vibe: string[];
   strictness: "low" | "medium" | "high";

@@ -5,6 +5,12 @@ export type OutingTimeValue = {
   timezone: string;
   outingDateContext: string | null;
   outingTimeConfidence: OutingTimeConfidence;
+  outingDateLabel?: string | null;
+  outingTimeLabel?: string | null;
+  outingDateTimeText?: string | null;
+  parsedDateText?: string | null;
+  parsedTimeText?: string | null;
+  parsedDateTimeISO?: string | null;
   remindersEnabled: boolean;
   nextMorningFollowupEnabled: boolean;
   nextMorningFollowupDate: string | null;
@@ -85,6 +91,12 @@ export function emptyOutingTimeValue(timezone = getBrowserTimezone()): OutingTim
     timezone,
     outingDateContext: null,
     outingTimeConfidence: "none",
+    outingDateLabel: null,
+    outingTimeLabel: null,
+    outingDateTimeText: null,
+    parsedDateText: null,
+    parsedTimeText: null,
+    parsedDateTimeISO: null,
     remindersEnabled: false,
     nextMorningFollowupEnabled: false,
     nextMorningFollowupDate: null,

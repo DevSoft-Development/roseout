@@ -153,6 +153,13 @@ type ApiResponse = {
   matched_locations?: unknown[];
   display_mode?: string;
   render_mode?: string;
+  outingTiming?: Partial<OutingTimeValue> | null;
+  outingDateTimeText?: string | null;
+  outingDateLabel?: string | null;
+  outingTimeLabel?: string | null;
+  parsedDateText?: string | null;
+  parsedTimeText?: string | null;
+  parsedDateTimeISO?: string | null;
   plannedTime?: {
     plannedFor: string | null;
     timezone: string;
@@ -216,6 +223,7 @@ type SavedPlan = {
   planExact?: boolean;
   savedAt?: number;
   outingTime?: OutingTimeValue;
+  outingTiming?: Partial<OutingTimeValue>;
 };
 
 const LOCATION_KEY = "theouthaven_user_location";
@@ -910,6 +918,12 @@ export default function CreatePage() {
               data.plannedTime.shouldScheduleNextMorningFollowup,
             ),
             nextMorningFollowupDate: data.plannedTime.nextMorningFollowupDate,
+            outingDateLabel: data.outingTiming?.outingDateLabel ?? data.outingDateLabel ?? null,
+            outingTimeLabel: data.outingTiming?.outingTimeLabel ?? data.outingTimeLabel ?? null,
+            outingDateTimeText: data.outingTiming?.outingDateTimeText ?? data.outingDateTimeText ?? null,
+            parsedDateText: data.outingTiming?.parsedDateText ?? data.parsedDateText ?? null,
+            parsedTimeText: data.outingTiming?.parsedTimeText ?? data.parsedTimeText ?? null,
+            parsedDateTimeISO: data.outingTiming?.parsedDateTimeISO ?? data.parsedDateTimeISO ?? null,
           },
           false,
         );
@@ -1167,6 +1181,15 @@ export default function CreatePage() {
       planExact: currentParams.get("planExact") === "true" || undefined,
       savedAt: Date.now(),
       outingTime,
+      outingTiming: {
+        outingDateLabel: outingTime.outingDateLabel ?? null,
+        outingTimeLabel: outingTime.outingTimeLabel ?? null,
+        outingDateTimeText: outingTime.outingDateTimeText ?? null,
+        outingTimeConfidence: outingTime.outingTimeConfidence,
+        parsedDateText: outingTime.parsedDateText ?? null,
+        parsedTimeText: outingTime.parsedTimeText ?? null,
+        parsedDateTimeISO: outingTime.parsedDateTimeISO ?? null,
+      },
     };
 
     localStorage.setItem("theouthaven_plan", JSON.stringify(plan));
@@ -1212,6 +1235,9 @@ export default function CreatePage() {
     if (outingTime.nextMorningFollowupEnabled)
       params.set("nextMorningFollowupEnabled", "true");
     if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
+    if (outingTime.outingDateTimeText) params.set("outingDateTimeText", outingTime.outingDateTimeText);
+    if (outingTime.outingDateLabel) params.set("outingDateLabel", outingTime.outingDateLabel);
+    if (outingTime.outingTimeLabel) params.set("outingTimeLabel", outingTime.outingTimeLabel);
 
     router.push(`/plan?${params.toString()}`);
   }
