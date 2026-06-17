@@ -26,11 +26,71 @@ function getNonEmptySearchLines(value: string) {
     .filter(Boolean);
 }
 
+function safeStringify(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatBatchResultForCopy(result: SearchLabBatchResult) {
+  const status = result.success ? "Success" : "Failed";
+
+  return [
+    "TheOutHaven Search Lab Result",
+    "",
+    "Search:",
+    result.query,
+    "",
+    "Status:",
+    status,
+    "",
+    result.success ? "Parsed Output:" : "Error:",
+    result.success ? safeStringify(result.data) : result.error || "Unknown error",
+  ].join("\n");
+}
+
+function formatAllBatchResultsForCopy(results: SearchLabBatchResult[]) {
+  const successfulCount = results.filter((result) => result.success).length;
+  const failedCount = results.length - successfulCount;
+
+  return [
+    "TheOutHaven Search Lab Batch Results",
+    `Total searches: ${results.length}`,
+    `Successful: ${successfulCount}`,
+    `Failed: ${failedCount}`,
+    "",
+    results.map(formatBatchResultForCopy).join("\n\n---\n\n"),
+  ].join("\n");
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "-9999px";
+
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
 function formatValue(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
-  if (typeof value === "object") return JSON.stringify(value, null, 2);
+  if (typeof value === "object") return safeStringify(value);
   return String(value);
 }
 
@@ -117,6 +177,8 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
   const [query, setQuery] = useState(initialQuery);
   const [result, setResult] = useState<SearchLabResult | null>(null);
   const [batchResults, setBatchResults] = useState<SearchLabBatchResult[]>([]);
+  const [copiedAllBatchResults, setCopiedAllBatchResults] = useState(false);
+  const [copiedBatchResultIndex, setCopiedBatchResultIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -126,6 +188,8 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
     setError(null);
     setResult(null);
     setBatchResults([]);
+    setCopiedAllBatchResults(false);
+    setCopiedBatchResultIndex(null);
 
     const searchLines = getNonEmptySearchLines(q);
     const runSingleSearch = async (line: string) => {
@@ -167,6 +231,29 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
     }
   }
 
+  async function handleCopyAllBatchResults() {
+    if (!batchResults.length) return;
+
+    await copyTextToClipboard(formatAllBatchResultsForCopy(batchResults));
+    setCopiedAllBatchResults(true);
+
+    window.setTimeout(() => {
+      setCopiedAllBatchResults(false);
+    }, 2000);
+  }
+
+  async function handleCopyBatchResult(index: number) {
+    const result = batchResults[index];
+    if (!result) return;
+
+    await copyTextToClipboard(formatBatchResultForCopy(result));
+    setCopiedBatchResultIndex(index);
+
+    window.setTimeout(() => {
+      setCopiedBatchResultIndex(null);
+    }, 2000);
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-3xl border border-white/10 bg-white/[.04] p-5">
@@ -192,12 +279,33 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
 
       {batchResults.length > 0 ? (
         <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-rose-200">Batch search test</p>
-          <h2 className="mt-2 text-2xl font-black">Testing {batchResults.length} searches one at a time</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-rose-200">Batch search test</p>
+              <h2 className="mt-2 text-2xl font-black">Testing {batchResults.length} searches one at a time</h2>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyAllBatchResults}
+              disabled={!batchResults.length}
+              className="rounded-full border border-rose-300/40 bg-rose-600/20 px-4 py-2 text-sm font-black text-rose-50 transition hover:bg-rose-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {copiedAllBatchResults ? "Copied all results" : "Copy all results"}
+            </button>
+          </div>
           <div className="mt-5 space-y-4">
             {batchResults.map((batchResult, index) => (
               <article key={`${batchResult.query}-${index}`} className={`rounded-3xl border p-5 ${batchResult.success ? "border-white/10 bg-white/[.03]" : "border-red-400/40 bg-red-500/10"}`}>
-                <h3 className="text-xl font-black">{batchResult.query}</h3>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <h3 className="min-w-0 flex-1 text-xl font-black">{batchResult.query}</h3>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyBatchResult(index)}
+                    className="rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-xs font-black text-white/80 transition hover:bg-white/[.1]"
+                  >
+                    {copiedBatchResultIndex === index ? "Copied" : "Copy this result"}
+                  </button>
+                </div>
                 {batchResult.success && batchResult.data ? <ResultDetails result={batchResult.data} /> : <p className="mt-3 font-semibold text-red-100">Error: {batchResult.error || "Search test failed."}</p>}
               </article>
             ))}
