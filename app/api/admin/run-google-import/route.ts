@@ -44,6 +44,9 @@ function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOption
     requireLocation: true,
     requireCuisineType: true,
     maxQueries: Number(searchParams.get("maxQueries") || 2),
+    requestedMarket: searchParams.get("market") || searchParams.get("requestedMarket") || null,
+    requestedArea: searchParams.get("areas") || searchParams.get("area") || null,
+    allowMarketCorrection: searchParams.get("allowMarketCorrection") === "true",
   };
 }
 
@@ -80,6 +83,9 @@ export async function POST(request: NextRequest) {
       requireLocation: body.requireLocation !== false,
       requireCuisineType: body.requireCuisineType !== false,
       maxQueries: Number(body.maxQueries || 2),
+      requestedMarket: body.market || body.requestedMarket || null,
+      requestedArea: body.areas || body.area || null,
+      allowMarketCorrection: body.allowMarketCorrection === true,
     });
 
     return NextResponse.json(result);
