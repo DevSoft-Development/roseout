@@ -144,7 +144,15 @@ async function main() {
           .insert(suggestionRow)
           .select("id")
           .single();
-      if (insertError) throw insertError;
+      if (insertError) {
+        const code = typeof insertError === "object" && insertError && "code" in insertError ? String(insertError.code) : "";
+        const message = typeof insertError === "object" && insertError && "message" in insertError ? String(insertError.message) : String(insertError);
+        if (code === "23505" || /duplicate key|already exists/i.test(message)) {
+          counters.skipped_duplicate += 1;
+          continue;
+        }
+        throw insertError;
+      }
       counters.suggestions_created += 1;
 
       if (!options.dryRun && options.applyHighConfidence && result.confidence >= 85) {
@@ -181,6 +189,11 @@ async function main() {
       dryRun: options.dryRun,
       createSuggestions: !options.dryRun,
       applyHighConfidence: options.applyHighConfidence && !options.dryRun,
+    },
+    behavior: {
+      dryRun: options.dryRun ? "no Supabase writes" : "writes enabled",
+      createSuggestions: options.dryRun ? "disabled in dry-run" : "enabled",
+      applyHighConfidence: options.applyHighConfidence && !options.dryRun ? "enabled for confidence >= 85" : "disabled",
     },
     mode: options.dryRun ? "dry-run" : options.applyHighConfidence ? "apply-high-confidence" : "suggestions-only",
     ...counters,
