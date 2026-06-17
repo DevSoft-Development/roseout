@@ -52,12 +52,27 @@ function formatCompactDateTime(iso: string | null, timezone: string) {
   }
 }
 
+function normalizedConfidence(value: OutingTimeValue) {
+  if (value.outingTimeConfidence === "explicit") return "exact";
+  if (value.outingTimeConfidence === "vague") return "date_only";
+  return value.outingTimeConfidence;
+}
+
+function hasExplicitOutingTime(value: OutingTimeValue) {
+  return value?.outingTimeConfidence === "explicit" && Boolean(value?.outingDateTimeText);
+}
+
+function hasVagueOutingTime(value: OutingTimeValue) {
+  return value?.outingTimeConfidence === "vague" && Boolean(value?.outingDateTimeText);
+}
+
 function formatCompactStatus(value: OutingTimeValue) {
-  if (value.outingTimeConfidence === "exact") {
+  const confidence = normalizedConfidence(value);
+  if (confidence === "exact") {
     return formatCompactDateTime(value.plannedFor, value.timezone);
   }
 
-  if (value.outingTimeConfidence === "date_only") {
+  if (confidence === "date_only") {
     return formatContext(value.outingDateContext);
   }
 
@@ -116,23 +131,28 @@ export default function OutingTimeSelector({
   const [date, setDate] = useState(inputDateFromValue(safeValue));
   const [time, setTime] = useState(inputTimeFromIso(safeValue.plannedFor, safeValue.timezone));
   const [showCustomPicker, setShowCustomPicker] = useState(
-    safeValue.outingTimeConfidence === "exact" ||
-      Boolean(safeValue.plannedFor) ||
-      Boolean(inputDateFromValue(safeValue)),
+    !hasExplicitOutingTime(safeValue) &&
+      !hasVagueOutingTime(safeValue) &&
+      (normalizedConfidence(safeValue) === "exact" ||
+        Boolean(safeValue.plannedFor) ||
+        Boolean(inputDateFromValue(safeValue))),
   );
 
   const panelStateCopy = useMemo(() => {
-    if (safeValue.outingTimeConfidence === "exact") return "Timing set — we’ll estimate the rest of your timeline.";
-    if (safeValue.outingTimeConfidence === "date_only") return "Timing not set yet — add a start time if you want a full timeline.";
+    if (hasExplicitOutingTime(safeValue)) return "Timing set from your search.";
+    if (hasVagueOutingTime(safeValue)) return "Want to choose an exact time?";
+    if (normalizedConfidence(safeValue) === "exact") return "Timing set — we’ll estimate the rest of your timeline.";
+    if (normalizedConfidence(safeValue) === "date_only") return "Want to choose an exact time?";
     return "Timing not set yet — add a start time if you want a full timeline.";
   }, [safeValue.outingTimeConfidence]);
 
-  const isTonightActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "tonight";
-  const isTomorrowActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "tomorrow";
-  const isWeekendActive = safeValue.outingTimeConfidence === "date_only" && safeValue.outingDateContext === "this_weekend";
+  const confidence = normalizedConfidence(safeValue);
+  const isTonightActive = confidence === "date_only" && safeValue.outingDateContext === "tonight";
+  const isTomorrowActive = confidence === "date_only" && safeValue.outingDateContext === "tomorrow";
+  const isWeekendActive = confidence === "date_only" && safeValue.outingDateContext === "this_weekend";
   const isDateActive =
-    safeValue.outingTimeConfidence === "exact" ||
-    (safeValue.outingTimeConfidence === "date_only" && Boolean(inputDateFromValue(safeValue))) ||
+    confidence === "exact" ||
+    (confidence === "date_only" && Boolean(inputDateFromValue(safeValue))) ||
     showCustomPicker;
 
   const chipBase =
@@ -236,7 +256,7 @@ export default function OutingTimeSelector({
             <button type="button" onClick={() => chooseDateContext("tomorrow")} className={isTomorrowActive ? activeChip : inactiveChip}>Tomorrow</button>
             <button type="button" onClick={() => chooseDateContext("this_weekend")} className={isWeekendActive ? activeChip : inactiveChip}>Weekend</button>
             <button type="button" onClick={() => setShowCustomPicker(true)} className={isDateActive ? activeChip : inactiveChip}>Date</button>
-            {safeValue.outingTimeConfidence !== "none" ? (
+            {confidence !== "none" ? (
               <button type="button" onClick={clearValue} className="px-1.5 text-[10px] font-black text-white/35 transition hover:text-white">
                 Clear
               </button>
@@ -249,14 +269,45 @@ export default function OutingTimeSelector({
     );
   }
 
+  const shouldShowStartTimePrompt = !hasExplicitOutingTime(safeValue) && !hasVagueOutingTime(safeValue);
+  const summaryText = safeValue.outingDateTimeText || safeValue.outingTimeLabel || safeValue.outingDateLabel || (safeValue.plannedFor ? "Exact time selected" : "Time not selected");
+
+  if (variant === "panel" && !shouldShowStartTimePrompt && !showCustomPicker) {
+    return (
+      <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-white">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">Outing time</p>
+            <p className="mt-1 text-base font-black text-white">{summaryText}</p>
+            {hasVagueOutingTime(safeValue) ? (
+              <p className="mt-1 text-sm font-semibold text-white/50">Want to choose an exact time?</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCustomPicker(true)}
+            className="inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-black text-white/80 transition hover:border-white hover:bg-white hover:text-black"
+          >
+            {hasVagueOutingTime(safeValue) ? "Add exact time" : "Change"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-white">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <label className="text-sm font-black text-white">When does your outing start?</label>
-          <p className="mt-1 text-xs font-semibold text-white/50">Optional — choose a start time and we’ll estimate the rest of your timeline.</p>
+          {shouldShowStartTimePrompt ? (<>
+            <label className="text-sm font-black text-white">When does your outing start?</label>
+            <p className="mt-1 text-xs font-semibold text-white/50">Optional — choose a start time and we’ll estimate the rest of your timeline.</p>
+          </>) : (<>
+            <label className="text-sm font-black text-white">Outing time</label>
+            <p className="mt-1 text-xs font-semibold text-white/50">Want to choose an exact time?</p>
+          </>)}
         </div>
-        {safeValue.outingTimeConfidence !== "none" ? (
+        {confidence !== "none" ? (
           <button type="button" onClick={clearValue} className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35 transition hover:text-white">
             Clear
           </button>
@@ -271,9 +322,9 @@ export default function OutingTimeSelector({
 
       {picker}
 
-      {showReminderOptions && safeValue.outingTimeConfidence !== "none" ? (
+      {showReminderOptions && confidence !== "none" ? (
         <div className="mt-3 space-y-2">
-          {safeValue.outingTimeConfidence === "exact" ? (
+          {confidence === "exact" ? (
             <label className="flex items-start gap-2 text-xs font-bold text-white/70">
               <input
                 type="checkbox"

@@ -164,7 +164,7 @@ type ApiResponse = {
     plannedFor: string | null;
     timezone: string;
     dateContext: string | null;
-    confidence: "none" | "date_only" | "exact";
+    confidence: "none" | "date_only" | "exact" | "vague" | "explicit";
     shouldSchedulePreOutingReminders?: boolean;
     shouldScheduleNextMorningFollowup?: boolean;
     nextMorningFollowupDate: string | null;
@@ -224,6 +224,13 @@ type SavedPlan = {
   savedAt?: number;
   outingTime?: OutingTimeValue;
   outingTiming?: Partial<OutingTimeValue>;
+  outingDateLabel?: string | null;
+  outingTimeLabel?: string | null;
+  outingDateTimeText?: string | null;
+  outingTimeConfidence?: OutingTimeValue["outingTimeConfidence"];
+  parsedDateText?: string | null;
+  parsedTimeText?: string | null;
+  parsedDateTimeISO?: string | null;
 };
 
 const LOCATION_KEY = "theouthaven_user_location";
@@ -1181,6 +1188,13 @@ export default function CreatePage() {
       planExact: currentParams.get("planExact") === "true" || undefined,
       savedAt: Date.now(),
       outingTime,
+      outingDateLabel: outingTime.outingDateLabel ?? null,
+      outingTimeLabel: outingTime.outingTimeLabel ?? null,
+      outingDateTimeText: outingTime.outingDateTimeText ?? null,
+      outingTimeConfidence: outingTime.outingTimeConfidence,
+      parsedDateText: outingTime.parsedDateText ?? null,
+      parsedTimeText: outingTime.parsedTimeText ?? null,
+      parsedDateTimeISO: outingTime.parsedDateTimeISO ?? null,
       outingTiming: {
         outingDateLabel: outingTime.outingDateLabel ?? null,
         outingTimeLabel: outingTime.outingTimeLabel ?? null,

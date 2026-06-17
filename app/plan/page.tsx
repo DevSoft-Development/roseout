@@ -87,6 +87,14 @@ type SavedPlan = {
   planExact?: boolean;
   savedAt?: number;
   outingTime?: OutingTimeValue;
+  outingTiming?: Partial<OutingTimeValue>;
+  outingDateLabel?: string | null;
+  outingTimeLabel?: string | null;
+  outingDateTimeText?: string | null;
+  outingTimeConfidence?: OutingTimeValue["outingTimeConfidence"];
+  parsedDateText?: string | null;
+  parsedTimeText?: string | null;
+  parsedDateTimeISO?: string | null;
 };
 
 type ExactCampaignLocation = {
@@ -298,7 +306,7 @@ function PlanPageInner() {
       timezone: searchParams.get("timezone") || base.timezone,
       outingDateContext: searchParams.get("outingDateContext"),
       outingTimeConfidence:
-        confidence === "exact" || confidence === "date_only" || confidence === "none"
+        confidence === "exact" || confidence === "date_only" || confidence === "none" || confidence === "explicit" || confidence === "vague"
           ? confidence
           : base.outingTimeConfidence,
       remindersEnabled: searchParams.get("remindersEnabled") === "true",
@@ -334,8 +342,26 @@ function PlanPageInner() {
             parsed.campaignSlug === campaignSlug ||
             parsed.planExact;
           if (savedMatchesCampaign && (parsed.restaurant || parsed.activity)) {
-            const nextOutingTime = outingTimeFromUrl(parsed.outingTime || emptyOutingTimeValue(getBrowserTimezone()));
-            const nextPlan = { ...parsed, outingTime: nextOutingTime };
+            const nestedTiming = (parsed as any).outingTiming || {};
+            const parsedTiming = {
+              ...emptyOutingTimeValue(getBrowserTimezone()),
+              ...nestedTiming,
+              outingDateLabel: nestedTiming.outingDateLabel ?? (parsed as any).outingDateLabel ?? parsed.outingTime?.outingDateLabel ?? null,
+              outingTimeLabel: nestedTiming.outingTimeLabel ?? (parsed as any).outingTimeLabel ?? parsed.outingTime?.outingTimeLabel ?? null,
+              outingDateTimeText: nestedTiming.outingDateTimeText ?? (parsed as any).outingDateTimeText ?? parsed.outingTime?.outingDateTimeText ?? null,
+              outingTimeConfidence: nestedTiming.outingTimeConfidence ?? (parsed as any).outingTimeConfidence ?? parsed.outingTime?.outingTimeConfidence ?? "none",
+              parsedDateText: nestedTiming.parsedDateText ?? (parsed as any).parsedDateText ?? parsed.outingTime?.parsedDateText ?? null,
+              parsedTimeText: nestedTiming.parsedTimeText ?? (parsed as any).parsedTimeText ?? parsed.outingTime?.parsedTimeText ?? null,
+              parsedDateTimeISO: nestedTiming.parsedDateTimeISO ?? (parsed as any).parsedDateTimeISO ?? parsed.outingTime?.parsedDateTimeISO ?? null,
+              plannedFor: parsed.outingTime?.plannedFor ?? (parsed as any).plannedFor ?? nestedTiming.parsedDateTimeISO ?? null,
+              timezone: parsed.outingTime?.timezone ?? getBrowserTimezone(),
+              outingDateContext: parsed.outingTime?.outingDateContext ?? null,
+              remindersEnabled: Boolean(parsed.outingTime?.remindersEnabled),
+              nextMorningFollowupEnabled: false,
+              nextMorningFollowupDate: null,
+            } as OutingTimeValue;
+            const nextOutingTime = outingTimeFromUrl(parsedTiming);
+            const nextPlan = { ...parsed, ...nestedTiming, outingTime: nextOutingTime, outingTiming: nestedTiming };
             setOutingTime(nextOutingTime);
             setPlan(nextPlan);
             localStorage.setItem(PLAN_KEY, JSON.stringify(nextPlan));

@@ -1,4 +1,4 @@
-export type OutingTimeConfidence = "none" | "date_only" | "exact";
+export type OutingTimeConfidence = "none" | "date_only" | "exact" | "vague" | "explicit";
 
 export type OutingTimeValue = {
   plannedFor: string | null;
