@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { syncActivityToLocation } from "@/lib/sync-location";
 import { extractReservationUrl } from "@/lib/reservation-links";
+import { inferMarketFromPlace, parseGoogleAddressComponents, validatePlaceForMarket } from "@/lib/location-market-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -583,6 +584,7 @@ async function googleDetails(placeId: string) {
       "types",
       "photos",
       "geometry",
+      "address_components",
       "price_level",
     ].join(",")
   );
@@ -599,7 +601,7 @@ async function googleDetails(placeId: string) {
   return data.result;
 }
 
-async function upsertSpecialtyActivity(place: any, query: string) {
+async function upsertSpecialtyActivity(place: any, query: string, requestedMarket?: string | null, requestedArea?: string | null) {
   const details = await googleDetails(place.place_id);
 
   const merged = {
@@ -619,6 +621,9 @@ async function upsertSpecialtyActivity(place: any, query: string) {
     "";
 
   const addressParts = parseAddressParts(formattedAddress);
+  const parsed = parseGoogleAddressComponents(merged.address_components);
+  const marketValidation = validatePlaceForMarket({ requestedMarket: requestedMarket || inferMarketFromPlace({ requestedArea, query }), requestedArea, formattedAddress, addressComponents: merged.address_components, city: parsed.city, state: parsed.state, county: parsed.county, borough: parsed.borough, neighborhood: parsed.neighborhood, latitude: merged.geometry?.location?.lat || null, longitude: merged.geometry?.location?.lng || null });
+  if (!marketValidation.ok) return { status: marketValidation.reason?.includes("state") ? "skipped_wrong_state" as const : "skipped_wrong_market" as const, validation: marketValidation };
   const photoReference =
     merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
   const imageUrl = getPhotoUrl(photoReference);
@@ -685,6 +690,10 @@ async function upsertSpecialtyActivity(place: any, query: string) {
     image_url: imageUrl,
 
     status: "approved",
+    market: marketValidation.correctedMarket || marketValidation.inferredMarket || requestedMarket || null,
+    borough: marketValidation.borough || null,
+    county: marketValidation.county || null,
+    neighborhood: marketValidation.neighborhood || null,
     claim_status: qr.claim_status,
     claim_token: qr.claim_token,
     claim_url: qr.claim_url,
@@ -756,6 +765,7 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get("category");
     const customQuery = searchParams.get("query")?.trim() || null;
     const areaParam = searchParams.get("area");
+    const requestedMarket = searchParams.get("market") || searchParams.get("requestedMarket") || null;
     const limit = Math.min(Number(searchParams.get("limit") || 10), 25);
 
     const queries = getQueries(category, customQuery);
@@ -776,7 +786,7 @@ export async function GET(request: NextRequest) {
       imported: 0,
       skipped: 0,
       failed: 0,
-      errors: [] as string[],
+      skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, rejected_examples: [] as any[], queries_used: [] as string[], requested_market: requestedMarket || inferMarketFromPlace({ requestedArea: areaParam || undefined }), inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, market_mismatch_count: 0, errors: [] as string[],
     };
 
     const seenPlaceIds = new Set<string>();
@@ -784,20 +794,22 @@ export async function GET(request: NextRequest) {
     for (const area of areas) {
       for (const baseQuery of queries) {
         const finalQuery = customQuery ? customQuery : `${baseQuery} in ${area}`;
+        stats.queries_used.push(finalQuery);
 
         try {
           const places = await googleTextSearch(finalQuery);
 
           for (const place of places.slice(0, limit)) {
-            if (seenPlaceIds.has(place.place_id)) continue;
+            if (seenPlaceIds.has(place.place_id)) { stats.skipped_duplicate += 1; continue; }
 
             seenPlaceIds.add(place.place_id);
             stats.checked += 1;
 
-            const result = await upsertSpecialtyActivity(place, finalQuery);
+            const result = await upsertSpecialtyActivity(place, finalQuery, requestedMarket, area);
 
             if (result.status === "imported") stats.imported += 1;
             if (result.status === "skipped") stats.skipped += 1;
+            if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") { stats.skipped += 1; if (result.status === "skipped_wrong_state") stats.skipped_wrong_state += 1; else stats.skipped_wrong_market += 1; stats.market_mismatch_count += 1; const v = result.validation; if (v) { stats.inferred_market_counts[v.inferredMarket] = (stats.inferred_market_counts[v.inferredMarket] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; if (stats.rejected_examples.length < 10) stats.rejected_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: v.requestedMarket, detectedState: v.state, detectedCity: v.city, reason: v.reason }); } }
 
             if (result.status === "failed") {
               stats.failed += 1;

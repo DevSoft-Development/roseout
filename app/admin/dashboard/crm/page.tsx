@@ -16,6 +16,7 @@ import {
   type PendingCRMClaim,
 } from "@/lib/admin-crm";
 import { MARKET_KEYS, getMarketDisplayName, inferMarketFromCityStateCounty } from "@/lib/location-markets";
+import { getMarketMismatchReason, validatePlaceForMarket } from "@/lib/location-market-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +152,14 @@ function PendingClaimsPanel({ claims }: { claims: PendingCRMClaim[] }) {
   );
 }
 
+function getMarketWarning(business: any): { label: string; reason: string } | null {
+  const market = inferMarketFromCityStateCounty(business);
+  const result = validatePlaceForMarket({ requestedMarket: market, city: business.city, state: business.state, county: business.county, borough: business.borough, neighborhood: business.neighborhood, address: business.address });
+  if (market === "LONG_ISLAND" && /long island city/i.test(`${business.city || ""} ${business.address || ""}`)) return { label: "Long Island City is Queens", reason: "Long Island City is Queens / NYC Core" };
+  if (!result.ok) return { label: result.reason?.includes("state") ? "Wrong state" : "Outside approved market", reason: result.reason || "Market mismatch" };
+  return null;
+}
+
 export default async function CRMPage({
   searchParams,
 }: {
@@ -250,6 +259,7 @@ export default async function CRMPage({
                   ))}
                 </select>
                 <button className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/80">Apply market</button>
+                <Link href={`/admin/dashboard/crm?${new URLSearchParams({ view: "market-issues", page: "1", pageSize: String(pageSize) }).toString()}`} className="rounded-2xl border border-amber-300/30 bg-amber-500/10 px-4 py-3 text-center text-sm font-black text-amber-100">Market issues only</Link>
               </div>
             </form>
           </div>
@@ -410,6 +420,7 @@ export default async function CRMPage({
                 </thead>
                 <tbody>
                   {businesses.map((business) => {
+                    const marketIssue = getMarketWarning(business);
                     return (
                       <tr
                         key={business.id}
@@ -435,7 +446,7 @@ export default async function CRMPage({
                           </p>
                         </td>
                         <td className="px-3 py-4 align-top text-xs font-bold text-white/70">{business.location_type || business.category || business.primary_category || "Location"}</td>
-                        <td className="px-3 py-4 align-top"><span className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-xs font-bold text-white/75">{getMarketDisplayName(inferMarketFromCityStateCounty(business))}</span></td>
+                        <td className="px-3 py-4 align-top"><span className="whitespace-nowrap rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-xs font-bold text-white/75">{getMarketDisplayName(inferMarketFromCityStateCounty(business))}</span>{marketIssue ? <span className="mt-2 block w-fit rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100" title={marketIssue.reason}>{marketIssue.label}</span> : null}</td>
                         <td className="px-3 py-4 align-top text-xs text-white/70"><div>{business.city || business.borough || "—"}, {business.state || "—"}</div><div className="mt-1 text-white/45">{business.county || business.borough || "—"}</div></td>
                         <td className="px-3 py-4 align-top text-xs text-white/70"><div>Searchable: {business.is_searchable ? "Yes" : "No"}</div><div className="mt-1">Photo: {business.image_url || business.main_image || (Array.isArray(business.images) && business.images.length) ? "Yes" : "Missing"}</div><div className="mt-1">Google ID: {business.google_place_id ? "Yes" : "Missing"}</div></td>
                         <td className="px-3 py-4 align-top text-xs font-bold text-white/70">{getPartnerPlanDisplay(business)}</td>
@@ -487,7 +498,7 @@ export default async function CRMPage({
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold capitalize">
                       <span className={`rounded-full border px-2 py-1 ${badgeClass(getClaimOutreachStatus(business))}`}>{getClaimOutreachStatus(business).replace(/_/g, " ")}</span>
                       <span className={`rounded-full border px-2 py-1 ${badgeClass(getPartnerSalesStatus(business))}`}>{getPartnerSalesStatus(business).replace(/_/g, " ")}</span>
-                      <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-white/70">{getMarketDisplayName(inferMarketFromCityStateCounty(business))}</span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-white/70">{getMarketDisplayName(inferMarketFromCityStateCounty(business))}</span>{getMarketWarning(business) ? <span className="rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-1 text-amber-100">{getMarketWarning(business)?.label}</span> : null}
                     </div>
                     <div className="mt-3 grid gap-2 text-xs text-white/60">
                       <p>Portal: {getReservationPortalStatus(business).replace(/_/g, " ")} · Embed: {getEmbedStatus(business).replace(/_/g, " ")}</p>

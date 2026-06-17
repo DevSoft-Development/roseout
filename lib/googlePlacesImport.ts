@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";
 import { extractReservationUrl } from "@/lib/reservation-links";
+import { inferMarketFromPlace, parseGoogleAddressComponents, validatePlaceForMarket, type MarketKey, type MarketValidationResult } from "@/lib/location-market-validation";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -200,6 +201,7 @@ type GooglePlace = {
   types?: string[];
   photos?: { photo_reference?: string }[];
   geometry?: { location?: { lat?: number; lng?: number } };
+  address_components?: Array<{ long_name?: string; short_name?: string; types?: string[] }>;
 };
 
 type GoogleTextSearchResponse = {
@@ -251,6 +253,9 @@ export type GooglePlacesImportOptions = {
   requireWebsite?: boolean;
   requireLocation?: boolean;
   requireCuisineType?: boolean;
+  requestedMarket?: MarketKey | string | null;
+  requestedArea?: string | null;
+  allowMarketCorrection?: boolean;
 };
 
 function getGoogleKey() {
@@ -599,6 +604,7 @@ async function googleDetails(placeId: string) {
       "types",
       "photos",
       "geometry",
+      "address_components",
       "price_level",
     ].join(",")
   );
@@ -623,6 +629,8 @@ async function upsertRestaurant(
 
   const formattedAddress = merged.formatted_address || merged.vicinity || "";
   const addressParts = parseAddressParts(formattedAddress);
+  const marketValidation = validateImportMarket(merged, options);
+  if (!marketValidation.ok) return { status: marketValidation.reason?.includes("state") ? "skipped_wrong_state" as const : "skipped_wrong_market" as const, validation: marketValidation };
   const photoReference = merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
   if (!hasRequiredImportFields(merged, addressParts, options)) return { status: "skipped" as const };
 
@@ -663,6 +671,10 @@ async function upsertRestaurant(
     booking_url: reservationUrl,
     image_url: getPhotoUrl(photoReference),
     status: "approved",
+    market: marketValidation.correctedMarket || marketValidation.inferredMarket || options.requestedMarket || null,
+    borough: marketValidation.borough || null,
+    county: marketValidation.county || null,
+    neighborhood: marketValidation.neighborhood || null,
   }, existing, "restaurant");
 
   const { data: restaurant, error } = await saveLocationRow(
@@ -703,6 +715,8 @@ async function upsertActivity(
 
   const formattedAddress = merged.formatted_address || merged.vicinity || "";
   const addressParts = parseAddressParts(formattedAddress);
+  const marketValidation = validateImportMarket(merged, options);
+  if (!marketValidation.ok) return { status: marketValidation.reason?.includes("state") ? "skipped_wrong_state" as const : "skipped_wrong_market" as const, validation: marketValidation };
   const photoReference = merged.photos?.[0]?.photo_reference || place.photos?.[0]?.photo_reference;
   if (!hasRequiredImportFields(merged, addressParts, options)) return { status: "skipped" as const };
 
@@ -742,6 +756,10 @@ async function upsertActivity(
     booking_url: reservationUrl,
     image_url: getPhotoUrl(photoReference),
     status: "approved",
+    market: marketValidation.correctedMarket || marketValidation.inferredMarket || options.requestedMarket || null,
+    borough: marketValidation.borough || null,
+    county: marketValidation.county || null,
+    neighborhood: marketValidation.neighborhood || null,
   }, existing, "activity");
 
   const { data: activity, error } = await saveLocationRow(
@@ -768,12 +786,24 @@ async function upsertActivity(
   return { status: "imported" as const };
 }
 
+function validateImportMarket(place: GooglePlace, options: GooglePlacesImportOptions = {}): MarketValidationResult {
+  const parsed = parseGoogleAddressComponents(place.address_components);
+  return validatePlaceForMarket({
+    requestedMarket: options.requestedMarket || inferMarketFromPlace({ requestedArea: options.requestedArea || options.areas, query: options.areas || undefined }),
+    requestedArea: options.requestedArea || options.areas || null,
+    formattedAddress: place.formatted_address || place.vicinity || null,
+    addressComponents: place.address_components,
+    city: parsed.city, state: parsed.state, county: parsed.county, borough: parsed.borough, neighborhood: parsed.neighborhood, postalCode: parsed.postalCode,
+    latitude: place.geometry?.location?.lat || null, longitude: place.geometry?.location?.lng || null,
+  });
+}
+
 function parseAreas(areas?: string | null) {
   const value = cleanText(areas || "nyc").toLowerCase();
   if (value === "nyc") return NYC_AREAS;
   if (value === "ct" || value === "connecticut") return ["Stamford", "Norwalk", "Bridgeport", "New Haven", "Hartford"];
-  if (value === "nj" || value === "new_jersey" || value === "new jersey") return ["Jersey City", "Hoboken", "Newark", "Montclair", "Morristown"];
-  if (value === "long_island" || value === "long island") return ["Long Island", "Nassau County", "Suffolk County", "Garden City", "Huntington"];
+  if (value === "nj" || value === "new_jersey" || value === "new jersey" || value === "northern_nj" || value === "northern jersey") return ["Jersey City NJ", "Hoboken NJ", "Edgewater NJ", "Newark NJ"];
+  if (value === "long_island" || value === "long island") return ["Nassau County NY", "Suffolk County NY", "Garden City NY", "Huntington NY"];
   if (value === "extended" || value === "all") return EXTENDED_AREAS;
   return cleanText(areas)
     .split(",")
@@ -809,7 +839,7 @@ async function runGroup(
   seenPlaceIds: Set<string>,
   options: GooglePlacesImportOptions = {}
 ) {
-  const stats = { checked: 0, imported: 0, skipped: 0, failed: 0, errors: [] as string[], queries_used: [] as string[] };
+  const stats = { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, rejected_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[] };
 
   for (const area of areas) {
     for (const baseQuery of queries) {
@@ -820,7 +850,8 @@ async function runGroup(
         const places = await googleTextSearch(query);
 
         for (const place of places.slice(0, limit)) {
-          if (!place.place_id || seenPlaceIds.has(place.place_id)) continue;
+          if (!place.place_id) continue;
+          if (seenPlaceIds.has(place.place_id)) { stats.skipped_duplicate += 1; continue; }
           seenPlaceIds.add(place.place_id);
           stats.checked += 1;
 
@@ -830,6 +861,12 @@ async function runGroup(
               : await upsertActivity(place, query, options);
           if (result.status === "imported") stats.imported += 1;
           if (result.status === "skipped") stats.skipped += 1;
+          if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") {
+            stats.skipped += 1;
+            if (result.status === "skipped_wrong_state") stats.skipped_wrong_state += 1; else stats.skipped_wrong_market += 1;
+            stats.market_mismatch_count += 1;
+            const v = result.validation; if (v) { stats.inferred_market_counts[v.inferredMarket] = (stats.inferred_market_counts[v.inferredMarket] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; if (stats.rejected_examples.length < 10) stats.rejected_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: v.requestedMarket, detectedState: v.state, detectedCity: v.city, reason: v.reason }); }
+          }
           if (result.status === "failed") {
             stats.failed += 1;
             if (result.error) stats.errors.push(`${query}: ${result.error}`);
@@ -854,17 +891,19 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
   const limit = Math.max(1, Math.min(Number(options.limit || 10), 25));
   const maxQueries = Math.max(1, Math.min(Number(options.maxQueries || 2), 12));
   const areas = parseAreas(options.areas);
+  const requestedMarket = (options.requestedMarket || inferMarketFromPlace({ requestedArea: options.areas })) as MarketKey;
+  options = { ...options, requestedMarket };
   const primaryTag = options.primaryTag || options.batch || "all";
   const restaurantQueries = filterQueries(CUISINE_QUERIES, primaryTag, maxQueries);
   const activityQueries = filterQueries(ACTIVITY_QUERIES, primaryTag, maxQueries);
   const seenPlaceIds = new Set<string>();
 
   const restaurant = type === "activities"
-    ? { checked: 0, imported: 0, skipped: 0, failed: 0, errors: [] as string[], queries_used: [] as string[] }
+    ? { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, rejected_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[] }
     : await runGroup("restaurant", restaurantQueries, areas, limit, seenPlaceIds, options);
 
   const activity = type === "restaurants"
-    ? { checked: 0, imported: 0, skipped: 0, failed: 0, errors: [] as string[], queries_used: [] as string[] }
+    ? { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, rejected_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[] }
     : await runGroup("activity", activityQueries, areas, limit, seenPlaceIds, options);
 
   await supabaseAdmin.from("ai_response_cache").delete().gte("created_at", "2000-01-01");
@@ -885,6 +924,7 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
     maxQueries,
     areas,
+    requested_market: requestedMarket,
     checked,
     imported,
     skipped,
@@ -892,6 +932,15 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     total_found_from_google: checked,
     restaurant,
     activity,
+    skipped_duplicate: restaurant.skipped_duplicate + activity.skipped_duplicate,
+    skipped_wrong_state: restaurant.skipped_wrong_state + activity.skipped_wrong_state,
+    skipped_wrong_market: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
+    skipped_out_of_area: restaurant.skipped_out_of_area + activity.skipped_out_of_area,
+    rejected_examples: [...restaurant.rejected_examples, ...activity.rejected_examples].slice(0, 10),
+    queries_used: [...restaurant.queries_used, ...activity.queries_used],
+    inferred_market_counts: { ...restaurant.inferred_market_counts, ...activity.inferred_market_counts },
+    state_counts: { ...restaurant.state_counts, ...activity.state_counts },
+    market_mismatch_count: restaurant.market_mismatch_count + activity.market_mismatch_count,
     errors: errors.slice(0, 30),
   };
 
@@ -911,6 +960,16 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     total_found_from_google: checked,
     restaurant,
     activity,
+    skipped_duplicate: restaurant.skipped_duplicate + activity.skipped_duplicate,
+    skipped_wrong_state: restaurant.skipped_wrong_state + activity.skipped_wrong_state,
+    skipped_wrong_market: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
+    skipped_out_of_area: restaurant.skipped_out_of_area + activity.skipped_out_of_area,
+    rejected_examples: [...restaurant.rejected_examples, ...activity.rejected_examples].slice(0, 10),
+    queries_used: [...restaurant.queries_used, ...activity.queries_used],
+    requested_market: requestedMarket,
+    inferred_market_counts: { ...restaurant.inferred_market_counts, ...activity.inferred_market_counts },
+    state_counts: { ...restaurant.state_counts, ...activity.state_counts },
+    market_mismatch_count: restaurant.market_mismatch_count + activity.market_mismatch_count,
     errors: errors.slice(0, 30),
     settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
   };

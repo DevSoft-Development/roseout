@@ -4,6 +4,7 @@ import {
 } from "@/lib/address-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferMarketFromCityStateCounty, type MarketKey } from "@/lib/location-markets";
+import { validatePlaceForMarket } from "@/lib/location-market-validation";
 
 export type CRMStatus =
   | "New Lead"
@@ -43,7 +44,8 @@ export type BusinessCRMFilter =
   | "embed-installed"
   | "discovery-needed"
   | "follow-ups-due"
-  | "owner-contact-missing";
+  | "owner-contact-missing"
+  | "market-issues";
 
 export type PartnerSalesStatus = "target" | "needs_outreach" | "contacted" | "interested" | "claim_link_sent" | "claim_pending" | "claim_approved" | "demo_setup" | "payment_pending" | "active_partner" | "reservation_ready" | "at_risk" | "not_interested" | "churned";
 export type ClaimOutreachStatus = "not_sent" | "sent" | "viewed" | "started" | "submitted" | "approved" | "rejected" | "expired";
@@ -814,6 +816,7 @@ function matchesBusinessFilter(row: BusinessCRMRow, filter?: string) {
     case "discovery-needed": return getDiscoveryStatus(row) !== "ready";
     case "follow-ups-due": return Boolean(row.next_action_due_at && !isOverdueDate(null) && new Date(row.next_action_due_at).getTime() <= Date.now() + 86400000);
     case "owner-contact-missing": return Boolean(row.owner_contact_missing) || (!hasText(row.owner_email) && !hasText(row.phone) && !hasText(row.owner_instagram));
+    case "market-issues": { const market = inferMarketFromCityStateCounty(row); return !validatePlaceForMarket({ requestedMarket: market, city: row.city, state: row.state, county: row.county, borough: row.borough, address: row.address }).ok; }
     case "all":
     default:
       return true;
