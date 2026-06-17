@@ -1,4 +1,6 @@
 #!/usr/bin/env tsx
+// Dry run example:
+// npx dotenv -e .env.local -- npx tsx scripts/import-outer-market-locations.ts --market LONG_ISLAND --cities "Garden City,Westbury,Rockville Centre" --categories "brunch,seafood,steakhouse" --limit=25 --dry-run
 import "dotenv/config";
 import { config as loadDotenv } from "dotenv";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
