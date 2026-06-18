@@ -586,6 +586,24 @@ export async function GET(req: Request) {
         last_seen: row.created_at,
       }));
 
+    const allSearchStats = {
+      totalVisible: allSearches.length,
+      publicCreateCount: allSearches.filter(
+        (row: any) => row.source === "public_create_search",
+      ).length,
+      adminSearchLabCount: allSearches.filter(
+        (row: any) => row.source === "admin_search_lab",
+      ).length,
+      cleanCount: allSearches.filter(
+        (row: any) => row.success === true && row.had_issue === false,
+      ).length,
+      issueCount: allSearches.filter(
+        (row: any) => row.had_issue || row.success === false,
+      ).length,
+      failedCount: allSearches.filter((row: any) => row.success === false)
+        .length,
+    };
+
     return NextResponse.json({
       success: true,
       view,
@@ -606,16 +624,12 @@ export async function GET(req: Request) {
       },
       matchCount:
         view === "all" ? allSearches.length : (recentEvents ?? []).length,
-      allSearchCount: allSearches.length,
-      publicCreateSearchCount: allSearches.filter(
-        (row: any) => row.source === "public_create_search",
-      ).length,
-      adminSearchLabCount: allSearches.filter(
-        (row: any) => row.source === "admin_search_lab",
-      ).length,
-      failedSearchCount: allSearches.filter((row: any) => row.success === false)
-        .length,
-      issueSearchCount: allSearches.filter((row: any) => row.had_issue).length,
+      allSearchStats,
+      allSearchCount: allSearchStats.totalVisible,
+      publicCreateSearchCount: allSearchStats.publicCreateCount,
+      adminSearchLabCount: allSearchStats.adminSearchLabCount,
+      failedSearchCount: allSearchStats.failedCount,
+      issueSearchCount: allSearchStats.issueCount,
       allSearches,
       recentEvents: (recentEvents ?? []).map(enrichEvent),
       summary,
