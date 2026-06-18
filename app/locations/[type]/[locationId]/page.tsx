@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import { clampScore } from "@/lib/clampScore";
-import ScoreBadge from "@/components/ScoreBadge";
 import { trackActivity } from "@/lib/trackActivity";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { getLocationName } from "@/lib/locationName";
@@ -158,6 +157,115 @@ function formatTagListForSentence(items: unknown, fallback = "a polished, social
   return `${cleanItems[0].toLowerCase()}, ${cleanItems[1].toLowerCase()}, and ${cleanItems[2].toLowerCase()}`;
 }
 
+function getDisplayArea(location: LocationDetailRecord | null) {
+  return [location?.neighborhood, location?.city, location?.state]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, all) => all.indexOf(item) === index)
+    .slice(0, 2)
+    .join(", ");
+}
+
+function getDisplayAddress(location: LocationDetailRecord | null) {
+  return [location?.address, location?.city, location?.state, location?.zip_code]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item, index, all) => all.indexOf(item) === index)
+    .join(", ");
+}
+
+function getReviewCount(location: LocationDetailRecord | null, reviews: ReviewRecord[]) {
+  return Number(location?.review_count || reviews.length || 0);
+}
+
+function getPhotoList(location: LocationDetailRecord | null) {
+  return Array.from(
+    new Set(
+      [
+        getLocationImage(location),
+        location?.main_image,
+        location?.image_url,
+        location?.cover_image,
+        location?.hero_image,
+        location?.thumbnail_url,
+        location?.google_photo_url,
+        location?.google_image_url,
+        location?.yelp_image_url,
+        ...toArray(location?.images),
+        ...toArray(location?.photos),
+        ...toArray(location?.gallery_images),
+        ...toArray(location?.image_urls),
+        ...toArray(location?.main_images),
+      ]
+        .map((image) => String(image || "").trim())
+        .filter((image) => image && image !== "null" && image !== "undefined"),
+    ),
+  );
+}
+
+function getPrimaryPhoto(location: LocationDetailRecord | null) {
+  return getPhotoList(location)[0] || "";
+}
+
+function buildWebsiteHref(location: LocationDetailRecord | null) {
+  const website = String(location?.website || "").trim();
+  if (!website) return "";
+  return /^https?:\/\//i.test(website) ? website : `https://${website}`;
+}
+
+function buildPhoneHref(location: LocationDetailRecord | null) {
+  const phone = String(location?.phone || "").replace(/[^\d+]/g, "");
+  return phone ? `tel:${phone}` : "";
+}
+
+function buildPlanLink(location: LocationDetailRecord | null, type: string) {
+  const locationType = location?.location_type || (type.includes("activit") ? "activity" : "restaurant");
+  const id = String(location?.id || "").trim();
+  return `/create?locationId=${encodeURIComponent(id)}&locationType=${encodeURIComponent(String(locationType))}`;
+}
+
+function buildFullOutingLinks(location: LocationDetailRecord | null, area: string, address: string) {
+  const context = address || area || getLocationName(location, "");
+  const near = context ? ` near ${context}` : "";
+  return [
+    ["Find drinks after", `drinks after${near}`],
+    ["Find an activity nearby", `activity${near}`],
+    ["Find dessert", `dessert${near}`],
+    ["Surprise me", `plan an outing${near}`],
+  ].map(([label, query]) => ({ label, href: `/create?q=${encodeURIComponent(query)}` }));
+}
+
+function getPublicTags(location: LocationDetailRecord | null, category: string, area: string) {
+  const tagMap: Record<string, string> = {
+    establishment: "Good for Outings",
+    point_of_interest: "Local Spot",
+    food: "Dining",
+    restaurant: "Restaurant",
+    bar: "Drinks",
+    night_club: "Nightlife",
+    tourist_attraction: "Things To Do",
+    bakery: "Dessert",
+    cafe: "Cafe",
+    museum: "Museum",
+    bowling_alley: "Bowling",
+    movie_theater: "Movies",
+    art_gallery: "Art Gallery",
+    spa: "Spa",
+    shopping_mall: "Shopping",
+  };
+  const raw = [category, area, "TheOutHaven Pick", getLocationTags(location), location?.primary_tag].flatMap(toArray);
+  return Array.from(
+    new Set(
+      raw
+        .map((tag) => {
+          const key = tag.toLowerCase().trim().replace(/\s+/g, "_");
+          return tagMap[key] || formatDisplayLabel(tag);
+        })
+        .filter(Boolean),
+    ),
+  ).slice(0, 6);
+}
+
 export default function LocationDetailPage() {
   const supabase = createClient();
   const params = useParams();
@@ -252,14 +360,10 @@ export default function LocationDetailPage() {
 
   const score = clampScore(getLocationScore(location));
 
-  const address = [
-    location?.address,
-    location?.city,
-    location?.state,
-    location?.zip_code,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const address = getDisplayAddress(location);
+  const area = getDisplayArea(location);
+  const publicTags = getPublicTags(location, category, area);
+  const reviewCount = getReviewCount(location, reviews);
 
   const externalReservationUrl = getExternalReservationUrl(location || {});
   const externalReservationProvider = getExternalReservationProvider(location || {});
@@ -332,29 +436,12 @@ export default function LocationDetailPage() {
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
     getOperatingHours(location),
   );
-  const galleryImages = Array.from(
-    new Set(
-      [
-        getLocationImage(location),
-        location?.main_image,
-        location?.image_url,
-        
-        location?.cover_image,
-        location?.hero_image,
-        location?.thumbnail_url,
-        location?.google_photo_url,
-        location?.google_image_url,
-        location?.yelp_image_url,
-        ...toArray(location?.images),
-        ...toArray(location?.photos),
-        ...toArray(location?.gallery_images),
-        ...toArray(location?.image_urls),
-        ...toArray(location?.image_url || location?.main_images),
-      ]
-        .map((image) => String(image || "").trim())
-        .filter((image) => image && image !== "null" && image !== "undefined"),
-    ),
-  ) as string[];
+  const galleryImages = getPhotoList(location);
+  const primaryPhoto = getPrimaryPhoto(location);
+  const planLink = buildPlanLink(location, type);
+  const websiteHref = buildWebsiteHref(location);
+  const phoneHref = buildPhoneHref(location);
+  const fullOutingLinks = buildFullOutingLinks(location, area, address);
   useEffect(() => {
     if (!location?.id) return;
 
@@ -521,316 +608,93 @@ export default function LocationDetailPage() {
         name={name}
         category={category}
         onBack={trackAndGoBack}
-        reservationUrl={reservationUrl}
-        isExternalReservation={isExternalReservation}
-        reservationLabel={reservationLabel}
         from={from}
       />
 
-      <main className="min-h-screen bg-[#050202] pt-20 text-white">
-        <section className="relative min-h-[88vh] overflow-hidden">
-          {getLocationImage(location) ? (
-            <Image
-              src={getLocationImage(location) as string}
-              alt={name}
-              fill
-              priority
-              className="object-cover opacity-60"
-            />
-          ) : (
-            <div className="absolute inset-0 bg-black" />
-          )}
-
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(220,38,38,0.32),transparent_32%),radial-gradient(circle_at_82%_8%,rgba(127,29,29,0.26),transparent_30%)]" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#050202] via-black/78 to-black/25" />
-
-          <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-5 pb-10 pt-24 sm:px-8">
-            <div className="mt-auto grid items-end gap-8 pb-8 lg:grid-cols-[1fr_330px]">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-                  TheOutHaven Location
-                </p>
-
-                <div className="mt-5 flex flex-wrap items-center gap-2">
-                  <PremiumTag>{formatDisplayLabel(category)}</PremiumTag>
-
-                  {location.price_range && (
-                    <PremiumTag>{location.price_range}</PremiumTag>
-                  )}
-
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
-                    <HavenMark className="h-5 w-5 text-[9px]" />
-                    {location.review_count || reviews.length || 0} Reviews
-                  </span>
-
-                  {galleryImages.length > 0 && (
-                    <span className="rounded-full border border-white/15 bg-black/55 px-4 py-2 text-xs font-black uppercase tracking-wide text-white backdrop-blur-xl">
-                      {galleryImages.length === 1 ? "1 Photo" : `${galleryImages.length} Photos`}
-                    </span>
-                  )}
-                </div>
-
-                <h1 className="mt-5 max-w-5xl text-5xl font-black tracking-tight sm:text-6xl lg:text-8xl">
-                  {name}
-                </h1>
-
-                {location.primary_tag && (
-                  <p className="mt-5 inline-flex items-center gap-2 text-xl font-black text-red-100">
-                    <HavenMark />
-                    {formatDisplayLabel(location.primary_tag)}
-                  </p>
-                )}
-
-                {address && (
-                  <p className="mt-5 max-w-3xl text-sm font-semibold leading-6 text-white/75">
-                    {address}
-                  </p>
-                )}
-
-                <p className="mt-6 max-w-3xl text-base leading-8 text-white/75 md:text-lg">
-                  {location.description ||
-                    "A curated TheOutHaven location selected for memorable outings, quality experiences, and strong match potential."}
-                </p>
-
-                {displayVibeTags.length > 0 && (
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {displayVibeTags.map((tag) => (
-                      <PremiumTag key={tag}>{tag}</PremiumTag>
-                    ))}
-                  </div>
-                )}
-
-                <div className="mt-8 flex flex-wrap gap-3">
-                  {reservationUrl && (
-                    <a
-                      href={reservationUrl}
-                      target={isExternalReservation ? "_blank" : undefined}
-                      rel={
-                        isExternalReservation
-                          ? "noopener noreferrer"
-                          : undefined
-                      }
-                      onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }}
-                      className="rounded-full bg-red-600 px-7 py-3 text-sm font-black text-white shadow-lg shadow-red-950/50 transition hover:bg-red-500"
-                    >
-                      {reservationLabel}
-                    </a>
-                  )}
-
-                  {secondaryReservationUrl && (
-                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }} className="rounded-full border border-red-300/30 px-7 py-3 text-sm font-black text-red-100 transition hover:bg-red-500/10">
-                      Reserve Externally
-                    </a>
-                  )}
-
-                  {!reservationUrl && location.website && (
-                    <a
-                      href={location.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => trackBusinessEvent("website_click")}
-                      className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
-                    >
-                      Website
-                    </a>
-                  )}
-
-                  {location?.phone ? (
-                    <a
-                      href={`tel:${String(location.phone).replace(/[^\d+]/g, "")}`}
-                      onClick={() => { void startOutingTracking("phone"); }}
-                      className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
-                    >
-                      Call Location
-                    </a>
-                  ) : null}
-
-                  {mapsUrl ? (
-                    <a
-                      href={mapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => trackBusinessEvent("directions_click")}
-                      className="rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
-                    >
-                      {location.website || reservationUrl ? "Get Directions" : "View on Google Maps"}
-                    </a>
-                  ) : null}
-                </div>
+      <main className="min-h-screen overflow-x-hidden bg-[#050505] pb-28 pt-36 text-white md:pb-0">
+        <section className="px-4 pb-10 sm:px-6 lg:px-8">
+          <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_520px] lg:items-start">
+            <div className="rounded-[1.75rem] border border-white/10 bg-[#101010]/90 p-5 shadow-2xl shadow-black/30 sm:p-8 lg:p-10">
+              <div className="flex flex-wrap items-center gap-2">
+                <PremiumTag>{category}</PremiumTag>
+                {publicTags.slice(0, 3).map((tag) => (
+                  <PublicChip key={tag}>{tag}</PublicChip>
+                ))}
               </div>
 
-              <div className="rounded-[2rem] border border-white/15 bg-black/55 p-3 text-white shadow-2xl shadow-red-950/20 backdrop-blur-xl">
-                <ScoreBadge score={score} />
+              <h1 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
+                {name}
+              </h1>
 
-                {Number(location.review_score || 0) >= 85 && (
-                  <div className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-red-300/25 bg-red-600/20 px-4 py-2 text-center text-xs font-black uppercase tracking-[0.16em] text-red-50">
-                    <HavenMark className="h-5 w-5 text-[9px]" />
-                    Review Favorite
-                  </div>
-                )}
+              <p className="mt-4 text-base font-semibold text-white/68 sm:text-lg">
+                {[category, area].filter(Boolean).join(" · ")}
+              </p>
+
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-extrabold text-red-50">
+                <HavenMark className="h-5 w-5 text-[9px]" />
+                {score >= 90 ? "Elite Pick" : "TheOutHaven Pick"}
               </div>
+
+              {address && <p className="mt-5 text-sm leading-6 text-white/70">{address}</p>}
+
+              <p className="mt-6 max-w-3xl text-base leading-8 text-white/74">
+                {location.description ||
+                  "A curated TheOutHaven pick selected for memorable outings, quality experience signals, and strong match potential."}
+              </p>
+
+              <LocationActionButtons
+                planLink={planLink}
+                websiteHref={websiteHref}
+                phoneHref={phoneHref}
+                mapsUrl={mapsUrl}
+                onWebsiteClick={() => trackBusinessEvent("website_click")}
+                onPhoneClick={() => { void startOutingTracking("phone"); }}
+                onDirectionsClick={() => trackBusinessEvent("directions_click")}
+              />
+
+              <OutHavenRatingCard score={score} category={category} />
             </div>
+
+            <LocationPhotoGallery images={galleryImages} primaryPhoto={primaryPhoto} name={name} />
           </div>
         </section>
 
-        <section className="border-y border-white/10 bg-[#090303] px-5 py-5 shadow-2xl shadow-black/30">
-          <div className="mx-auto grid max-w-7xl gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <QuickDetail label="Category" value={category} />
-            <QuickDetail label="Neighborhood" value={location.neighborhood || location.city || "Explore area"} />
-            <QuickDetail label="Hours" value={operatingHoursDisplay || "Confirm directly"} />
-            <QuickDetail label="Reservations" value={reservationUrl ? "Available" : "Call or visit website"} />
-            <QuickDetail label="Best for" value={displayBestFor[0] || formatDisplayLabel(location.primary_tag) || "Curated outing"} />
-          </div>
-        </section>
-
-        <section className="relative overflow-hidden bg-[#050202] px-5 py-16">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(225,6,42,0.18),transparent_30%)]" />
-
-          <div className="relative mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1fr_380px]">
+        <section className="px-4 py-8 sm:px-6 lg:px-8">
+          <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-6">
-              <LuxuryCard
-                eyebrow="Why TheOutHaven Recommends It"
-                title="Editorial match notes."
-              >
-                <div className="grid gap-3">
-                  {recommendationBullets.map((bullet) => (
-                    <div key={bullet} className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-4 text-sm font-semibold leading-7 text-white/72">
-                      {bullet}
-                    </div>
-                  ))}
-                </div>
+              <LuxuryCard eyebrow="Why TheOutHaven picked it" title="Built for a better plan.">
+                <p className="text-sm leading-7 text-white/70">
+                  Selected for strong outing potential, quality signals, and local popularity{area ? ` in ${area}` : ""}.
+                  {reviewCount ? ` Guests have added ${reviewCount} review${reviewCount === 1 ? "" : "s"} to the signal mix.` : ""}
+                  {score ? ` Match confidence is currently ${score} / 100.` : ""}
+                </p>
               </LuxuryCard>
 
-              <LuxuryCard eyebrow="About / Experience" title="What to expect.">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <EditorialTile
-                    label="Atmosphere"
-                    value={formatTagListForSentence(
-                      location.atmosphere || location.primary_tag,
-                      "Curated hospitality setting",
-                    )}
-                  />
-                  <EditorialTile label="Signature" value={displaySignatureItems[0] || displaySpecialFeatures[0] || "Memorable experience moments"} />
-                  <EditorialTile label="Experience" value={location.description || "Selected for guests looking for elevated plans with a clear sense of place."} />
-                  <EditorialTile label="Planning note" value={reservationUrl ? "Reserve ahead for the smoothest visit." : "Confirm hours and availability before heading out."} />
-                </div>
-              </LuxuryCard>
+              <FullOutingCard links={fullOutingLinks} />
 
-              {relatedExploreLinks.length > 0 && (
-                <LuxuryCard eyebrow="Related Discovery" title="Explore nearby and similar places.">
-                  <div className="flex flex-wrap gap-2">
-                    {relatedExploreLinks.map((link) => (
-                      <Link key={link.href} href={link.href} className="rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/75 transition hover:bg-white hover:text-black">
-                        {link.label}
-                      </Link>
-                    ))}
-                  </div>
-                </LuxuryCard>
-              )}
+              <AtAGlanceCard
+                area={area}
+                category={category}
+                address={address}
+                reviews={reviewCount}
+                photos={galleryImages.length}
+                score={score}
+              />
 
-              {galleryImages.length > 0 && (
-                <LuxuryCard eyebrow="Photo Gallery" title="A closer look.">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {galleryImages.slice(0, 6).map((image, index) => (
-                      <a
-                        key={`${image}-${index}`}
-                        href={image}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group overflow-hidden rounded-[1.35rem] border border-white/10 bg-white/[0.04]"
-                      >
-                        <Image
-                          src={image}
-                          alt={`${name} gallery photo ${index + 1}`}
-                          width={520}
-                          height={380}
-                          className="h-52 w-full object-cover transition duration-500 group-hover:scale-105"
-                        />
-                      </a>
-                    ))}
-                  </div>
-                  <p className="mt-4 text-xs font-bold text-white/40">Tap any photo to open it full size. Mobile guests can swipe horizontally in the browser photo view.</p>
-                </LuxuryCard>
-              )}
-
-              {displayBestFor.length > 0 && (
-                <DetailGrid title="Best For" items={displayBestFor} />
-              )}
-
-              {displaySpecialFeatures.length > 0 && (
-                <DetailGrid title="Special Features" items={displaySpecialFeatures} />
-              )}
-
-              {displaySignatureItems.length > 0 && (
-                <DetailGrid title="Signature Picks" items={displaySignatureItems} />
-              )}
-
-              <LuxuryCard
-                eyebrow="Customer Reviews"
-                title="What people are saying."
-              >
+              <LuxuryCard eyebrow="Customer reviews" title="What people are saying.">
                 {reviews.length === 0 ? (
                   <p className="text-sm leading-7 text-white/60">
                     Verified guest reviews will appear here after TheOutHaven outings.
                   </p>
                 ) : (
-                  <div className="mt-6 space-y-4">
+                  <div className="space-y-4">
                     {reviews.map((review) => (
-                      <div
-                        key={review.id}
-                        className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5"
-                      >
+                      <div key={review.id} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                          <p className="font-black text-white">
-                            {review.customer_name || "TheOutHaven Guest"}
-                          </p>
-
-                          <p className="inline-flex items-center gap-2 rounded-full border border-red-300/25 bg-red-600/20 px-3 py-1 text-xs font-black text-red-50">
-                            <HavenMark className="h-5 w-5 text-[9px]" />
-                            {review.rating}/5
-                          </p>
+                          <p className="font-black text-white">{review.customer_name || "TheOutHaven Guest"}</p>
+                          <p className="rounded-full border border-red-300/25 bg-red-600/15 px-3 py-1 text-xs font-black text-red-50">{review.rating}/5</p>
                         </div>
-
-                        <p className="mt-3 text-sm leading-7 text-white/70">
-                          {review.review_text}
-                        </p>
-
-                        {cleanDisplayTags(toArray(review.ai_keywords), 6).length > 0 && (
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {cleanDisplayTags(toArray(review.ai_keywords), 6).map((keyword) => (
-                              <span
-                                key={keyword}
-                                className="rounded-full border border-red-300/20 bg-red-950/30 px-3 py-1 text-xs font-bold text-red-50"
-                              >
-                                {formatDisplayLabel(keyword)}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {(review.vibe ||
-                          review.noise_level ||
-                          review.service_quality) && (
-                          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                            {review.vibe && (
-                              <MiniInsight label="Vibe" value={review.vibe} />
-                            )}
-
-                            {review.noise_level && (
-                              <MiniInsight
-                                label="Noise"
-                                value={review.noise_level}
-                              />
-                            )}
-
-                            {review.service_quality && (
-                              <MiniInsight
-                                label="Service"
-                                value={review.service_quality}
-                              />
-                            )}
-                          </div>
-                        )}
+                        <p className="mt-3 text-sm leading-7 text-white/70">{review.review_text}</p>
                       </div>
                     ))}
                   </div>
@@ -839,132 +703,28 @@ export default function LocationDetailPage() {
             </div>
 
             <aside className="space-y-6 lg:sticky lg:top-36 lg:self-start">
-              <LuxuryCard
-                eyebrow="Plan Your Visit"
-                title={
-                  isActivity ? "Book the experience." : "Reserve the table."
-                }
-              >
-                {operatingHoursDisplay && (
-                  <div className="mt-5 rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
-                    <InfoRow label="Hours" value={operatingHoursDisplay} />
-                  </div>
-                )}
-
-                {reservationSourceLabel && (
-                  <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">
-                    {reservationSourceLabel}
-                  </p>
-                )}
-
-                <div className="mt-6 grid gap-3">
-                  {reservationUrl && (
-                    <a
-                      href={reservationUrl}
-                      target={isExternalReservation ? "_blank" : undefined}
-                      rel={
-                        isExternalReservation
-                          ? "noopener noreferrer"
-                          : undefined
-                      }
-                      onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }}
-                      className="rounded-full bg-red-600 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-red-500"
-                    >
-                      {reservationLabel}
-                    </a>
-                  )}
-
-                  {secondaryReservationUrl && (
-                    <a href={secondaryReservationUrl} target="_blank" rel="noopener noreferrer" onClick={() => { trackBusinessEvent("reservation_started"); void startOutingTracking("external"); }} className="rounded-full border border-red-300/30 px-5 py-3 text-center text-sm font-black text-red-100 transition hover:bg-red-500/10">
-                      Reserve Externally
-                    </a>
-                  )}
-
-                  {!reservationUrl && location.website && (
-                    <a
-                      href={location.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => trackBusinessEvent("website_click")}
-                      className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
-                    >
-                      Visit Website
-                    </a>
-                  )}
-
-                  {location?.phone ? (
-                    <a
-                      href={`tel:${String(location.phone).replace(/[^\d+]/g, "")}`}
-                      onClick={() => { void startOutingTracking("phone"); }}
-                      className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
-                    >
-                      Call Location
-                    </a>
-                  ) : null}
-
-                  {mapsUrl ? (
-                    <a
-                      href={mapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => trackBusinessEvent("directions_click")}
-                      className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
-                    >
-                      {location.website || reservationUrl ? "Get Directions" : "View on Google Maps"}
-                    </a>
-                  ) : null}
-
-                  <button
-                    onClick={trackAndGoBack}
-                    className="rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
-                  >
-                    Back to Results
-                  </button>
-                </div>
-              </LuxuryCard>
-
-              <LuxuryCard
-                eyebrow="Review Intelligence"
-                title="Powered by real words."
-              >
-                <div className="mt-5 space-y-4 text-sm">
-                  <InfoRow
-                    label="Review Score"
-                    value={location.review_score || 0}
-                  />
-
-                  <InfoRow
-                    label="Review Count"
-                    value={location.review_count || reviews.length || 0}
-                  />
-
-                  <InfoRow
-                    label="Recommendation Signals"
-                    value={
-                      reviewKeywords.length > 0
-                        ? `${reviewKeywords.length} imported signals`
-                        : "Not enough verified data yet"
-                    }
-                  />
-                </div>
+              <LuxuryCard eyebrow="Plan your visit" title="Ready when you are.">
+                {operatingHoursDisplay && <InfoRow label="Hours" value={operatingHoursDisplay} />}
+                {reservationSourceLabel && <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">{reservationSourceLabel}</p>}
+                <LocationActionButtons
+                  planLink={planLink}
+                  websiteHref={websiteHref}
+                  phoneHref={phoneHref}
+                  mapsUrl={mapsUrl}
+                  stacked
+                  onWebsiteClick={() => trackBusinessEvent("website_click")}
+                  onPhoneClick={() => { void startOutingTracking("phone"); }}
+                  onDirectionsClick={() => trackBusinessEvent("directions_click")}
+                />
+                <button onClick={trackAndGoBack} className="mt-3 w-full rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">Back to Results</button>
               </LuxuryCard>
             </aside>
           </div>
         </section>
       </main>
 
-      {reservationUrl && (
-        <div className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-full border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur-xl md:hidden">
-          <a
-            href={reservationUrl}
-            target={isExternalReservation ? "_blank" : undefined}
-            rel={isExternalReservation ? "noopener noreferrer" : undefined}
-            className="block rounded-full bg-red-600 px-6 py-4 text-center text-sm font-black text-white"
-          >
-            {reservationLabel} at {name}
-          </a>
-        </div>
-      )}
+      <MobileStickyLocationBar name={name} meta={area || category} planLink={planLink} phoneHref={phoneHref} mapsUrl={mapsUrl} onPhoneClick={() => { void startOutingTracking("phone"); }} onDirectionsClick={() => trackBusinessEvent("directions_click")} />
+
     </>
   );
 }
@@ -998,23 +758,157 @@ function buildRelatedExploreLinks({
   return links.filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index).slice(0, 5);
 }
 
+function LocationActionButtons({
+  planLink,
+  websiteHref,
+  phoneHref,
+  mapsUrl,
+  stacked = false,
+  onWebsiteClick,
+  onPhoneClick,
+  onDirectionsClick,
+}: {
+  planLink: string;
+  websiteHref: string;
+  phoneHref: string;
+  mapsUrl: string;
+  stacked?: boolean;
+  onWebsiteClick: () => void;
+  onPhoneClick: () => void;
+  onDirectionsClick: () => void;
+}) {
+  return (
+    <div className={`mt-7 ${stacked ? "grid gap-3" : "flex flex-wrap gap-3"}`}>
+      <Link href={planLink} className="rounded-full bg-red-600 px-6 py-3 text-center text-sm font-black text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500">
+        Plan an Outing Here
+      </Link>
+      {websiteHref && (
+        <a href={websiteHref} target="_blank" rel="noopener noreferrer" onClick={onWebsiteClick} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+          Visit Website
+        </a>
+      )}
+      {phoneHref && (
+        <a href={phoneHref} onClick={onPhoneClick} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+          Call
+        </a>
+      )}
+      {mapsUrl && (
+        <a href={mapsUrl} target="_blank" rel="noopener noreferrer" onClick={onDirectionsClick} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+          Get Directions
+        </a>
+      )}
+    </div>
+  );
+}
+
+function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]; primaryPhoto: string; name: string }) {
+  const thumbs = images.filter((image) => image !== primaryPhoto).slice(0, 2);
+  return (
+    <div className="grid gap-3">
+      <div className="relative min-h-[260px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#111114] shadow-2xl shadow-black/30 sm:min-h-[360px] lg:min-h-[520px]">
+        {primaryPhoto ? (
+          <Image src={primaryPhoto} alt={name} fill priority className="object-cover" />
+        ) : (
+          <div className="flex h-full min-h-[260px] items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(225,6,42,0.22),transparent_34%),#111114]">
+            <HavenMark className="h-16 w-16 text-2xl" />
+          </div>
+        )}
+        {images.length > 1 && (
+          <a href={primaryPhoto || images[0]} target="_blank" rel="noopener noreferrer" className="absolute bottom-4 right-4 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-xs font-black text-white backdrop-blur-xl">
+            {images.length} photos
+          </a>
+        )}
+      </div>
+      {thumbs.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {thumbs.map((image, index) => (
+            <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="relative h-32 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04]">
+              <Image src={image} alt={`${name} photo ${index + 2}`} fill className="object-cover transition duration-500 hover:scale-105" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OutHavenRatingCard({ score, category }: { score: number; category: string }) {
+  const chips = category.toLowerCase().includes("restaurant")
+    ? ["Date night", "Dinner", "Group outing", "Celebration"]
+    : ["Date night", "Activity", "Group outing", "Celebration"];
+  return (
+    <section className="mt-7 rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-white">{score >= 90 ? "Elite Pick" : "Great outing potential"}</p>
+          <p className="mt-1 text-sm leading-6 text-white/62">Strong fit based on quality signals, popularity, and outing potential.</p>
+        </div>
+        <p className="rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-black text-red-50">{score}% match confidence</p>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">{chips.map((chip) => <PublicChip key={chip}>{chip}</PublicChip>)}</div>
+    </section>
+  );
+}
+
+function FullOutingCard({ links }: { links: { label: string; href: string }[] }) {
+  return (
+    <LuxuryCard eyebrow="Make it a full outing" title="Pair this spot with something nearby.">
+      <div className="flex flex-wrap gap-2">
+        {links.map((link) => (
+          <Link key={link.href} href={link.href} className="rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-black text-red-50 transition hover:bg-red-600 hover:text-white">
+            {link.label}
+          </Link>
+        ))}
+      </div>
+    </LuxuryCard>
+  );
+}
+
+function AtAGlanceCard({ area, category, address, reviews, photos, score }: { area: string; category: string; address: string; reviews: number; photos: number; score: number }) {
+  const items = [
+    ["Area", area],
+    ["Category", category],
+    ["Address", address],
+    ["Reviews", reviews ? `${reviews}` : ""],
+    ["Photos", photos ? `${photos}` : ""],
+    ["Match level", score ? `${score} / 100` : ""],
+  ].filter(([, value]) => Boolean(value));
+  return (
+    <LuxuryCard eyebrow="At a glance" title="The essentials.">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map(([label, value]) => <QuickDetail key={label} label={label} value={value} />)}
+      </div>
+    </LuxuryCard>
+  );
+}
+
+function MobileStickyLocationBar({ name, meta, planLink, phoneHref, mapsUrl, onPhoneClick, onDirectionsClick }: { name: string; meta: string; planLink: string; phoneHref: string; mapsUrl: string; onPhoneClick: () => void; onDirectionsClick: () => void }) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/90 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl md:hidden">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-black text-white">{name}</p>
+          <p className="truncate text-xs font-bold text-white/55">{meta}</p>
+        </div>
+        {phoneHref && <a aria-label="Call" href={phoneHref} onClick={onPhoneClick} className="rounded-full border border-white/15 px-3 py-2 text-xs font-black text-white">Call</a>}
+        {mapsUrl && <a aria-label="Get directions" href={mapsUrl} target="_blank" rel="noopener noreferrer" onClick={onDirectionsClick} className="rounded-full border border-white/15 px-3 py-2 text-xs font-black text-white">Map</a>}
+        <Link href={planLink} className="rounded-full bg-red-600 px-4 py-2.5 text-sm font-black text-white">Plan Here</Link>
+      </div>
+    </div>
+  );
+}
+
 function DynamicLocationHeader({
   scrolled,
   name,
   category,
   onBack,
-  reservationUrl,
-  isExternalReservation,
-  reservationLabel,
   from,
 }: {
   scrolled: boolean;
   name: string;
   category: string;
   onBack: () => void;
-  reservationUrl: string;
-  isExternalReservation: boolean;
-  reservationLabel: string;
   from: string;
 }) {
   return (
@@ -1070,20 +964,16 @@ function DynamicLocationHeader({
             New Search
           </a>
 
-          {reservationUrl && (
-            <a
-              href={reservationUrl}
-              target={isExternalReservation ? "_blank" : undefined}
-              rel={isExternalReservation ? "noopener noreferrer" : undefined}
-              className={`rounded-full px-5 py-2.5 text-sm font-black shadow-lg transition ${
-                scrolled
-                  ? "bg-red-600 text-white shadow-red-950/40 hover:bg-red-500"
-                  : "bg-white text-black hover:bg-red-600 hover:text-white"
-              }`}
-            >
-              {reservationLabel}
-            </a>
-          )}
+          <a
+            href="/create"
+            className={`rounded-full px-5 py-2.5 text-sm font-black shadow-lg transition ${
+              scrolled
+                ? "bg-red-600 text-white shadow-red-950/40 hover:bg-red-500"
+                : "bg-white text-black hover:bg-red-600 hover:text-white"
+            }`}
+          >
+            Plan an Outing
+          </a>
         </div>
       </div>
     </header>
@@ -1115,6 +1005,14 @@ function LuxuryCard({
 function PremiumTag({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-full border border-red-400/20 bg-red-950/25 px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-red-50 shadow-sm shadow-red-950/20">
+      {children}
+    </span>
+  );
+}
+
+function PublicChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.055] px-3.5 py-1.5 text-xs font-bold text-white/76">
       {children}
     </span>
   );
