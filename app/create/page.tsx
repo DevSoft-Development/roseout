@@ -16,7 +16,6 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import {
   normalizePublicCardImage,
-  hasPublicCardImage,
 } from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
@@ -368,6 +367,7 @@ export default function CreatePage() {
     null,
   );
   const [locationSaved, setLocationSaved] = useState(false);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [showPlanSummary, setShowPlanSummary] = useState(false);
   const [outingTime, setOutingTimeState] = useState<OutingTimeValue>(() =>
     emptyOutingTimeValue(getBrowserTimezone()),
@@ -424,7 +424,9 @@ export default function CreatePage() {
     document.title = "Create Your Outing | TheOutHaven";
 
     window.setTimeout(() => {
-      setLocationSaved(Boolean(getSavedLocation()));
+      const savedLocation = getSavedLocation();
+      setUserLocation(savedLocation);
+      setLocationSaved(Boolean(savedLocation));
     }, 0);
 
     if (initialPromptHandled.current) return;
@@ -698,14 +700,50 @@ export default function CreatePage() {
         };
 
         localStorage.setItem(LOCATION_KEY, JSON.stringify(userLocation));
+        setUserLocation(userLocation);
         setLocationSaved(true);
         setError("");
       },
       () => {
+        setUserLocation(null);
         setLocationSaved(false);
-        setError("Please allow location access or search by neighborhood.");
+        setError("We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.");
       },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
     );
+  }
+
+  async function ensureUserLocationForSearch(): Promise<UserLocation | null> {
+    const savedLocation = getSavedLocation() || userLocation;
+    if (savedLocation) return savedLocation;
+
+    if (!navigator.geolocation) {
+      setError("Location is not supported on this device. Please enter a neighborhood, borough, city, or ZIP code instead.");
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const nextLocation: UserLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+          localStorage.setItem(LOCATION_KEY, JSON.stringify(nextLocation));
+          setUserLocation(nextLocation);
+          setLocationSaved(true);
+          setError("");
+          resolve(nextLocation);
+        },
+        () => {
+          setUserLocation(null);
+          setLocationSaved(false);
+          setError("We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.");
+          resolve(null);
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+      );
+    });
   }
 
   function resetSearch() {
@@ -814,13 +852,15 @@ export default function CreatePage() {
     const previousAssistant = latestAssistant;
     const rawQueryBeforeNearMeStrip = cleanInput;
     const nearMeIntent = hasNearMeIntent(rawQueryBeforeNearMeStrip);
-    const savedLocation = getSavedLocation();
-
     const typedLocationIntent = hasTypedLocationIntent(rawQueryBeforeNearMeStrip);
+    const savedLocation =
+      nearMeIntent && !typedLocationIntent
+        ? await ensureUserLocationForSearch()
+        : getSavedLocation() || userLocation;
 
     if (nearMeIntent && !savedLocation && !typedLocationIntent) {
       setError(
-        "We need your location to search near you. Please allow location access or type a neighborhood.",
+        "We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.",
       );
       return;
     }
@@ -886,6 +926,17 @@ export default function CreatePage() {
                 rawQueryBeforeNearMeStrip,
                 rawQueryAfterNearMeStrip: submittedInput,
               };
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[create] near me generate payload", {
+          locationEnabled: locationSaved || Boolean(savedLocation),
+          hasBrowserCoords: Boolean(savedLocation),
+          sentLatitude: savedLocation?.latitude ?? null,
+          sentLongitude: savedLocation?.longitude ?? null,
+          rawQuery: rawQueryBeforeNearMeStrip,
+          cleanedQuery: submittedInput,
+        });
+      }
 
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -1857,7 +1908,12 @@ function HelpfulSearchState({
   message: string;
   onSuggestion: (prompt: string) => void;
 }) {
-  const suggestions = [
+  const isLiveLocation = hasNearMeIntent(message) || /current location|near your current location|live coordinates/i.test(message);
+  const suggestions = isLiveLocation ? [
+    { label: "Try a wider area", prompt: "dinner near me" },
+    { label: "Search restaurants only", prompt: "restaurants near me" },
+    { label: "Enter a neighborhood", prompt: "dinner in Astoria" },
+  ] : [
     {
       label: "Try another area",
       prompt: "restaurants and activities in Brooklyn",
@@ -2772,29 +2828,56 @@ function filterVisibleWalkingResults<T>(
   });
 }
 
+function normalizeSafeApiCard(item: any, index: number, fallbackType: string) {
+  const stableId =
+    item?.id ??
+    item?.source_id ??
+    item?.google_place_id ??
+    `${fallbackType}-${index}-${item?.name ?? item?.restaurant_name ?? item?.activity_name ?? "location"}`;
+
+  return normalizePublicCardImage({
+    ...item,
+    id: String(stableId),
+    name:
+      item?.name ??
+      item?.restaurant_name ??
+      item?.activity_name ??
+      "TheOutHaven pick",
+    address:
+      item?.address ??
+      item?.formatted_address ??
+      "Address available after selection",
+    image_url: item?.image_url ?? item?.main_image ?? "/toh_logo.png",
+    main_image: item?.main_image ?? item?.image_url ?? "/toh_logo.png",
+    images:
+      Array.isArray(item?.images) && item.images.length
+        ? item.images
+        : [item?.image_url ?? item?.main_image ?? "/toh_logo.png"],
+    rating: Number.isFinite(Number(item?.rating)) ? Number(item.rating) : null,
+    tags: Array.isArray(item?.tags) ? item.tags : [],
+    location_type: item?.location_type ?? fallbackType,
+  });
+}
+
 function normalizeApiCards(data: ApiResponse) {
   const restaurants = Array.isArray(data.restaurants)
     ? data.restaurants
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+        .map((item: any, index: number) => normalizeSafeApiCard(item, index, "restaurant"))
     : [];
 
   const activities = Array.isArray(data.activities)
     ? data.activities
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+        .map((item: any, index: number) => normalizeSafeApiCard(item, index, "activity"))
     : [];
 
   const cards = Array.isArray(data.cards)
     ? data.cards
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+        .map((item: any, index: number) => normalizeSafeApiCard(item, index, getCardType(item)))
     : [];
 
   const matched = Array.isArray(data.matched_locations)
     ? data.matched_locations
-        .map((item: any) => normalizePublicCardImage(item))
-        .filter(hasPublicCardImage)
+        .map((item: any, index: number) => normalizeSafeApiCard(item, index, getCardType(item)))
     : [];
 
   const fallbackCards = cards.length ? cards : matched;

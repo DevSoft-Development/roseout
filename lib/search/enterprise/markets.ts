@@ -91,7 +91,7 @@ function geoFromUserLocation(geo: GeoIntent, userLocation: UserSearchLocation): 
     latitude: userLocation.latitude ?? null,
     longitude: userLocation.longitude ?? null,
     radiusMiles: userLocation.radiusMiles ?? geo.radiusMiles ?? (isCurrentLocation ? 12 : null),
-    geoStrictness: isCurrentLocation ? "current_location" : "soft",
+    geoStrictness: isCurrentLocation ? "user_location" : "soft",
   };
 }
 
