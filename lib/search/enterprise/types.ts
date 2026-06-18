@@ -46,6 +46,11 @@ export type GeoIntent = {
   geoStrictness: GeoStrictness;
   defaultMarketId?: string | null;
   defaultMarketLabel?: string | null;
+  requestedMarket?: string | null;
+  resolvedMarket?: string | null;
+  marketIntent?: string | null;
+  explicitMarketRequested?: boolean;
+  allowedMarkets?: string[];
 };
 
 export type SearchIntent = {
@@ -84,6 +89,7 @@ export type EnterpriseLocation = {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  market?: string | null;
   neighborhood?: string | null;
   borough?: string | null;
   latitude?: number | string | null;

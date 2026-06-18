@@ -16,8 +16,31 @@ describe("shared market validation", () => {
     expect(result.borough).toBe("Queens");
   });
 
-  it("parses Long Island searches as Long Island", () => {
-    expect(detectRequestedMarket("date night in Long Island").resolvedMarket).toBe("LONG_ISLAND");
+  it.each([
+    "date night in Long Island",
+    "dinner and activity on Long Island",
+    "brunch near Long Island",
+    "date night in Nassau County",
+    "things to do in Suffolk",
+  ])("parses %s as Long Island", (query) => {
+    const result = detectRequestedMarket(query);
+    expect(result.resolvedMarket).toBe("LONG_ISLAND");
+    expect(result.state).toBe("NY");
+  });
+
+  it.each([
+    "date night in Long Island City",
+    "date night in Long Island City Queens",
+    "date night in Long Island City NY",
+    "date night in LIC",
+  ])("parses %s as NYC Core Queens, not Long Island", (query) => {
+    const result = detectRequestedMarket(query);
+    expect(result.resolvedMarket).toBe("NYC_CORE");
+    expect(result.borough).toBe("Queens");
+  });
+
+  it("does not let the generic word island trigger Long Island", () => {
+    expect(detectRequestedMarket("island vibes").marketIntent).toBe("default");
   });
 
   it.each([
