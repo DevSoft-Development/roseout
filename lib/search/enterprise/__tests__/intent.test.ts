@@ -7,6 +7,7 @@ import {
   restaurantSearchTerms,
 } from "../normalize-intent";
 import { resolveSearchMarket } from "../markets";
+import { hasNearMeIntent, stripNearMeIntent } from "../../near-me";
 import {
   getEnterpriseIntentFastPathReason,
   parseEnterpriseIntent,
@@ -14,6 +15,31 @@ import {
 } from "../intent-parser";
 
 describe("enterprise search intent", () => {
+  it("strips near-me language before restaurant intent parsing", () => {
+    const cleanedDinner = stripNearMeIntent("Dinner near me");
+    const dinnerIntent = normalizeIntent(cleanedDinner);
+
+    expect(hasNearMeIntent("Dinner near me")).toBe(true);
+    expect(cleanedDinner).toBe("Dinner");
+    expect(dinnerIntent.searchType).toBe("restaurant");
+    expect(dinnerIntent.wantsPairing).toBe(false);
+
+    const cleanedSeafood = stripNearMeIntent("seafood near me");
+    const seafoodIntent = normalizeIntent(cleanedSeafood);
+    expect(cleanedSeafood).toBe("seafood");
+    expect(restaurantSearchTerms(seafoodIntent)).not.toContain("near me");
+    expect(seafoodIntent.searchType).toBe("restaurant");
+  });
+
+  it("keeps date-night near-me queries as pair intent after location words are stripped", () => {
+    const cleaned = stripNearMeIntent("date night near me");
+    const intent = normalizeIntent(cleaned);
+
+    expect(cleaned).toBe("date night");
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.wantsPairing).toBe(true);
+  });
+
   for (const query of [
     "restaurant with activity walking distance",
     "dinner and activity nearby",

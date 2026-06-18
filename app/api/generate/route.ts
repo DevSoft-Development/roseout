@@ -52,7 +52,7 @@ function normalizeCardTags(value: unknown): string[] {
 }
 
 function toCardRecord(item: any) {
-  const usableImage = getLocationImage(item);
+  const usableImage = getLocationImage(item) || "/toh_logo.png";
 
   return {
     id: item?.id ?? item?.source_id ?? item?.google_place_id ?? null,
@@ -120,6 +120,39 @@ function selectedSearchLaneFromRequestBody(body: any): "auto" | "restaurant" | "
     normalizeSelectedSearchLane(body?.search_type) ??
     "auto"
   );
+}
+
+function finiteNumberFrom(...values: unknown[]): number | null {
+  for (const value of values) {
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+  return null;
+}
+
+function normalizeRequestCoordinates(body: any) {
+  const latitude = finiteNumberFrom(
+    body?.latitude,
+    body?.lat,
+    body?.userLatitude,
+    body?.user_latitude,
+    body?.userLocation?.latitude,
+    body?.user_location?.latitude,
+    body?.userLocation?.lat,
+    body?.user_location?.lat,
+  );
+  const longitude = finiteNumberFrom(
+    body?.longitude,
+    body?.lng,
+    body?.lon,
+    body?.userLongitude,
+    body?.user_longitude,
+    body?.userLocation?.longitude,
+    body?.user_location?.longitude,
+    body?.userLocation?.lng,
+    body?.user_location?.lng,
+  );
+  return latitude != null && longitude != null ? { latitude, longitude } : null;
 }
 
 function metadataString(value: unknown): string | null {
@@ -251,17 +284,18 @@ export async function POST(request: Request) {
 
 
     const selectedSearchLane = selectedSearchLaneFromRequestBody(body);
-    const userLatitude = Number(body?.userLatitude ?? body?.user_latitude);
-    const userLongitude = Number(body?.userLongitude ?? body?.user_longitude);
-    const userLatitudePresent = Number.isFinite(userLatitude);
-    const userLongitudePresent = Number.isFinite(userLongitude);
+    const normalizedCoordinates = normalizeRequestCoordinates(body);
+    const userLatitude = normalizedCoordinates?.latitude ?? null;
+    const userLongitude = normalizedCoordinates?.longitude ?? null;
+    const userLatitudePresent = userLatitude != null;
+    const userLongitudePresent = userLongitude != null;
     const useCurrentLocation = body?.useCurrentLocation === true || body?.use_current_location === true;
     const currentLocationUserLocation =
-      nearMeIntent && useCurrentLocation && userLatitudePresent && userLongitudePresent
+      nearMeIntent && userLatitudePresent && userLongitudePresent
         ? {
             latitude: userLatitude,
             longitude: userLongitude,
-            radiusMiles: 12,
+            radiusMiles: Number.isFinite(Number(body?.radiusMiles ?? body?.radius_miles)) ? Number(body?.radiusMiles ?? body?.radius_miles) : 12,
             label: "Current location",
           }
         : null;
@@ -284,6 +318,8 @@ export async function POST(request: Request) {
       useCurrentLocation,
       userLatitude: userLatitudePresent ? userLatitude : undefined,
       userLongitude: userLongitudePresent ? userLongitude : undefined,
+      latitude: userLatitudePresent ? userLatitude : undefined,
+      longitude: userLongitudePresent ? userLongitude : undefined,
       rawQueryBeforeNearMeStrip,
       rawQueryAfterNearMeStrip: cleanInput,
       ...(currentLocationUserLocation ? { userLocation: currentLocationUserLocation } : {}),
@@ -313,7 +349,8 @@ export async function POST(request: Request) {
 
     const marketDetection = detectRequestedMarket(cleanInput);
     const forceLegacyForLongIsland = marketDetection.requestedMarket === "LONG_ISLAND";
-    const result: any = forceLegacyForLongIsland
+    const forceLegacyForUserLocation = Boolean(currentLocationUserLocation);
+    const result: any = forceLegacyForLongIsland || forceLegacyForUserLocation
       ? await legacySearch()
       : await runCreateSearchWithEdgeFallback(
           {
@@ -450,7 +487,9 @@ export async function POST(request: Request) {
 
     const response = {
       ...result,
-      reply: resolvedMarketForGuardrail === "LONG_ISLAND" && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) === 0
+      reply: currentLocationUserLocation && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) === 0
+        ? "We couldn’t find dinner spots near your current location yet. Try a nearby neighborhood or turn off Location and search by borough."
+        : resolvedMarketForGuardrail === "LONG_ISLAND" && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) === 0
         ? "We’re still expanding Long Island picks. Try a broader search like ‘dinner and activity in Long Island’ or check back soon."
         : result.reply,
       plannedTime,
@@ -480,7 +519,7 @@ export async function POST(request: Request) {
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? { ...(result.debug || {}), ...nearMeDebug, geoSource: (result.debug as any)?.geoSource, marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), rawQuery: rawQueryBeforeNearMeStrip, cleanedQuery: cleanInput, searchType: ((result.debug as any)?.normalizedIntent?.searchType ?? (result.debug as any)?.intent?.searchType ?? (result as any)?.searchType ?? selectedSearchLane), usedUserLocation: Boolean(currentLocationUserLocation), receivedLatitude: userLatitude, receivedLongitude: userLongitude, geoCenter: currentLocationUserLocation ? { latitude: userLatitude, longitude: userLongitude } : ((result.debug as any)?.effectiveGeo ?? (result.debug as any)?.geo ?? null), radiusMiles: currentLocationUserLocation?.radiusMiles ?? (result.debug as any)?.rpcRadiusMiles ?? null, resultCount: publicRestaurants.length + publicActivities.length + publicMatchedLocations.length + publicPairs.length, fallbackUsed: Boolean((result.debug as any)?.restaurantRecoveryUsed || (result.debug as any)?.activityRecoveryUsed), renderSafeResultCount: publicRestaurants.length + publicActivities.length + publicMatchedLocations.length, ...nearMeDebug, geoSource: (result.debug as any)?.geoSource, marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo
