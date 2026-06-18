@@ -28,11 +28,8 @@ import {
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
-import {
-  hasNearMeIntent,
-  hasTypedLocationIntent,
-  stripNearMeIntent,
-} from "@/lib/search/near-me";
+import { hasNearMeIntent } from "@/lib/search/near-me";
+import { normalizeCreateSearchRequest } from "@/lib/search/normalizeCreateSearchRequest";
 import {
   cleanDistanceLabel,
   formatDistanceFromRestaurant,
@@ -851,24 +848,38 @@ export default function CreatePage() {
     const { addOnTarget, preservePlan = false } = options;
     const previousAssistant = latestAssistant;
     const rawQueryBeforeNearMeStrip = cleanInput;
-    const nearMeIntent = hasNearMeIntent(rawQueryBeforeNearMeStrip);
-    const typedLocationIntent = hasTypedLocationIntent(rawQueryBeforeNearMeStrip);
+    const initialNearMeIntent = /\b(near me|nearby|around me|close to me|by me|near my location|around my location)\b/i.test(rawQueryBeforeNearMeStrip);
+    const initialTypedLocationIntent = /\b(queens|brooklyn|manhattan|bronx|staten island|long island|astoria|lic|long island city|williamsburg|bushwick|flushing|forest hills|jamaica|bayside|elmhurst|jackson heights|harlem|soho|tribeca|chelsea|midtown|downtown|uptown|hoboken|jersey city|newark|yonkers|nyc|new york|nassau|suffolk)\b/i.test(rawQueryBeforeNearMeStrip);
     const savedLocation =
-      nearMeIntent && !typedLocationIntent
+      initialNearMeIntent && !initialTypedLocationIntent
         ? await ensureUserLocationForSearch()
         : getSavedLocation() || userLocation;
 
-    if (nearMeIntent && !savedLocation && !typedLocationIntent) {
+    if (initialNearMeIntent && !savedLocation && !initialTypedLocationIntent) {
       setError(
         "We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.",
       );
       return;
     }
 
-    const submittedInput =
-      nearMeIntent && (savedLocation || typedLocationIntent)
-        ? stripNearMeIntent(rawQueryBeforeNearMeStrip) || rawQueryBeforeNearMeStrip
-        : rawQueryBeforeNearMeStrip;
+    const normalizedSearch = normalizeCreateSearchRequest({
+      rawQuery: rawQueryBeforeNearMeStrip,
+      source: "public_create",
+      body: {
+        ...(savedLocation
+          ? {
+              latitude: savedLocation.latitude,
+              longitude: savedLocation.longitude,
+              lat: savedLocation.latitude,
+              lng: savedLocation.longitude,
+              userLatitude: savedLocation.latitude,
+              userLongitude: savedLocation.longitude,
+            }
+          : {}),
+        useCurrentLocation: initialNearMeIntent && !initialTypedLocationIntent && Boolean(savedLocation),
+      },
+    });
+    const { cleanedQuery: submittedInput, nearMeIntent, typedLocationIntent, useCurrentLocation } = normalizedSearch;
 
     setLoading(true);
     setActiveAddOnTarget(addOnTarget || null);
@@ -893,39 +904,22 @@ export default function CreatePage() {
     );
 
     try {
-      const searchPayloadLocation =
-        nearMeIntent && savedLocation
-          ? {
-              latitude: savedLocation.latitude,
-              longitude: savedLocation.longitude,
-              lat: savedLocation.latitude,
-              lng: savedLocation.longitude,
-              userLatitude: savedLocation.latitude,
-              userLongitude: savedLocation.longitude,
-              useCurrentLocation: true,
-              nearMeIntent: true,
-              rawQueryBeforeNearMeStrip,
-              rawQueryAfterNearMeStrip: submittedInput,
-            }
-          : savedLocation
-            ? {
-                latitude: savedLocation.latitude,
-                longitude: savedLocation.longitude,
-                lat: savedLocation.latitude,
-                lng: savedLocation.longitude,
-                userLatitude: savedLocation.latitude,
-                userLongitude: savedLocation.longitude,
-                useCurrentLocation: false,
-                nearMeIntent,
-                rawQueryBeforeNearMeStrip,
-                rawQueryAfterNearMeStrip: submittedInput,
-              }
-            : {
-                useCurrentLocation: false,
-                nearMeIntent,
-                rawQueryBeforeNearMeStrip,
-                rawQueryAfterNearMeStrip: submittedInput,
-              };
+      const searchPayloadLocation = {
+        input: submittedInput,
+        query: submittedInput,
+        message: submittedInput,
+        prompt: submittedInput,
+        rawQueryBeforeNearMeStrip,
+        rawQueryAfterNearMeStrip: submittedInput,
+        nearMeIntent,
+        typedLocationIntent,
+        useCurrentLocation,
+        userLatitude: normalizedSearch.userLatitude,
+        userLongitude: normalizedSearch.userLongitude,
+        latitude: normalizedSearch.userLatitude,
+        longitude: normalizedSearch.userLongitude,
+        userLocationSoftBoostOnly: normalizedSearch.searchBody.userLocationSoftBoostOnly,
+      };
 
       if (process.env.NODE_ENV !== "production") {
         console.log("[create] near me generate payload", {
@@ -944,9 +938,8 @@ export default function CreatePage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          input: submittedInput,
-          messages: [...messages, userMessage],
           ...searchPayloadLocation,
+          messages: [...messages, userMessage],
           plannedFor: outingTime.plannedFor,
           timezone: outingTime.timezone,
           outingDateContext: outingTime.outingDateContext,
@@ -1056,9 +1049,12 @@ export default function CreatePage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            input: `${submittedInput} ${missingTarget}`,
-            messages: [...messages, userMessage],
             ...searchPayloadLocation,
+            input: `${submittedInput} ${missingTarget}`,
+            query: `${submittedInput} ${missingTarget}`,
+            message: `${submittedInput} ${missingTarget}`,
+            prompt: `${submittedInput} ${missingTarget}`,
+            messages: [...messages, userMessage],
           }),
         });
 

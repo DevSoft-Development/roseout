@@ -5,6 +5,8 @@ import { getSearchSpeedStatus } from "@/lib/search/performance";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import { requireBetaAdmin, safeError } from "../_shared";
 import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
+import { normalizeCreateSearchRequest } from "@/lib/search/normalizeCreateSearchRequest";
+import { detectRequestedMarket } from "@/lib/location-markets";
 
 export async function POST(req: NextRequest) {
   const auth = await requireBetaAdmin();
@@ -12,7 +14,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const query = String(body.query || "").trim();
+    const rawQuery = String(body.query || body.input || body.prompt || "").trim();
+    const simulatedLocation = body.simulateCurrentLocation === true
+      ? { userLatitude: body.testLatitude, userLongitude: body.testLongitude, latitude: body.testLatitude, longitude: body.testLongitude }
+      : {};
+    const normalizedRequest = normalizeCreateSearchRequest({
+      rawQuery,
+      body: { ...body, ...simulatedLocation },
+      source: "admin_search_lab",
+    });
+    const query = normalizedRequest.cleanedQuery;
     const queryFlag = req.nextUrl.searchParams.get("useFastPath");
     const useFastPath = body.force_llm === true
       ? false
@@ -27,7 +38,7 @@ export async function POST(req: NextRequest) {
     const legacySearch = () =>
       runEnterpriseSearch(query, {
         useLLM: true,
-        body,
+        body: normalizedRequest.searchBody,
         source: "admin_search_lab",
         route: "/api/admin/beta/search-lab",
         logPerformance: true,
@@ -40,9 +51,19 @@ export async function POST(req: NextRequest) {
         searchHealthDebug: true,
       });
 
-    const result = await runCreateSearchWithEdgeFallback(
+    const marketDetection = detectRequestedMarket(query);
+    const forceLegacyForLongIsland = marketDetection.requestedMarket === "LONG_ISLAND";
+    const forceLegacyForUserLocation = normalizedRequest.useCurrentLocation;
+    const searchBackendUsed = forceLegacyForLongIsland ? "legacy_for_long_island" : forceLegacyForUserLocation ? "legacy_for_current_location" : "edge";
+
+    const result = forceLegacyForLongIsland || forceLegacyForUserLocation
+      ? await legacySearch()
+      : await runCreateSearchWithEdgeFallback(
       {
+        ...normalizedRequest.searchBody,
         prompt: query,
+        input: query,
+        query,
         debug: true,
         force_llm: body.force_llm === true || useFastPath === false,
         useFastPath,
@@ -56,15 +77,64 @@ export async function POST(req: NextRequest) {
     const debug = result.debug as any;
     const perf = debug?.performance || {};
     const outingTiming = { ...parseOutingDateTime(query), ...(debug?.normalizedIntent ? { outingDateLabel: debug.normalizedIntent.outingDateLabel, outingTimeLabel: debug.normalizedIntent.outingTimeLabel, outingDateTimeText: debug.normalizedIntent.outingDateTimeText, outingTimeConfidence: debug.normalizedIntent.outingTimeConfidence, parsedDateText: debug.normalizedIntent.parsedDateText, parsedTimeText: debug.normalizedIntent.parsedTimeText, parsedDateTimeISO: debug.normalizedIntent.parsedDateTimeISO } : {}) };
+    const restaurantCards = (result.restaurants as any[]) || [];
+    const activityCards = (result.activities as any[]) || [];
+    const pairCards = (result.pairs as any[]) || [];
+    const rawCounts = { restaurants: restaurantCards.length, activities: activityCards.length, pairs: pairCards.length };
+    const publicCounts = { ...rawCounts, cards: restaurantCards.length + activityCards.length };
+    const finalResultNames = [...restaurantCards, ...activityCards, ...pairCards].slice(0, 12).map((item: any) => item?.name || item?.restaurant_name || item?.activity_name || item?.restaurant?.name || item?.activity?.name).filter(Boolean);
+    const marketFiltering = {
+      explicitMarketRequested: debug?.explicitMarketRequested ?? normalizedRequest.debugParity.explicitMarketRequested,
+      resolvedMarket: debug?.resolvedMarket ?? normalizedRequest.debugParity.resolvedMarket,
+      requestedMarket: debug?.requestedMarket ?? normalizedRequest.debugParity.requestedMarket,
+      allowedMarkets: debug?.allowedMarkets ?? normalizedRequest.debugParity.allowedMarkets,
+      geoSource: normalizedRequest.debugParity.geoSource,
+      userLocationReceived: normalizedRequest.userLatitude != null && normalizedRequest.userLongitude != null,
+      userLocationUsedAsPrimaryGeo: normalizedRequest.useCurrentLocation,
+      userLocationUsedAsSoftBoost: Boolean(normalizedRequest.debugParity.userLocationUsedAsSoftBoost),
+      restaurantCandidatesBeforeMarketFilter: debug?.restaurantCandidatesBeforeMarketFilter ?? restaurantCards.length,
+      restaurantCandidatesAfterMarketFilter: restaurantCards.length,
+      activityCandidatesBeforeMarketFilter: debug?.activityCandidatesBeforeMarketFilter ?? activityCards.length,
+      activityCandidatesAfterMarketFilter: activityCards.length,
+      outOfMarketRestaurantsRemoved: debug?.outOfMarketRestaurantsRemoved ?? 0,
+      outOfMarketActivitiesRemoved: debug?.outOfMarketActivitiesRemoved ?? 0,
+    };
+    const debugParity = {
+      ...normalizedRequest.debugParity,
+      route: "/api/admin/beta/search-lab",
+      source: "admin_search_lab",
+      rawQueryReceived: rawQuery,
+      forceLegacyForLongIsland,
+      forceLegacyForUserLocation,
+      searchBackendUsed,
+      resolvedMarket: marketFiltering.resolvedMarket,
+      allowedMarkets: marketFiltering.allowedMarkets,
+      explicitMarketRequested: marketFiltering.explicitMarketRequested,
+      searchType: debug?.normalizedIntent?.searchType ?? normalizedRequest.debugParity.searchType,
+      wantsPairing: debug?.normalizedIntent?.wantsPairing ?? normalizedRequest.debugParity.wantsPairing,
+      needsRestaurant: debug?.normalizedIntent?.needsRestaurant ?? normalizedRequest.debugParity.needsRestaurant,
+      needsActivity: debug?.normalizedIntent?.needsActivity ?? normalizedRequest.debugParity.needsActivity,
+      resultCounts: rawCounts,
+      firstResultNames: finalResultNames.slice(0, 5),
+    };
 
     const responseBody = {
       success: true,
       reply: result.reply,
-      restaurants: (result.restaurants as any[])?.length || 0,
-      activities: (result.activities as any[])?.length || 0,
-      pairs: (result.pairs as any[])?.length || 0,
-      cards: [...((result.restaurants as any[]) || []), ...((result.activities as any[]) || [])],
+      restaurants: restaurantCards.length,
+      activities: activityCards.length,
+      pairs: pairCards.length,
+      restaurantCards,
+      activityCards,
+      pairCards,
+      cards: [...restaurantCards, ...activityCards],
+      rawCounts,
+      publicCounts,
+      finalResultNames,
+      debugParity,
+      marketFiltering,
       source: (result as any).source || (isEdgeCreateSearchEnabled() ? "edge" : "legacy"),
+      searchBackendUsed,
       parser_source: debug?.parser_source,
       intentParserSource: debug?.intentParserSource ?? debug?.parser_source,
       fastPathMatched: Boolean(debug?.fastPathMatched ?? (debug?.parser_source === "fast_parser" || debug?.parser_source === "fast_path")),
@@ -123,15 +193,15 @@ export async function POST(req: NextRequest) {
       missingPhotoResultsRemoved: true,
       fallbackUsed: Boolean(debug?.restaurantRecoveryUsed || debug?.activityRecoveryUsed || debug?.edge_error),
       customPrompt: !!body.usedCustomPrompt,
-      debug: result.debug,
+      debug: { ...(result.debug as any || {}), debugParity, marketFiltering, searchBackendUsed },
     };
 
     if ((result as any).source === "edge" || debug?.source === "edge") {
       void logSearchHealthEvent({
         source: "admin_search_lab",
-        rawQuery: query,
+        rawQuery: normalizedRequest.rawQuery,
         result: responseBody,
-        debug: result.debug,
+        debug: { ...(result.debug as any || {}), debugParity, marketFiltering, searchBackendUsed },
         createdByUserId: auth.adminUser?.user_id ?? null,
         betaAssignmentId: body.betaAssignmentId ?? null,
         betaTesterId: body.betaTesterId ?? null,
