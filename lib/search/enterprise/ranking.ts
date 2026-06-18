@@ -34,6 +34,79 @@ function fieldText(r: EnterpriseLocation, fields: string[]) {
     .replaceAll("-", " ");
 }
 
+export function isDateNightDinnerIntent(intent: SearchIntent): boolean {
+  const text = [
+    intent.rawQuery,
+    intent.occasion,
+    intent.timeContext,
+    intent.restaurantIntent?.mealTerms,
+    intent.restaurantIntent?.vibeTerms,
+    intent.restaurantIntent?.categoryTerms,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    /\b(date night|dinner date|romantic date|romantic dinner|anniversary|couples night|night out)\b/.test(
+      text,
+    ) ||
+    (/\bdate\b/.test(text) && /\b(night|dinner|romantic)\b/.test(text))
+  );
+}
+
+export function hasExplicitCafeDessertIntent(intent: SearchIntent): boolean {
+  const text = [
+    intent.rawQuery,
+    intent.restaurantIntent?.foodTerms,
+    intent.restaurantIntent?.cuisineTerms,
+    intent.restaurantIntent?.categoryTerms,
+    intent.restaurantIntent?.mealTerms,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /\b(coffee|cafe|café|bakery|bake shop|pastry|dessert|ice cream|yogurt|frozen yogurt|bagel|donut|doughnut|cake|cupcake|cookies|sweets|bubble tea|tea|smoothie|juice|milkshake)\b/.test(
+    text,
+  );
+}
+
+export function isCafeBakeryDessertQuickBiteOnly(
+  r: EnterpriseLocation,
+): boolean {
+  const text = fieldText(r, [
+    "name",
+    "restaurant_name",
+    "primary_category",
+    "cuisine",
+    "cuisine_type",
+    "food_type",
+    "google_types",
+    "tags",
+    "semantic_tags",
+    "intent_tags",
+    "description",
+    "search_document",
+    "semantic_search_text",
+    "search_keywords",
+  ]);
+
+  const cafeDessertSignal =
+    /\b(cafe|café|coffee|coffee shop|bakery|bake shop|pastry|patisserie|dessert|ice cream|yogurt|frozen yogurt|bagel|bagels|donut|doughnut|cake|cupcake|cookies|sweets|bubble tea|tea shop|smoothie|juice bar|milkshake)\b/.test(
+      text,
+    );
+
+  const fullDinnerSignal =
+    /\b(full service|table service|dining room|dinner service|restaurant|steakhouse|seafood|italian restaurant|sushi|mediterranean|american restaurant|new american|thai restaurant|mexican restaurant|caribbean restaurant|latin restaurant|french restaurant|greek restaurant|tapas|wine bar|cocktail bar|lounge|bistro|brasserie|supper club|reservation|reservations|resy|open table)\b/.test(
+      text,
+    );
+
+  return cafeDessertSignal && !fullDinnerSignal;
+}
+
 function userAskedToWatchSportsGame(intent: SearchIntent): boolean {
   const text = [
     intent.rawQuery,
@@ -70,13 +143,25 @@ function sportsWatchRecordSignal(r: EnterpriseLocation): number {
   if (/\bsports bar\b|\bsports lounge\b|\bsport lounge\b/.test(text)) {
     score += 55;
   }
-  if (/\btv\b|\btvs\b|\btelevision\b|\bscreen\b|\bscreens\b|\bbig screen\b|\bbig screens\b|\bprojector\b|\btv bar\b/.test(text)) {
+  if (
+    /\btv\b|\btvs\b|\btelevision\b|\bscreen\b|\bscreens\b|\bbig screen\b|\bbig screens\b|\bprojector\b|\btv bar\b/.test(
+      text,
+    )
+  ) {
     score += 35;
   }
-  if (/\bwatch party\b|\bgame day\b|\bgame night\b|\bshowing the game\b|\bwatch the game\b|\blive sports\b|\bsports viewing\b|\bplayoffs?\b/.test(text)) {
+  if (
+    /\bwatch party\b|\bgame day\b|\bgame night\b|\bshowing the game\b|\bwatch the game\b|\blive sports\b|\bsports viewing\b|\bplayoffs?\b/.test(
+      text,
+    )
+  ) {
     score += 45;
   }
-  if (/\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bmarch madness\b|\bfinal four\b|\blakers\b|\bwarriors\b|\bceltics\b|\bcowboys\b|\beagles\b|\bchiefs\b|\bdodgers\b|\bred sox\b|\bduke\b|\buconn\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(text)) {
+  if (
+    /\bnba\b|\bnfl\b|\bmlb\b|\bnhl\b|\bwnba\b|\bmarch madness\b|\bfinal four\b|\blakers\b|\bwarriors\b|\bceltics\b|\bcowboys\b|\beagles\b|\bchiefs\b|\bdodgers\b|\bred sox\b|\bduke\b|\buconn\b|\bknicks\b|\bnets\b|\byankees\b|\bmets\b|\bgiants\b|\bjets\b|\brangers\b|\bislanders\b|\bdevils\b|\bfootball\b|\bbasketball\b|\bbaseball\b|\bhockey\b|\bsoccer\b|\bufc\b|\bboxing\b/.test(
+      text,
+    )
+  ) {
     score += 25;
   }
   if (/\bgame bar\b/.test(text)) {
@@ -85,11 +170,11 @@ function sportsWatchRecordSignal(r: EnterpriseLocation): number {
   return score;
 }
 
-
-
 function userAskedForRelaxedNoClub(intent: SearchIntent): boolean {
   const q = String(intent.rawQuery ?? "").toLowerCase();
-  return /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|casual|relaxed|chill|quiet|not too loud|no club|no clubs|not a club|no dancing|no live dj|no dj|cozy)\b/.test(q);
+  return /\b(relaxed activity|relaxing activity|chill activity|easy activity|low key|low-key|laid back|laid-back|casual activity|casual|relaxed|chill|quiet|not too loud|no club|no clubs|not a club|no dancing|no live dj|no dj|cozy)\b/.test(
+    q,
+  );
 }
 
 function relaxedActivityRecordSignal(r: EnterpriseLocation): number {
@@ -110,11 +195,19 @@ function relaxedActivityRecordSignal(r: EnterpriseLocation): number {
 
   let score = 0;
 
-  if (/\bboard games?\b|\barcade\b|\bmini golf\b|\bbowling\b|\bgallery\b|\bmuseum\b|\bbilliards\b|\bpool hall\b|\bpaint and sip\b|\bcafe\b|\bdessert\b/.test(text)) {
+  if (
+    /\bboard games?\b|\barcade\b|\bmini golf\b|\bbowling\b|\bgallery\b|\bmuseum\b|\bbilliards\b|\bpool hall\b|\bpaint and sip\b|\bcafe\b|\bdessert\b/.test(
+      text,
+    )
+  ) {
     score += 35;
   }
 
-  if (/\brelaxed\b|\bchill\b|\blow key\b|\blow-key\b|\blaid back\b|\blaid-back\b|\bcasual\b|\bquiet\b|\bcozy\b/.test(text)) {
+  if (
+    /\brelaxed\b|\bchill\b|\blow key\b|\blow-key\b|\blaid back\b|\blaid-back\b|\bcasual\b|\bquiet\b|\bcozy\b/.test(
+      text,
+    )
+  ) {
     score += 20;
   }
 
@@ -195,7 +288,9 @@ function userAskedForHardNightlife(rawQuery: string): boolean {
 function isHardNightlifeRecord(record: EnterpriseLocation): boolean {
   const text = textForRecord(record).toLowerCase();
 
-  return /\bnightclub\b|\bdance club\b|\bclub\b|\bdancing\b|\bdance\b|\blive dj\b|\bdj\b|\bspeakeasy\b|\brooftop lounge\b|\brooftop\b|\broof top\b/i.test(text);
+  return /\bnightclub\b|\bdance club\b|\bclub\b|\bdancing\b|\bdance\b|\blive dj\b|\bdj\b|\bspeakeasy\b|\brooftop lounge\b|\brooftop\b|\broof top\b/i.test(
+    text,
+  );
 }
 
 function isTheaterRecord(r: EnterpriseLocation) {
@@ -380,17 +475,39 @@ function isActivityLike(r: EnterpriseLocation) {
 }
 
 function hasSingleVenueWithSportsSignal(terms: string[]) {
-  return terms.some((term) => /sports|game watch|tv|bar with tv|screen/.test(term));
+  return terms.some((term) =>
+    /sports|game watch|tv|bar with tv|screen/.test(term),
+  );
 }
 
-export function scoreSingleVenueWithMatch(record: EnterpriseLocation, intent: SearchIntent) {
+export function scoreSingleVenueWithMatch(
+  record: EnterpriseLocation,
+  intent: SearchIntent,
+) {
   const singleVenue = detectSingleVenueWithIntent(intent.rawQuery);
-  if (!singleVenue.matched) return { score: 0, venueMatched: false, foodMatched: false, featureMatched: false, dualMatched: false };
+  if (!singleVenue.matched)
+    return {
+      score: 0,
+      venueMatched: false,
+      foodMatched: false,
+      featureMatched: false,
+      dualMatched: false,
+    };
 
-  const venueMatched = singleVenue.venueTerms.length === 0 || termMatchesRecord(record, singleVenue.venueTerms);
-  const foodMatched = singleVenue.foodTerms.length === 0 || termMatchesRecord(record, singleVenue.foodTerms);
-  const featureMatched = singleVenue.featureTerms.length === 0 || termMatchesRecord(record, singleVenue.featureTerms);
-  const sportsMatched = hasSingleVenueWithSportsSignal([...singleVenue.venueTerms, ...singleVenue.featureTerms]) && sportsWatchRecordSignal(record) > 0;
+  const venueMatched =
+    singleVenue.venueTerms.length === 0 ||
+    termMatchesRecord(record, singleVenue.venueTerms);
+  const foodMatched =
+    singleVenue.foodTerms.length === 0 ||
+    termMatchesRecord(record, singleVenue.foodTerms);
+  const featureMatched =
+    singleVenue.featureTerms.length === 0 ||
+    termMatchesRecord(record, singleVenue.featureTerms);
+  const sportsMatched =
+    hasSingleVenueWithSportsSignal([
+      ...singleVenue.venueTerms,
+      ...singleVenue.featureTerms,
+    ]) && sportsWatchRecordSignal(record) > 0;
 
   let score = 0;
   if (venueMatched && singleVenue.venueTerms.length) score += 70;
@@ -398,17 +515,32 @@ export function scoreSingleVenueWithMatch(record: EnterpriseLocation, intent: Se
   if (featureMatched && singleVenue.featureTerms.length) score += 40;
   if (sportsMatched) score += 25;
   if (singleVenue.foodTerms.length && venueMatched && !foodMatched) score -= 60;
-  if (singleVenue.venueTerms.length && foodMatched && !venueMatched) score -= 60;
+  if (singleVenue.venueTerms.length && foodMatched && !venueMatched)
+    score -= 60;
   if (isClearlyActivityOnly(record) && !isRestaurantLike(record)) score -= 80;
-  if (singleVenue.featureTerms.length && isRestaurantLike(record) && !venueMatched && !featureMatched) score -= 80;
+  if (
+    singleVenue.featureTerms.length &&
+    isRestaurantLike(record) &&
+    !venueMatched &&
+    !featureMatched
+  )
+    score -= 80;
 
   (record as any).singleVenueWithScore = score;
   (record as any).singleVenueWithVenueMatched = venueMatched;
   (record as any).singleVenueWithFoodMatched = foodMatched;
   (record as any).singleVenueWithFeatureMatched = featureMatched;
-  (record as any).singleVenueWithDualMatched = Boolean(venueMatched && (foodMatched || featureMatched));
+  (record as any).singleVenueWithDualMatched = Boolean(
+    venueMatched && (foodMatched || featureMatched),
+  );
 
-  return { score, venueMatched, foodMatched, featureMatched, dualMatched: Boolean(venueMatched && (foodMatched || featureMatched)) };
+  return {
+    score,
+    venueMatched,
+    foodMatched,
+    featureMatched,
+    dualMatched: Boolean(venueMatched && (foodMatched || featureMatched)),
+  };
 }
 
 const CURATED_TERMS = [
@@ -658,6 +790,13 @@ export function scoreRestaurantOutingFit(
   const descriptionTagText = signals.descriptionTagText;
   const outingCategoryMatch = OUTING_CATEGORY_RE.test(categoryTypeText);
   const outingDescriptionMatch = OUTING_DESCRIPTION_RE.test(descriptionTagText);
+  const dateNightDinnerIntent = isDateNightDinnerIntent(intent);
+  const explicitCafeDessertIntent = hasExplicitCafeDessertIntent(intent);
+  const cafeBakeryDessertOnly = isCafeBakeryDessertQuickBiteOnly(r);
+  const suppressCafeDessertForDateNight =
+    dateNightDinnerIntent &&
+    !explicitCafeDessertIntent &&
+    cafeBakeryDessertOnly;
   const strongOutingSignal =
     /\b(fine dining|upscale|full service|bistro|brasserie|steakhouse|seafood|italian restaurant|wine bar|supper club)\b/.test(
       categoryTypeText,
@@ -701,12 +840,36 @@ export function scoreRestaurantOutingFit(
     qualityReason(reasons, "rating >= 4.3 with 100+ reviews", 15);
   }
   if (outingCategoryMatch) {
-    score += 20;
-    qualityReason(reasons, "outing category/type dining signal", 20);
+    if (suppressCafeDessertForDateNight) {
+      qualityReason(
+        penalties,
+        "removed dining boost for cafe/bakery/dessert-only date-night result",
+        0,
+      );
+    } else {
+      score += 20;
+      qualityReason(reasons, "outing category/type dining signal", 20);
+    }
   }
   if (outingDescriptionMatch) {
-    score += 15;
-    qualityReason(reasons, "date-night/ambiance/dinner tag signal", 15);
+    if (suppressCafeDessertForDateNight) {
+      qualityReason(
+        penalties,
+        "removed date-night boost for cafe/bakery/dessert-only result",
+        0,
+      );
+    } else {
+      score += 15;
+      qualityReason(reasons, "date-night/ambiance/dinner tag signal", 15);
+    }
+  }
+  if (suppressCafeDessertForDateNight) {
+    score -= 80;
+    qualityReason(
+      penalties,
+      "cafe/bakery/dessert-only suppressed for date-night dinner intent",
+      -80,
+    );
   }
 
   const priority = Number(
@@ -863,7 +1026,11 @@ export function scoreActivityQuality(
   }
   if (relaxedNoClubIntent && isHardNightlifeRecord(r)) {
     score -= 60;
-    qualityReason(penalties, "hard nightlife result for relaxed/no-club query", -60);
+    qualityReason(
+      penalties,
+      "hard nightlife result for relaxed/no-club query",
+      -60,
+    );
   }
   if (sportsWatchIntent && sportsWatchScore > 0) {
     score += sportsWatchScore;
@@ -1201,7 +1368,8 @@ function relevance(
     domain === "restaurant"
       ? scoreRestaurantQuality(r, intent).score
       : scoreActivityQuality(r, intent).score;
-  const singleVenueWithScore = domain === "restaurant" ? scoreSingleVenueWithMatch(r, intent).score : 0;
+  const singleVenueWithScore =
+    domain === "restaurant" ? scoreSingleVenueWithMatch(r, intent).score : 0;
   const quality =
     Number(r.theouthaven_score ?? r.quality_score ?? 0) +
     Number(r.rating ?? 0) * 2 +

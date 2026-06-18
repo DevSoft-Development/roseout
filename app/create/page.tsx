@@ -14,9 +14,7 @@ import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
-import {
-  normalizePublicCardImage,
-} from "@/lib/publicCardImage";
+import { normalizePublicCardImage } from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
@@ -208,7 +206,7 @@ type CampaignLocationResponse = {
 };
 
 type AddOnTarget = "restaurant" | "activity";
-type ResultSectionKind = "restaurants" | "activities";
+type ResultSectionKind = "pairs" | "restaurants" | "activities";
 
 type UserLocation = {
   latitude: number;
@@ -281,6 +279,11 @@ const loadingLines = [
 ];
 
 const DEFAULT_RESULT_ORDER: ResultSectionKind[] = ["restaurants", "activities"];
+const PAIR_FIRST_RESULT_ORDER: ResultSectionKind[] = [
+  "pairs",
+  "restaurants",
+  "activities",
+];
 const RESULT_ORDER_RESTAURANT_KEYWORDS = [
   "restaurant",
   "restaurants",
@@ -704,7 +707,9 @@ export default function CreatePage() {
       () => {
         setUserLocation(null);
         setLocationSaved(false);
-        setError("We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.");
+        setError(
+          "We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.",
+        );
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
     );
@@ -715,7 +720,9 @@ export default function CreatePage() {
     if (savedLocation) return savedLocation;
 
     if (!navigator.geolocation) {
-      setError("Location is not supported on this device. Please enter a neighborhood, borough, city, or ZIP code instead.");
+      setError(
+        "Location is not supported on this device. Please enter a neighborhood, borough, city, or ZIP code instead.",
+      );
       return null;
     }
 
@@ -735,7 +742,9 @@ export default function CreatePage() {
         () => {
           setUserLocation(null);
           setLocationSaved(false);
-          setError("We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.");
+          setError(
+            "We need your location to search near you. Please enter a neighborhood, borough, city, or ZIP code instead.",
+          );
           resolve(null);
         },
         { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
@@ -848,8 +857,14 @@ export default function CreatePage() {
     const { addOnTarget, preservePlan = false } = options;
     const previousAssistant = latestAssistant;
     const rawQueryBeforeNearMeStrip = cleanInput;
-    const initialNearMeIntent = /\b(near me|nearby|around me|close to me|by me|near my location|around my location)\b/i.test(rawQueryBeforeNearMeStrip);
-    const initialTypedLocationIntent = /\b(queens|brooklyn|manhattan|bronx|staten island|long island|astoria|lic|long island city|williamsburg|bushwick|flushing|forest hills|jamaica|bayside|elmhurst|jackson heights|harlem|soho|tribeca|chelsea|midtown|downtown|uptown|hoboken|jersey city|newark|yonkers|nyc|new york|nassau|suffolk)\b/i.test(rawQueryBeforeNearMeStrip);
+    const initialNearMeIntent =
+      /\b(near me|nearby|around me|close to me|by me|near my location|around my location)\b/i.test(
+        rawQueryBeforeNearMeStrip,
+      );
+    const initialTypedLocationIntent =
+      /\b(queens|brooklyn|manhattan|bronx|staten island|long island|astoria|lic|long island city|williamsburg|bushwick|flushing|forest hills|jamaica|bayside|elmhurst|jackson heights|harlem|soho|tribeca|chelsea|midtown|downtown|uptown|hoboken|jersey city|newark|yonkers|nyc|new york|nassau|suffolk)\b/i.test(
+        rawQueryBeforeNearMeStrip,
+      );
     const savedLocation =
       initialNearMeIntent && !initialTypedLocationIntent
         ? await ensureUserLocationForSearch()
@@ -876,10 +891,18 @@ export default function CreatePage() {
               userLongitude: savedLocation.longitude,
             }
           : {}),
-        useCurrentLocation: initialNearMeIntent && !initialTypedLocationIntent && Boolean(savedLocation),
+        useCurrentLocation:
+          initialNearMeIntent &&
+          !initialTypedLocationIntent &&
+          Boolean(savedLocation),
       },
     });
-    const { cleanedQuery: submittedInput, nearMeIntent, typedLocationIntent, useCurrentLocation } = normalizedSearch;
+    const {
+      cleanedQuery: submittedInput,
+      nearMeIntent,
+      typedLocationIntent,
+      useCurrentLocation,
+    } = normalizedSearch;
 
     setLoading(true);
     setActiveAddOnTarget(addOnTarget || null);
@@ -918,7 +941,8 @@ export default function CreatePage() {
         userLongitude: normalizedSearch.userLongitude,
         latitude: normalizedSearch.userLatitude,
         longitude: normalizedSearch.userLongitude,
-        userLocationSoftBoostOnly: normalizedSearch.searchBody.userLocationSoftBoostOnly,
+        userLocationSoftBoostOnly:
+          normalizedSearch.searchBody.userLocationSoftBoostOnly,
       };
 
       if (process.env.NODE_ENV !== "production") {
@@ -1009,12 +1033,26 @@ export default function CreatePage() {
               data.plannedTime.shouldScheduleNextMorningFollowup,
             ),
             nextMorningFollowupDate: data.plannedTime.nextMorningFollowupDate,
-            outingDateLabel: data.outingTiming?.outingDateLabel ?? data.outingDateLabel ?? null,
-            outingTimeLabel: data.outingTiming?.outingTimeLabel ?? data.outingTimeLabel ?? null,
-            outingDateTimeText: data.outingTiming?.outingDateTimeText ?? data.outingDateTimeText ?? null,
-            parsedDateText: data.outingTiming?.parsedDateText ?? data.parsedDateText ?? null,
-            parsedTimeText: data.outingTiming?.parsedTimeText ?? data.parsedTimeText ?? null,
-            parsedDateTimeISO: data.outingTiming?.parsedDateTimeISO ?? data.parsedDateTimeISO ?? null,
+            outingDateLabel:
+              data.outingTiming?.outingDateLabel ??
+              data.outingDateLabel ??
+              null,
+            outingTimeLabel:
+              data.outingTiming?.outingTimeLabel ??
+              data.outingTimeLabel ??
+              null,
+            outingDateTimeText:
+              data.outingTiming?.outingDateTimeText ??
+              data.outingDateTimeText ??
+              null,
+            parsedDateText:
+              data.outingTiming?.parsedDateText ?? data.parsedDateText ?? null,
+            parsedTimeText:
+              data.outingTiming?.parsedTimeText ?? data.parsedTimeText ?? null,
+            parsedDateTimeISO:
+              data.outingTiming?.parsedDateTimeISO ??
+              data.parsedDateTimeISO ??
+              null,
           },
           false,
         );
@@ -1100,7 +1138,9 @@ export default function CreatePage() {
         distancePreference: queryRequestsWalkingDistance(cleanInput)
           ? "walking"
           : "miles",
-        resultOrder: inferResultOrder(cleanInput),
+        resultOrder: responsePairs.length
+          ? PAIR_FIRST_RESULT_ORDER
+          : inferResultOrder(cleanInput),
         searchQuery: cleanInput,
         outingType: addOnTarget || inferResultOrder(cleanInput).join("+"),
         content:
@@ -1322,9 +1362,12 @@ export default function CreatePage() {
     if (outingTime.nextMorningFollowupEnabled)
       params.set("nextMorningFollowupEnabled", "true");
     if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
-    if (outingTime.outingDateTimeText) params.set("outingDateTimeText", outingTime.outingDateTimeText);
-    if (outingTime.outingDateLabel) params.set("outingDateLabel", outingTime.outingDateLabel);
-    if (outingTime.outingTimeLabel) params.set("outingTimeLabel", outingTime.outingTimeLabel);
+    if (outingTime.outingDateTimeText)
+      params.set("outingDateTimeText", outingTime.outingDateTimeText);
+    if (outingTime.outingDateLabel)
+      params.set("outingDateLabel", outingTime.outingDateLabel);
+    if (outingTime.outingTimeLabel)
+      params.set("outingTimeLabel", outingTime.outingTimeLabel);
 
     router.push(`/plan?${params.toString()}`);
   }
@@ -1539,6 +1582,95 @@ export default function CreatePage() {
                 </div>
 
                 {resultOrder.map((sectionKind) => {
+                  if (sectionKind === "pairs" && pairs.length > 0) {
+                    return (
+                      <div key="pairs" className="scroll-mt-24 sm:scroll-mt-28">
+                        <ResultSection
+                          title="Paired Date-Night Outings"
+                          subtitle="Dinner-plus-experience combinations matched for the full night"
+                        >
+                          {pairs.map((pair, pairIndex) => {
+                            const pairRecord = pair as {
+                              restaurant?: RestaurantCard | null;
+                              activity?: ActivityCard | null;
+                              pair_distance_miles?: number | null;
+                            };
+                            const restaurant = pairRecord.restaurant;
+                            const activity = pairRecord.activity;
+                            const restaurantImage = restaurant
+                              ? getLocationImage(
+                                  normalizePublicCardImage(restaurant),
+                                )
+                              : null;
+                            const activityImage = activity
+                              ? getLocationImage(
+                                  normalizePublicCardImage(activity),
+                                )
+                              : null;
+                            const imageUrl = restaurantImage || activityImage;
+
+                            if (!imageUrl || (!restaurant && !activity))
+                              return null;
+
+                            return (
+                              <ResultCard
+                                key={`${restaurant?.id || "restaurant"}-${activity?.id || "activity"}-${pairIndex}`}
+                                index={pairIndex}
+                                type={restaurant ? "restaurant" : "activity"}
+                                imageUrl={imageUrl}
+                                title={[
+                                  restaurant
+                                    ? getLocationName(restaurant)
+                                    : null,
+                                  activity ? getLocationName(activity) : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" + ")}
+                                eyebrow="Date-night pair"
+                                address={
+                                  restaurant
+                                    ? formatAddress(restaurant)
+                                    : activity
+                                      ? formatAddress(activity)
+                                      : ""
+                                }
+                                rating={restaurant?.rating || activity?.rating}
+                                distance={
+                                  pairRecord.pair_distance_miles ??
+                                  restaurant?.distance_miles ??
+                                  activity?.distance_miles
+                                }
+                                primaryTag="Dinner + experience"
+                                selected={Boolean(
+                                  (restaurant &&
+                                    selectedRestaurant?.id === restaurant.id) ||
+                                  (activity &&
+                                    selectedActivity?.id === activity.id),
+                                )}
+                                priority={pairIndex === 0}
+                                selectLabel="Choose this pair"
+                                onSelect={() => {
+                                  if (restaurant)
+                                    selectRestaurantAndMaybeScroll(restaurant);
+                                  if (activity) selectActivity(activity);
+                                }}
+                                onCardClick={() => {
+                                  if (restaurant?.id)
+                                    trackRestaurantClick(String(restaurant.id));
+                                  if (activity?.id)
+                                    trackActivityClick(String(activity.id));
+                                }}
+                                analyticsMetadata={
+                                  CREATE_RESULTS_ANALYTICS_METADATA
+                                }
+                              />
+                            );
+                          })}
+                        </ResultSection>
+                      </div>
+                    );
+                  }
+
                   if (sectionKind === "restaurants" && restaurants.length > 0) {
                     return (
                       <div
@@ -1904,28 +2036,37 @@ function HelpfulSearchState({
   message: string;
   onSuggestion: (prompt: string) => void;
 }) {
-  const isLiveLocation = hasNearMeIntent(message) || /current location|near your current location|live coordinates/i.test(message);
-  const suggestions = isLiveLocation ? [
-    { label: "Try a wider area", prompt: "dinner near me" },
-    { label: "Search restaurants only", prompt: "restaurants near me" },
-    { label: "Enter a neighborhood", prompt: "dinner in Astoria" },
-  ] : [
-    {
-      label: "Try another area",
-      prompt: "restaurants and activities in Brooklyn",
-    },
-    { label: "Remove one filter", prompt: "fun dinner and activity nearby" },
-    {
-      label: "Search without borough",
-      prompt: "date night restaurant and activity",
-    },
-    {
-      label: "Browse popular spots nearby",
-      prompt: "popular restaurants and activities near me",
-    },
-    { label: "Try restaurants only", prompt: "best restaurants nearby" },
-    { label: "Try activities only", prompt: "fun activities nearby" },
-  ];
+  const isLiveLocation =
+    hasNearMeIntent(message) ||
+    /current location|near your current location|live coordinates/i.test(
+      message,
+    );
+  const suggestions = isLiveLocation
+    ? [
+        { label: "Try a wider area", prompt: "dinner near me" },
+        { label: "Search restaurants only", prompt: "restaurants near me" },
+        { label: "Enter a neighborhood", prompt: "dinner in Astoria" },
+      ]
+    : [
+        {
+          label: "Try another area",
+          prompt: "restaurants and activities in Brooklyn",
+        },
+        {
+          label: "Remove one filter",
+          prompt: "fun dinner and activity nearby",
+        },
+        {
+          label: "Search without borough",
+          prompt: "date night restaurant and activity",
+        },
+        {
+          label: "Browse popular spots nearby",
+          prompt: "popular restaurants and activities near me",
+        },
+        { label: "Try restaurants only", prompt: "best restaurants nearby" },
+        { label: "Try activities only", prompt: "fun activities nearby" },
+      ];
 
   return (
     <div className="mb-4 rounded-[1.1rem] border border-white/10 bg-[#101010] p-4 shadow-xl shadow-black/25 sm:mb-5 sm:rounded-[1.25rem] sm:p-5">
@@ -2767,7 +2908,10 @@ function getOrderedResultSections(resultOrder?: ResultSectionKind[]) {
   const uniqueOrdered = ordered.filter(
     (sectionKind, index) => ordered.indexOf(sectionKind) === index,
   );
-  const missingSections = DEFAULT_RESULT_ORDER.filter(
+  const baseSections = uniqueOrdered.includes("pairs")
+    ? PAIR_FIRST_RESULT_ORDER
+    : DEFAULT_RESULT_ORDER;
+  const missingSections = baseSections.filter(
     (sectionKind) => !uniqueOrdered.includes(sectionKind),
   );
 
@@ -2857,23 +3001,27 @@ function normalizeSafeApiCard(item: any, index: number, fallbackType: string) {
 
 function normalizeApiCards(data: ApiResponse) {
   const restaurants = Array.isArray(data.restaurants)
-    ? data.restaurants
-        .map((item: any, index: number) => normalizeSafeApiCard(item, index, "restaurant"))
+    ? data.restaurants.map((item: any, index: number) =>
+        normalizeSafeApiCard(item, index, "restaurant"),
+      )
     : [];
 
   const activities = Array.isArray(data.activities)
-    ? data.activities
-        .map((item: any, index: number) => normalizeSafeApiCard(item, index, "activity"))
+    ? data.activities.map((item: any, index: number) =>
+        normalizeSafeApiCard(item, index, "activity"),
+      )
     : [];
 
   const cards = Array.isArray(data.cards)
-    ? data.cards
-        .map((item: any, index: number) => normalizeSafeApiCard(item, index, getCardType(item)))
+    ? data.cards.map((item: any, index: number) =>
+        normalizeSafeApiCard(item, index, getCardType(item)),
+      )
     : [];
 
   const matched = Array.isArray(data.matched_locations)
-    ? data.matched_locations
-        .map((item: any, index: number) => normalizeSafeApiCard(item, index, getCardType(item)))
+    ? data.matched_locations.map((item: any, index: number) =>
+        normalizeSafeApiCard(item, index, getCardType(item)),
+      )
     : [];
 
   const fallbackCards = cards.length ? cards : matched;
