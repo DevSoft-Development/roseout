@@ -4,6 +4,7 @@ import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/li
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
+import { isExplicitMarket, isPairAllowedForResolvedMarket, isResultAllowedForResolvedMarket } from "@/lib/search/market-guardrails";
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 export const runtime = "nodejs";
@@ -304,21 +305,20 @@ export async function POST(request: Request) {
       return normalizePublicCardImage(mergedCard);
     };
 
-    const publicRestaurants = rawRestaurants
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
+    const resolvedMarketForGuardrail = (result.debug as any)?.resolvedMarket ?? (result.debug as any)?.normalizedIntent?.geo?.resolvedMarket ?? null;
+    const explicitMarketRequestedForGuardrail = isExplicitMarket(resolvedMarketForGuardrail) && Boolean((result.debug as any)?.explicitMarketRequested ?? (result.debug as any)?.normalizedIntent?.geo?.explicitMarketRequested);
+    const guardResult = (item: any) => !explicitMarketRequestedForGuardrail || isResultAllowedForResolvedMarket(item, resolvedMarketForGuardrail);
 
-    const publicActivities = rawActivities
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
+    const normalizedRestaurantsBeforeGuardrail = rawRestaurants.map(normalizeResultCard).filter(hasPublicCardImage);
+    const normalizedActivitiesBeforeGuardrail = rawActivities.map(normalizeResultCard).filter(hasPublicCardImage);
+    const normalizedMatchedBeforeGuardrail = rawMatchedLocations.map(normalizeResultCard).filter(hasPublicCardImage);
+    const normalizedCardsBeforeGuardrail = rawCards.map(normalizeResultCard).filter(hasPublicCardImage);
 
-    const publicMatchedLocations = rawMatchedLocations
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
-
-    const publicResultCards = rawCards
-      .map(normalizeResultCard)
-      .filter(hasPublicCardImage);
+    const publicRestaurants = normalizedRestaurantsBeforeGuardrail.filter(guardResult);
+    const publicActivities = normalizedActivitiesBeforeGuardrail.filter(guardResult);
+    const publicMatchedLocations = normalizedMatchedBeforeGuardrail.filter(guardResult);
+    const publicResultCards = normalizedCardsBeforeGuardrail.filter(guardResult);
+    const marketGuardrailRejected = (normalizedRestaurantsBeforeGuardrail.length - publicRestaurants.length) + (normalizedActivitiesBeforeGuardrail.length - publicActivities.length) + (normalizedMatchedBeforeGuardrail.length - publicMatchedLocations.length) + (normalizedCardsBeforeGuardrail.length - publicResultCards.length);
 
     const publicCardsByKey = new Map<string, any>();
 
@@ -361,7 +361,10 @@ export async function POST(request: Request) {
         : normalizedChildren;
     };
 
-    const publicPairs = rawPairs.map(normalizeNestedPublicImages);
+    const normalizedPairsBeforeGuardrail = rawPairs.map(normalizeNestedPublicImages);
+    const publicPairs = explicitMarketRequestedForGuardrail
+      ? normalizedPairsBeforeGuardrail.filter((pair: any) => isPairAllowedForResolvedMarket(pair, resolvedMarketForGuardrail))
+      : normalizedPairsBeforeGuardrail;
 
     if (process.env.NODE_ENV !== "production") {
       console.log("[generate] public image normalization", {
@@ -372,6 +375,9 @@ export async function POST(request: Request) {
         rawMatchedLocations: rawMatchedLocations.length,
         publicMatchedLocations: publicMatchedLocations.length,
         publicCards: publicCards.length,
+        resolvedMarket: resolvedMarketForGuardrail,
+        explicitMarketRequested: explicitMarketRequestedForGuardrail,
+        marketGuardrailRejected,
       });
       console.log("[generate] public image url check", {
         firstCard: publicCards[0]
@@ -390,6 +396,9 @@ export async function POST(request: Request) {
 
     const response = {
       ...result,
+      reply: resolvedMarketForGuardrail === "LONG_ISLAND" && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) < 3
+        ? "We’re still expanding Long Island picks. Try a broader search like ‘dinner and activity in Long Island’ or check back soon."
+        : result.reply,
       plannedTime,
       outingTiming: parsedOutingDateTime,
       ...parsedOutingDateTime,
@@ -417,7 +426,7 @@ export async function POST(request: Request) {
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? { ...(result.debug || {}), routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo
@@ -429,6 +438,10 @@ export async function POST(request: Request) {
         activity_search_input: ((result.debug as any)?.activityTerms ?? []).join(
           " ",
         ),
+        marketGuardrailRejected,
+        resolvedMarket: resolvedMarketForGuardrail,
+        explicitMarketRequested: explicitMarketRequestedForGuardrail,
+        fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0,
         final_restaurants: publicRestaurants.length,
         final_activities: publicActivities.length,
         fallback_used: Boolean(
@@ -577,6 +590,14 @@ export async function POST(request: Request) {
         primaryDomain: resolvedPrimaryDomain,
         intentParserSource: resolvedIntentParserSource,
         selectedSearchLane,
+        raw_query: cleanInput,
+        parsed_market: resolvedMarketForGuardrail,
+        parsed_borough: normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
+        parsed_city: normalizedIntent?.geo?.city ?? debug?.parsedCity ?? null,
+        explicit_market_requested: explicitMarketRequestedForGuardrail,
+        final_result_markets_returned: Array.from(new Set([...publicRestaurants, ...publicActivities].map((item: any) => `${item.market || "UNKNOWN"}:${item.state || ""}`))),
+        market_guardrail_rejected_count: marketGuardrailRejected,
+        fallback_suppressed_count: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0 ? 1 : 0,
       }) as Record<string, any>,
     });
 

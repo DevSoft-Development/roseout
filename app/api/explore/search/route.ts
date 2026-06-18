@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
+import { isExplicitMarket, isPairAllowedForResolvedMarket, isResultAllowedForResolvedMarket } from "@/lib/search/market-guardrails";
 
 
 function metadataString(value: unknown): string | null {
@@ -49,7 +50,16 @@ export async function GET(request: NextRequest) {
     const result = await runEnterpriseSearch(query, { useLLM: !simple && q.split(/\s+/).length > 3, displayLimit: 48, source: betaTesterId ? "beta_tester_search" : "public_explore_search", route: "/api/explore/search", logPerformance: true, sessionId: request.cookies.get("toh_session")?.value || request.headers.get("x-session-id"), betaAssignmentId, betaTesterId, usedCustomPrompt, betaDebug, searchHealthDebug: betaDebug });
     const mixedWithPairing = result.render_mode === "mixed_pairs" || result.render_mode === "partial_mixed";
     let exploreNote: string | undefined;
-    let items = kind === "restaurants" || kind === "rooftops" ? result.restaurants : kind === "activities" || kind === "lounges" ? result.activities : mixedWithPairing && result.pairs.length ? [...result.pairs, ...result.restaurants, ...result.activities] : [...result.restaurants, ...result.activities];
+    const resolvedMarket = (result.debug as any)?.resolvedMarket ?? (result.debug as any)?.normalizedIntent?.geo?.resolvedMarket ?? null;
+    const explicitMarketRequested = isExplicitMarket(resolvedMarket) && Boolean((result.debug as any)?.explicitMarketRequested ?? (result.debug as any)?.normalizedIntent?.geo?.explicitMarketRequested);
+    const restaurantsBeforeGuardrail = result.restaurants ?? [];
+    const activitiesBeforeGuardrail = result.activities ?? [];
+    const pairsBeforeGuardrail = result.pairs ?? [];
+    const guardedRestaurants = explicitMarketRequested ? restaurantsBeforeGuardrail.filter((item: any) => isResultAllowedForResolvedMarket(item, resolvedMarket)) : restaurantsBeforeGuardrail;
+    const guardedActivities = explicitMarketRequested ? activitiesBeforeGuardrail.filter((item: any) => isResultAllowedForResolvedMarket(item, resolvedMarket)) : activitiesBeforeGuardrail;
+    const guardedPairs = explicitMarketRequested ? pairsBeforeGuardrail.filter((pair: any) => isPairAllowedForResolvedMarket(pair, resolvedMarket)) : pairsBeforeGuardrail;
+    const marketGuardrailRejected = (restaurantsBeforeGuardrail.length - guardedRestaurants.length) + (activitiesBeforeGuardrail.length - guardedActivities.length) + (pairsBeforeGuardrail.length - guardedPairs.length);
+    let items = kind === "restaurants" || kind === "rooftops" ? guardedRestaurants : kind === "activities" || kind === "lounges" ? guardedActivities : mixedWithPairing && guardedPairs.length ? [...guardedPairs, ...guardedRestaurants, ...guardedActivities] : [...guardedRestaurants, ...guardedActivities];
     if (kind === "all" && mixedWithPairing && !result.pairs.length) exploreNote = "No walkable pairs found. Showing individual matches. Prefer using /create for full pair planning.";
     if (kind === "rooftops") items = items.filter((item:any)=>/[\s-]roof|rooftop|terrace|skyline|view|lounge/i.test([item.name,item.primary_category,item.description,item.search_document,item.tags].flat().join(" ")));
     if (kind === "lounges") items = items.filter((item:any)=>/lounge|hookah|bar|nightlife|cocktail/i.test([item.name,item.primary_category,item.activity_type,item.description,item.search_document,item.tags].flat().join(" ")));
@@ -154,6 +164,10 @@ export async function GET(request: NextRequest) {
         activities: result.activities?.length ?? 0,
         pairs: result.pairs?.length ?? 0,
         finalDisplayedResultCount: total,
+        marketGuardrailRejected,
+        resolvedMarket,
+        explicitMarketRequested,
+        fallbackSuppressedBecauseExplicitMarket: explicitMarketRequested && marketGuardrailRejected > 0,
       },
       performance: perf ?? { route: "/api/explore/search" },
       pairingPreference:
@@ -180,6 +194,14 @@ export async function GET(request: NextRequest) {
         needsRestaurant: normalizedIntent?.needsRestaurant,
         needsActivity: normalizedIntent?.needsActivity,
         explore_kind: kind,
+        raw_query: query,
+        parsed_market: resolvedMarket,
+        parsed_borough: normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
+        parsed_city: normalizedIntent?.geo?.city ?? debug?.parsedCity ?? null,
+        explicit_market_requested: explicitMarketRequested,
+        final_result_markets_returned: Array.from(new Set([...guardedRestaurants, ...guardedActivities].map((item: any) => `${item.market || "UNKNOWN"}:${item.state || ""}`))),
+        market_guardrail_rejected_count: marketGuardrailRejected,
+        fallback_suppressed_count: explicitMarketRequested && marketGuardrailRejected > 0 ? 1 : 0,
         normalizedIntent,
         geo: resolvedGeo,
         searchType: resolvedSearchType,
@@ -188,7 +210,8 @@ export async function GET(request: NextRequest) {
       }) as Record<string, any>,
     });
 
-    return NextResponse.json({ success: true, items, restaurants: result.restaurants, activities: result.activities, pairs: result.pairs, note: exploreNote, total, searchPerformance: betaDebug && perf ? { totalMs: perf.total_ms, speedStatus: perf.speed_status, resultCount: perf.result_count } : undefined, debug: betaDebug ? result.debug : undefined });
+    const debugPayload = betaDebug ? { ...(result.debug as any), marketGuardrailRejected, resolvedMarket, explicitMarketRequested, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequested && marketGuardrailRejected > 0 } : undefined;
+    return NextResponse.json({ success: true, items, restaurants: guardedRestaurants, activities: guardedActivities, pairs: guardedPairs, note: exploreNote, total, searchPerformance: betaDebug && perf ? { totalMs: perf.total_ms, speedStatus: perf.speed_status, resultCount: perf.result_count } : undefined, debug: debugPayload });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Explore search failed";
     console.error("EXPLORE_SEARCH_ERROR", error);

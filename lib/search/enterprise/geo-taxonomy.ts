@@ -1,3 +1,4 @@
+import { detectRequestedMarket } from "../../location-markets";
 import type { EnterpriseLocation, GeoIntent } from "./types";
 
 type GeoType = "neighborhood" | "borough" | "city" | "county" | "region" | "state";
@@ -41,12 +42,23 @@ export const GEO_TAXONOMY = base;
 const norm = (s: string) => s.toLowerCase().replace(/[’']/g,"'").replace(/\s+/g," ").trim();
 export function normalizeGeoTerm(input?: string | null) { if (!input) return null; const n = norm(input); return GEO_TAXONOMY.find((g)=>[g.name,...g.aliases].some((a)=>norm(a)===n)) ?? null; }
 export function detectGeoIntent(query: string): GeoIntent {
+  const marketDetection = detectRequestedMarket(query);
+  const explicitMarketRequested = marketDetection.marketIntent === "explicit" && Boolean(marketDetection.requestedMarket);
+  const marketGeo = explicitMarketRequested
+    ? {
+        requestedMarket: marketDetection.requestedMarket,
+        resolvedMarket: marketDetection.resolvedMarket,
+        marketIntent: marketDetection.marketIntent,
+        explicitMarketRequested: true,
+        allowedMarkets: marketDetection.allowedMarkets,
+      }
+    : {};
   const q = ` ${norm(query)} `;
   const priority = (g: GeoTaxonomyRecord) => g.type === "neighborhood" ? 5 : g.type === "city" ? 4 : g.type === "borough" ? 3 : g.type === "county" ? 2 : g.type === "region" ? 1 : 0;
   const sorted = [...GEO_TAXONOMY].sort((a,b)=> (Math.max(...b.aliases.map(x=>x.length),b.name.length)-Math.max(...a.aliases.map(x=>x.length),a.name.length)) || priority(b)-priority(a));
   const hit = sorted.find((g)=>[g.name,...g.aliases].some((a)=>new RegExp(`(^|[^a-z0-9])${norm(a).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}([^a-z0-9]|$)`).test(q)));
-  if (!hit) return { raw: null, aliases: [], latitude: null, longitude: null, radiusMiles: null, geoStrictness: "none" };
-  return { raw: hit.name, neighborhood: hit.type==="neighborhood"?hit.name:null, city: hit.city ?? (hit.type==="city"?hit.name:null), borough: hit.borough ?? (hit.type==="borough"?hit.name:null), county: hit.county ?? (hit.type==="county"?hit.name:null), region: hit.region ?? (hit.type==="region"?hit.name:null), state: hit.state, aliases: getGeoAliases(hit), latitude: hit.latitude, longitude: hit.longitude, radiusMiles: hit.defaultRadiusMiles, geoStrictness: hit.type==="neighborhood"||hit.type==="city"?"strict":"medium" };
+  if (!hit) return { raw: null, aliases: [], latitude: null, longitude: null, radiusMiles: null, geoStrictness: "none", ...marketGeo };
+  return { raw: hit.name, neighborhood: hit.type==="neighborhood"?hit.name:null, city: hit.city ?? (hit.type==="city"?hit.name:null), borough: hit.borough ?? (hit.type==="borough"?hit.name:null), county: hit.county ?? (hit.type==="county"?hit.name:null), region: hit.region ?? (hit.type==="region"?hit.name:null), state: hit.state, aliases: getGeoAliases(hit), latitude: hit.latitude, longitude: hit.longitude, radiusMiles: hit.defaultRadiusMiles, geoStrictness: hit.type==="neighborhood"||hit.type==="city"?"strict":"medium", ...marketGeo };
 }
 export function getGeoAliases(geo: GeoIntent | GeoTaxonomyRecord) { const rec = "geoStrictness" in geo ? normalizeGeoTerm(geo.raw ?? geo.neighborhood ?? geo.city ?? geo.borough ?? geo.county ?? geo.region ?? geo.state ?? "") : geo; return rec ? Array.from(new Set([rec.name, ...rec.aliases, rec.type === "neighborhood" ? rec.name : undefined, rec.borough, rec.city, rec.county, rec.region, rec.state].filter(Boolean) as string[])) : []; }
 export function getGeoCenter(geo: GeoIntent) { return geo.latitude != null && geo.longitude != null ? { latitude: geo.latitude, longitude: geo.longitude } : null; }
