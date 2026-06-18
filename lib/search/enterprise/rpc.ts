@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
+import { isExplicitMarket, isResultAllowedForResolvedMarket } from "../market-guardrails";
 import {
   activityRpcTerms,
   activitySearchTerms,
@@ -33,6 +34,9 @@ type RpcDebug = {
   expandedGenericActivityRpcTerms?: string[];
   restaurantRpcCount?: number;
   activityRpcCount?: number;
+  marketFallbackFilters?: Record<string, unknown>;
+  marketFallbackRestaurantCount?: number;
+  marketFallbackActivityCount?: number;
   restaurantRecoveryUsed?: boolean;
   restaurantRecoveryReason?: string | null;
   restaurantRecoveryTermsTried?: string[][];
@@ -74,6 +78,96 @@ export function mapRpcLocation(row: any): EnterpriseLocation {
     distance_miles:
       row?.distance_miles == null ? null : Number(row.distance_miles),
   };
+}
+
+
+function explicitMarketForIntent(intent: SearchIntent): string | null {
+  const market = (intent.geo as any)?.resolvedMarket ?? (intent.geo as any)?.requestedMarket ?? null;
+  const explicit = (intent.geo as any)?.explicitMarketRequested !== false;
+  return explicit && isExplicitMarket(market) ? String(market).toUpperCase() : null;
+}
+
+function stateForMarket(market: string) {
+  if (market === "NORTHERN_NJ") return "NJ";
+  return "NY";
+}
+
+function domainOrFilter(domain: SearchDomain) {
+  if (domain === "restaurant") {
+    return "restaurant_name.not.is.null,cuisine.not.is.null,cuisine_type.not.is.null,location_type.ilike.%restaurant%,primary_category.ilike.%restaurant%,primary_category.ilike.%dining%,primary_category.ilike.%cafe%,primary_category.ilike.%bakery%,primary_category.ilike.%bistro%,primary_category.ilike.%steakhouse%,primary_category.ilike.%bar and grill%,primary_category.ilike.%gastropub%";
+  }
+
+  if (domain === "activity") {
+    return "activity_name.not.is.null,activity_type.not.is.null,location_type.ilike.%activity%,primary_category.ilike.%activity%,primary_category.ilike.%experience%,primary_category.ilike.%entertainment%,primary_category.ilike.%lounge%,primary_category.ilike.%hookah%,primary_category.ilike.%bowling%,primary_category.ilike.%museum%,primary_category.ilike.%theater%,primary_category.ilike.%theatre%,primary_category.ilike.%cinema%,primary_category.ilike.%arcade%,primary_category.ilike.%karaoke%,primary_category.ilike.%gallery%,primary_category.ilike.%park%,primary_category.ilike.%spa%";
+  }
+
+  return null;
+}
+
+async function searchExplicitMarketLaneFallback(
+  supabase: SupabaseClient,
+  intent: SearchIntent,
+  domain: SearchDomain,
+  limit: number,
+  debug?: RpcDebug,
+) {
+  const market = explicitMarketForIntent(intent);
+  if (!market) return [];
+
+  const state = stateForMarket(market);
+  const filters = { market, state, is_searchable: true, domain };
+  if (debug) debug.marketFallbackFilters = filters;
+
+  let query = supabase
+    .from("locations")
+    .select("*")
+    .eq("market", market)
+    .eq("state", state)
+    .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
+    .not("is_hidden", "is", true)
+    .not("status", "in", '("closed","archived","hidden","deleted")')
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .limit(limit);
+
+  const domainFilter = domainOrFilter(domain);
+  if (domainFilter) query = query.or(domainFilter);
+
+  const { data, error } = await query;
+  if (error) {
+    addDebugError(debug, `explicit_market_fallback:${error.message}`);
+    return [];
+  }
+
+  const rows = (data ?? []).map(mapRpcLocation).filter((row) =>
+    isResultAllowedForResolvedMarket(row, market),
+  );
+
+  if (debug) {
+    if (domain === "restaurant") debug.marketFallbackRestaurantCount = rows.length;
+    if (domain === "activity") debug.marketFallbackActivityCount = rows.length;
+  }
+
+  return rows;
+}
+
+function mergeMarketFallbackRows(rows: EnterpriseLocation[], fallbackRows: EnterpriseLocation[]) {
+  if (!fallbackRows.length) return rows;
+  const seen = new Set(rows.map((row) => row.id).filter(Boolean));
+  return [
+    ...rows,
+    ...fallbackRows.filter((row) => {
+      if (!row.id) return true;
+      if (seen.has(row.id)) return false;
+      seen.add(row.id);
+      return true;
+    }),
+  ];
 }
 
 function termsFor(intent: SearchIntent, domain: SearchDomain) {
@@ -202,10 +296,27 @@ export async function searchEnterpriseLane(
         message,
       });
 
+      const fallbackRows = await searchExplicitMarketLaneFallback(
+        supabase,
+        intent,
+        domain,
+        laneLimitFor(intent, domain),
+        debug,
+      );
+      if (fallbackRows.length) return fallbackRows;
+
+
       return [];
     }
 
-    const rows = (data ?? []).map(mapRpcLocation);
+    let rows = (data ?? []).map(mapRpcLocation);
+    const market = explicitMarketForIntent(intent);
+    if (market && rows.filter((row: EnterpriseLocation) => isResultAllowedForResolvedMarket(row, market)).length < Math.min(3, laneLimitFor(intent, domain))) {
+      rows = mergeMarketFallbackRows(
+        rows,
+        await searchExplicitMarketLaneFallback(supabase, intent, domain, laneLimitFor(intent, domain), debug),
+      );
+    }
 
     if (domain === "restaurant" && debug) {
       debug.restaurantRpcCount = rows.length;
@@ -262,10 +373,28 @@ export async function recoverEnterpriseLane(
         message,
       });
 
+      const fallbackRows = await searchExplicitMarketLaneFallback(
+        supabase,
+        intent,
+        domain,
+        80,
+        debug,
+      );
+      if (fallbackRows.length) return fallbackRows;
+
       return [];
     }
 
-    return (data ?? []).map(mapRpcLocation);
+    let rows = (data ?? []).map(mapRpcLocation);
+    const market = explicitMarketForIntent(intent);
+    if (market) {
+      rows = mergeMarketFallbackRows(
+        rows,
+        await searchExplicitMarketLaneFallback(supabase, intent, domain, 80, debug),
+      );
+    }
+
+    return rows;
   } catch (error) {
     const message = addDebugError(debug, error);
 
