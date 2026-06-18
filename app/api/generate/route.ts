@@ -8,7 +8,7 @@ import { isExplicitMarket, isPairAllowedForResolvedMarket, isResultAllowedForRes
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 import { detectRequestedMarket } from "@/lib/location-markets";
-import { hasNearMeIntent, stripNearMeIntent } from "@/lib/search/near-me";
+import { normalizeCreateSearchRequest } from "@/lib/search/normalizeCreateSearchRequest";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -224,15 +224,22 @@ export async function POST(request: Request) {
             ? body.query
             : "";
 
-    const rawQueryBeforeNearMeStrip =
-      typeof body?.rawQueryBeforeNearMeStrip === "string" && body.rawQueryBeforeNearMeStrip.trim()
-        ? body.rawQueryBeforeNearMeStrip.trim()
-        : input.trim();
-    const nearMeIntent = body?.nearMeIntent === true || hasNearMeIntent(rawQueryBeforeNearMeStrip);
-    const rawQueryAfterNearMeStrip = nearMeIntent
-      ? stripNearMeIntent(input.trim()) || stripNearMeIntent(rawQueryBeforeNearMeStrip)
-      : input.trim();
-    const cleanInput = rawQueryAfterNearMeStrip.trim();
+    const normalizedRequest = normalizeCreateSearchRequest({
+      rawQuery: input,
+      body,
+      source: "public_create",
+    });
+    const {
+      cleanedQuery: cleanInput,
+      nearMeIntent,
+      typedLocationIntent,
+      useCurrentLocation,
+      userLatitude,
+      userLongitude,
+      rawQueryBeforeNearMeStrip,
+      rawQueryAfterNearMeStrip,
+      selectedSearchLane,
+    } = normalizedRequest;
     searchHealthRawQuery = cleanInput;
 
     if (!cleanInput) {
@@ -283,15 +290,10 @@ export async function POST(request: Request) {
         };
 
 
-    const selectedSearchLane = selectedSearchLaneFromRequestBody(body);
-    const normalizedCoordinates = normalizeRequestCoordinates(body);
-    const userLatitude = normalizedCoordinates?.latitude ?? null;
-    const userLongitude = normalizedCoordinates?.longitude ?? null;
     const userLatitudePresent = userLatitude != null;
     const userLongitudePresent = userLongitude != null;
-    const useCurrentLocation = body?.useCurrentLocation === true || body?.use_current_location === true;
     const currentLocationUserLocation =
-      nearMeIntent && userLatitudePresent && userLongitudePresent
+      useCurrentLocation && userLatitudePresent && userLongitudePresent
         ? {
             latitude: userLatitude,
             longitude: userLongitude,
@@ -301,30 +303,14 @@ export async function POST(request: Request) {
         : null;
     const nearMeDebug = {
       nearMeIntent,
+      typedLocationIntent,
       useCurrentLocation,
       userLatitudePresent,
       userLongitudePresent,
       rawQueryBeforeNearMeStrip,
       rawQueryAfterNearMeStrip: cleanInput,
     };
-    const searchBody = {
-      ...body,
-      input: cleanInput,
-      message: cleanInput,
-      query: cleanInput,
-      prompt: cleanInput,
-      selectedSearchLane,
-      nearMeIntent,
-      useCurrentLocation,
-      userLatitude: userLatitudePresent ? userLatitude : undefined,
-      userLongitude: userLongitudePresent ? userLongitude : undefined,
-      latitude: userLatitudePresent ? userLatitude : undefined,
-      longitude: userLongitudePresent ? userLongitude : undefined,
-      rawQueryBeforeNearMeStrip,
-      rawQueryAfterNearMeStrip: cleanInput,
-      ...(currentLocationUserLocation ? { userLocation: currentLocationUserLocation } : {}),
-      ...(selectedSearchLane === "auto" ? { searchType: "auto" } : { searchType: selectedSearchLane }),
-    };
+    const searchBody = normalizedRequest.searchBody;
 
     const betaAssignmentId = body?.betaAssignmentId || body?.beta_assignment_id || new URL(request.url).searchParams.get("betaAssignmentId") || request.headers.get("x-beta-assignment-id");
     const betaTesterId = body?.betaTesterId || body?.beta_tester_id || request.headers.get("x-beta-tester-id");
@@ -350,6 +336,7 @@ export async function POST(request: Request) {
     const marketDetection = detectRequestedMarket(cleanInput);
     const forceLegacyForLongIsland = marketDetection.requestedMarket === "LONG_ISLAND";
     const forceLegacyForUserLocation = Boolean(currentLocationUserLocation);
+    const searchBackendUsed = forceLegacyForLongIsland ? "legacy_for_long_island" : forceLegacyForUserLocation ? "legacy_for_current_location" : "edge";
     const result: any = forceLegacyForLongIsland || forceLegacyForUserLocation
       ? await legacySearch()
       : await runCreateSearchWithEdgeFallback(
@@ -485,6 +472,43 @@ export async function POST(request: Request) {
       });
     }
 
+
+    const marketFiltering = {
+      explicitMarketRequested: explicitMarketRequestedForGuardrail,
+      resolvedMarket: resolvedMarketForGuardrail,
+      requestedMarket: (result.debug as any)?.requestedMarket ?? marketDetection.requestedMarket,
+      allowedMarkets: (result.debug as any)?.allowedMarkets ?? marketDetection.allowedMarkets,
+      geoSource: explicitMarketRequestedForGuardrail ? "typed_location" : currentLocationUserLocation ? "current_location" : ((result.debug as any)?.geoSource ?? "default_market"),
+      userLocationReceived: userLatitudePresent && userLongitudePresent,
+      userLocationUsedAsPrimaryGeo: Boolean(currentLocationUserLocation),
+      userLocationUsedAsSoftBoost: Boolean(nearMeIntent && typedLocationIntent && userLatitudePresent && userLongitudePresent),
+      restaurantCandidatesBeforeMarketFilter: normalizedRestaurantsBeforeGuardrail.length,
+      restaurantCandidatesAfterMarketFilter: publicRestaurants.length,
+      activityCandidatesBeforeMarketFilter: normalizedActivitiesBeforeGuardrail.length,
+      activityCandidatesAfterMarketFilter: publicActivities.length,
+      outOfMarketRestaurantsRemoved: normalizedRestaurantsBeforeGuardrail.length - publicRestaurants.length,
+      outOfMarketActivitiesRemoved: normalizedActivitiesBeforeGuardrail.length - publicActivities.length,
+    };
+
+    const debugParity = {
+      ...normalizedRequest.debugParity,
+      route: "/api/generate",
+      source: "public_create_search",
+      rawQueryReceived: input,
+      forceLegacyForLongIsland,
+      forceLegacyForUserLocation,
+      searchBackendUsed,
+      resolvedMarket: resolvedMarketForGuardrail,
+      allowedMarkets: marketFiltering.allowedMarkets,
+      explicitMarketRequested: explicitMarketRequestedForGuardrail,
+      searchType: (result.debug as any)?.normalizedIntent?.searchType ?? normalizedRequest.debugParity.searchType,
+      wantsPairing: (result.debug as any)?.normalizedIntent?.wantsPairing ?? normalizedRequest.debugParity.wantsPairing,
+      needsRestaurant: (result.debug as any)?.normalizedIntent?.needsRestaurant ?? normalizedRequest.debugParity.needsRestaurant,
+      needsActivity: (result.debug as any)?.normalizedIntent?.needsActivity ?? normalizedRequest.debugParity.needsActivity,
+      resultCounts: { restaurants: publicRestaurants.length, activities: publicActivities.length, pairs: publicPairs.length, cards: publicCards.length },
+      firstResultNames: [...publicRestaurants, ...publicActivities, ...publicCards].slice(0, 5).map((item: any) => item.name || item.restaurant_name || item.activity_name).filter(Boolean),
+    };
+
     const response = {
       ...result,
       reply: currentLocationUserLocation && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) === 0
@@ -519,7 +543,9 @@ export async function POST(request: Request) {
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? { ...(result.debug || {}), rawQuery: rawQueryBeforeNearMeStrip, cleanedQuery: cleanInput, searchType: ((result.debug as any)?.normalizedIntent?.searchType ?? (result.debug as any)?.intent?.searchType ?? (result as any)?.searchType ?? selectedSearchLane), usedUserLocation: Boolean(currentLocationUserLocation), receivedLatitude: userLatitude, receivedLongitude: userLongitude, geoCenter: currentLocationUserLocation ? { latitude: userLatitude, longitude: userLongitude } : ((result.debug as any)?.effectiveGeo ?? (result.debug as any)?.geo ?? null), radiusMiles: currentLocationUserLocation?.radiusMiles ?? (result.debug as any)?.rpcRadiusMiles ?? null, resultCount: publicRestaurants.length + publicActivities.length + publicMatchedLocations.length + publicPairs.length, fallbackUsed: Boolean((result.debug as any)?.restaurantRecoveryUsed || (result.debug as any)?.activityRecoveryUsed), renderSafeResultCount: publicRestaurants.length + publicActivities.length + publicMatchedLocations.length, ...nearMeDebug, geoSource: (result.debug as any)?.geoSource, marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
+      debugParity: betaDebug ? debugParity : undefined,
+      marketFiltering: betaDebug ? marketFiltering : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), rawQuery: rawQueryBeforeNearMeStrip, cleanedQuery: cleanInput, searchType: ((result.debug as any)?.normalizedIntent?.searchType ?? (result.debug as any)?.intent?.searchType ?? (result as any)?.searchType ?? selectedSearchLane), usedUserLocation: Boolean(currentLocationUserLocation), receivedLatitude: userLatitude, receivedLongitude: userLongitude, geoCenter: currentLocationUserLocation ? { latitude: userLatitude, longitude: userLongitude } : ((result.debug as any)?.effectiveGeo ?? (result.debug as any)?.geo ?? null), radiusMiles: currentLocationUserLocation?.radiusMiles ?? (result.debug as any)?.rpcRadiusMiles ?? null, resultCount: publicRestaurants.length + publicActivities.length + publicMatchedLocations.length + publicPairs.length, fallbackUsed: Boolean((result.debug as any)?.restaurantRecoveryUsed || (result.debug as any)?.activityRecoveryUsed), renderSafeResultCount: publicRestaurants.length + publicActivities.length + publicMatchedLocations.length, ...nearMeDebug, debugParity, marketFiltering, searchBackendUsed, geoSource: (result.debug as any)?.geoSource, marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo

@@ -121,11 +121,12 @@ function formatAllBatchResultsForCopy(results: SearchLabBatchResult[]) {
   ].join("\n");
 }
 
-async function copyTextToClipboard(text: string) {
-  if (navigator?.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
 
   const textarea = document.createElement("textarea");
   textarea.value = text;
@@ -138,8 +139,124 @@ async function copyTextToClipboard(text: string) {
   textarea.focus();
   textarea.select();
 
-  document.execCommand("copy");
+  const copied = document.execCommand("copy");
   document.body.removeChild(textarea);
+  return copied;
+  } catch {
+    return false;
+  }
+}
+
+function compactLines(lines: Array<string | null | undefined | false>) {
+  return lines.filter((line) => typeof line === "string" && line.trim() && !/undefined|null$/i.test(line.trim())).join("\n");
+}
+
+function getName(item: any) { return pickFirst(item?.name, item?.restaurant_name, item?.activity_name, item?.business_name) as string | undefined; }
+function getAddress(item: any) { return pickFirst(item?.address, item?.formatted_address, item?.location_address) as string | undefined; }
+function getWebsite(item: any) { return pickFirst(item?.website, item?.website_url, item?.url) as string | undefined; }
+function getReservation(item: any) { return pickFirst(item?.reservation_url, item?.reservation_link, item?.booking_url, item?.external_reservation_url) as string | undefined; }
+function getMaps(item: any) { return pickFirst(item?.google_maps_url, item?.maps_url, item?.googleMapsUrl) as string | undefined; }
+function getTags(item: any) { const tags = pickFirst(item?.tags, item?.vibe_tags, item?.best_for_tags); return Array.isArray(tags) ? tags.join(", ") : tags as string | undefined; }
+function getWhy(item: any) { return pickFirst(item?.why_it_matched, item?.whyMatched, item?.match_reason, item?.reason) as string | undefined; }
+function getSearchTypeLabel(item: any) { return String(pickFirst(item?.location_type, item?.type, item?.activity_name ? "activity" : item?.restaurant_name ? "restaurant" : "result") || "result"); }
+
+function formatSearchResultForCopy(item: any, context: { query: string }) {
+  const type = getSearchTypeLabel(item).toLowerCase().includes("activity") ? "Activity" : "Restaurant";
+  return compactLines([
+    "TheOutHaven Search Result", "",
+    `Type: ${type}`,
+    `Name: ${getName(item) || ""}`,
+    `Category: ${pickFirst(item?.primary_category, item?.category) || ""}`,
+    type === "Restaurant" ? `Cuisine: ${pickFirst(item?.cuisine, item?.cuisine_type, item?.food_type) || ""}` : `Activity Type: ${pickFirst(item?.activity_type, item?.activityType) || ""}`,
+    `Address: ${getAddress(item) || ""}`,
+    `City/State: ${[item?.city, item?.state].filter(Boolean).join(", ")}`,
+    `Rating: ${pickFirst(item?.rating, item?.google_rating) || ""}`,
+    `Price: ${pickFirst(item?.price_level, item?.price_range, item?.price) || ""}`,
+    `Phone: ${pickFirst(item?.phone_number, item?.phone) || ""}`,
+    `Website: ${getWebsite(item) || ""}`,
+    `${type === "Restaurant" ? "Reservation URL" : "Booking/Reservation URL"}: ${getReservation(item) || ""}`,
+    `Google Maps: ${getMaps(item) || ""}`,
+    `Distance: ${pickFirst(item?.distance, item?.distance_miles, item?.distanceMiles) || ""}`,
+    `Tags: ${getTags(item) || ""}`,
+    `Why it matched: ${getWhy(item) || ""}`,
+    `Search Query: ${context.query}`,
+  ]);
+}
+
+function formatPairForCopy(pair: any, context: { query: string }) {
+  const restaurant = pair?.restaurant || pair?.restaurantCard || pair?.venueA || {};
+  const activity = pair?.activity || pair?.activityCard || pair?.venueB || {};
+  return compactLines([
+    "TheOutHaven Paired Outing Result", "",
+    `Restaurant: ${getName(restaurant) || pair?.restaurant_name || ""}`,
+    `Restaurant Address: ${getAddress(restaurant) || pair?.restaurant_address || ""}`,
+    `Restaurant Category/Cuisine: ${pickFirst(restaurant?.primary_category, restaurant?.category, restaurant?.cuisine, restaurant?.cuisine_type) || ""}`,
+    `Restaurant Rating: ${restaurant?.rating || ""}`,
+    `Restaurant Website: ${getWebsite(restaurant) || ""}`,
+    `Restaurant Reservation URL: ${getReservation(restaurant) || ""}`, "",
+    `Activity: ${getName(activity) || pair?.activity_name || ""}`,
+    `Activity Address: ${getAddress(activity) || pair?.activity_address || ""}`,
+    `Activity Category/Type: ${pickFirst(activity?.primary_category, activity?.category, activity?.activity_type) || ""}`,
+    `Activity Rating: ${activity?.rating || ""}`,
+    `Activity Website: ${getWebsite(activity) || ""}`,
+    `Activity Booking URL: ${getReservation(activity) || ""}`, "",
+    `Pair Distance: ${pickFirst(pair?.distance, pair?.pair_distance_miles, pair?.distance_miles) || ""}`,
+    `Walking Time: ${pickFirst(pair?.walking_time, pair?.walking_minutes, pair?.walkingMinutesLabel) || ""}`,
+    `Why it matched: ${getWhy(pair) || ""}`,
+    `Search Query: ${context.query}`,
+  ]);
+}
+
+function getVisibleResults(response: SearchLabResult | null) {
+  const cards = Array.isArray(response?.cards) ? response.cards as any[] : [];
+  const pairs = Array.isArray(response?.pairCards) ? response.pairCards as any[] : [];
+  return { cards, pairs };
+}
+
+function formatAllResultsForCopy(response: SearchLabResult, query: string) {
+  const { cards, pairs } = getVisibleResults(response);
+  const intent = getIntent(response);
+  const market = (response.marketFiltering as any)?.resolvedMarket || (response.debugParity as any)?.resolvedMarket || "";
+  const lines = cards.map((item, i) => `${i + 1}. [${getSearchTypeLabel(item)}] ${getName(item) || "Result"}\n${formatSearchResultForCopy(item, { query })}`).concat(pairs.map((pair, i) => `${cards.length + i + 1}. [Pair] ${getName(pair?.restaurant || {}) || "Restaurant"} + ${getName(pair?.activity || {}) || "Activity"}\n${formatPairForCopy(pair, { query })}`));
+  return compactLines([
+    "TheOutHaven Beta Search Lab Results",
+    `Query: ${query}`,
+    `Search Type: ${pickFirst(intent.searchType, (response.debugParity as any)?.searchType) || ""}`,
+    `Market: ${market}`,
+    `Generated: ${new Date().toISOString()}`, "",
+    "Counts:",
+    `Restaurants: ${response.restaurants || 0}`,
+    `Activities: ${response.activities || 0}`,
+    `Pairs: ${response.pairs || 0}`, "",
+    "Results:", "",
+    lines.join("\n\n"),
+  ]);
+}
+
+function formatDebugJsonForCopy(response: SearchLabResult) {
+  const safePayload = { debug: response.debug, debugParity: response.debugParity, parsedIntent: response.parsedIntent, performance: response.performance, marketFiltering: response.marketFiltering, rawCounts: response.rawCounts, publicCounts: response.publicCounts };
+  return JSON.stringify(safePayload, null, 2);
+}
+
+function formatPromptSummaryForCopy(response: SearchLabResult, query: string) {
+  const intent = getIntent(response);
+  const debug = (response.debug as any) || {};
+  return compactLines([
+    "TheOutHaven Beta Search Lab Summary", "Prompt:", query, "", "Resolved Intent:",
+    `Search Type: ${pickFirst(intent.searchType, (response.debugParity as any)?.searchType) || ""}`,
+    `Primary Domain: ${pickFirst(intent.primaryDomain, intent.primary_domain) || ""}`,
+    `Wants Pairing: ${pickFirst(intent.wantsPairing, (response.debugParity as any)?.wantsPairing) || ""}`,
+    `Needs Restaurant: ${pickFirst(intent.needsRestaurant, (response.debugParity as any)?.needsRestaurant) || ""}`,
+    `Needs Activity: ${pickFirst(intent.needsActivity, (response.debugParity as any)?.needsActivity) || ""}`,
+    `Occasion: ${pickFirst(intent.occasion, intent.occasionType) || ""}`,
+    `Meal/Time: ${pickFirst(intent.mealTime, intent.timeContext, response.outingTimeLabel) || ""}`,
+    `Market: ${pickFirst((response.marketFiltering as any)?.resolvedMarket, (response.debugParity as any)?.resolvedMarket) || ""}`,
+    `Allowed Markets: ${formatValue(pickFirst((response.marketFiltering as any)?.allowedMarkets, (response.debugParity as any)?.allowedMarkets))}`,
+    `Explicit Market Requested: ${pickFirst((response.marketFiltering as any)?.explicitMarketRequested, (response.debugParity as any)?.explicitMarketRequested) || ""}`, "",
+    "Counts:", `Restaurants: ${response.restaurants || 0}`, `Activities: ${response.activities || 0}`, `Pairs: ${response.pairs || 0}`, `Final Displayed: ${((response.finalResultNames as any[]) || []).length || 0}`, "",
+    "Top Results:", ...(((response.finalResultNames as any[]) || []).slice(0, 5).map((name, i) => `${i + 1}. ${name}`)), "",
+    "Key Debug:", `Fallback Used: ${response.fallbackUsed || false}`, `Fallback Reason: ${debug.fallbackReason || debug.noPairsReason || ""}`, `Market Guardrail Rejected: ${debug.marketGuardrailRejected || 0}`, `Parser Source: ${response.intentParserSource || response.parser_source || ""}`, `Fast Path Matched: ${response.fastPathMatched || false}`, `Performance: ${safeStringify(response.performance || {})}`,
+  ]);
 }
 
 function formatValue(value: unknown) {
@@ -284,6 +401,7 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
   const [batchResults, setBatchResults] = useState<SearchLabBatchResult[]>([]);
   const [copiedAllBatchResults, setCopiedAllBatchResults] = useState(false);
   const [copiedBatchResultIndex, setCopiedBatchResultIndex] = useState<number | null>(null);
+  const [copiedAction, setCopiedAction] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -334,6 +452,13 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
     } finally {
       setLoading(false);
     }
+  }
+
+
+  async function copyWithFeedback(key: string, text: string) {
+    const copied = await copyTextToClipboard(text);
+    setCopiedAction(copied ? key : "copy-failed");
+    window.setTimeout(() => setCopiedAction(null), 1500);
   }
 
   async function handleCopyAllBatchResults() {
@@ -428,8 +553,31 @@ export default function SearchLabClient({ initialQuery }: { initialQuery: string
 
       {result ? (
         <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
-          <h2 className="text-2xl font-black">Results summary</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-black">Results summary</h2>
+              {copiedAction === "copy-failed" ? <p className="mt-1 text-sm font-semibold text-red-200">Could not copy. Please try again.</p> : null}
+            </div>
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <button type="button" disabled={!getVisibleResults(result).cards.length && !getVisibleResults(result).pairs.length} onClick={() => copyWithFeedback("all-results", formatAllResultsForCopy(result, query))} className="w-full rounded-full border border-rose-300/40 bg-rose-600/20 px-3 py-2 text-xs font-black text-rose-50 disabled:opacity-50 sm:w-auto">{copiedAction === "all-results" ? "Copied" : "Copy All Results"}</button>
+              <button type="button" disabled={!result.debug && !result.debugParity} onClick={() => copyWithFeedback("debug-json", formatDebugJsonForCopy(result))} className="w-full rounded-full border border-white/15 bg-white/[.06] px-3 py-2 text-xs font-black text-white/80 disabled:opacity-50 sm:w-auto">{copiedAction === "debug-json" ? "Copied" : "Copy Debug JSON"}</button>
+              <button type="button" onClick={() => copyWithFeedback("prompt-summary", formatPromptSummaryForCopy(result, query))} className="w-full rounded-full border border-white/15 bg-white/[.06] px-3 py-2 text-xs font-black text-white/80 sm:w-auto">{copiedAction === "prompt-summary" ? "Copied" : "Copy Prompt + Summary"}</button>
+            </div>
+          </div>
           <ResultDetails result={result} />
+          <div className="mt-5 space-y-3">
+            {[...getVisibleResults(result).cards.map((card: any) => ({ type: "card", item: card })), ...getVisibleResults(result).pairs.map((pair: any) => ({ type: "pair", item: pair }))].map((entry, index) => (
+              <article key={`${entry.type}-${index}`} className="rounded-2xl border border-white/10 bg-white/[.03] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-white/40">{entry.type === "pair" ? "Pair" : getSearchTypeLabel(entry.item)}</p>
+                    <h3 className="font-black">{entry.type === "pair" ? `${getName(entry.item?.restaurant || {}) || "Restaurant"} + ${getName(entry.item?.activity || {}) || "Activity"}` : getName(entry.item) || "Result"}</h3>
+                  </div>
+                  <button type="button" onClick={() => copyWithFeedback(`result-${index}`, entry.type === "pair" ? formatPairForCopy(entry.item, { query }) : formatSearchResultForCopy(entry.item, { query }))} className="rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-xs font-black text-white/80">{copiedAction === `result-${index}` ? "Copied" : "Copy Result"}</button>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       ) : null}
     </div>
