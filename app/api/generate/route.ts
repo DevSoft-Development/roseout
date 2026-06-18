@@ -8,6 +8,7 @@ import { isExplicitMarket, isPairAllowedForResolvedMarket, isResultAllowedForRes
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 import { detectRequestedMarket } from "@/lib/location-markets";
+import { hasNearMeIntent, stripNearMeIntent } from "@/lib/search/near-me";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -190,7 +191,15 @@ export async function POST(request: Request) {
             ? body.query
             : "";
 
-    const cleanInput = input.trim();
+    const rawQueryBeforeNearMeStrip =
+      typeof body?.rawQueryBeforeNearMeStrip === "string" && body.rawQueryBeforeNearMeStrip.trim()
+        ? body.rawQueryBeforeNearMeStrip.trim()
+        : input.trim();
+    const nearMeIntent = body?.nearMeIntent === true || hasNearMeIntent(rawQueryBeforeNearMeStrip);
+    const rawQueryAfterNearMeStrip = nearMeIntent
+      ? stripNearMeIntent(input.trim()) || stripNearMeIntent(rawQueryBeforeNearMeStrip)
+      : input.trim();
+    const cleanInput = rawQueryAfterNearMeStrip.trim();
     searchHealthRawQuery = cleanInput;
 
     if (!cleanInput) {
@@ -204,6 +213,12 @@ export async function POST(request: Request) {
       hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       hasServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       nodeEnv: process.env.NODE_ENV,
+      nearMeIntent,
+      useCurrentLocation: body?.useCurrentLocation === true || body?.use_current_location === true,
+      userLatitudePresent: Number.isFinite(Number(body?.userLatitude ?? body?.user_latitude)),
+      userLongitudePresent: Number.isFinite(Number(body?.userLongitude ?? body?.user_longitude)),
+      rawQueryBeforeNearMeStrip,
+      rawQueryAfterNearMeStrip: cleanInput,
     });
     const timezone =
       typeof body?.timezone === "string" && body.timezone.trim()
@@ -236,9 +251,42 @@ export async function POST(request: Request) {
 
 
     const selectedSearchLane = selectedSearchLaneFromRequestBody(body);
+    const userLatitude = Number(body?.userLatitude ?? body?.user_latitude);
+    const userLongitude = Number(body?.userLongitude ?? body?.user_longitude);
+    const userLatitudePresent = Number.isFinite(userLatitude);
+    const userLongitudePresent = Number.isFinite(userLongitude);
+    const useCurrentLocation = body?.useCurrentLocation === true || body?.use_current_location === true;
+    const currentLocationUserLocation =
+      nearMeIntent && useCurrentLocation && userLatitudePresent && userLongitudePresent
+        ? {
+            latitude: userLatitude,
+            longitude: userLongitude,
+            radiusMiles: 12,
+            label: "Current location",
+          }
+        : null;
+    const nearMeDebug = {
+      nearMeIntent,
+      useCurrentLocation,
+      userLatitudePresent,
+      userLongitudePresent,
+      rawQueryBeforeNearMeStrip,
+      rawQueryAfterNearMeStrip: cleanInput,
+    };
     const searchBody = {
       ...body,
+      input: cleanInput,
+      message: cleanInput,
+      query: cleanInput,
+      prompt: cleanInput,
       selectedSearchLane,
+      nearMeIntent,
+      useCurrentLocation,
+      userLatitude: userLatitudePresent ? userLatitude : undefined,
+      userLongitude: userLongitudePresent ? userLongitude : undefined,
+      rawQueryBeforeNearMeStrip,
+      rawQueryAfterNearMeStrip: cleanInput,
+      ...(currentLocationUserLocation ? { userLocation: currentLocationUserLocation } : {}),
       ...(selectedSearchLane === "auto" ? { searchType: "auto" } : { searchType: selectedSearchLane }),
     };
 
@@ -249,6 +297,7 @@ export async function POST(request: Request) {
     const betaFeedbackSubmitted = Boolean(betaTesterId && (body?.feedbackSubmitted === true || body?.feedback_submitted === true || body?.feedback || body?.feedback_type || body?.expected_result || body?.actual_result || body?.rating));
     const legacySearch = () => runEnterpriseSearch(cleanInput, {
       body: searchBody,
+      userLocation: currentLocationUserLocation,
       useLLM: true,
       source: betaTesterId ? "beta_tester_search" : "public_create_search",
       route: "/api/generate",
@@ -431,7 +480,7 @@ export async function POST(request: Request) {
       render_mode: result.render_mode === "empty" ? "empty" : result.render_mode,
       renderMode: result.renderMode || result.render_mode,
       searchPerformance: betaDebug && (result.debug as any)?.performance ? { totalMs: (result.debug as any).performance.total_ms, speedStatus: (result.debug as any).performance.speed_status, resultCount: (result.debug as any).performance.result_count } : undefined,
-      debug: betaDebug ? { ...(result.debug || {}), marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
+      debug: betaDebug ? { ...(result.debug || {}), ...nearMeDebug, geoSource: (result.debug as any)?.geoSource, marketGuardrailRejected: ((result.debug as any)?.marketGuardrailRejected ?? 0) + marketGuardrailRejected, resolvedMarket: resolvedMarketForGuardrail, explicitMarketRequested: explicitMarketRequestedForGuardrail, fallbackSuppressedBecauseExplicitMarket: explicitMarketRequestedForGuardrail && marketGuardrailRejected > 0, routeDebug: { ...((result.debug as any)?.routeDebug || {}), selectedSearchLane }, selectedSearchLane, plannedTime, outingTiming: parsedOutingDateTime } : undefined,
       diagnostics: {
         requested_locations:
           result.debug && (result.debug as any).geo
@@ -595,6 +644,8 @@ export async function POST(request: Request) {
         primaryDomain: resolvedPrimaryDomain,
         intentParserSource: resolvedIntentParserSource,
         selectedSearchLane,
+        ...nearMeDebug,
+        geoSource: debug?.geoSource,
         raw_query: cleanInput,
         parsed_market: resolvedMarketForGuardrail,
         parsed_borough: normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,

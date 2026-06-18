@@ -1,6 +1,6 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
 export type SearchType = "restaurant" | "activity" | "mixed_outing" | "any";
-export type GeoStrictness = "none" | "soft" | "medium" | "strict" | "default_market";
+export type GeoStrictness = "none" | "soft" | "medium" | "strict" | "default_market" | "current_location";
 export type PairDistanceMode = "short_walk" | "walking" | "nearby" | "same_area" | "any";
 
 export type PairingPreference = {

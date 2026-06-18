@@ -30,6 +30,11 @@ import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { isCrossAreaWalkingPair } from "@/lib/walkingArea";
 import {
+  hasNearMeIntent,
+  hasTypedLocationIntent,
+  stripNearMeIntent,
+} from "@/lib/search/near-me";
+import {
   cleanDistanceLabel,
   formatDistanceFromRestaurant,
   getEffectiveWalkingPairLimitMinutes,
@@ -807,6 +812,23 @@ export default function CreatePage() {
 
     const { addOnTarget, preservePlan = false } = options;
     const previousAssistant = latestAssistant;
+    const rawQueryBeforeNearMeStrip = cleanInput;
+    const nearMeIntent = hasNearMeIntent(rawQueryBeforeNearMeStrip);
+    const savedLocation = getSavedLocation();
+
+    const typedLocationIntent = hasTypedLocationIntent(rawQueryBeforeNearMeStrip);
+
+    if (nearMeIntent && !savedLocation && !typedLocationIntent) {
+      setError(
+        "We need your location to search near you. Please allow location access or type a neighborhood.",
+      );
+      return;
+    }
+
+    const submittedInput =
+      nearMeIntent && (savedLocation || typedLocationIntent)
+        ? stripNearMeIntent(rawQueryBeforeNearMeStrip) || rawQueryBeforeNearMeStrip
+        : rawQueryBeforeNearMeStrip;
 
     setLoading(true);
     setActiveAddOnTarget(addOnTarget || null);
@@ -831,7 +853,39 @@ export default function CreatePage() {
     );
 
     try {
-      const savedLocation = getSavedLocation();
+      const searchPayloadLocation =
+        nearMeIntent && savedLocation
+          ? {
+              latitude: savedLocation.latitude,
+              longitude: savedLocation.longitude,
+              lat: savedLocation.latitude,
+              lng: savedLocation.longitude,
+              userLatitude: savedLocation.latitude,
+              userLongitude: savedLocation.longitude,
+              useCurrentLocation: true,
+              nearMeIntent: true,
+              rawQueryBeforeNearMeStrip,
+              rawQueryAfterNearMeStrip: submittedInput,
+            }
+          : savedLocation
+            ? {
+                latitude: savedLocation.latitude,
+                longitude: savedLocation.longitude,
+                lat: savedLocation.latitude,
+                lng: savedLocation.longitude,
+                userLatitude: savedLocation.latitude,
+                userLongitude: savedLocation.longitude,
+                useCurrentLocation: false,
+                nearMeIntent,
+                rawQueryBeforeNearMeStrip,
+                rawQueryAfterNearMeStrip: submittedInput,
+              }
+            : {
+                useCurrentLocation: false,
+                nearMeIntent,
+                rawQueryBeforeNearMeStrip,
+                rawQueryAfterNearMeStrip: submittedInput,
+              };
 
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -839,16 +893,9 @@ export default function CreatePage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          input: cleanInput,
+          input: submittedInput,
           messages: [...messages, userMessage],
-          ...(savedLocation
-            ? {
-                latitude: savedLocation.latitude,
-                longitude: savedLocation.longitude,
-                lat: savedLocation.latitude,
-                lng: savedLocation.longitude,
-              }
-            : {}),
+          ...searchPayloadLocation,
           plannedFor: outingTime.plannedFor,
           timezone: outingTime.timezone,
           outingDateContext: outingTime.outingDateContext,
@@ -958,16 +1005,9 @@ export default function CreatePage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            input: `${cleanInput} ${missingTarget}`,
+            input: `${submittedInput} ${missingTarget}`,
             messages: [...messages, userMessage],
-            ...(savedLocation
-              ? {
-                  latitude: savedLocation.latitude,
-                  longitude: savedLocation.longitude,
-                  lat: savedLocation.latitude,
-                  lng: savedLocation.longitude,
-                }
-              : {}),
+            ...searchPayloadLocation,
           }),
         });
 

@@ -27,7 +27,7 @@ export type SearchMarketResolution = {
   originalGeo: GeoIntent;
   effectiveGeo: GeoIntent;
   marketApplied: boolean;
-  marketReason: "explicit_geo" | "selected_market" | "user_location" | "platform_default" | "unknown_market" | null;
+  marketReason: "explicit_geo" | "selected_market" | "current_location" | "user_location" | "platform_default" | "unknown_market" | null;
   market: SearchMarket | null;
 };
 
@@ -81,15 +81,17 @@ function geoFromMarket(geo: GeoIntent, market: SearchMarket): GeoIntent {
 }
 
 function geoFromUserLocation(geo: GeoIntent, userLocation: UserSearchLocation): GeoIntent {
+  const isCurrentLocation = userLocation.label === "Current location";
+
   return {
     ...geo,
-    raw: userLocation.label ?? geo.raw ?? null,
+    raw: isCurrentLocation ? "Current location" : userLocation.label ?? geo.raw ?? null,
     state: userLocation.state ?? geo.state ?? null,
     aliases: geo.aliases ?? [],
     latitude: userLocation.latitude ?? null,
     longitude: userLocation.longitude ?? null,
-    radiusMiles: userLocation.radiusMiles ?? geo.radiusMiles ?? null,
-    geoStrictness: "soft",
+    radiusMiles: userLocation.radiusMiles ?? geo.radiusMiles ?? (isCurrentLocation ? 12 : null),
+    geoStrictness: isCurrentLocation ? "current_location" : "soft",
   };
 }
 
@@ -115,7 +117,7 @@ export function resolveSearchMarket({
       originalGeo,
       effectiveGeo: geoFromUserLocation(geo, userLocation),
       marketApplied: false,
-      marketReason: "user_location",
+      marketReason: userLocation.label === "Current location" ? "current_location" : "user_location",
       market: null,
     };
   }
