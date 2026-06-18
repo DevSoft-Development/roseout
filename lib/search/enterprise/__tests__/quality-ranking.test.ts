@@ -266,52 +266,130 @@ it("counts Playoffs Sport Lounge as sports-watch fit", () => {
 
 it("ranks dual-match single-venue-with records first", () => {
   const intent = normalizeIntent("bar with wings nyc");
-  const ranked = rankRestaurantResults([
-    {
-      id: "a",
-      name: "Ace Sports Bar",
-      restaurant_name: "Ace Sports Bar",
-      location_type: "restaurant",
-      primary_category: "sports bar pub",
-      cuisine: "American bar food",
-      description: "Sports bar and pub serving chicken wings with TVs.",
-      image_url: "x.jpg",
-    },
-    {
-      id: "b",
-      name: "Chicken Only",
-      restaurant_name: "Chicken Only",
-      location_type: "restaurant",
-      primary_category: "chicken restaurant",
-      cuisine: "Chicken wings",
-      description: "Chicken wings and fried chicken counter service.",
-      image_url: "x.jpg",
-    },
-    {
-      id: "c",
-      name: "Velvet Lounge",
-      restaurant_name: "Velvet Lounge",
-      location_type: "restaurant",
-      primary_category: "lounge bar",
-      cuisine: "American",
-      description: "Cocktail lounge with nightlife but no wings.",
-      image_url: "x.jpg",
-    },
-    {
-      id: "d",
-      name: "Night Activity",
-      activity_name: "Night Activity",
-      location_type: "activity",
-      primary_category: "nightlife activity",
-      activity_type: "nightlife",
-      description: "Nightlife activity with music.",
-      image_url: "x.jpg",
-    },
-  ] as any, intent);
+  const ranked = rankRestaurantResults(
+    [
+      {
+        id: "a",
+        name: "Ace Sports Bar",
+        restaurant_name: "Ace Sports Bar",
+        location_type: "restaurant",
+        primary_category: "sports bar pub",
+        cuisine: "American bar food",
+        description: "Sports bar and pub serving chicken wings with TVs.",
+        image_url: "x.jpg",
+      },
+      {
+        id: "b",
+        name: "Chicken Only",
+        restaurant_name: "Chicken Only",
+        location_type: "restaurant",
+        primary_category: "chicken restaurant",
+        cuisine: "Chicken wings",
+        description: "Chicken wings and fried chicken counter service.",
+        image_url: "x.jpg",
+      },
+      {
+        id: "c",
+        name: "Velvet Lounge",
+        restaurant_name: "Velvet Lounge",
+        location_type: "restaurant",
+        primary_category: "lounge bar",
+        cuisine: "American",
+        description: "Cocktail lounge with nightlife but no wings.",
+        image_url: "x.jpg",
+      },
+      {
+        id: "d",
+        name: "Night Activity",
+        activity_name: "Night Activity",
+        location_type: "activity",
+        primary_category: "nightlife activity",
+        activity_type: "nightlife",
+        description: "Nightlife activity with music.",
+        image_url: "x.jpg",
+      },
+    ] as any,
+    intent,
+  );
 
   expect(ranked[0].id).toBe("a");
-  expect((ranked.find((item) => item.id === "a") as any).singleVenueWithScore).toBeGreaterThan(
+  expect(
+    (ranked.find((item) => item.id === "a") as any).singleVenueWithScore,
+  ).toBeGreaterThan(
     (ranked.find((item) => item.id === "b") as any).singleVenueWithScore,
   );
   expect(ranked.map((item) => item.id)).not.toContain("d");
+});
+
+it("suppresses cafe/bakery/dessert-only records for date-night dinner intent", () => {
+  const intent = makeIntent("date night near me");
+  const ranked = rankRestaurantResults(
+    [
+      {
+        id: "cafe",
+        name: "CAFE BLESSING",
+        restaurant_name: "CAFE BLESSING",
+        primary_category: "cafe bakery coffee shop",
+        cuisine: "Cafe",
+        description: "Coffee, pastries, yogurt, quick bites, and dessert.",
+        rating: 4.9,
+        review_count: 2000,
+        image_url: "x.jpg",
+        location_type: "restaurant",
+      },
+      {
+        id: "dinner",
+        name: "Velvet Table",
+        restaurant_name: "Velvet Table",
+        primary_category: "full service new american restaurant",
+        cuisine: "New American",
+        tags: ["date night", "dinner", "reservations", "romantic"],
+        description:
+          "Full-service dinner restaurant with cocktails and romantic ambiance.",
+        rating: 4.4,
+        review_count: 250,
+        image_url: "x.jpg",
+        location_type: "restaurant",
+      },
+    ] as any,
+    intent,
+  );
+
+  expect(ranked[0].id).toBe("dinner");
+  expect(
+    (
+      (ranked.find((item) => item.id === "cafe") as any)
+        .restaurantQualityPenalties ?? []
+    ).join(" "),
+  ).toMatch(
+    /cafe\/bakery\/dessert-only suppressed for date-night dinner intent/i,
+  );
+});
+
+it("allows explicit coffee, dessert, bakery, and brunch-cafe intents", () => {
+  const cafe = {
+    id: "cafe",
+    name: "GREY Cafe",
+    restaurant_name: "GREY Cafe",
+    primary_category: "cafe coffee shop bakery dessert",
+    cuisine: "Cafe",
+    description: "Coffee, pastries, dessert, brunch cafe, and quick bites.",
+    rating: 4.6,
+    review_count: 800,
+    image_url: "x.jpg",
+    location_type: "restaurant",
+  } as any;
+
+  for (const query of [
+    "coffee date near me",
+    "dessert date near me",
+    "bakery near me",
+    "brunch cafe near me",
+  ]) {
+    const ranked = rankRestaurantResults([{ ...cafe }], makeIntent(query));
+    expect(ranked).toHaveLength(1);
+    expect(
+      ((ranked[0] as any).restaurantQualityPenalties ?? []).join(" "),
+    ).not.toMatch(/date-night dinner intent/i);
+  }
 });
