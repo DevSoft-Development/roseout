@@ -453,6 +453,10 @@ export async function GET(req: Request) {
       issue_type: cleanFilter(searchParams.get("issue_type")),
     };
 
+    // search_health_events remains issue-focused by default. To force all public
+    // searches into search_health_events for debugging, set
+    // SEARCH_HEALTH_LOG_ALL_PUBLIC_SEARCHES=true; the recommended dashboard path
+    // for normal /create searches is view=all from search_events.
     let allSearches: any[] = [];
 
     if (view === "all") {
@@ -600,7 +604,18 @@ export async function GET(req: Request) {
         reviewStatus: searchParams.get("review_status"),
         speedStatus: searchParams.get("speed_status"),
       },
-      matchCount: view === "all" ? allSearches.length : (recentEvents ?? []).length,
+      matchCount:
+        view === "all" ? allSearches.length : (recentEvents ?? []).length,
+      allSearchCount: allSearches.length,
+      publicCreateSearchCount: allSearches.filter(
+        (row: any) => row.source === "public_create_search",
+      ).length,
+      adminSearchLabCount: allSearches.filter(
+        (row: any) => row.source === "admin_search_lab",
+      ).length,
+      failedSearchCount: allSearches.filter((row: any) => row.success === false)
+        .length,
+      issueSearchCount: allSearches.filter((row: any) => row.had_issue).length,
       allSearches,
       recentEvents: (recentEvents ?? []).map(enrichEvent),
       summary,
