@@ -7,6 +7,7 @@ import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger
 import { isExplicitMarket, isPairAllowedForResolvedMarket, isResultAllowedForResolvedMarket } from "@/lib/search/market-guardrails";
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
+import { detectRequestedMarket } from "@/lib/location-markets";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -261,19 +262,23 @@ export async function POST(request: Request) {
       betaFeedbackSubmitted,
     });
 
-    const result: any = await runCreateSearchWithEdgeFallback(
-      {
-        ...searchBody,
-        prompt: cleanInput,
-        limit: body?.limit ?? 12,
-        debug: betaDebug || Boolean(body?.debug),
-      },
-      {
-        accessToken: request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? null,
-        fallbackDisabled: body?.disableLegacyFallback === true,
-        legacySearch,
-      },
-    );
+    const marketDetection = detectRequestedMarket(cleanInput);
+    const forceLegacyForLongIsland = marketDetection.requestedMarket === "LONG_ISLAND";
+    const result: any = forceLegacyForLongIsland
+      ? await legacySearch()
+      : await runCreateSearchWithEdgeFallback(
+          {
+            ...searchBody,
+            prompt: cleanInput,
+            limit: body?.limit ?? 12,
+            debug: betaDebug || Boolean(body?.debug),
+          },
+          {
+            accessToken: request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? null,
+            fallbackDisabled: body?.disableLegacyFallback === true,
+            legacySearch,
+          },
+        );
 
     const rawRestaurants = Array.isArray(result.restaurants) ? result.restaurants : [];
     const rawActivities = Array.isArray(result.activities) ? result.activities : [];
@@ -396,7 +401,7 @@ export async function POST(request: Request) {
 
     const response = {
       ...result,
-      reply: resolvedMarketForGuardrail === "LONG_ISLAND" && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) < 3
+      reply: resolvedMarketForGuardrail === "LONG_ISLAND" && (publicRestaurants.length + publicActivities.length + publicMatchedLocations.length) === 0
         ? "We’re still expanding Long Island picks. Try a broader search like ‘dinner and activity in Long Island’ or check back soon."
         : result.reply,
       plannedTime,
