@@ -3,10 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-async function copyJsonToClipboard(value: unknown) {
-  const text =
-    typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2);
-
+async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     if (
       typeof navigator !== "undefined" &&
@@ -24,7 +21,6 @@ async function copyJsonToClipboard(value: unknown) {
     textarea.style.position = "fixed";
     textarea.style.left = "-9999px";
     textarea.style.top = "0";
-
     document.body.appendChild(textarea);
     textarea.focus();
     textarea.select();
@@ -32,21 +28,141 @@ async function copyJsonToClipboard(value: unknown) {
     const copied = document.execCommand("copy");
     document.body.removeChild(textarea);
 
-    if (!copied) {
-      throw new Error("document.execCommand copy failed");
-    }
-
+    if (!copied) throw new Error("Copy command failed");
     return true;
   } catch (error) {
-    console.error("Failed to copy JSON", error);
-
-    if (typeof window !== "undefined") {
-      window.prompt("Copy JSON manually:", text);
-    }
-
+    console.error("Copy failed", error);
     return false;
   }
 }
+
+function cleanValue(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "—";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
+}
+
+function sanitizeForCopy(value: unknown): unknown {
+  const redactedKeys = [
+    "token",
+    "secret",
+    "apikey",
+    "api_key",
+    "authorization",
+    "password",
+    "service_role",
+    "bearer",
+  ];
+  if (Array.isArray(value)) return value.map(sanitizeForCopy);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, val]) => {
+      const normalized = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+      const shouldRedact = redactedKeys.some((needle) =>
+        normalized.includes(needle),
+      );
+      return [key, shouldRedact ? "[REDACTED]" : sanitizeForCopy(val)];
+    }),
+  );
+}
+
+function formatSearchEventForCopy(row: any): string {
+  const lines = [
+    "TheOutHaven Search Log",
+    "",
+    `Created: ${cleanValue(row.created_at)}`,
+    `Source: ${cleanValue(row.source)}`,
+    `Route: ${cleanValue(row.route)}`,
+    `Raw Query: ${cleanValue(row.raw_query)}`,
+    `Normalized Query: ${cleanValue(row.normalized_query)}`,
+    `Search Type: ${cleanValue(row.search_type)}`,
+    `Primary Domain: ${cleanValue(row.primary_domain)}`,
+    "",
+    "Counts:",
+    `Restaurants: ${cleanValue(row.restaurant_count)}`,
+    `Activities: ${cleanValue(row.activity_count)}`,
+    `Pairs: ${cleanValue(row.pair_count)}`,
+    `Results: ${cleanValue(row.result_count)}`,
+    "",
+    "Performance:",
+    `Timing: ${cleanValue(row.timing_ms ? `${row.timing_ms} ms` : null)}`,
+    `LLM: ${cleanValue(row.llm_ms ? `${row.llm_ms} ms` : null)}`,
+    `RPC: ${cleanValue(row.rpc_ms ? `${row.rpc_ms} ms` : null)}`,
+    `Pairing: ${cleanValue(row.pairing_ms ? `${row.pairing_ms} ms` : null)}`,
+    `Ranking: ${cleanValue(row.ranking_ms ? `${row.ranking_ms} ms` : null)}`,
+    `Speed Status: ${cleanValue(row.speed_status)}`,
+    "",
+    "Status:",
+    `Success: ${cleanValue(row.success)}`,
+    `Had Issue: ${cleanValue(row.had_issue)}`,
+    `Issue Type: ${cleanValue(row.issue_type)}`,
+    `Issue Label: ${cleanValue(row.issue_label)}`,
+    `No Results Reason: ${cleanValue(row.no_results_reason)}`,
+    `No Pairs Reason: ${cleanValue(row.no_pairs_reason)}`,
+    "",
+    "Location:",
+    `City: ${cleanValue(row.city)}`,
+    `State: ${cleanValue(row.state)}`,
+    `Borough: ${cleanValue(row.borough)}`,
+    `Neighborhood: ${cleanValue(row.neighborhood)}`,
+    "",
+    "Outing Time:",
+    `Date: ${cleanValue(row.outing_date)}`,
+    `Time: ${cleanValue(row.outing_time)}`,
+    `DateTime: ${cleanValue(row.outing_datetime)}`,
+    `Time Label: ${cleanValue(row.outing_time_label)}`,
+  ];
+  return lines.join("\n");
+}
+
+function formatSearchEventsForCopy(rows: any[], context: any): string {
+  return [
+    "TheOutHaven All Searches",
+    `Range: ${cleanValue(context.range)}`,
+    `Source: ${cleanValue(context.source || "All")}`,
+    "View: All Searches",
+    `Generated: ${new Date().toISOString()}`,
+    "",
+    ...rows.map((row, index) =>
+      [
+        `${index + 1}. ${cleanValue(row.raw_query)}`,
+        `Created: ${cleanValue(row.created_at)}`,
+        `Source: ${cleanValue(row.source)}`,
+        `Route: ${cleanValue(row.route)}`,
+        `Search Type: ${cleanValue(row.search_type)}`,
+        `Primary Domain: ${cleanValue(row.primary_domain)}`,
+        `Counts: Restaurants ${cleanValue(row.restaurant_count)} · Activities ${cleanValue(row.activity_count)} · Pairs ${cleanValue(row.pair_count)} · Results ${cleanValue(row.result_count)}`,
+        `Timing: ${cleanValue(row.timing_ms ? `${row.timing_ms} ms` : null)}`,
+        `Success: ${cleanValue(row.success)}`,
+        `Had Issue: ${cleanValue(row.had_issue)}`,
+        `Issue: ${cleanValue(row.issue_label || row.issue_type || row.no_results_reason || row.no_pairs_reason)}`,
+      ].join("\n"),
+    ),
+  ].join("\n\n");
+}
+
+function formatSearchQueriesForCopy(rows: any[]): string {
+  return rows.map((row) => row.raw_query).filter(Boolean).join("\n");
+}
+
+function csvEscape(value: unknown): string {
+  const text = value === undefined || value === null ? "" : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function formatSearchEventsCsv(rows: any[]): string {
+  const headers = [
+    "created_at", "source", "route", "raw_query", "normalized_query",
+    "search_type", "primary_domain", "restaurant_count", "activity_count",
+    "pair_count", "result_count", "timing_ms", "speed_status", "success",
+    "had_issue", "issue_type", "issue_label",
+  ];
+  return [
+    headers.join(","),
+    ...rows.map((row) => headers.map((key) => csvEscape(row[key])).join(",")),
+  ].join("\n");
+}
+
 
 type CountRow = {
   reason?: string;
@@ -66,6 +182,7 @@ type SearchHealthData = {
   commonFailingQueries?: any[];
   eventsBySource?: { source: string; count: number }[];
   lastDigestRun?: any | null;
+  allSearchStats?: { totalVisible: number; publicCreateCount: number; adminSearchLabCount: number; cleanCount: number; issueCount: number; failedCount: number };
   allSearchCount?: number;
   publicCreateSearchCount?: number;
   adminSearchLabCount?: number;
@@ -82,15 +199,15 @@ const views = [
   { label: "Slow", value: "slow" },
   { label: "Debug Runs", value: "debug" },
 ];
-const sources = [
-  "",
-  "public_create_search",
-  "admin_search_lab",
-  "public_explore_search",
-  "public_plan_search",
-  "beta_tester_search",
-  "search_api",
-  "admin_test_event",
+const sourceOptions = [
+  { label: "All sources", value: "" },
+  { label: "Create searches", value: "public_create_search" },
+  { label: "Search Lab", value: "admin_search_lab" },
+  { label: "Explore", value: "public_explore_search" },
+  { label: "Plan", value: "public_plan_search" },
+  { label: "Beta tester", value: "beta_tester_search" },
+  { label: "Search API", value: "search_api" },
+  { label: "Test events", value: "admin_test_event" },
 ];
 const statuses = ["", "new", "reviewing", "fixed", "ignored", "archived"];
 const speeds = [
@@ -282,42 +399,24 @@ export default function SearchHealthClient() {
 
   async function copyDebugJson() {
     if (!selected) return;
-
-    const json = JSON.stringify(selected.debug ?? {}, null, 2);
-
-    try {
-      if (
-        typeof navigator.clipboard?.writeText === "function" &&
-        typeof window !== "undefined" &&
-        window.isSecureContext
-      ) {
-        await navigator.clipboard.writeText(json);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = json;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        textarea.style.top = "0";
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-
-        const copied = document.execCommand("copy");
-        document.body.removeChild(textarea);
-
-        if (!copied) {
-          throw new Error("Copy command failed");
-        }
-      }
-
+    const copied = await copyTextToClipboard(
+      JSON.stringify(sanitizeForCopy(selected.debug ?? {}), null, 2),
+    );
+    if (copied) {
       setNotice("Debug JSON copied.");
       setError(null);
-    } catch (err) {
-      console.error("Failed to copy debug JSON", err);
-      setError(
-        "Could not copy Debug JSON. You can still select and copy it manually below.",
-      );
+    } else {
+      setError("Could not copy Debug JSON. You can still select and copy it manually below.");
+    }
+  }
+
+  async function copyWithNotice(text: string, successNotice: string) {
+    const copied = await copyTextToClipboard(text);
+    if (copied) {
+      setNotice(successNotice);
+      setError(null);
+    } else {
+      setError("Could not copy to clipboard. Please try selecting the text manually.");
     }
   }
 
@@ -358,23 +457,29 @@ export default function SearchHealthClient() {
     ["All Searches", data.allSearchCount ?? allSearches.length],
     [
       "/create Searches",
-      data.publicCreateSearchCount ??
+      data.allSearchStats?.publicCreateCount ?? data.publicCreateSearchCount ??
         allSearches.filter((row) => row.source === "public_create_search")
           .length,
     ],
     [
       "Search Lab Runs",
-      data.adminSearchLabCount ??
+      data.allSearchStats?.adminSearchLabCount ?? data.adminSearchLabCount ??
         allSearches.filter((row) => row.source === "admin_search_lab").length,
     ],
     [
+      "Clean Searches",
+      data.allSearchStats?.cleanCount ??
+        allSearches.filter((row) => row.success === true && row.had_issue === false)
+          .length,
+    ],
+    [
       "Failed Searches",
-      data.failedSearchCount ??
+      data.allSearchStats?.failedCount ?? data.failedSearchCount ??
         allSearches.filter((row) => row.success === false).length,
     ],
     [
       "Issue Searches",
-      data.issueSearchCount ??
+      data.allSearchStats?.issueCount ?? data.issueSearchCount ??
         allSearches.filter((row) => row.had_issue).length,
     ],
   ];
@@ -408,10 +513,13 @@ export default function SearchHealthClient() {
         </div>
         {view !== "all" ? (
           <p className="mt-3 rounded-2xl border border-sky-300/25 bg-sky-500/10 p-3 text-sm font-semibold text-sky-100">
-            Search Health shows issue/warning events by default. Normal /create
-            searches are stored in All Searches.
+            Search Health shows issues and warnings by default. To review every /create search, switch to All Searches.
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-3 rounded-2xl border border-emerald-300/25 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-100">
+            All Searches includes normal /create searches from search_events, including clean searches that were not marked as issues.
+          </p>
+        )}
       </section>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -472,9 +580,8 @@ export default function SearchHealthClient() {
         <Filter
           label="Source"
           value={source}
-          values={sources}
+          options={sourceOptions}
           onChange={setSource}
-          empty="All sources"
         />
         <label className="text-xs font-black uppercase tracking-[0.2em] text-white/45 xl:col-span-2">
           Search
@@ -500,6 +607,18 @@ export default function SearchHealthClient() {
           onChange={setSpeed}
           empty="All speeds"
         />
+        {isAllSearchesView ? (
+          <button
+            type="button"
+            className="rounded-2xl border border-rose-300/30 bg-rose-500/15 px-3 py-3 text-sm font-black text-rose-100"
+            onClick={() => {
+              setView("all");
+              setSource("public_create_search");
+            }}
+          >
+            Show /create searches
+          </button>
+        ) : null}
         {!isAllSearchesView ? (
           <Filter
             label="Severity"
@@ -582,90 +701,41 @@ export default function SearchHealthClient() {
       </section>
 
       {isAllSearchesView ? (
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
-          <h2 className="text-lg font-black">All Searches</h2>
-          <p className="mt-1 text-sm text-white/55">
-            Includes normal /create searches from search_events.
-          </p>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[1680px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.2em] text-white/45">
-                <tr>
-                  {[
-                    "created_at",
-                    "source",
-                    "route",
-                    "raw_query",
-                    "normalized_query",
-                    "search_type",
-                    "primary_domain",
-                    "restaurant_count",
-                    "activity_count",
-                    "pair_count",
-                    "result_count",
-                    "success",
-                    "had_issue",
-                    "issue_type",
-                    "issue_label",
-                    "timing_ms",
-                    "speed_status",
-                  ].map((h) => (
-                    <th key={h} className="px-3 py-3">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {allSearches.map((event) => (
-                  <tr key={event.id} className="hover:bg-white/[0.04]">
-                    <td className="px-3 py-3 text-white/60">
-                      {formatTime(event.created_at)}
-                    </td>
-                    <td className="px-3 py-3">{event.source || "—"}</td>
-                    <td className="px-3 py-3">{event.route || "—"}</td>
-                    <td className="max-w-[260px] truncate px-3 py-3 font-semibold">
-                      {event.raw_query || "—"}
-                    </td>
-                    <td className="max-w-[260px] truncate px-3 py-3">
-                      {event.normalized_query || "—"}
-                    </td>
-                    <td className="px-3 py-3">{event.search_type || "—"}</td>
-                    <td className="px-3 py-3">{event.primary_domain || "—"}</td>
-                    <td className="px-3 py-3">
-                      {event.restaurant_count ?? "—"}
-                    </td>
-                    <td className="px-3 py-3">{event.activity_count ?? "—"}</td>
-                    <td className="px-3 py-3">{event.pair_count ?? "—"}</td>
-                    <td className="px-3 py-3">{event.result_count ?? "—"}</td>
-                    <td className="px-3 py-3">
-                      {String(event.success ?? "—")}
-                    </td>
-                    <td className="px-3 py-3">
-                      {String(event.had_issue ?? "—")}
-                    </td>
-                    <td className="px-3 py-3">{event.issue_type || "—"}</td>
-                    <td className="max-w-[240px] truncate px-3 py-3 text-rose-100">
-                      {event.issue_label || "—"}
-                    </td>
-                    <td className="px-3 py-3">
-                      {event.timing_ms ? `${event.timing_ms}ms` : "—"}
-                    </td>
-                    <td className="px-3 py-3">{event.speed_status || "—"}</td>
-                  </tr>
-                ))}
-                {!loading && !allSearches.length ? (
-                  <tr>
-                    <td
-                      className="px-3 py-8 text-center text-white/50"
-                      colSpan={17}
-                    >
-                      No searches match these filters.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-4 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-xl font-black">All Searches</h2>
+              <p className="mt-1 max-w-3xl text-sm text-white/60">
+                Showing latest 200 searches for this filter. Clean means the system considered the search successful. You can still copy it for manual review.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <CopyButton disabled={!allSearches.length} onClick={() => copyWithNotice(formatSearchEventsForCopy(allSearches, { range, source }), "Copied visible searches.")}>
+                Copy Visible Searches
+              </CopyButton>
+              <CopyButton disabled={!allSearches.length} onClick={() => copyWithNotice(formatSearchQueriesForCopy(allSearches), "Copied queries.")}>
+                Copy Visible Queries
+              </CopyButton>
+              <CopyButton disabled={!allSearches.length} onClick={() => copyWithNotice(formatSearchEventsCsv(allSearches), "Copied CSV.")}>
+                Copy Search CSV
+              </CopyButton>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {allSearches.map((event) => (
+              <SearchEventCard
+                key={event.id}
+                event={event}
+                onCopySearch={() => copyWithNotice(formatSearchEventForCopy(event), "Copied search.")}
+                onCopyMetadata={() => copyWithNotice(JSON.stringify(sanitizeForCopy(event), null, 2), "Copied metadata.")}
+              />
+            ))}
+            {!loading && !allSearches.length ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center text-sm text-white/50">
+                No searches match these filters.
+              </div>
+            ) : null}
           </div>
         </section>
       ) : (
@@ -675,74 +745,29 @@ export default function SearchHealthClient() {
             <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-white/45">
                 <tr>
-                  {[
-                    "Time",
-                    "Query",
-                    "Event Label",
-                    "Severity",
-                    "Type",
-                    "Pair Count",
-                    "Restaurant Count",
-                    "Activity Count",
-                    "Speed",
-                    "Market",
-                    "Status",
-                  ].map((h) => (
-                    <th key={h} className="px-3 py-3">
-                      {h}
-                    </th>
+                  {["Time", "Query", "Event Label", "Severity", "Type", "Pair Count", "Restaurant Count", "Activity Count", "Speed", "Market", "Status"].map((h) => (
+                    <th key={h} className="px-3 py-3">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
                 {(data.recentEvents ?? []).map((event) => (
-                  <tr
-                    key={event.id}
-                    className="cursor-pointer hover:bg-white/[0.04]"
-                    onClick={() => openDetail(event.id)}
-                  >
-                    <td className="px-3 py-3 text-white/60">
-                      {formatTime(event.created_at)}
-                    </td>
-                    <td className="max-w-[280px] truncate px-3 py-3 font-semibold">
-                      {event.raw_query || "—"}
-                    </td>
-                    <td className="px-3 py-3 text-rose-100">
-                      {issueLabel(event)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span
-                        className={`rounded-full border px-2 py-1 text-xs font-black ${severityClass(event.severity)}`}
-                      >
-                        {event.severity || "info"}
-                      </span>
-                    </td>
+                  <tr key={event.id} className="cursor-pointer hover:bg-white/[0.04]" onClick={() => openDetail(event.id)}>
+                    <td className="px-3 py-3 text-white/60">{formatTime(event.created_at)}</td>
+                    <td className="max-w-[280px] truncate px-3 py-3 font-semibold">{event.raw_query || "—"}</td>
+                    <td className="px-3 py-3 text-rose-100">{issueLabel(event)}</td>
+                    <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs font-black ${severityClass(event.severity)}`}>{event.severity || "info"}</span></td>
                     <td className="px-3 py-3">{event.event_type || "—"}</td>
                     <td className="px-3 py-3">{event.pair_count ?? "—"}</td>
-                    <td className="px-3 py-3">
-                      {event.restaurant_count ?? "—"}
-                    </td>
+                    <td className="px-3 py-3">{event.restaurant_count ?? "—"}</td>
                     <td className="px-3 py-3">{event.activity_count ?? "—"}</td>
-                    <td className="px-3 py-3">
-                      {event.timing_ms
-                        ? `${event.timing_ms}ms`
-                        : event.speed_status || "—"}
-                    </td>
-                    <td className="px-3 py-3">
-                      {event.default_market_id || "—"}
-                    </td>
+                    <td className="px-3 py-3">{event.timing_ms ? `${event.timing_ms}ms` : event.speed_status || "—"}</td>
+                    <td className="px-3 py-3">{event.default_market_id || "—"}</td>
                     <td className="px-3 py-3">{event.review_status}</td>
                   </tr>
                 ))}
                 {!loading && !(data.recentEvents ?? []).length ? (
-                  <tr>
-                    <td
-                      className="px-3 py-8 text-center text-white/50"
-                      colSpan={11}
-                    >
-                      No search health events match these filters.
-                    </td>
-                  </tr>
+                  <tr><td className="px-3 py-8 text-center text-white/50" colSpan={11}>No search health events match these filters.</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -926,16 +951,152 @@ export default function SearchHealthClient() {
   );
 }
 
+function CopyButton({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="rounded-2xl bg-white px-3 py-2 text-xs font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "warn" | "bad" }) {
+  const classes = {
+    neutral: "border-white/15 bg-white/10 text-white/75",
+    good: "border-emerald-300/25 bg-emerald-500/15 text-emerald-100",
+    warn: "border-amber-300/25 bg-amber-500/15 text-amber-100",
+    bad: "border-red-300/25 bg-red-500/15 text-red-100",
+  }[tone];
+  return <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${classes}`}>{children}</span>;
+}
+
+function SearchEventCard({
+  event,
+  onCopySearch,
+  onCopyMetadata,
+}: {
+  event: any;
+  onCopySearch: () => void;
+  onCopyMetadata: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isIssue = event.had_issue || event.success === false;
+  const normalizedDiffers =
+    event.normalized_query && event.normalized_query !== event.raw_query;
+  return (
+    <article className="rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-sm shadow-black/20 sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="break-words text-lg font-black text-white sm:text-xl">
+              {event.raw_query || "Untitled search"}
+            </h3>
+            <Badge>{event.source || "unknown"}</Badge>
+            <Badge tone={isIssue ? "bad" : "good"}>{isIssue ? "Issue" : "Clean"}</Badge>
+            {event.success === false ? <Badge tone="bad">Failed</Badge> : <Badge tone="good">Success</Badge>}
+          </div>
+          <p className="mt-2 text-sm text-white/55">{formatTime(event.created_at)}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <CopyButton onClick={onCopySearch}>Copy Search</CopyButton>
+          <CopyButton onClick={onCopyMetadata}>Copy Metadata</CopyButton>
+          {event.raw_query ? (
+            <Link
+              className="rounded-2xl bg-rose-600 px-3 py-2 text-xs font-black text-white transition hover:bg-rose-500"
+              href={`/admin/dashboard/beta/search-lab?query=${encodeURIComponent(event.raw_query)}`}
+            >
+              Re-run in Search Lab
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-black text-white transition hover:bg-white/15"
+          >
+            {expanded ? "Hide Details" : "View Details"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 text-sm text-white/70 md:grid-cols-2 xl:grid-cols-4">
+        <Info label="Route" value={event.route} />
+        <Info label="Search type" value={event.search_type} />
+        <Info label="Primary domain" value={event.primary_domain} />
+        {normalizedDiffers ? <Info label="Normalized" value={event.normalized_query} /> : null}
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat label="Restaurants" value={event.restaurant_count} />
+        <Stat label="Activities" value={event.activity_count} />
+        <Stat label="Pairs" value={event.pair_count} />
+        <Stat label="Results" value={event.result_count} />
+        <Stat label="Time" value={event.timing_ms ? `${event.timing_ms} ms` : "—"} sub={event.speed_status || "good"} />
+      </div>
+
+      {isIssue ? (
+        <div className="mt-4 rounded-2xl border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
+          <span className="font-black">Issue:</span> {cleanValue(event.issue_label || event.issue_type || event.no_results_reason || event.no_pairs_reason)}
+          <div className="mt-2 grid gap-2 text-xs text-red-100/80 sm:grid-cols-2 lg:grid-cols-4">
+            <span>had_issue: {cleanValue(event.had_issue)}</span>
+            <span>type: {cleanValue(event.issue_type)}</span>
+            <span>no results: {cleanValue(event.no_results_reason)}</span>
+            <span>no pairs: {cleanValue(event.no_pairs_reason)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {expanded ? (
+        <pre className="mt-4 max-h-96 overflow-auto rounded-2xl border border-white/10 bg-black/30 p-4 text-xs leading-5 text-white/70">
+          {JSON.stringify(sanitizeForCopy(event), null, 2)}
+        </pre>
+      ) : null}
+    </article>
+  );
+}
+
+function Info({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="rounded-2xl bg-black/20 p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">{label}</p>
+      <p className="mt-1 break-words font-semibold text-white/80">{cleanValue(value)}</p>
+    </div>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: unknown; sub?: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+      <p className="text-xs font-bold text-white/45">{label}</p>
+      <p className="mt-1 text-lg font-black text-white">{cleanValue(value)}</p>
+      {sub ? <p className="mt-1 text-xs font-semibold text-white/45">Speed: {sub}</p> : null}
+    </div>
+  );
+}
+
 function Filter({
   label,
   value,
   values,
+  options,
   empty,
   onChange,
 }: {
   label: string;
   value: string;
-  values: string[];
+  values?: string[];
+  options?: { label: string; value: string }[];
   empty?: string;
   onChange: (value: string) => void;
 }) {
@@ -947,9 +1108,9 @@ function Filter({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        {values.map((item) => (
-          <option key={item || "all"} value={item}>
-            {item || empty || item}
+        {(options ?? values?.map((item) => ({ label: item || empty || item, value: item })) ?? []).map((item) => (
+          <option key={item.value || "all"} value={item.value}>
+            {item.label}
           </option>
         ))}
       </select>
