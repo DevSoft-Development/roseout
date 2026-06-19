@@ -10,7 +10,13 @@ export const metadata: Metadata = {
   description: "Admin reservation operations dashboard.",
 };
 
-export default async function AdminReservationsPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function AdminReservationsPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
 
   return (
@@ -31,7 +37,7 @@ export default async function AdminReservationsPage() {
             <AdminPageTabs tabs={adminReservationTabs} />
           </div>
         </section>
-        <ReserveDashboardPage />
+        <ReserveDashboardPage searchParams={searchParams} />
       </div>
     </main>
   );

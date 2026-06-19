@@ -69,6 +69,11 @@ export type PendingCRMClaim = {
 export type BusinessCRMRow = {
   id: string;
   location_id?: string | null;
+  source_id?: string | null;
+  source_table?: string | null;
+  slug?: string | null;
+  locations_id?: string | null;
+  locationId?: string | null;
   name: string;
   location_name?: string | null;
   address?: string | null;
@@ -534,6 +539,34 @@ export function getDisplayCRMStatus(row: Partial<BusinessCRMRow>) {
   )
     return "Upgrade Opportunity";
   return titleizeStatus(raw) as CRMStatus;
+}
+
+
+export function getCrmLocationTypeForPublicHref(row: Partial<BusinessCRMRow>) {
+  const raw = String(row.location_type || row.source_table || row.category || row.primary_category || "").toLowerCase();
+  if (raw.includes("activit")) return "activities";
+  return "restaurants";
+}
+
+export function getCrmCanonicalLocationId(row: Partial<BusinessCRMRow>) {
+  return (
+    row.location_id ||
+    row.locations_id ||
+    row.locationId ||
+    row.id ||
+    null
+  );
+}
+
+export function getCrmPublicLocationHref(row: Partial<BusinessCRMRow>) {
+  const id = getCrmCanonicalLocationId(row);
+  if (!id) return null;
+  const type = getCrmLocationTypeForPublicHref(row);
+  return `/locations/${type}/${encodeURIComponent(String(id))}`;
+}
+
+export function canOpenPublicLocationPage(row: Partial<BusinessCRMRow>) {
+  return row.active !== false && row.is_searchable !== false;
 }
 
 export function normalizeCRMRow(row: Record<string, any>): BusinessCRMRow {

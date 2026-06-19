@@ -54,6 +54,8 @@ type Props = {
   backHref: string;
   adminMode?: boolean;
   createMode?: boolean;
+  initialLocationId?: string;
+  initialLocationType?: LocationType;
 };
 
 type FormState = {
@@ -195,14 +197,14 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-export default function LocationLayoutClient({ backHref, adminMode = false, createMode = false }: Props) {
+export default function LocationLayoutClient({ backHref, adminMode = false, createMode = false, initialLocationId = "", initialLocationType }: Props) {
   const supabase = createClient();
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; offsetLeft: number; offsetTop: number } | null>(null);
   const [items, setItems] = useState<LayoutItem[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
-  const [locationType, setLocationType] = useState<LocationType>("restaurant");
-  const [locationId, setLocationId] = useState("");
+  const [locationType, setLocationType] = useState<LocationType>(initialLocationType || "restaurant");
+  const [locationId, setLocationId] = useState(initialLocationId);
   const [locationSearch, setLocationSearch] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
   const [editVisualLayout, setEditVisualLayout] = useState(!createMode);
@@ -279,7 +281,11 @@ export default function LocationLayoutClient({ backHref, adminMode = false, crea
       if (!response.ok) throw new Error(data.error || "Unable to load the location layout.");
       setItems(data.items || []);
       setLocations(data.locations || []);
-      if (!locationId && (data.locations || []).length > 0) {
+      const loadedLocations = (data.locations || []) as LocationOption[];
+      if (initialLocationId && !loadedLocations.some((location) => location.id === initialLocationId)) {
+        setMessage("This CRM location is selected, but it was not found in the reservation location search list. Layout items will still load if the ID is valid.");
+      }
+      if (!initialLocationId && !locationId && loadedLocations.length > 0) {
         const first = data.locations[0];
         setLocationId(first.id);
         setLocationType(first.type || "restaurant");
