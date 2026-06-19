@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabaseAdmin
     .from("locations")
-    .select(CARD_FIELDS, { count: "planned" })
+    .select(CARD_FIELDS)
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
@@ -76,14 +76,18 @@ export async function GET(request: NextRequest) {
     .or("is_low_level.is.null,is_low_level.eq.false")
     .not("public_visibility_tier", "in", '("low_level","hidden")')
     .not("curation_tier", "eq", "low_level")
-    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not(
+      "source_quality_status",
+      "in",
+      '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")',
+    )
     .not("import_confidence", "eq", "low");
 
   if (city) query = query.ilike("city", `%${city}%`);
   if (borough) query = query.ilike("borough", `%${borough}%`);
 
   const dbStart = Date.now();
-  const { data, error, count } = await query
+  const { data, error } = await query
     .order("is_featured", { ascending: false, nullsFirst: false })
     .order("rating", { ascending: false, nullsFirst: false })
     .range(from, to);
@@ -92,8 +96,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
 
   const items = data || [];
-  const hasMore =
-    typeof count === "number" ? page * limit < count : items.length === limit;
+  const hasMore = items.length === limit;
   const totalMs = Date.now() - start;
 
   console.log(
@@ -112,6 +115,5 @@ export async function GET(request: NextRequest) {
     page,
     limit,
     hasMore,
-    totalEstimate: count ?? null,
   });
 }
