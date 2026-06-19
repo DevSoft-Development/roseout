@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Building2, CheckCircle, Clock, DollarSign, Download, Filter, Plus, Send, Users } from "lucide-react";
+import AdminCrmWorkspace from "@/components/admin/crm/AdminCrmWorkspace";
 import {
   AdminActionButton,
   AdminEmptyState,
@@ -6,6 +8,11 @@ import {
   AdminKpiGrid,
   AdminPageHeader,
   AdminPageShell,
+  AdminFilterChip,
+  AdminFilterGroup,
+  AdminFilterPanel,
+  AdminPagination,
+  AdminSearchInput,
   AdminSectionCard,
   AdminStatusBadge,
   getReadinessLabel,
@@ -427,380 +434,50 @@ export default async function CRMPage({
           </form>
         </div>
       </AdminSectionCard>
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <AdminSectionCard className="p-3 sm:p-4">
-          {filter === "pending-claims" && pendingClaims.length > 0 ? (
-            <PendingClaimsPanel claims={pendingClaims} />
-          ) : businesses.length === 0 ? (
-            <AdminEmptyState
-              title="No CRM records match this view."
-              body={emptyCopy(filter)}
-              action={
-                <AdminActionButton
-                  href="/admin/dashboard/crm"
-                  variant="primary"
-                >
-                  Clear filters
-                </AdminActionButton>
-              }
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left text-sm">
-                <thead className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  <tr>
-                    {[
-                      "Location",
-                      "Market",
-                      "Status / Stage",
-                      "Readiness",
-                      "Analytics",
-                      "Last Activity",
-                      "Next Action",
-                    ].map((h) => (
-                      <th key={h} className="px-3 py-3 font-black">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {businesses.map((business: any, index: number) => {
-                    const readiness = Math.round(
-                      (getSalesReadinessScore(business) +
-                        getReservationPortalReadinessScore(business)) /
-                        2,
-                    );
-                    const tone = getReadinessTone(readiness);
-                    const marketIssue = getMarketWarning(business);
-                    return (
-                      <tr
-                        key={business.id}
-                        tabIndex={0}
-                        className={`group border-t border-white/10 align-top outline-none transition hover:bg-white/[0.035] focus:bg-white/[0.05] ${index === 0 ? "bg-rose-500/[0.04] ring-1 ring-inset ring-rose-300/25" : ""}`}
-                      >
-                        <td className="max-w-[270px] px-3 py-4">
-                          <Link
-                            href={`/admin/dashboard/crm/${business.id}`}
-                            className="font-black text-rose-100 hover:text-white"
-                          >
-                            {business.name}
-                          </Link>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/50">
-                            {business.address ||
-                              [
-                                business.city || business.borough,
-                                business.state,
-                              ]
-                                .filter(Boolean)
-                                .join(", ") ||
-                              "Location profile"}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-white/35">
-                            {business.location_type ||
-                              business.category ||
-                              business.primary_category ||
-                              "Location"}
-                          </p>
-                        </td>
-                        <td className="px-3 py-4">
-                          <AdminStatusBadge>
-                            {getMarketDisplayName(
-                              inferMarketFromCityStateCounty(business),
-                            )}
-                          </AdminStatusBadge>
-                          {marketIssue ? (
-                            <div className="mt-2">
-                              <AdminStatusBadge tone="amber">
-                                {marketIssue.label}
-                              </AdminStatusBadge>
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-4">
-                          <div className="flex flex-col gap-1.5">
-                            <AdminStatusBadge
-                              tone={business.is_searchable ? "green" : "amber"}
-                            >
-                              {getClaimOutreachStatus(business).replace(
-                                /_/g,
-                                " ",
-                              )}
-                            </AdminStatusBadge>
-                            <span className="text-xs text-white/55">
-                              {getDiscoveryStatus(business).replace(/_/g, " ")}
-                            </span>
-                            <span className="text-xs text-white/40">
-                              Searchable:{" "}
-                              {business.is_searchable ? "Yes" : "No"}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-4">
-                          <div className="w-28">
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-2xl font-black">
-                                {readiness}%
-                              </span>
-                              <span
-                                className={`text-xs font-black ${tone === "green" ? "text-emerald-200" : tone === "amber" ? "text-amber-200" : "text-red-200"}`}
-                              >
-                                {getReadinessLabel(readiness)}
-                              </span>
-                            </div>
-                            <div className="mt-2 h-2 rounded-full bg-white/10">
-                              <div
-                                className={`h-2 rounded-full ${tone === "green" ? "bg-emerald-400" : tone === "amber" ? "bg-amber-400" : "bg-red-400"}`}
-                                style={{
-                                  width: `${Math.max(5, Math.min(100, readiness))}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-xs text-white/60">
-                          <div>
-                            Reservations{" "}
-                            {fmt(business.reservation_completions_30d)}
-                          </div>
-                          <div>Views {fmt(business.profile_views_30d)}</div>
-                          <div>
-                            Search {fmt(business.search_appearances_30d)}
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-xs text-white/60">
-                          {dateLabel(
-                            business.last_contacted_at ||
-                              business.updated_at ||
-                              business.created_at,
-                          )}
-                        </td>
-                        <td className="px-3 py-4">
-                          <p className="text-xs font-bold text-white/70">
-                            {getNextActionLabel(business)}
-                          </p>
-                          <p className="mt-1 text-xs text-white/40">
-                            {dateLabel(
-                              business.next_action_due_at ||
-                                business.follow_up_date,
-                            )}
-                          </p>
-                          <Link
-                            href={`/admin/dashboard/crm/${business.id}`}
-                            className="mt-2 inline-flex rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/70 hover:border-rose-300/40 hover:text-white"
-                          >
-                            Open
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-white/60 lg:flex-row lg:items-center lg:justify-between">
-            <p>
-              Showing{" "}
-              <span className="font-bold text-white">{fmt(pageStart)}</span> to{" "}
-              <span className="font-bold text-white">{fmt(pageEnd)}</span> of{" "}
-              <span className="font-bold text-white">
-                {fmt(pageData.total)}
-              </span>{" "}
-              locations
-            </p>
-            <div className="flex flex-wrap gap-2">
+      <AdminCrmWorkspace
+        businesses={businesses}
+        empty={
+          <AdminEmptyState
+            title="No CRM records match this view."
+            body={emptyCopy(filter)}
+            action={
+              <AdminActionButton href="/admin/dashboard/crm" variant="primary">
+                Clear filters
+              </AdminActionButton>
+            }
+          />
+        }
+        pageStart={pageStart}
+        pageEnd={pageEnd}
+        total={pageData.total}
+        pagination={
+          <AdminPagination>
+            <Link
+              aria-disabled={pageData.page <= 1}
+              href={pageData.page <= 1 ? "#" : pageHref(pageData.page - 1)}
+              className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page <= 1 ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}
+            >
+              Previous
+            </Link>
+            {pageNumbers.map((n) => (
               <Link
-                aria-disabled={pageData.page <= 1}
-                href={pageData.page <= 1 ? "#" : pageHref(pageData.page - 1)}
-                className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page <= 1 ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}
+                key={n}
+                href={pageHref(n)}
+                className={`rounded-full border px-4 py-2 font-bold ${n === pageData.page ? "border-rose-300/50 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.06] text-white/70"}`}
               >
-                Previous
+                {n}
               </Link>
-              {pageNumbers.map((n) => (
-                <Link
-                  key={n}
-                  href={pageHref(n)}
-                  className={`rounded-full border px-4 py-2 font-bold ${n === pageData.page ? "border-rose-300/50 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.06] text-white/70"}`}
-                >
-                  {n}
-                </Link>
-              ))}
-              <Link
-                aria-disabled={pageData.page >= pageData.totalPages}
-                href={
-                  pageData.page >= pageData.totalPages
-                    ? "#"
-                    : pageHref(pageData.page + 1)
-                }
-                className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page >= pageData.totalPages ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}
-              >
-                Next
-              </Link>
-            </div>
-          </div>
-        </AdminSectionCard>
-        <aside className="min-w-0 rounded-[1.5rem] border border-white/10 bg-[#101012] p-5 shadow-2xl shadow-black/30 xl:sticky xl:top-6 xl:h-fit">
-          {selectedBusiness ? (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-black text-white">
-                    {selectedBusiness.name}
-                  </h2>
-                  <p className="mt-1 text-sm leading-5 text-white/50">
-                    {selectedBusiness.address ||
-                      [selectedBusiness.city, selectedBusiness.state]
-                        .filter(Boolean)
-                        .join(", ") ||
-                      "—"}
-                  </p>
-                </div>
-                <AdminStatusBadge tone="rose">Selected</AdminStatusBadge>
-              </div>
-              <div className="mt-4 flex gap-2 border-b border-white/10 pb-3 text-xs font-black">
-                <span className="rounded-full bg-rose-500/15 px-3 py-1.5 text-rose-100">
-                  Overview
-                </span>
-                <span className="px-3 py-1.5 text-white/40">Notes</span>
-                <span className="px-3 py-1.5 text-white/40">Tasks</span>
-                <span className="px-3 py-1.5 text-white/40">Activity</span>
-              </div>
-              <div className="mt-4 space-y-4 text-sm">
-                <Detail
-                  title="Profile"
-                  rows={[
-                    [
-                      "Market",
-                      getMarketDisplayName(
-                        inferMarketFromCityStateCounty(selectedBusiness),
-                      ),
-                    ],
-                    [
-                      "Type",
-                      selectedBusiness.location_type ||
-                        selectedBusiness.category ||
-                        "—",
-                    ],
-                    [
-                      "Searchable",
-                      selectedBusiness.is_searchable ? "Yes" : "No",
-                    ],
-                    [
-                      "Photos",
-                      selectedBusiness.image_url ||
-                      selectedBusiness.main_image ||
-                      (Array.isArray(selectedBusiness.images) &&
-                        selectedBusiness.images.length)
-                        ? "Available"
-                        : "Missing",
-                    ],
-                    ["Google ID", selectedBusiness.google_place_id || "—"],
-                  ]}
-                  href={`/admin/dashboard/crm/${selectedBusiness.id}?tab=profile`}
-                />
-                <Detail
-                  title="Portal / Embed"
-                  rows={[
-                    [
-                      "Portal",
-                      getReservationPortalStatus(selectedBusiness).replace(
-                        /_/g,
-                        " ",
-                      ),
-                    ],
-                    [
-                      "Embed",
-                      getEmbedStatus(selectedBusiness).replace(/_/g, " "),
-                    ],
-                    ["Plan", getPartnerPlanDisplay(selectedBusiness)],
-                  ]}
-                  href={`/admin/dashboard/crm/${selectedBusiness.id}?tab=qr`}
-                />
-                <Detail
-                  title="Discovery"
-                  rows={[
-                    [
-                      "Stage",
-                      getDiscoveryStatus(selectedBusiness).replace(/_/g, " "),
-                    ],
-                    [
-                      "Sales",
-                      getPartnerSalesStatus(selectedBusiness).replace(
-                        /_/g,
-                        " ",
-                      ),
-                    ],
-                    ["Next action", getNextActionLabel(selectedBusiness)],
-                  ]}
-                  href={`/admin/dashboard/crm/${selectedBusiness.id}`}
-                />
-                <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 p-4">
-                  <h3 className="font-black">No notes yet</h3>
-                  <p className="mt-1 text-xs text-white/50">
-                    Add a note to keep track of important details.
-                  </p>
-                  <Link
-                    href={`/admin/dashboard/crm/${selectedBusiness.id}?tab=notes`}
-                    className="mt-3 inline-flex rounded-full bg-[#ec0b5b] px-3 py-1.5 text-xs font-black text-white"
-                  >
-                    Add Note
-                  </Link>
-                </div>
-                <div className="grid gap-2">
-                  <AdminActionButton
-                    href={`/locations/${(selectedBusiness as any).slug || selectedBusiness.id}`}
-                  >
-                    View Location Page
-                  </AdminActionButton>
-                  <AdminActionButton
-                    href="/admin/dashboard/my-workspace/tasks"
-                    variant="primary"
-                  >
-                    Create Task
-                  </AdminActionButton>
-                </div>
-              </div>
-            </>
-          ) : (
-            <AdminEmptyState
-              title="No selected location"
-              body="Select a CRM row to review the details panel."
-            />
-          )}
-        </aside>
-      </div>
+            ))}
+            <Link
+              aria-disabled={pageData.page >= pageData.totalPages}
+              href={pageData.page >= pageData.totalPages ? "#" : pageHref(pageData.page + 1)}
+              className={`rounded-full border border-white/10 px-4 py-2 font-bold ${pageData.page >= pageData.totalPages ? "pointer-events-none opacity-40" : "bg-white/[0.06] text-white"}`}
+            >
+              Next
+            </Link>
+          </AdminPagination>
+        }
+      />
     </AdminPageShell>
-  );
-}
-
-function Detail({
-  title,
-  rows,
-  href,
-}: {
-  title: string;
-  rows: Array<[string, any]>;
-  href: string;
-}) {
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-black text-white">{title}</h3>
-        <Link href={href} className="text-xs font-black text-rose-200">
-          Edit
-        </Link>
-      </div>
-      <dl className="mt-3 grid gap-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-3 text-xs">
-            <dt className="text-white/40">{label}</dt>
-            <dd className="max-w-[190px] truncate text-right font-bold capitalize text-white/70">
-              {value || "—"}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </section>
   );
 }
