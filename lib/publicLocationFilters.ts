@@ -1,3 +1,4 @@
+import { ACTIVE_MARKET_STATES } from "@/lib/location-publishability";
 export const PUBLIC_LOW_LEVEL_SELECT_FIELDS = [
   "is_low_level",
   "public_visibility_tier",
@@ -15,6 +16,7 @@ export function applyPublicLocationFilters(query: any) {
   return query
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
+    .in("state", [...ACTIVE_MARKET_STATES])
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
     .eq("has_photos", true)
     .not("photo_status", "eq", "missing_photo")
@@ -23,7 +25,7 @@ export function applyPublicLocationFilters(query: any) {
     .not("longitude", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
-    .not("status", "in", '("closed","archived")')
+    .not("status", "in", '("closed","archived","rejected")')
     .or("is_low_level.is.null,is_low_level.eq.false")
     .not("public_visibility_tier", "in", '("low_level","internal","pending_review","hidden","rejected")')
     .not("is_demo", "is", true)
@@ -51,5 +53,8 @@ export function isPublicLocationRecord(item: any) {
     String(item?.curation_tier || "").toLowerCase() !== "low_level" &&
     !["imported_unverified", "generic_restaurant", "needs_enrichment", "low_level_review"].includes(String(item?.source_quality_status || "").toLowerCase()) &&
     String(item?.import_confidence || "").toLowerCase() !== "low" &&
-    Boolean(item?.main_image || item?.image_url);
+    Boolean(item?.main_image || item?.image_url) &&
+    ACTIVE_MARKET_STATES.includes(String(item?.state || "").toUpperCase() as any) &&
+    Boolean(item?.address) && Boolean(item?.city) && item?.latitude != null && item?.longitude != null &&
+    status !== "rejected";
 }

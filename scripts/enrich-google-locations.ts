@@ -1,3 +1,4 @@
+import { buildPublishabilityUpdate } from "../lib/location-publishability";
 import { createClient } from "@supabase/supabase-js";
 import {
   buildApplySuggestionUpdate,
@@ -156,7 +157,7 @@ async function main() {
       counters.suggestions_created += 1;
 
       if (!options.dryRun && options.applyHighConfidence && result.confidence >= 85) {
-        const update = {
+        const baseUpdate = {
           ...buildApplySuggestionUpdate(row, suggestionRow),
           google_place_id: result.place.id,
           google_enrichment_status: "auto_applied",
@@ -169,6 +170,9 @@ async function main() {
           google_user_rating_count: result.place.userRatingCount || null,
           google_last_error: null,
         };
+        const mergedRow = { ...row, ...baseUpdate };
+        const { update: publishabilityUpdate } = buildPublishabilityUpdate(mergedRow, { allowApproval: true });
+        const update = { ...baseUpdate, ...publishabilityUpdate };
         const { error: updateError } = await supabase.from(options.table).update(update).eq("id", row.id);
         if (updateError) throw updateError;
         if (inserted?.id) await supabase.from("location_google_food_term_suggestions").update({ applied_at: new Date().toISOString() }).eq("id", inserted.id);
