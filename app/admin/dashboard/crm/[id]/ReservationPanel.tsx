@@ -3,14 +3,14 @@ import type { BusinessCRMRow } from "@/lib/admin-crm";
 import { getEmbedStatus, getPartnerPlanDisplay, getReservationPortalStatus } from "@/lib/admin-crm";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 
-type Reservation = { id?: string; status?: string | null; reservation_date?: string | null; date?: string | null; starts_at?: string | null; created_at?: string | null };
+type Reservation = { id?: string; status?: string | null; reservation_date?: string | null; date?: string | null; starts_at?: string | null; created_at?: string | null; guest_name?: string | null; party_size?: number | null };
 
 function fmtDate(value?: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export default function ReservationsPanel({ business, reservations }: { business: BusinessCRMRow; reservations: Reservation[]; canSend: boolean }) {
+export default function ReservationsPanel({ business, reservations, canSend }: { business: BusinessCRMRow; reservations: Reservation[]; canSend: boolean }) {
   const appUrl = getCanonicalAppUrl();
   const embedUrl = `${appUrl}/embed/reservations/${business.id}`;
   const publicUrl = `/embed/reservations/${business.id}`;
@@ -61,6 +61,13 @@ export default function ReservationsPanel({ business, reservations }: { business
       <textarea readOnly value={iframe} rows={9} className="mt-4 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 font-mono text-xs text-white outline-none" />
       <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/65"><p className="font-black text-white">Install instructions</p><ol className="mt-2 list-decimal space-y-1 pl-5"><li>Copy iframe code.</li><li>Paste into the business website where reservations should appear.</li><li>Save/publish the page.</li><li>Test a booking.</li><li>Confirm booking appears in the owner/admin reservation dashboard.</li></ol></div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2">{checklist.map((item) => <div key={item} className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs font-bold text-white/65">□ {item}</div>)}</div>
+    </article>
+    <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 lg:col-span-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h3 className="text-lg font-black">Reservation records</h3><p className="mt-1 text-sm text-white/55">Recent and upcoming bookings connected to this location.</p></div>
+        <span className="rounded-full border border-white/10 bg-black/25 px-3 py-1 text-xs font-black text-white/55">{canSend ? "Editable" : "Read only"}</span>
+      </div>
+      {reservations.length ? <div className="mt-4 grid gap-2">{reservations.slice(0, 12).map((reservation, index) => <div key={reservation.id || index} className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70 md:grid-cols-[1fr_auto_auto]"><div><p className="font-black text-white">{reservation.guest_name || "Reservation"}</p><p className="text-xs text-white/45">{fmtDate(reservation.starts_at || reservation.reservation_date || reservation.date || reservation.created_at)}</p></div><span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-black capitalize">{reservation.status || "scheduled"}</span><span className="text-xs font-bold text-white/55">Party {reservation.party_size || "—"}</span></div>)}</div> : <div className="mt-4 rounded-2xl border border-dashed border-white/15 bg-black/20 p-8 text-center"><h4 className="font-black text-white">No reservations yet</h4><p className="mt-2 text-sm text-white/55">Reservations will appear here after guests book through the portal or connected reservation tools.</p></div>}
     </article>
   </section>;
 }

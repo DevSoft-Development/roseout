@@ -14,24 +14,26 @@ import { createClaimQr } from "@/lib/claimQrServer";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
+import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminPageShell, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
 export const dynamic = "force-dynamic";
 
 const tabs = [
   "overview",
-  "profile",
-  "photos",
+  "partner-launch",
   "reservations",
+  "photos",
+  "listing",
+  "analytics",
+  "communication",
+  "settings",
+  "logs",
+  "profile",
   "claims",
   "owner",
   "plan",
-  "analytics",
   "qr",
-  "communication",
   "support",
-  "logs",
   "seo",
-  "enhancement",
-  "settings",
 ] as const;
 
 type Tab = (typeof tabs)[number];
@@ -283,7 +285,7 @@ function ProfileForm({ business, canEdit }: { business: BusinessCRMRow; canEdit:
     ["category", "Category", business.category],
     ["cuisine", "Cuisine", business.cuisine],
     ["reservation_url", "Reservation URL", business.reservation_url],
-    ["external_reservation_url", "External reservation URL", business.external_reservation_url],
+    ["external_reservation_url", "External reservation URL", (business as any).external_reservation_url],
     ["status", "Status", business.status],
   ];
 
@@ -306,7 +308,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const { id } = await params;
   const query = await searchParams;
-  const requestedTab = query.tab === "emails" ? "communication" : query.tab;
+  const requestedTab = query.tab === "emails" ? "communication" : query.tab === "enhancement" ? "listing" : query.tab;
   const activeTab = tabs.includes(requestedTab as Tab) ? (requestedTab as Tab) : "overview";
   const business = await getBusinessCRM(id);
   if (!business) notFound();
@@ -318,9 +320,8 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const qualityScore = business.profile_quality_score || Math.round([business.name, business.address, business.city, business.phone, business.website, business.description].filter(Boolean).length / 6 * 100);
   const seoScore = business.seo_score || Math.round([business.name, business.description, business.category, business.city, business.is_searchable].filter(Boolean).length / 5 * 100);
 
-  return <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-    <div className="mx-auto max-w-[1500px] space-y-6">
-      <section className="sticky top-0 z-20 rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#170b0b,#090706_60%,#14100c)] p-5 shadow-2xl shadow-black/30">
+  return <AdminPageShell>
+      <section className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(135deg,#12090d,#090909_60%,#131316)] p-5 shadow-2xl shadow-black/30">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <Link href="/admin/dashboard/crm" className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">← TheOutHaven CRM</Link>
@@ -329,7 +330,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
             <div className="mt-4 flex flex-wrap gap-2">{badge(business.status || "active")}{badge(business.is_searchable ? "Searchable" : "Not searchable", business.is_searchable ? "good" : "danger")}{badge(getClaimStatus(business), business.is_claimed ? "good" : "danger")}{badge(business.plan_status || "Free Discovery")}{badge(getDisplayCRMStatus(business))}</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=enhancement`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Edit Listing Enhancement</Link>
+            <Link href={`/admin/dashboard/crm/${business.id}?tab=listing`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Edit Listing Enhancement</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Edit profile</Link>
             <Link href={publicHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">View public page</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=claims`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open claims</Link>
@@ -347,35 +348,55 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
         </div>
       </section>
 
-      <PartnerLaunchPanel business={business} canEdit={canEdit} />
+      <AdminKpiGrid>
+        <AdminKpiCard label="Sales Readiness" value={`${getSalesReadinessScore(business)}%`} helper="Pipeline fit" />
+        <AdminKpiCard label="Setup Score" value={`${getPartnerSetupScore(business)}%`} helper="Partner readiness" />
+        <AdminKpiCard label="Reservation Ready" value={`${business.reservation_readiness_score || (business.reservation_url || (business as any).external_reservation_url ? 80 : 35)}%`} helper={getReservationPortalStatus(business).replace(/_/g, " ")} />
+        <AdminKpiCard label="Views 30D" value={fmt(business.profile_views_30d)} helper="Profile views" />
+        <AdminKpiCard label="Search 30D" value={fmt(business.search_appearances_30d)} helper="Appearances" />
+        <AdminKpiCard label="Reserve Intent 30D" value={fmt(business.reservation_completions_30d)} helper="Completions" />
+      </AdminKpiGrid>
+
+      {activeTab === "partner-launch" ? <PartnerLaunchPanel business={business} canEdit={canEdit} /> : null}
 
       <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.04] p-2 text-sm font-bold">
-        {tabs.map((tab) => <Link key={tab} href={`/admin/dashboard/crm/${business.id}?tab=${tab}`} className={`whitespace-nowrap rounded-full px-4 py-2 capitalize ${activeTab === tab ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>{tab === "qr" ? "QR Codes" : tab === "communication" ? "Communication" : tab === "enhancement" ? "Listing Enhancement" : tab}</Link>)}
+        {tabs.map((tab) => <Link key={tab} href={`/admin/dashboard/crm/${business.id}?tab=${tab}`} className={`whitespace-nowrap rounded-full px-4 py-2 capitalize ${activeTab === tab ? "bg-rose-600 text-white" : "bg-black/20 text-white/60 hover:text-white"}`}>{tab === "qr" ? "QR Codes" : tab === "communication" ? "Communication" : tab === "listing" ? "Listing" : tab === "partner-launch" ? "Partner Launch" : tab}</Link>)}
       </nav>
 
-      {activeTab === "overview" ? <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+      {activeTab === "overview" ? <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="min-w-0 grid gap-4 lg:grid-cols-2">
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Location command center</h2><p className="mt-2 text-sm leading-6 text-white/60">Owner, claim, plan, analytics, Experience Inbox, logs, and data quality context are consolidated here so admins do not need to jump across disconnected pages.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><StatCard label="Profile views 30d" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances 30d" value={fmt(business.search_appearances_30d)} /><StatCard label="Reserve intent 30d" value={fmt(business.reservation_completions_30d)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /></div></article>
         <NextRecommendedActions business={business} flags={flags} isAdmin={canAdmin(admin.role, "crmEdit")} />
+        <ReservationSummaryCard business={business} />
         <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Recent activity</h2>{related.logs.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{related.logs.slice(0, 6).map((log: any) => <li key={log.id} className="rounded-2xl border border-white/10 bg-black/20 p-3"><b>{log.action || log.category}</b> · {log.message}<span className="block text-xs text-white/40">{formatDate(log.created_at)}</span></li>)}</ul> : <EmptyPanel title="No activity yet" text="CRM actions, profile edits, claim changes, QR activity, and Experience notes will appear here after admins perform them." />}</article>
-        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Open tasks & Experience Inbox</h2>{related.reminders.length || related.supportTickets.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{[...related.reminders, ...related.supportTickets].slice(0, 6).map((item: any) => <li key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">{item.title || item.subject || item.message || "CRM item"}<span className="block text-xs text-white/40">{item.reminder_status || item.status || "open"}</span></li>)}</ul> : <EmptyPanel title="No open tasks" text="Tasks, reminders, and Experience Inbox tickets tied to this location will appear here." />}</article>
-      </section> : null}
+        <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Open tasks & Experience Inbox</h2>{related.reminders.length || related.supportTickets.length ? <ul className="mt-3 space-y-2 text-sm text-white/70">{[...related.reminders, ...related.supportTickets].slice(0, 6).map((item: any) => <li key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-3">{item.title || item.subject || item.message || "CRM item"}<span className="block text-xs text-white/40">{item.reminder_status || item.status || "open"}</span></li>)}</ul> : <EmptyPanel title="No open tasks" text="Tasks, reminders, and Experience Inbox tickets tied to this location will appear here." />}</article></div><RightCommandPanel business={business} flags={flags} canEdit={canEdit} /></section> : null}
 
       {activeTab === "profile" ? <ProfileForm business={business} canEdit={canEdit} /> : null}
-      {activeTab === "analytics" ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><StatCard label="Profile views" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances" value={fmt(business.search_appearances_30d)} /><StatCard label="Saves" value={fmt(business.saves_30d)} /><StatCard label="Reserve completions" value={fmt(business.reservation_completions_30d)} /><StatCard label="Call clicks" value={fmt(business.call_clicks_30d || 0)} /><StatCard label="Website clicks" value={fmt(business.website_clicks_30d || 0)} /><StatCard label="QR scans" value={fmt(business.qr_scans_30d || 0)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /><div className="xl:col-span-4"><EmptyPanel title="Location analytics only" text="This tab contains location-specific analytics. Platform-wide executive analytics stay on /admin/dashboard/analytics." /></div></section> : null}
+      {activeTab === "analytics" ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><StatCard label="Profile views" value={fmt(business.profile_views_30d)} /><StatCard label="Search appearances" value={fmt(business.search_appearances_30d)} /><StatCard label="Saves" value={fmt(business.saves_30d)} /><StatCard label="Reserve completions" value={fmt(business.reservation_completions_30d)} /><StatCard label="Call clicks" value={fmt((business as any).call_clicks_30d || 0)} /><StatCard label="Website clicks" value={fmt((business as any).website_clicks_30d || 0)} /><StatCard label="QR scans" value={fmt((business as any).qr_scans_30d || 0)} /><StatCard label="Conversion rate" value={`${fmt(business.conversion_rate_30d * 100)}%`} /><div className="xl:col-span-4"><EmptyPanel title="Location analytics only" text="This tab contains location-specific analytics. Platform-wide executive analytics stay on /admin/dashboard/analytics." /></div></section> : null}
       {activeTab === "claims" ? <ClaimsPanel business={business} claims={related.claims} /> : null}
       {activeTab === "logs" ? <section className="space-y-4"><Panel title="Location logs" items={related.logs} empty="No admin activity has been recorded for this location yet." href="/admin/dashboard/logs" hrefLabel="Open platform logs" /></section> : null}
       {activeTab === "communication" ? <CommunicationPanel locationId={business.id} defaultEmail={business.owner_email} defaultPhone={business.phone} templates={related.templates} logs={related.communications} canSend={canEdit} /> : null}
       {activeTab === "support" ? <Panel title="Experience Inbox" items={related.supportTickets} empty="No Experience Inbox tickets have been opened for this location yet." href="/admin/dashboard/support" hrefLabel="Open Experience Inbox" /> : null}
       {activeTab === "photos" ? <PhotosPanelClient business={business} canEdit={canEdit} saveAction={saveLocationPhotos} /> : null}
-      {activeTab === "reservations" ? <ReservationsPanel business={business} reservations={related.reservations || []} canSend={canEdit} /> : null}
+      {activeTab === "reservations" ? <AdminSectionCard className="p-5"><div className="mb-5"><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Reservations</p><h2 className="mt-2 text-2xl font-black">Reservations</h2><p className="mt-1 text-sm text-white/55">Manage reservation setup, partner booking links, and reservation readiness.</p></div><ReservationsPanel business={business} reservations={related.reservations || []} canSend={canEdit} /></AdminSectionCard> : null}
       {activeTab === "owner" ? <OwnerPanel business={business} owners={related.owners} /> : null}
       {activeTab === "plan" ? <PlanBillingPanel business={business} canEdit={admin.role === "superadmin"} isSuperadmin={admin.role === "superadmin"} /> : null}
       {activeTab === "qr" ? <QRCodePanel business={business} qrCodes={related.qrCodes} canRegenerate={canAdmin(admin.role, "claimQrsGenerate")} /> : null}
       {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use Listing Enhancement, profile, and settings to improve location-level search visibility.`} /> : null}
-      {activeTab === "enhancement" ? <ListingEnhancementEditor table={enhancementTable} id={business.id} record={business} canEdit={canEdit} /> : null}
+      {activeTab === "listing" ? <ListingEnhancementEditor table={enhancementTable} id={business.id} record={business} canEdit={canEdit} /> : null}
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
-    </div>
-  </main>;
+  </AdminPageShell>;
+}
+
+function ReservationSummaryCard({ business }: { business: BusinessCRMRow }) {
+  return <article className="rounded-3xl border border-rose-200/15 bg-rose-500/[0.045] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.24em] text-rose-200">Reservation Summary</p><h2 className="mt-2 text-xl font-black">Booking readiness</h2><p className="mt-1 text-sm text-white/55">Reservation setup is visible here and in the Reservations tab.</p></div><Link href={`/admin/dashboard/crm/${business.id}?tab=reservations`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Manage Reservations</Link></div><dl className="mt-4 grid gap-3 sm:grid-cols-2 text-sm"><Info label="Portal status" value={getReservationPortalStatus(business).replace(/_/g, " ")} /><Info label="Reservation URL" value={business.reservation_url || "—"} /><Info label="External URL" value={(business as any).external_reservation_url || "—"} /><Info label="Ready score" value={`${business.reservation_readiness_score || (business.reservation_url || (business as any).external_reservation_url ? 80 : 35)}%`} /><Info label="Completions 30d" value={fmt(business.reservation_completions_30d)} /><Info label="Call clicks 30d" value={fmt((business as any).call_clicks_30d || 0)} /></dl></article>;
+}
+
+function Info({ label, value }: { label: string; value: any }) {
+  return <div className="min-w-0 rounded-2xl border border-white/10 bg-black/20 p-3"><dt className="text-xs font-black uppercase tracking-[0.16em] text-white/35">{label}</dt><dd className="mt-1 truncate font-bold capitalize text-white/75">{value || "—"}</dd></div>;
+}
+
+function RightCommandPanel({ business, flags, canEdit }: { business: BusinessCRMRow; flags: string[]; canEdit: boolean }) {
+  return <AdminDetailPanel className="space-y-4"><h2 className="text-lg font-black">Command Panel</h2><AdminActionButton href={`/admin/dashboard/crm/${business.id}?tab=partner-launch`} variant="primary">Set Next Action</AdminActionButton><AdminActionButton href={`/admin/dashboard/crm/${business.id}?tab=communication`}>Log Note / Message</AdminActionButton><AdminActionButton href={`/admin/dashboard/crm/${business.id}?tab=reservations`}>Manage Reservations</AdminActionButton><div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><h3 className="font-black">Profile completeness</h3><ul className="mt-3 space-y-2 text-sm text-white/60">{(flags.length ? flags : ["No critical issues flagged", "Review reservations weekly"]).map((flag) => <li key={flag}>• {flag}</li>)}</ul></div><p className="text-xs text-white/40">{canEdit ? "Editing enabled for your role." : "Viewer role is read-only."}</p></AdminDetailPanel>;
 }
 
 function PartnerLaunchPanel({ business, canEdit }: { business: BusinessCRMRow; canEdit: boolean }) {
@@ -394,7 +415,7 @@ function NextRecommendedActions({ business, flags, isAdmin }: { business: Busine
     { label: "Review claim", href: `/admin/dashboard/crm/${business.id}?tab=claims`, show: getClaimStatus(business).toLowerCase().includes("pending") || !business.is_claimed },
     { label: "Upgrade plan", href: `/admin/dashboard/crm/${business.id}?tab=plan`, show: isAdmin },
     { label: "Generate QR", href: `/admin/dashboard/crm/${business.id}?tab=qr`, show: true },
-    { label: "Fix reservation setup", href: `/admin/dashboard/crm/${business.id}?tab=reservations`, show: !business.reservation_url && !business.external_reservation_url },
+    { label: "Fix reservation setup", href: `/admin/dashboard/crm/${business.id}?tab=reservations`, show: !business.reservation_url && !(business as any).external_reservation_url },
   ].filter((item) => item.show);
   return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><h2 className="text-xl font-black">Next recommended action</h2><p className="mt-2 text-sm text-white/55">Use these shortcuts to act on the highest-impact CRM tasks for this location.</p><div className="mt-4 flex flex-wrap gap-2">{items.map((item) => <Link key={item.label} href={item.href} className="rounded-full border border-white/10 bg-black/25 px-4 py-2 text-sm font-black text-white/80 hover:bg-rose-600">{item.label}</Link>)}</div><ul className="mt-4 space-y-2 text-sm text-white/60">{(flags.length ? flags : ["Monitor weekly", "Keep profile fresh", "Review search visibility"]).map((flag) => <li key={flag} className="rounded-2xl border border-white/10 bg-black/20 p-3">{flag}</li>)}</ul></article>;
 }
@@ -429,7 +450,7 @@ function QRCodePanel({ business, qrCodes, canRegenerate }: { business: BusinessC
   const rawUrl = current.qr_url || current.claim_url || current.qr_link || business.claim_url;
   const url = rawUrl ? String(rawUrl).replace(/https?:\/\/(www\.)?roseout\.com/gi, getCanonicalAppUrl()) : "";
   const oldDomain = Boolean(rawUrl && /roseout\.com/i.test(String(rawUrl)));
-  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">QR Codes</h2><div className="flex gap-2"><Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open bulk QR page</Link>{url ? <Link href={url} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print/download QR</Link> : null}</div></div>{code || url ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70"><p><b>Claim code:</b> {code || "—"}</p><p className="mt-2 break-all"><b>Current QR URL:</b> {url || "—"}</p>{oldDomain ? <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-amber-100">This QR uses an old domain. Regenerate it to use theouthaven.com.</p> : null}<p className="mt-2"><b>Status:</b> {current.status || current.claim_status || "active"}</p><p className="mt-2"><b>Scan count:</b> {current.scan_count || current.scans || business.qr_scans_30d || 0}</p></div> : <EmptyPanel title="No claim QR code" text="No claim QR code has been generated for this location yet. Generate one here or use the bulk QR tools." />}<form action={regenerateLocationClaimQr} className="mt-5"><input type="hidden" name="location_id" value={business.id} /><button disabled={!canRegenerate} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Regenerate with TheOutHaven URL</button>{!canRegenerate ? <p className="mt-2 text-sm text-white/45">Admin or superadmin permission is required to regenerate QR codes.</p> : null}</form></article>;
+  return <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">QR Codes</h2><div className="flex gap-2"><Link href="/admin/dashboard/claim-qrs" className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open bulk QR page</Link>{url ? <Link href={url} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print/download QR</Link> : null}</div></div>{code || url ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70"><p><b>Claim code:</b> {code || "—"}</p><p className="mt-2 break-all"><b>Current QR URL:</b> {url || "—"}</p>{oldDomain ? <p className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-amber-100">This QR uses an old domain. Regenerate it to use theouthaven.com.</p> : null}<p className="mt-2"><b>Status:</b> {current.status || current.claim_status || "active"}</p><p className="mt-2"><b>Scan count:</b> {current.scan_count || current.scans || (business as any).qr_scans_30d || 0}</p></div> : <EmptyPanel title="No claim QR code" text="No claim QR code has been generated for this location yet. Generate one here or use the bulk QR tools." />}<form action={regenerateLocationClaimQr} className="mt-5"><input type="hidden" name="location_id" value={business.id} /><button disabled={!canRegenerate} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-50">Regenerate with TheOutHaven URL</button>{!canRegenerate ? <p className="mt-2 text-sm text-white/45">Admin or superadmin permission is required to regenerate QR codes.</p> : null}</form></article>;
 }
 
 function OwnerPanel({ business, owners }: { business: BusinessCRMRow; owners: any[] }) {
