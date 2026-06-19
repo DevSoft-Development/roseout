@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { buildLocationCleanupUpdates } from "@/lib/location-growth/cleanExistingLocations";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
@@ -257,6 +258,8 @@ export async function POST(request: NextRequest) {
           updates.photo_backfilled_at = checkedAt;
           updates.photo_backfill_checked_at = checkedAt;
           updates.photo_backfill_error = null;
+          Object.assign(updates, getPhotoPublishabilityUpdates({ ...row, ...updates }));
+          updates.photo_status = "google_photo";
         } else if (!photoRef && !hasGoodPhoto({ ...row, ...updates })) {
           updates.photo_status = "missing_photo";
           updates.has_photos = false;

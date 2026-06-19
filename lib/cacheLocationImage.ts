@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const LOCATION_IMAGE_BUCKET = "location-images";
@@ -200,12 +201,19 @@ export async function updateLocationImageWithCachedUrl(location: LocationImageRe
       ]
     : [result.publicUrl];
 
+  const mergedLocation = {
+    ...location,
+    main_image: result.publicUrl,
+    image_url: result.publicUrl,
+    images,
+    photo_status: "storage_cached",
+  };
   const updatePayload = {
     main_image: result.publicUrl,
     image_url: result.publicUrl,
     images,
-    has_photos: true,
-    photo_status: "cached_project_image",
+    ...getPhotoPublishabilityUpdates(mergedLocation),
+    photo_status: "storage_cached",
     updated_at: new Date().toISOString(),
   };
 

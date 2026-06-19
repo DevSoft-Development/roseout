@@ -5,6 +5,7 @@ import {
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferMarketFromCityStateCounty, type MarketKey } from "@/lib/location-markets";
 import { validatePlaceForMarket } from "@/lib/location-market-validation";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 export type CRMStatus =
   | "New Lead"
@@ -1810,6 +1811,22 @@ export async function safeUpdateLocationPhotos(
 ) {
   const mainImage = payload.mainImage ?? null;
   const galleryImages = dedupeUrls(payload.galleryImages || []);
+  const { data: currentLocation } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .eq("id", locationId)
+    .maybeSingle();
+  const mergedLocation = {
+    ...(currentLocation || {}),
+    main_image: mainImage,
+    image_url: mainImage,
+    gallery_images: galleryImages,
+    gallery: galleryImages,
+    photos: galleryImages,
+    image_gallery: galleryImages,
+    images: galleryImages,
+  };
+  const publishabilityUpdates = getPhotoPublishabilityUpdates(mergedLocation);
   const updates: Record<string, any> = {
     main_image: mainImage,
     image_url: mainImage,
@@ -1818,6 +1835,7 @@ export async function safeUpdateLocationPhotos(
     photos: galleryImages,
     image_gallery: galleryImages,
     images: galleryImages,
+    ...publishabilityUpdates,
     updated_at: new Date().toISOString(),
   };
   const missingColumn = (message?: string) =>
@@ -1845,6 +1863,11 @@ export async function safeUpdateLocationPhotos(
         "gallery_images",
         "image_url",
         "main_image",
+        "has_photos",
+        "photo_status",
+        "quality_status",
+        "data_status",
+        "is_searchable",
       ].find((key) => updates[key] !== undefined);
       if (optional) delete updates[optional];
       else break;

@@ -43,6 +43,23 @@ export function getPhotoStatus(row: any): string {
       "",
   ).toLowerCase();
 
+  const currentStatus = String(row?.photo_status ?? "").toLowerCase();
+  if ([
+    "admin_photo",
+    "owner_photo",
+    "google_photo",
+    "imported_photo",
+    "storage_cached",
+    "has_photo",
+  ].includes(currentStatus)) {
+    return currentStatus;
+  }
+
+  const mainImage = String(row?.main_image ?? row?.image_url ?? "").toLowerCase();
+  if (mainImage.includes("storage/v1/object/public")) {
+    return "storage_cached";
+  }
+
   if (
     row?.owner_photo ||
     row?.owner_uploaded_photo ||
@@ -71,6 +88,10 @@ export function getPhotoStatus(row: any): string {
     ["nyc_open_data", "osm", "google_places"].includes(source)
   ) {
     return "imported_photo";
+  }
+
+  if (source.includes("storage") || source.includes("cached")) {
+    return "storage_cached";
   }
 
   return "has_photo";

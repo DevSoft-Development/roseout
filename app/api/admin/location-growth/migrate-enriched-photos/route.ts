@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const runtime = "nodejs";
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
             main_image: stored.publicUrl,
             image_url: stored.publicUrl,
             gallery_images: [stored.publicUrl],
-            has_photos: true,
+            ...getPhotoPublishabilityUpdates({ ...row, main_image: stored.publicUrl, image_url: stored.publicUrl, gallery_images: [stored.publicUrl], photo_status: "google_photo" }),
             photo_status: "google_photo",
             photo_source: "google_places",
             photo_storage_path: stored.storagePath,
