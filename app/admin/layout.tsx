@@ -21,13 +21,13 @@ export default async function AdminLayout({
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#090706] text-white">
+    <div className="min-h-screen overflow-x-hidden bg-[#050505] text-white xl:pl-64">
       <AdminTopBar
         adminName={admin.full_name || "Admin"}
         adminEmail={admin.email || ""}
         adminRole={admin.role}
       />
-      {children}
+      <div className="min-w-0 max-w-full">{children}</div>
     </div>
   );
 }
