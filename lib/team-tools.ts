@@ -131,6 +131,185 @@ export async function listUsersById(userIds: string[]) {
     }]));
 }
 
+export type AssignableTeamMember = {
+  id: string;
+  user_id: string;
+  team_type: string | null;
+  status: string | null;
+  display_name: string;
+  email: string | null;
+};
+
+export async function listAssignableTeamMembers(): Promise<AssignableTeamMember[]> {
+  const { data, error } = await supabaseAdmin
+    .from("team_member_profiles")
+    .select("id,user_id,team_type,status")
+    .in("status", ["active", "training"])
+    .order("team_type", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const profiles = Array.isArray(data) ? data : [];
+
+  const usersById = await listUsersById(
+    profiles
+      .map((profile: any) => String(profile.user_id || "").trim())
+      .filter(Boolean),
+  );
+
+  return profiles.map((profile: any) => {
+    const userId = String(profile.user_id || "").trim();
+    const user = usersById.get(userId);
+
+    return {
+      id: String(profile.id),
+      user_id: userId,
+      team_type: profile.team_type || null,
+      status: profile.status || null,
+      display_name:
+        user?.full_name ||
+        user?.email ||
+        `${labelize(profile.team_type || "Team")} Member`,
+      email: user?.email || null,
+    };
+  });
+}
+
+export type AssignLocationsOptions = {
+  assignedBy?: string | null;
+  assignmentType?: string | null;
+  campaign?: string | null;
+  priority?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  tag?: string | null;
+  nextActionType?: string | null;
+  nextActionNote?: string | null;
+  nextActionDueAt?: string | null;
+};
+
+export async function assignLocationsToWorkspaceUser(
+  locationIds: string[],
+  assignedTo: string | null,
+  options: AssignLocationsOptions = {},
+) {
+  const cleanLocationIds = Array.from(
+    new Set(
+      (Array.isArray(locationIds) ? locationIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (!cleanLocationIds.length) {
+    throw new Error("Select at least one location to assign.");
+  }
+
+  const cleanAssignedTo = String(assignedTo || "").trim();
+
+  if (!cleanAssignedTo) {
+    throw new Error("Choose a team member to assign these locations to.");
+  }
+
+  const { data: teamMember, error: teamMemberError } = await supabaseAdmin
+    .from("team_member_profiles")
+    .select("id,user_id,status,team_type")
+    .eq("id", cleanAssignedTo)
+    .maybeSingle();
+
+  if (teamMemberError) {
+    throw teamMemberError;
+  }
+
+  if (!teamMember?.id) {
+    throw new Error("The selected team member could not be found.");
+  }
+
+  const assignmentType =
+    String(options.assignmentType || "partner_launch").trim() || "partner_launch";
+
+  const campaign =
+    String(options.campaign || "partner_launch").trim() || "partner_launch";
+
+  const priority =
+    String(options.priority || "normal").trim() || "normal";
+
+  const now = new Date().toISOString();
+  const savedRows: any[] = [];
+
+  for (const locationId of cleanLocationIds) {
+    const row = {
+      location_id: locationId,
+      team_member_id: String(teamMember.id),
+      assigned_by: options.assignedBy || null,
+      assignment_type: assignmentType,
+      priority,
+      status: "active",
+      reason: options.reason || null,
+      notes: options.notes || null,
+      campaign,
+      next_action_type: options.nextActionType || null,
+      next_action_note: options.nextActionNote || null,
+      next_action_due_at: options.nextActionDueAt || null,
+      updated_at: now,
+    };
+
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("team_location_assignments")
+      .select("id")
+      .eq("location_id", row.location_id)
+      .eq("team_member_id", row.team_member_id)
+      .eq("assignment_type", row.assignment_type)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    if (existing?.id) {
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from("team_location_assignments")
+        .update(row)
+        .eq("id", existing.id)
+        .select("id,location_id,team_member_id,assignment_type,status")
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      savedRows.push(updated);
+      continue;
+    }
+
+    const { data: created, error: insertError } = await supabaseAdmin
+      .from("team_location_assignments")
+      .insert({
+        ...row,
+        created_at: now,
+      })
+      .select("id,location_id,team_member_id,assignment_type,status")
+      .single();
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    savedRows.push(created);
+  }
+
+  return {
+    success: true,
+    count: savedRows.length,
+    assignedTo: String(teamMember.id),
+    assignmentType,
+    rows: savedRows,
+  };
+}
+
 export async function requireTeamAdmin() {
   const admin = await getCurrentAdmin();
   if (!["superadmin", "admin", "experience", "ambassador"].includes(admin.role)) {
