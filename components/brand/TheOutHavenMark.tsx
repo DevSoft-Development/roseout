@@ -9,7 +9,9 @@ type TheOutHavenMarkProps = {
 
 export default function TheOutHavenMark({ className = "", size = 24 }: TheOutHavenMarkProps) {
   const [sourceIndex, setSourceIndex] = useState(0);
-  const sources = ["/icon.svg", "/toh_logo.png"];
+  // Use the current TheOutHaven header logo asset here.
+  // Do not fall back to legacy Roseout/R favicon assets.
+  const sources = ["/toh_logo.png"];
   const src = sources[sourceIndex];
 
   return (
@@ -30,7 +32,7 @@ export default function TheOutHavenMark({ className = "", size = 24 }: TheOutHav
         />
       ) : (
         <span className="text-[10px] font-black leading-none text-red-50" aria-hidden="true">
-          TOH
+          H
         </span>
       )}
     </span>
