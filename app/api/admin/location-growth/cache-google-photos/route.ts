@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
 
 export const runtime = "nodejs";
@@ -69,7 +70,7 @@ async function updateLocationWithCachedPhoto(location: any, cached: any) {
     main_image: cached.publicUrl,
     image_url: cached.publicUrl,
     images: [cached.publicUrl],
-    has_photos: true,
+    ...getPhotoPublishabilityUpdates({ ...location, main_image: cached.publicUrl, image_url: cached.publicUrl, images: [cached.publicUrl], photo_status: "storage_cached" }),
     photo_status: "storage_cached",
     photo_backfill_error: null,
     updated_at: new Date().toISOString(),

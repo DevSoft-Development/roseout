@@ -1,5 +1,6 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 const BUCKET = "location-images";
@@ -40,6 +41,45 @@ export async function POST(request: Request, context: { params: Promise<{ locati
     }
 
     const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(storagePath);
+
+    const { data: currentLocation } = await supabaseAdmin
+      .from("locations")
+      .select("*")
+      .eq("id", locationId)
+      .maybeSingle();
+
+    const existingImages = Array.isArray(currentLocation?.images) ? currentLocation.images : [];
+    const galleryImages = [
+      data.publicUrl,
+      ...existingImages.filter((item: unknown) => String(item || "").trim() !== data.publicUrl),
+    ];
+    const isMainUpload = ["main", "primary", "hero"].includes(imageType.toLowerCase());
+    const mergedLocation = {
+      ...(currentLocation || {}),
+      main_image: isMainUpload ? data.publicUrl : currentLocation?.main_image || data.publicUrl,
+      image_url: isMainUpload ? data.publicUrl : currentLocation?.image_url || data.publicUrl,
+      images: galleryImages,
+      gallery_images: galleryImages,
+      photos: galleryImages,
+      photo_uploaded_by: "admin",
+      photo_status: "admin_photo",
+    };
+    const publishabilityUpdates = getPhotoPublishabilityUpdates(mergedLocation);
+
+    await supabaseAdmin
+      .from("locations")
+      .update({
+        main_image: mergedLocation.main_image,
+        image_url: mergedLocation.image_url,
+        images: galleryImages,
+        gallery_images: galleryImages,
+        photos: galleryImages,
+        ...publishabilityUpdates,
+        photo_status: "admin_photo",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", locationId);
+
     await supabaseAdmin.from("admin_system_logs").insert({
       level: "info",
       category: "crm",

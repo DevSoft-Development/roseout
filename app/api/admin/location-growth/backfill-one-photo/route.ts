@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
       .update({
         main_image: photoUrl,
         image_url: photoUrl,
-        has_photos: true,
+        ...getPhotoPublishabilityUpdates({ ...data, main_image: photoUrl, image_url: photoUrl, images: [photoUrl], photo_status: "google_photo" }),
         photo_status: "google_photo",
         updated_at: new Date().toISOString(),
       })
