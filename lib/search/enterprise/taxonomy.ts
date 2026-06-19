@@ -8,10 +8,10 @@ export const MEAL_SYNONYMS: Record<string, string[]> = {
 };
 
 export const FOOD_SYNONYMS: Record<string, string[]> = {
-  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib", "churrasco", "brazilian steakhouse"],
-  seafood: ["seafood", "fish", "lobster", "crab", "shrimp", "oyster", "oysters", "raw bar", "clam", "mussels", "scallops"],
-  sushi: ["sushi", "sashimi", "omakase", "nigiri", "maki", "rolls", "japanese sushi"],
-  italian: ["italian", "pasta", "pizza", "trattoria", "osteria", "ristorante"],
+  steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "prime rib", "brazilian steakhouse", "churrasco", "grill"],
+  seafood: ["seafood", "fish", "lobster", "crab", "shrimp", "oyster", "oysters", "raw bar", "clam", "mussels", "scallops", "sushi"],
+  sushi: ["sushi", "sashimi", "omakase", "nigiri", "maki", "rolls", "japanese sushi", "japanese", "izakaya"],
+  italian: ["italian", "pasta", "pizza", "trattoria", "osteria", "ristorante", "italian restaurant"],
   mexican: ["mexican", "tacos", "taco", "burritos", "birria", "tequila", "taqueria", "tex-mex"],
   caribbean: ["caribbean", "jamaican", "jerk", "oxtail", "curry goat", "roti", "doubles", "patties", "trinidadian", "haitian", "dominican", "puerto rican", "cuban"],
   american: ["american", "new american", "southern", "soul food"], latin: ["latin", "colombian", "peruvian", "brazilian", "argentinian"], mediterranean: ["mediterranean", "greek", "turkish", "lebanese", "middle eastern", "israeli", "moroccan"], french: ["french"], spanish: ["spanish", "tapas"], portuguese: ["portuguese"], german: ["german"], irish: ["irish"], british: ["british"], indian: ["indian"], pakistani: ["pakistani"], bangladeshi: ["bangladeshi"], nepalese: ["nepalese"], thai: ["thai"], vietnamese: ["vietnamese"], chinese: ["chinese", "cantonese", "szechuan", "sichuan", "shanghainese", "taiwanese", "dim sum", "hot pot"], korean: ["korean"], japanese: ["japanese", "ramen", "izakaya", "teppanyaki", "hibachi"], filipino: ["filipino"], indonesian: ["indonesian"], malaysian: ["malaysian"], singaporean: ["singaporean"], african: ["african", "nigerian", "ethiopian", "senegalese", "ghanaian", "south african"], vegan: ["vegan", "plant-based"], vegetarian: ["vegetarian"], "gluten-free": ["gluten-free"], kosher: ["kosher"], halal: ["halal"], bbq: ["bbq", "barbecue"], burger: ["burger"], chicken: ["chicken", "wings", "fried chicken"], bakery: ["bakery"], cafe: ["cafe"], "wine bar": ["wine bar"], "cocktail bar": ["cocktail bar"], lounge: ["lounge restaurant"]
@@ -29,6 +29,11 @@ export const ROOFTOP_RESTAURANT_FEATURE_TERMS = [
   "scenic views",
   "views",
   "roof deck",
+  "roof top",
+  "patio",
+  "outdoor seating",
+  "city views",
+  "waterfront views",
 ];
 
 export function hasRooftopRestaurantFeatureLanguage(query: string) {
@@ -78,8 +83,8 @@ export function detectBroadOutingOccasion(query: string): string | null {
 }
 
 export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
-  bowling: ["bowling", "bowling alley", "bowling lanes"],
-  karaoke: ["karaoke"],
+  bowling: ["bowling", "bowling alley", "bowling lanes", "games", "entertainment"],
+  karaoke: ["karaoke", "karaoke bar", "private karaoke", "karaoke lounge", "sing along"],
   hookah: ["hookah", "hookah lounge", "hookah bar", "shisha"],
   "live music": ["live music", "concert", "jazz club"],
   museum: ["museum", "exhibit", "exhibition", "cultural center"],
@@ -128,11 +133,11 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
     "bowling",
     "gallery",
   ],
-  comedy: ["comedy club", "comedy show", "comedy", "stand up comedy", "standup comedy"],
+  comedy: ["comedy club", "comedy show", "comedy", "stand up comedy", "standup comedy", "improv", "live entertainment"],
   "wine tasting": ["wine tasting"],
   brewery: ["brewery", "beer garden"],
-  arcade: ["arcade", "games"],
-  billiards: ["pool hall", "billiards"],
+  arcade: ["arcade", "games", "game room", "amusement", "entertainment"],
+  billiards: ["pool hall", "billiards", "pool table", "games"],
   darts: ["darts"],
   "axe throwing": ["axe throwing"],
   "escape room": ["escape room"],
@@ -160,6 +165,9 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
     "sports bar", "sports lounge", "sport lounge", "bar with tv", "bar with tvs", "bar with screens", "tv bar", "tvs", "tv", "big screen", "big screens", "watch party", "game day", "game night", "live sports", "sports viewing", "pub", "tavern", "bar and grill",
   ],
   shopping: ["mall", "shopping", "market", "flea market", "pop-up", "festival", "fair"],
+  "family friendly": ["family friendly", "kid friendly", "kids", "all ages"],
+  "romantic activity": ["romantic activity", "date activity", "date idea"],
+  "outdoor activity": ["outdoor activity", "park", "garden", "botanical garden", "waterfront", "pier", "walking tour", "boat ride", "observation deck"],
 };
 
 

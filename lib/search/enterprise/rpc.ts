@@ -3,7 +3,6 @@ import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
 import { isExplicitMarket, isResultAllowedForResolvedMarket } from "../market-guardrails";
 import {
   activityRpcTerms,
-  activitySearchTerms,
   activitySearchTermsOriginal,
   hasRelaxedActivityIntent,
   isBroadGenericActivityIntent,
@@ -17,6 +16,9 @@ import {
 import { userAskedForPlaceOfWorship } from "./taxonomy";
 
 type RpcDebug = {
+  rpcTermsBeforeCap?: string[];
+  rpcTermsAfterCap?: string[];
+  rpcTermsRemovedForPerformance?: string[];
   rpcCalls: string[];
   // RPC-safe terms after deterministic pruning.
   restaurantRpcTerms?: string[];
@@ -210,8 +212,30 @@ function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
   return intent.strictness === "high" ? 24 : 40;
 }
 
+
+const WEAK_RPC_TERMS = new Set([
+  "and", "to", "do", "with", "after", "before", "in", "near", "around",
+  "night", "friday", "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday",
+  "tonight", "tomorrow", "today", "this friday", "this weekend", "weekend",
+]);
+
+function capRpcTerms(terms: string[], domain: SearchDomain, recovery = false) {
+  const max = recovery ? 10 : domain === "restaurant" ? 12 : domain === "activity" ? 14 : 16;
+  const normalized = Array.from(new Set(terms.map((term) => String(term || "").trim().toLowerCase()).filter(Boolean)));
+  const hasSpecific = normalized.some((term) => term.includes(" ") || !["restaurant", "activity", "food", "dinner"].includes(term));
+  const kept = normalized
+    .filter((term) => !WEAK_RPC_TERMS.has(term))
+    .filter((term) => !(hasSpecific && term === "activity" && domain === "activity"))
+    .filter((term) => !(hasSpecific && term === "restaurant" && domain === "restaurant"))
+    .sort((a, b) => (Number(b.includes(" ")) - Number(a.includes(" "))) || b.length - a.length)
+    .slice(0, max);
+  return { terms: kept.length ? kept : normalized.slice(0, max), removed: normalized.filter((term) => !kept.includes(term)) };
+}
+
 function params(intent: SearchIntent, domain: SearchDomain, limit: number, overrideTerms?: string[]) {
-  const terms = overrideTerms ?? termsFor(intent, domain);
+  const sourceTerms = overrideTerms ?? termsFor(intent, domain);
+  const capped = capRpcTerms(sourceTerms, domain, Boolean(overrideTerms));
+  const terms = capped.terms;
   const allowPlacesOfWorship = userAskedForPlaceOfWorship(intent.rawQuery);
 
   return {
@@ -228,7 +252,9 @@ function params(intent: SearchIntent, domain: SearchDomain, limit: number, overr
     p_radius_miles: intent.geo.radiusMiles ?? null,
     p_limit: limit,
     p_allow_places_of_worship: allowPlacesOfWorship,
-  };
+    __debug_before_terms: sourceTerms,
+    __debug_removed_terms: capped.removed,
+  } as any;
 }
 
 function locationParams(intent: SearchIntent, domain: SearchDomain, limit: number) {
@@ -285,6 +311,14 @@ export async function searchEnterpriseLane(
         ? rpcTerms.removedForRelaxedIntent
         : [];
     }
+
+    if (debug) {
+      debug.rpcTermsBeforeCap = (p as any).__debug_before_terms;
+      debug.rpcTermsAfterCap = p.p_search_terms;
+      debug.rpcTermsRemovedForPerformance = (p as any).__debug_removed_terms ?? [];
+    }
+    delete (p as any).__debug_before_terms;
+    delete (p as any).__debug_removed_terms;
 
     const { data, error } = await supabase.rpc("enterprise_search_locations", p);
 
@@ -362,6 +396,14 @@ export async function recoverEnterpriseLane(
     if (domain === "activity" && debug) {
       debug.activityRecoveryUsed = true;
     }
+
+    if (debug) {
+      debug.rpcTermsBeforeCap = (p as any).__debug_before_terms;
+      debug.rpcTermsAfterCap = p.p_search_terms;
+      debug.rpcTermsRemovedForPerformance = (p as any).__debug_removed_terms ?? [];
+    }
+    delete (p as any).__debug_before_terms;
+    delete (p as any).__debug_removed_terms;
 
     const { data, error } = await supabase.rpc("enterprise_search_recovery", p);
 

@@ -1,4 +1,29 @@
+
+const SEARCH_RECOVERY_REGRESSION_PROMPTS = [
+  "date night in Queens tonight at 8pm with dinner and something fun after",
+  "seafood rooftop restaurant in Manhattan this Friday at 7:30pm",
+  "girls night in Brooklyn with drinks and a lounge after",
+  "steakhouse and hookah in Queens Saturday night",
+  "romantic dinner and jazz activity near Harlem tomorrow at 6pm",
+  "brunch and museum date in Manhattan Sunday afternoon",
+  "casual lunch and bowling near Astoria today at 2pm",
+  "birthday dinner with activity after in Long Island City at 9pm",
+  "Italian restaurant and comedy show in NYC this weekend",
+  "seafood dinner near me with something fun after",
+  "cheap date night in Brooklyn under 100 dollars",
+  "upscale anniversary dinner in Manhattan with rooftop drinks after",
+  "fun things to do in Long Island tonight",
+  "dinner and arcade near Times Square",
+  "Afrobeats lounge and dinner in Queens",
+  "family friendly restaurant and activity in Brooklyn Sunday afternoon",
+  "late night food and pool hall near me",
+  "sushi and karaoke in Manhattan Friday night",
+  "romantic activity first then dinner in Williamsburg",
+  "outdoor activity and brunch in Queens this weekend",
+] as const;
+
 export const DEFAULT_SEARCH_QA_PROMPTS = [
+  ...SEARCH_RECOVERY_REGRESSION_PROMPTS,
   "Best bar to watch the Knicks game in Harlem",
   "casual dinner relaxed activity no club",
   "girls night dinner and drinks",
@@ -122,6 +147,7 @@ export const DEFAULT_SEARCH_QA_PROMPTS = [
 ] as const;
 
 export const SEARCH_QA_PROMPT_GROUPS = {
+  searchRecoveryRegressionPack: [...SEARCH_RECOVERY_REGRESSION_PROMPTS],
   core: [
     "Best bar to watch the Knicks game in Harlem",
     "casual dinner relaxed activity no club",
