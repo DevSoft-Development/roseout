@@ -39,7 +39,7 @@ async function loadExploreData() {
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select(
-      "id,source_table,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,primary_category,cuisine,cuisine_type,activity_type,tags,vibe_tags,best_for_tags,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,is_featured,created_at,is_searchable,is_hidden,data_status,quality_status,duplicate_status,has_photos,photo_status,is_low_level,public_visibility_tier,curation_tier,source_quality_status,import_confidence"
+      "id,source_table,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,primary_category,cuisine,cuisine_type,activity_type,tags,vibe_tags,best_for_tags,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,is_featured,created_at,is_searchable,is_hidden,data_status,quality_status,duplicate_status,has_photos,photo_status,is_low_level,public_visibility_tier,curation_tier,source_quality_status,import_confidence",
     )
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
@@ -55,7 +55,11 @@ async function loadExploreData() {
     .or("is_low_level.is.null,is_low_level.eq.false")
     .not("public_visibility_tier", "in", '("low_level","hidden")')
     .not("curation_tier", "eq", "low_level")
-    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not(
+      "source_quality_status",
+      "in",
+      '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")',
+    )
     .not("import_confidence", "eq", "low")
     .order("is_featured", { ascending: false, nullsFirst: false })
     .order("rating", { ascending: false, nullsFirst: false })
@@ -66,8 +70,8 @@ async function loadExploreData() {
     return [];
   }
 
-  return dedupeById((data || []) as unknown as ExploreLocation[]).filter((row) =>
-    Boolean(getLocationName(row, "").trim()),
+  return dedupeById((data || []) as unknown as ExploreLocation[]).filter(
+    (row) => Boolean(getLocationName(row, "").trim()),
   );
 }
 
@@ -82,7 +86,11 @@ function dedupeById(locations: ExploreLocation[]) {
 }
 
 function cleanParam(value: unknown) {
-  return String(value || "").trim().slice(0, 120);
+  return String(value || "")
+    .replace(/[%_,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 function normalizeKind(value: unknown) {
@@ -91,9 +99,10 @@ function normalizeKind(value: unknown) {
     "all",
     "restaurants",
     "activities",
-    "rooftops",
     "lounges",
-    "brunch",
+    "date-night",
+    "groups",
+    "open-now",
   ]);
 
   return allowed.has(kind) ? kind : "all";
@@ -114,5 +123,7 @@ function normalizeArea(value: unknown) {
     "Long Island",
   ];
 
-  return allowed.find((item) => item.toLowerCase() === area.toLowerCase()) || "all";
+  return (
+    allowed.find((item) => item.toLowerCase() === area.toLowerCase()) || "all"
+  );
 }

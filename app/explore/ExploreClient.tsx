@@ -83,22 +83,20 @@ type SearchResponse = {
 };
 
 const QUICK_CHIPS = [
-  "Date Night",
-  "Dinner",
-  "Rooftops",
-  "Brunch",
-  "Hookah",
-  "Activities",
-  "Queens",
+  "date night in Queens",
+  "rooftop dinner",
+  "bowling in Long Island",
+  "hookah after dinner",
 ];
 
 const KIND_FILTERS = [
   { label: "All", value: "all" },
   { label: "Restaurants", value: "restaurants" },
   { label: "Activities", value: "activities" },
-  { label: "Rooftops", value: "rooftops" },
   { label: "Lounges", value: "lounges" },
-  { label: "Brunch", value: "brunch" },
+  { label: "Date Night", value: "date-night" },
+  { label: "Groups", value: "groups" },
+  { label: "Open Now", value: "open-now" },
 ];
 
 const AREA_FILTERS = [
@@ -111,28 +109,9 @@ const AREA_FILTERS = [
   { label: "Long Island", value: "Long Island" },
 ];
 
-const COLLECTIONS = [
-  {
-    title: "Date Night",
-    description: "Romantic, polished, and easy to plan.",
-    query: "date night",
-  },
-  {
-    title: "Rooftop Views",
-    description: "Dinner, drinks, and a skyline moment.",
-    query: "rooftop",
-  },
-  {
-    title: "Brunch Plans",
-    description: "Weekend spots with a social vibe.",
-    query: "brunch",
-  },
-  {
-    title: "Weekend Fun",
-    description: "Activities, lounges, and after-dinner ideas.",
-    query: "weekend fun",
-  },
-];
+const AREA_FILTERS_DISPLAY = AREA_FILTERS.filter(
+  (area) => area.value !== "all",
+);
 
 export default function ExploreClient({
   initialLocations,
@@ -148,9 +127,12 @@ export default function ExploreClient({
   const [locations, setLocations] = useState(initialLocations);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const lastHandledKey = useRef(buildSearchKey(initialQ, initialKind, initialArea));
+  const lastHandledKey = useRef(
+    buildSearchKey(initialQ, initialKind, initialArea),
+  );
 
-  const hasActiveSearch = Boolean(q.trim()) || selectedKind !== "all" || selectedArea !== "all";
+  const hasActiveSearch =
+    Boolean(q.trim()) || selectedKind !== "all" || selectedArea !== "all";
   const displayLocations = useMemo(
     () => (hasActiveSearch ? locations : initialLocations),
     [hasActiveSearch, initialLocations, locations],
@@ -172,7 +154,12 @@ export default function ExploreClient({
     lastHandledKey.current = nextKey;
 
     if (nextQ || nextKind !== "all" || nextArea !== "all") {
-      void runSearch({ q: nextQ, kind: nextKind, area: nextArea, replaceUrl: false });
+      void runSearch({
+        q: nextQ,
+        kind: nextKind,
+        area: nextArea,
+        replaceUrl: false,
+      });
     } else {
       setLocations(initialLocations);
       setError("");
@@ -195,7 +182,8 @@ export default function ExploreClient({
     const cleanKind = normalizeKind(nextKind);
     const cleanArea = normalizeArea(nextArea);
     const params = buildParams(cleanQ, cleanKind, cleanArea);
-    const hasSearch = Boolean(cleanQ) || cleanKind !== "all" || cleanArea !== "all";
+    const hasSearch =
+      Boolean(cleanQ) || cleanKind !== "all" || cleanArea !== "all";
 
     setQ(cleanQ);
     setSelectedKind(cleanKind);
@@ -205,7 +193,9 @@ export default function ExploreClient({
 
     if (replaceUrl) {
       const queryString = params.toString();
-      router.replace(queryString ? `/explore?${queryString}` : "/explore", { scroll: false });
+      router.replace(queryString ? `/explore?${queryString}` : "/explore", {
+        scroll: false,
+      });
     }
 
     if (!hasSearch) {
@@ -234,7 +224,13 @@ export default function ExploreClient({
         const fallbackParams = new URLSearchParams();
 
         if (cleanArea !== "all") {
-          if (cleanArea === "Queens" || cleanArea === "Brooklyn" || cleanArea === "Manhattan" || cleanArea === "Bronx" || cleanArea === "Staten Island") {
+          if (
+            cleanArea === "Queens" ||
+            cleanArea === "Brooklyn" ||
+            cleanArea === "Manhattan" ||
+            cleanArea === "Bronx" ||
+            cleanArea === "Staten Island"
+          ) {
             fallbackParams.set("borough", cleanArea);
           } else {
             fallbackParams.set("city", cleanArea);
@@ -247,17 +243,22 @@ export default function ExploreClient({
 
         fallbackParams.set("limit", "48");
 
-        const fallbackResponse = await fetch(`/api/explore?${fallbackParams.toString()}`, {
-          headers: { Accept: "application/json" },
-        });
+        const fallbackResponse = await fetch(
+          `/api/explore?${fallbackParams.toString()}`,
+          {
+            headers: { Accept: "application/json" },
+          },
+        );
 
         const fallbackData = await fallbackResponse.json();
 
         if (fallbackResponse.ok && Array.isArray(fallbackData.items)) {
-          const fallbackItems = fallbackData.items.filter((item: ExploreLocation) => {
-            if (!cleanQ) return true;
-            return searchableText(item).includes(normalizeSearch(cleanQ));
-          });
+          const fallbackItems = fallbackData.items.filter(
+            (item: ExploreLocation) => {
+              if (!cleanQ) return true;
+              return searchableText(item).includes(normalizeSearch(cleanQ));
+            },
+          );
 
           setLocations(fallbackItems);
           setError("");
@@ -267,7 +268,9 @@ export default function ExploreClient({
         console.error("EXPLORE_CLIENT_FALLBACK_ERROR", fallbackErr);
       }
 
-      setError(`Explore search failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setError(
+        `Explore search failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
       setLocations([]);
     } finally {
       setLoading(false);
@@ -295,7 +298,7 @@ export default function ExploreClient({
 
           <div className="mt-5">
             <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Popular
+              Quick prompts
             </p>
 
             <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -303,7 +306,13 @@ export default function ExploreClient({
                 <button
                   key={chip}
                   type="button"
-                  onClick={() => void runSearch({ q: chip, kind: selectedKind, area: selectedArea })}
+                  onClick={() =>
+                    void runSearch({
+                      q: chip,
+                      kind: selectedKind,
+                      area: selectedArea,
+                    })
+                  }
                   className="shrink-0 rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/15 hover:text-white"
                 >
                   {chip}
@@ -312,9 +321,9 @@ export default function ExploreClient({
             </div>
           </div>
 
-          <FeaturedCollections
+          <BrowseByArea
+            q={q}
             selectedKind={selectedKind}
-            selectedArea={selectedArea}
             runSearch={runSearch}
           />
 
@@ -322,15 +331,16 @@ export default function ExploreClient({
             <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
-                  Browse
+                  Places to explore
                 </p>
 
                 <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
-                  All Places
+                  Places to build your outing around
                 </h2>
 
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-                  Explore helps you browse places first. When you’re ready, start an outing from a place or build the full plan.
+                  Browse curated places, then start an outing around the spot
+                  that fits your vibe.
                 </p>
               </div>
 
@@ -350,7 +360,6 @@ export default function ExploreClient({
             />
 
             <ResultsHeader
-              count={displayLocations.length}
               q={q}
               loading={loading}
               hasActiveSearch={hasActiveSearch}
@@ -370,6 +379,7 @@ export default function ExploreClient({
         </div>
       </section>
 
+      <BusinessOwnerCta />
       <PublicFooter />
     </main>
   );
@@ -393,12 +403,12 @@ function HeroSearch({
           </p>
 
           <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
-            Find your next place out.
+            Explore places to build your outing around.
           </h1>
 
           <p className="mt-4 max-w-2xl text-base leading-7 text-white/68">
-            Browse restaurants, activities, rooftops, lounges, brunch spots, and date-night ideas.
-            Want the full plan? Start from any place or build an outing.
+            Find restaurants, lounges, activities, and things to do after across
+            NYC and Long Island.
           </p>
         </div>
 
@@ -413,7 +423,7 @@ function HeroSearch({
                 name="q"
                 value={q}
                 onChange={(event) => setQ(event.target.value)}
-                placeholder="Search by vibe, food, activity, or area"
+                placeholder="Search by place, vibe, food, activity, or neighborhood"
                 className="min-h-12 min-w-0 flex-1 rounded-full border border-white/10 bg-black/45 px-5 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-[#e1062a]"
               />
 
@@ -438,50 +448,53 @@ function HeroSearch({
   );
 }
 
-function FeaturedCollections({
+function BrowseByArea({
+  q,
   selectedKind,
-  selectedArea,
   runSearch,
 }: {
+  q: string;
   selectedKind: string;
-  selectedArea: string;
-  runSearch: (args: { q?: string; kind?: string; area?: string }) => Promise<void>;
+  runSearch: (args: {
+    q?: string;
+    kind?: string;
+    area?: string;
+  }) => Promise<void>;
 }) {
   return (
     <section className="mt-9">
       <div className="mb-4 flex items-end justify-between gap-4">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-            Curated
+            Browse by area
           </p>
 
           <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">
-            Featured Collections
+            Pick a neighborhood lane
           </h2>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {COLLECTIONS.map((collection) => (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {AREA_FILTERS_DISPLAY.map((area) => (
           <button
-            key={collection.title}
+            key={area.value}
             type="button"
-            onClick={() => void runSearch({ q: collection.query, kind: selectedKind, area: selectedArea })}
-            className="group relative min-h-[150px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-5 text-left shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-[#e1062a]/60 hover:bg-white/[0.075]"
+            onClick={() =>
+              void runSearch({
+                q: q || area.label,
+                kind: selectedKind,
+                area: area.value,
+              })
+            }
+            className="group relative min-h-[110px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-5 text-left shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-[#e1062a]/60 hover:bg-white/[0.075]"
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,.32),transparent_36%),linear-gradient(145deg,rgba(255,255,255,.08),transparent_55%)] opacity-80 transition group-hover:opacity-100" />
-
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,.28),transparent_38%),linear-gradient(145deg,rgba(255,255,255,.07),transparent_55%)] opacity-80 transition group-hover:opacity-100" />
             <div className="relative flex h-full flex-col justify-between">
-              <span className="w-fit rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/65">
-                Explore
+              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-white/45">
+                Area
               </span>
-
-              <div className="pt-8">
-                <h3 className="text-xl font-black">{collection.title}</h3>
-                <p className="mt-1 text-sm leading-5 text-white/62">
-                  {collection.description}
-                </p>
-              </div>
+              <span className="pt-6 text-lg font-black">{area.label}</span>
             </div>
           </button>
         ))}
@@ -499,7 +512,11 @@ function FilterPills({
   selectedKind: string;
   selectedArea: string;
   q: string;
-  runSearch: (args: { q?: string; kind?: string; area?: string }) => Promise<void>;
+  runSearch: (args: {
+    q?: string;
+    kind?: string;
+    area?: string;
+  }) => Promise<void>;
 }) {
   return (
     <div className="space-y-3 rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-3">
@@ -508,7 +525,9 @@ function FilterPills({
           <button
             key={filter.value}
             type="button"
-            onClick={() => void runSearch({ q, kind: filter.value, area: selectedArea })}
+            onClick={() =>
+              void runSearch({ q, kind: filter.value, area: selectedArea })
+            }
             className={pillClass(selectedKind === filter.value)}
           >
             {filter.label}
@@ -521,7 +540,9 @@ function FilterPills({
           <button
             key={filter.value}
             type="button"
-            onClick={() => void runSearch({ q, kind: selectedKind, area: filter.value })}
+            onClick={() =>
+              void runSearch({ q, kind: selectedKind, area: filter.value })
+            }
             className={pillClass(
               selectedArea.toLowerCase() === filter.value.toLowerCase(),
             )}
@@ -535,13 +556,11 @@ function FilterPills({
 }
 
 function ResultsHeader({
-  count,
   q,
   loading,
   hasActiveSearch,
   error,
 }: {
-  count: number;
   q: string;
   loading: boolean;
   hasActiveSearch: boolean;
@@ -550,35 +569,21 @@ function ResultsHeader({
   const text = loading
     ? "Searching TheOutHaven…"
     : q.trim()
-      ? `Showing results for “${q.trim()}”`
-      : `Showing ${count} ${count === 1 ? "place" : "places"}`;
+      ? `Results for “${q.trim()}”`
+      : hasActiveSearch
+        ? "Filtered places"
+        : "Curated places from TheOutHaven";
 
   return (
     <div className="mt-5 flex flex-col gap-1 text-sm text-white/58 sm:flex-row sm:items-center sm:justify-between">
       <p className="font-bold">{text}</p>
-      {!loading && q.trim() ? (
-        <p className="text-white/42">
-          {count} {count === 1 ? "place" : "places"} found
-        </p>
-      ) : null}
-      {!loading && !q.trim() && hasActiveSearch ? (
-        <p className="text-white/42">
-          {count} {count === 1 ? "place" : "places"} match these filters
-        </p>
-      ) : null}
-      {error ? <p className="text-[#ff8a9b]">{error}</p> : null}
+      {error ? <p className="font-bold text-[#ff8a9b]">{error}</p> : null}
     </div>
   );
 }
 
 function LocationCard({ location }: { location: ExploreLocation }) {
   const name = getLocationName(location);
-  const reserveHref =
-    location.external_reservation_url ||
-    location.reservation_url ||
-    location.reservation_link ||
-    location.website;
-
   const detailHref = getLocationDetailHref({
     id: location.id,
     type: location.type || location.location_type,
@@ -586,13 +591,18 @@ function LocationCard({ location }: { location: ExploreLocation }) {
     location,
   });
 
-  const startOutingHref = `/create?locationId=${encodeURIComponent(
-    location.id,
-  )}&locationName=${encodeURIComponent(name)}&source=explore`;
-
-  const locationArea = [location.neighborhood, location.city || location.borough]
+  const locationArea = [
+    location.neighborhood,
+    location.city || location.borough,
+  ]
     .filter(Boolean)
     .join(", ");
+  const typeLabel = getTypeLabel(location);
+  const startOutingHref = `/create?q=${encodeURIComponent(
+    `plan an outing around ${name} in ${locationArea || "New York"}`,
+  )}&locationId=${encodeURIComponent(location.id)}&locationType=${encodeURIComponent(
+    typeLabel,
+  )}&source=explore`;
 
   const categoryLine =
     [
@@ -606,8 +616,8 @@ function LocationCard({ location }: { location: ExploreLocation }) {
       .slice(0, 2)
       .join(" · ") || "Curated on TheOutHaven";
 
-  const tags = cleanedTags(location).slice(0, 2);
-  const typeLabel = getTypeLabel(location);
+  const tags = cleanedTags(location).slice(0, 3);
+  const score = location.theouthaven_score || location.score;
 
   return (
     <article className="group overflow-hidden rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-3 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.065]">
@@ -631,12 +641,16 @@ function LocationCard({ location }: { location: ExploreLocation }) {
         </h3>
 
         <p className="mt-1 line-clamp-1 text-sm font-semibold text-white/62">
-          {locationArea || "New York"}
+          {[categoryLine, locationArea || "New York"]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
 
-        <p className="mt-1 line-clamp-1 text-sm text-white/50">
-          {categoryLine}
-        </p>
+        {score ? (
+          <p className="mt-1 text-sm font-black text-[#ff8a9b]">
+            TOH score {score}
+          </p>
+        ) : null}
 
         {tags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -657,27 +671,16 @@ function LocationCard({ location }: { location: ExploreLocation }) {
               href={detailHref}
               className="rounded-full bg-[#e1062a] px-4 py-2.5 text-center text-xs font-black text-white transition hover:bg-red-500"
             >
-              View Details
+              View Location
             </Link>
 
             <Link
               href={startOutingHref}
               className="rounded-full border border-white/15 bg-white/[0.055] px-4 py-2.5 text-center text-xs font-black text-white/75 transition hover:bg-white hover:text-black"
             >
-              Start Outing
+              Plan Around This
             </Link>
           </div>
-
-          {reserveHref ? (
-            <a
-              href={reserveHref}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-white/15 bg-black/35 px-4 py-2.5 text-center text-xs font-black text-white/65 transition hover:border-[#e1062a]/60 hover:text-white"
-            >
-              Reserve
-            </a>
-          ) : null}
         </div>
       </div>
     </article>
@@ -687,19 +690,14 @@ function LocationCard({ location }: { location: ExploreLocation }) {
 function EmptyState({ clearSearch }: { clearSearch: () => void }) {
   return (
     <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-8 text-center shadow-xl shadow-black/20">
-      <h3 className="text-2xl font-black">No matching places found.</h3>
+      <h3 className="text-2xl font-black">No places found for that search.</h3>
 
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/60">
-        Try a different vibe, cuisine, activity, or area. You can also build a full outing and let TheOutHaven guide the plan.
+        Try a nearby neighborhood, a broader category, or search by vibe like
+        date night, girls night, or something fun.
       </p>
 
       <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
-        <Link
-          href="/create"
-          className="inline-flex justify-center rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
-        >
-          Build an outing
-        </Link>
         <button
           type="button"
           onClick={clearSearch}
@@ -707,8 +705,42 @@ function EmptyState({ clearSearch }: { clearSearch: () => void }) {
         >
           Clear search
         </button>
+        <Link
+          href="/create"
+          className="inline-flex justify-center rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500"
+        >
+          Build an outing
+        </Link>
       </div>
     </div>
+  );
+}
+
+function BusinessOwnerCta() {
+  return (
+    <section className="bg-[#070303] px-5 pb-12 sm:px-6">
+      <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/30 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
+            For businesses
+          </p>
+          <h2 className="mt-3 text-2xl font-black tracking-tight sm:text-3xl">
+            Manage a location on TheOutHaven?
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">
+            Claim your listing to update details, add photos, and help guests
+            plan around your business.
+          </p>
+        </div>
+
+        <Link
+          href="/locations/apply/claim"
+          className="mt-5 inline-flex rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500 lg:mt-0"
+        >
+          Claim your location
+        </Link>
+      </div>
+    </section>
   );
 }
 
@@ -812,10 +844,7 @@ function isActivity(location: ExploreLocation) {
 function getTypeLabel(location: ExploreLocation) {
   const text = searchableText(location);
   const rawType = String(
-    location.location_type ||
-      location.source_table ||
-      location.type ||
-      ""
+    location.location_type || location.source_table || location.type || "",
   ).toLowerCase();
 
   if (text.includes("rooftop")) return "Rooftop";
@@ -912,15 +941,31 @@ function buildSearchKey(q: string, kind: string, area: string) {
 function buildParams(q: string, kind: string, area: string) {
   const params = new URLSearchParams();
 
-  if (q.trim()) params.set("q", q.trim());
+  const expandedQ = [q.trim(), kindSearchPhrase(kind)]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (expandedQ) params.set("q", expandedQ);
   if (kind !== "all") params.set("kind", kind);
   if (area !== "all") params.set("area", area);
 
   return params;
 }
 
+function kindSearchPhrase(kind: string) {
+  if (kind === "date-night") return "date night romantic dinner";
+  if (kind === "groups") return "group outing fun activities";
+  if (kind === "open-now") return "open now late night";
+  return "";
+}
+
 function cleanParam(value: unknown) {
-  return String(value || "").trim().slice(0, 120);
+  return String(value || "")
+    .replace(/[%_,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 function normalizeKind(value: unknown) {
@@ -929,9 +974,10 @@ function normalizeKind(value: unknown) {
     "all",
     "restaurants",
     "activities",
-    "rooftops",
     "lounges",
-    "brunch",
+    "date-night",
+    "groups",
+    "open-now",
   ]);
 
   return allowed.has(kind) ? kind : "all";
@@ -952,7 +998,9 @@ function normalizeArea(value: unknown) {
     "Long Island",
   ];
 
-  return allowed.find((item) => item.toLowerCase() === area.toLowerCase()) || "all";
+  return (
+    allowed.find((item) => item.toLowerCase() === area.toLowerCase()) || "all"
+  );
 }
 
 function normalizeSearch(value: unknown) {
