@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { BusinessCRMRow } from "@/lib/admin-crm";
-import { getEmbedStatus, getPartnerPlanDisplay, getReservationPortalStatus } from "@/lib/admin-crm";
+import { getCrmCanonicalLocationId, getCrmLocationTypeForPublicHref, getEmbedStatus, getPartnerPlanDisplay, getReservationPortalStatus } from "@/lib/admin-crm";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 
 type Reservation = { id?: string; status?: string | null; reservation_date?: string | null; date?: string | null; starts_at?: string | null; created_at?: string | null; guest_name?: string | null; party_size?: number | null };
@@ -14,8 +14,13 @@ export default function ReservationsPanel({ business, reservations, canSend }: {
   const appUrl = getCanonicalAppUrl();
   const embedUrl = `${appUrl}/embed/reservations/${business.id}`;
   const publicUrl = `/embed/reservations/${business.id}`;
-  const dashboardUrl = `/admin/dashboard/reservations?locationId=${business.id}`;
-  const layoutUrl = `/admin/dashboard/reservations/location-layout?locationId=${business.id}`;
+  const reservationLocationId = getCrmCanonicalLocationId(business);
+  const reservationLocationType = getCrmLocationTypeForPublicHref(business) === "activities" ? "activity" : "restaurant";
+  const reservationQuery = reservationLocationId
+    ? `locationId=${encodeURIComponent(String(reservationLocationId))}&type=${encodeURIComponent(reservationLocationType)}`
+    : "";
+  const dashboardUrl = reservationQuery ? `/admin/dashboard/reservations?${reservationQuery}` : "/admin/dashboard/reservations";
+  const layoutUrl = reservationQuery ? `/admin/dashboard/reservations/location-layout?${reservationQuery}` : "/admin/dashboard/reservations/location-layout";
   const portalStatus = getReservationPortalStatus(business);
   const embedStatus = getEmbedStatus(business);
   const hasReserve = Boolean(
@@ -49,8 +54,8 @@ export default function ReservationsPanel({ business, reservations, canSend }: {
       </div>
       {!hasReserve || !["enabled", "tested", "live"].includes(portalStatus) ? <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm text-amber-100">Warning: the embed code is shown for setup, but the reservation portal is not active/tested yet.</div> : null}
       <div className="mt-5 flex flex-wrap gap-2">
-        <Link href={dashboardUrl} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Reservation dashboard</Link>
-        <Link href={layoutUrl} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/70">Layout/resource setup</Link>
+        {reservationLocationId ? <Link href={dashboardUrl} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Reservation dashboard</Link> : <div><button type="button" disabled className="rounded-full bg-white/[0.04] px-4 py-2 text-sm font-black text-white/35">Reservation Dashboard Unavailable</button><p className="mt-1 text-xs text-white/40">Missing location id.</p></div>}
+        {reservationLocationId ? <Link href={layoutUrl} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/70">Layout/resource setup</Link> : <div><button type="button" disabled className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/35">Layout Setup Unavailable</button><p className="mt-1 text-xs text-white/40">Missing location id.</p></div>}
         <Link href={publicUrl} target="_blank" className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/70">Test reservation portal</Link>
         <Link href={`/admin/dashboard/crm/${business.id}?tab=communication&channel=email&subject=${subject}&body=${body}`} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/70">Send embed code action</Link>
       </div>

@@ -10,8 +10,22 @@ export const metadata: Metadata = {
   description: "Admin visual reservation layout editor.",
 };
 
-export default async function AdminReservationLocationLayoutPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function AdminReservationLocationLayoutPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.reservationLayouts);
+  const params = await searchParams;
+  const locationId = firstParam(params.locationId);
+  const rawType = firstParam(params.type);
+  const type = rawType === "activity" ? "activity" : rawType === "restaurant" ? "restaurant" : undefined;
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
@@ -28,6 +42,8 @@ export default async function AdminReservationLocationLayoutPage() {
         <LocationLayoutClient
           backHref="/admin/dashboard/reservations"
           adminMode
+          initialLocationId={locationId}
+          initialLocationType={type}
         />
       </div>
     </main>

@@ -110,8 +110,34 @@ function estimateCapacityNeeded(partySize: number | null | undefined) {
   return Math.ceil(party / 4);
 }
 
-export default async function ReserveDashboardPage() {
+type ReserveDashboardPageProps = {
+  searchParams?:
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
+};
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function ReserveDashboardPage({
+  searchParams,
+}: ReserveDashboardPageProps = {}) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
+  const params = searchParams ? await searchParams : {};
+  const selectedLocationId = firstParam(params.locationId);
+  const rawSelectedType = firstParam(params.type);
+  const selectedType =
+    rawSelectedType === "activity" || rawSelectedType === "restaurant"
+      ? rawSelectedType
+      : undefined;
+  const scoped = Boolean(selectedLocationId);
+  const scopeQuery = <T extends ReturnType<typeof supabase.from>>(query: any) => {
+    let next = query;
+    if (selectedLocationId) next = next.eq("location_id", selectedLocationId);
+    if (selectedType) next = next.eq("location_type", selectedType);
+    return next;
+  };
 
   const now = new Date();
   const today = dateKey(now);
@@ -128,26 +154,26 @@ export default async function ReserveDashboardPage() {
     confirmedReservationsResult,
     reservationListResult,
   ] = await Promise.all([
-    supabase
+    scopeQuery(supabase
       .from("location_reservations")
-      .select("id", { count: "exact", head: true }),
-    supabase
-      .from("location_reservations")
-      .select("id", { count: "exact", head: true })
-      .eq("reservation_date", today),
-    supabase
+      .select("id", { count: "exact", head: true })),
+    scopeQuery(supabase
       .from("location_reservations")
       .select("id", { count: "exact", head: true })
-      .gte("reservation_date", today),
-    supabase
+      .eq("reservation_date", today)),
+    scopeQuery(supabase
       .from("location_reservations")
       .select("id", { count: "exact", head: true })
-      .eq("status", "pending"),
-    supabase
+      .gte("reservation_date", today)),
+    scopeQuery(supabase
       .from("location_reservations")
       .select("id", { count: "exact", head: true })
-      .eq("status", "confirmed"),
-    supabase
+      .eq("status", "pending")),
+    scopeQuery(supabase
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "confirmed")),
+    scopeQuery(supabase
       .from("location_reservations")
       .select(
         "id, customer_name, customer_email, customer_phone, party_size, reservation_date, reservation_time, status, location_id, location_type, reservable_item_name, reservable_item_type, special_request, created_at"
@@ -156,7 +182,7 @@ export default async function ReserveDashboardPage() {
       .lte("reservation_date", weekEndKey)
       .order("reservation_date", { ascending: true })
       .order("reservation_time", { ascending: true })
-      .limit(60),
+      .limit(60)),
   ]);
 
   const safeReservations = (reservationListResult.data || []) as ReservationItem[];
@@ -176,7 +202,9 @@ export default async function ReserveDashboardPage() {
     )
   );
 
-  const locationIds = Array.from(new Set([...restaurantIds, ...activityIds]));
+  const locationIds = Array.from(
+    new Set([...restaurantIds, ...activityIds, selectedLocationId].filter(Boolean) as string[]),
+  );
 
   const locationsResult = locationIds.length
     ? await supabase
@@ -202,6 +230,12 @@ export default async function ReserveDashboardPage() {
     const key = `${reservation.location_type}:${reservation.location_id}`;
     return locationNames.get(key) || reservation.reservable_item_name || "Unknown location";
   };
+  const selectedLocationName = selectedLocationId
+    ? locationNames.get(`${selectedType || "restaurant"}:${selectedLocationId}`) ||
+      locationNames.get(`activity:${selectedLocationId}`) ||
+      locationNames.get(`restaurant:${selectedLocationId}`) ||
+      "Selected location"
+    : null;
 
   const todaysReservations = safeReservations.filter(
     (item) => item.reservation_date === today
@@ -327,6 +361,30 @@ export default async function ReserveDashboardPage() {
             </div>
           </div>
         </section>
+
+        {scoped ? (
+          <section className="mt-5 rounded-[1.5rem] border border-rose-300/30 bg-rose-500/15 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-200">
+                  Location filter active
+                </p>
+                <h2 className="mt-1 text-xl font-black">
+                  Viewing reservations for {selectedLocationName}
+                </h2>
+                <p className="mt-1 text-sm text-white/60">
+                  Reservation lists and dashboard counts are scoped to this CRM location.
+                </p>
+              </div>
+              <Link
+                href="/admin/dashboard/reservations"
+                className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-sm font-black text-white/75"
+              >
+                Clear location filter
+              </Link>
+            </div>
+          </section>
+        ) : null}
 
         <section className="mt-5 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
           <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
@@ -502,7 +560,7 @@ export default async function ReserveDashboardPage() {
                 <div className="p-8 text-center">
                   <p className="text-lg font-black">No reservations today</p>
                   <p className="mt-2 text-sm text-black/45">
-                    New bookings from TheOutHaven Reserve will appear here.
+                  {scoped ? "No reservations today for this location." : "New bookings from TheOutHaven Reserve will appear here."}
                   </p>
                 </div>
               )}
@@ -548,7 +606,7 @@ export default async function ReserveDashboardPage() {
 
             {locationOverview.length === 0 && (
               <div className="p-8 text-center text-sm font-bold text-black/45">
-                No upcoming reservation demand by location yet.
+                {scoped ? "No upcoming reservations for this location yet." : "No upcoming reservation demand by location yet."}
               </div>
             )}
           </div>
@@ -604,8 +662,9 @@ export default async function ReserveDashboardPage() {
 
             {safeReservations.length === 0 && (
               <div className="p-8 text-sm font-bold text-white/45">
-                Upcoming reservations will appear here when customers book
-                through TheOutHaven Reserve.
+                {scoped
+                  ? "Upcoming reservations for this location will appear here when customers book through TheOutHaven Reserve."
+                  : "Upcoming reservations will appear here when customers book through TheOutHaven Reserve."}
               </div>
             )}
           </div>
