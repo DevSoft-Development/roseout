@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import BatchQaRunner from "./BatchQaRunner";
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
@@ -142,7 +143,10 @@ function formatSearchEventsForCopy(rows: any[], context: any): string {
 }
 
 function formatSearchQueriesForCopy(rows: any[]): string {
-  return rows.map((row) => row.raw_query).filter(Boolean).join("\n");
+  return rows
+    .map((row) => row.raw_query)
+    .filter(Boolean)
+    .join("\n");
 }
 
 function csvEscape(value: unknown): string {
@@ -152,17 +156,29 @@ function csvEscape(value: unknown): string {
 
 function formatSearchEventsCsv(rows: any[]): string {
   const headers = [
-    "created_at", "source", "route", "raw_query", "normalized_query",
-    "search_type", "primary_domain", "restaurant_count", "activity_count",
-    "pair_count", "result_count", "timing_ms", "speed_status", "success",
-    "had_issue", "issue_type", "issue_label",
+    "created_at",
+    "source",
+    "route",
+    "raw_query",
+    "normalized_query",
+    "search_type",
+    "primary_domain",
+    "restaurant_count",
+    "activity_count",
+    "pair_count",
+    "result_count",
+    "timing_ms",
+    "speed_status",
+    "success",
+    "had_issue",
+    "issue_type",
+    "issue_label",
   ];
   return [
     headers.join(","),
     ...rows.map((row) => headers.map((key) => csvEscape(row[key])).join(",")),
   ].join("\n");
 }
-
 
 type CountRow = {
   reason?: string;
@@ -182,7 +198,14 @@ type SearchHealthData = {
   commonFailingQueries?: any[];
   eventsBySource?: { source: string; count: number }[];
   lastDigestRun?: any | null;
-  allSearchStats?: { totalVisible: number; publicCreateCount: number; adminSearchLabCount: number; cleanCount: number; issueCount: number; failedCount: number };
+  allSearchStats?: {
+    totalVisible: number;
+    publicCreateCount: number;
+    adminSearchLabCount: number;
+    cleanCount: number;
+    issueCount: number;
+    failedCount: number;
+  };
   allSearchCount?: number;
   publicCreateSearchCount?: number;
   adminSearchLabCount?: number;
@@ -406,7 +429,9 @@ export default function SearchHealthClient() {
       setNotice("Debug JSON copied.");
       setError(null);
     } else {
-      setError("Could not copy Debug JSON. You can still select and copy it manually below.");
+      setError(
+        "Could not copy Debug JSON. You can still select and copy it manually below.",
+      );
     }
   }
 
@@ -416,7 +441,9 @@ export default function SearchHealthClient() {
       setNotice(successNotice);
       setError(null);
     } else {
-      setError("Could not copy to clipboard. Please try selecting the text manually.");
+      setError(
+        "Could not copy to clipboard. Please try selecting the text manually.",
+      );
     }
   }
 
@@ -457,29 +484,34 @@ export default function SearchHealthClient() {
     ["All Searches", data.allSearchCount ?? allSearches.length],
     [
       "/create Searches",
-      data.allSearchStats?.publicCreateCount ?? data.publicCreateSearchCount ??
+      data.allSearchStats?.publicCreateCount ??
+        data.publicCreateSearchCount ??
         allSearches.filter((row) => row.source === "public_create_search")
           .length,
     ],
     [
       "Search Lab Runs",
-      data.allSearchStats?.adminSearchLabCount ?? data.adminSearchLabCount ??
+      data.allSearchStats?.adminSearchLabCount ??
+        data.adminSearchLabCount ??
         allSearches.filter((row) => row.source === "admin_search_lab").length,
     ],
     [
       "Clean Searches",
       data.allSearchStats?.cleanCount ??
-        allSearches.filter((row) => row.success === true && row.had_issue === false)
-          .length,
+        allSearches.filter(
+          (row) => row.success === true && row.had_issue === false,
+        ).length,
     ],
     [
       "Failed Searches",
-      data.allSearchStats?.failedCount ?? data.failedSearchCount ??
+      data.allSearchStats?.failedCount ??
+        data.failedSearchCount ??
         allSearches.filter((row) => row.success === false).length,
     ],
     [
       "Issue Searches",
-      data.allSearchStats?.issueCount ?? data.issueSearchCount ??
+      data.allSearchStats?.issueCount ??
+        data.issueSearchCount ??
         allSearches.filter((row) => row.had_issue).length,
     ],
   ];
@@ -513,14 +545,18 @@ export default function SearchHealthClient() {
         </div>
         {view !== "all" ? (
           <p className="mt-3 rounded-2xl border border-sky-300/25 bg-sky-500/10 p-3 text-sm font-semibold text-sky-100">
-            Search Health shows issues and warnings by default. To review every /create search, switch to All Searches.
+            Search Health shows issues and warnings by default. To review every
+            /create search, switch to All Searches.
           </p>
         ) : (
           <p className="mt-3 rounded-2xl border border-emerald-300/25 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-100">
-            All Searches includes normal /create searches from search_events, including clean searches that were not marked as issues.
+            All Searches includes normal /create searches from search_events,
+            including clean searches that were not marked as issues.
           </p>
         )}
       </section>
+
+      <BatchQaRunner />
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map(([title, value]) => (
@@ -706,17 +742,43 @@ export default function SearchHealthClient() {
             <div>
               <h2 className="text-xl font-black">All Searches</h2>
               <p className="mt-1 max-w-3xl text-sm text-white/60">
-                Showing latest 200 searches for this filter. Clean means the system considered the search successful. You can still copy it for manual review.
+                Showing latest 200 searches for this filter. Clean means the
+                system considered the search successful. You can still copy it
+                for manual review.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <CopyButton disabled={!allSearches.length} onClick={() => copyWithNotice(formatSearchEventsForCopy(allSearches, { range, source }), "Copied visible searches.")}>
+              <CopyButton
+                disabled={!allSearches.length}
+                onClick={() =>
+                  copyWithNotice(
+                    formatSearchEventsForCopy(allSearches, { range, source }),
+                    "Copied visible searches.",
+                  )
+                }
+              >
                 Copy Visible Searches
               </CopyButton>
-              <CopyButton disabled={!allSearches.length} onClick={() => copyWithNotice(formatSearchQueriesForCopy(allSearches), "Copied queries.")}>
+              <CopyButton
+                disabled={!allSearches.length}
+                onClick={() =>
+                  copyWithNotice(
+                    formatSearchQueriesForCopy(allSearches),
+                    "Copied queries.",
+                  )
+                }
+              >
                 Copy Visible Queries
               </CopyButton>
-              <CopyButton disabled={!allSearches.length} onClick={() => copyWithNotice(formatSearchEventsCsv(allSearches), "Copied CSV.")}>
+              <CopyButton
+                disabled={!allSearches.length}
+                onClick={() =>
+                  copyWithNotice(
+                    formatSearchEventsCsv(allSearches),
+                    "Copied CSV.",
+                  )
+                }
+              >
                 Copy Search CSV
               </CopyButton>
             </div>
@@ -727,8 +789,18 @@ export default function SearchHealthClient() {
               <SearchEventCard
                 key={event.id}
                 event={event}
-                onCopySearch={() => copyWithNotice(formatSearchEventForCopy(event), "Copied search.")}
-                onCopyMetadata={() => copyWithNotice(JSON.stringify(sanitizeForCopy(event), null, 2), "Copied metadata.")}
+                onCopySearch={() =>
+                  copyWithNotice(
+                    formatSearchEventForCopy(event),
+                    "Copied search.",
+                  )
+                }
+                onCopyMetadata={() =>
+                  copyWithNotice(
+                    JSON.stringify(sanitizeForCopy(event), null, 2),
+                    "Copied metadata.",
+                  )
+                }
               />
             ))}
             {!loading && !allSearches.length ? (
@@ -745,29 +817,74 @@ export default function SearchHealthClient() {
             <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-white/45">
                 <tr>
-                  {["Time", "Query", "Event Label", "Severity", "Type", "Pair Count", "Restaurant Count", "Activity Count", "Speed", "Market", "Status"].map((h) => (
-                    <th key={h} className="px-3 py-3">{h}</th>
+                  {[
+                    "Time",
+                    "Query",
+                    "Event Label",
+                    "Severity",
+                    "Type",
+                    "Pair Count",
+                    "Restaurant Count",
+                    "Activity Count",
+                    "Speed",
+                    "Market",
+                    "Status",
+                  ].map((h) => (
+                    <th key={h} className="px-3 py-3">
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
                 {(data.recentEvents ?? []).map((event) => (
-                  <tr key={event.id} className="cursor-pointer hover:bg-white/[0.04]" onClick={() => openDetail(event.id)}>
-                    <td className="px-3 py-3 text-white/60">{formatTime(event.created_at)}</td>
-                    <td className="max-w-[280px] truncate px-3 py-3 font-semibold">{event.raw_query || "—"}</td>
-                    <td className="px-3 py-3 text-rose-100">{issueLabel(event)}</td>
-                    <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs font-black ${severityClass(event.severity)}`}>{event.severity || "info"}</span></td>
+                  <tr
+                    key={event.id}
+                    className="cursor-pointer hover:bg-white/[0.04]"
+                    onClick={() => openDetail(event.id)}
+                  >
+                    <td className="px-3 py-3 text-white/60">
+                      {formatTime(event.created_at)}
+                    </td>
+                    <td className="max-w-[280px] truncate px-3 py-3 font-semibold">
+                      {event.raw_query || "—"}
+                    </td>
+                    <td className="px-3 py-3 text-rose-100">
+                      {issueLabel(event)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`rounded-full border px-2 py-1 text-xs font-black ${severityClass(event.severity)}`}
+                      >
+                        {event.severity || "info"}
+                      </span>
+                    </td>
                     <td className="px-3 py-3">{event.event_type || "—"}</td>
                     <td className="px-3 py-3">{event.pair_count ?? "—"}</td>
-                    <td className="px-3 py-3">{event.restaurant_count ?? "—"}</td>
+                    <td className="px-3 py-3">
+                      {event.restaurant_count ?? "—"}
+                    </td>
                     <td className="px-3 py-3">{event.activity_count ?? "—"}</td>
-                    <td className="px-3 py-3">{event.timing_ms ? `${event.timing_ms}ms` : event.speed_status || "—"}</td>
-                    <td className="px-3 py-3">{event.default_market_id || "—"}</td>
+                    <td className="px-3 py-3">
+                      {event.timing_ms
+                        ? `${event.timing_ms}ms`
+                        : event.speed_status || "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      {event.default_market_id || "—"}
+                    </td>
                     <td className="px-3 py-3">{event.review_status}</td>
                   </tr>
                 ))}
                 {!loading && !(data.recentEvents ?? []).length ? (
-                  <tr><td className="px-3 py-8 text-center text-white/50" colSpan={11}>No search health events match these filters.</td></tr>
+                  <tr>
+                    <td
+                      className="px-3 py-8 text-center text-white/50"
+                      colSpan={11}
+                    >
+                      No search health events match these filters.
+                    </td>
+                  </tr>
                 ) : null}
               </tbody>
             </table>
@@ -972,14 +1089,26 @@ function CopyButton({
   );
 }
 
-function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "warn" | "bad" }) {
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "good" | "warn" | "bad";
+}) {
   const classes = {
     neutral: "border-white/15 bg-white/10 text-white/75",
     good: "border-emerald-300/25 bg-emerald-500/15 text-emerald-100",
     warn: "border-amber-300/25 bg-amber-500/15 text-amber-100",
     bad: "border-red-300/25 bg-red-500/15 text-red-100",
   }[tone];
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${classes}`}>{children}</span>;
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-1 text-xs font-black ${classes}`}
+    >
+      {children}
+    </span>
+  );
 }
 
 function SearchEventCard({
@@ -1004,10 +1133,18 @@ function SearchEventCard({
               {event.raw_query || "Untitled search"}
             </h3>
             <Badge>{event.source || "unknown"}</Badge>
-            <Badge tone={isIssue ? "bad" : "good"}>{isIssue ? "Issue" : "Clean"}</Badge>
-            {event.success === false ? <Badge tone="bad">Failed</Badge> : <Badge tone="good">Success</Badge>}
+            <Badge tone={isIssue ? "bad" : "good"}>
+              {isIssue ? "Issue" : "Clean"}
+            </Badge>
+            {event.success === false ? (
+              <Badge tone="bad">Failed</Badge>
+            ) : (
+              <Badge tone="good">Success</Badge>
+            )}
           </div>
-          <p className="mt-2 text-sm text-white/55">{formatTime(event.created_at)}</p>
+          <p className="mt-2 text-sm text-white/55">
+            {formatTime(event.created_at)}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <CopyButton onClick={onCopySearch}>Copy Search</CopyButton>
@@ -1034,7 +1171,9 @@ function SearchEventCard({
         <Info label="Route" value={event.route} />
         <Info label="Search type" value={event.search_type} />
         <Info label="Primary domain" value={event.primary_domain} />
-        {normalizedDiffers ? <Info label="Normalized" value={event.normalized_query} /> : null}
+        {normalizedDiffers ? (
+          <Info label="Normalized" value={event.normalized_query} />
+        ) : null}
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
@@ -1042,12 +1181,22 @@ function SearchEventCard({
         <Stat label="Activities" value={event.activity_count} />
         <Stat label="Pairs" value={event.pair_count} />
         <Stat label="Results" value={event.result_count} />
-        <Stat label="Time" value={event.timing_ms ? `${event.timing_ms} ms` : "—"} sub={event.speed_status || "good"} />
+        <Stat
+          label="Time"
+          value={event.timing_ms ? `${event.timing_ms} ms` : "—"}
+          sub={event.speed_status || "good"}
+        />
       </div>
 
       {isIssue ? (
         <div className="mt-4 rounded-2xl border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
-          <span className="font-black">Issue:</span> {cleanValue(event.issue_label || event.issue_type || event.no_results_reason || event.no_pairs_reason)}
+          <span className="font-black">Issue:</span>{" "}
+          {cleanValue(
+            event.issue_label ||
+              event.issue_type ||
+              event.no_results_reason ||
+              event.no_pairs_reason,
+          )}
           <div className="mt-2 grid gap-2 text-xs text-red-100/80 sm:grid-cols-2 lg:grid-cols-4">
             <span>had_issue: {cleanValue(event.had_issue)}</span>
             <span>type: {cleanValue(event.issue_type)}</span>
@@ -1069,18 +1218,32 @@ function SearchEventCard({
 function Info({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-2xl bg-black/20 p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">{label}</p>
-      <p className="mt-1 break-words font-semibold text-white/80">{cleanValue(value)}</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
+        {label}
+      </p>
+      <p className="mt-1 break-words font-semibold text-white/80">
+        {cleanValue(value)}
+      </p>
     </div>
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: unknown; sub?: string }) {
+function Stat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: unknown;
+  sub?: string;
+}) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
       <p className="text-xs font-bold text-white/45">{label}</p>
       <p className="mt-1 text-lg font-black text-white">{cleanValue(value)}</p>
-      {sub ? <p className="mt-1 text-xs font-semibold text-white/45">Speed: {sub}</p> : null}
+      {sub ? (
+        <p className="mt-1 text-xs font-semibold text-white/45">Speed: {sub}</p>
+      ) : null}
     </div>
   );
 }
@@ -1108,7 +1271,14 @@ function Filter({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        {(options ?? values?.map((item) => ({ label: item || empty || item, value: item })) ?? []).map((item) => (
+        {(
+          options ??
+          values?.map((item) => ({
+            label: item || empty || item,
+            value: item,
+          })) ??
+          []
+        ).map((item) => (
           <option key={item.value || "all"} value={item.value}>
             {item.label}
           </option>
