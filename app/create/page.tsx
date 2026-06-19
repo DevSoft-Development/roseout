@@ -79,6 +79,8 @@ type RestaurantCard = LocationScoreFields &
     routeDurationMinutes?: number | null;
     walking_route_minutes?: number | null;
     pair_walking_label?: string | null;
+    health_department_grade?: string | null;
+    health_department_score?: number | string | null;
   };
 
 type ActivityCard = LocationScoreFields &
@@ -125,6 +127,8 @@ type ActivityCard = LocationScoreFields &
     routeDurationMinutes?: number | null;
     walking_route_minutes?: number | null;
     pair_walking_label?: string | null;
+    health_department_grade?: string | null;
+    health_department_score?: number | string | null;
   };
 
 type DistancePreference = "walking" | "miles";
@@ -1663,6 +1667,12 @@ export default function CreatePage() {
                                 analyticsMetadata={
                                   CREATE_RESULTS_ANALYTICS_METADATA
                                 }
+                                healthDepartmentGrade={
+                                  restaurant?.health_department_grade
+                                }
+                                healthDepartmentScore={
+                                  restaurant?.health_department_score
+                                }
                               />
                             );
                           })}
@@ -1727,6 +1737,12 @@ export default function CreatePage() {
                                 locationId={restaurantId}
                                 analyticsMetadata={
                                   CREATE_RESULTS_ANALYTICS_METADATA
+                                }
+                                healthDepartmentGrade={
+                                  restaurant.health_department_grade
+                                }
+                                healthDepartmentScore={
+                                  restaurant.health_department_score
                                 }
                               />
                             );
@@ -2507,6 +2523,13 @@ function StartPanel() {
   );
 }
 
+function formatHealthDepartmentScore(value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+  const score = Number(value);
+  if (!Number.isFinite(score)) return "";
+  return String(Math.round(score));
+}
+
 function ResultSection({
   title,
   subtitle,
@@ -2557,6 +2580,8 @@ function ResultCard({
   onCardClick,
   locationId,
   analyticsMetadata,
+  healthDepartmentGrade,
+  healthDepartmentScore,
 }: {
   index: number;
   type: "restaurant" | "activity";
@@ -2578,6 +2603,8 @@ function ResultCard({
   onCardClick?: () => void;
   locationId?: string | null;
   analyticsMetadata?: LocationAnalyticsMetadata;
+  healthDepartmentGrade?: string | null;
+  healthDepartmentScore?: number | string | null;
 }) {
   const whyPicked = getWhyPicked({
     primaryTag,
@@ -2596,6 +2623,11 @@ function ResultCard({
       ? imageUrl.trim()
       : null;
   const displayImageUrl = resolvedImageUrl;
+  const healthGrade =
+    typeof healthDepartmentGrade === "string"
+      ? healthDepartmentGrade.trim().toUpperCase()
+      : "";
+  const healthScore = formatHealthDepartmentScore(healthDepartmentScore);
 
   if (
     process.env.NODE_ENV !== "production" &&
@@ -2676,6 +2708,13 @@ function ResultCard({
           {rating ? (
             <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-black sm:px-2.5 sm:py-1 sm:text-[11px]">
               ★ {rating}
+            </span>
+          ) : null}
+
+          {type === "restaurant" && (healthGrade || healthScore) ? (
+            <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
+              Health{" "}
+              {healthGrade ? `Grade ${healthGrade}` : `Score ${healthScore}`}
             </span>
           ) : null}
         </div>

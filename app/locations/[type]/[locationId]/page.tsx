@@ -30,8 +30,6 @@ import {
   getReservationSourceLabel,
 } from "@/lib/reservation";
 
-
-
 type LocationDetailRecord = Record<string, unknown> & {
   id?: string | null;
   name?: string | null;
@@ -63,6 +61,11 @@ type LocationDetailRecord = Record<string, unknown> & {
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | string | null;
+  health_department_grade?: string | null;
+  health_department_score?: number | string | null;
+  health_department_last_inspection_date?: string | null;
+  health_department_source?: string | null;
+  health_department_source_url?: string | null;
 };
 type ReviewRecord = Record<string, unknown> & {
   id?: string | number | null;
@@ -137,17 +140,34 @@ function formatDisplayLabel(value: unknown) {
     .join(" ");
 }
 
+function formatHealthDepartmentScore(value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+  const score = Number(value);
+  if (!Number.isFinite(score)) return "";
+  return String(Math.round(score));
+}
+
+function formatShortDate(value: unknown) {
+  if (!value) return "";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function cleanDisplayTags(items: unknown, limit = 8) {
   return Array.from(
-    new Set(
-      toArray(items)
-        .map(formatDisplayLabel)
-        .filter(Boolean),
-    ),
+    new Set(toArray(items).map(formatDisplayLabel).filter(Boolean)),
   ).slice(0, limit);
 }
 
-function formatTagListForSentence(items: unknown, fallback = "a polished, social mood") {
+function formatTagListForSentence(
+  items: unknown,
+  fallback = "a polished, social mood",
+) {
   const cleanItems = cleanDisplayTags(items, 3);
 
   if (cleanItems.length === 0) return fallback;
@@ -169,14 +189,22 @@ function getDisplayArea(location: LocationDetailRecord | null) {
 }
 
 function getDisplayAddress(location: LocationDetailRecord | null) {
-  return [location?.address, location?.city, location?.state, location?.zip_code]
+  return [
+    location?.address,
+    location?.city,
+    location?.state,
+    location?.zip_code,
+  ]
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .filter((item, index, all) => all.indexOf(item) === index)
     .join(", ");
 }
 
-function getReviewCount(location: LocationDetailRecord | null, reviews: ReviewRecord[]) {
+function getReviewCount(
+  location: LocationDetailRecord | null,
+  reviews: ReviewRecord[],
+) {
   return Number(location?.review_count || reviews.length || 0);
 }
 
@@ -203,7 +231,10 @@ function extractPhotoValues(value: unknown): unknown[] {
     const trimmed = value.trim();
     if (!trimmed) return [];
 
-    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
       try {
         return extractPhotoValues(JSON.parse(trimmed));
       } catch {
@@ -218,7 +249,9 @@ function extractPhotoValues(value: unknown): unknown[] {
 }
 
 function normalizePhotoUrl(value: unknown) {
-  const raw = String(value || "").trim().replace(/^["']|["']$/g, "");
+  const raw = String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
 
   if (!raw) return "";
   if (/^(null|undefined|n\/a|na|none|false)$/i.test(raw)) return "";
@@ -252,7 +285,10 @@ function dedupePhotoUrls(values: unknown[]) {
     .map(normalizePhotoUrl)
     .filter(isLikelyValidImageUrl)
     .filter((url) => {
-      const key = url.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+      const key = url
+        .replace(/^https?:\/\//i, "")
+        .replace(/\/+$/, "")
+        .toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -305,12 +341,18 @@ function buildPhoneHref(location: LocationDetailRecord | null) {
 }
 
 function buildPlanLink(location: LocationDetailRecord | null, type: string) {
-  const locationType = location?.location_type || (type.includes("activit") ? "activity" : "restaurant");
+  const locationType =
+    location?.location_type ||
+    (type.includes("activit") ? "activity" : "restaurant");
   const id = String(location?.id || "").trim();
   return `/create?locationId=${encodeURIComponent(id)}&locationType=${encodeURIComponent(String(locationType))}`;
 }
 
-function buildFullOutingLinks(location: LocationDetailRecord | null, area: string, address: string) {
+function buildFullOutingLinks(
+  location: LocationDetailRecord | null,
+  area: string,
+  address: string,
+) {
   const context = address || area || getLocationName(location, "");
   const near = context ? ` near ${context}` : "";
   return [
@@ -318,10 +360,17 @@ function buildFullOutingLinks(location: LocationDetailRecord | null, area: strin
     ["Find an activity nearby", `activity${near}`],
     ["Find dessert", `dessert${near}`],
     ["Surprise me", `plan an outing${near}`],
-  ].map(([label, query]) => ({ label, href: `/create?q=${encodeURIComponent(query)}` }));
+  ].map(([label, query]) => ({
+    label,
+    href: `/create?q=${encodeURIComponent(query)}`,
+  }));
 }
 
-function getPublicTags(location: LocationDetailRecord | null, category: string, area: string) {
+function getPublicTags(
+  location: LocationDetailRecord | null,
+  category: string,
+  area: string,
+) {
   const tagMap: Record<string, string> = {
     establishment: "Good for Outings",
     point_of_interest: "Local Spot",
@@ -339,7 +388,13 @@ function getPublicTags(location: LocationDetailRecord | null, category: string, 
     spa: "Spa",
     shopping_mall: "Shopping",
   };
-  const raw = [category, area, "TheOutHaven Pick", getLocationTags(location), location?.primary_tag].flatMap(toArray);
+  const raw = [
+    category,
+    area,
+    "TheOutHaven Pick",
+    getLocationTags(location),
+    location?.primary_tag,
+  ].flatMap(toArray);
   return Array.from(
     new Set(
       raw
@@ -376,11 +431,16 @@ export default function LocationDetailPage() {
     async function loadLocation() {
       setLoading(true);
 
-      const sourceTable = type === "activities" || type === "activity" ? "activities" : "restaurants";
+      const sourceTable =
+        type === "activities" || type === "activity"
+          ? "activities"
+          : "restaurants";
       let { data, error } = await supabase
         .from("locations")
         .select("*")
-        .or(`id.eq.${locationId},and(source_table.eq.${sourceTable},source_id.eq.${locationId})`)
+        .or(
+          `id.eq.${locationId},and(source_table.eq.${sourceTable},source_id.eq.${locationId})`,
+        )
         .maybeSingle();
 
       if (!data && !error) {
@@ -452,16 +512,20 @@ export default function LocationDetailPage() {
   const reviewCount = getReviewCount(location, reviews);
 
   const externalReservationUrl = getExternalReservationUrl(location || {});
-  const externalReservationProvider = getExternalReservationProvider(location || {});
+  const externalReservationProvider = getExternalReservationProvider(
+    location || {},
+  );
   const internalReservationHref = getInternalReservationHref(
     location || {},
     isActivity ? "activity" : "restaurant",
   );
-  const reservationSource = String(location?.reservation_source || "external").toLowerCase();
+  const reservationSource = String(
+    location?.reservation_source || "external",
+  ).toLowerCase();
   const hasInternalReservations = Boolean(
     location?.internal_reservations_enabled ||
-      location?.uses_internal_reservations ||
-      location?.reservation_enabled === true,
+    location?.uses_internal_reservations ||
+    location?.reservation_enabled === true,
   );
   const showInternalReservation =
     (reservationSource === "internal" || reservationSource === "both") &&
@@ -473,21 +537,24 @@ export default function LocationDetailPage() {
   const primaryReservationUrl = showInternalReservation
     ? internalReservationHref || ""
     : showExternalReservation
-    ? externalReservationUrl || ""
-    : "";
+      ? externalReservationUrl || ""
+      : "";
   const secondaryReservationUrl =
-    showInternalReservation && reservationSource === "both" ? externalReservationUrl || "" : "";
+    showInternalReservation && reservationSource === "both"
+      ? externalReservationUrl || ""
+      : "";
   const reservationUrl = primaryReservationUrl;
-  const isExternalReservation = Boolean(reservationUrl) && !showInternalReservation;
+  const isExternalReservation =
+    Boolean(reservationUrl) && !showInternalReservation;
   const reservationLabel = showInternalReservation
     ? "Reserve on TheOutHaven"
     : showExternalReservation && externalReservationProvider
-    ? `Reserve via ${externalReservationProvider}`
-    : showExternalReservation
-    ? "Reserve Externally"
-    : location?.booking_url
-    ? "Book"
-    : "";
+      ? `Reserve via ${externalReservationProvider}`
+      : showExternalReservation
+        ? "Reserve Externally"
+        : location?.booking_url
+          ? "Book"
+          : "";
   const reservationSourceLabel = getReservationSourceLabel(location || {});
 
   const mapsUrl = useMemo(() => {
@@ -499,7 +566,8 @@ export default function LocationDetailPage() {
     borough: location?.borough,
     city: location?.city,
     category,
-    cuisine: location?.cuisine || location?.cuisine_type || location?.activity_type,
+    cuisine:
+      location?.cuisine || location?.cuisine_type || location?.activity_type,
   });
   const dateStyleTags = toArray(location?.date_style_tags);
   const reviewKeywords = toArray(location?.review_keywords);
@@ -528,6 +596,16 @@ export default function LocationDetailPage() {
   const websiteHref = buildWebsiteHref(location);
   const phoneHref = buildPhoneHref(location);
   const fullOutingLinks = buildFullOutingLinks(location, area, address);
+  const healthGrade = formatDisplayLabel(location?.health_department_grade);
+  const healthScore = formatHealthDepartmentScore(
+    location?.health_department_score,
+  );
+  const healthInspectionDate = formatShortDate(
+    location?.health_department_last_inspection_date,
+  );
+  const healthSource = String(
+    location?.health_department_source || "Health Department",
+  ).trim();
   useEffect(() => {
     if (!location?.id) return;
 
@@ -547,7 +625,9 @@ export default function LocationDetailPage() {
     }).catch(() => undefined);
   }, [location?.id, location?.location_type, name, type]);
 
-  function trackBusinessEvent(eventType: "reservation_started" | "website_click" | "directions_click") {
+  function trackBusinessEvent(
+    eventType: "reservation_started" | "website_click" | "directions_click",
+  ) {
     if (!location?.id) return;
 
     fetch("/api/analytics/location-event", {
@@ -563,8 +643,6 @@ export default function LocationDetailPage() {
     }).catch(() => undefined);
   }
 
-
-
   const startOutingTracking = async (method: "phone" | "external") => {
     try {
       const response = await fetch("/api/outings/start", {
@@ -573,7 +651,8 @@ export default function LocationDetailPage() {
         body: JSON.stringify({
           location_id: location?.id || locationId,
           location_type: location?.location_type || type,
-          external_reservation_url: method === "external" ? reservationUrl : null,
+          external_reservation_url:
+            method === "external" ? reservationUrl : null,
           phone_number: method === "phone" ? location?.phone : null,
           contact_method: method,
           source: "location_detail_page",
@@ -583,19 +662,32 @@ export default function LocationDetailPage() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: data?.error || response.statusText, location_id: location?.id || locationId });
+        console.error("THEOUTHAVEN_TRACKING_FAILED", {
+          method,
+          reason: data?.error || response.statusText,
+          location_id: location?.id || locationId,
+        });
         return;
       }
-      console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", { method, location_id: location?.id || locationId });
+      console.info("THEOUTHAVEN_OUTING_TRACKING_STARTED", {
+        method,
+        location_id: location?.id || locationId,
+      });
     } catch (error) {
-      console.error("THEOUTHAVEN_TRACKING_FAILED", { method, reason: error instanceof Error ? error.message : "unknown", location_id: location?.id || locationId });
+      console.error("THEOUTHAVEN_TRACKING_FAILED", {
+        method,
+        reason: error instanceof Error ? error.message : "unknown",
+        location_id: location?.id || locationId,
+      });
     }
   };
 
   const recommendationBullets = buildRecommendationBullets({
     category,
     cuisine: location?.cuisine || location?.activity_type,
-    atmosphere: formatTagListForSentence(location?.atmosphere || displayVibeTags),
+    atmosphere: formatTagListForSentence(
+      location?.atmosphere || displayVibeTags,
+    ),
     reviewKeywords: cleanDisplayTags(reviewKeywords, 6),
     bestFor: cleanDisplayTags(bestFor, 6),
     qualityScore: location?.quality_score || score,
@@ -721,7 +813,24 @@ export default function LocationDetailPage() {
                 {score >= 90 ? "Elite Pick" : "TheOutHaven Pick"}
               </div>
 
-              {address && <p className="mt-5 text-sm leading-6 text-white/70">{address}</p>}
+              {(healthGrade || healthScore) && (
+                <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-extrabold text-white/72">
+                  <span className="text-white/50">{healthSource}</span>
+                  {healthGrade ? <span>Grade {healthGrade}</span> : null}
+                  {healthScore ? <span>Score {healthScore}</span> : null}
+                  {healthInspectionDate ? (
+                    <span className="text-white/45">
+                      Last checked {healthInspectionDate}
+                    </span>
+                  ) : null}
+                </div>
+              )}
+
+              {address && (
+                <p className="mt-5 text-sm leading-6 text-white/70">
+                  {address}
+                </p>
+              )}
 
               <p className="mt-6 max-w-3xl text-base leading-8 text-white/74">
                 {location.description ||
@@ -734,25 +843,39 @@ export default function LocationDetailPage() {
                 phoneHref={phoneHref}
                 mapsUrl={mapsUrl}
                 onWebsiteClick={() => trackBusinessEvent("website_click")}
-                onPhoneClick={() => { void startOutingTracking("phone"); }}
+                onPhoneClick={() => {
+                  void startOutingTracking("phone");
+                }}
                 onDirectionsClick={() => trackBusinessEvent("directions_click")}
               />
 
               <OutHavenRatingCard score={score} category={category} />
             </div>
 
-            <LocationPhotoGallery images={galleryImages} primaryPhoto={primaryPhoto} name={name} />
+            <LocationPhotoGallery
+              images={galleryImages}
+              primaryPhoto={primaryPhoto}
+              name={name}
+            />
           </div>
         </section>
 
         <section className="px-4 py-8 sm:px-6 lg:px-8">
           <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-6">
-              <LuxuryCard eyebrow="Why TheOutHaven picked it" title="Built for a better plan.">
+              <LuxuryCard
+                eyebrow="Why TheOutHaven picked it"
+                title="Built for a better plan."
+              >
                 <p className="text-sm leading-7 text-white/70">
-                  Selected for strong outing potential, quality signals, and local popularity{area ? ` in ${area}` : ""}.
-                  {reviewCount ? ` Guests have added ${reviewCount} review${reviewCount === 1 ? "" : "s"} to the signal mix.` : ""}
-                  {score ? ` Match confidence is currently ${score} / 100.` : ""}
+                  Selected for strong outing potential, quality signals, and
+                  local popularity{area ? ` in ${area}` : ""}.
+                  {reviewCount
+                    ? ` Guests have added ${reviewCount} review${reviewCount === 1 ? "" : "s"} to the signal mix.`
+                    : ""}
+                  {score
+                    ? ` Match confidence is currently ${score} / 100.`
+                    : ""}
                 </p>
               </LuxuryCard>
 
@@ -767,20 +890,33 @@ export default function LocationDetailPage() {
                 score={score}
               />
 
-              <LuxuryCard eyebrow="Customer reviews" title="What people are saying.">
+              <LuxuryCard
+                eyebrow="Customer reviews"
+                title="What people are saying."
+              >
                 {reviews.length === 0 ? (
                   <p className="text-sm leading-7 text-white/60">
-                    Verified guest reviews will appear here after TheOutHaven outings.
+                    Verified guest reviews will appear here after TheOutHaven
+                    outings.
                   </p>
                 ) : (
                   <div className="space-y-4">
                     {reviews.map((review) => (
-                      <div key={review.id} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+                      <div
+                        key={review.id}
+                        className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5"
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                          <p className="font-black text-white">{review.customer_name || "TheOutHaven Guest"}</p>
-                          <p className="rounded-full border border-red-300/25 bg-red-600/15 px-3 py-1 text-xs font-black text-red-50">{review.rating}/5</p>
+                          <p className="font-black text-white">
+                            {review.customer_name || "TheOutHaven Guest"}
+                          </p>
+                          <p className="rounded-full border border-red-300/25 bg-red-600/15 px-3 py-1 text-xs font-black text-red-50">
+                            {review.rating}/5
+                          </p>
                         </div>
-                        <p className="mt-3 text-sm leading-7 text-white/70">{review.review_text}</p>
+                        <p className="mt-3 text-sm leading-7 text-white/70">
+                          {review.review_text}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -790,8 +926,14 @@ export default function LocationDetailPage() {
 
             <aside className="space-y-6 lg:sticky lg:top-36 lg:self-start">
               <LuxuryCard eyebrow="Plan your visit" title="Ready when you are.">
-                {operatingHoursDisplay && <InfoRow label="Hours" value={operatingHoursDisplay} />}
-                {reservationSourceLabel && <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">{reservationSourceLabel}</p>}
+                {operatingHoursDisplay && (
+                  <InfoRow label="Hours" value={operatingHoursDisplay} />
+                )}
+                {reservationSourceLabel && (
+                  <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">
+                    {reservationSourceLabel}
+                  </p>
+                )}
                 <LocationActionButtons
                   planLink={planLink}
                   websiteHref={websiteHref}
@@ -799,22 +941,39 @@ export default function LocationDetailPage() {
                   mapsUrl={mapsUrl}
                   stacked
                   onWebsiteClick={() => trackBusinessEvent("website_click")}
-                  onPhoneClick={() => { void startOutingTracking("phone"); }}
-                  onDirectionsClick={() => trackBusinessEvent("directions_click")}
+                  onPhoneClick={() => {
+                    void startOutingTracking("phone");
+                  }}
+                  onDirectionsClick={() =>
+                    trackBusinessEvent("directions_click")
+                  }
                 />
-                <button onClick={trackAndGoBack} className="mt-3 w-full rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">Back to Results</button>
+                <button
+                  onClick={trackAndGoBack}
+                  className="mt-3 w-full rounded-full border border-white/15 px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+                >
+                  Back to Results
+                </button>
               </LuxuryCard>
             </aside>
           </div>
         </section>
       </main>
 
-      <MobileStickyLocationBar name={name} meta={area || category} planLink={planLink} phoneHref={phoneHref} mapsUrl={mapsUrl} onPhoneClick={() => { void startOutingTracking("phone"); }} onDirectionsClick={() => trackBusinessEvent("directions_click")} />
-
+      <MobileStickyLocationBar
+        name={name}
+        meta={area || category}
+        planLink={planLink}
+        phoneHref={phoneHref}
+        mapsUrl={mapsUrl}
+        onPhoneClick={() => {
+          void startOutingTracking("phone");
+        }}
+        onDirectionsClick={() => trackBusinessEvent("directions_click")}
+      />
     </>
   );
 }
-
 
 function buildRelatedExploreLinks({
   borough,
@@ -829,19 +988,49 @@ function buildRelatedExploreLinks({
 }) {
   const links: { label: string; href: string }[] = [];
   const area = String(borough || city || "").trim();
-  const areaSlug = area.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const areaSlug = area
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   const categoryText = `${category || ""} ${cuisine || ""}`.toLowerCase();
 
-  if (["queens", "brooklyn", "manhattan", "bronx", "staten-island", "long-island"].includes(areaSlug)) {
+  if (
+    [
+      "queens",
+      "brooklyn",
+      "manhattan",
+      "bronx",
+      "staten-island",
+      "long-island",
+    ].includes(areaSlug)
+  ) {
     links.push({ label: `More in ${area}`, href: `/explore/${areaSlug}` });
   }
-  if (categoryText.includes("steak")) links.push({ label: "More steak restaurants", href: "/explore/steak-restaurants" });
-  if (categoryText.includes("brunch")) links.push({ label: "More brunch spots", href: "/explore/brunch-spots" });
-  if (categoryText.includes("hookah")) links.push({ label: "More hookah lounges", href: "/explore/hookah-lounges" });
-  if (categoryText.includes("rooftop")) links.push({ label: "More rooftop restaurants", href: "/explore/rooftop-restaurants" });
+  if (categoryText.includes("steak"))
+    links.push({
+      label: "More steak restaurants",
+      href: "/explore/steak-restaurants",
+    });
+  if (categoryText.includes("brunch"))
+    links.push({ label: "More brunch spots", href: "/explore/brunch-spots" });
+  if (categoryText.includes("hookah"))
+    links.push({
+      label: "More hookah lounges",
+      href: "/explore/hookah-lounges",
+    });
+  if (categoryText.includes("rooftop"))
+    links.push({
+      label: "More rooftop restaurants",
+      href: "/explore/rooftop-restaurants",
+    });
 
   links.push({ label: "Date night ideas", href: "/explore/date-night" });
-  return links.filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index).slice(0, 5);
+  return links
+    .filter(
+      (link, index, all) =>
+        all.findIndex((item) => item.href === link.href) === index,
+    )
+    .slice(0, 5);
 }
 
 function LocationActionButtons({
@@ -865,21 +1054,40 @@ function LocationActionButtons({
 }) {
   return (
     <div className={`mt-7 ${stacked ? "grid gap-3" : "flex flex-wrap gap-3"}`}>
-      <Link href={planLink} className="rounded-full bg-red-600 px-6 py-3 text-center text-sm font-black text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500">
+      <Link
+        href={planLink}
+        className="rounded-full bg-red-600 px-6 py-3 text-center text-sm font-black text-white shadow-lg shadow-red-950/40 transition hover:bg-red-500"
+      >
         Plan an Outing Here
       </Link>
       {websiteHref && (
-        <a href={websiteHref} target="_blank" rel="noopener noreferrer" onClick={onWebsiteClick} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+        <a
+          href={websiteHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onWebsiteClick}
+          className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+        >
           Visit Website
         </a>
       )}
       {phoneHref && (
-        <a href={phoneHref} onClick={onPhoneClick} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+        <a
+          href={phoneHref}
+          onClick={onPhoneClick}
+          className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+        >
           Call
         </a>
       )}
       {mapsUrl && (
-        <a href={mapsUrl} target="_blank" rel="noopener noreferrer" onClick={onDirectionsClick} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black">
+        <a
+          href={mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onDirectionsClick}
+          className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-center text-sm font-black text-white transition hover:bg-white hover:text-black"
+        >
           Get Directions
         </a>
       )}
@@ -887,7 +1095,15 @@ function LocationActionButtons({
   );
 }
 
-function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]; primaryPhoto: string; name: string }) {
+function LocationPhotoGallery({
+  images,
+  primaryPhoto,
+  name,
+}: {
+  images: string[];
+  primaryPhoto: string;
+  name: string;
+}) {
   const safePhotos = dedupePhotoUrls([primaryPhoto, ...images]).slice(0, 5);
   const mainPhoto = safePhotos[0] || "";
   const thumbs = safePhotos.slice(1, 3);
@@ -896,12 +1112,22 @@ function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]
     <div className="grid gap-3">
       <div className="relative min-h-[260px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#111114] shadow-2xl shadow-black/30 sm:min-h-[360px] lg:min-h-[520px]">
         {mainPhoto ? (
-          <SafeLocationImage src={mainPhoto} alt={name} priority fallbackType="placeholder" />
+          <SafeLocationImage
+            src={mainPhoto}
+            alt={name}
+            priority
+            fallbackType="placeholder"
+          />
         ) : (
           <LocationImagePlaceholder label="Photo coming soon" />
         )}
         {safePhotos.length > 1 && mainPhoto && (
-          <a href={mainPhoto} target="_blank" rel="noopener noreferrer" className="absolute bottom-4 right-4 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-xs font-black text-white backdrop-blur-xl">
+          <a
+            href={mainPhoto}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="absolute bottom-4 right-4 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-xs font-black text-white backdrop-blur-xl"
+          >
             {safePhotos.length} photos
           </a>
         )}
@@ -909,8 +1135,19 @@ function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]
       {thumbs.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {thumbs.map((image, index) => (
-            <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="relative h-32 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] empty:hidden">
-              <SafeLocationImage src={image} alt={`${name} photo ${index + 2}`} fallbackType="hide" className="transition duration-500 hover:scale-105" />
+            <a
+              key={image}
+              href={image}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative h-32 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] empty:hidden"
+            >
+              <SafeLocationImage
+                src={image}
+                alt={`${name} photo ${index + 2}`}
+                fallbackType="hide"
+                className="transition duration-500 hover:scale-105"
+              />
             </a>
           ))}
         </div>
@@ -919,7 +1156,13 @@ function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]
   );
 }
 
-function OutHavenRatingCard({ score, category }: { score: number; category: string }) {
+function OutHavenRatingCard({
+  score,
+  category,
+}: {
+  score: number;
+  category: string;
+}) {
   const chips = category.toLowerCase().includes("restaurant")
     ? ["Date night", "Dinner", "Group outing", "Celebration"]
     : ["Date night", "Activity", "Group outing", "Celebration"];
@@ -927,22 +1170,44 @@ function OutHavenRatingCard({ score, category }: { score: number; category: stri
     <section className="mt-7 rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-white">{score >= 90 ? "Elite Pick" : "Great outing potential"}</p>
-          <p className="mt-1 text-sm leading-6 text-white/62">Strong fit based on quality signals, popularity, and outing potential.</p>
+          <p className="text-sm font-black text-white">
+            {score >= 90 ? "Elite Pick" : "Great outing potential"}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-white/62">
+            Strong fit based on quality signals, popularity, and outing
+            potential.
+          </p>
         </div>
-        <p className="rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-black text-red-50">{score}% match confidence</p>
+        <p className="rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-black text-red-50">
+          {score}% match confidence
+        </p>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">{chips.map((chip) => <PublicChip key={chip}>{chip}</PublicChip>)}</div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {chips.map((chip) => (
+          <PublicChip key={chip}>{chip}</PublicChip>
+        ))}
+      </div>
     </section>
   );
 }
 
-function FullOutingCard({ links }: { links: { label: string; href: string }[] }) {
+function FullOutingCard({
+  links,
+}: {
+  links: { label: string; href: string }[];
+}) {
   return (
-    <LuxuryCard eyebrow="Make it a full outing" title="Pair this spot with something nearby.">
+    <LuxuryCard
+      eyebrow="Make it a full outing"
+      title="Pair this spot with something nearby."
+    >
       <div className="flex flex-wrap gap-2">
         {links.map((link) => (
-          <Link key={link.href} href={link.href} className="rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-black text-red-50 transition hover:bg-red-600 hover:text-white">
+          <Link
+            key={link.href}
+            href={link.href}
+            className="rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-black text-red-50 transition hover:bg-red-600 hover:text-white"
+          >
             {link.label}
           </Link>
         ))}
@@ -951,7 +1216,21 @@ function FullOutingCard({ links }: { links: { label: string; href: string }[] })
   );
 }
 
-function AtAGlanceCard({ area, category, address, reviews, photos, score }: { area: string; category: string; address: string; reviews: number; photos: number; score: number }) {
+function AtAGlanceCard({
+  area,
+  category,
+  address,
+  reviews,
+  photos,
+  score,
+}: {
+  area: string;
+  category: string;
+  address: string;
+  reviews: number;
+  photos: number;
+  score: number;
+}) {
   const items = [
     ["Area", area],
     ["Category", category],
@@ -963,13 +1242,31 @@ function AtAGlanceCard({ area, category, address, reviews, photos, score }: { ar
   return (
     <LuxuryCard eyebrow="At a glance" title="The essentials.">
       <div className="grid gap-3 sm:grid-cols-2">
-        {items.map(([label, value]) => <QuickDetail key={label} label={label} value={value} />)}
+        {items.map(([label, value]) => (
+          <QuickDetail key={label} label={label} value={value} />
+        ))}
       </div>
     </LuxuryCard>
   );
 }
 
-function MobileStickyLocationBar({ name, meta, planLink, phoneHref, mapsUrl, onPhoneClick, onDirectionsClick }: { name: string; meta: string; planLink: string; phoneHref: string; mapsUrl: string; onPhoneClick: () => void; onDirectionsClick: () => void }) {
+function MobileStickyLocationBar({
+  name,
+  meta,
+  planLink,
+  phoneHref,
+  mapsUrl,
+  onPhoneClick,
+  onDirectionsClick,
+}: {
+  name: string;
+  meta: string;
+  planLink: string;
+  phoneHref: string;
+  mapsUrl: string;
+  onPhoneClick: () => void;
+  onDirectionsClick: () => void;
+}) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/90 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl md:hidden">
       <div className="flex items-center gap-3">
@@ -977,9 +1274,34 @@ function MobileStickyLocationBar({ name, meta, planLink, phoneHref, mapsUrl, onP
           <p className="truncate text-sm font-black text-white">{name}</p>
           <p className="truncate text-xs font-bold text-white/55">{meta}</p>
         </div>
-        {phoneHref && <a aria-label="Call" href={phoneHref} onClick={onPhoneClick} className="rounded-full border border-white/15 px-3 py-2 text-xs font-black text-white">Call</a>}
-        {mapsUrl && <a aria-label="Get directions" href={mapsUrl} target="_blank" rel="noopener noreferrer" onClick={onDirectionsClick} className="rounded-full border border-white/15 px-3 py-2 text-xs font-black text-white">Map</a>}
-        <Link href={planLink} className="rounded-full bg-red-600 px-4 py-2.5 text-sm font-black text-white">Plan Here</Link>
+        {phoneHref && (
+          <a
+            aria-label="Call"
+            href={phoneHref}
+            onClick={onPhoneClick}
+            className="rounded-full border border-white/15 px-3 py-2 text-xs font-black text-white"
+          >
+            Call
+          </a>
+        )}
+        {mapsUrl && (
+          <a
+            aria-label="Get directions"
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onDirectionsClick}
+            className="rounded-full border border-white/15 px-3 py-2 text-xs font-black text-white"
+          >
+            Map
+          </a>
+        )}
+        <Link
+          href={planLink}
+          className="rounded-full bg-red-600 px-4 py-2.5 text-sm font-black text-white"
+        >
+          Plan Here
+        </Link>
       </div>
     </div>
   );
@@ -1028,7 +1350,9 @@ function DynamicLocationHeader({
                 Results
               </a>
               <span>/</span>
-              <span className="truncate text-red-300">{formatDisplayLabel(category)}</span>
+              <span className="truncate text-red-300">
+                {formatDisplayLabel(category)}
+              </span>
             </div>
 
             <p
@@ -1125,7 +1449,13 @@ function DetailGrid({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function QuickDetail({ label, value }: { label: string; value: string | number }) {
+function QuickDetail({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
   const displayValue =
     typeof value === "string" && label !== "Hours"
       ? formatDisplayLabel(value) || value
@@ -1144,12 +1474,17 @@ function QuickDetail({ label, value }: { label: string; value: string | number }
 }
 
 function EditorialTile({ label, value }: { label: string; value: string }) {
-  const displayValue = label === "Experience" ? value : formatDisplayLabel(value) || value;
+  const displayValue =
+    label === "Experience" ? value : formatDisplayLabel(value) || value;
 
   return (
     <div className="rounded-[1.25rem] border border-white/10 bg-black/25 p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-200/60">{label}</p>
-      <p className="mt-2 text-sm font-semibold leading-6 text-white/70">{displayValue}</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-200/60">
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-white/70">
+        {displayValue}
+      </p>
     </div>
   );
 }
@@ -1189,9 +1524,13 @@ function buildRecommendationBullets({
   ];
 
   if (Number(qualityScore || 0) >= 80 || Number(popularityScore || 0) >= 80) {
-    bullets.push("Quality and popularity signals make it a standout candidate for high-intent searches.");
+    bullets.push(
+      "Quality and popularity signals make it a standout candidate for high-intent searches.",
+    );
   } else if (vibeTags[0]) {
-    bullets.push(`TheOutHaven sees this as a natural fit for ${formatTagListForSentence(vibeTags)} moments.`);
+    bullets.push(
+      `TheOutHaven sees this as a natural fit for ${formatTagListForSentence(vibeTags)} moments.`,
+    );
   }
 
   return bullets.slice(0, 4);
