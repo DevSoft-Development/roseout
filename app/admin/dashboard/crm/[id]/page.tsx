@@ -15,6 +15,7 @@ import { getCanonicalAppUrl } from "@/lib/site-url";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminPageShell, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
+import { getPublicLocationHref } from "@/lib/locationLinks";
 export const dynamic = "force-dynamic";
 
 const tabs = [
@@ -433,7 +434,15 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const related = await getLocationCrmRelatedData(business.id);
   const flags = getUpgradeFlags(business);
   const canEdit = canAdmin(admin.role, "crmEdit");
-  const publicHref = business.location_type === "activities" ? `/activities/${business.id}` : `/restaurants/${business.id}`;
+  const publicHref = getPublicLocationHref(business);
+  if (!publicHref && process.env.NODE_ENV !== "production") {
+    console.warn("[CRM] Missing public location href", {
+      id: business.id,
+      name: business.name,
+      slug: (business as { slug?: string | null }).slug,
+      location_type: business.location_type,
+    });
+  }
   const enhancementTable: LocationTableName = business.location_type === "restaurants" || business.location_type === "activities" ? business.location_type : "locations";
   const qualityScore = business.profile_quality_score || Math.round([business.name, business.address, business.city, business.phone, business.website, business.description].filter(Boolean).length / 6 * 100);
   const seoScore = business.seo_score || Math.round([business.name, business.description, business.category, business.city, business.is_searchable].filter(Boolean).length / 5 * 100);
@@ -450,7 +459,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
           <div className="flex flex-wrap gap-2">
             <Link href={`/admin/dashboard/crm/${business.id}?tab=listing`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Edit Listing Enhancement</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Edit profile</Link>
-            <Link href={publicHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">View public page</Link>
+            {publicHref ? <Link href={publicHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">View public page</Link> : <div className="max-w-[210px]"><button type="button" disabled className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-white/35 disabled:cursor-not-allowed">Public Page Unavailable</button><p className="mt-1 text-xs text-white/40">Missing public slug or public route data.</p></div>}
             <Link href={`/admin/dashboard/crm/${business.id}?tab=claims`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open claims</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=qr-codes`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print QR</Link>
             <Link href={`/admin/dashboard/crm/${business.id}?tab=support`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Add Experience note</Link>
