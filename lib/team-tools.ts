@@ -325,6 +325,18 @@ export function normalizeSearchText(value: unknown): string {
     .trim();
 }
 
+function expandLocationSearchAliases(row: any): string[] {
+  const aliases: string[] = [];
+  const state = String(row.state || "").trim().toUpperCase();
+  if (state === "NY") aliases.push("New York");
+  if (state === "NJ") aliases.push("New Jersey");
+  const cityState = [row.city, row.state].filter(Boolean).join(" ");
+  if (/\bny\b/i.test(cityState)) aliases.push(cityState.replace(/\bNY\b/gi, "New York"));
+  if (/\bnj\b/i.test(cityState)) aliases.push(cityState.replace(/\bNJ\b/gi, "New Jersey"));
+  if (/queens|astoria|brooklyn|bronx|staten island|manhattan/i.test(`${row.city || ""} ${row.borough || ""} ${row.neighborhood || ""}`)) aliases.push("New York NYC NYC Core");
+  return aliases;
+}
+
 export function buildWorkspaceLocationHaystack(row: any): string {
   return [
     row.name,
@@ -360,6 +372,7 @@ export function buildWorkspaceLocationHaystack(row: any): string {
     row.subscription_plan,
     row.subscription_status,
     row.sales_campaign,
+    ...expandLocationSearchAliases(row),
   ].filter(Boolean).join(" ");
 }
 
