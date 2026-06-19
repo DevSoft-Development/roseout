@@ -649,6 +649,13 @@ export default async function AdminLocationsPage({
                 Print Claim QRs
               </Link>
               <Link
+                href="/admin/dashboard/locations/non-searchable"
+                className="rounded-full border border-sky-300/30 bg-sky-500/15 px-5 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/25"
+                title="See hidden, low-level, missing-photo, and ready-to-approve locations before they go public."
+              >
+                Review Non-Searchable Locations
+              </Link>
+              <Link
                 href="/admin/dashboard/locations?tab=google-enrichment"
                 className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
               >

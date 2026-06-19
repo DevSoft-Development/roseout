@@ -6,6 +6,7 @@ import {
 } from "@/lib/location-growth/photoDetection";
 import { isLowLevelLocation, isUnverifiedNycRestaurant } from "@/lib/search/lowLevel";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { buildPublishabilityUpdate } from "@/lib/location-publishability";
 
 // Supabase rows are intentionally dynamic because this project does not ship
 // generated database types for the location growth tables.
@@ -33,7 +34,7 @@ function toLocationInsert(row: StagingRow) {
   const lowLevel = isLowLevelLocation({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const unverifiedNyc = isUnverifiedNycRestaurant({ ...row, has_photos: hasPhotos, photo_status: photoStatus });
   const publishReady = hasPhotos && row.quality_status === "publish_ready" && !lowLevel && !unverifiedNyc;
-  return {
+  const base = {
     location_type: row.location_type,
     name: row.name || row.restaurant_name || row.activity_name,
     restaurant_name: row.restaurant_name,
@@ -101,6 +102,8 @@ function toLocationInsert(row: StagingRow) {
     last_cleaned_at: new Date().toISOString(),
     last_deduped_at: new Date().toISOString(),
   };
+  const { update } = buildPublishabilityUpdate(base, { allowApproval: true });
+  return { ...base, ...update, data_status: update.is_searchable ? "clean" : base.data_status };
 }
 
 export async function publishReadyStagedLocations({

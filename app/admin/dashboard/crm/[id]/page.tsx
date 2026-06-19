@@ -12,6 +12,8 @@ import ListingEnhancementEditor from "./ListingEnhancementEditor";
 import type { LocationTableName } from "@/lib/listing-enhancement";
 import { createClaimQr } from "@/lib/claimQrServer";
 import { getCanonicalAppUrl } from "@/lib/site-url";
+import { evaluateLocationPublishability } from "@/lib/location-publishability";
+import PublishabilityRepairButton from "./PublishabilityRepairButton";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminPageShell, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
@@ -439,6 +441,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const enhancementTable: LocationTableName = business.location_type === "restaurants" || business.location_type === "activities" ? business.location_type : "locations";
   const qualityScore = business.profile_quality_score || Math.round([business.name, business.address, business.city, business.phone, business.website, business.description].filter(Boolean).length / 6 * 100);
   const seoScore = business.seo_score || Math.round([business.name, business.description, business.category, business.city, business.is_searchable].filter(Boolean).length / 5 * 100);
+  const publishability = evaluateLocationPublishability(business as any, { allowApproval: true });
 
   return <AdminPageShell>
       <section className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(135deg,#12090d,#090909_60%,#131316)] p-5 shadow-2xl shadow-black/30">
@@ -479,6 +482,24 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       </AdminKpiGrid>
 
       <CrmDetailNavigation locationId={business.id} activeTab={activeTab} />
+
+      <AdminSectionCard className="p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-200">Search Visibility / Publishability</p>
+            <h2 className="mt-2 text-xl font-black">{publishability.reviewLabel}</h2>
+            <div className="mt-3 grid gap-2 text-sm text-white/65 sm:grid-cols-2 lg:grid-cols-4">
+              <span>Searchable: <b>{publishability.isSearchable ? "yes" : "no"}</b></span><span>Publish-ready: <b>{publishability.qualityStatus === "publish_ready" ? "yes" : "no"}</b></span><span>Ready to approve: <b>{publishability.isReadyToApprove ? "yes" : "no"}</b></span><span>Visibility tier: <b>{publishability.publicVisibilityTier}</b></span>
+              <span>Hidden flag: <b>{String(publishability.isHidden)}</b></span><span>Low-level flag: <b>{String(publishability.isLowLevel)}</b></span><span>Photo status: <b>{(business as any).photo_status || "—"}</b></span><span>Data status: <b>{(business as any).data_status || "—"}</b></span>
+              <span>Quality status: <b>{publishability.qualityStatus}</b></span><span>Source quality: <b>{publishability.sourceQualityStatus}</b></span><span>Import confidence: <b>{publishability.importConfidence}</b></span><span>Duplicate status: <b>{(business as any).duplicate_status || "—"}</b></span>
+            </div>
+            {publishability.reasons.length ? <div className="mt-3 flex flex-wrap gap-2">{publishability.reasons.map((reason)=><span key={reason} className="rounded-full border border-amber-300/20 bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-100">{reason}</span>)}</div> : null}
+          </div>
+          <PublishabilityRepairButton locationId={business.id} eligible={publishability.isReadyToApprove} />
+        </div>
+      </AdminSectionCard>
+
+
 
       {activeTab === "partner-launch" ? <PartnerLaunchPanel business={business} canEdit={canEdit} /> : null}
 
