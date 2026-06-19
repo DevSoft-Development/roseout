@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
@@ -10,6 +9,7 @@ import { getLocationImage } from "@/lib/locationImage";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { getPrimaryCategory, getCuisine } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
+import SafeLocationImage from "@/components/public-location/SafeLocationImage";
 
 export type ExploreLocation = {
   id: string;
@@ -109,9 +109,52 @@ const AREA_FILTERS = [
   { label: "Long Island", value: "Long Island" },
 ];
 
-const AREA_FILTERS_DISPLAY = AREA_FILTERS.filter(
-  (area) => area.value !== "all",
-);
+const AREA_CARDS = [
+  {
+    label: "Queens",
+    value: "Queens",
+    description: "Food, lounges, activities, and hidden gems across Queens.",
+    fallbackGradient: "from-[#4b1020] via-[#141016] to-[#060303]",
+    searchHint: "Queens nights",
+  },
+  {
+    label: "Brooklyn",
+    value: "Brooklyn",
+    description:
+      "Creative nights, date spots, rooftops, and after-dinner plans.",
+    fallbackGradient: "from-[#321053] via-[#15101f] to-[#060303]",
+    searchHint: "Brooklyn energy",
+  },
+  {
+    label: "Manhattan",
+    value: "Manhattan",
+    description: "Classic NYC restaurants, experiences, and night-out energy.",
+    fallbackGradient: "from-[#5b1c08] via-[#1b0f0b] to-[#060303]",
+    searchHint: "NYC classics",
+  },
+  {
+    label: "Bronx",
+    value: "Bronx",
+    description: "Local favorites, cultural stops, and neighborhood gems.",
+    fallbackGradient: "from-[#173d25] via-[#101813] to-[#060303]",
+    searchHint: "Bronx gems",
+  },
+  {
+    label: "Staten Island",
+    value: "Staten Island",
+    description: "Relaxed outings, waterfront stops, and group-friendly plans.",
+    fallbackGradient: "from-[#123859] via-[#0d1822] to-[#060303]",
+    searchHint: "Waterfront plans",
+  },
+  {
+    label: "Long Island",
+    value: "Long Island",
+    description:
+      "Restaurants, activities, and polished nights out beyond the city.",
+    fallbackGradient: "from-[#5c1832] via-[#170d13] to-[#060303]",
+    searchHint: "Long Island",
+  },
+];
 
 export default function ExploreClient({
   initialLocations,
@@ -124,7 +167,11 @@ export default function ExploreClient({
   const [q, setQ] = useState(initialQ);
   const [selectedKind, setSelectedKind] = useState(normalizeKind(initialKind));
   const [selectedArea, setSelectedArea] = useState(normalizeArea(initialArea));
-  const [locations, setLocations] = useState(initialLocations);
+  const safeInitialLocations = useMemo(
+    () => dedupeRenderableLocations(initialLocations),
+    [initialLocations],
+  );
+  const [locations, setLocations] = useState(safeInitialLocations);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const lastHandledKey = useRef(
@@ -134,8 +181,11 @@ export default function ExploreClient({
   const hasActiveSearch =
     Boolean(q.trim()) || selectedKind !== "all" || selectedArea !== "all";
   const displayLocations = useMemo(
-    () => (hasActiveSearch ? locations : initialLocations),
-    [hasActiveSearch, initialLocations, locations],
+    () =>
+      dedupeRenderableLocations(
+        hasActiveSearch ? locations : safeInitialLocations,
+      ),
+    [hasActiveSearch, safeInitialLocations, locations],
   );
 
   useEffect(() => {
@@ -161,11 +211,11 @@ export default function ExploreClient({
         replaceUrl: false,
       });
     } else {
-      setLocations(initialLocations);
+      setLocations(safeInitialLocations);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, initialLocations]);
+  }, [searchParams, safeInitialLocations]);
 
   async function runSearch({
     q: nextQ = q,
@@ -199,7 +249,7 @@ export default function ExploreClient({
     }
 
     if (!hasSearch) {
-      setLocations(initialLocations);
+      setLocations(safeInitialLocations);
       return;
     }
 
@@ -215,7 +265,9 @@ export default function ExploreClient({
         throw new Error(data.error || "Explore search failed");
       }
 
-      setLocations(Array.isArray(data.items) ? data.items : []);
+      setLocations(
+        dedupeRenderableLocations(Array.isArray(data.items) ? data.items : []),
+      );
       setError("");
     } catch (err) {
       console.error("EXPLORE_CLIENT_SEARCH_ERROR", err);
@@ -260,7 +312,7 @@ export default function ExploreClient({
             },
           );
 
-          setLocations(fallbackItems);
+          setLocations(dedupeRenderableLocations(fallbackItems));
           setError("");
           return;
         }
@@ -309,8 +361,8 @@ export default function ExploreClient({
                   onClick={() =>
                     void runSearch({
                       q: chip,
-                      kind: selectedKind,
-                      area: selectedArea,
+                      kind: "all",
+                      area: "all",
                     })
                   }
                   className="shrink-0 rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 transition hover:border-[#e1062a]/70 hover:bg-[#e1062a]/15 hover:text-white"
@@ -324,6 +376,7 @@ export default function ExploreClient({
           <BrowseByArea
             q={q}
             selectedKind={selectedKind}
+            selectedArea={selectedArea}
             runSearch={runSearch}
           />
 
@@ -368,9 +421,12 @@ export default function ExploreClient({
 
             {displayLocations.length > 0 ? (
               <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {displayLocations.slice(0, 32).map((location) => (
-                  <LocationCard key={location.id} location={location} />
-                ))}
+                {displayLocations
+                  .slice(0, 32)
+                  .filter(isRenderableExploreLocation)
+                  .map((location) => (
+                    <LocationCard key={location.id} location={location} />
+                  ))}
               </div>
             ) : (
               <EmptyState clearSearch={clearSearch} />
@@ -451,10 +507,12 @@ function HeroSearch({
 function BrowseByArea({
   q,
   selectedKind,
+  selectedArea,
   runSearch,
 }: {
   q: string;
   selectedKind: string;
+  selectedArea: string;
   runSearch: (args: {
     q?: string;
     kind?: string;
@@ -463,41 +521,70 @@ function BrowseByArea({
 }) {
   return (
     <section className="mt-9">
-      <div className="mb-4 flex items-end justify-between gap-4">
+      <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
             Browse by area
           </p>
 
           <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">
             Pick a neighborhood lane
           </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
+            Start with an area, then narrow it by vibe, food, or activity.
+          </p>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {AREA_FILTERS_DISPLAY.map((area) => (
-          <button
-            key={area.value}
-            type="button"
-            onClick={() =>
-              void runSearch({
-                q: q || area.label,
-                kind: selectedKind,
-                area: area.value,
-              })
-            }
-            className="group relative min-h-[110px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.055] p-5 text-left shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-[#e1062a]/60 hover:bg-white/[0.075]"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(225,6,42,.28),transparent_38%),linear-gradient(145deg,rgba(255,255,255,.07),transparent_55%)] opacity-80 transition group-hover:opacity-100" />
-            <div className="relative flex h-full flex-col justify-between">
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-white/45">
-                Area
-              </span>
-              <span className="pt-6 text-lg font-black">{area.label}</span>
-            </div>
-          </button>
-        ))}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {AREA_CARDS.map((area) => {
+          const active =
+            selectedArea.toLowerCase() === area.value.toLowerCase();
+
+          return (
+            <button
+              key={area.value}
+              type="button"
+              onClick={() =>
+                void runSearch({
+                  q,
+                  kind: selectedKind,
+                  area: area.value,
+                })
+              }
+              className={`group relative min-h-[220px] overflow-hidden rounded-[1.75rem] border p-5 text-left shadow-2xl shadow-black/25 transition hover:-translate-y-0.5 hover:border-[#e1062a]/70 ${
+                active
+                  ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
+                  : "border-white/10"
+              }`}
+            >
+              <div
+                className={`absolute inset-0 bg-gradient-to-br ${area.fallbackGradient}`}
+              />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,.20),transparent_28%),linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.78))]" />
+              <img
+                src="/toh_logo.png"
+                alt=""
+                aria-hidden="true"
+                className="absolute right-5 top-5 h-12 w-12 rounded-full border border-white/10 bg-black/35 object-contain p-2 opacity-45"
+              />
+              <div className="relative flex h-full flex-col justify-end">
+                <span className="mb-3 w-fit rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-white/70 backdrop-blur">
+                  {area.searchHint}
+                </span>
+                <h3 className="text-2xl font-black tracking-tight text-white">
+                  {area.label}
+                </h3>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-white/72">
+                  {area.description}
+                </p>
+                <span className="mt-4 inline-flex text-sm font-black text-white">
+                  Explore area →
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -601,7 +688,7 @@ function LocationCard({ location }: { location: ExploreLocation }) {
   const startOutingHref = `/create?q=${encodeURIComponent(
     `plan an outing around ${name} in ${locationArea || "New York"}`,
   )}&locationId=${encodeURIComponent(location.id)}&locationType=${encodeURIComponent(
-    typeLabel,
+    getStableLocationType(location),
   )}&source=explore`;
 
   const categoryLine =
@@ -620,22 +707,16 @@ function LocationCard({ location }: { location: ExploreLocation }) {
   const score = location.theouthaven_score || location.score;
 
   return (
-    <article className="group overflow-hidden rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-3 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.065]">
-      <div className="relative h-48 overflow-hidden rounded-[1.2rem] bg-white/[0.04]">
-        <Image
-          src={getLocationImage(location) || "/placeholder.jpg"}
-          alt={name}
-          fill
-          sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw"
-          className="object-cover transition duration-500 group-hover:scale-105"
-        />
+    <article className="group flex h-full flex-col overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-3 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.065]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.2rem] bg-white/[0.04]">
+        <SafeExploreImage src={getLocationImage(location)} alt={name} />
 
         <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/60 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white backdrop-blur">
           {typeLabel}
         </div>
       </div>
 
-      <div className="flex min-h-[215px] flex-col px-1 pb-1 pt-4">
+      <div className="flex flex-1 flex-col px-1 pb-1 pt-4 sm:px-2">
         <h3 className="line-clamp-2 min-h-[3.5rem] text-lg font-black leading-tight">
           {name}
         </h3>
@@ -665,18 +746,18 @@ function LocationCard({ location }: { location: ExploreLocation }) {
           </div>
         ) : null}
 
-        <div className="mt-auto grid gap-2 pt-4">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="mt-auto pt-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link
               href={detailHref}
-              className="rounded-full bg-[#e1062a] px-4 py-2.5 text-center text-xs font-black text-white transition hover:bg-red-500"
+              className="flex min-h-[52px] items-center justify-center rounded-full bg-[#e1062a] px-4 text-center text-sm font-black leading-tight text-white transition hover:bg-red-500"
             >
               View Location
             </Link>
 
             <Link
               href={startOutingHref}
-              className="rounded-full border border-white/15 bg-white/[0.055] px-4 py-2.5 text-center text-xs font-black text-white/75 transition hover:bg-white hover:text-black"
+              className="flex min-h-[52px] items-center justify-center rounded-full border border-white/15 bg-white/[0.055] px-4 text-center text-sm font-black leading-tight text-white/75 transition hover:bg-white hover:text-black"
             >
               Plan Around This
             </Link>
@@ -684,6 +765,42 @@ function LocationCard({ location }: { location: ExploreLocation }) {
         </div>
       </div>
     </article>
+  );
+}
+
+function SafeExploreImage({ src, alt }: { src?: string | null; alt: string }) {
+  if (!src || !isUsableImageSrc(src)) {
+    return <BrandedImageFallback />;
+  }
+
+  return (
+    <SafeLocationImage
+      src={src}
+      alt={alt}
+      fallbackType="placeholder"
+      className="transition duration-500 group-hover:scale-105"
+    />
+  );
+}
+
+function BrandedImageFallback() {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(225,6,42,.32),transparent_34%),linear-gradient(135deg,#1a0808,#050202)]">
+      <img
+        src="/toh_logo.png"
+        alt="TheOutHaven"
+        className="h-16 w-16 rounded-full border border-white/10 bg-black/35 object-contain p-3 opacity-80"
+      />
+    </div>
+  );
+}
+
+function isUsableImageSrc(src: string) {
+  const value = src.trim();
+  return (
+    Boolean(value) &&
+    !value.includes("placeholder.jpg") &&
+    !value.startsWith("data:,")
   );
 }
 
@@ -772,6 +889,29 @@ function PublicFooter() {
   );
 }
 
+export function isRenderableExploreLocation(
+  location: ExploreLocation,
+): boolean {
+  if (!location?.id) return false;
+  const name = getLocationName(location, "").trim();
+  if (!name || normalizeSearch(name) === "unknown location") return false;
+  if (!getStableLocationType(location)) return false;
+  if (location.is_hidden === true) return false;
+  if (location.is_searchable === false) return false;
+  if (location.data_status && location.data_status !== "clean") return false;
+  return true;
+}
+
+function dedupeRenderableLocations(locations: ExploreLocation[]) {
+  const seen = new Set<string>();
+  return locations.filter((location) => {
+    if (!isRenderableExploreLocation(location) || seen.has(location.id))
+      return false;
+    seen.add(location.id);
+    return true;
+  });
+}
+
 function searchableText(location: ExploreLocation) {
   return normalizeSearch(
     [
@@ -847,12 +987,39 @@ function getTypeLabel(location: ExploreLocation) {
     location.location_type || location.source_table || location.type || "",
   ).toLowerCase();
 
+  if (/restaurant/.test(rawType) || isRestaurant(location)) return "Restaurant";
+  if (/activity/.test(rawType) || isActivity(location)) return "Activity";
+  if (
+    text.includes("lounge") ||
+    text.includes("hookah") ||
+    text.includes("nightlife")
+  )
+    return "Lounge";
   if (text.includes("rooftop")) return "Rooftop";
-  if (text.includes("hookah") || text.includes("lounge")) return "Lounge";
-  if (isRestaurant(location)) return "Restaurant";
-  if (isActivity(location)) return "Activity";
 
-  return cleanLabel(rawType) || "Place";
+  return (
+    cleanLabel(location.primary_category) || cleanLabel(rawType) || "Place"
+  );
+}
+
+function getStableLocationType(location: ExploreLocation) {
+  const text = searchableText(location);
+  const rawType = String(
+    location.source_table || location.location_type || location.type || "",
+  ).toLowerCase();
+
+  if (rawType.includes("restaurant") || text.includes("restaurant"))
+    return "restaurants";
+  if (rawType.includes("activity") || text.includes("activity"))
+    return "activities";
+  if (
+    text.includes("lounge") ||
+    text.includes("hookah") ||
+    text.includes("nightlife")
+  )
+    return "lounges";
+  if (rawType || location.primary_category) return "places";
+  return "";
 }
 
 function cleanedTags(location: ExploreLocation) {
@@ -941,23 +1108,13 @@ function buildSearchKey(q: string, kind: string, area: string) {
 function buildParams(q: string, kind: string, area: string) {
   const params = new URLSearchParams();
 
-  const expandedQ = [q.trim(), kindSearchPhrase(kind)]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const cleanQ = q.trim();
 
-  if (expandedQ) params.set("q", expandedQ);
+  if (cleanQ) params.set("q", cleanQ);
   if (kind !== "all") params.set("kind", kind);
   if (area !== "all") params.set("area", area);
 
   return params;
-}
-
-function kindSearchPhrase(kind: string) {
-  if (kind === "date-night") return "date night romantic dinner";
-  if (kind === "groups") return "group outing fun activities";
-  if (kind === "open-now") return "open now late night";
-  return "";
 }
 
 function cleanParam(value: unknown) {
