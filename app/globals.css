@@ -75,8 +75,16 @@ div {
   max-width: 100vw;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at top left, rgba(225, 6, 42, 0.18), transparent 32%),
-    radial-gradient(circle at top right, rgba(225, 6, 42, 0.12), transparent 28%),
+    radial-gradient(
+      circle at top left,
+      rgba(225, 6, 42, 0.18),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(225, 6, 42, 0.12),
+      transparent 28%
+    ),
     #050505;
   color: white;
 }
@@ -180,4 +188,14 @@ div {
 
 .testimonial-track:hover {
   animation-play-state: paused;
+}
+
+/* Admin dashboard safety rails: prevent nested full-width panels from causing page-level horizontal scroll. */
+.admin-page-shell,
+.admin-page-shell * {
+  min-width: 0;
+}
+
+.admin-page-shell table {
+  max-width: 100%;
 }

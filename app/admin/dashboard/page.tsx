@@ -1,21 +1,47 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "@/components/admin/AdminDesignSystem";
 import { requireAdminRole } from "@/lib/admin-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-export const metadata: Metadata = { title: "Admin Dashboard", description: "Central admin overview for TheOutHaven." };
+export const metadata: Metadata = {
+  title: "Admin Dashboard",
+  description: "Central admin overview for TheOutHaven.",
+};
+
 const todayKey = () => new Date().toISOString().split("T")[0];
-const format = (v: number | null | undefined) => Number(v || 0).toLocaleString();
+const format = (v: number | null | undefined) =>
+  Number(v || 0).toLocaleString();
 
 export default async function CentralDashboardPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
   const today = todayKey();
-  const [restaurants, activities, reservations, todayReservations, openTicketsResult] = await Promise.all([
-    supabaseAdmin.from("restaurants").select("id", { count: "exact", head: true }),
-    supabaseAdmin.from("activities").select("id", { count: "exact", head: true }),
-    supabaseAdmin.from("location_reservations").select("id", { count: "exact", head: true }),
+  const [
+    restaurants,
+    activities,
+    reservations,
+    todayReservations,
+    openTicketsResult,
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("restaurants")
+      .select("id", { count: "exact", head: true }),
+    supabaseAdmin
+      .from("activities")
+      .select("id", { count: "exact", head: true }),
+    supabaseAdmin
+      .from("location_reservations")
+      .select("id", { count: "exact", head: true }),
     supabaseAdmin
       .from("location_reservations")
       .select("id", { count: "exact", head: true })
@@ -25,32 +51,150 @@ export default async function CentralDashboardPage() {
       .select("id", { count: "exact", head: true })
       .not("status", "in", "(closed,resolved)"),
   ]);
-  const openTickets = openTicketsResult.count || 0;
-  const groups = [
-    {title:"Core Operations",desc:"Inventory and quality controls.",cards:[
-      ["Locations","Manage all locations.","/admin/dashboard/locations"],["Add Location","Create a new listing.","/admin/dashboard/locations/new"],["Import","Run Google import.","/admin/dashboard/import"],["Data Quality","Fix bad records.","/admin/dashboard/data-quality"],["Search Diagnostics","Validate discovery and search.","/admin/search-qa"]]},
-    {title:"Claims & Owners",desc:"Owner onboarding and claim controls.",cards:[["Claim Review","Review incoming claims.","/admin/claims"],["Print Claim QRs","Print labels and cards.","/admin/dashboard/claim-qrs"],["Claim Tools","Audit and regenerate claims.","/admin/dashboard/claim-tools"],["Location Owners","Manage owner links.","/admin/dashboard/owner-accounts"],["Owner Accounts / Businesses","Owner business admin.","/admin/dashboard/owner-accounts"]]},
-    {title:"Launch",desc:"Launch list and giveaway tracking.",cards:[["Giveaway","Review launch signups and verify prize entries.","/admin/dashboard/giveaway"]]},
-  ];
-  return <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-[1500px] space-y-6"><section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.24),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6"><p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">TheOutHaven Admin</p><h1 className="mt-3 text-4xl font-black">TheOutHaven Admin</h1><p className="mt-3 max-w-3xl text-white/70">Manage locations, claims, reservations, analytics, Experience Inbox, imports, and owner operations from one clean control center.</p><div className="mt-5 flex flex-wrap gap-3">{[["Manage Locations","/admin/dashboard/locations",true],["Print Claim QRs","/admin/dashboard/claim-qrs",false],["Experience Inbox","/admin/dashboard/support",false],["Giveaway","/admin/dashboard/giveaway",false],["Analytics","/admin/dashboard/analytics",false]].map(([label,href,primary])=><Link key={String(label)} href={String(href)} className={primary?"rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black":"rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/80"}>{label}</Link>)}</div></section>
-  <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Locations",format((restaurants.count||0)+(activities.count||0))],["Reservations",format(reservations.count)],["Today",format(todayReservations.count)],["Open Tickets",format(openTickets)]].map(([l,v])=><div key={String(l)} className="rounded-2xl border border-white/10 bg-white/[0.06] p-4"><p className="text-xs uppercase text-white/55">{l}</p><p className="mt-1 text-3xl font-black">{v}</p></div>)}</section>
-  <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/20">
-    <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-      <div>
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">
-          Quick Admin Search
-        </p>
-        <h2 className="mt-1 text-2xl font-black text-white">
-          Search locations, owners, and CRM records
-        </h2>
-        <p className="mt-1 max-w-2xl text-sm text-white/55">
-          Find records by location name, owner email, phone number, or address without leaving the dashboard.
-        </p>
-      </div>
-    </div>
 
-    <AdminLocationSearch />
-  </section>
-  <div className="grid gap-6 xl:grid-cols-[1fr_360px]"> <div className="space-y-6">{groups.map(g=><section key={g.title}><h2 className="text-2xl font-black">{g.title}</h2><p className="text-sm text-white/60">{g.desc}</p><div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{g.cards.map(c=><Link key={c[0]} href={String(c[2])} className="rounded-3xl border border-[#eaded6] bg-[#f8f3ef] p-5 text-[#1b1210] transition hover:bg-rose-50"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-700">Admin Tool</p><h3 className="mt-2 text-xl font-black">{c[0]}</h3><p className="mt-2 text-sm text-[#4a3a35]">{c[1]}</p><span className="mt-4 inline-flex rounded-full bg-[#1b1210] px-3 py-1 text-xs font-black text-white">Open</span></Link>)}</div></section>)}</div>
-  <aside className="rounded-3xl border border-white/10 bg-white/[0.05] p-5"><h3 className="text-lg font-black">Ticket Pulse</h3><p className="text-sm text-white/60">Latest support activity.</p></aside></div></div></main>;
+  const totalLocations = (restaurants.count || 0) + (activities.count || 0);
+  const groups = [
+    {
+      title: "Search health",
+      desc: "Validate discovery, parser output, and search QA.",
+      href: "/admin/dashboard/search-health",
+      status: "Monitor",
+    },
+    {
+      title: "Photo enrichment",
+      desc: "Improve listing quality with Google enrichment and missing-photo queues.",
+      href: "/admin/dashboard/locations/google-enrichment",
+      status: "Improve",
+    },
+    {
+      title: "Claims pipeline",
+      desc: "Review owner claims, QR codes, and claim outreach readiness.",
+      href: "/admin/dashboard/claims",
+      status: "Review",
+    },
+    {
+      title: "Partner readiness",
+      desc: "Open CRM to manage partner launch, payments, portal, and next actions.",
+      href: "/admin/dashboard/crm",
+      status: "Operate",
+    },
+  ];
+  const tasks = [
+    ["Needs review", "/admin/dashboard/data-quality"],
+    ["Missing Google Place ID", "/admin/dashboard/locations/google-enrichment"],
+    ["Claim not sent", "/admin/dashboard/crm?view=claim-not-sent"],
+    ["Payment pending", "/admin/dashboard/crm?view=payment-pending"],
+    ["Giveaway entries", "/admin/dashboard/giveaway"],
+  ];
+
+  return (
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="TheOutHaven Admin"
+        title="Admin Overview"
+        subtitle="Monitor TheOutHaven operations, partners, search health, claims, and growth."
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/reports">
+              View Reports
+            </AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/settings">
+              Settings
+            </AdminActionButton>
+            <AdminActionButton href="/admin/dashboard" variant="primary">
+              Refresh
+            </AdminActionButton>
+          </>
+        }
+      />
+
+      <AdminKpiGrid>
+        <AdminKpiCard
+          label="Total locations"
+          value={totalLocations}
+          helper="Restaurants + activities"
+        />
+        <AdminKpiCard
+          label="Restaurants"
+          value={restaurants.count || 0}
+          helper="Inventory source"
+        />
+        <AdminKpiCard
+          label="Activities"
+          value={activities.count || 0}
+          helper="Inventory source"
+        />
+        <AdminKpiCard
+          label="Reservations"
+          value={reservations.count || 0}
+          helper="All-time reservation records"
+        />
+        <AdminKpiCard
+          label="Today"
+          value={todayReservations.count || 0}
+          helper="Reservations scheduled today"
+        />
+        <AdminKpiCard
+          label="Open tickets"
+          value={openTicketsResult.count || 0}
+          helper="Support requiring attention"
+        />
+      </AdminKpiGrid>
+
+      <AdminSectionCard className="p-5">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">
+              Quick Admin Search
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-white">
+              Search locations, owners, and CRM records
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm text-white/55">
+              Find records by location name, owner email, phone number, or
+              address without leaving the dashboard.
+            </p>
+          </div>
+        </div>
+        <AdminLocationSearch />
+      </AdminSectionCard>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="grid min-w-0 gap-4 md:grid-cols-2">
+          {groups.map((g) => (
+            <Link
+              key={g.title}
+              href={g.href}
+              className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/20 transition hover:border-rose-200/30 hover:bg-white/[0.065]"
+            >
+              <AdminStatusBadge tone="rose">{g.status}</AdminStatusBadge>
+              <h3 className="mt-4 text-xl font-black text-white">{g.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-white/55">{g.desc}</p>
+              <span className="mt-5 inline-flex rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/70">
+                Open panel
+              </span>
+            </Link>
+          ))}
+        </section>
+        <AdminSectionCard className="p-5">
+          <h2 className="text-xl font-black text-white">Priority tasks</h2>
+          <p className="mt-1 text-sm text-white/55">
+            Operational queues that usually need daily attention.
+          </p>
+          <div className="mt-4 grid gap-2">
+            {tasks.map(([label, href]) => (
+              <Link
+                key={label}
+                href={href}
+                className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/75 hover:border-rose-200/30 hover:text-white"
+              >
+                <span>{label}</span>
+                <span className="text-rose-200">Open</span>
+              </Link>
+            ))}
+          </div>
+        </AdminSectionCard>
+      </div>
+    </AdminPageShell>
+  );
 }
