@@ -3,6 +3,7 @@ import { normalizePublicCardImage, hasPublicCardImage } from "@/lib/publicCardIm
 import { isEdgeCreateSearchEnabled, runCreateSearchWithEdgeFallback } from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
+import { buildCreateSearchDebugParity, getCreateSearchAnalyticsIntent } from "@/lib/search/enterprise/createSearchAnalytics";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
 import { isExplicitMarket, isPairAllowedForResolvedMarket, isResultAllowedForResolvedMarket } from "@/lib/search/market-guardrails";
 import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
@@ -490,24 +491,43 @@ export async function POST(request: Request) {
       outOfMarketActivitiesRemoved: normalizedActivitiesBeforeGuardrail.length - publicActivities.length,
     };
 
-    const debugParity = {
-      ...normalizedRequest.debugParity,
-      route: "/api/generate",
-      source: "public_create_search",
+    const preAnalyticsCounts = {
+      restaurants: publicRestaurants.length,
+      activities: publicActivities.length,
+      pairs: publicPairs.length,
+      cards: publicCards.length,
+      finalDisplayedResultCount: publicCards.length || publicRestaurants.length + publicActivities.length + publicMatchedLocations.length + publicPairs.length,
+      pairCandidatesEvaluated: (result.debug as any)?.pairCandidatesEvaluated,
+      validPairCountBeforeRender: (result.debug as any)?.validPairCountBeforeRender,
+      candidatePairCountBeforeRequiredPairSuppression: (result.debug as any)?.candidatePairCountBeforeRequiredPairSuppression,
+      pairsRejectedForDistance: (result.debug as any)?.pairsRejectedForDistance,
+      pairsRejectedForMissingCoordinates: (result.debug as any)?.pairsRejectedForMissingCoordinates,
+      extremeWalkingRoutesRejected: (result.debug as any)?.extremeWalkingRoutesRejected,
+      invalidWalkingRoutesHiddenFromDisplay: (result.debug as any)?.invalidWalkingRoutesHiddenFromDisplay,
+      pairQualityScorePreview: (result.debug as any)?.pairQualityScorePreview,
+    };
+    const preAnalyticsIntent = getCreateSearchAnalyticsIntent({ result, debug: result.debug, counts: preAnalyticsCounts });
+    const preIntentParserSource = (result.debug as any)?.intentParserSource ?? (result.debug as any)?.intent_parser_source ?? preAnalyticsIntent?.intentParserSource ?? preAnalyticsIntent?.parserSource ?? null;
+    const debugParity = buildCreateSearchDebugParity({
+      existing: { ...normalizedRequest.debugParity, source: "public_create_search", forceLegacyForLongIsland, forceLegacyForUserLocation, resultCounts: { restaurants: publicRestaurants.length, activities: publicActivities.length, pairs: publicPairs.length, cards: publicCards.length }, firstResultNames: [...publicRestaurants, ...publicActivities, ...publicCards].slice(0, 5).map((item: any) => item.name || item.restaurant_name || item.activity_name).filter(Boolean) },
       rawQueryReceived: input,
-      forceLegacyForLongIsland,
-      forceLegacyForUserLocation,
+      cleanedQuery: cleanInput,
+      rawQueryBeforeNearMeStrip,
+      rawQueryAfterNearMeStrip: cleanInput,
+      nearMeIntent,
+      typedLocationIntent,
+      useCurrentLocation,
+      userLatitudePresent,
+      userLongitudePresent,
       searchBackendUsed,
       resolvedMarket: resolvedMarketForGuardrail,
       allowedMarkets: marketFiltering.allowedMarkets,
       explicitMarketRequested: explicitMarketRequestedForGuardrail,
-      searchType: (result.debug as any)?.normalizedIntent?.searchType ?? normalizedRequest.debugParity.searchType,
-      wantsPairing: (result.debug as any)?.normalizedIntent?.wantsPairing ?? normalizedRequest.debugParity.wantsPairing,
-      needsRestaurant: (result.debug as any)?.normalizedIntent?.needsRestaurant ?? normalizedRequest.debugParity.needsRestaurant,
-      needsActivity: (result.debug as any)?.normalizedIntent?.needsActivity ?? normalizedRequest.debugParity.needsActivity,
-      resultCounts: { restaurants: publicRestaurants.length, activities: publicActivities.length, pairs: publicPairs.length, cards: publicCards.length },
-      firstResultNames: [...publicRestaurants, ...publicActivities, ...publicCards].slice(0, 5).map((item: any) => item.name || item.restaurant_name || item.activity_name).filter(Boolean),
-    };
+      analyticsIntent: preAnalyticsIntent,
+      renderMode: result.render_mode ?? result.renderMode ?? null,
+      counts: preAnalyticsCounts,
+      intentParserSource: preIntentParserSource,
+    });
 
     const response = {
       ...result,
@@ -573,14 +593,24 @@ export async function POST(request: Request) {
     };
 
     const debug = (result.debug as any) ?? {};
-    const normalizedIntent =
-      debug.normalizedIntent ?? debug.intent ?? result.normalizedIntent ?? null;
-    const counts = debug.counts ?? {
+    const responsePayload = response as any;
+    const counts = {
+      ...(debug.counts ?? {}),
       restaurants: publicRestaurants.length,
       activities: publicActivities.length,
-      pairs: result.pairs?.length ?? 0,
-      finalDisplayedResultCount: publicCards.length,
+      pairs: publicPairs.length,
+      finalDisplayedResultCount: publicCards.length || publicRestaurants.length + publicActivities.length + publicMatchedLocations.length + publicPairs.length,
+      pairCandidatesEvaluated: debug.pairCandidatesEvaluated ?? debug.counts?.pairCandidatesEvaluated,
+      validPairCountBeforeRender: debug.validPairCountBeforeRender ?? debug.counts?.validPairCountBeforeRender,
+      candidatePairCountBeforeRequiredPairSuppression: debug.candidatePairCountBeforeRequiredPairSuppression,
+      pairsRejectedForDistance: debug.pairsRejectedForDistance,
+      pairsRejectedForMissingCoordinates: debug.pairsRejectedForMissingCoordinates,
+      extremeWalkingRoutesRejected: debug.extremeWalkingRoutesRejected,
+      invalidWalkingRoutesHiddenFromDisplay: debug.invalidWalkingRoutesHiddenFromDisplay,
+      pairQualityScorePreview: debug.pairQualityScorePreview,
     };
+    const normalizedIntent = getCreateSearchAnalyticsIntent({ result, responsePayload, debug, counts });
+    const analyticsIntent = normalizedIntent;
     const noResultsReason =
       result.no_results_reason ??
       result.noResultsReason ??
@@ -594,7 +624,6 @@ export async function POST(request: Request) {
       debug.no_pairs_reason ??
       debug.noPairsReason ??
       null;
-    const responsePayload = response as any;
     const resolvedIntentParserSource =
       debug.intentParserSource ??
       debug.intent_parser_source ??
@@ -658,9 +687,8 @@ export async function POST(request: Request) {
     void logSearchEvent({
       source: "public_create_search",
       route: "/api/generate",
-      rawQuery: cleanInput,
-      normalizedQuery:
-        normalizedIntent?.rawQuery ?? normalizedIntent?.query ?? cleanInput,
+      rawQuery: rawQueryBeforeNearMeStrip || input || cleanInput,
+      normalizedQuery: cleanInput,
       searchType: resolvedSearchType,
       primaryDomain: resolvedPrimaryDomain,
       intentParserSource: resolvedIntentParserSource,
@@ -681,7 +709,10 @@ export async function POST(request: Request) {
         total_ms: Date.now() - startedAt,
       },
       pairingPreference:
-        normalizedIntent?.pairingPreference ?? debug?.pairingPreference ?? null,
+        analyticsIntent?.pairingPreference ?? debug?.pairingPreference ?? null,
+      wantsPairing: analyticsIntent?.wantsPairing ?? null,
+      needsRestaurant: analyticsIntent?.needsRestaurant ?? null,
+      needsActivity: analyticsIntent?.needsActivity ?? null,
       success: result?.success !== false,
       hadIssue: Boolean(
         noResultsReason ||
@@ -700,10 +731,14 @@ export async function POST(request: Request) {
       metadata: sanitizeSearchMetadata({
         search_system: debug?.search_system,
         render_mode: debug?.render_mode ?? result?.render_mode,
-        wantsPairing: normalizedIntent?.wantsPairing,
-        needsRestaurant: normalizedIntent?.needsRestaurant,
-        needsActivity: normalizedIntent?.needsActivity,
-        normalizedIntent,
+        wantsPairing: analyticsIntent?.wantsPairing,
+        needsRestaurant: analyticsIntent?.needsRestaurant,
+        needsActivity: analyticsIntent?.needsActivity,
+        normalizedIntent: analyticsIntent,
+        originalRawQuery: rawQueryBeforeNearMeStrip || input || cleanInput,
+        raw_query_before_near_me_strip: rawQueryBeforeNearMeStrip,
+        raw_query_after_near_me_strip: cleanInput,
+        debugParity,
         geo: resolvedGeo,
         searchType: resolvedSearchType,
         primaryDomain: resolvedPrimaryDomain,
@@ -711,7 +746,7 @@ export async function POST(request: Request) {
         selectedSearchLane,
         ...nearMeDebug,
         geoSource: debug?.geoSource,
-        raw_query: cleanInput,
+        raw_query: rawQueryBeforeNearMeStrip || input || cleanInput,
         parsed_market: resolvedMarketForGuardrail,
         parsed_borough: normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
         parsed_city: normalizedIntent?.geo?.city ?? debug?.parsedCity ?? null,

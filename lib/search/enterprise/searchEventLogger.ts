@@ -31,6 +31,9 @@ export type SearchEventLoggerArgs = {
   noResultsReason?: string | null;
   noPairsReason?: string | null;
   metadata?: JsonRecord | null;
+  wantsPairing?: boolean | null;
+  needsRestaurant?: boolean | null;
+  needsActivity?: boolean | null;
 };
 
 function safeText(value: unknown, max = 500) {
@@ -47,7 +50,19 @@ function safeNumber(value: unknown) {
 }
 
 function safeBool(value: unknown) {
-  return typeof value === "boolean" ? value : false;
+  return typeof value === "boolean" ? value : null;
+}
+
+function intentBool(args: SearchEventLoggerArgs, key: "wantsPairing" | "needsRestaurant" | "needsActivity") {
+  const direct = safeBool(args[key]);
+  if (direct != null) return direct;
+  const metadataValue = safeBool(args.metadata?.[key]);
+  if (metadataValue != null) return metadataValue;
+  const normalizedValue = safeBool(args.metadata?.normalizedIntent?.[key]);
+  if (normalizedValue != null) return normalizedValue;
+  const renderMode = args.metadata?.render_mode ?? args.metadata?.renderMode;
+  if (renderMode === "mixed_pairs") return true;
+  return null;
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -137,15 +152,14 @@ export async function logSearchEvent(
       pair_count: pairCount,
       result_count: resultCount,
       pair_candidates_evaluated:
-        safeNumber(counts.pairCandidatesEvaluated) ?? 0,
+        safeNumber(counts.pairCandidatesEvaluated),
       valid_pair_count_before_render:
-        safeNumber(counts.validPairCountBeforeRender) ?? 0,
+        safeNumber(counts.validPairCountBeforeRender),
 
-      wants_pairing: safeBool(
-        pairingPreference.requiresPairing ?? args.metadata?.wantsPairing,
-      ),
-      needs_restaurant: safeBool(args.metadata?.needsRestaurant),
-      needs_activity: safeBool(args.metadata?.needsActivity),
+      wants_pairing:
+        safeBool(pairingPreference.requiresPairing) ?? intentBool(args, "wantsPairing"),
+      needs_restaurant: intentBool(args, "needsRestaurant"),
+      needs_activity: intentBool(args, "needsActivity"),
       distance_mode: safeText(pairingPreference.distanceMode, 80),
       max_pair_distance_miles: safeNumber(
         pairingPreference.maxPairDistanceMiles,
