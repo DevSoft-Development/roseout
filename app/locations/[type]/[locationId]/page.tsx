@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -8,6 +7,9 @@ import { createClient } from "@/lib/supabase-browser";
 import { clampScore } from "@/lib/clampScore";
 import { trackActivity } from "@/lib/trackActivity";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import TheOutHavenMark from "@/components/brand/TheOutHavenMark";
+import LocationImagePlaceholder from "@/components/public-location/LocationImagePlaceholder";
+import SafeLocationImage from "@/components/public-location/SafeLocationImage";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationScore } from "@/lib/locationScore";
@@ -178,29 +180,113 @@ function getReviewCount(location: LocationDetailRecord | null, reviews: ReviewRe
   return Number(location?.review_count || reviews.length || 0);
 }
 
+function extractPhotoValues(value: unknown): unknown[] {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractPhotoValues(item));
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      record.url,
+      record.photo_url,
+      record.image_url,
+      record.src,
+      record.cached_photo_url,
+      record.google_photo_url,
+    ].flatMap((item) => extractPhotoValues(item));
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try {
+        return extractPhotoValues(JSON.parse(trimmed));
+      } catch {
+        // Not JSON; continue with the raw string below.
+      }
+    }
+
+    return [trimmed];
+  }
+
+  return [];
+}
+
+function normalizePhotoUrl(value: unknown) {
+  const raw = String(value || "").trim().replace(/^["']|["']$/g, "");
+
+  if (!raw) return "";
+  if (/^(null|undefined|n\/a|na|none|false)$/i.test(raw)) return "";
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (/^http:\/\//i.test(raw)) return raw.replace(/^http:\/\//i, "https://");
+
+  return raw;
+}
+
+function isLikelyValidImageUrl(value: unknown) {
+  const url = normalizePhotoUrl(value);
+  if (!url) return false;
+  if (/\s/.test(url)) return false;
+  if (/^(data|blob|javascript):/i.test(url)) return false;
+  if (url.startsWith("/")) return !url.startsWith("//") && url.length > 1;
+
+  if (!/^https:\/\//i.test(url)) return false;
+
+  try {
+    const parsed = new URL(url);
+    return Boolean(parsed.hostname) && parsed.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
+function dedupePhotoUrls(values: unknown[]) {
+  const seen = new Set<string>();
+
+  return values
+    .map(normalizePhotoUrl)
+    .filter(isLikelyValidImageUrl)
+    .filter((url) => {
+      const key = url.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function getPhotoList(location: LocationDetailRecord | null) {
-  return Array.from(
-    new Set(
-      [
-        getLocationImage(location),
-        location?.main_image,
-        location?.image_url,
-        location?.cover_image,
-        location?.hero_image,
-        location?.thumbnail_url,
-        location?.google_photo_url,
-        location?.google_image_url,
-        location?.yelp_image_url,
-        ...toArray(location?.images),
-        ...toArray(location?.photos),
-        ...toArray(location?.gallery_images),
-        ...toArray(location?.image_urls),
-        ...toArray(location?.main_images),
-      ]
-        .map((image) => String(image || "").trim())
-        .filter((image) => image && image !== "null" && image !== "undefined"),
-    ),
-  );
+  if (!location) return [];
+
+  return dedupePhotoUrls([
+    getLocationImage(location),
+    location.main_image,
+    location.image_url,
+    location.cover_image,
+    location.hero_image,
+    location.hero_image_url,
+    location.thumbnail_url,
+    location.photo_url,
+    location.primary_photo_url,
+    location.place_photo_url,
+    location.cached_photo_url,
+    location.google_photo_url,
+    location.google_image_url,
+    location.yelp_image_url,
+    ...extractPhotoValues(location.images),
+    ...extractPhotoValues(location.photos),
+    ...extractPhotoValues(location.photo_urls),
+    ...extractPhotoValues(location.gallery_images),
+    ...extractPhotoValues(location.image_urls),
+    ...extractPhotoValues(location.main_images),
+    ...extractPhotoValues(location.google_photos),
+    ...extractPhotoValues(location.google_photo_urls),
+    ...extractPhotoValues(location.cached_photo_urls),
+  ]).slice(0, 5);
 }
 
 function getPrimaryPhoto(location: LocationDetailRecord | null) {
@@ -631,7 +717,7 @@ export default function LocationDetailPage() {
               </p>
 
               <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-red-300/20 bg-red-600/10 px-4 py-2 text-sm font-extrabold text-red-50">
-                <HavenMark className="h-5 w-5 text-[9px]" />
+                <TheOutHavenMark size={22} />
                 {score >= 90 ? "Elite Pick" : "TheOutHaven Pick"}
               </div>
 
@@ -802,28 +888,29 @@ function LocationActionButtons({
 }
 
 function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]; primaryPhoto: string; name: string }) {
-  const thumbs = images.filter((image) => image !== primaryPhoto).slice(0, 2);
+  const safePhotos = dedupePhotoUrls([primaryPhoto, ...images]).slice(0, 5);
+  const mainPhoto = safePhotos[0] || "";
+  const thumbs = safePhotos.slice(1, 3);
+
   return (
     <div className="grid gap-3">
       <div className="relative min-h-[260px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#111114] shadow-2xl shadow-black/30 sm:min-h-[360px] lg:min-h-[520px]">
-        {primaryPhoto ? (
-          <Image src={primaryPhoto} alt={name} fill priority className="object-cover" />
+        {mainPhoto ? (
+          <SafeLocationImage src={mainPhoto} alt={name} priority fallbackType="placeholder" />
         ) : (
-          <div className="flex h-full min-h-[260px] items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(225,6,42,0.22),transparent_34%),#111114]">
-            <HavenMark className="h-16 w-16 text-2xl" />
-          </div>
+          <LocationImagePlaceholder label="Photo coming soon" />
         )}
-        {images.length > 1 && (
-          <a href={primaryPhoto || images[0]} target="_blank" rel="noopener noreferrer" className="absolute bottom-4 right-4 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-xs font-black text-white backdrop-blur-xl">
-            {images.length} photos
+        {safePhotos.length > 1 && mainPhoto && (
+          <a href={mainPhoto} target="_blank" rel="noopener noreferrer" className="absolute bottom-4 right-4 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-xs font-black text-white backdrop-blur-xl">
+            {safePhotos.length} photos
           </a>
         )}
       </div>
       {thumbs.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {thumbs.map((image, index) => (
-            <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="relative h-32 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04]">
-              <Image src={image} alt={`${name} photo ${index + 2}`} fill className="object-cover transition duration-500 hover:scale-105" />
+            <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="relative h-32 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] empty:hidden">
+              <SafeLocationImage src={image} alt={`${name} photo ${index + 2}`} fallbackType="hide" className="transition duration-500 hover:scale-105" />
             </a>
           ))}
         </div>
@@ -1019,14 +1106,7 @@ function PublicChip({ children }: { children: React.ReactNode }) {
 }
 
 function HavenMark({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-300/30 bg-red-600/20 text-[13px] font-black text-red-50 shadow-sm shadow-red-950/30 ${className}`}
-      aria-hidden="true"
-    >
-      ◆
-    </span>
-  );
+  return <TheOutHavenMark size={24} className={className} />;
 }
 
 function DetailGrid({ title, items }: { title: string; items: string[] }) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clampScore } from "@/lib/clampScore";
+import TheOutHavenMark from "@/components/brand/TheOutHavenMark";
 
 export default function ScoreBadge({ score }: { score: number }) {
   const safeScore = clampScore(score);
@@ -81,9 +82,7 @@ export default function ScoreBadge({ score }: { score: number }) {
           </svg>
 
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full border border-red-300/25 bg-black/70 text-[14px] font-black text-red-50">
-              ◆
-            </span>
+            <TheOutHavenMark size={40} className="bg-black/70" />
           </div>
         </div>
       </div>
