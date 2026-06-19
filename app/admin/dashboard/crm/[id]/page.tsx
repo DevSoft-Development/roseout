@@ -425,6 +425,111 @@ function ProfileForm({ business, canEdit }: { business: BusinessCRMRow; canEdit:
   </form>;
 }
 
+function CrmHeroActions({
+  business,
+  publicHref,
+  canViewPublic,
+  adminLocationId,
+}: {
+  business: BusinessCRMRow;
+  publicHref: string | null;
+  canViewPublic: boolean;
+  adminLocationId: string;
+}) {
+  const publicStatusLabel = canViewPublic && publicHref ? "Public page live" : "Public page not live";
+  const publicStatusHelper = canViewPublic && publicHref
+    ? "This listing can be opened publicly."
+    : publicHref
+      ? "Hidden from public search or missing public route data."
+      : "Missing public location id or route data.";
+
+  return (
+    <aside className="w-full rounded-[1.4rem] border border-white/10 bg-black/30 p-3 shadow-inner shadow-black/30 xl:w-[390px]">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+        <Link
+          href={`/admin/dashboard/crm/${business.id}?tab=listing`}
+          className="flex min-h-[52px] items-center justify-center rounded-[1rem] bg-rose-600 px-4 py-3 text-center text-sm font-black text-white shadow-lg shadow-rose-950/35 transition hover:bg-rose-500"
+        >
+          Edit Listing Enhancement
+        </Link>
+
+        <Link
+          href={`/admin/dashboard/crm/${business.id}?tab=profile`}
+          className="flex min-h-[52px] items-center justify-center rounded-[1rem] border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-sm font-black text-white/80 transition hover:border-white/20 hover:bg-white/[0.09] hover:text-white"
+        >
+          Edit Profile
+        </Link>
+      </div>
+
+      <div className="mt-3 rounded-[1rem] border border-white/10 bg-white/[0.04] p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-white/40">
+              Public Page
+            </p>
+            <p className={`mt-1 text-sm font-black ${canViewPublic && publicHref ? "text-emerald-100" : "text-white/55"}`}>
+              {publicStatusLabel}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-white/40">
+              {publicStatusHelper}
+            </p>
+          </div>
+
+          {canViewPublic && publicHref ? (
+            <Link
+              href={publicHref}
+              className="shrink-0 rounded-full border border-emerald-300/20 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/15"
+            >
+              View
+            </Link>
+          ) : (
+            <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-white/35">
+              Hidden
+            </span>
+          )}
+        </div>
+      </div>
+
+      <details className="group mt-3 rounded-[1rem] border border-white/10 bg-white/[0.04]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black text-white/75 transition hover:text-white [&::-webkit-details-marker]:hidden">
+          <span>More Actions</span>
+          <span className="text-white/35 transition group-open:rotate-180">⌄</span>
+        </summary>
+
+        <div className="grid gap-2 border-t border-white/10 p-2">
+          <Link
+            href={`/admin/dashboard/locations/id/${adminLocationId}`}
+            className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            Open Admin Location
+          </Link>
+
+          <Link
+            href={`/admin/dashboard/crm/${business.id}?tab=claims`}
+            className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            Open Claims
+          </Link>
+
+          <Link
+            href={`/admin/dashboard/crm/${business.id}?tab=qr-codes`}
+            className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            Print QR
+          </Link>
+
+          <Link
+            href={`/admin/dashboard/crm/${business.id}?tab=support`}
+            className="rounded-[0.85rem] px-3 py-2 text-sm font-bold text-white/65 transition hover:bg-white/[0.06] hover:text-white"
+          >
+            Add Experience Note
+          </Link>
+        </div>
+      </details>
+    </aside>
+  );
+}
+
 export default async function CRMDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const { id } = await params;
@@ -444,23 +549,22 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const publishability = evaluateLocationPublishability(business as any, { allowApproval: true });
 
   return <AdminPageShell>
-      <section className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(135deg,#12090d,#090909_60%,#131316)] p-5 shadow-2xl shadow-black/30">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
+      <section className="rounded-[1.35rem] border border-white/10 bg-[linear-gradient(135deg,#12090d,#090909_60%,#131316)] p-4 shadow-2xl shadow-black/30 sm:p-5 xl:p-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-start">
+          <div className="min-w-0">
             <Link href="/admin/dashboard/crm" className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">← TheOutHaven CRM</Link>
-            <h1 className="mt-3 text-4xl font-black tracking-tight">{business.name}</h1>
+            <h1 className="mt-3 max-w-4xl text-3xl font-black tracking-tight text-white sm:text-4xl xl:text-5xl">
+              {business.name}
+            </h1>
             <p className="mt-2 text-sm text-white/60">{formatLocationAddress(business)}</p>
-            <div className="mt-4 flex flex-wrap gap-2">{badge(business.status || "active")}{badge(business.is_searchable ? "Searchable" : "Not searchable", business.is_searchable ? "good" : "danger")}{badge(getClaimStatus(business), business.is_claimed ? "good" : "danger")}{badge(business.plan_status || "Free Discovery")}{badge(getDisplayCRMStatus(business))}</div>
+            <div className="mt-4 flex max-w-4xl flex-wrap gap-2">{badge(business.status || "active")}{badge(business.is_searchable ? "Searchable" : "Not searchable", business.is_searchable ? "good" : "danger")}{badge(getClaimStatus(business), business.is_claimed ? "good" : "danger")}{badge(business.plan_status || "Free Discovery")}{badge(getDisplayCRMStatus(business))}</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=listing`} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white">Edit Listing Enhancement</Link>
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=profile`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Edit profile</Link>
-            {canViewPublic && publicHref ? <Link href={publicHref} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">View Public Page</Link> : <div className="max-w-[240px]"><button type="button" disabled className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-white/35 disabled:cursor-not-allowed">{publicHref ? "Public Page Not Live" : "Public Page Unavailable"}</button><p className="mt-1 text-xs text-white/40">{publicHref ? "This location is hidden from public search or missing public route data." : "Missing public location id or location is not public."}</p></div>}
-            <Link href={`/admin/dashboard/locations/id/${adminLocationId}`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open Admin Location</Link>
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=claims`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Open claims</Link>
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=qr-codes`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Print QR</Link>
-            <Link href={`/admin/dashboard/crm/${business.id}?tab=support`} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70">Add Experience note</Link>
-          </div>
+          <CrmHeroActions
+            business={business}
+            publicHref={publicHref}
+            canViewPublic={canViewPublic}
+            adminLocationId={adminLocationId}
+          />
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Opportunity" value={fmt(business.opportunity_score)} />
