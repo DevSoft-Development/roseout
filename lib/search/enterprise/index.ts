@@ -61,6 +61,11 @@ import {
   isResultAllowedForResolvedMarket,
 } from "../market-guardrails";
 
+const MIN_RESTAURANT_RESULTS = 6;
+const MIN_ACTIVITY_RESULTS = 4;
+const MIN_PAIR_RESULTS = 3;
+const RECOVERY_LIMIT = 80;
+
 function serializeErrorForDebug(error: unknown) {
   if (error instanceof Error) {
     return {
@@ -340,7 +345,7 @@ function cloneIntentForRestaurantRecovery(
 }
 
 function buildGenericRestaurantRecoveryAttempts(intent: SearchIntent) {
-  if (!intent.needsRestaurant || intent.needsActivity) return [];
+  if (!intent.needsRestaurant) return [];
 
   const foodCuisineTerms = restaurantFoodCuisineTerms(intent);
   const featureTerms = restaurantFeatureTerms(intent);
@@ -502,6 +507,42 @@ function buildBoroughRestaurantFallbackGeo(geo: any) {
     radiusMiles: Math.max(originalRadius, resolvedRadius, 10),
     geoStrictness: "medium",
   };
+}
+
+function budgetIntentDetected(intent: SearchIntent) {
+  return /\b(cheap|affordable|budget|under\s*\$?100|low cost|inexpensive)\b/i.test(
+    `${intent.rawQuery || ""} ${intent.budget || ""}`,
+  );
+}
+
+function activityRecoveryAttempts(intent: SearchIntent): { reason: string; terms: string[]; level: string }[] {
+  const q = String(intent.rawQuery || "").toLowerCase();
+  const terms = uniqueStrings([...(intent.activityIntent?.activityTerms ?? []), ...(intent.activityIntent?.categoryTerms ?? [])]);
+  const attempts: { reason: string; terms: string[]; level: string }[] = [];
+  const add = (reason: string, level: string, values: string[]) => attempts.push({ reason, level, terms: uniqueStrings(values) });
+  if (/karaoke/.test(q)) add("activity_karaoke_recovery", "specific", ["karaoke", "karaoke bar", "karaoke lounge", "bar", "lounge"]);
+  if (/hookah|shisha/.test(q)) add("activity_hookah_recovery", "specific", ["hookah", "hookah lounge", "shisha", "lounge", "bar", "nightlife"]);
+  if (/pool hall|billiards|pool table/.test(q)) add("activity_billiards_recovery", "specific", ["pool hall", "billiards", "pool table", "games", "bar", "lounge"]);
+  if (/bowling/.test(q)) add("activity_bowling_recovery", "specific", ["bowling", "bowling alley", "bowling lanes", "games", "entertainment"]);
+  if (/comedy|stand ?up|improv/.test(q)) add("activity_comedy_recovery", "specific", ["comedy club", "comedy show", "stand up comedy", "improv", "theater", "live entertainment", "nightlife"]);
+  if (/arcade/.test(q)) add("activity_arcade_recovery", "specific", ["arcade", "games", "game room", "entertainment", "bowling", "mini golf"]);
+  if (/family|kid|kids/.test(q)) add("activity_family_recovery", "broad", ["family friendly", "kid friendly", "museum", "bowling", "arcade", "park", "zoo", "aquarium", "activity", "entertainment"]);
+  if (/romantic|date/.test(q)) add("activity_romantic_recovery", "broad", ["date activity", "date idea", "museum", "gallery", "live music", "jazz", "lounge", "dessert", "park"]);
+  if (/outdoor/.test(q)) add("activity_outdoor_recovery", "broad", ["outdoor activity", "park", "garden", "waterfront", "pier", "walking tour", "boat ride", "observation deck"]);
+  if (terms.length) add("activity_original_relaxed_recovery", "strict", terms);
+  add("activity_entertainment_recovery", "broad", ["entertainment", "activity", "things to do", "nightlife", "games", "lounge"]);
+  return attempts;
+}
+
+function cloneIntentForActivityRecovery(intent: SearchIntent): SearchIntent {
+  return {
+    ...intent,
+    strictness: "medium",
+    activityIntent: {
+      ...intent.activityIntent,
+      alternativeGroups: [],
+    },
+  } as SearchIntent;
 }
 
 function requiresStrictMixedPair(intent: SearchIntent) {
@@ -751,7 +792,7 @@ export async function runEnterpriseSearch(
         debug,
       );
       let filtered = filterRestaurantResults(restaurantRaw, effectiveIntent);
-      if (!filtered.length && restaurantSearchTerms(effectiveIntent).length) {
+      if (filtered.length < MIN_RESTAURANT_RESULTS && restaurantSearchTerms(effectiveIntent).length) {
         usedFallback = true;
 
         const restaurantRecoveryAttempts =
@@ -825,7 +866,7 @@ export async function runEnterpriseSearch(
             effectiveIntent,
             "restaurant",
             debug,
-            undefined,
+            restaurantSearchTerms(effectiveIntent).slice(0, RECOVERY_LIMIT),
           );
           filtered = filterRestaurantResults(restaurantRaw, effectiveIntent);
         }
@@ -885,8 +926,8 @@ export async function runEnterpriseSearch(
       activityRpcCountBeforeRecovery = activityRaw.length;
       let filtered = filterActivityResults(activityRaw, effectiveIntent);
       if (
-        (!filtered.length && activitySearchTerms(effectiveIntent).length) ||
-        (isBroadGenericActivityIntent(effectiveIntent) && filtered.length < 6)
+        (filtered.length < MIN_ACTIVITY_RESULTS && activitySearchTerms(effectiveIntent).length) ||
+        (isBroadGenericActivityIntent(effectiveIntent) && filtered.length < MIN_RESTAURANT_RESULTS)
       ) {
         usedFallback = true;
         if (isRooftopDrinksIntent(effectiveIntent)) {
@@ -912,26 +953,31 @@ export async function runEnterpriseSearch(
             filtered = filterActivityResults(activityRaw, effectiveIntent);
           }
         } else {
-          const broadExpansionTerms = isBroadGenericActivityIntent(
-            effectiveIntent,
-          )
-            ? activitySearchTerms(effectiveIntent)
-            : undefined;
-          if (broadExpansionTerms) {
-            debug.activityRecoveryReason = filtered.length
-              ? "broad_generic_activity_low_results"
-              : "broad_generic_activity_zero_results";
-            debug.activityRecoveryTermsTried = [broadExpansionTerms];
+          for (const attempt of activityRecoveryAttempts(effectiveIntent)) {
+            debug.activityRecoveryReason = attempt.reason;
+            (debug as any).activityRecoveryLevel = attempt.level;
+            debug.activityRecoveryTermsTried = [
+              ...(debug.activityRecoveryTermsTried ?? []),
+              attempt.terms,
+            ];
+            const recoveredActivityRaw = await recoverEnterpriseLane(
+              supabase,
+              cloneIntentForActivityRecovery(effectiveIntent),
+              "activity",
+              debug,
+              attempt.terms,
+            );
+            activityRaw = uniqueById([...activityRaw, ...recoveredActivityRaw]);
+            filtered = filterActivityResults(activityRaw, cloneIntentForActivityRecovery(effectiveIntent));
+            (debug as any).activityRecoveryAttemptResults = [
+              ...((debug as any).activityRecoveryAttemptResults ?? []),
+              { reason: attempt.reason, terms: attempt.terms, resultCount: recoveredActivityRaw.length, filteredCount: filtered.length },
+            ];
+            if (filtered.length >= MIN_ACTIVITY_RESULTS) {
+              (debug as any).activityRecoverySucceeded = true;
+              break;
+            }
           }
-          const recoveredActivityRaw = await recoverEnterpriseLane(
-            supabase,
-            effectiveIntent,
-            "activity",
-            debug,
-            broadExpansionTerms,
-          );
-          activityRaw = uniqueById([...activityRaw, ...recoveredActivityRaw]);
-          filtered = filterActivityResults(activityRaw, effectiveIntent);
         }
       }
       perf.activity_rpc_ms = Date.now() - rpcStarted;
@@ -1333,6 +1379,8 @@ export async function runEnterpriseSearch(
     const requiredPairingSuppressedFallback =
       requiresStrictMixedPair(effectiveIntent) &&
       pairs.length === 0 &&
+      restaurants.length === 0 &&
+      activities.length === 0 &&
       !(
         explicitMarketRequested &&
         requestedMarketForResults === "LONG_ISLAND" &&
@@ -1443,6 +1491,13 @@ export async function runEnterpriseSearch(
         : null;
     const noPairsReason =
       requiredPairingFailureReasonValue ??
+      (effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS && restaurants.length > 0 && activities.length > 0
+        ? "pair_count_below_recovery_threshold"
+        : effectiveIntent.wantsPairing && restaurants.length > 0 && activities.length === 0
+          ? "no_activity_results_for_required_pair"
+          : effectiveIntent.wantsPairing && activities.length > 0 && restaurants.length === 0
+            ? "no_restaurant_results_for_required_pair"
+            : null) ??
       (effectiveIntent.wantsPairing &&
       pairs.length === 0 &&
       activities.length > 0 &&
@@ -1664,6 +1719,15 @@ export async function runEnterpriseSearch(
       rejectedPairs: pairingDebug.rejectedPairs,
       walkablePairsFound: pairingDebug.walkablePairsFound,
       noPairsReason,
+      no_pairs_reason: noPairsReason,
+      recoveryLayerUsed: Boolean(debug.restaurantRecoveryUsed || debug.activityRecoveryUsed),
+      recoverySucceeded: Boolean(debug.restaurantRecoverySucceeded || (debug as any).activityRecoverySucceeded),
+      recoveryLevel: (debug as any).activityRecoveryLevel ?? null,
+      partialResultsReturned: effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS && (restaurants.length > 0 || activities.length > 0),
+      pairRecoveryNeeded: effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS,
+      budgetIntentDetected: budgetIntentDetected(effectiveIntent),
+      budgetHardFilterDisabled: budgetIntentDetected(effectiveIntent),
+      budgetRankingPreferenceApplied: budgetIntentDetected(effectiveIntent),
       requiredPairingSuppressedFallback,
       requiredPairingFailureReason: requiredPairingFailureReasonValue,
       candidateRestaurantCountBeforeRequiredPairSuppression,

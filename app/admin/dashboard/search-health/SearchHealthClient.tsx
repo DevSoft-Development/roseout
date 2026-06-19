@@ -1008,6 +1008,18 @@ export default function SearchHealthClient() {
               ))}
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
+              {selected.debug?.recoveryLayerUsed ? (
+                <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-emerald-200">
+                  Recovery used
+                </span>
+              ) : null}
+              {selected.debug?.partialResultsReturned ? (
+                <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-amber-200">
+                  Partial results returned
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
                 className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black"
