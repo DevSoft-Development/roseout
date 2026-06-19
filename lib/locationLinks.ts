@@ -32,6 +32,11 @@ type LocationTypeFields = {
   search_document?: string | null;
 };
 
+export type PublicLocationLinkFields = LocationTypeFields & {
+  id?: string | number | null;
+  location_id?: string | number | null;
+};
+
 export function normalizeLocationType(
   type?: string | null,
   options?: {
@@ -117,6 +122,19 @@ export function getLocationDetailHref({
   const normalizedType = normalizeLocationType(type, { sourceTable, location });
 
   return `/locations/${normalizedType}/${id}`;
+}
+
+export function getPublicLocationHref(location?: PublicLocationLinkFields | null) {
+  const id = location?.id ?? location?.location_id;
+
+  if (id == null || String(id).trim() === "") return null;
+
+  return getLocationDetailHref({
+    id,
+    type: location?.location_type ?? location?.type,
+    sourceTable: location?.source_table ?? location?.sourceTable,
+    location,
+  });
 }
 
 function appearsRestaurantLike(location: LocationTypeFields) {
