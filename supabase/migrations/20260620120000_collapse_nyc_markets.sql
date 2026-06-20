@@ -1,21 +1,23 @@
 -- Collapse legacy NYC submarkets into NYC_CORE and keep North Jersey canonical as NORTHERN_NJ.
 
+drop function if exists public.toh_infer_market(text, text, text, text, text);
+
 create or replace function public.toh_infer_market(
-  p_city text default null,
-  p_state text default null,
-  p_borough text default null,
-  p_county text default null,
-  p_address text default null
+  input_city text default null,
+  input_state text default null,
+  input_borough text default null,
+  input_county text default null,
+  input_address text default null
 ) returns text
 language plpgsql
 immutable
 as $$
 declare
-  c text := lower(coalesce(p_city, ''));
-  s text := upper(coalesce(p_state, ''));
-  b text := lower(coalesce(p_borough, ''));
-  co text := lower(coalesce(p_county, ''));
-  a text := lower(coalesce(p_address, ''));
+  c text := lower(coalesce(input_city, ''));
+  s text := upper(coalesce(input_state, ''));
+  b text := lower(coalesce(input_borough, ''));
+  co text := lower(coalesce(input_county, ''));
+  a text := lower(coalesce(input_address, ''));
 begin
   if s = 'NJ' or co in ('hudson','bergen','essex','union','passaic') or c in ('jersey city','hoboken','newark','montclair','fort lee','edgewater','weehawken','union city','elizabeth','hackensack','paterson','clifton','secaucus','teaneck','englewood') then
     return 'NORTHERN_NJ';
