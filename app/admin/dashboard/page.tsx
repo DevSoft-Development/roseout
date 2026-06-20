@@ -63,6 +63,12 @@ export default async function CentralDashboardPage() {
   const totalLocations = (restaurants.count || 0) + (activities.count || 0);
   const groups = [
     {
+      title: "Users",
+      desc: "View customer accounts, beta testers, saved outings, booked outings, support tickets, and account activity.",
+      href: "/admin/dashboard/users",
+      status: "Manage Users",
+    },
+    {
       title: "Search health",
       desc: "Validate discovery, parser output, and search QA.",
       href: "/admin/dashboard/search-health",
