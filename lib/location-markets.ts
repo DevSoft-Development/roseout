@@ -80,9 +80,21 @@ export function normalizeMarketKey(market: unknown): CanonicalMarketKey {
   const raw = String(market ?? "").trim();
   const n = normalizeText(raw);
   if (!n) return "UNKNOWN";
-  if (["bronx outer", "bronx_outer", "staten island", "staten_island", "outer nyc", "outer_nyc"].includes(n) || ["BRONX_OUTER", "STATEN_ISLAND", "OUTER_NYC"].includes(raw.toUpperCase())) return "NYC_CORE";
-  if (["north jersey", "north_jersey", "northern nj", "northern_nj", "northern jersey"].includes(n) || ["NORTH_JERSEY", "NORTHERN_NJ"].includes(raw.toUpperCase())) return NORTH_JERSEY_MARKET_KEY;
-  for (const key of ACTIVE_MARKET_KEYS) if (normalizeText(key) === n || normalizeText(MARKET_DISPLAY_NAMES[key]) === n) return key as CanonicalMarketKey;
+
+  const repeatedCanonical = ([...ACTIVE_MARKET_KEYS, ...LEGACY_NYC_MARKET_KEYS, "NORTH_JERSEY"] as const)
+    .find((key) => {
+      const normalizedKey = normalizeText(key);
+      return n === normalizedKey || new RegExp(`^(?:${normalizedKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?:\\s+${normalizedKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})+$`).test(n);
+    });
+  if (repeatedCanonical) {
+    if (["BRONX_OUTER", "STATEN_ISLAND", "OUTER_NYC"].includes(repeatedCanonical)) return "NYC_CORE";
+    if (repeatedCanonical === "NORTH_JERSEY") return NORTH_JERSEY_MARKET_KEY;
+    return repeatedCanonical as CanonicalMarketKey;
+  }
+
+  if (["bronx outer", "staten island", "outer nyc"].includes(n) || ["BRONX_OUTER", "STATEN_ISLAND", "OUTER_NYC"].includes(raw.toUpperCase())) return "NYC_CORE";
+  if (["north jersey", "northern nj", "northern jersey"].includes(n) || ["NORTH_JERSEY", "NORTHERN_NJ"].includes(raw.toUpperCase())) return NORTH_JERSEY_MARKET_KEY;
+  for (const key of ACTIVE_MARKET_KEYS) if (normalizeText(key) === n || normalizeText(MARKET_DISPLAY_NAMES[key]) === n || MARKET_ALIASES[key].some((alias) => normalizeText(alias) === n)) return key as CanonicalMarketKey;
   return "UNKNOWN";
 }
 

@@ -796,19 +796,38 @@ export type ImportMarketResolution = {
   confidence: "high" | "medium" | "low";
 };
 
-function resolveRequestedMarketForImport(options: GooglePlacesImportOptions = {}, candidateMarket?: MarketKey | string | null, queriesUsed?: string[]): ImportMarketResolution {
-  const direct = [
+function valueText(value: unknown): string {
+  return Array.isArray(value) ? value.filter(Boolean).join(" ") : cleanText(value);
+}
+
+function resolveMarketCandidate(value: unknown): MarketKey {
+  const text = valueText(value);
+  return normalizeMarketKey(normalizeMarketInput(text) || text);
+}
+
+export function resolveRequestedMarketForImport(options: GooglePlacesImportOptions = {}, candidateMarket?: MarketKey | string | null, queriesUsed?: string[]): ImportMarketResolution {
+  const explicit = [
     ["settings.market", options.market],
     ["settings.requestedMarket", options.requestedMarket],
     ["settings.requested_market", options.requested_market],
   ] as const;
-  for (const [source, value] of direct) {
-    const normalized = normalizeMarketKey(normalizeMarketInput(String(value || "")) || value);
-    if (normalized !== "UNKNOWN") return { original: String(value), resolved: normalized, source, confidence: "high" };
+
+  const validExplicit = explicit
+    .map(([source, value]) => ({ source, original: valueText(value), resolved: resolveMarketCandidate(value) }))
+    .find((candidate) => candidate.original && candidate.resolved !== "UNKNOWN");
+
+  const areaText = [options.requestedArea, valueText(options.areas)].filter(Boolean).join(" ");
+  const areaMarket = resolveMarketCandidate(areaText) !== "UNKNOWN"
+    ? resolveMarketCandidate(areaText)
+    : normalizeMarketKey(inferMarketFromPlace({ requestedArea: areaText, query: areaText }));
+
+  if (areaMarket !== "UNKNOWN") {
+    if (!validExplicit || validExplicit.resolved === areaMarket) return { original: areaText, resolved: areaMarket, source: "settings.areas", confidence: "high" };
+    return { original: validExplicit.original, resolved: validExplicit.resolved, source: validExplicit.source, confidence: "high" };
   }
-  const areaText = [options.requestedArea, options.areas].filter(Boolean).join(" ");
-  const areaMarket = inferMarketFromPlace({ requestedArea: areaText, query: areaText });
-  if (normalizeMarketKey(areaMarket) !== "UNKNOWN") return { original: areaText || null, resolved: normalizeMarketKey(areaMarket), source: "areas", confidence: "high" };
+
+  if (validExplicit) return { original: validExplicit.original, resolved: validExplicit.resolved, source: validExplicit.source, confidence: "high" };
+
   const queryText = (queriesUsed || []).join(" ");
   const queryMarket = inferMarketFromPlace({ query: queryText, requestedArea: queryText });
   if (normalizeMarketKey(queryMarket) !== "UNKNOWN") return { original: queryText || null, resolved: normalizeMarketKey(queryMarket), source: "queries_used", confidence: "medium" };
@@ -845,6 +864,14 @@ function parseAreas(areas?: string | null) {
     .split(",")
     .map((area) => area.trim())
     .filter(Boolean);
+}
+
+
+export function mergeCountMaps(...maps: Array<Record<string, number>>): Record<string, number> {
+  return maps.reduce<Record<string, number>>((merged, map) => {
+    for (const [key, value] of Object.entries(map)) merged[key] = (merged[key] || 0) + value;
+    return merged;
+  }, {});
 }
 
 function rotateQueries(queries: string[], maxQueries: number) {
@@ -887,9 +914,9 @@ async function runGroup(
 
         for (const place of places.slice(0, limit)) {
           if (!place.place_id) continue;
-          if (seenPlaceIds.has(place.place_id)) { stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (stats.duplicate_examples.length < 10) stats.duplicate_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, reason: "duplicate" }); continue; }
-          seenPlaceIds.add(place.place_id);
           stats.checked += 1;
+          if (seenPlaceIds.has(place.place_id)) { stats.skipped += 1; stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (stats.duplicate_examples.length < 10) stats.duplicate_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, reason: "duplicate" }); continue; }
+          seenPlaceIds.add(place.place_id);
 
           const result =
             kind === "restaurant"
@@ -982,10 +1009,10 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     wrong_state_examples: [...restaurant.wrong_state_examples, ...activity.wrong_state_examples].slice(0, 10),
     wrong_market_examples: [...restaurant.wrong_market_examples, ...activity.wrong_market_examples].slice(0, 10),
     queries_used: [...restaurant.queries_used, ...activity.queries_used],
-    imported_by_market: { ...restaurant.imported_by_market, ...activity.imported_by_market },
-    skipped_by_reason: { ...restaurant.skipped_by_reason, ...activity.skipped_by_reason },
-    inferred_market_counts: { ...restaurant.inferred_market_counts, ...activity.inferred_market_counts },
-    state_counts: { ...restaurant.state_counts, ...activity.state_counts },
+    imported_by_market: mergeCountMaps(restaurant.imported_by_market, activity.imported_by_market),
+    skipped_by_reason: mergeCountMaps(restaurant.skipped_by_reason, activity.skipped_by_reason),
+    inferred_market_counts: mergeCountMaps(restaurant.inferred_market_counts, activity.inferred_market_counts),
+    state_counts: mergeCountMaps(restaurant.state_counts, activity.state_counts),
     market_mismatch_count: restaurant.market_mismatch_count + activity.market_mismatch_count,
     errors: errors.slice(0, 30),
   };
@@ -1015,15 +1042,15 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     wrong_state_examples: [...restaurant.wrong_state_examples, ...activity.wrong_state_examples].slice(0, 10),
     wrong_market_examples: [...restaurant.wrong_market_examples, ...activity.wrong_market_examples].slice(0, 10),
     queries_used: [...restaurant.queries_used, ...activity.queries_used],
-    imported_by_market: { ...restaurant.imported_by_market, ...activity.imported_by_market },
-    skipped_by_reason: { ...restaurant.skipped_by_reason, ...activity.skipped_by_reason },
+    imported_by_market: mergeCountMaps(restaurant.imported_by_market, activity.imported_by_market),
+    skipped_by_reason: mergeCountMaps(restaurant.skipped_by_reason, activity.skipped_by_reason),
     requested_market: requestedMarket,
     requested_market_original: requestedMarketResolution.original,
     requested_market_resolved: requestedMarketResolution.resolved,
     requested_market_source: requestedMarketResolution.source,
     market_resolution_confidence: requestedMarketResolution.confidence,
-    inferred_market_counts: { ...restaurant.inferred_market_counts, ...activity.inferred_market_counts },
-    state_counts: { ...restaurant.state_counts, ...activity.state_counts },
+    inferred_market_counts: mergeCountMaps(restaurant.inferred_market_counts, activity.inferred_market_counts),
+    state_counts: mergeCountMaps(restaurant.state_counts, activity.state_counts),
     market_mismatch_count: restaurant.market_mismatch_count + activity.market_mismatch_count,
     errors: errors.slice(0, 30),
     settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
