@@ -72,4 +72,46 @@ describe("Google Places import skip accounting helpers", () => {
     expect(skipped).toBe(3);
     expect(4).toBe(1 + skipped);
   });
+
+  it("aliases market_mismatch_count to the final wrong_market skip count", () => {
+    const stats = googlePlacesImport.normalizeImportSkipCounts({
+      skipped: 4,
+      skipped_duplicate: 1,
+      skipped_wrong_state: 1,
+      skipped_wrong_market: 1,
+      skipped_by_reason: {
+        duplicate: 1,
+        low_quality: 1,
+        wrong_state: 1,
+        wrong_market: 1,
+      },
+      market_mismatch_count: 4,
+    });
+
+    expect(stats.market_mismatch_count).toBe(1);
+    expect(stats.market_mismatch_count).toBe(stats.skipped_wrong_market);
+    expect(stats.market_mismatch_count).not.toBe(stats.skipped_wrong_state + stats.skipped_wrong_market);
+    expect(stats.skipped_by_reason.wrong_market).toBe(stats.skipped_wrong_market);
+  });
+
+  it("computes overall market mismatches from restaurant and activity wrong_market skips only", () => {
+    const restaurant = googlePlacesImport.normalizeImportSkipCounts({
+      skipped_wrong_market: 12,
+      skipped_wrong_state: 2,
+      skipped_duplicate: 71,
+      market_mismatch_count: 14,
+    });
+    const activity = googlePlacesImport.normalizeImportSkipCounts({
+      skipped_wrong_market: 6,
+      skipped_wrong_state: 0,
+      skipped_duplicate: 0,
+      market_mismatch_count: 7,
+    });
+    const overallMarketMismatchCount = restaurant.skipped_wrong_market + activity.skipped_wrong_market;
+
+    expect(restaurant.market_mismatch_count).toBe(restaurant.skipped_wrong_market);
+    expect(activity.market_mismatch_count).toBe(activity.skipped_wrong_market);
+    expect(overallMarketMismatchCount).toBe(18);
+    expect(overallMarketMismatchCount).toBe(restaurant.skipped_wrong_market + activity.skipped_wrong_market);
+  });
 });

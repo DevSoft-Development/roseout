@@ -874,6 +874,11 @@ export function mergeCountMaps(...maps: Array<Record<string, number>>): Record<s
   }, {});
 }
 
+export function normalizeImportSkipCounts<T extends { skipped_wrong_market: number; market_mismatch_count: number }>(stats: T): T {
+  stats.market_mismatch_count = stats.skipped_wrong_market;
+  return stats;
+}
+
 function rotateQueries(queries: string[], maxQueries: number) {
   if (queries.length <= maxQueries) return queries;
 
@@ -926,8 +931,7 @@ async function runGroup(
           if (result.status === "skipped") { stats.skipped += 1; stats.skipped_by_reason.low_quality = (stats.skipped_by_reason.low_quality || 0) + 1; }
           if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") {
             stats.skipped += 1;
-            if (result.status === "skipped_wrong_state") { stats.skipped_wrong_state += 1; stats.skipped_by_reason.wrong_state = (stats.skipped_by_reason.wrong_state || 0) + 1; } else { stats.skipped_wrong_market += 1; stats.skipped_by_reason.wrong_market = (stats.skipped_by_reason.wrong_market || 0) + 1; }
-            stats.market_mismatch_count += 1;
+            if (result.status === "skipped_wrong_state") { stats.skipped_wrong_state += 1; stats.skipped_by_reason.wrong_state = (stats.skipped_by_reason.wrong_state || 0) + 1; } else { stats.skipped_wrong_market += 1; stats.skipped_by_reason.wrong_market = (stats.skipped_by_reason.wrong_market || 0) + 1; stats.market_mismatch_count = stats.skipped_wrong_market; }
             const v = result.validation; if (v) { const im = normalizeMarketKey(v.inferredMarket); stats.inferred_market_counts[im] = (stats.inferred_market_counts[im] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; const example = { name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: normalizeMarketKey(v.requestedMarket), detectedState: v.state, detectedCity: v.city, primary_reason: result.status === "skipped_wrong_state" ? "wrong_state" : "wrong_market", reason: v.reason }; if (stats.rejected_examples.length < 10) stats.rejected_examples.push(example); if (result.status === "skipped_wrong_state" && stats.wrong_state_examples.length < 10) stats.wrong_state_examples.push(example); if (result.status === "skipped_wrong_market" && stats.wrong_market_examples.length < 10) stats.wrong_market_examples.push(example); }
           }
           if (result.status === "failed") {
@@ -946,7 +950,7 @@ async function runGroup(
     }
   }
 
-  return stats;
+  return normalizeImportSkipCounts(stats);
 }
 
 export async function runGooglePlacesImport(options: GooglePlacesImportOptions = {}) {
@@ -1013,7 +1017,7 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     skipped_by_reason: mergeCountMaps(restaurant.skipped_by_reason, activity.skipped_by_reason),
     inferred_market_counts: mergeCountMaps(restaurant.inferred_market_counts, activity.inferred_market_counts),
     state_counts: mergeCountMaps(restaurant.state_counts, activity.state_counts),
-    market_mismatch_count: restaurant.market_mismatch_count + activity.market_mismatch_count,
+    market_mismatch_count: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     errors: errors.slice(0, 30),
   };
 
@@ -1051,7 +1055,7 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     market_resolution_confidence: requestedMarketResolution.confidence,
     inferred_market_counts: mergeCountMaps(restaurant.inferred_market_counts, activity.inferred_market_counts),
     state_counts: mergeCountMaps(restaurant.state_counts, activity.state_counts),
-    market_mismatch_count: restaurant.market_mismatch_count + activity.market_mismatch_count,
+    market_mismatch_count: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     errors: errors.slice(0, 30),
     settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
   };
