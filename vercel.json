@@ -25,6 +25,8 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/admin/ml/recalculate-phase2",
+      "schedule": "30 8 * * *"
       "path": "/api/admin/ml/recalculate-location-scores",
       "schedule": "0 8 * * *"
     }
