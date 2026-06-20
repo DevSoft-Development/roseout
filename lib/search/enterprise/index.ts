@@ -45,6 +45,7 @@ import {
   searchEnterpriseLane,
 } from "./rpc";
 import { productionSafeDebug } from "./debug";
+import { firstSearchImage, hasUsableSearchPhoto } from "./photos";
 import {
   getSearchSpeedStatus,
   logSearchPerformance,
@@ -92,87 +93,8 @@ function errorMessageForDebug(error: unknown) {
   const serialized = serializeErrorForDebug(error);
   return serialized.message || String(error);
 }
-function firstImage(value: unknown): string | null {
-  if (!value) return null;
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const image = firstImage(item);
-      if (image) return image;
-    }
-    return null;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (
-      !trimmed ||
-      ["null", "undefined", "none", "n/a", "placeholder", "#", "?"].includes(
-        trimmed.toLowerCase(),
-      )
-    ) {
-      return null;
-    }
-
-    if (
-      trimmed.toLowerCase().includes("placeholder") ||
-      trimmed.toLowerCase().includes("/placeholder")
-    ) {
-      return null;
-    }
-
-    if (
-      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-      (trimmed.startsWith("{") && trimmed.endsWith("}"))
-    ) {
-      try {
-        return firstImage(JSON.parse(trimmed));
-      } catch {
-        return null;
-      }
-    }
-
-    return (
-      trimmed
-        .split(/[\n,]+/)
-        .map((item) => item.trim())
-        .find((item) => {
-          const lower = item.toLowerCase();
-          return (
-            item.length > 8 &&
-            ![
-              "null",
-              "undefined",
-              "none",
-              "n/a",
-              "placeholder",
-              "#",
-              "?",
-            ].includes(lower) &&
-            !lower.includes("placeholder")
-          );
-        }) || null
-    );
-  }
-
-  if (typeof value === "object") {
-    const record = value as any;
-    return firstImage(
-      record.url || record.src || record.image_url || record.main_image,
-    );
-  }
-
-  return null;
-}
-
 function hasUsableLivePhoto(location: EnterpriseLocation) {
-  return Boolean(
-    firstImage(location.image_url) ||
-    firstImage(location.main_image) ||
-    firstImage(location.images) ||
-    firstImage(location.gallery_images),
-  );
+  return hasUsableSearchPhoto(location);
 }
 
 function filterLivePhotoResults(items: EnterpriseLocation[]) {
@@ -1295,30 +1217,83 @@ export async function runEnterpriseSearch(
     const marketSafeActivities = rankedActivities.filter(
       (item) => !suppressMarketMismatch(item),
     );
+
+    const photoSafeRestaurants = filterLivePhotoResults(marketSafeRestaurants);
+    const photoSafeActivities = filterLivePhotoResults(marketSafeActivities);
+
+    const photoSuppressedRestaurants = marketSafeRestaurants.filter(
+      (item) => !hasUsableLivePhoto(item),
+    );
+    const photoSuppressedActivities = marketSafeActivities.filter(
+      (item) => !hasUsableLivePhoto(item),
+    );
+
     const suppressedMarketMismatchCount =
       rankedRestaurants.length -
       marketSafeRestaurants.length +
       (rankedActivities.length - marketSafeActivities.length);
+
     const marketGuardrailRejected = rejectedForMarketGuardrail.length;
+
+    const imageDebugFor = (item: EnterpriseLocation) => {
+      const record = item as any;
+
+      return {
+        name: item.name || item.restaurant_name || item.activity_name || null,
+        market: record.market ?? null,
+        state: item.state ?? null,
+        city: item.city ?? null,
+        county: record.county ?? null,
+        borough: item.borough ?? null,
+        has_photos: record.has_photos ?? null,
+        photo_status: record.photo_status ?? null,
+        image_url: Boolean(firstSearchImage(record.image_url)),
+        main_image: Boolean(firstSearchImage(record.main_image)),
+        photo_url: Boolean(firstSearchImage(record.photo_url)),
+        primary_photo_url: Boolean(firstSearchImage(record.primary_photo_url)),
+        google_photo_url: Boolean(firstSearchImage(record.google_photo_url)),
+        images: Boolean(firstSearchImage(record.images)),
+        gallery_images: Boolean(firstSearchImage(record.gallery_images)),
+        photos: Boolean(firstSearchImage(record.photos)),
+        photo_urls: Boolean(firstSearchImage(record.photo_urls)),
+        google_photos: Boolean(firstSearchImage(record.google_photos)),
+      };
+    };
+
     const sampleRejectedMarkets = rejectedForMarketGuardrail
       .slice(0, 8)
       .map((item) => ({
-        name: item.name || item.restaurant_name || item.activity_name || null,
-        market: (item as any).market ?? null,
-        state: item.state ?? null,
+        ...imageDebugFor(item),
         reason: getMarketGuardrailRejectionReason(
           item,
           requestedMarketForResults,
         ),
       }));
-    let restaurants = filterLivePhotoResults(marketSafeRestaurants).slice(
-      0,
-      displayLimit,
-    );
-    let activities = filterLivePhotoResults(marketSafeActivities).slice(
-      0,
-      displayLimit,
-    );
+
+    (debug as any).rankedRestaurantCountBeforeMarketGuardrail =
+      rankedRestaurants.length;
+    (debug as any).rankedActivityCountBeforeMarketGuardrail =
+      rankedActivities.length;
+    (debug as any).marketSafeRestaurantCount = marketSafeRestaurants.length;
+    (debug as any).marketSafeActivityCount = marketSafeActivities.length;
+    (debug as any).photoSafeRestaurantCount = photoSafeRestaurants.length;
+    (debug as any).photoSafeActivityCount = photoSafeActivities.length;
+    (debug as any).photoSuppressedRestaurantCount =
+      photoSuppressedRestaurants.length;
+    (debug as any).photoSuppressedActivityCount =
+      photoSuppressedActivities.length;
+    (debug as any).samplePhotoSuppressedRestaurants =
+      photoSuppressedRestaurants.slice(0, 8).map(imageDebugFor);
+    (debug as any).samplePhotoSuppressedActivities = photoSuppressedActivities
+      .slice(0, 8)
+      .map(imageDebugFor);
+    (debug as any).sampleRejectedMarkets = sampleRejectedMarkets;
+    (debug as any).marketGuardrailRejected = marketGuardrailRejected;
+    (debug as any).suppressedMarketMismatchCount =
+      suppressedMarketMismatchCount;
+
+    let restaurants = photoSafeRestaurants.slice(0, displayLimit);
+    let activities = photoSafeActivities.slice(0, displayLimit);
     const candidateRestaurantCountBeforeRequiredPairSuppression =
       restaurants.length;
     const candidateActivityCountBeforeRequiredPairSuppression =
@@ -1609,6 +1584,21 @@ export async function runEnterpriseSearch(
       fallbackSuppressedBecauseExplicitMarket,
       marketGuardrailRejected,
       sampleRejectedMarkets,
+      rankedRestaurantCountBeforeMarketGuardrail:
+        rankedRestaurants.length,
+      rankedActivityCountBeforeMarketGuardrail: rankedActivities.length,
+      marketSafeRestaurantCount: marketSafeRestaurants.length,
+      marketSafeActivityCount: marketSafeActivities.length,
+      photoSafeRestaurantCount: photoSafeRestaurants.length,
+      photoSafeActivityCount: photoSafeActivities.length,
+      photoSuppressedRestaurantCount: photoSuppressedRestaurants.length,
+      photoSuppressedActivityCount: photoSuppressedActivities.length,
+      samplePhotoSuppressedRestaurants: photoSuppressedRestaurants
+        .slice(0, 8)
+        .map(imageDebugFor),
+      samplePhotoSuppressedActivities: photoSuppressedActivities
+        .slice(0, 8)
+        .map(imageDebugFor),
       parsedMarket: requestedMarketForResults,
       parsedBorough: effectiveIntent.geo.borough ?? null,
       parsedCity: effectiveIntent.geo.city ?? null,
