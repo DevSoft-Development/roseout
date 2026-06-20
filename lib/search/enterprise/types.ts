@@ -159,6 +159,11 @@ export type EnterpriseLocation = {
   activityQualityScore?: number | null;
   activityQualityReasons?: string[] | null;
   activityQualityPenalties?: string[] | null;
+  ml_score?: number | null;
+  intent_score?: number | null;
+  intent_boost?: number | null;
+  primary_intent?: string | null;
+  matched_intents?: string[] | null;
   [key: string]: unknown;
 };
 
@@ -187,6 +192,11 @@ export type EnterprisePair = {
   pairQualityReasons?: string[];
   pairQualityPenalties?: string[];
   defaultMarketPairPriority?: number;
+  ml_score?: number | null;
+  pair_ml_score?: number | null;
+  pair_boost?: number | null;
+  primary_intent?: string | null;
+  matched_intents?: string[] | null;
   isWalkable: boolean;
 };
 

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { classifySearchIntent } from "@/lib/ml/intentBuckets";
 
 type JsonRecord = Record<string, any>;
 
@@ -110,6 +111,8 @@ export async function logSearchEvent(
       safeNumber(performance.result_count) ??
       restaurantCount + activityCount + pairCount;
 
+    const mlIntent = classifySearchIntent(args.rawQuery || args.normalizedQuery || "");
+
     const row = {
       source: safeText(args.source, 100) ?? "search",
       route: safeText(args.route ?? performance.route, 200),
@@ -185,7 +188,7 @@ export async function logSearchEvent(
       no_results_reason: safeText(args.noResultsReason, 250),
       no_pairs_reason: safeText(args.noPairsReason, 250),
 
-      metadata: cleanMetadata(args.metadata),
+      metadata: cleanMetadata({ ...(args.metadata ?? {}), primary_intent: mlIntent.primaryIntent, secondary_intents: mlIntent.secondaryIntents, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: mlIntent.inferredSearchMode }),
     };
 
     const { error } = await supabaseAdmin.from("search_events").insert(row);
