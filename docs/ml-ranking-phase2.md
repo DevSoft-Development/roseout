@@ -73,3 +73,26 @@ Hard filters and safeguards still win: publishability/searchability, geography, 
 8. Confirm ML boosts do not override hard filters such as publish/searchable status, location type, market/geography, category/domain matching, pair distance rejection, or missing coordinate rejection.
 
 <!-- PR refresh: no runtime behavior change. -->
+
+## ML Admin Dashboard
+
+The merged Machine Learning admin page is `/admin/dashboard/ml`. Phase 1 learned ranking and Phase 2 location intent and pair scoring are shown together. `/admin/dashboard/ml/phase-2` now redirects to the merged dashboard.
+
+## Why Phase 2 May Show 0 Rows
+
+Phase 2 needs `search_events.metadata.ml_result_ids` to score location intent rows. Pair scoring needs `search_events.metadata.ml_pair_ids` or outings with restaurant/activity location IDs. `debugParity.firstResultNames` is not enough because names can be ambiguous and can credit the wrong location. Make new searches after the tracking update, then rerun Phase 2.
+
+## Manual Verification
+
+1. Run a new `/create` search.
+2. Confirm the latest `search_events` row has `metadata.ml_result_ids`.
+3. Run a mixed outing search.
+4. Confirm the latest `search_events` row has `metadata.ml_pair_ids` if pairs were shown.
+5. Run `/api/admin/ml/recalculate-location-scores`.
+6. Confirm `location_ml_features` rows appear if Phase 1 exists.
+7. Run `/api/admin/ml/recalculate-phase2`.
+8. Confirm diagnostics show candidate rows.
+9. Confirm `location_intent_ml_features` rows appear.
+10. Confirm `location_pair_ml_features` rows appear if pairs exist.
+11. Open `/admin/dashboard/ml`.
+12. Open `/admin/dashboard/search-health` to test search impact if ML debug is installed.
