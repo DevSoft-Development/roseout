@@ -809,7 +809,7 @@ export async function GET(request: NextRequest) {
 
             if (result.status === "imported") stats.imported += 1;
             if (result.status === "skipped") stats.skipped += 1;
-            if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") { stats.skipped += 1; if (result.status === "skipped_wrong_state") stats.skipped_wrong_state += 1; else stats.skipped_wrong_market += 1; stats.market_mismatch_count += 1; const v = result.validation; if (v) { stats.inferred_market_counts[v.inferredMarket] = (stats.inferred_market_counts[v.inferredMarket] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; if (stats.rejected_examples.length < 10) stats.rejected_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: v.requestedMarket, detectedState: v.state, detectedCity: v.city, reason: v.reason }); } }
+            if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") { stats.skipped += 1; if (result.status === "skipped_wrong_state") stats.skipped_wrong_state += 1; else { stats.skipped_wrong_market += 1; stats.market_mismatch_count = stats.skipped_wrong_market; } const v = result.validation; if (v) { stats.inferred_market_counts[v.inferredMarket] = (stats.inferred_market_counts[v.inferredMarket] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; if (stats.rejected_examples.length < 10) stats.rejected_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: v.requestedMarket, detectedState: v.state, detectedCity: v.city, reason: v.reason }); } }
 
             if (result.status === "failed") {
               stats.failed += 1;
@@ -826,6 +826,8 @@ export async function GET(request: NextRequest) {
         await sleep(250);
       }
     }
+
+    stats.market_mismatch_count = stats.skipped_wrong_market;
 
     // Clear AI cache after imports
 await supabaseAdmin
