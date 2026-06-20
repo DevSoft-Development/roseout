@@ -45,7 +45,8 @@ import {
   searchEnterpriseLane,
 } from "./rpc";
 import { productionSafeDebug } from "./debug";
-import { firstSearchImage, hasUsableSearchPhoto } from "./photos";
+import { hasUsableSearchPhoto } from "./photos";
+import { getLocationImageDebug, hasUsableLocationImage } from "@/lib/location-images";
 import {
   getSearchSpeedStatus,
   logSearchPerformance,
@@ -54,12 +55,9 @@ import { resolveSearchMarket, type UserSearchLocation } from "./markets";
 import { detectGeoIntent } from "./geo-taxonomy";
 import { logSearchHealthEvent } from "./searchHealthLogger";
 import { parseOutingDateTime } from "../parse-outing-date-time";
-import { validatePlaceForMarket } from "../../location-market-validation";
 import {
-  getMarketGuardrailRejectionReason,
+  classifyMarketFit,
   isExplicitMarket,
-  isPairAllowedForResolvedMarket,
-  isResultAllowedForResolvedMarket,
 } from "../market-guardrails";
 
 const MIN_RESTAURANT_RESULTS = 6;
@@ -1185,112 +1183,89 @@ export async function runEnterpriseSearch(
     const explicitMarketRequested =
       isExplicitMarket(requestedMarketForResults) &&
       (effectiveIntent.geo as any).explicitMarketRequested !== false;
-    const suppressMarketMismatch = (item: EnterpriseLocation) => {
-      if (!requestedMarketForResults) return false;
-      if (
-        explicitMarketRequested &&
-        !isResultAllowedForResolvedMarket(item, requestedMarketForResults)
-      )
-        return true;
-      const validation = validatePlaceForMarket({
-        requestedMarket: requestedMarketForResults,
-        city: (item as any).city,
-        state: (item as any).state,
-        county: (item as any).county,
-        borough: (item as any).borough,
-        neighborhood: (item as any).neighborhood,
-        address: (item as any).address,
+
+    const applyLocationFit = (items: EnterpriseLocation[]) => {
+      return items.map((item) => {
+        const fit = classifyMarketFit(item, {
+          requestedMarket: requestedMarketForResults,
+          requestedBorough: (effectiveIntent.geo as any).borough,
+          requestedCity: (effectiveIntent.geo as any).city,
+          requestedState: (effectiveIntent.geo as any).state,
+          requestedCounty: (effectiveIntent.geo as any).county,
+          requestedNeighborhood: (effectiveIntent.geo as any).neighborhood,
+          radiusMiles: (effectiveIntent.geo as any).radiusMiles,
+          isPhotoSafe: hasUsableLocationImage,
+        });
+        return Object.assign(item, {
+          _marketFitBucket: fit.bucket,
+          _marketFitReason: fit.reason,
+          _marketFitLabel: fit.label,
+          _marketFitAllowed: fit.allowed,
+        });
       });
-      return !validation.ok;
     };
-    const rejectedForMarketGuardrail = [
-      ...rankedRestaurants,
-      ...rankedActivities,
-    ].filter(
-      (item) =>
-        explicitMarketRequested &&
-        !isResultAllowedForResolvedMarket(item, requestedMarketForResults),
-    );
-    const marketSafeRestaurants = rankedRestaurants.filter(
-      (item) => !suppressMarketMismatch(item),
-    );
-    const marketSafeActivities = rankedActivities.filter(
-      (item) => !suppressMarketMismatch(item),
-    );
 
-    const photoSafeRestaurants = filterLivePhotoResults(marketSafeRestaurants);
-    const photoSafeActivities = filterLivePhotoResults(marketSafeActivities);
+    const locationFitRestaurants = applyLocationFit(rankedRestaurants);
+    const locationFitActivities = applyLocationFit(rankedActivities);
+    const locationSuppressedRestaurants = locationFitRestaurants.filter((item) => !(item as any)._marketFitAllowed);
+    const locationSuppressedActivities = locationFitActivities.filter((item) => !(item as any)._marketFitAllowed);
 
-    const photoSuppressedRestaurants = marketSafeRestaurants.filter(
-      (item) => !hasUsableLivePhoto(item),
-    );
-    const photoSuppressedActivities = marketSafeActivities.filter(
-      (item) => !hasUsableLivePhoto(item),
-    );
+    const fitRank = { requested: 0, nearby: 1, fallback: 2 } as const;
+    const sortLocationFit = (items: EnterpriseLocation[]) =>
+      [...items].sort((a, b) => {
+        const ar = fitRank[((a as any)._marketFitBucket || "fallback") as keyof typeof fitRank] ?? 2;
+        const br = fitRank[((b as any)._marketFitBucket || "fallback") as keyof typeof fitRank] ?? 2;
+        if (ar !== br) return ar - br;
+        const score = (x: any) => Number(x.match_score ?? x.term_score ?? 0) || 0;
+        const quality = (x: any) => Number(x.quality_rank_score ?? x.restaurantQualityScore ?? x.activityQualityScore ?? 0) || 0;
+        return (score(b) - score(a)) || (quality(b) - quality(a)) || (Number(hasUsableLocationImage(b)) - Number(hasUsableLocationImage(a))) || ((Number(b.rating) || 0) - (Number(a.rating) || 0)) || ((Number(b.review_count) || 0) - (Number(a.review_count) || 0)) || ((Number(a.distance_miles) || 9999) - (Number(b.distance_miles) || 9999));
+      });
+    const includeFallbackIfThin = (items: EnterpriseLocation[], minimum: number) => {
+      const requestedNearby = items.filter((item) => (item as any)._marketFitAllowed && ["requested", "nearby"].includes((item as any)._marketFitBucket));
+      const fallback = items.filter((item) => (item as any)._marketFitAllowed && (item as any)._marketFitBucket === "fallback");
+      return sortLocationFit(requestedNearby.length >= minimum ? requestedNearby : [...requestedNearby, ...fallback]);
+    };
 
-    const suppressedMarketMismatchCount =
-      rankedRestaurants.length -
-      marketSafeRestaurants.length +
-      (rankedActivities.length - marketSafeActivities.length);
+    const marketSafeRestaurants = includeFallbackIfThin(locationFitRestaurants, MIN_RESTAURANT_RESULTS);
+    const marketSafeActivities = includeFallbackIfThin(locationFitActivities, MIN_ACTIVITY_RESULTS);
+    const photoSafeRestaurants = marketSafeRestaurants.filter(hasUsableLocationImage);
+    const photoSafeActivities = marketSafeActivities.filter(hasUsableLocationImage);
+    const photoSuppressedRestaurants = locationFitRestaurants.filter((item) => (item as any)._marketFitAllowed && !hasUsableLocationImage(item));
+    const photoSuppressedActivities = locationFitActivities.filter((item) => (item as any)._marketFitAllowed && !hasUsableLocationImage(item));
+    const suppressedMarketMismatchCount = locationSuppressedRestaurants.length + locationSuppressedActivities.length;
+    const marketGuardrailRejected = 0;
 
-    const marketGuardrailRejected = rejectedForMarketGuardrail.length;
-
-    const imageDebugFor = (item: EnterpriseLocation) => {
+    const sampleFor = (item: EnterpriseLocation) => {
       const record = item as any;
-
       return {
-        name: item.name || item.restaurant_name || item.activity_name || null,
-        market: record.market ?? null,
-        state: item.state ?? null,
-        city: item.city ?? null,
-        county: record.county ?? null,
-        borough: item.borough ?? null,
-        has_photos: record.has_photos ?? null,
-        photo_status: record.photo_status ?? null,
-        image_url: Boolean(firstSearchImage(record.image_url)),
-        main_image: Boolean(firstSearchImage(record.main_image)),
-        photo_url: Boolean(firstSearchImage(record.photo_url)),
-        primary_photo_url: Boolean(firstSearchImage(record.primary_photo_url)),
-        google_photo_url: Boolean(firstSearchImage(record.google_photo_url)),
-        images: Boolean(firstSearchImage(record.images)),
-        gallery_images: Boolean(firstSearchImage(record.gallery_images)),
-        photos: Boolean(firstSearchImage(record.photos)),
-        photo_urls: Boolean(firstSearchImage(record.photo_urls)),
-        google_photos: Boolean(firstSearchImage(record.google_photos)),
+        id: record.id ?? null, name: item.name || item.restaurant_name || item.activity_name || null,
+        location_type: record.location_type ?? null, primary_category: record.primary_category ?? null, city: item.city ?? null, state: item.state ?? null, county: record.county ?? null, market: record.market ?? null, borough: item.borough ?? null, neighborhood: record.neighborhood ?? null, latitude: record.latitude ?? null, longitude: record.longitude ?? null, distance_miles: record.distance_miles ?? null, has_photos: record.has_photos ?? null, photo_status: record.photo_status ?? null, public_visibility_tier: record.public_visibility_tier ?? null, curation_tier: record.curation_tier ?? null, source_quality_status: record.source_quality_status ?? null, duplicate_status: record.duplicate_status ?? null, is_low_level: record.is_low_level ?? null, is_searchable: record.is_searchable ?? null, match_score: record.match_score ?? null, term_score: record.term_score ?? null, quality_rank_score: record.quality_rank_score ?? null, _marketFitBucket: record._marketFitBucket ?? null, _marketFitReason: record._marketFitReason ?? null, _marketFitLabel: record._marketFitLabel ?? null, reason: record._marketFitReason ?? null, ...getLocationImageDebug(record),
       };
     };
 
-    const sampleRejectedMarkets = rejectedForMarketGuardrail
-      .slice(0, 8)
-      .map((item) => ({
-        ...imageDebugFor(item),
-        reason: getMarketGuardrailRejectionReason(
-          item,
-          requestedMarketForResults,
-        ),
-      }));
+    const sampleRejectedMarkets: any[] = [];
+    const imageDebugFor = sampleFor;
 
-    (debug as any).rankedRestaurantCountBeforeMarketGuardrail =
-      rankedRestaurants.length;
-    (debug as any).rankedActivityCountBeforeMarketGuardrail =
-      rankedActivities.length;
-    (debug as any).marketSafeRestaurantCount = marketSafeRestaurants.length;
-    (debug as any).marketSafeActivityCount = marketSafeActivities.length;
-    (debug as any).photoSafeRestaurantCount = photoSafeRestaurants.length;
-    (debug as any).photoSafeActivityCount = photoSafeActivities.length;
-    (debug as any).photoSuppressedRestaurantCount =
-      photoSuppressedRestaurants.length;
-    (debug as any).photoSuppressedActivityCount =
-      photoSuppressedActivities.length;
-    (debug as any).samplePhotoSuppressedRestaurants =
-      photoSuppressedRestaurants.slice(0, 8).map(imageDebugFor);
-    (debug as any).samplePhotoSuppressedActivities = photoSuppressedActivities
-      .slice(0, 8)
-      .map(imageDebugFor);
-    (debug as any).sampleRejectedMarkets = sampleRejectedMarkets;
-    (debug as any).marketGuardrailRejected = marketGuardrailRejected;
-    (debug as any).suppressedMarketMismatchCount =
-      suppressedMarketMismatchCount;
+    Object.assign(debug as any, {
+      rpcReturnedActivityCount: activityRaw.length, rpcReturnedRestaurantCount: restaurantRaw.length,
+      rankedActivityCountBeforeLocationFit: rankedActivities.length, rankedRestaurantCountBeforeLocationFit: rankedRestaurants.length,
+      rankedRestaurantCountBeforeMarketGuardrail: rankedRestaurants.length, rankedActivityCountBeforeMarketGuardrail: rankedActivities.length,
+      requestedMarketActivityCount: locationFitActivities.filter((i) => (i as any)._marketFitBucket === "requested").length, requestedMarketRestaurantCount: locationFitRestaurants.filter((i) => (i as any)._marketFitBucket === "requested").length,
+      nearbyActivityCount: marketSafeActivities.filter((i) => (i as any)._marketFitBucket === "nearby").length, nearbyRestaurantCount: marketSafeRestaurants.filter((i) => (i as any)._marketFitBucket === "nearby").length,
+      fallbackActivityCount: marketSafeActivities.filter((i) => (i as any)._marketFitBucket === "fallback").length, fallbackRestaurantCount: marketSafeRestaurants.filter((i) => (i as any)._marketFitBucket === "fallback").length,
+      marketSafeRestaurantCount: marketSafeRestaurants.length, marketSafeActivityCount: marketSafeActivities.length,
+      photoSafeRestaurantCount: photoSafeRestaurants.length, photoSafeActivityCount: photoSafeActivities.length,
+      photoRejectedRestaurantCount: photoSuppressedRestaurants.length, photoRejectedActivityCount: photoSuppressedActivities.length,
+      photoSuppressedRestaurantCount: photoSuppressedRestaurants.length, photoSuppressedActivityCount: photoSuppressedActivities.length,
+      dedupeRejectedActivityCount: 0, dedupeRejectedRestaurantCount: 0,
+      requestedMarketActivitiesSample: locationFitActivities.filter((i) => (i as any)._marketFitBucket === "requested").slice(0, 8).map(sampleFor), requestedMarketRestaurantsSample: locationFitRestaurants.filter((i) => (i as any)._marketFitBucket === "requested").slice(0, 8).map(sampleFor),
+      nearbyIncludedActivitiesSample: marketSafeActivities.filter((i) => (i as any)._marketFitBucket === "nearby").slice(0, 8).map(sampleFor), nearbyIncludedRestaurantsSample: marketSafeRestaurants.filter((i) => (i as any)._marketFitBucket === "nearby").slice(0, 8).map(sampleFor),
+      fallbackIncludedActivitiesSample: marketSafeActivities.filter((i) => (i as any)._marketFitBucket === "fallback").slice(0, 8).map(sampleFor), fallbackIncludedRestaurantsSample: marketSafeRestaurants.filter((i) => (i as any)._marketFitBucket === "fallback").slice(0, 8).map(sampleFor),
+      locationSuppressedActivitiesSample: locationSuppressedActivities.slice(0, 8).map(sampleFor), locationSuppressedRestaurantsSample: locationSuppressedRestaurants.slice(0, 8).map(sampleFor),
+      photoRejectedActivitiesSample: photoSuppressedActivities.slice(0, 8).map(sampleFor), photoRejectedRestaurantsSample: photoSuppressedRestaurants.slice(0, 8).map(sampleFor),
+      dedupeRejectedActivitiesSample: [], dedupeRejectedRestaurantsSample: [], finalSuppressedActivitiesSample: [], finalSuppressedRestaurantsSample: [],
+      samplePhotoSuppressedRestaurants: photoSuppressedRestaurants.slice(0, 8).map(sampleFor), samplePhotoSuppressedActivities: photoSuppressedActivities.slice(0, 8).map(sampleFor), sampleRejectedMarkets: [], marketGuardrailRejected, suppressedMarketMismatchCount,
+    });
 
     let restaurants = photoSafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
@@ -1325,9 +1300,6 @@ export async function runEnterpriseSearch(
         )
       : [];
     let pairs = pairedResults
-      .filter((pair) =>
-        isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
-      )
       .filter((pair) => {
         const walkingLimitCheck = shouldHidePairForWalkingLimit(
           pair,
@@ -1398,6 +1370,8 @@ export async function runEnterpriseSearch(
       matched_locations: matched_locations.length,
       pairs: pairs.length,
     };
+    (debug as any).finalActivityCount = activities.length;
+    (debug as any).finalRestaurantCount = restaurants.length;
     const pairDisplayLabels = pairs
       .map((pair) =>
         formatDistanceFromRestaurant({
