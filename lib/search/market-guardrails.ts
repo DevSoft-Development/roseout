@@ -26,6 +26,15 @@ export function isResultAllowedForResolvedMarket(result: unknown, resolvedMarket
   const expectedState = STRICT_MARKET_STATES[expectedMarket as MarketKey];
   const market = String(item.market || "").toUpperCase();
   const state = String(item.state || "").toUpperCase();
+  const county = String(item.county || "").toLowerCase();
+
+  if (!market && expectedMarket === "LONG_ISLAND") {
+    return (
+      state === "NY" &&
+      ["nassau", "nassau county", "suffolk", "suffolk county"].includes(county) &&
+      item.is_searchable === true
+    );
+  }
 
   return market === expectedMarket && (!expectedState || state === expectedState) && item.is_searchable === true;
 }
@@ -35,8 +44,18 @@ export function getMarketGuardrailRejectionReason(result: unknown, resolvedMarke
   const item = (result ?? {}) as Record<string, unknown>;
   const expectedMarket = String(resolvedMarket).toUpperCase();
   const expectedState = STRICT_MARKET_STATES[expectedMarket as MarketKey];
-  const market = String(item.market || "").toUpperCase() || "missing";
+  const rawMarket = String(item.market || "").toUpperCase();
+  const market = rawMarket || "missing";
   const state = String(item.state || "").toUpperCase() || "missing";
+  const county = String(item.county || "").toLowerCase();
+  if (!rawMarket && expectedMarket === "LONG_ISLAND") {
+    if (state !== "NY") return `state ${state} !== NY for missing LONG_ISLAND market fallback`;
+    if (!["nassau", "nassau county", "suffolk", "suffolk county"].includes(county)) {
+      return `county ${county || "missing"} is not Nassau/Suffolk for missing LONG_ISLAND market fallback`;
+    }
+    if (item.is_searchable !== true) return "is_searchable is not true";
+    return null;
+  }
   if (market !== expectedMarket) return `market ${market} !== ${expectedMarket}`;
   if (expectedState && state !== expectedState) return `state ${state} !== ${expectedState}`;
   if (item.is_searchable !== true) return "is_searchable is not true";

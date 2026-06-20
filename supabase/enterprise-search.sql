@@ -1,5 +1,25 @@
 create extension if not exists pg_trgm;
 
+drop function if exists public.enterprise_search_recovery(
+  text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean
+);
+
+drop function if exists public.enterprise_search_recovery(
+  text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int
+);
+
+drop function if exists public.enterprise_search_locations(
+  text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean, boolean
+);
+
+drop function if exists public.enterprise_search_locations(
+  text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean
+);
+
+drop function if exists public.enterprise_search_locations(
+  text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int
+);
+
 create or replace function public.enterprise_search_locations(
   p_search_terms text[],
   p_domain text default 'any',
@@ -16,7 +36,7 @@ create or replace function public.enterprise_search_locations(
   p_allow_places_of_worship boolean default false,
   p_allow_low_level boolean default false
 ) returns table (
-  id uuid, location_type text, restaurant_name text, activity_name text, name text, address text, city text, state text, zip_code text, neighborhood text, borough text, latitude numeric, longitude numeric, description text, cuisine text, cuisine_type text, activity_type text, primary_category text, tags text[], vibe_tags text[], best_for_tags text[], date_style_tags text[], search_keywords text[], google_types text[], semantic_tags text[], intent_tags text[], search_document text, semantic_search_text text, rating numeric, review_count integer, review_score numeric, quality_score numeric, popularity_score numeric, roseout_score numeric, theouthaven_score numeric, search_score numeric, recommendation_score numeric, analytics_score numeric, reservation_url text, reservation_link text, booking_url text, external_reservation_url text, website text, phone text, image_url text, main_image text, images jsonb, gallery_images jsonb, is_searchable boolean, is_hidden boolean, active boolean, status text, data_status text, deleted_at timestamptz, match_score numeric, term_score numeric, geo_score numeric, distance_score numeric, distance_miles numeric, domain_score numeric, quality_rank_score numeric
+  id uuid, location_type text, restaurant_name text, activity_name text, name text, address text, city text, state text, zip_code text, market text, county text, neighborhood text, borough text, latitude numeric, longitude numeric, description text, cuisine text, cuisine_type text, activity_type text, primary_category text, tags text[], vibe_tags text[], best_for_tags text[], date_style_tags text[], search_keywords text[], google_types text[], semantic_tags text[], intent_tags text[], search_document text, semantic_search_text text, rating numeric, review_count integer, review_score numeric, quality_score numeric, popularity_score numeric, roseout_score numeric, theouthaven_score numeric, search_score numeric, recommendation_score numeric, analytics_score numeric, reservation_url text, reservation_link text, booking_url text, external_reservation_url text, website text, phone text, image_url text, main_image text, images jsonb, gallery_images jsonb, has_photos boolean, photo_status text, public_visibility_tier text, curation_tier text, source_quality_status text, duplicate_status text, is_low_level boolean, is_searchable boolean, is_hidden boolean, active boolean, status text, data_status text, deleted_at timestamptz, match_score numeric, term_score numeric, geo_score numeric, distance_score numeric, distance_miles numeric, domain_score numeric, quality_rank_score numeric
 ) language sql stable as $$
 with candidates as (
   select l.*,
@@ -204,7 +224,7 @@ with candidates as (
       + case when coalesce(s.source_quality_status,'enriched') in ('imported_unverified','generic_restaurant') then -700 else 0 end as quality_rank_score_calc
   from scored s
 )
-select f.id, f.location_type, f.restaurant_name, f.activity_name, f.name, f.address, f.city, f.state, f.zip_code, f.neighborhood, f.borough, f.latitude, f.longitude, f.description, f.cuisine, f.cuisine_type, f.activity_type, f.primary_category, f.tags, f.vibe_tags, f.best_for_tags, f.date_style_tags, f.search_keywords, f.google_types, f.semantic_tags, f.intent_tags, f.search_document, f.semantic_search_text, f.rating, f.review_count, f.review_score, f.quality_score, f.popularity_score, f.roseout_score, f.theouthaven_score, null::numeric, f.recommendation_score, f.analytics_score, f.reservation_url, f.reservation_link, f.booking_url, f.external_reservation_url, f.website, f.phone, f.image_url, f.main_image, to_jsonb(f.images), to_jsonb(f.gallery_images), f.is_searchable, f.is_hidden, f.active, f.status, f.data_status, f.deleted_at,
+select f.id, f.location_type, f.restaurant_name, f.activity_name, f.name, f.address, f.city, f.state, f.zip_code, f.market, f.county, f.neighborhood, f.borough, f.latitude, f.longitude, f.description, f.cuisine, f.cuisine_type, f.activity_type, f.primary_category, f.tags, f.vibe_tags, f.best_for_tags, f.date_style_tags, f.search_keywords, f.google_types, f.semantic_tags, f.intent_tags, f.search_document, f.semantic_search_text, f.rating, f.review_count, f.review_score, f.quality_score, f.popularity_score, f.roseout_score, f.theouthaven_score, null::numeric, f.recommendation_score, f.analytics_score, f.reservation_url, f.reservation_link, f.booking_url, f.external_reservation_url, f.website, f.phone, f.image_url, f.main_image, to_jsonb(f.images), to_jsonb(f.gallery_images), f.has_photos, f.photo_status, f.public_visibility_tier, f.curation_tier, f.source_quality_status, f.duplicate_status, f.is_low_level, f.is_searchable, f.is_hidden, f.active, f.status, f.data_status, f.deleted_at,
   (f.term_score_calc + f.geo_score_calc + f.domain_score_calc + f.distance_score_calc + f.quality_rank_score_calc) as match_score,
   f.term_score_calc, f.geo_score_calc, f.distance_score_calc, round(f.distance_miles_calc::numeric,2), f.domain_score_calc, f.quality_rank_score_calc
 from final f
@@ -228,7 +248,7 @@ create or replace function public.enterprise_search_recovery(
   p_limit int default 80,
   p_allow_places_of_worship boolean default false
 ) returns table (
-  id uuid, location_type text, restaurant_name text, activity_name text, name text, address text, city text, state text, zip_code text, neighborhood text, borough text, latitude numeric, longitude numeric, description text, cuisine text, cuisine_type text, activity_type text, primary_category text, tags text[], vibe_tags text[], best_for_tags text[], date_style_tags text[], search_keywords text[], google_types text[], semantic_tags text[], intent_tags text[], search_document text, semantic_search_text text, rating numeric, review_count integer, review_score numeric, quality_score numeric, popularity_score numeric, roseout_score numeric, theouthaven_score numeric, search_score numeric, recommendation_score numeric, analytics_score numeric, reservation_url text, reservation_link text, booking_url text, external_reservation_url text, website text, phone text, image_url text, main_image text, images jsonb, gallery_images jsonb, is_searchable boolean, is_hidden boolean, active boolean, status text, data_status text, deleted_at timestamptz, match_score numeric, term_score numeric, geo_score numeric, distance_score numeric, distance_miles numeric, domain_score numeric, quality_rank_score numeric
+  id uuid, location_type text, restaurant_name text, activity_name text, name text, address text, city text, state text, zip_code text, market text, county text, neighborhood text, borough text, latitude numeric, longitude numeric, description text, cuisine text, cuisine_type text, activity_type text, primary_category text, tags text[], vibe_tags text[], best_for_tags text[], date_style_tags text[], search_keywords text[], google_types text[], semantic_tags text[], intent_tags text[], search_document text, semantic_search_text text, rating numeric, review_count integer, review_score numeric, quality_score numeric, popularity_score numeric, roseout_score numeric, theouthaven_score numeric, search_score numeric, recommendation_score numeric, analytics_score numeric, reservation_url text, reservation_link text, booking_url text, external_reservation_url text, website text, phone text, image_url text, main_image text, images jsonb, gallery_images jsonb, has_photos boolean, photo_status text, public_visibility_tier text, curation_tier text, source_quality_status text, duplicate_status text, is_low_level boolean, is_searchable boolean, is_hidden boolean, active boolean, status text, data_status text, deleted_at timestamptz, match_score numeric, term_score numeric, geo_score numeric, distance_score numeric, distance_miles numeric, domain_score numeric, quality_rank_score numeric
 ) language sql stable as $$
   select * from public.enterprise_search_locations(
     p_search_terms,
@@ -272,11 +292,7 @@ create index if not exists locations_intent_tags_gin_idx on public.locations usi
 create index if not exists locations_search_document_trgm_idx on public.locations using gin (search_document gin_trgm_ops);
 create index if not exists locations_semantic_search_text_trgm_idx on public.locations using gin (semantic_search_text gin_trgm_ops);
 
-grant execute on function public.enterprise_search_locations(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int) to authenticated;
-grant execute on function public.enterprise_search_locations(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int) to service_role;
-grant execute on function public.enterprise_search_recovery(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int) to authenticated;
-grant execute on function public.enterprise_search_recovery(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int) to service_role;
-grant execute on function public.enterprise_search_locations(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean) to authenticated;
-grant execute on function public.enterprise_search_locations(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean) to service_role;
+grant execute on function public.enterprise_search_locations(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean, boolean) to authenticated;
+grant execute on function public.enterprise_search_locations(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean, boolean) to service_role;
 grant execute on function public.enterprise_search_recovery(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean) to authenticated;
 grant execute on function public.enterprise_search_recovery(text[], text, text, text, text, text, text, text, numeric, numeric, numeric, int, boolean) to service_role;

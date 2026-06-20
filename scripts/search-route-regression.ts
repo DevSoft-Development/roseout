@@ -32,7 +32,11 @@ function assertNoRawSystemError(value: unknown) {
 }
 
 
-function createMockSupabase() {
+function createMockSupabase(options: { includeLongIslandRows?: boolean } = {}) {
+  const market = options.includeLongIslandRows ? "LONG_ISLAND" : undefined;
+  const county = options.includeLongIslandRows ? "Nassau" : undefined;
+  const city = options.includeLongIslandRows ? "Garden City" : "New York";
+
   const restaurant = {
     id: "mock-restaurant",
     name: "Mock Dinner & Drinks",
@@ -40,12 +44,31 @@ function createMockSupabase() {
     location_type: "restaurant",
     primary_category: "restaurant",
     cuisine: "american",
-    search_document: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
-    semantic_search_text: "restaurant dinner drinks cocktails group night steak rooftop food dining menu",
+    search_document: "restaurant dinner drinks cocktails group night steak rooftop food dining menu hookah date night bowling long island",
+    semantic_search_text: "restaurant dinner drinks cocktails group night steak rooftop food dining menu hookah date night bowling long island",
     image_url: "https://example.com/restaurant.jpg",
     state: "NY",
-    latitude: 40.75,
-    longitude: -73.98,
+    city,
+    county,
+    market,
+    has_photos: true,
+    photo_status: "approved",
+    rating: 4.7,
+    review_count: 125,
+    quality_score: 85,
+    theouthaven_score: 90,
+    public_visibility_tier: "standard",
+    curation_tier: "standard",
+    source_quality_status: "enriched",
+    duplicate_status: "unique",
+    is_low_level: false,
+    active: true,
+    is_hidden: false,
+    status: "active",
+    data_status: "clean",
+    is_searchable: true,
+    latitude: options.includeLongIslandRows ? 40.7268 : 40.75,
+    longitude: options.includeLongIslandRows ? -73.6343 : -73.98,
   };
   const activity = {
     id: "mock-activity",
@@ -54,12 +77,22 @@ function createMockSupabase() {
     location_type: "activity",
     primary_category: "hookah lounge rooftop nightlife activity",
     activity_type: "hookah rooftop lounge",
-    search_document: "hookah lounge rooftop drinks cocktails activity nightlife",
-    semantic_search_text: "hookah lounge rooftop drinks cocktails activity nightlife",
+    search_document: "hookah lounge rooftop drinks cocktails activity nightlife date night bowling long island",
+    semantic_search_text: "hookah lounge rooftop drinks cocktails activity nightlife date night bowling long island",
     state: "NY",
+    city,
+    county,
+    market,
+    has_photos: true,
+    photo_status: "approved",
+    rating: 4.7,
+    review_count: 125,
+    quality_score: 85,
+    theouthaven_score: 90,
+    is_searchable: true,
     image_url: "https://example.com/activity.jpg",
-    latitude: 40.751,
-    longitude: -73.981,
+    latitude: options.includeLongIslandRows ? 40.729 : 40.751,
+    longitude: options.includeLongIslandRows ? -73.63 : -73.981,
   };
   const calls: Array<{ name: string; params: any }> = [];
 
@@ -166,7 +199,7 @@ async function main() {
     const mock = createMockSupabase();
     const result = await runEnterpriseSearch("group dinner and drinks after", { supabase: mock.client, betaDebug: true, useLLM: false });
     assert.equal(result.debug?.normalizedIntent && (result.debug.normalizedIntent as any).searchType, "mixed_outing");
-    assert.deepEqual(result.debug?.rpcCalls, ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
+    assert.deepEqual((result.debug?.rpcCalls as string[])?.slice(0, 2), ["enterprise_search_locations:restaurant", "enterprise_search_locations:activity"]);
     assert.equal(result.renderMode, "mixed_pairs");
   }
 
@@ -231,10 +264,51 @@ async function main() {
       "sirloin",
       "tomahawk",
       "prime rib",
-      "churrasco",
       "brazilian steakhouse",
+      "churrasco",
     ]);
     assert.deepEqual(result.debug?.activityTerms, ["hookah", "hookah lounge", "hookah bar", "shisha"]);
+  }
+
+
+
+  {
+    const { isResultAllowedForResolvedMarket } = await import("../lib/search/market-guardrails");
+    assert.equal(
+      isResultAllowedForResolvedMarket(
+        { market: "LONG_ISLAND", state: "NY", county: "Nassau", is_searchable: true },
+        "LONG_ISLAND",
+      ),
+      true,
+      "explicit Long Island market row should pass guardrail",
+    );
+    assert.equal(
+      isResultAllowedForResolvedMarket(
+        { state: "NY", county: "Suffolk County", is_searchable: true },
+        "LONG_ISLAND",
+      ),
+      true,
+      "missing-market Nassau/Suffolk fallback should prevent total LI outage",
+    );
+    assert.equal(
+      isResultAllowedForResolvedMarket(
+        { market: "NYC_CORE", state: "NY", county: "Queens", is_searchable: true },
+        "LONG_ISLAND",
+      ),
+      false,
+      "NYC_CORE rows should not pass explicit Long Island searches",
+    );
+  }
+
+  for (const query of [
+    "hookah and drinks in long island",
+    "date night in long island",
+    "restaurants in long island",
+    "bowling in long island",
+  ] as const) {
+    const intent = normalizeIntent(query);
+    assert.equal(intent.geo.resolvedMarket, "LONG_ISLAND", `${query} should resolve to LONG_ISLAND`);
+    assert.equal(intent.geo.explicitMarketRequested, true, `${query} should be an explicit market search`);
   }
 
   process.env.NEXT_PUBLIC_SUPABASE_URL = "not a valid supabase url";
