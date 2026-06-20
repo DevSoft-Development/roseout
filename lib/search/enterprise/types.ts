@@ -120,6 +120,8 @@ export type EnterpriseLocation = {
   search_score?: number | null;
   recommendation_score?: number | null;
   analytics_score?: number | null;
+  ml_score?: number | null;
+  ml_boost?: number | null;
   reservation_url?: string | null;
   reservation_link?: string | null;
   booking_url?: string | null;

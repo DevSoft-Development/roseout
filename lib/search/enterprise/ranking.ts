@@ -12,6 +12,7 @@ import {
   userAskedForPlaceOfWorship,
 } from "./taxonomy";
 import { isWellnessActivity } from "../lowLevel";
+import { calculateMlBoost } from "@/lib/ml/locationRanking";
 import {
   hasRelaxedActivityIntent,
   hasSportsWatchIntent,
@@ -1390,7 +1391,8 @@ function relevance(
     quality -
     chainPenalty(r, intent) +
     wellnessIntentAdjustment(r, intent, domain) +
-    Number(r.search_boost ?? 0)
+    Number(r.search_boost ?? 0) +
+    ((r.ml_boost = calculateMlBoost(r.ml_score)), r.ml_boost ?? 0)
   );
 }
 export function rankRestaurantResults(

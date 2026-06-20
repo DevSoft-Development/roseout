@@ -55,6 +55,7 @@ import { detectGeoIntent } from "./geo-taxonomy";
 import { logSearchHealthEvent } from "./searchHealthLogger";
 import { parseOutingDateTime } from "../parse-outing-date-time";
 import { validatePlaceForMarket } from "../../location-market-validation";
+import { getLocationMlScoreMap } from "@/lib/ml/locationMlScores";
 import {
   getMarketGuardrailRejectionReason,
   isExplicitMarket,
@@ -1009,8 +1010,27 @@ export async function runEnterpriseSearch(
       "activity",
     );
     const rankStarted = Date.now();
+    const attachMlScores = async (items: EnterpriseLocation[]) => {
+      const scoreMap = await getLocationMlScoreMap(
+        items.map((item) => String(item.id ?? "")).filter(Boolean),
+      );
+      return items.map((item) => ({
+        ...item,
+        ml_score: scoreMap.get(String(item.id ?? "")) ?? null,
+      }));
+    };
+    const [restaurantCandidatesWithMl, activityCandidatesWithMl] = await Promise.all([
+      attachMlScores(uniqueById(restaurantRaw)),
+      attachMlScores(uniqueById(activityRaw)),
+    ]);
+    (debug as any).mlRanking = {
+      enabled: true,
+      restaurantScoresLoaded: restaurantCandidatesWithMl.filter((item) => item.ml_score != null).length,
+      activityScoresLoaded: activityCandidatesWithMl.filter((item) => item.ml_score != null).length,
+      boostFormula: "min(20, max(0, ml_score) * 0.15)",
+    };
     let rankedRestaurants = rankRestaurantResults(
-      uniqueById(restaurantRaw),
+      restaurantCandidatesWithMl,
       restaurantRankingIntent,
     );
     const requestedBorough = restaurantRankingIntent.geo?.borough ?? null;
@@ -1163,7 +1183,7 @@ export async function runEnterpriseSearch(
         : rankedRestaurants;
     }
     const rankedActivities = rankActivityResults(
-      uniqueById(activityRaw),
+      activityCandidatesWithMl,
       effectiveIntent,
     );
     const singleVenueWith = detectSingleVenueWithIntent(
