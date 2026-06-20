@@ -90,6 +90,7 @@ export type EnterpriseLocation = {
   state?: string | null;
   zip_code?: string | null;
   market?: string | null;
+  county?: string | null;
   neighborhood?: string | null;
   borough?: string | null;
   latitude?: number | string | null;
@@ -129,6 +130,13 @@ export type EnterpriseLocation = {
   main_image?: string | null;
   images?: string[] | string | null;
   gallery_images?: string[] | string | null;
+  has_photos?: boolean | null;
+  photo_status?: string | null;
+  public_visibility_tier?: string | null;
+  curation_tier?: string | null;
+  source_quality_status?: string | null;
+  duplicate_status?: string | null;
+  is_low_level?: boolean | null;
   is_searchable?: boolean | null;
   is_hidden?: boolean | null;
   active?: boolean | null;

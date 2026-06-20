@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "isolatedModules": false,
     "strict": false,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "incremental": false
   },
   "include": [
     "scripts/search-route-regression.ts",
