@@ -126,6 +126,85 @@ function uniqueById(items: EnterpriseLocation[]) {
     return true;
   });
 }
+
+type MarketFitBucket = "requested" | "nearby" | "fallback";
+
+function classifyMarketFit(
+  item: EnterpriseLocation,
+  requestedMarket?: string | null,
+): {
+  bucket: MarketFitBucket;
+  reason: string;
+  label: string | null;
+} {
+  const record = item as any;
+  const market = String(record.market ?? "").toUpperCase();
+  const state = String(record.state ?? "").toUpperCase();
+  const county = String(record.county ?? "").toLowerCase();
+
+  if (requestedMarket === "LONG_ISLAND") {
+    if (
+      market === "LONG_ISLAND" ||
+      (state === "NY" && ["nassau", "suffolk"].includes(county))
+    ) {
+      return {
+        bucket: "requested",
+        reason: "long_island_market_or_nassau_suffolk",
+        label: null,
+      };
+    }
+
+    if (state === "NY" || state === "NJ") {
+      return {
+        bucket: "nearby",
+        reason: "nearby_region_for_long_island_request",
+        label: "Near your requested location",
+      };
+    }
+
+    return {
+      bucket: "fallback",
+      reason: "fallback_region_for_long_island_request",
+      label: "Recommended nearby",
+    };
+  }
+
+  if (
+    requestedMarket &&
+    isResultAllowedForResolvedMarket(item, requestedMarket)
+  ) {
+    return {
+      bucket: "requested",
+      reason: "allowed_for_requested_market",
+      label: null,
+    };
+  }
+
+  return {
+    bucket: requestedMarket ? "nearby" : "fallback",
+    reason: requestedMarket
+      ? "nearby_region_for_requested_market"
+      : "no_requested_market",
+    label: requestedMarket
+      ? "Near your requested location"
+      : "Recommended nearby",
+  };
+}
+
+function withMarketFit(
+  item: EnterpriseLocation,
+  requestedMarket?: string | null,
+): EnterpriseLocation {
+  const fit = classifyMarketFit(item, requestedMarket);
+
+  return {
+    ...item,
+    _marketFitBucket: fit.bucket,
+    _marketFitReason: fit.reason,
+    _marketFitLabel: fit.label,
+  } as EnterpriseLocation;
+}
+
 function hasPairConstraint(intent: SearchIntent) {
   return Boolean(
     intent.pairingPreference && intent.pairingPreference.distanceMode !== "any",
@@ -1185,8 +1264,9 @@ export async function runEnterpriseSearch(
     const explicitMarketRequested =
       isExplicitMarket(requestedMarketForResults) &&
       (effectiveIntent.geo as any).explicitMarketRequested !== false;
+    const useLocationFitForLongIsland = requestedMarketForResults === "LONG_ISLAND";
     const suppressMarketMismatch = (item: EnterpriseLocation) => {
-      if (!requestedMarketForResults) return false;
+      if (!requestedMarketForResults || useLocationFitForLongIsland) return false;
       if (
         explicitMarketRequested &&
         !isResultAllowedForResolvedMarket(item, requestedMarketForResults)
@@ -1203,20 +1283,22 @@ export async function runEnterpriseSearch(
       });
       return !validation.ok;
     };
-    const rejectedForMarketGuardrail = [
-      ...rankedRestaurants,
-      ...rankedActivities,
-    ].filter(
-      (item) =>
-        explicitMarketRequested &&
-        !isResultAllowedForResolvedMarket(item, requestedMarketForResults),
-    );
-    const marketSafeRestaurants = rankedRestaurants.filter(
-      (item) => !suppressMarketMismatch(item),
-    );
-    const marketSafeActivities = rankedActivities.filter(
-      (item) => !suppressMarketMismatch(item),
-    );
+    const rejectedForMarketGuardrail = useLocationFitForLongIsland
+      ? []
+      : [
+          ...rankedRestaurants,
+          ...rankedActivities,
+        ].filter(
+          (item) =>
+            explicitMarketRequested &&
+            !isResultAllowedForResolvedMarket(item, requestedMarketForResults),
+        );
+    const marketSafeRestaurants = rankedRestaurants
+      .filter((item) => !suppressMarketMismatch(item))
+      .map((item) => withMarketFit(item, requestedMarketForResults));
+    const marketSafeActivities = rankedActivities
+      .filter((item) => !suppressMarketMismatch(item))
+      .map((item) => withMarketFit(item, requestedMarketForResults));
 
     const photoSafeRestaurants = filterLivePhotoResults(marketSafeRestaurants);
     const photoSafeActivities = filterLivePhotoResults(marketSafeActivities);
@@ -1232,6 +1314,45 @@ export async function runEnterpriseSearch(
       rankedRestaurants.length -
       marketSafeRestaurants.length +
       (rankedActivities.length - marketSafeActivities.length);
+    const marketFitItems = [...marketSafeRestaurants, ...marketSafeActivities];
+    const requestedMarketActivityCount = marketSafeActivities.filter(
+      (item: any) => item._marketFitBucket === "requested",
+    ).length;
+    const nearbyActivityCount = marketSafeActivities.filter(
+      (item: any) => item._marketFitBucket === "nearby",
+    ).length;
+    const fallbackActivityCount = marketSafeActivities.filter(
+      (item: any) => item._marketFitBucket === "fallback",
+    ).length;
+    const locationSuppressedActivitiesSample = useLocationFitForLongIsland
+      ? []
+      : rejectedForMarketGuardrail
+          .filter((item: any) => item.activity_name || item.location_type === "activity")
+          .slice(0, 8)
+          .map((item) => ({
+            name: item.name || item.activity_name || null,
+            market: (item as any).market ?? null,
+            state: item.state ?? null,
+            city: item.city ?? null,
+            county: (item as any).county ?? null,
+            reason: getMarketGuardrailRejectionReason(
+              item,
+              requestedMarketForResults,
+            ),
+          }));
+    const nearbyIncludedActivitiesSample = marketSafeActivities
+      .filter((item: any) => item._marketFitBucket === "nearby")
+      .slice(0, 8)
+      .map((item: any) => ({
+        name: item.name || item.activity_name || null,
+        market: item.market ?? null,
+        state: item.state ?? null,
+        city: item.city ?? null,
+        county: item.county ?? null,
+        _marketFitBucket: item._marketFitBucket,
+        _marketFitReason: item._marketFitReason,
+        _marketFitLabel: item._marketFitLabel,
+      }));
 
     const marketGuardrailRejected = rejectedForMarketGuardrail.length;
 
@@ -1291,6 +1412,22 @@ export async function runEnterpriseSearch(
     (debug as any).marketGuardrailRejected = marketGuardrailRejected;
     (debug as any).suppressedMarketMismatchCount =
       suppressedMarketMismatchCount;
+    (debug as any).requestedMarketActivityCount =
+      requestedMarketActivityCount;
+    (debug as any).nearbyActivityCount = nearbyActivityCount;
+    (debug as any).fallbackActivityCount = fallbackActivityCount;
+    (debug as any).locationSuppressedActivitiesSample =
+      locationSuppressedActivitiesSample;
+    (debug as any).nearbyIncludedActivitiesSample =
+      nearbyIncludedActivitiesSample;
+    (debug as any).locationFitBucketCounts = marketFitItems.reduce(
+      (acc: Record<string, number>, item: any) => {
+        const bucket = item._marketFitBucket ?? "unknown";
+        acc[bucket] = (acc[bucket] ?? 0) + 1;
+        return acc;
+      },
+      {},
+    );
 
     let restaurants = photoSafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
@@ -1325,8 +1462,10 @@ export async function runEnterpriseSearch(
         )
       : [];
     let pairs = pairedResults
-      .filter((pair) =>
-        isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
+      .filter(
+        (pair) =>
+          requestedMarketForResults === "LONG_ISLAND" ||
+          isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
       )
       .filter((pair) => {
         const walkingLimitCheck = shouldHidePairForWalkingLimit(

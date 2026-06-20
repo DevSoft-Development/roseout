@@ -335,9 +335,9 @@ export async function POST(request: Request) {
     });
 
     const marketDetection = detectRequestedMarket(cleanInput);
-    const forceLegacyForLongIsland = marketDetection.requestedMarket === "LONG_ISLAND";
+    const forceLegacyForLongIsland = false;
     const forceLegacyForUserLocation = Boolean(currentLocationUserLocation);
-    const searchBackendUsed = forceLegacyForLongIsland ? "legacy_for_long_island" : forceLegacyForUserLocation ? "legacy_for_current_location" : "edge";
+    const searchBackendUsed = forceLegacyForUserLocation ? "legacy_for_current_location" : "edge";
     const result: any = forceLegacyForLongIsland || forceLegacyForUserLocation
       ? await legacySearch()
       : await runCreateSearchWithEdgeFallback(
@@ -386,7 +386,11 @@ export async function POST(request: Request) {
 
     const resolvedMarketForGuardrail = (result.debug as any)?.resolvedMarket ?? (result.debug as any)?.normalizedIntent?.geo?.resolvedMarket ?? null;
     const explicitMarketRequestedForGuardrail = isExplicitMarket(resolvedMarketForGuardrail) && Boolean((result.debug as any)?.explicitMarketRequested ?? (result.debug as any)?.normalizedIntent?.geo?.explicitMarketRequested);
-    const guardResult = (item: any) => !explicitMarketRequestedForGuardrail || isResultAllowedForResolvedMarket(item, resolvedMarketForGuardrail);
+    const guardResult = (item: any) =>
+      resolvedMarketForGuardrail === "LONG_ISLAND"
+        ? true
+        : !explicitMarketRequestedForGuardrail ||
+          isResultAllowedForResolvedMarket(item, resolvedMarketForGuardrail);
 
     const normalizedRestaurantsBeforeGuardrail = rawRestaurants.map(normalizeResultCard).filter(hasPublicCardImage);
     const normalizedActivitiesBeforeGuardrail = rawActivities.map(normalizeResultCard).filter(hasPublicCardImage);
@@ -441,7 +445,7 @@ export async function POST(request: Request) {
     };
 
     const normalizedPairsBeforeGuardrail = rawPairs.map(normalizeNestedPublicImages);
-    const publicPairs = explicitMarketRequestedForGuardrail
+    const publicPairs = explicitMarketRequestedForGuardrail && resolvedMarketForGuardrail !== "LONG_ISLAND"
       ? normalizedPairsBeforeGuardrail.filter((pair: any) => isPairAllowedForResolvedMarket(pair, resolvedMarketForGuardrail))
       : normalizedPairsBeforeGuardrail;
 
