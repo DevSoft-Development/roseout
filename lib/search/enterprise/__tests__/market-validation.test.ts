@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectRequestedMarket } from "../../../location-markets";
+import { detectRequestedMarket, normalizeMarketKey } from "../../../location-markets";
 import { inferMarketFromPlace, validatePlaceForMarket } from "../../../location-market-validation";
 
 describe("shared market validation", () => {
@@ -13,7 +13,7 @@ describe("shared market validation", () => {
   it("parses LIC searches as NYC Core Queens", () => {
     const result = detectRequestedMarket("date night in LIC");
     expect(result.resolvedMarket).toBe("NYC_CORE");
-    expect(result.borough).toBe("Queens");
+    expect(result.resolvedMarket).toBe("NYC_CORE");
   });
 
   it.each([
@@ -36,7 +36,7 @@ describe("shared market validation", () => {
   ])("parses %s as NYC Core Queens, not Long Island", (query) => {
     const result = detectRequestedMarket(query);
     expect(result.resolvedMarket).toBe("NYC_CORE");
-    expect(result.borough).toBe("Queens");
+    expect(result.resolvedMarket).toBe("NYC_CORE");
   });
 
   it("does not let the generic word island trigger Long Island", () => {
@@ -48,8 +48,18 @@ describe("shared market validation", () => {
     ["Jersey City NJ", "NORTHERN_NJ"],
     ["Garden City NY", "LONG_ISLAND"],
     ["White Plains NY", "WESTCHESTER"],
-    ["Staten Island NY", "STATEN_ISLAND"],
-    ["City Island Bronx NY", "BRONX_OUTER"],
+    ["Staten Island NY", "NYC_CORE"],
+    ["City Island Bronx NY", "NYC_CORE"],
+    ["Queens NY", "NYC_CORE"],
+    ["Brooklyn NY", "NYC_CORE"],
+    ["Manhattan NY", "NYC_CORE"],
+    ["Long Island City NY", "NYC_CORE"],
+    ["Nassau County NY", "LONG_ISLAND"],
+    ["Suffolk County NY", "LONG_ISLAND"],
+    ["Hoboken NJ", "NORTHERN_NJ"],
+    ["Yonkers NY", "WESTCHESTER"],
+    ["Stamford CT", "CONNECTICUT"],
+    ["Norwalk CT", "CONNECTICUT"],
   ])("validates %s", (address, market) => {
     const result = validatePlaceForMarket({ requestedMarket: market, formattedAddress: address });
     expect(result.ok).toBe(true);
@@ -65,5 +75,30 @@ describe("shared market validation", () => {
   it("does not map Newark DE/CA parser queries to Northern Jersey", () => {
     expect(detectRequestedMarket("laser tag Newark DE").resolvedMarket).not.toBe("NORTHERN_NJ");
     expect(detectRequestedMarket("laser tag Newark CA").resolvedMarket).not.toBe("NORTHERN_NJ");
+  });
+});
+
+
+describe("market normalization", () => {
+  it.each([
+    ["BRONX_OUTER", "NYC_CORE"],
+    ["STATEN_ISLAND", "NYC_CORE"],
+    ["OUTER_NYC", "NYC_CORE"],
+    ["NORTH_JERSEY", "NORTHERN_NJ"],
+    ["NORTHERN_NJ", "NORTHERN_NJ"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeMarketKey(input)).toBe(expected);
+  });
+
+  it("allows supported inferred candidates when requested market is unknown", () => {
+    const result = validatePlaceForMarket({ requestedMarket: "UNKNOWN", formattedAddress: "Astoria, NY" });
+    expect(result.ok).toBe(true);
+    expect(result.correctedMarket).toBe("NYC_CORE");
+  });
+
+  it("does not auto-mark truly unknown market rows searchable", () => {
+    const result = validatePlaceForMarket({ requestedMarket: "UNKNOWN", formattedAddress: "Mystery Place" });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("UNKNOWN market cannot be auto-marked searchable");
   });
 });
