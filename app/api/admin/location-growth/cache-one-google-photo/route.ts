@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 import { cacheGooglePlacePhotoToStorage } from "@/lib/location-growth/cacheGooglePhoto";
@@ -11,6 +13,9 @@ function clean(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json().catch(() => ({}));
 

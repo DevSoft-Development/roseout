@@ -98,12 +98,74 @@ const CANONICAL_LOCATION_BLOCKLIST = new Set([
   "source_id",
 ]);
 
+const CANONICAL_LOCATION_EDIT_COLUMNS = new Set([
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "formatted_address",
+  "address",
+  "days_of_operation",
+  "dress_code",
+  "parking_info",
+  "reservation_discovery_status",
+  "reservation_manual_override",
+  "reservation_provider",
+  "reservation_url",
+  "external_reservation_url",
+  "reservation_phone",
+  "booking_url",
+  "website",
+  "website_url",
+  "phone",
+  "description",
+  "short_description",
+  "neighborhood",
+  "borough",
+  "city",
+  "state",
+  "zip_code",
+  "postal_code",
+  "country",
+  "latitude",
+  "longitude",
+  "price_level",
+  "price_range",
+  "ambiance",
+  "atmosphere",
+  "good_for",
+  "cuisine",
+  "cuisine_type",
+  "activity_type",
+  "tags",
+  "primary_tag",
+  "primary_category",
+  "category",
+  "is_searchable",
+  "publish_ready",
+  "data_status",
+  "photo_status",
+  "image_url",
+  "main_image",
+  "images",
+  "google_place_id",
+  "health_department_score",
+  "health_department_grade",
+  "health_department_source",
+  "health_department_source_url",
+  "health_department_last_inspection_date",
+  "updated_at",
+]);
+
 function sanitizeCanonicalLocationPayload(payload: Record<string, unknown>) {
   const copy = sanitizeLocationPayload(payload);
 
-  for (const key of CANONICAL_LOCATION_BLOCKLIST) {
-    delete copy[key];
+  for (const key of Object.keys(copy)) {
+    if (CANONICAL_LOCATION_BLOCKLIST.has(key) || !CANONICAL_LOCATION_EDIT_COLUMNS.has(key)) {
+      delete copy[key];
+    }
   }
+
+  copy.updated_at = new Date().toISOString();
 
   if (
     copy.health_department_score !== undefined &&
@@ -239,8 +301,9 @@ export async function PATCH(req: Request) {
     if (!existingLocation.data?.id) {
       return NextResponse.json(
         {
-          error:
-            "This record is not linked to a canonical location yet. Please sync it into locations before editing.",
+          success: false,
+          error: "Canonical location row not found. Please repair this location before editing.",
+          code: "CANONICAL_LOCATION_MISSING",
         },
         { status: 404 },
       );

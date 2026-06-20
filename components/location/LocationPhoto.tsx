@@ -40,7 +40,7 @@ export default function LocationPhoto({
   priority = false,
   className = "",
   sizes = "(max-width: 768px) 100vw, 33vw",
-  fallbackLabel = "Photo coming soon",
+  fallbackLabel = "TheOutHaven",
 }: {
   src?: string | null;
   alt: string;
@@ -75,9 +75,6 @@ export default function LocationPhoto({
               className="h-8 w-8 object-contain"
             />
           </div>
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
-            {fallbackLabel}
-          </p>
         </div>
       </div>
     );
@@ -91,12 +88,7 @@ export default function LocationPhoto({
       unoptimized
       priority={priority}
       sizes={sizes}
-      onError={() => {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[LocationPhoto] failed to load image", cleanedSrc);
-        }
-        setFailed(true);
-      }}
+      onError={() => setFailed(true)}
       className={`object-cover transition duration-700 group-hover:scale-[1.06] ${className}`}
     />
   );

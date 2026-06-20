@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { updateLocationImageWithCachedUrl } from "@/lib/cacheLocationImage";
 
@@ -14,6 +16,9 @@ function sanitizeSearch(value: string) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationsEdit);
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json().catch(() => ({}));
 
