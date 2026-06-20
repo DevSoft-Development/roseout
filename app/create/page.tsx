@@ -14,6 +14,7 @@ import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
+import { TOH_IMAGE_FALLBACK, isUsableImageUrl } from "@/lib/location-images";
 import { normalizePublicCardImage } from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
@@ -81,6 +82,8 @@ type RestaurantCard = LocationScoreFields &
     pair_walking_label?: string | null;
     health_department_grade?: string | null;
     health_department_score?: number | string | null;
+    _marketFitBucket?: "requested" | "nearby" | "fallback" | null;
+    _marketFitLabel?: string | null;
   };
 
 type ActivityCard = LocationScoreFields &
@@ -129,6 +132,8 @@ type ActivityCard = LocationScoreFields &
     pair_walking_label?: string | null;
     health_department_grade?: string | null;
     health_department_score?: number | string | null;
+    _marketFitBucket?: "requested" | "nearby" | "fallback" | null;
+    _marketFitLabel?: string | null;
   };
 
 type DistancePreference = "walking" | "miles";
@@ -1622,6 +1627,8 @@ export default function CreatePage() {
                                 index={pairIndex}
                                 type={restaurant ? "restaurant" : "activity"}
                                 imageUrl={imageUrl}
+                                marketFitBucket={(restaurant || activity)?._marketFitBucket}
+                                marketFitLabel={(restaurant || activity)?._marketFitLabel}
                                 title={[
                                   restaurant
                                     ? getLocationName(restaurant)
@@ -1707,6 +1714,8 @@ export default function CreatePage() {
                                 index={restaurantIndex}
                                 type="restaurant"
                                 imageUrl={restaurantImage}
+                                marketFitBucket={restaurant._marketFitBucket}
+                                marketFitLabel={restaurant._marketFitLabel}
                                 title={getLocationName(restaurant)}
                                 eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
@@ -1799,6 +1808,8 @@ export default function CreatePage() {
                                 index={activityIndex}
                                 type="activity"
                                 imageUrl={activityImage}
+                                marketFitBucket={activity._marketFitBucket}
+                                marketFitLabel={activity._marketFitLabel}
                                 title={getLocationName(activity)}
                                 eyebrow={getPrimaryCategory(activity)}
                                 address={formatAddress(activity)}
@@ -2574,6 +2585,8 @@ function ResultCard({
   analyticsMetadata,
   healthDepartmentGrade,
   healthDepartmentScore,
+  marketFitBucket,
+  marketFitLabel,
 }: {
   index: number;
   type: "restaurant" | "activity";
@@ -2597,6 +2610,8 @@ function ResultCard({
   analyticsMetadata?: LocationAnalyticsMetadata;
   healthDepartmentGrade?: string | null;
   healthDepartmentScore?: number | string | null;
+  marketFitBucket?: "requested" | "nearby" | "fallback" | string | null;
+  marketFitLabel?: string | null;
 }) {
   const whyPicked = getWhyPicked({
     primaryTag,
@@ -2612,11 +2627,12 @@ function ResultCard({
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
   const healthGrade = typeof healthDepartmentGrade === "string" ? healthDepartmentGrade.trim().toUpperCase() : "";
   const healthScore = formatHealthDepartmentScore(healthDepartmentScore);
-  const resolvedImageUrl =
-    typeof imageUrl === "string" && imageUrl.trim().length > 8
-      ? imageUrl.trim()
-      : null;
-  const displayImageUrl = resolvedImageUrl;
+  const resolvedImageUrl = isUsableImageUrl(imageUrl) ? imageUrl.trim() : TOH_IMAGE_FALLBACK;
+  const [displayImageUrl, setDisplayImageUrl] = useState(resolvedImageUrl);
+
+  useEffect(() => {
+    setDisplayImageUrl(resolvedImageUrl);
+  }, [resolvedImageUrl]);
 
   if (
     process.env.NODE_ENV !== "production" &&
@@ -2649,8 +2665,7 @@ function ResultCard({
       }}
     >
       <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
-        {displayImageUrl ? (
-          <>
+        <>
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
               <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
                 <img
@@ -2669,19 +2684,12 @@ function ResultCard({
               loading={priority ? "eager" : "lazy"}
               referrerPolicy="no-referrer"
               onError={(event) => {
-                console.warn("[ResultCard] image failed to load", {
-                  title,
-                  imageUrl: displayImageUrl,
-                });
-                event.currentTarget.style.opacity = "0";
+                if (displayImageUrl !== TOH_IMAGE_FALLBACK) {
+                  setDisplayImageUrl(TOH_IMAGE_FALLBACK);
+                }
               }}
             />
-          </>
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-xs text-neutral-500">
-            Photo Coming Soon
-          </div>
-        )}
+        </>
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-black/50 to-black/5" />
 
@@ -2697,6 +2705,12 @@ function ResultCard({
           {rating ? (
             <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-black sm:px-2.5 sm:py-1 sm:text-[11px]">
               ★ {rating}
+            </span>
+          ) : null}
+
+          {marketFitBucket === "nearby" || marketFitBucket === "fallback" ? (
+            <span className="rounded-full border border-[#e1062a]/35 bg-black/75 px-2 py-0.5 text-[10px] font-black text-red-50 backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
+              {marketFitLabel || (marketFitBucket === "fallback" ? "Recommended nearby" : "Near your requested location")}
             </span>
           ) : null}
 

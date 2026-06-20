@@ -1,4 +1,5 @@
 import type { EnterpriseLocation } from "./types";
+import { isUsableImageUrl, hasUsableLocationImage } from "@/lib/location-images";
 
 export function firstSearchImage(value: unknown): string | null {
   if (!value) return null;
@@ -20,7 +21,7 @@ export function firstSearchImage(value: unknown): string | null {
       !["null", "undefined", "none", "n/a", "na", "#", "?"].includes(
         lower,
       ) &&
-      !lower.includes("placeholder")
+      isUsableImageUrl(trimmed)
       ? trimmed
       : null;
   }
@@ -50,22 +51,5 @@ export function firstSearchImage(value: unknown): string | null {
 }
 
 export function hasUsableSearchPhoto(location: EnterpriseLocation) {
-  const record = location as any;
-
-  return Boolean(
-    firstSearchImage(record.image_url) ||
-      firstSearchImage(record.main_image) ||
-      firstSearchImage(record.photo_url) ||
-      firstSearchImage(record.primary_photo_url) ||
-      firstSearchImage(record.google_photo_url) ||
-      firstSearchImage(record.google_image_url) ||
-      firstSearchImage(record.thumbnail_url) ||
-      firstSearchImage(record.cover_image_url) ||
-      firstSearchImage(record.hero_image_url) ||
-      firstSearchImage(record.images) ||
-      firstSearchImage(record.gallery_images) ||
-      firstSearchImage(record.photos) ||
-      firstSearchImage(record.photo_urls) ||
-      firstSearchImage(record.google_photos)
-  );
+  return hasUsableLocationImage(location);
 }

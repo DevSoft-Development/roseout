@@ -16,6 +16,7 @@ import {
   hasRelaxedActivityIntent,
   hasSportsWatchIntent,
 } from "./normalize-intent";
+import { hasUsableLocationImage } from "@/lib/location-images";
 
 function compactRecordText(r: EnterpriseLocation) {
   return textForRecord(r).replaceAll("_", " ").replaceAll("-", " ");
@@ -828,9 +829,11 @@ export function scoreRestaurantOutingFit(
     score += 10;
     qualityReason(reasons, "approved/verified/published status", 10);
   }
-  if (signals.hasPhotos) {
+  if (hasUsableLocationImage(r)) {
     score += 15;
     qualityReason(reasons, "has photos", 15);
+  } else if (signals.hasPhotos) {
+    qualityReason(penalties, "has_photos true but no usable image url", 0);
   }
   if (signals.rating >= 4.5 && signals.reviewCount >= 500) {
     score += 25;
@@ -1012,9 +1015,11 @@ export function scoreActivityQuality(
     score += 20;
     qualityReason(reasons, "rating >= 4.4 with 100+ reviews", 20);
   }
-  if (signals.hasPhotos) {
+  if (hasUsableLocationImage(r)) {
     score += 15;
     qualityReason(reasons, "has photos", 15);
+  } else if (signals.hasPhotos) {
+    qualityReason(penalties, "has_photos true but no usable image url", 0);
   }
   const sportsWatchIntent = userAskedToWatchSportsGame(intent);
   const sportsWatchScore = sportsWatchRecordSignal(r);
