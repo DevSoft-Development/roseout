@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/nightly-photo-backfill",
       "schedule": "15 4 * * *"
+    },
+    {
+      "path": "/api/cron/health-intelligence",
+      "schedule": "30 3 * * *"
     }
   ]
 }

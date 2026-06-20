@@ -63,6 +63,11 @@ type LocationDetailRecord = Record<string, unknown> & {
   main_image?: string | null;
   image_url?: string | null;
   images?: string[] | string | null;
+  health_department_grade?: string | null;
+  health_department_score?: number | string | null;
+  health_department_last_inspection_date?: string | null;
+  health_department_source?: string | null;
+  health_department_source_url?: string | null;
 };
 type ReviewRecord = Record<string, unknown> & {
   id?: string | number | null;
@@ -135,6 +140,24 @@ function formatDisplayLabel(value: unknown) {
         : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
     )
     .join(" ");
+}
+
+function formatHealthDepartmentScore(value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+  const score = Number(value);
+  if (!Number.isFinite(score)) return "";
+  return String(Math.round(score));
+}
+
+function formatShortDate(value: unknown) {
+  if (!value) return "";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function cleanDisplayTags(items: unknown, limit = 8) {
@@ -447,6 +470,10 @@ export default function LocationDetailPage() {
   const score = clampScore(getLocationScore(location));
 
   const address = getDisplayAddress(location);
+  const healthGrade = formatDisplayLabel(location?.health_department_grade);
+  const healthScore = formatHealthDepartmentScore(location?.health_department_score);
+  const healthInspectionDate = formatShortDate(location?.health_department_last_inspection_date);
+  const healthSource = String(location?.health_department_source || "Health Department").trim();
   const area = getDisplayArea(location);
   const publicTags = getPublicTags(location, category, area);
   const reviewCount = getReviewCount(location, reviews);
@@ -720,6 +747,17 @@ export default function LocationDetailPage() {
                 <TheOutHavenMark size={22} />
                 {score >= 90 ? "Elite Pick" : "TheOutHaven Pick"}
               </div>
+
+              {(healthGrade || healthScore) && (
+                <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-extrabold text-white/72">
+                  <span className="text-white/50">{healthSource}</span>
+                  {healthGrade ? <span>Grade {healthGrade}</span> : null}
+                  {healthScore ? <span>Score {healthScore}</span> : null}
+                  {healthInspectionDate ? (
+                    <span className="text-white/45">Last checked {healthInspectionDate}</span>
+                  ) : null}
+                </div>
+              )}
 
               {address && <p className="mt-5 text-sm leading-6 text-white/70">{address}</p>}
 
