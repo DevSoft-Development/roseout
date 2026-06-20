@@ -34,7 +34,20 @@ function sanitizeObject(value: unknown, maxEntries = 40): Record<string, any> {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const eventName = cleanString(body?.event_name, 64);
+    const rawEventName =
+      body?.event_name ??
+      body?.eventName ??
+      body?.name ??
+      body?.type ??
+      body?.event ??
+      body?.action ??
+      body?.metadata?.event_name ??
+      body?.metadata?.eventName ??
+      body?.metadata?.name ??
+      body?.metadata?.type ??
+      body?.metadata?.event ??
+      body?.metadata?.action;
+    const eventName = cleanString(rawEventName, 64);
     if (!eventName || !EVENT_NAME_REGEX.test(eventName)) {
       return NextResponse.json({ ok: false, error: "invalid_event_name" }, { status: 400 });
     }
@@ -51,7 +64,7 @@ export async function POST(req: Request) {
       anonymous_id: cleanString(body?.anonymous_id),
       session_id: cleanString(body?.session_id),
       outing_id: cleanString(body?.outing_id),
-      location_id: cleanString(body?.location_id),
+      location_id: cleanString(body?.location_id ?? body?.locationId ?? body?.result_location_id ?? body?.resultLocationId),
       source_location_id: cleanString(body?.source_location_id),
       query: cleanString(body?.query),
       normalized_query: cleanString(body?.normalized_query),
@@ -74,7 +87,21 @@ export async function POST(req: Request) {
       response_time_ms: cleanNumber(body?.response_time_ms),
       conversion_step: cleanString(body?.conversion_step),
       revenue_impact: cleanNumber(body?.revenue_impact),
-      metadata: sanitizeObject({ ...(body?.metadata || {}), primary_intent: mlIntent.primaryIntent, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: mlIntent.inferredSearchMode }),
+      metadata: sanitizeObject({
+        ...(body?.metadata || {}),
+        original_event_name: rawEventName,
+        location_id: body?.location_id ?? body?.locationId ?? body?.result_location_id ?? body?.resultLocationId ?? body?.metadata?.location_id ?? body?.metadata?.locationId ?? null,
+        location_type: body?.location_type ?? body?.locationType ?? body?.metadata?.location_type ?? body?.metadata?.locationType ?? null,
+        restaurant_location_id: body?.restaurant_location_id ?? body?.restaurantLocationId ?? body?.metadata?.restaurant_location_id ?? body?.metadata?.restaurantLocationId ?? null,
+        activity_location_id: body?.activity_location_id ?? body?.activityLocationId ?? body?.metadata?.activity_location_id ?? body?.metadata?.activityLocationId ?? null,
+        ranking_position: body?.ranking_position ?? body?.rankingPosition ?? body?.metadata?.ranking_position ?? null,
+        result_count: body?.result_count ?? body?.resultCount ?? body?.metadata?.result_count ?? null,
+        market: body?.market ?? body?.requestedMarket ?? body?.metadata?.market ?? body?.metadata?.requestedMarket ?? null,
+        primary_intent: mlIntent.primaryIntent,
+        all_intents: mlIntent.allIntents,
+        intent_confidence: mlIntent.confidence,
+        inferred_search_mode: mlIntent.inferredSearchMode,
+      }),
     });
 
     return NextResponse.json({ ok: true });

@@ -42,3 +42,22 @@ Development mode also allows admin/dev access using the same route.
 - Duplicate and bad-data detection.
 - Category correction.
 - Automated quality review queue.
+
+## ML Admin Dashboard
+
+The merged Machine Learning admin page is `/admin/dashboard/ml`. Phase 1 learned ranking and Phase 2 intent/pair scoring are shown together. `/admin/dashboard/ml/phase-2` now redirects to the merged dashboard.
+
+## Why Phase 1 May Show 0 Rows
+
+Phase 1 needs canonical location IDs from `search_events.metadata.ml_result_ids`, analytics event metadata such as `location_id`, or outings with restaurant/activity location IDs. `debugParity.firstResultNames` is not enough because names can be ambiguous and can credit the wrong location. Make new searches after the tracking update, then rerun Phase 1.
+
+## Manual Verification
+
+1. Run a new `/create` search.
+2. Confirm the latest `search_events` row has `metadata.ml_result_ids`.
+3. Run a mixed outing search.
+4. Confirm the latest `search_events` row has `metadata.ml_pair_ids` if pairs were shown.
+5. Run `/api/admin/ml/recalculate-location-scores`.
+6. Confirm `location_ml_features` rows appear if Phase 1 exists.
+7. Open `/admin/dashboard/ml`.
+8. Open `/admin/dashboard/search-health` to test search impact if ML debug is installed.

@@ -34,10 +34,10 @@ export default async function SearchHealthPage() {
               Open Search Lab ML debug
             </a>
             <a
-              href="/admin/dashboard/ml/phase-2"
+              href="/admin/dashboard/ml"
               className="rounded-full border border-rose-300/40 bg-rose-600/20 px-4 py-2 text-xs font-black text-rose-50"
             >
-              View Phase 2 ML dashboard
+              View ML dashboard
             </a>
           </div>
         </section>

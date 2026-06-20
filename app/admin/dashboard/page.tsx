@@ -32,6 +32,10 @@ export default async function CentralDashboardPage() {
     reservations,
     todayReservations,
     openTicketsResult,
+    mlScored,
+    mlIntentRows,
+    mlPairRows,
+    mlLastRun,
   ] = await Promise.all([
     supabaseAdmin
       .from("restaurants")
@@ -50,6 +54,10 @@ export default async function CentralDashboardPage() {
       .from("support_tickets")
       .select("id", { count: "exact", head: true })
       .not("status", "in", "(closed,resolved)"),
+    supabaseAdmin.from("location_ml_features").select("location_id", { count: "exact", head: true }),
+    supabaseAdmin.from("location_intent_ml_features").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("location_pair_ml_features").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("location_ml_score_runs").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
   const totalLocations = (restaurants.count || 0) + (activities.count || 0);
@@ -67,10 +75,11 @@ export default async function CentralDashboardPage() {
       status: "Improve",
     },
     {
-      title: "ML ranking",
-      desc: "Review learned ranking scores and run safe recalculations.",
+      title: "Machine Learning",
+      desc: "Track learned ranking, intent scoring, pair scoring, and ML data readiness.",
       href: "/admin/dashboard/ml",
-      status: "Monitor",
+      status: `${format(mlScored.count)} scored · ${format(mlIntentRows.count)} intents · ${format(mlPairRows.count)} pairs`,
+      helper: mlLastRun.data?.created_at ? `Last run ${new Date(mlLastRun.data.created_at).toLocaleDateString()}` : "No ML run yet",
     },
     {
       title: "Claims pipeline",
@@ -176,8 +185,9 @@ export default async function CentralDashboardPage() {
               <AdminStatusBadge tone="rose">{g.status}</AdminStatusBadge>
               <h3 className="mt-4 text-xl font-black text-white">{g.title}</h3>
               <p className="mt-2 text-sm leading-6 text-white/55">{g.desc}</p>
+              {"helper" in g ? <p className="mt-2 text-xs font-bold text-white/40">{g.helper}</p> : null}
               <span className="mt-5 inline-flex rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/70">
-                Open panel
+                {g.title === "Machine Learning" ? "Open ML Dashboard" : "Open panel"}
               </span>
             </Link>
           ))}

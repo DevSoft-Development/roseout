@@ -448,6 +448,40 @@ export async function POST(request: Request) {
     const publicPairs = explicitMarketRequestedForGuardrail && resolvedMarketForGuardrail !== "LONG_ISLAND"
       ? normalizedPairsBeforeGuardrail.filter((pair: any) => isPairAllowedForResolvedMarket(pair, resolvedMarketForGuardrail))
       : normalizedPairsBeforeGuardrail;
+    const mlResultIds = [
+      ...publicRestaurants,
+      ...publicActivities,
+      ...publicMatchedLocations,
+      ...publicCards,
+    ]
+      .map((item: any, index) => ({
+        location_id: typeof item?.id === "string" ? item.id : null,
+        location_type:
+          item?.location_type === "activity" ? "activity" : item?.location_type === "restaurant" ? "restaurant" : null,
+        name: item?.name || item?.restaurant_name || item?.activity_name || null,
+        rank: index + 1,
+        market: item?.market || resolvedMarketForGuardrail || null,
+        city: item?.city || null,
+        state: item?.state || null,
+      }))
+      .filter((item: any) => item.location_id && item.location_type)
+      .slice(0, 25);
+    const mlPairIds = publicPairs
+      .map((pair: any, index: number) => {
+        const restaurant = pair?.restaurant || pair?.restaurant_location || pair?.restaurantLocation;
+        const activity = pair?.activity || pair?.activity_location || pair?.activityLocation;
+        return {
+          restaurant_location_id: typeof restaurant?.id === "string" ? restaurant.id : null,
+          activity_location_id: typeof activity?.id === "string" ? activity.id : null,
+          restaurant_name: restaurant?.name || restaurant?.restaurant_name || null,
+          activity_name: activity?.name || activity?.activity_name || null,
+          rank: index + 1,
+          pair_distance_miles: pair?.pairDistanceMiles ?? pair?.distance_miles ?? pair?.pair_distance_miles ?? null,
+          market: pair?.market || restaurant?.market || activity?.market || resolvedMarketForGuardrail || null,
+        };
+      })
+      .filter((pair: any) => pair.restaurant_location_id && pair.activity_location_id)
+      .slice(0, 10);
 
     if (process.env.NODE_ENV !== "production") {
       console.log("[generate] public image normalization", {
@@ -751,7 +785,11 @@ export async function POST(request: Request) {
         ...nearMeDebug,
         geoSource: debug?.geoSource,
         raw_query: rawQueryBeforeNearMeStrip || input || cleanInput,
+        ml_result_ids: mlResultIds,
+        ml_pair_ids: mlPairIds,
         parsed_market: resolvedMarketForGuardrail,
+        requestedMarket: marketFiltering.requestedMarket,
+        resolvedMarket: resolvedMarketForGuardrail,
         parsed_borough: normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
         parsed_city: normalizedIntent?.geo?.city ?? debug?.parsedCity ?? null,
         explicit_market_requested: explicitMarketRequestedForGuardrail,
