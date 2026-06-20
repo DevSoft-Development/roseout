@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -1221,29 +1222,37 @@ function ImportPageContent() {
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-rose-300">
-                  TheOutHaven Admin
+                  Location Operations
                 </p>
                 <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                  Import Center
+                  Import & Maintenance Center
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                  Manage Google imports, staged location growth, dedupe,
-                  enrichment, and QR tools from one safe admin workspace.
+                  Part of Location Operations: manage Google imports, staged location growth, dedupe,
+                  enrichment, cleanup, publish, photo, QR, and history tools from one safe admin workspace.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  fetchLogs();
-                  fetchSummary();
-                }}
-                disabled={logsLoading || summaryLoading}
-                className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-zinc-200 transition hover:border-rose-300 hover:bg-white/10 disabled:opacity-50"
-              >
-                {logsLoading || summaryLoading
-                  ? "Refreshing..."
-                  : "Refresh Data"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/admin/dashboard/locations"
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-black text-zinc-200 transition hover:border-rose-300 hover:bg-white/10"
+                >
+                  Back to Locations
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchLogs();
+                    fetchSummary();
+                  }}
+                  disabled={logsLoading || summaryLoading}
+                  className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-zinc-200 transition hover:border-rose-300 hover:bg-white/10 disabled:opacity-50"
+                >
+                  {logsLoading || summaryLoading
+                    ? "Refreshing..."
+                    : "Refresh Data"}
+                </button>
+              </div>
             </div>
           </div>
         </header>

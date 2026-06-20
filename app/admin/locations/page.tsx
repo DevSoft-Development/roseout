@@ -1,10 +1,23 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import AdminLocationsSearchBox from "./AdminLocationsSearchBox";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import FoodTermBackfillPanel from "../dashboard/locations/FoodTermBackfillPanel";
 import GoogleEnrichmentPanel from "@/components/admin/locations/GoogleEnrichmentPanel";
+import {
+  AdminActionButton,
+  AdminEmptyState,
+  AdminFilterChip,
+  AdminFilterGroup,
+  AdminFilterPanel,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminPagination,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "@/components/admin/AdminDesignSystem";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { formatFullAddress as formatSharedFullAddress } from "@/lib/address-utils";
 import { supabase } from "@/lib/supabase";
@@ -209,27 +222,6 @@ function formatFullAddress(item: {
     zip_code: item.zip_code,
     fallback: "Address not listed",
   });
-}
-
-function statusBadge(status?: string | null) {
-  const value = status || "unknown";
-
-  if (value === "approved")
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (value === "pending") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (value === "rejected") return "border-red-200 bg-red-50 text-red-700";
-  if (value === "draft")
-    return "border-neutral-200 bg-neutral-100 text-neutral-700";
-
-  return "border-neutral-200 bg-neutral-100 text-neutral-600";
-}
-
-function typeBadge(type: "restaurants" | "activities") {
-  if (type === "restaurants") {
-    return "border-rose-200 bg-rose-50 text-rose-700";
-  }
-
-  return "border-purple-200 bg-purple-50 text-purple-700";
 }
 
 function buildQueryUrl({
@@ -603,639 +595,211 @@ export default async function AdminLocationsPage({
   const totalAllLocations = totalLocationsResult.count || 0;
 
   const error = locationsResult.error;
+  const operations = [
+    {
+      title: "Import & Maintenance",
+      body: "Run import, cleanup, dedupe, publish, photo, QR, and history tools.",
+      href: "/admin/dashboard/locations/import",
+      accent: "rose",
+    },
+    {
+      title: "Google Enrichment",
+      body: "Queue and review Google enrichment work for location records.",
+      href: "/admin/dashboard/locations/google-enrichment",
+      accent: "blue",
+    },
+    {
+      title: "Non-Searchable Review",
+      body: "Audit hidden, low-level, and non-searchable location records.",
+      href: "/admin/dashboard/locations/non-searchable",
+      accent: "amber",
+    },
+    {
+      title: "Data Quality",
+      body: "Review data quality issues and cleanup opportunities.",
+      href: "/admin/dashboard/data-quality",
+      accent: "green",
+    },
+    {
+      title: "Search Health",
+      body: "Validate search quality and ranking behavior.",
+      href: "/admin/dashboard/search-health",
+      accent: "blue",
+    },
+    {
+      title: "Claim QR Tools",
+      body: "Print and repair QR codes used for claim workflows.",
+      href: "/admin/dashboard/claim-qrs",
+      accent: "muted",
+    },
+  ];
+
   return (
-    <main
-      data-page-version={ADMIN_LOCATIONS_VERSION}
-      className="min-h-screen bg-[#090706] px-4 pb-10 pt-4 text-white sm:px-6 lg:px-8"
-    >
-      <div className="mx-auto max-w-[1600px]">
-        <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_35%),linear-gradient(135deg,#160b0b,#090706_55%,#140f0a)] p-5 shadow-2xl sm:p-6">
-          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-500/20 blur-3xl" />
-
-          <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-                TheOutHaven Admin
-              </p>
-
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                Locations
-              </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Manage restaurants and activities from one unified page. Filter
-                by location type, approval status, claim status, address, city,
-                zip, category, and performance.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href="/admin/dashboard/locations/new"
-                className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg transition hover:scale-[1.02]"
-              >
-                + Add Location
-              </Link>
-              <Link
-                href="/admin/dashboard/crm"
-                className="rounded-full border border-rose-300/30 bg-rose-500/15 px-5 py-3 text-sm font-black text-rose-100 hover:bg-rose-500/25"
-              >
-                Open CRM
-              </Link>
-              <Link
-                href="/admin/dashboard/claim-qrs"
-                className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                Print Claim QRs
-              </Link>
-              <Link
-                href="/admin/dashboard/locations/non-searchable"
-                className="rounded-full border border-sky-300/30 bg-sky-500/15 px-5 py-3 text-sm font-black text-sky-100 hover:bg-sky-500/25"
-                title="See hidden, low-level, missing-photo, and ready-to-approve locations before they go public."
-              >
-                Review Non-Searchable Locations
-              </Link>
-              <Link
-                href="/admin/dashboard/locations?tab=google-enrichment"
-                className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                Google Enrichment
-              </Link>
-              <Link
-                href={buildQueryUrl({
-                  q,
-                  type,
-                  status,
-                  claim,
-                  review: "low-level-hidden",
-                  page: 1,
-                  pageSize,
-                })}
-                className="rounded-full border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-black text-red-100 hover:bg-red-500/25"
-              >
-                Low-Level Hidden
-              </Link>
-              <Link
-                href={buildQueryUrl({
-                  q,
-                  type,
-                  status,
-                  claim,
-                  review: "nyc-unverified",
-                  page: 1,
-                  pageSize,
-                })}
-                className="rounded-full border border-amber-300/30 bg-amber-500/15 px-5 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/25"
-              >
-                NYC Unverified
-              </Link>
-              <Link
-                href={buildQueryUrl({
-                  q,
-                  type,
-                  status,
-                  claim,
-                  review: "missing-photos",
-                  page: 1,
-                  pageSize,
-                })}
-                className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                Missing Photos
-              </Link>
-              <Link
-                href={buildQueryUrl({
-                  q,
-                  type,
-                  status,
-                  claim,
-                  review: "publish-ready",
-                  page: 1,
-                  pageSize,
-                })}
-                className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-5 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/25"
-              >
-                Publish Ready
-              </Link>
-              <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 backdrop-blur">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                  Showing
-                </p>
-                <p className="mt-1 text-3xl font-black">
-                  {formatNumber(totalFiltered)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+    <AdminPageShell>
+      <div data-page-version={ADMIN_LOCATIONS_VERSION} className="max-w-full min-w-0 overflow-x-hidden">
+        <AdminPageHeader
+          eyebrow="TheOutHaven Admin"
+          title="Locations"
+          subtitle="Manage restaurants and activities from one enterprise workspace. Search, audit, enrich, and maintain listing health without changing database behavior."
+          badge={<AdminStatusBadge tone="rose">{formatNumber(totalFiltered)} showing</AdminStatusBadge>}
+          actions={
+            <>
+              <AdminActionButton href="/admin/dashboard/locations/new" variant="primary">Add Location</AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/locations/import" variant="primary">Import / Maintenance</AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/crm">Open CRM</AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/locations/non-searchable">Review Non-Searchable</AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/locations/google-enrichment" variant="ghost">Google Enrichment</AdminActionButton>
+            </>
+          }
+        />
 
         {safeMode && (
-          <div className="mt-5 rounded-3xl border border-amber-300/30 bg-amber-500/10 p-5 text-sm font-bold text-amber-100">
-            <p>
-              Some optional admin quality columns are missing and the page is
-              using safe mode. Core location data is still available.
-            </p>
+          <AdminSectionCard className="border-amber-300/25 bg-amber-500/10 p-5 text-sm font-bold text-amber-100">
+            <p>Some optional admin quality columns are missing and the page is using safe mode. Core location data is still available.</p>
             {safeModeWarnings.length > 1 && (
               <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-100/80">
-                {Array.from(new Set(safeModeWarnings.slice(1))).map(
-                  (warning) => (
-                    <li key={warning}>{warning}</li>
-                  ),
-                )}
+                {Array.from(new Set(safeModeWarnings.slice(1))).map((warning) => <li key={warning}>{warning}</li>)}
               </ul>
             )}
-          </div>
+          </AdminSectionCard>
         )}
 
-        {error && (
-          <div className="mt-5 rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm font-bold text-rose-100">
-            {error.message}
+        {error && <AdminSectionCard className="border-red-300/25 bg-red-500/10 p-5 text-sm font-bold text-red-100">{error.message}</AdminSectionCard>}
+
+        <AdminKpiGrid>
+          <AdminKpiCard label="Total Locations" value={formatNumber(totalAllLocations)} helper="All live location records" />
+          <AdminKpiCard label="Restaurants" value={formatNumber(totalRestaurants)} helper="Restaurant records" />
+          <AdminKpiCard label="Activities" value={formatNumber(totalActivities)} helper="Activity records" />
+          <AdminKpiCard label="Current Filter" value={formatNumber(totalFiltered)} helper={`Page ${safePage} of ${totalPages}`} />
+        </AdminKpiGrid>
+
+        <AdminSectionCard className="p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Location Operations</p>
+              <h2 className="mt-2 text-2xl font-black text-white">Import, enrichment, cleanup, dedupe, publish, QR, and quality tools</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Run the existing maintenance workflows from the locations section while keeping the original import center route available.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <AdminActionButton href="/admin/dashboard/claim-qrs" variant="ghost">Print Claim QRs</AdminActionButton>
+              <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review: "low-level-hidden", page: 1, pageSize })} variant="ghost">Low-Level Hidden</AdminActionButton>
+              <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review: "nyc-unverified", page: 1, pageSize })} variant="ghost">NYC Unverified</AdminActionButton>
+              <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review: "missing-photos", page: 1, pageSize })} variant="ghost">Missing Photos</AdminActionButton>
+              <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review: "publish-ready", page: 1, pageSize })} variant="ghost">Publish Ready</AdminActionButton>
+            </div>
           </div>
-        )}
-
-        <section className="mt-5 grid gap-4 md:grid-cols-4">
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Total Locations
-            </p>
-            <p className="mt-2 text-3xl font-black">
-              {formatNumber(totalAllLocations)}
-            </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {operations.map((item) => (
+              <Link key={item.href} href={item.href} className="group min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-4 transition hover:border-rose-300/35 hover:bg-white/[0.06]">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-base font-black text-white">{item.title}</h3>
+                  <AdminStatusBadge tone={item.accent as "rose" | "green" | "amber" | "red" | "blue" | "muted"}>Open</AdminStatusBadge>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-white/55">{item.body}</p>
+              </Link>
+            ))}
           </div>
+        </AdminSectionCard>
 
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Restaurants
-            </p>
-            <p className="mt-2 text-3xl font-black text-rose-200">
-              {formatNumber(totalRestaurants)}
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Activities
-            </p>
-            <p className="mt-2 text-3xl font-black text-purple-200">
-              {formatNumber(totalActivities)}
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-              Current Filter
-            </p>
-            <p className="mt-2 text-3xl font-black">
-              {formatNumber(totalFiltered)}
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-5 rounded-[1.75rem] border border-white/10 bg-[#120d0b] p-4 shadow-2xl">
-          <form className="grid gap-3 lg:grid-cols-[1fr_170px_170px_170px_150px_120px]">
-            <AdminLocationsSearchBox
-              initialQuery={q}
-              type={type}
-              status={status}
-              claim={claim}
-              pageSize={pageSize}
-            />
-
-            <select
-              name="type"
-              defaultValue={type}
-              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-bold text-white outline-none focus:border-rose-300"
-            >
-              <option className="text-black" value="all">
-                All Types
-              </option>
-              <option className="text-black" value="restaurants">
-                Restaurants
-              </option>
-              <option className="text-black" value="activities">
-                Activities
-              </option>
-            </select>
-
-            <select
-              name="status"
-              defaultValue={status}
-              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-bold text-white outline-none focus:border-rose-300"
-            >
-              <option className="text-black" value="all">
-                All Statuses
-              </option>
-              <option className="text-black" value="approved">
-                Approved
-              </option>
-              <option className="text-black" value="pending">
-                Pending
-              </option>
-              <option className="text-black" value="draft">
-                Draft
-              </option>
-              <option className="text-black" value="rejected">
-                Rejected
-              </option>
-            </select>
-
-            <select
-              name="claim"
-              defaultValue={claim}
-              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-bold text-white outline-none focus:border-rose-300"
-            >
-              <option className="text-black" value="all">
-                All Claims
-              </option>
-              <option className="text-black" value="claimed">
-                Claimed
-              </option>
-              <option className="text-black" value="unclaimed">
-                Unclaimed
-              </option>
-            </select>
-
-            <select
-              name="pageSize"
-              defaultValue={pageSize}
-              className="h-11 rounded-full border border-white/10 bg-white/[0.07] px-5 text-sm font-bold text-white outline-none focus:border-rose-300"
-            >
-              {PAGE_SIZE_OPTIONS.map((option) => (
-                <option key={option} className="text-black" value={option}>
-                  {option} / page
-                </option>
-              ))}
-            </select>
-
+        <AdminFilterPanel>
+          <form className="grid max-w-full gap-3 lg:grid-cols-[minmax(0,1fr)_170px_170px_170px_150px_120px]">
+            <div className="min-w-0"><AdminLocationsSearchBox initialQuery={q} type={type} status={status} claim={claim} pageSize={pageSize} /></div>
+            <select name="type" defaultValue={type} className="h-11 min-w-0 rounded-xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none focus:border-rose-300"><option className="text-black" value="all">All Types</option><option className="text-black" value="restaurants">Restaurants</option><option className="text-black" value="activities">Activities</option></select>
+            <select name="status" defaultValue={status} className="h-11 min-w-0 rounded-xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none focus:border-rose-300"><option className="text-black" value="all">All Statuses</option><option className="text-black" value="approved">Approved</option><option className="text-black" value="pending">Pending</option><option className="text-black" value="draft">Draft</option><option className="text-black" value="rejected">Rejected</option></select>
+            <select name="claim" defaultValue={claim} className="h-11 min-w-0 rounded-xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none focus:border-rose-300"><option className="text-black" value="all">All Claims</option><option className="text-black" value="claimed">Claimed</option><option className="text-black" value="unclaimed">Unclaimed</option></select>
+            <select name="pageSize" defaultValue={pageSize} className="h-11 min-w-0 rounded-xl border border-white/10 bg-[#0b0b0d] px-4 text-sm font-bold text-white outline-none focus:border-rose-300">{PAGE_SIZE_OPTIONS.map((option) => <option key={option} className="text-black" value={option}>{option} / page</option>)}</select>
             <input type="hidden" name="page" value="1" />
-
-            <button
-              type="submit"
-              className="h-11 rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.02]"
-            >
-              Filter
-            </button>
+            <AdminActionButton type="submit" variant="primary">Filter</AdminActionButton>
           </form>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              { label: "All", nextType: "all" },
-              { label: "Restaurants", nextType: "restaurants" },
-              { label: "Activities", nextType: "activities" },
-            ].map((item) => (
-              <Link
-                key={item.nextType}
-                href={buildQueryUrl({
-                  q,
-                  type: item.nextType,
-                  status,
-                  claim,
-                  page: 1,
-                  pageSize,
-                })}
-                className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-                  type === item.nextType
-                    ? "border-rose-400 bg-rose-500 text-white"
-                    : "border-white/10 bg-white/[0.06] text-white/55 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-
-            <span className="mx-1 hidden h-9 w-px bg-white/10 sm:block" />
-
-            {["approved", "pending", "draft", "rejected"].map((item) => (
-              <Link
-                key={item}
-                href={buildQueryUrl({
-                  q,
-                  type,
-                  status: status === item ? "all" : item,
-                  claim,
-                  page: 1,
-                  pageSize,
-                })}
-                className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-                  status === item
-                    ? "border-rose-400 bg-rose-500 text-white"
-                    : "border-white/10 bg-white/[0.06] text-white/55 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                {item}
-              </Link>
-            ))}
-
-            <span className="mx-1 hidden h-9 w-px bg-white/10 sm:block" />
-
-            {["claimed", "unclaimed"].map((item) => (
-              <Link
-                key={item}
-                href={buildQueryUrl({
-                  q,
-                  type,
-                  status,
-                  claim: claim === item ? "all" : item,
-                  page: 1,
-                  pageSize,
-                })}
-                className={`rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide transition ${
-                  claim === item
-                    ? "border-rose-400 bg-rose-500 text-white"
-                    : "border-white/10 bg-white/[0.06] text-white/55 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                {item}
-              </Link>
-            ))}
+          <div className="mt-5 grid gap-4 xl:grid-cols-4">
+            <AdminFilterGroup label="Type">
+              {[{ label: "All", value: "all" }, { label: "Restaurants", value: "restaurants" }, { label: "Activities", value: "activities" }].map((item) => <AdminFilterChip key={item.value} active={type === item.value} href={buildQueryUrl({ q, type: item.value, status, claim, review, page: 1, pageSize })}>{item.label}</AdminFilterChip>)}
+            </AdminFilterGroup>
+            <AdminFilterGroup label="Status">
+              {["approved", "pending", "draft", "rejected"].map((item) => <AdminFilterChip key={item} active={status === item} href={buildQueryUrl({ q, type, status: status === item ? "all" : item, claim, review, page: 1, pageSize })}>{item}</AdminFilterChip>)}
+            </AdminFilterGroup>
+            <AdminFilterGroup label="Claim">
+              {["claimed", "unclaimed"].map((item) => <AdminFilterChip key={item} active={claim === item} href={buildQueryUrl({ q, type, status, claim: claim === item ? "all" : item, review, page: 1, pageSize })}>{item}</AdminFilterChip>)}
+            </AdminFilterGroup>
+            <AdminFilterGroup label="Review">
+              {[
+                ["low-level-hidden", "Low-Level Hidden"],
+                ["nyc-unverified", "NYC Unverified"],
+                ["missing-photos", "Missing Photos"],
+                ["publish-ready", "Publish Ready"],
+              ].map(([value, label]) => <AdminFilterChip key={value} active={review === value} href={buildQueryUrl({ q, type, status, claim, review: review === value ? "all" : value, page: 1, pageSize })}>{label}</AdminFilterChip>)}
+            </AdminFilterGroup>
           </div>
-        </section>
+        </AdminFilterPanel>
 
         <FoodTermBackfillPanel />
 
-        <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
-          <div className="flex flex-col gap-3 border-b border-black/10 bg-[#fffaf6] p-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-black">Location Listings</h2>
-              <p className="mt-1 text-xs font-medium text-black/50">
-                Full address is visible directly in the admin list. Use View or
-                Edit to manage each location.
-              </p>
+        <AdminSectionCard>
+          <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-lg font-black text-white">Location Listings</h2>
+              <p className="mt-1 text-xs font-medium text-white/50">Showing {totalFiltered ? from + 1 : 0}-{Math.min(to, totalFiltered)} of {formatNumber(totalFiltered)}. Use CRM, View, Edit, Marketing, and owner access actions per record.</p>
             </div>
-
-            <div className="rounded-full bg-[#1b1210] px-4 py-2 text-[11px] font-black uppercase tracking-wide text-white">
-              Showing {totalFiltered ? from + 1 : 0}-
-              {Math.min(to, totalFiltered)} of {formatNumber(totalFiltered)}
-            </div>
+            <AdminStatusBadge tone="muted">Page {safePage} / {totalPages}</AdminStatusBadge>
           </div>
-
           {!locations.length ? (
-            <div className="p-12 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 p-3">
-                <Image
-                  src="/toh_logo.png"
-                  alt="TheOutHaven"
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 object-contain"
-                />
-              </div>
-              <p className="mt-4 text-lg font-black">No locations found</p>
-              <p className="mt-1 text-sm text-black/50">
-                Try changing the search or filters.
-              </p>
-            </div>
+            <div className="p-5"><AdminEmptyState title="No locations found" body="Try changing the search or filters." action={<AdminActionButton href={buildQueryUrl({ q: "", type: "all", status: "all", claim: "all", review: "all", page: 1, pageSize })}>Clear filters</AdminActionButton>} /></div>
           ) : (
             <div className="space-y-3 p-4">
-              {locations.map((location) => (
-                <div
-                  key={`${location.locationType}-${location.id}`}
-                  className="group rounded-[1.5rem] border border-black/10 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-xl"
-                >
-                  <div className="space-y-3">
-                    <div className="grid gap-4 xl:grid-cols-[1fr_420px] xl:items-center">
-                      <Link
-                        href={`/admin/dashboard/crm/${location.id}`}
-                        className="flex min-w-0 items-center gap-4"
-                      >
-                        <div className="h-20 w-24 shrink-0 overflow-hidden rounded-[1.25rem] bg-[#eadfd8] shadow-sm">
-                          {getLocationImage(location) ? (
-                            <img
-                              src={getLocationImage(location) || undefined}
-                              alt={location.name || "TheOutHaven location"}
-                              className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-sm font-black text-black/30">
-                              RO
-                            </div>
-                          )}
+              {locations.map((location) => {
+                const image = getLocationImage(location);
+                return (
+                  <article key={`${location.locationType}-${location.id}`} className="group min-w-0 rounded-[1.35rem] border border-white/10 bg-white/[0.035] p-3 transition hover:border-rose-300/30 hover:bg-white/[0.055]">
+                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] xl:items-start">
+                      <Link href={`/admin/dashboard/crm/${location.id}`} className="flex min-w-0 flex-col gap-4 sm:flex-row">
+                        <div className="h-24 w-full shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 sm:w-28">
+                          {image ? <img src={image} alt={location.name || "TheOutHaven location"} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" /> : <div className="flex h-full w-full items-center justify-center text-sm font-black text-white/25">TOH</div>}
                         </div>
-
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate text-lg font-black">
-                              {location.name || "Untitled Location"}
-                            </h3>
-
-                            <span
-                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${typeBadge(
-                                location.locationType,
-                              )}`}
-                            >
-                              {location.locationType === "restaurants"
-                                ? "Restaurant"
-                                : "Activity"}
-                            </span>
-
-                            <span
-                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${statusBadge(
-                                location.status,
-                              )}`}
-                            >
-                              {location.status || "unknown"}
-                            </span>
-
-                            <span
-                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${
-                                isPubliclyVisible(location)
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border-amber-200 bg-amber-50 text-amber-700"
-                              }`}
-                            >
-                              {isPubliclyVisible(location)
-                                ? "Searchable"
-                                : getDataStatus(location)}
-                            </span>
+                            <h3 className="min-w-0 truncate text-lg font-black text-white">{location.name || "Untitled Location"}</h3>
+                            <AdminStatusBadge tone={location.locationType === "restaurants" ? "rose" : "blue"}>{location.locationType === "restaurants" ? "Restaurant" : "Activity"}</AdminStatusBadge>
+                            <AdminStatusBadge tone={location.status === "approved" ? "green" : location.status === "pending" ? "amber" : location.status === "rejected" ? "red" : "muted"}>{location.status || "unknown"}</AdminStatusBadge>
+                            <AdminStatusBadge tone={isPubliclyVisible(location) ? "green" : "amber"}>{isPubliclyVisible(location) ? "Searchable" : getDataStatus(location)}</AdminStatusBadge>
                           </div>
-
-                          <p className="mt-1 line-clamp-2 text-sm font-bold text-black/55">
-                            {formatFullAddress(location)}
-                          </p>
-
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <span className="rounded-full bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/55">
-                              {location.category || "Category N/A"}
-                            </span>
-
-                            <span
-                              className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase ${
-                                getIsClaimed(location)
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border-black/10 bg-[#f5eee8] text-black/50"
-                              }`}
-                            >
-                              {getIsClaimed(location)
-                                ? "Claimed"
-                                : "Open Claim"}
-                            </span>
-
-                            {getMissingFields(location).length > 0 && (
-                              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black uppercase text-amber-700">
-                                Missing {getMissingFields(location).length}
-                              </span>
-                            )}
-
-                            {location.is_hidden === true && (
-                              <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
-                                Hidden
-                              </span>
-                            )}
-
-                            {location.is_low_level === true && (
-                              <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase text-red-700">
-                                Low-Level:{" "}
-                                {location.low_level_reason || "review"}
-                              </span>
-                            )}
-
-                            {location.source_quality_status && (
-                              <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-black uppercase text-blue-700">
-                                Source: {location.source_quality_status}
-                              </span>
-                            )}
-
-                            {location.public_visibility_tier && (
-                              <span className="rounded-full border border-black/10 bg-[#f5eee8] px-3 py-1 text-[11px] font-black uppercase text-black/50">
-                                Tier: {location.public_visibility_tier}
-                              </span>
-                            )}
+                          <p className="mt-2 line-clamp-2 text-sm font-semibold text-white/55">{formatFullAddress(location)}</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <AdminStatusBadge tone="muted">{location.category || "Category N/A"}</AdminStatusBadge>
+                            <AdminStatusBadge tone={getIsClaimed(location) ? "green" : "muted"}>{getIsClaimed(location) ? "Claimed" : "Open Claim"}</AdminStatusBadge>
+                            {getMissingFields(location).length > 0 && <AdminStatusBadge tone="amber">Missing {getMissingFields(location).length}</AdminStatusBadge>}
+                            {location.is_hidden === true && <AdminStatusBadge tone="red">Hidden</AdminStatusBadge>}
+                            {location.is_low_level === true && <AdminStatusBadge tone="red">Low-Level: {location.low_level_reason || "review"}</AdminStatusBadge>}
+                            {location.source_quality_status && <AdminStatusBadge tone="blue">Source: {location.source_quality_status}</AdminStatusBadge>}
+                            {location.public_visibility_tier && <AdminStatusBadge tone="muted">Tier: {location.public_visibility_tier}</AdminStatusBadge>}
                           </div>
                         </div>
                       </Link>
-
-                      <div className="grid grid-cols-4 gap-2">
-                        <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
-                            Rating
-                          </p>
-                          <p className="mt-1 text-sm font-black">
-                            {location.rating || 0}
-                          </p>
+                      <div className="min-w-0 space-y-3">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          {[["Rating", location.rating || 0], ["Views", formatNumber(location.view_count)], ["Clicks", formatNumber(location.click_count)], ["Score", getLocationScore(location)]].map(([label, value]) => <div key={label} className="rounded-2xl border border-white/10 bg-black/25 p-3 text-center"><p className="text-[10px] font-black uppercase tracking-wide text-white/35">{label}</p><p className="mt-1 text-sm font-black text-white">{value}</p></div>)}
                         </div>
-
-                        <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
-                            Views
-                          </p>
-                          <p className="mt-1 text-sm font-black">
-                            {formatNumber(location.view_count)}
-                          </p>
-                        </div>
-
-                        <div className="rounded-2xl bg-[#f5eee8] p-3 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-wide text-black/35">
-                            Clicks
-                          </p>
-                          <p className="mt-1 text-sm font-black">
-                            {formatNumber(location.click_count)}
-                          </p>
-                        </div>
-
-                        <div className="rounded-2xl bg-[#1b1210] p-3 text-center text-white">
-                          <p className="text-[10px] font-black uppercase tracking-wide text-white/40">
-                            Score
-                          </p>
-                          <p className="mt-1 text-sm font-black">
-                            {getLocationScore(location)}
-                          </p>
+                        <div className="flex min-w-0 flex-wrap gap-2 border-t border-white/10 pt-3">
+                          <AdminActionButton href={`/admin/dashboard/crm/${location.id}`} variant="primary">Open in CRM</AdminActionButton>
+                          <AdminActionButton href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}>View</AdminActionButton>
+                          <AdminActionButton href={`/admin/dashboard/locations/edit/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}>Edit</AdminActionButton>
+                          <AdminActionButton href={`/admin/dashboard/marketing?source_table=${location.locationType}&source_id=${location.id}&location_id=${location.id}&location_name=${encodeURIComponent(location.name || "Untitled Location")}&image=${encodeURIComponent(image || "")}&category=${encodeURIComponent(location.category || "")}&city=${encodeURIComponent(location.city || "")}&state=${encodeURIComponent(location.state || "")}&address=${encodeURIComponent(formatFullAddress(location))}&public_url=${encodeURIComponent(`/locations/${location.locationType}/${location.id}`)}`}>Marketing</AdminActionButton>
+                          {canImpersonate && (location.owner_user_id ? <ImpersonateButton targetType="location_owner" locationId={location.id} locationType={location.locationType} userId={location.owner_user_id} label="Log in as owner" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-300/25 bg-amber-500/10 px-4 py-2 text-sm font-black text-amber-100 hover:bg-amber-500/20 disabled:opacity-50" /> : <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/35">No owner connected</span>)}
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-black/5 pt-3">
-                      <Link
-                        href={`/admin/dashboard/crm/${location.id}`}
-                        className="min-w-[130px] rounded-full bg-[#1b1210] px-4 py-2 text-center text-xs font-black text-white transition hover:bg-rose-700"
-                      >
-                        Open in CRM
-                      </Link>
-                      <Link
-                        href={`/admin/dashboard/locations/${location.locationType}/${location.id}`}
-                        className="min-w-[130px] rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-[#1b1210] transition hover:bg-[#1b1210] hover:text-white"
-                      >
-                        Legacy View
-                      </Link>
-
-                      <Link
-                        href={`/admin/dashboard/locations/edit/${location.locationType}/${location.id}?from=/admin/dashboard/locations`}
-                        className="min-w-[130px] rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-4 py-2 text-center text-xs font-black text-white shadow-sm transition hover:scale-[1.03]"
-                      >
-                        Edit
-                      </Link>
-
-                      <Link
-                        href={`/admin/dashboard/marketing?source_table=${location.locationType}&source_id=${location.id}&location_id=${location.id}&location_name=${encodeURIComponent(location.name || "Untitled Location")}&image=${encodeURIComponent(getLocationImage(location) || "")}&category=${encodeURIComponent(location.category || "")}&city=${encodeURIComponent(location.city || "")}&state=${encodeURIComponent(location.state || "")}&address=${encodeURIComponent(formatFullAddress(location))}&public_url=${encodeURIComponent(`/locations/${location.locationType}/${location.id}`)}`}
-                        className="min-w-[150px] rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-center text-xs font-black text-rose-700 transition hover:bg-rose-600 hover:text-white"
-                      >
-                        Create Marketing
-                      </Link>
-
-                      {canImpersonate &&
-                        (location.owner_user_id ? (
-                          <ImpersonateButton
-                            targetType="location_owner"
-                            locationId={location.id}
-                            locationType={location.locationType}
-                            userId={location.owner_user_id}
-                            label="Log in as owner"
-                            className="min-w-[150px] rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-black text-amber-800 transition hover:bg-amber-500 hover:text-white disabled:opacity-50"
-                          />
-                        ) : (
-                          <span className="min-w-[150px] rounded-full border border-black/10 bg-[#f5eee8] px-4 py-2 text-center text-xs font-black text-black/35">
-                            No owner connected
-                          </span>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
-        </section>
+        </AdminSectionCard>
 
-        <div className="mt-5 flex items-center justify-between gap-4">
-          <Link
-            href={buildQueryUrl({
-              q,
-              type,
-              status,
-              claim,
-              page: Math.max(1, safePage - 1),
-              pageSize,
-            })}
-            className={`rounded-full px-5 py-3 text-sm font-black transition ${
-              safePage <= 1
-                ? "pointer-events-none border border-white/10 bg-white/[0.04] text-white/30"
-                : "border border-white/10 bg-white text-black hover:scale-[1.02]"
-            }`}
-          >
-            Previous
-          </Link>
-
-          <p className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/55">
-            Page {safePage} of {totalPages}
-          </p>
-
-          <Link
-            href={buildQueryUrl({
-              q,
-              type,
-              status,
-              claim,
-              page: Math.min(totalPages, safePage + 1),
-              pageSize,
-            })}
-            className={`rounded-full px-5 py-3 text-sm font-black transition ${
-              safePage >= totalPages
-                ? "pointer-events-none border border-white/10 bg-white/[0.04] text-white/30"
-                : "bg-gradient-to-r from-rose-500 to-rose-700 text-white hover:scale-[1.02]"
-            }`}
-          >
-            Next
-          </Link>
-        </div>
+        <AdminPagination>
+          <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review, page: Math.max(1, safePage - 1), pageSize })} variant={safePage <= 1 ? "ghost" : "secondary"}>Previous</AdminActionButton>
+          <span className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/55">Page {safePage} of {totalPages}</span>
+          <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review, page: Math.min(totalPages, safePage + 1), pageSize })} variant={safePage >= totalPages ? "ghost" : "primary"}>Next</AdminActionButton>
+        </AdminPagination>
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
