@@ -22,7 +22,13 @@ function getAuthFullName(user: AuthAdminUser | null) {
   return null;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  if (url.searchParams.get("customer") === "1") {
+    const { listAdminUsers } = await import("@/lib/admin-users");
+    return Response.json({ success: true, ...(await listAdminUsers(Object.fromEntries(url.searchParams))) });
+  }
+
   const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.adminUsers);
 
   if (error) return error;
