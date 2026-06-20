@@ -796,6 +796,57 @@ export type ImportMarketResolution = {
   confidence: "high" | "medium" | "low";
 };
 
+function formatCanonicalMarket(value: unknown): string | null {
+  const market = resolveMarketCandidate(value);
+  return market === "UNKNOWN" ? null : market;
+}
+
+function isDuplicatedSingleMarketValue(value: unknown): boolean {
+  const text = valueText(value);
+  if (!text) return false;
+  const parts = text.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+  return parts.length > 1 && new Set(parts.map((part) => part.toLowerCase())).size === 1;
+}
+
+export function formatRequestedMarketSourceForDisplay(
+  resolution: ImportMarketResolution,
+  settings: GooglePlacesImportOptions = {},
+): string {
+  if (resolution.source === "unresolved") return "Unresolved";
+
+  if (resolution.source === "settings.areas") {
+    const areas = parseAreas(settings.areas || resolution.original);
+    if (areas.length) return `Areas: ${areas.join(", ")}`;
+  }
+
+  if (
+    resolution.source === "settings.market" ||
+    resolution.source === "settings.requestedMarket" ||
+    resolution.source === "settings.requested_market" ||
+    isDuplicatedSingleMarketValue(resolution.original)
+  ) {
+    return `Market: ${formatCanonicalMarket(resolution.original) || resolution.resolved}`;
+  }
+
+  if (resolution.resolved !== "UNKNOWN") return `Market: ${resolution.resolved}`;
+  return resolution.original || "Unresolved";
+}
+
+export function formatRequestedMarketOriginalForResponse(
+  resolution: ImportMarketResolution,
+  settings: GooglePlacesImportOptions = {},
+): string | null {
+  if (isDuplicatedSingleMarketValue(resolution.original)) {
+    return formatCanonicalMarket(resolution.original) || resolution.resolved;
+  }
+
+  if (resolution.source === "settings.areas") {
+    return formatRequestedMarketSourceForDisplay(resolution, settings);
+  }
+
+  return resolution.original;
+}
+
 function valueText(value: unknown): string {
   return Array.isArray(value) ? value.filter(Boolean).join(" ") : cleanText(value);
 }
@@ -960,6 +1011,8 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
   const areas = parseAreas(options.areas);
   const requestedMarketResolution = resolveRequestedMarketForImport(options);
   const requestedMarket = requestedMarketResolution.resolved as MarketKey;
+  const requestedMarketOriginal = formatRequestedMarketOriginalForResponse(requestedMarketResolution, options);
+  const requestedMarketDisplay = formatRequestedMarketSourceForDisplay(requestedMarketResolution, options);
   options = { ...options, requestedMarket };
   const primaryTag = options.primaryTag || options.batch || "all";
   const restaurantQueries = filterQueries(CUISINE_QUERIES, primaryTag, maxQueries);
@@ -993,7 +1046,8 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     maxQueries,
     areas,
     requested_market: requestedMarket,
-    requested_market_original: requestedMarketResolution.original,
+    requested_market_original: requestedMarketOriginal,
+    requested_market_display: requestedMarketDisplay,
     requested_market_resolved: requestedMarketResolution.resolved,
     requested_market_source: requestedMarketResolution.source,
     market_resolution_confidence: requestedMarketResolution.confidence,
@@ -1049,7 +1103,8 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     imported_by_market: mergeCountMaps(restaurant.imported_by_market, activity.imported_by_market),
     skipped_by_reason: mergeCountMaps(restaurant.skipped_by_reason, activity.skipped_by_reason),
     requested_market: requestedMarket,
-    requested_market_original: requestedMarketResolution.original,
+    requested_market_original: requestedMarketOriginal,
+    requested_market_display: requestedMarketDisplay,
     requested_market_resolved: requestedMarketResolution.resolved,
     requested_market_source: requestedMarketResolution.source,
     market_resolution_confidence: requestedMarketResolution.confidence,

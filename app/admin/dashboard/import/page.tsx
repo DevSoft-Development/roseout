@@ -22,6 +22,12 @@ type ImportSectionMeta = {
   failed?: unknown;
   total_found_from_google?: unknown;
   queries_used?: string[];
+  requested_market?: unknown;
+  requested_market_original?: unknown;
+  requested_market_display?: unknown;
+  requested_market_resolved?: unknown;
+  requested_market_source?: unknown;
+  market_resolution_confidence?: unknown;
 };
 
 type ImportMeta = ImportSectionMeta & {
@@ -1793,6 +1799,24 @@ function GoogleImportPanel({
                     <MiniStat label="Failed" value={getFailed(meta)} />
                     <MiniStat label="Found" value={getFound(meta)} />
                   </div>
+                  {meta.requested_market || meta.requested_market_resolved || meta.requested_market_display || meta.requested_market_original ? (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      {[
+                        ["Requested market", meta.requested_market_resolved || meta.requested_market || "—"],
+                        ["Source", meta.requested_market_display || meta.requested_market_original || "—"],
+                        ["Confidence", meta.market_resolution_confidence || "—"],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="rounded-2xl bg-black/25 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+                            {String(label)}
+                          </p>
+                          <p className="mt-1 break-words text-sm font-black text-white">
+                            {String(value)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {log.error ? (
                     <div className="mt-4 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-sm text-rose-100">
                       {log.error}
@@ -2800,6 +2824,7 @@ function ResultBanner({
   const isScoreAction = actionKey === "score";
   const isClassifyChainsAction = actionKey === "classify-chains";
   const isQrAction = actionKey === "qr";
+  const requestedMarketDisplay = result.requested_market_display ?? result.requested_market_original;
   const hasBatchMetrics = [
     "batchId",
     "limit",
@@ -2840,6 +2865,11 @@ function ResultBanner({
     "failed",
     "searchableMissingPhotosRemaining",
     "totalNonSearchablePhotoBacklog",
+    "requested_market",
+    "requested_market_resolved",
+    "requested_market_display",
+    "requested_market_source",
+    "market_resolution_confidence",
   ].some((key) => result[key] !== undefined);
   const errorText = typeof result.error === "string" ? result.error : "";
   const isOsmTimeout =
@@ -2961,6 +2991,9 @@ function ResultBanner({
             ["Generated public QRs", result.generatedPublicQrs],
             ["Skipped complete", result.skippedAlreadyComplete],
             ["Failed", result.failed],
+            ["Requested market", result.requested_market_resolved ?? result.requested_market],
+            ["Source", requestedMarketDisplay],
+            ["Confidence", result.market_resolution_confidence],
             ["Searchable missing photos remaining", result.searchableMissingPhotosRemaining],
             ["Total non-searchable photo backlog", result.totalNonSearchablePhotoBacklog],
           ]

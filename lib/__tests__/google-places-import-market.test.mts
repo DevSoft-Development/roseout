@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { normalizeMarketKey } from "../location-markets";
+import { normalizeMarketKey, type MarketKey } from "../location-markets";
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ from: () => ({ delete: () => ({ gte: vi.fn() }), insert: vi.fn() }) }),
@@ -45,11 +45,31 @@ describe("Google Places import market normalization", () => {
   });
 
   it("does not let malformed duplicate explicit Long Island token break area resolution", () => {
-    expect(googlePlacesImport.resolveRequestedMarketForImport({ requested_market: "long_island long_island", areas: "Nassau County NY, Suffolk County NY, Garden City NY, Huntington NY" })).toMatchObject({
+    const resolution = googlePlacesImport.resolveRequestedMarketForImport({ requested_market: "long_island long_island", areas: "Nassau County NY, Suffolk County NY, Garden City NY, Huntington NY" });
+
+    expect(resolution).toMatchObject({
       resolved: "LONG_ISLAND",
       source: "settings.areas",
       confidence: "high",
     });
+    expect(resolution.resolved).toBe("LONG_ISLAND");
+  });
+
+  it.each([
+    ["long_island long_island", "LONG_ISLAND"],
+    ["nyc_core nyc_core", "NYC_CORE"],
+  ])("formats duplicated raw original %s as %s", (original, expected) => {
+    const resolution = { original, resolved: expected as MarketKey, source: "settings.requested_market", confidence: "high" } as const;
+
+    expect(googlePlacesImport.formatRequestedMarketOriginalForResponse(resolution)).toBe(expected);
+    expect(googlePlacesImport.formatRequestedMarketSourceForDisplay(resolution)).toBe(`Market: ${expected}`);
+  });
+
+  it("formats settings areas as a readable source summary", () => {
+    const resolution = googlePlacesImport.resolveRequestedMarketForImport({ areas: "Nassau County NY, Suffolk County NY" });
+
+    expect(googlePlacesImport.formatRequestedMarketSourceForDisplay(resolution, { areas: "Nassau County NY, Suffolk County NY" })).toBe("Areas: Nassau County NY, Suffolk County NY");
+    expect(resolution.resolved).toBe("LONG_ISLAND");
   });
 
   it.each([
