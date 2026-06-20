@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { runGooglePlacesImport, type GooglePlacesImportOptions } from "@/lib/googlePlacesImport";
 
 function getErrorMessage(error: unknown) {
@@ -16,8 +18,6 @@ function getBearerToken(request: NextRequest) {
 }
 
 function isCronAuthorized(request: NextRequest) {
-  if (process.env.NODE_ENV === "development") return true;
-
   const importSecret = request.headers.get("x-internal-import-secret");
   const bearerToken = getBearerToken(request);
 
@@ -26,6 +26,13 @@ function isCronAuthorized(request: NextRequest) {
   }
 
   return Boolean(process.env.CRON_SECRET && bearerToken === process.env.CRON_SECRET);
+}
+
+async function authorize(request: NextRequest) {
+  if (process.env.NODE_ENV === "development" || isCronAuthorized(request)) return null;
+
+  const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.import);
+  return error;
 }
 
 function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOptions {
@@ -52,9 +59,8 @@ function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOption
 
 export async function GET(request: NextRequest) {
   try {
-    if (!isCronAuthorized(request)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await authorize(request);
+    if (auth) return auth;
 
     const result = await runGooglePlacesImport(optionsFromSearchParams(request));
     return NextResponse.json(result);
@@ -68,9 +74,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isCronAuthorized(request)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await authorize(request);
+    if (auth) return auth;
 
     const body = await request.json().catch(() => ({}));
 
