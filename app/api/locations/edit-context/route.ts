@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
-import { syncActivityToLocation, syncRestaurantToLocation } from "@/lib/sync-location";
 import { createClient as createAuthClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 
@@ -19,24 +18,6 @@ function adminSupabase() {
 
 function validType(type: string | null): type is LocationType {
   return type === "restaurants" || type === "activities";
-}
-
-const ACTIVITY_UPDATE_BLOCKLIST = new Set([
-  "cuisine",
-  "cuisine_type",
-  "food_type",
-  "hours_of_operation",
-  "days_of_operation",
-  "kitchen_closing_time",
-  "google_maps_link",
-]);
-
-function sanitizePayloadForType(type: LocationType, payload: Record<string, unknown>) {
-  if (type !== "activities") return payload;
-
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key]) => !ACTIVITY_UPDATE_BLOCKLIST.has(key))
-  );
 }
 
 function sourceTableForType(type: LocationType) {
@@ -109,6 +90,55 @@ function sanitizeLocationPayload(payload: Record<string, unknown>) {
   if (typeof copy.reservation_source === "string" && !["internal", "external", "both", "none"].includes(copy.reservation_source)) {
     copy.reservation_source = "external";
   }
+  return copy;
+}
+
+const CANONICAL_LOCATION_BLOCKLIST = new Set([
+  "source_table",
+  "source_id",
+]);
+
+function sanitizeCanonicalLocationPayload(payload: Record<string, unknown>) {
+  const copy = sanitizeLocationPayload(payload);
+
+  for (const key of CANONICAL_LOCATION_BLOCKLIST) {
+    delete copy[key];
+  }
+
+  if (
+    copy.health_department_score !== undefined &&
+    copy.health_department_score !== null &&
+    copy.health_department_score !== ""
+  ) {
+    const numericScore = Number(copy.health_department_score);
+    copy.health_department_score = Number.isFinite(numericScore)
+      ? numericScore
+      : null;
+  }
+
+  if (
+    typeof copy.health_department_grade === "string" &&
+    copy.health_department_grade.trim()
+  ) {
+    copy.health_department_grade = copy.health_department_grade
+      .trim()
+      .toUpperCase();
+  }
+
+  if (
+    typeof copy.health_department_source === "string" &&
+    !copy.health_department_source.trim()
+  ) {
+    copy.health_department_source = null;
+  }
+
+  if (
+    typeof copy.health_department_source_url === "string" &&
+    !copy.health_department_source_url.trim()
+  ) {
+    copy.health_department_source_url = null;
+  }
+
   return copy;
 }
 
@@ -197,10 +227,8 @@ export async function PATCH(req: Request) {
     const finalId = resolved.finalId;
     const supabase = resolved.supabase;
     const isLocationImpersonation = resolved.isLocationImpersonation;
-
     const sourceTable = sourceTableForType(requestedType);
-    const locationPayload = sanitizeLocationPayload(payload);
-    const legacyPayload = sanitizePayloadForType(requestedType, payload);
+    const locationPayload = sanitizeCanonicalLocationPayload(payload);
 
     const existingLocation = await supabase
       .from("locations")
@@ -208,62 +236,42 @@ export async function PATCH(req: Request) {
       .or(`id.eq.${finalId},and(source_table.eq.${sourceTable},source_id.eq.${finalId})`)
       .maybeSingle();
 
-    if (existingLocation.data?.id) {
-      const { error } = await supabase
-        .from("locations")
-        .update(locationPayload)
-        .eq("id", existingLocation.data.id);
-
-      if (error) {
-        const schemaCacheHint =
-          typeof error.message === "string" &&
-          error.message.toLowerCase().includes("schema cache")
-            ? " Run the latest Supabase migrations and reload the PostgREST schema cache."
-            : "";
-
-        return NextResponse.json(
-          { error: `${error.message}${schemaCacheHint}` },
-          { status: 400 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        effectiveId: String(existingLocation.data.source_id || finalId),
-        canonicalId: existingLocation.data.id,
-        savedTo: "locations",
-        skippedLegacySync: true,
-        isImpersonating: Boolean(isLocationImpersonation),
-      });
+    if (!existingLocation.data?.id) {
+      return NextResponse.json(
+        {
+          error:
+            "This record is not linked to a canonical location yet. Please sync it into locations before editing.",
+        },
+        { status: 404 },
+      );
     }
 
-    const legacyId = String(existingLocation.data?.source_id || finalId);
-    const { data: legacyRow, error } = await supabase
-      .from(requestedType)
-      .update(legacyPayload)
-      .eq("id", legacyId)
-      .select("*")
-      .maybeSingle();
+    const { error } = await supabase
+      .from("locations")
+      .update(locationPayload)
+      .eq("id", existingLocation.data.id);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const schemaCacheHint =
+        typeof error.message === "string" &&
+        error.message.toLowerCase().includes("schema cache")
+          ? " Run the latest Supabase migrations and reload the PostgREST schema cache."
+          : "";
+
+      return NextResponse.json(
+        { error: `${error.message}${schemaCacheHint}` },
+        { status: 400 },
+      );
     }
 
-    if (legacyRow) {
-      try {
-        if (requestedType === "restaurants") {
-          await syncRestaurantToLocation(legacyRow as Record<string, unknown> & { id: string | number });
-        } else {
-          await syncActivityToLocation(legacyRow as Record<string, unknown> & { id: string | number });
-        }
-      } catch (syncError) {
-        console.error("Location canonical sync failed:", syncError);
-      }
-    }
-
+    // locations is the canonical source of truth for admin edits.
+    // Do not dual-write the full admin payload into legacy restaurants/activities.
     return NextResponse.json({
       success: true,
-      effectiveId: legacyId,
+      savedTo: "locations",
+      skippedLegacySync: true,
+      canonicalId: existingLocation.data.id,
+      effectiveId: String(existingLocation.data.source_id || finalId),
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {
