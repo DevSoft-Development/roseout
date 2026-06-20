@@ -71,3 +71,5 @@ Hard filters and safeguards still win: publishability/searchability, geography, 
 6. Use **Copy raw JSON** or the per-result copy buttons to capture admin-only ML debug payloads for troubleshooting.
 7. If no ML data appears, run Phase 1 recalculation if that installation exists, then run `POST /api/admin/ml/recalculate-phase2` and test again.
 8. Confirm ML boosts do not override hard filters such as publish/searchable status, location type, market/geography, category/domain matching, pair distance rejection, or missing coordinate rejection.
+
+<!-- PR refresh: no runtime behavior change. -->
