@@ -37,6 +37,20 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+const PAIR_UPSERT_CONFLICT_TARGET =
+  "restaurant_location_id,activity_location_id,intent_bucket,market_key";
+
+function samplePairRowKeys(pairRows: any[], limit: number) {
+  return pairRows.slice(0, limit).map((row) => ({
+    restaurant_location_id: row.restaurant_location_id,
+    activity_location_id: row.activity_location_id,
+    intent_bucket: row.intent_bucket,
+    market: row.market,
+    market_key: row.market_key,
+    pair_score: row.pair_score,
+  }));
+}
 function bearer(req: NextRequest) {
   const h = req.headers.get("authorization") || "";
   return h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : null;
@@ -475,17 +489,25 @@ export async function POST(req: NextRequest) {
     const { error } = await supabaseAdmin
       .from("location_pair_ml_features")
       .upsert(pairRows, {
-        onConflict:
-          "restaurant_location_id,activity_location_id,intent_bucket,market_key",
+        onConflict: PAIR_UPSERT_CONFLICT_TARGET,
       });
     if (error) {
       const pairUpsertError = {
+        message: error.message ?? null,
+        code: error.code ?? null,
+        details: error.details ?? null,
+        hint: error.hint ?? null,
+      };
+      pairDiagnostics.pairUpsertError = pairUpsertError;
+      console.error("[ml-phase2] pair upsert failed", {
         message: error.message,
         code: error.code,
         details: error.details,
         hint: error.hint,
-      };
-      pairDiagnostics.pairUpsertError = pairUpsertError;
+        pairRowCount: pairRows.length,
+        conflictTarget: PAIR_UPSERT_CONFLICT_TARGET,
+        samplePairRowKeys: samplePairRowKeys(pairRows, 2),
+      });
       errors.push(`pair upsert: ${error.message}`);
       diagnostics.pairUpsertIssue = error.message;
     } else updatedPair = pairRows.length;
@@ -517,6 +539,19 @@ export async function POST(req: NextRequest) {
   if (pairDiagnostics.searchEventsWithMlPairIds === 0)
     diagnostics.recommendation =
       "No pair IDs found yet. Run a new mixed outing search after the tracking update.";
+  const responsePairDiagnostics = {
+    ...pairDiagnostics,
+    pairUpsertError: pairDiagnostics.pairUpsertError ?? null,
+    upsertConflictTarget: PAIR_UPSERT_CONFLICT_TARGET,
+    pairRowsIncludeMarketKey: pairRows.every((row) =>
+      Object.prototype.hasOwnProperty.call(row, "market_key"),
+    ),
+    samplePairRowKeys: samplePairRowKeys(pairRows, 5),
+    candidatePairRows: pairRows.length,
+    upsertPairRows: updatedPair,
+    validMlPairsExtracted: pairDiagnostics.validMlPairsExtracted,
+  };
+  diagnostics.pairDiagnostics = responsePairDiagnostics;
   await supabaseAdmin.from("ml_phase2_score_runs").insert({
     status: errors.length ? "completed_with_errors" : "completed",
     processed_location_intents: locRows.length,
@@ -525,7 +560,11 @@ export async function POST(req: NextRequest) {
     updated_pairs: updatedPair,
     error_count: errors.length,
     score_version: "phase2_rank_v1",
-    metadata: { errors: errors.slice(0, 20), diagnostics, pairDiagnostics },
+    metadata: {
+      errors: errors.slice(0, 20),
+      diagnostics,
+      pairDiagnostics: responsePairDiagnostics,
+    },
   });
   return NextResponse.json({
     success: errors.length === 0,
@@ -536,7 +575,7 @@ export async function POST(req: NextRequest) {
     errors,
     scoreVersion: "phase2_rank_v1",
     diagnostics,
-    pairDiagnostics,
+    pairDiagnostics: responsePairDiagnostics,
     sampleTopLocationIntentScores: locRows
       .sort((a, b) => b.intent_score - a.intent_score)
       .slice(0, 5),

@@ -14,6 +14,35 @@ function valueLine(label: string, value: any) {
   );
 }
 
+function PairUpsertErrorPanel({ result }: { result: Result }) {
+  const d = result?.diagnostics || {};
+  const p = result?.pairDiagnostics || d?.pairDiagnostics || {};
+  const pairUpsertError = p?.pairUpsertError;
+  if (!pairUpsertError) return null;
+
+  return (
+    <div className="mt-3 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-rose-50">
+      <p className="font-black text-rose-100">Pair upsert error:</p>
+      <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+        {valueLine("code", pairUpsertError.code)}
+        {valueLine("message", pairUpsertError.message)}
+        {valueLine("details", pairUpsertError.details)}
+        {valueLine("hint", pairUpsertError.hint)}
+        {valueLine("conflict target", p.upsertConflictTarget)}
+        {valueLine("pairRowsIncludeMarketKey", p.pairRowsIncludeMarketKey)}
+      </ul>
+      {Array.isArray(p.samplePairRowKeys) && p.samplePairRowKeys.length ? (
+        <div className="mt-3">
+          <p className="font-bold text-rose-100">Sample pair row keys</p>
+          <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 text-[11px] leading-relaxed text-white/80">
+            {JSON.stringify(p.samplePairRowKeys, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ResultPanel({
   title,
   result,
@@ -77,6 +106,9 @@ function ResultPanel({
           {valueLine("validMlPairsExtracted", p.validMlPairsExtracted)}
           {valueLine("upsertPairRows", p.upsertPairRows)}
         </ul>
+      ) : null}
+      {title === "Phase 2 result" ? (
+        <PairUpsertErrorPanel result={result} />
       ) : null}
     </div>
   );
