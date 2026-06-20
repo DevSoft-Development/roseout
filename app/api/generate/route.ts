@@ -10,6 +10,8 @@ import { parsePlannedTimeFromQuery } from "@/lib/outings/parse-planned-time";
 import { parseOutingDateTime } from "@/lib/search/parse-outing-date-time";
 import { detectRequestedMarket } from "@/lib/location-markets";
 import { normalizeCreateSearchRequest } from "@/lib/search/normalizeCreateSearchRequest";
+import { checkSearchLimit, getCurrentSearchIdentity, recordSearchUsageEvent } from "@/lib/search-usage-limits";
+import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -247,6 +249,15 @@ export async function POST(request: Request) {
       return Response.json(
         emptySearchResponse("Please enter what you want to search for."),
       );
+    }
+
+    const searchIdentity = await getCurrentSearchIdentity(request);
+    const limitCheck = await checkSearchLimit(searchIdentity, cleanInput);
+    if (!limitCheck.allowed) {
+      await recordSearchUsageEvent({ identity: searchIdentity, query: cleanInput, allowed: false, reason: "weekly_limit_reached", planKey: limitCheck.plan.planKey });
+      const blocked = Response.json({ success: false, error: "SEARCH_LIMIT_REACHED", limit: { planKey: limitCheck.plan.planKey, weeklyLimit: limitCheck.weeklyLimit, usedThisWeek: limitCheck.usedThisWeek, resetWindow: "weekly", message: limitCheck.message } }, { status: 429 });
+      if (searchIdentity.setGuestCookie && searchIdentity.guestId) blocked.headers.append("Set-Cookie", `guest_search_id=${searchIdentity.guestId}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      return blocked;
     }
 
     console.log("[api/generate] request", {
@@ -840,7 +851,10 @@ export async function POST(request: Request) {
       }),
     );
 
-    return Response.json(response);
+    await recordSearchUsageEvent({ identity: searchIdentity, query: cleanInput, allowed: true, planKey: limitCheck.plan.planKey });
+    const finalResponse = Response.json(response);
+    if (searchIdentity.setGuestCookie && searchIdentity.guestId) finalResponse.headers.append("Set-Cookie", `guest_search_id=${searchIdentity.guestId}; Path=/; Max-Age=31536000; SameSite=Lax`);
+    return finalResponse;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 

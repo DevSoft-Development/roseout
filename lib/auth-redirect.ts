@@ -106,5 +106,5 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
     return safePath;
   }
 
-  return "/create";
+  return "/user/dashboard";
 }
