@@ -374,3 +374,42 @@ export function getPairGeoPriority(
     return "cross_state_low_priority";
   return "standard";
 }
+
+export function createActivityActivityPairs(
+  firstActivities: EnterpriseLocation[],
+  secondActivities: EnterpriseLocation[],
+  intent: SearchIntent,
+  debug: PairingDebug = createPairingDebug(),
+) {
+  const pairs = createSearchPairs(
+    firstActivities,
+    secondActivities,
+    intent,
+    debug,
+  ).map((pair, index) => {
+    const firstName = pair.restaurant.name || pair.restaurant.activity_name || null;
+    const secondName = pair.activity.name || pair.activity.activity_name || null;
+    return {
+      ...pair,
+      pair_type: "activity_activity" as const,
+      first_activity_location_id: pair.restaurant.id,
+      second_activity_location_id: pair.activity.id,
+      activity_location_id: pair.restaurant.id,
+      paired_activity_location_id: pair.activity.id,
+      first_activity_name: firstName,
+      second_activity_name: secondName,
+      title: [firstName, secondName].filter(Boolean).join(" + ") || pair.title,
+      explanation:
+        pair.pairDistanceMiles != null
+          ? `These two activity picks work as a two-stop outing about ${pair.pairDistanceMiles} miles apart.`
+          : "These two activity picks work as a two-stop outing.",
+      pairExplanation:
+        pair.pairDistanceMiles != null
+          ? `These two activity picks work as a two-stop outing about ${pair.pairDistanceMiles} miles apart.`
+          : "These two activity picks work as a two-stop outing.",
+      score: pair.score - index * 0.01,
+      pairScore: pair.pairScore - index * 0.01,
+    };
+  });
+  return pairs;
+}

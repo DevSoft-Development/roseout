@@ -749,6 +749,89 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
 }
 
 
+
+const ACTIVITY_PAIR_CONNECTOR_RE = /\b(after|then|followed by|with|and then|before|first|next|afterwards|afterward|later)\b/i;
+
+function activityTermsForSegment(segment: string) {
+  return uniqueTerms(detectFastPathActivityIntentTerms(segment));
+}
+
+function expandActivityPairTerms(terms: string[]) {
+  const joined = terms.join(" ");
+  const expanded = [...terms];
+  if (/hookah|shisha/.test(joined)) expanded.push("hookah", "hookah lounge", "hookah bar", "shisha", "lounge");
+  if (/rooftop|roof top/.test(joined)) expanded.push("rooftop bar", "rooftop lounge", "rooftop drinks", "rooftop cocktails", "terrace", "skyline", "cocktails", "drinks");
+  if (/arcade/.test(joined)) expanded.push("arcade", "games");
+  if (/bowling/.test(joined)) expanded.push("bowling");
+  if (/comedy/.test(joined)) expanded.push("comedy", "comedy show", "comedy club");
+  if (/museum/.test(joined)) expanded.push("museum", "exhibit", "gallery");
+  if (/karaoke/.test(joined)) expanded.push("karaoke", "karaoke bar");
+  if (/jazz/.test(joined)) expanded.push("jazz lounge", "jazz", "live jazz", "live music");
+  if (/cocktail|drinks|bar|lounge/.test(joined)) expanded.push("cocktails", "drinks", "bar", "lounge");
+  return uniqueTerms(expanded);
+}
+
+function splitActivityPairIntent(query: string) {
+  const q = String(query || "").toLowerCase().trim();
+  if (!ACTIVITY_PAIR_CONNECTOR_RE.test(q) || hasMealOrRestaurantTerm(q)) return null;
+  const match = q.match(ACTIVITY_PAIR_CONNECTOR_RE);
+  if (!match?.index && match?.index !== 0) return null;
+  const before = q.slice(0, match.index).trim();
+  const after = q.slice(match.index + match[0].length).trim();
+  const beforeTerms = expandActivityPairTerms(activityTermsForSegment(before));
+  const afterTerms = expandActivityPairTerms(activityTermsForSegment(after));
+  const allTerms = expandActivityPairTerms(activityTermsForSegment(q));
+  let firstActivityTerms = beforeTerms;
+  let secondActivityTerms = afterTerms;
+  if (!firstActivityTerms.length || !secondActivityTerms.length) {
+    if (!["after", "then", "and then", "followed by", "before", "next", "afterwards", "afterward", "later"].includes(match[1])) return null;
+    const midpoint = Math.ceil(allTerms.length / 2);
+    firstActivityTerms = firstActivityTerms.length ? firstActivityTerms : allTerms.slice(0, midpoint);
+    secondActivityTerms = secondActivityTerms.length ? secondActivityTerms : allTerms.slice(midpoint);
+  }
+  if (!firstActivityTerms.length || !secondActivityTerms.length) return null;
+  if (firstActivityTerms.join("|") === secondActivityTerms.join("|")) return null;
+  return {
+    firstActivityTerms: uniqueTerms(firstActivityTerms),
+    secondActivityTerms: uniqueTerms(secondActivityTerms),
+    sequence: match[1] === "before" ? "second_then_first" as const : "first_then_second" as const,
+    source: "sequencing_language" as const,
+  };
+}
+
+function hasActivityActivityPairFastPathIntent(query: string) {
+  return Boolean(splitActivityPairIntent(query));
+}
+
+function createActivityActivityPairFastPathIntent(rawQuery: string) {
+  const activityPairIntent = splitActivityPairIntent(rawQuery)!;
+  return {
+    rawQuery,
+    searchType: "activity_pair",
+    primaryDomain: "activity",
+    needsRestaurant: false,
+    needsActivity: true,
+    wantsPairing: true,
+    restaurantIntent: createEmptyRestaurantIntent(),
+    activityIntent: {
+      ...createEmptyActivityIntent(),
+      activityTerms: uniqueTerms([...activityPairIntent.firstActivityTerms, ...activityPairIntent.secondActivityTerms]),
+      alternativeGroups: [activityPairIntent.firstActivityTerms, activityPairIntent.secondActivityTerms],
+    },
+    activityPairIntent,
+    pairingPreference: {
+      requiresPairing: true,
+      distanceMode: fastPathDistanceMode(rawQuery) === "any" ? "nearby" : fastPathDistanceMode(rawQuery),
+      maxPairDistanceMiles: 8,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    },
+    geo: emptyGeoIntent(),
+    vibe: [],
+    strictness: "high",
+  } satisfies Partial<SearchIntent>;
+}
+
 function hasRelaxedMixedFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
   const hasMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|eat)\b/.test(q);
@@ -960,6 +1043,14 @@ function createEnterpriseIntentFastPathResult(
       intent: createExplicitMixedFastPathIntent(rawQuery),
       reason: "matched explicit mixed outing fast path",
       confidence: 0.9,
+    };
+  }
+
+  if (hasActivityActivityPairFastPathIntent(query)) {
+    return {
+      intent: createActivityActivityPairFastPathIntent(rawQuery),
+      reason: "matched activity-activity paired outing fast path",
+      confidence: 0.91,
     };
   }
 
