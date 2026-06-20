@@ -145,11 +145,14 @@ export type MlPairExtractionDiagnostics = {
   candidatePairRows: number;
   upsertPairRows: number;
   pairUpsertError?: {
-    message?: string;
-    code?: string;
-    details?: string;
-    hint?: string;
-  };
+    message?: string | null;
+    code?: string | null;
+    details?: string | null;
+    hint?: string | null;
+  } | null;
+  upsertConflictTarget?: string;
+  pairRowsIncludeMarketKey?: boolean;
+  samplePairRowKeys?: Array<Record<string, any>>;
 };
 export function createPairDiagnostics(): MlPairExtractionDiagnostics {
   return {
