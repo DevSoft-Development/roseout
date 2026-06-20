@@ -24,6 +24,11 @@ export default function LaunchWaitlistForm() {
   const [followedSocial, setFollowedSocial] = useState(false);
   const [taggedTwoFriends, setTaggedTwoFriends] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
+  const [betaInterest, setBetaInterest] = useState(true);
+  const [testerType, setTesterType] = useState("user");
+  const [notes, setNotes] = useState("");
+  const [betaAgreement, setBetaAgreement] = useState(false);
+  const [age18Confirmed, setAge18Confirmed] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileReady, setTurnstileReady] = useState(false);
   const [turnstileError, setTurnstileError] = useState("");
@@ -34,7 +39,7 @@ export default function LaunchWaitlistForm() {
 
   const enabledTurnstile = useMemo(() => isTurnstileEnabled(), []);
   const siteKeyMissing = enabledTurnstile && !process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  const requiredFieldsMissing = !fullName.trim() || !email.trim() || !marketingConsent || (wantsGiveaway && (!socialHandle.trim() || !["instagram", "tiktok", "both"].includes(socialPlatform)));
+  const requiredFieldsMissing = !fullName.trim() || !email.trim() || !marketingConsent || (betaInterest && !betaAgreement) || (wantsGiveaway && (!age18Confirmed || !socialHandle.trim() || !["instagram", "tiktok", "both"].includes(socialPlatform)));
   const submitDisabled = loading || requiredFieldsMissing || (enabledTurnstile && !turnstileToken);
 
   const resetTurnstile = useCallback(() => {
@@ -72,6 +77,8 @@ export default function LaunchWaitlistForm() {
     if (trimmedName.length > 120) return "Please enter your name.";
     if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) return "Please enter a valid email address.";
     if (!marketingConsent) return "Please agree to the launch list and giveaway terms to continue.";
+    if (betaInterest && !betaAgreement) return "Please agree to complete beta tasks if approved.";
+    if (wantsGiveaway && !age18Confirmed) return "Please confirm you are 18+ to enter the giveaway.";
     if (wantsGiveaway && !socialHandle.trim()) return "Please enter your Instagram or TikTok handle to join the giveaway.";
     if (wantsGiveaway && !["instagram", "tiktok", "both"].includes(socialPlatform)) return "Please choose Instagram, TikTok, or Both.";
     if (enabledTurnstile && !turnstileToken) return "Complete the verification to continue.";
@@ -103,6 +110,11 @@ export default function LaunchWaitlistForm() {
           followedSocial: wantsGiveaway ? followedSocial : false,
           taggedTwoFriends: wantsGiveaway ? taggedTwoFriends : false,
           marketingConsent,
+          betaInterest,
+          testerType,
+          notes,
+          betaAgreement,
+          age18Confirmed,
           turnstileToken,
           referrer: typeof document !== "undefined" ? document.referrer : null,
         }),
@@ -147,11 +159,20 @@ export default function LaunchWaitlistForm() {
         </label>
       </div>
 
+      <label className="flex cursor-pointer items-start gap-3 rounded-3xl border border-emerald-300/20 bg-emerald-500/10 p-4">
+        <input type="checkbox" checked={betaInterest} onChange={(event) => setBetaInterest(event.target.checked)} className="mt-1 h-5 w-5 accent-rose-500" />
+        <span>
+          <span className="block text-base font-black text-white">Apply for beta early access</span>
+          <span className="mt-1 block text-sm leading-6 text-white/65">Help test TheOutHaven and get considered for beta approval.</span>
+        </span>
+      </label>
+      {betaInterest ? <div className="grid gap-4 rounded-3xl border border-white/10 bg-black/20 p-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-bold text-white/85">Tester type<select aria-label="Tester type" value={testerType} onChange={(event) => setTesterType(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#180807] px-4 py-3 text-white outline-none"><option value="user">User</option><option value="location_owner">Location owner</option><option value="ambassador">Ambassador</option><option value="experience_team">Experience team</option></select></label><label className="space-y-2 text-sm font-bold text-white/85">Notes <span className="font-medium text-white/45">optional</span><input value={notes} onChange={(event) => setNotes(event.target.value)} className="w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-white outline-none" placeholder="What would you like to test?" /></label><label className="flex items-start gap-3 text-sm text-white/75 sm:col-span-2"><input type="checkbox" checked={betaAgreement} onChange={(event) => setBetaAgreement(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I agree to complete beta tasks if approved.</label></div> : null}
+
       <label className="flex cursor-pointer items-start gap-3 rounded-3xl border border-rose-300/20 bg-rose-500/10 p-4">
         <input type="checkbox" checked={wantsGiveaway} onChange={(event) => setWantsGiveaway(event.target.checked)} className="mt-1 h-5 w-5 accent-rose-500" />
         <span>
           <span className="block text-base font-black text-white">Enter the $100 gift card giveaway</span>
-          <span className="mt-1 block text-sm leading-6 text-white/65">To qualify for the giveaway, follow @TheOutHaven on Instagram or TikTok, tag 2 friends in the giveaway post comments, and verify your email.</span>
+          <span className="mt-1 block text-sm leading-6 text-white/65">To qualify for the $100 gift card giveaway, follow @TheOutHaven on Instagram or TikTok, tag 2 friends in the giveaway post comments, and verify your email. Must be 18+. No purchase necessary. One winner selected at random.</span>
         </span>
       </label>
 
@@ -176,6 +197,7 @@ export default function LaunchWaitlistForm() {
           <div className="grid gap-3 text-sm text-white/75">
             <label className="flex items-start gap-3"><input type="checkbox" checked={followedSocial} onChange={(event) => setFollowedSocial(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I followed @TheOutHaven on Instagram or TikTok</label>
             <label className="flex items-start gap-3"><input type="checkbox" checked={taggedTwoFriends} onChange={(event) => setTaggedTwoFriends(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I tagged 2 friends in the giveaway post comments</label>
+            <label className="flex items-start gap-3"><input type="checkbox" checked={age18Confirmed} onChange={(event) => setAge18Confirmed(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I confirm I am 18 or older</label>
             <p className="text-xs leading-5 text-white/45">These checkboxes are self-reported only. TheOutHaven manually verifies follows and tagged friends before marking an entry verified.</p>
           </div>
         </div>
@@ -207,7 +229,7 @@ export default function LaunchWaitlistForm() {
       {success ? <div className="rounded-2xl border border-emerald-300/40 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">{success}</div> : null}
 
       <button type="submit" disabled={submitDisabled} className="w-full rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-6 py-4 text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60">
-        {loading ? "Joining..." : wantsGiveaway ? "Join Launch List + Enter Giveaway" : "Join Launch List"}
+        {loading ? "Joining..." : "Join Beta Launch List"}
       </button>
     </form>
   );
