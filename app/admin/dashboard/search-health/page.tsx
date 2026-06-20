@@ -18,11 +18,28 @@ export default async function SearchHealthPage() {
           <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">
             Admin Tools / System
           </p>
-          <h1 className="mt-3 text-4xl font-black tracking-tight">Search Health</h1>
+          <h1 className="mt-3 text-4xl font-black tracking-tight">
+            Search Health
+          </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65">
-            Monitor real search issues, no-pair results, slow searches, walking-route
-            suppressions, and search lab debug warnings captured by backend logging.
+            Monitor real search issues, no-pair results, slow searches,
+            walking-route suppressions, and search lab debug warnings captured
+            by backend logging.
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <a
+              href="/admin/dashboard/beta/search-lab"
+              className="rounded-full border border-white/15 bg-white/[.06] px-4 py-2 text-xs font-black text-white/80"
+            >
+              Open Search Lab ML debug
+            </a>
+            <a
+              href="/admin/dashboard/ml/phase-2"
+              className="rounded-full border border-rose-300/40 bg-rose-600/20 px-4 py-2 text-xs font-black text-rose-50"
+            >
+              View Phase 2 ML dashboard
+            </a>
+          </div>
         </section>
 
         <SearchHealthClient />
