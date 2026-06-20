@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import type { AdminRole } from "@/lib/users/roles";
 
 const allowedStatuses = new Set([
@@ -10,6 +11,7 @@ const allowedStatuses = new Set([
   "disqualified",
   "winner",
   "alternate",
+  "pending_beta_tasks",
 ]);
 
 const giveawayAdminRoles: AdminRole[] = [
@@ -99,17 +101,19 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    if (body.giveaway_status === "verified" && (!entry.email_verified || !entry.social_handle || !entry.social_platform || !(entry.followed_social || entry.followed_social_verified_at) || !(entry.tagged_two_friends || entry.tagged_friends_verified_at) || entry.duplicate_flag)) {
+    const betaEligibility = await getBetaGiveawayEligibilityForEmail(entry.email || "");
+    if (body.giveaway_status === "verified" && (!entry.email_verified || !entry.wants_giveaway || !entry.social_handle || !entry.social_platform || !(entry.followed_social || entry.followed_social_verified_at) || !(entry.tagged_two_friends || entry.tagged_friends_verified_at) || !entry.age_18_confirmed || !entry.giveaway_rules_agreed || (betaEligibility.isBetaTester && !betaEligibility.weeklyTasksComplete) || entry.duplicate_flag || entry.giveaway_status === "disqualified")) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Email, social handle/platform, follow, tags, and duplicate checks must pass before marking verified.",
+            "Email, giveaway opt-in, social handle/platform, follow, tags, 18+ confirmation, giveaway rules agreement, beta weekly tasks when applicable, and duplicate/disqualification checks must pass before marking verified.",
         },
         { status: 400 },
       );
     }
     updates.giveaway_status = body.giveaway_status;
+    updates.weekly_task_eligibility_status = (await getBetaGiveawayEligibilityForEmail(entry.email || "")).eligibilityStatus;
     if (
       body.giveaway_status === "verified" ||
       body.giveaway_status === "winner"
@@ -135,7 +139,7 @@ export async function PATCH(
       { status: 500 },
     );
   await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: data.email, action: "giveaway_status_changed", entity_type: "launch_waitlist_signup", entity_id: id, summary: `Giveaway/admin review updated to ${data.giveaway_status}`, before_data: entry, after_data: data, metadata: { action: body.action || null } });
-  return NextResponse.json({ success: true, entry: data });
+  return NextResponse.json({ success: true, entry: { ...data, beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(data.email || "") } });
 }
 
 export async function DELETE(

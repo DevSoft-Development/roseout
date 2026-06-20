@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 
 export async function GET(request: Request) {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.giveaway);
@@ -26,7 +27,10 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  const entries = data || [];
+  const entries = await Promise.all((data || []).map(async (entry) => ({
+    ...entry,
+    beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || ""),
+  })));
   const stats = {
     total: entries.length,
     launchListOnly: entries.filter((entry) => !entry.wants_giveaway).length,

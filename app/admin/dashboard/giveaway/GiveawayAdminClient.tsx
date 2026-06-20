@@ -27,7 +27,7 @@ type Entry = {
   giveaway_notes: string | null;
   created_at: string | null;
   giveaway_verified_at: string | null;
-  beta_interest?: boolean | null; beta_application_status?: string | null; tester_type?: string | null; age_18_confirmed?: boolean | null;
+  beta_interest?: boolean | null; beta_application_status?: string | null; age_18_confirmed?: boolean | null; giveaway_rules_agreed?: boolean | null; weekly_task_eligibility_status?: string | null; beta_giveaway_eligibility?: { isBetaTester: boolean; betaStatus: string | null; completedThisWeek: number; requiredThisWeek: number; weeklyTasksComplete: boolean; eligibilityStatus: string; reason: string; } | null;
 };
 
 type DuplicateEvent = {
@@ -89,6 +89,9 @@ const csvColumns = [
   "email_consent_at",
   "followed_social",
   "tagged_two_friends",
+  "age_18_confirmed",
+  "giveaway_rules_agreed",
+  "weekly_task_eligibility_status",
   "giveaway_status",
   "duplicate_flag",
   "duplicate_reason",
@@ -133,7 +136,7 @@ function formatText(value: string | null | undefined) {
   return value?.trim() || "—";
 }
 
-function yesNo(value: boolean | null) {
+function yesNo(value: boolean | null | undefined) {
   return value ? "Yes" : "No";
 }
 
@@ -172,6 +175,8 @@ function statusBadgeClass(status: string | null) {
       return "border-sky-300/35 bg-sky-400/10 text-sky-100";
     case "email_unverified":
       return "border-orange-300/30 bg-orange-400/10 text-orange-100";
+    case "pending_beta_tasks":
+      return "border-amber-300/35 bg-amber-400/10 text-amber-100";
     default:
       return "border-white/10 bg-white/[0.07] text-white/70";
   }
@@ -383,6 +388,7 @@ export default function GiveawayAdminClient({
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "reject_beta", rejection_reason: "Admin rejected" })} className={`${actionButtonClass} border border-red-300/30 bg-red-500/10 text-red-100`}>Reject Beta</button>
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_social" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify follow</button>
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_tags" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify tags</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "pending_beta_tasks" })} className={`${actionButtonClass} border border-amber-300/20 bg-amber-500/10 text-amber-100`}>Pending beta tasks</button>
         {entry.wants_giveaway ? (
           <button
             disabled={isBusy}
@@ -514,7 +520,7 @@ export default function GiveawayAdminClient({
           tags, or social handle. Verify that the user followed @TheOutHaven and
           tagged 2 friends in the giveaway post comments before marking the
           entry verified. Duplicate emails update the existing signup. Duplicate
-          social handles across different emails should be reviewed or blocked.
+          social handles across different emails should be reviewed or blocked. Approved beta testers must also complete the current weekly beta task requirement before an entry can be marked verified.
         </p>
       </section>
 
@@ -664,6 +670,15 @@ export default function GiveawayAdminClient({
                         {yesNo(entry.duplicate_flag)}
                       </span>
                     </p>
+                    <p className="mt-1">
+                      18+ confirmed: <span className="font-bold text-white">{yesNo(entry.age_18_confirmed)}</span>
+                    </p>
+                    <p className="mt-1">
+                      Rules agreed: <span className="font-bold text-white">{yesNo(entry.giveaway_rules_agreed)}</span>
+                    </p>
+                    <p className="mt-1">
+                      Weekly beta tasks: <span className="font-bold text-white">{entry.beta_giveaway_eligibility?.isBetaTester ? `${entry.beta_giveaway_eligibility.completedThisWeek} / ${entry.beta_giveaway_eligibility.requiredThisWeek} completed` : "Not approved as beta yet"}</span>
+                    </p>
                     {entry.duplicate_reason ? (
                       <p className="mt-2 text-red-100/80">
                         {entry.duplicate_reason}
@@ -779,6 +794,9 @@ export default function GiveawayAdminClient({
                   {yesNo(entry.duplicate_flag)}
                 </span>
               </p>
+              <p className="mt-1">18+ confirmed: <span className="font-black text-white">{yesNo(entry.age_18_confirmed)}</span></p>
+              <p className="mt-1">Giveaway rules agreed: <span className="font-black text-white">{yesNo(entry.giveaway_rules_agreed)}</span></p>
+              <p className="mt-1">Weekly beta tasks: <span className="font-black text-white">{entry.beta_giveaway_eligibility?.isBetaTester ? `${entry.beta_giveaway_eligibility.completedThisWeek} / ${entry.beta_giveaway_eligibility.requiredThisWeek} completed` : "Not approved as beta yet"}</span></p>
               {entry.duplicate_reason ? (
                 <p className="mt-2 text-red-100">{entry.duplicate_reason}</p>
               ) : null}
