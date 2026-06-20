@@ -809,6 +809,15 @@ export default function CreatePage() {
     scrollToElement(targetElement || addOnSearchRef.current);
   }
 
+  function scrollToActivitiesSection() {
+    window.requestAnimationFrame(() => {
+      activitySectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
   function handleInputChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(event.target.value);
   }
@@ -820,19 +829,16 @@ export default function CreatePage() {
   }
 
   function selectRestaurantAndMaybeScroll(restaurant: RestaurantCard) {
-    const nextSelected =
-      selectedRestaurant?.id === restaurant.id ? null : restaurant;
+    if (restaurant?.id) {
+      trackRestaurantClick(String(restaurant.id));
+      trackRestaurantSave(String(restaurant.id));
+    }
 
-    setSelectedRestaurant(nextSelected);
+    setSelectedRestaurant(restaurant);
     setShowPlanSummary(false);
 
-    if (nextSelected && latestResultOrder[0] === "restaurants") {
-      setTimeout(() => {
-        activitySectionRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 200);
+    if ((latestAssistant?.activities?.length || 0) > 0) {
+      scrollToActivitiesSection();
     }
   }
 
@@ -841,15 +847,6 @@ export default function CreatePage() {
 
     setSelectedActivity(nextSelected);
     setShowPlanSummary(false);
-
-    if (nextSelected && latestResultOrder[0] === "activities") {
-      setTimeout(() => {
-        addOnRestaurantSectionRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 200);
-    }
   }
 
   async function submitSearch(
@@ -1737,8 +1734,6 @@ export default function CreatePage() {
                                     : "Choose this spot"
                                 }
                                 onSelect={() => {
-                                  trackRestaurantClick(restaurantId);
-                                  trackRestaurantSave(restaurantId);
                                   selectRestaurantAndMaybeScroll(restaurant);
                                 }}
                                 onCardClick={() =>
