@@ -1126,3 +1126,46 @@ describe("broad occasion outing intent", () => {
     });
   }
 });
+
+describe("activity-activity paired outing intent", () => {
+  for (const query of [
+    "hookah lounge with rooftop bar after",
+    "rooftop bar then hookah",
+    "bowling and arcade after",
+    "comedy show then lounge",
+    "museum then rooftop drinks",
+  ]) {
+    it(`fast-paths ${query} as an activity pair`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      expect(parsed.usedLlm).toBe(false);
+      expect(parsed.fastPathReason).toBe("matched activity-activity paired outing fast path");
+      expect(parsed.intent.searchType).toBe("activity_pair");
+      expect(parsed.intent.primaryDomain).toBe("activity");
+      expect(parsed.intent.wantsPairing).toBe(true);
+      expect(parsed.intent.needsRestaurant).toBe(false);
+      expect(parsed.intent.needsActivity).toBe(true);
+      expect(parsed.intent.pairingPreference?.requiresPairing).toBe(true);
+      expect(parsed.intent.pairingPreference?.distanceMode).toBe("nearby");
+      expect(parsed.intent.pairingPreference?.maxPairDistanceMiles).toBe(8);
+      expect(parsed.intent.activityPairIntent?.firstActivityTerms.length).toBeGreaterThan(0);
+      expect(parsed.intent.activityPairIntent?.secondActivityTerms.length).toBeGreaterThan(0);
+    });
+  }
+
+  for (const query of ["hookah lounge", "rooftop bar"]) {
+    it(`keeps ${query} activity-only`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      expect(parsed.intent.searchType).toBe("activity");
+      expect(parsed.intent.wantsPairing).toBe(false);
+    });
+  }
+
+  for (const query of ["steak dinner and hookah", "dinner then rooftop bar"]) {
+    it(`keeps ${query} as restaurant + activity`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      expect(parsed.intent.searchType).toBe("mixed_outing");
+      expect(parsed.intent.needsRestaurant).toBe(true);
+      expect(parsed.intent.needsActivity).toBe(true);
+    });
+  }
+});

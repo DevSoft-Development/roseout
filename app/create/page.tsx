@@ -1595,7 +1595,9 @@ export default function CreatePage() {
                               restaurant?: RestaurantCard | null;
                               activity?: ActivityCard | null;
                               pair_distance_miles?: number | null;
+                              pair_type?: string | null;
                             };
+                            const isActivityActivityPair = pairRecord.pair_type === "activity_activity";
                             const restaurant = pairRecord.restaurant;
                             const activity = pairRecord.activity;
                             const restaurantImage = restaurant
@@ -1675,6 +1677,7 @@ export default function CreatePage() {
                                   if (activity?.id)
                                     trackActivityClick(String(activity.id));
                                 }}
+                                pairType={isActivityActivityPair ? "activity_activity" : "restaurant_activity"}
                                 analyticsMetadata={
                                   CREATE_RESULTS_ANALYTICS_METADATA
                                 }
@@ -2570,6 +2573,7 @@ function ComboResultCard({
   selectLabel,
   onSelect,
   onCardClick,
+  pairType = "restaurant_activity",
   analyticsMetadata,
 }: {
   index: number;
@@ -2583,6 +2587,7 @@ function ComboResultCard({
   selectLabel: string;
   onSelect: () => void;
   onCardClick?: () => void;
+  pairType?: "restaurant_activity" | "activity_activity";
   analyticsMetadata?: LocationAnalyticsMetadata;
 }) {
   const viewRef = useTrackLocationView<HTMLElement>(
@@ -2591,22 +2596,25 @@ function ComboResultCard({
       : null,
     analyticsMetadata,
   );
+  const isActivityActivityPair = pairType === "activity_activity";
   const restaurantName = restaurant
     ? getLocationName(restaurant)
-    : "Restaurant";
-  const activityName = activity ? getLocationName(activity) : "Activity";
+    : isActivityActivityPair ? "First Pick" : "Restaurant";
+  const activityName = activity ? getLocationName(activity) : isActivityActivityPair ? "Next Pick" : "Activity";
   const title = [restaurant ? restaurantName : null, activity ? activityName : null]
     .filter(Boolean)
     .join(" + ");
   const whyPicked =
     restaurant && activity
-      ? "This combination pairs a food spot with an experience that fits your search, location, and vibe."
+      ? isActivityActivityPair
+        ? "This two-stop activity outing fits your search, location, and vibe."
+        : "This combination pairs a food spot with an experience that fits your search, location, and vibe."
       : "This recommendation fits your search, location, and vibe.";
 
   if (!restaurant && !activity) return null;
 
   const renderImagePanel = (
-    label: "Restaurant" | "Activity",
+    label: "Restaurant" | "Activity" | "First Pick" | "Next Pick",
     imageUrl: string | null | undefined,
     alt: string,
   ) => {
@@ -2672,8 +2680,8 @@ function ComboResultCard({
       }}
     >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {renderImagePanel("Restaurant", restaurantImageUrl, restaurantName)}
-        {renderImagePanel("Activity", activityImageUrl, activityName)}
+        {renderImagePanel(isActivityActivityPair ? "First Pick" : "Restaurant", restaurantImageUrl, restaurantName)}
+        {renderImagePanel(isActivityActivityPair ? "Next Pick" : "Activity", activityImageUrl, activityName)}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col p-1 pt-4">
@@ -2688,7 +2696,7 @@ function ComboResultCard({
 
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
-              Food + experience
+              {isActivityActivityPair ? "Two activity stops" : "Food + experience"}
             </span>
             {distance !== null && distance !== undefined ? (
               <span className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-2.5 py-1 text-[11px] font-black text-red-50">
@@ -2700,12 +2708,12 @@ function ComboResultCard({
           <div className="space-y-1 text-xs font-semibold leading-5 text-white/42">
             {restaurant ? (
               <p className="line-clamp-1 break-words">
-                Restaurant: {formatAddress(restaurant)}
+                {isActivityActivityPair ? "First Pick" : "Restaurant"}: {formatAddress(restaurant)}
               </p>
             ) : null}
             {activity ? (
               <p className="line-clamp-1 break-words">
-                Activity: {formatAddress(activity)}
+                {isActivityActivityPair ? "Next Pick" : "Activity"}: {formatAddress(activity)}
               </p>
             ) : null}
           </div>

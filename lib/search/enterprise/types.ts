@@ -1,5 +1,5 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
-export type SearchType = "restaurant" | "activity" | "mixed_outing" | "any";
+export type SearchType = "restaurant" | "activity" | "mixed_outing" | "activity_pair" | "any";
 export type GeoStrictness =
   | "none"
   | "soft"
@@ -32,6 +32,13 @@ export type RestaurantIntent = {
   featureTerms: string[];
   negativeTerms: string[];
   alternativeGroups?: string[][];
+};
+
+export type ActivityPairIntent = {
+  firstActivityTerms: string[];
+  secondActivityTerms: string[];
+  sequence: "first_then_second" | "second_then_first" | "unknown";
+  source: "sequencing_language" | "fallback";
 };
 
 export type ActivityIntent = {
@@ -75,6 +82,7 @@ export type SearchIntent = {
   pairingPreference?: PairingPreference;
   restaurantIntent: RestaurantIntent;
   activityIntent: ActivityIntent;
+  activityPairIntent?: ActivityPairIntent | null;
   geo: GeoIntent;
   occasion?: string | null;
   partySize?: number | null;
@@ -211,6 +219,13 @@ export type EnterprisePair = {
   primary_intent?: string | null;
   matched_intents?: string[] | null;
   isWalkable: boolean;
+  pair_type?: "restaurant_activity" | "activity_activity";
+  first_activity_location_id?: string | number | null;
+  second_activity_location_id?: string | number | null;
+  first_activity_name?: string | null;
+  second_activity_name?: string | null;
+  activity_location_id?: string | number | null;
+  paired_activity_location_id?: string | number | null;
 };
 
 export type EnterpriseSearchDebugMetadata = {
@@ -293,6 +308,7 @@ export type EnterpriseSearchResult = {
     | "restaurant_cards"
     | "activity_cards"
     | "mixed_pairs"
+    | "activity_activity_pairs"
     | "empty"
     | "partial_mixed"
     | "cards"

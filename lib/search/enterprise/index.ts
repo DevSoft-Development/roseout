@@ -31,6 +31,7 @@ import {
 import {
   createPairingDebug,
   createSearchPairs,
+  createActivityActivityPairs,
   getPairCityState,
   getPairGeoPriority,
 } from "./pairing";
@@ -1513,6 +1514,19 @@ export async function runEnterpriseSearch(
       activityCandidatesWithMl,
       effectiveIntent,
     );
+    const activityPairIntent = effectiveIntent.activityPairIntent ?? null;
+    const firstActivityRankingIntent: SearchIntent = activityPairIntent
+      ? { ...effectiveIntent, activityIntent: { ...effectiveIntent.activityIntent, activityTerms: activityPairIntent.firstActivityTerms } }
+      : effectiveIntent;
+    const secondActivityRankingIntent: SearchIntent = activityPairIntent
+      ? { ...effectiveIntent, activityIntent: { ...effectiveIntent.activityIntent, activityTerms: activityPairIntent.secondActivityTerms } }
+      : effectiveIntent;
+    const rankedFirstActivities = activityPairIntent
+      ? rankActivityResults(activityCandidatesWithMl, firstActivityRankingIntent)
+      : [];
+    const rankedSecondActivities = activityPairIntent
+      ? rankActivityResults(activityCandidatesWithMl, secondActivityRankingIntent)
+      : [];
     const singleVenueWith = detectSingleVenueWithIntent(
       effectiveIntent.rawQuery,
     );
@@ -1793,6 +1807,12 @@ export async function runEnterpriseSearch(
 
     let restaurants = photoSafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
+    const firstActivityCandidates = activityPairIntent
+      ? filterLivePhotoResults(rankedFirstActivities.filter((item) => isResultAllowedForResolvedMarket(item, requestedMarketForResults))).slice(0, displayLimit)
+      : [];
+    const secondActivityCandidates = activityPairIntent
+      ? filterLivePhotoResults(rankedSecondActivities.filter((item) => isResultAllowedForResolvedMarket(item, requestedMarketForResults))).slice(0, displayLimit)
+      : [];
     const candidateRestaurantCountBeforeRequiredPairSuppression =
       restaurants.length;
     const candidateActivityCountBeforeRequiredPairSuppression =
@@ -1811,8 +1831,19 @@ export async function runEnterpriseSearch(
 
     const pairingDebug = createPairingDebug();
     const pairingStarted = Date.now();
-    const pairedResults = effectiveIntent.wantsPairing
-      ? createSearchPairs(
+    const pairedResults = effectiveIntent.searchType === "activity_pair"
+      ? createActivityActivityPairs(
+          firstActivityCandidates.length ? firstActivityCandidates : activities,
+          secondActivityCandidates.length ? secondActivityCandidates : activities,
+          effectiveIntent,
+          pairingDebug,
+        ).filter(
+          (pair) =>
+            hasUsableLivePhoto(pair.restaurant) &&
+            hasUsableLivePhoto(pair.activity),
+        )
+      : effectiveIntent.wantsPairing
+        ? createSearchPairs(
           restaurants,
           activities,
           effectiveIntent,
@@ -1897,8 +1928,15 @@ export async function runEnterpriseSearch(
             ).length,
           )
         : undefined;
+    const isActivityActivityPairSearch = effectiveIntent.searchType === "activity_pair";
     const render_mode = requiredPairingSuppressedFallback
       ? "empty"
+      : isActivityActivityPairSearch
+        ? pairs.length
+          ? "activity_activity_pairs"
+          : activities.length
+            ? "activity_cards"
+            : "empty"
       : effectiveIntent.wantsPairing
         ? pairs.length
           ? "mixed_pairs"
@@ -2145,6 +2183,14 @@ export async function runEnterpriseSearch(
       distanceScoringUsed: Boolean(
         effectiveIntent.geo.latitude && effectiveIntent.geo.longitude,
       ),
+      activityPairIntent,
+      firstActivityCandidateCount: firstActivityCandidates.length,
+      secondActivityCandidateCount: secondActivityCandidates.length,
+      activityActivityPairCandidateCount: isActivityActivityPairSearch ? pairingDebug.validPairCountBeforeRender : 0,
+      activityActivityPairCount: isActivityActivityPairSearch ? pairs.length : 0,
+      activityActivityPairsRejectedForDistance: isActivityActivityPairSearch ? pairingDebug.pairsRejectedForDistance : 0,
+      activityPairFallbackReason: isActivityActivityPairSearch && pairs.length === 0 && activities.length > 0 ? "no_valid_activity_activity_pairs_showing_activity_fallback" : null,
+      pair_type: isActivityActivityPairSearch ? "activity_activity" : pairs.length ? "restaurant_activity" : null,
       pairDistanceMiles: pairs.map((p) => p.pairDistanceMiles),
       pairGeoPriorities,
       pairGeoSummary,

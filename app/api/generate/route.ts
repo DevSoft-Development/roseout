@@ -470,17 +470,32 @@ export async function POST(request: Request) {
       .map((pair: any, index: number) => {
         const restaurant = pair?.restaurant || pair?.restaurant_location || pair?.restaurantLocation;
         const activity = pair?.activity || pair?.activity_location || pair?.activityLocation;
+        if (pair?.pair_type === "activity_activity") {
+          return {
+            first_activity_location_id: typeof restaurant?.id === "string" ? restaurant.id : null,
+            second_activity_location_id: typeof activity?.id === "string" ? activity.id : null,
+            activity_location_id: typeof restaurant?.id === "string" ? restaurant.id : null,
+            paired_activity_location_id: typeof activity?.id === "string" ? activity.id : null,
+            first_activity_name: restaurant?.name || restaurant?.activity_name || null,
+            second_activity_name: activity?.name || activity?.activity_name || null,
+            pair_type: "activity_activity",
+            rank: index + 1,
+            pair_distance_miles: pair?.pairDistanceMiles ?? pair?.distance_miles ?? pair?.pair_distance_miles ?? null,
+            market: pair?.market || restaurant?.market || activity?.market || resolvedMarketForGuardrail || null,
+          };
+        }
         return {
           restaurant_location_id: typeof restaurant?.id === "string" ? restaurant.id : null,
           activity_location_id: typeof activity?.id === "string" ? activity.id : null,
           restaurant_name: restaurant?.name || restaurant?.restaurant_name || null,
           activity_name: activity?.name || activity?.activity_name || null,
+          pair_type: "restaurant_activity",
           rank: index + 1,
           pair_distance_miles: pair?.pairDistanceMiles ?? pair?.distance_miles ?? pair?.pair_distance_miles ?? null,
           market: pair?.market || restaurant?.market || activity?.market || resolvedMarketForGuardrail || null,
         };
       })
-      .filter((pair: any) => pair.restaurant_location_id && pair.activity_location_id)
+      .filter((pair: any) => (pair.pair_type === "activity_activity" ? pair.first_activity_location_id && pair.second_activity_location_id : pair.restaurant_location_id && pair.activity_location_id))
       .slice(0, 10);
 
     if (process.env.NODE_ENV !== "production") {

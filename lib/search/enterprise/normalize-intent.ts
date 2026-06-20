@@ -551,6 +551,7 @@ function protectBroadOccasionMixedIntent(intent: SearchIntent, explicitSearchLan
 }
 
 function finalDomainCleanup(intent: SearchIntent): SearchIntent {
+  if (intent.searchType === "activity_pair") return { ...intent, primaryDomain: "activity", needsRestaurant: false, needsActivity: true, wantsPairing: true, restaurantIntent: createEmptyRestaurantIntent() };
   if (!intent.needsActivity || intent.searchType === "restaurant") return { ...intent, searchType: "restaurant", primaryDomain: "restaurant", needsActivity: false, needsRestaurant: true, activityIntent: createEmptyActivityIntent(), wantsPairing: false, pairingPreference: resetPairingPreference() };
   if (!intent.needsRestaurant || intent.searchType === "activity") return { ...intent, searchType: "activity", primaryDomain: "activity", needsRestaurant: false, needsActivity: true, restaurantIntent: createEmptyRestaurantIntent(), wantsPairing: false, pairingPreference: resetPairingPreference() };
   return intent;
@@ -1294,7 +1295,14 @@ export function normalizeIntent(
   merged.needsRestaurant =
     hasRestaurant && !/^\s*hookah\s+(in|near)/i.test(query);
   merged.needsActivity = hasActivity;
-  merged.wantsPairing = merged.needsRestaurant && merged.needsActivity;
+  const preserveActivityPair = llmIntent?.searchType === "activity_pair" || (merged as any).activityPairIntent;
+  merged.wantsPairing = preserveActivityPair ? true : merged.needsRestaurant && merged.needsActivity;
+  if (preserveActivityPair) {
+    merged.needsRestaurant = false;
+    merged.needsActivity = true;
+    merged.searchType = "activity_pair";
+    merged.primaryDomain = "activity";
+  } else {
   merged.searchType = merged.wantsPairing
     ? "mixed_outing"
     : merged.needsRestaurant
@@ -1309,6 +1317,7 @@ export function normalizeIntent(
       : merged.needsActivity
         ? "activity"
         : "any";
+  }
   const detectedPreference = detectPairingPreference(
     query,
     merged.wantsPairing,
