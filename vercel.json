@@ -1,4 +1,5 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
       "path": "/api/admin/run-google-import?type=both&limit=2&batch=all&areas=nyc&maxQueries=2",
@@ -27,8 +28,6 @@
     {
       "path": "/api/admin/ml/recalculate-phase2",
       "schedule": "30 8 * * *"
-      "path": "/api/admin/ml/recalculate-location-scores",
-      "schedule": "0 8 * * *"
     }
   ]
 }
