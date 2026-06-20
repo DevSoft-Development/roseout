@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
-import { getZipMarketMapping } from "@/lib/zip-market-mapping";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
+import TurnstileWidget from "@/components/auth/TurnstileWidget";
 
 type Tab = "signin" | "signup";
 type SignupStep = 1 | 2;
@@ -83,6 +83,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const [smsOptIn, setSmsOptIn] = useState(false);
   const [signin, setSignin] = useState({ email: "", password: "" });
   const [signup, setSignup] = useState<SignupState>(initialSignupState);
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   const pass = useMemo(() => passwordChecks(signup.password), [signup.password]);
   const strong = Object.values(pass).every(Boolean);
@@ -145,93 +146,39 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setMessage("");
     if (!strong) return setError("Please use a stronger password.");
     if (signup.password !== signup.confirm_password) return setError("Passwords do not match.");
     if (!agreeTerms) return setError("You must agree to the Terms of Use and Privacy Policy.");
     if (mobileProvided && !smsOptIn) {
       return setError("Please agree to SMS messaging terms to receive text updates.");
     }
-
-    const derived = getZipMarketMapping(signup.zip_code);
-    if (!derived) return setError("Please enter a valid 5-digit ZIP code.");
-
     setLoading(true);
-
-    if (signup.promo_code.trim()) {
-      const vr = await fetch("/api/promo-codes/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: signup.promo_code, audience: "users" }),
-      });
-      const vd = await vr.json();
-      if (!vd.valid) {
-        setLoading(false);
-        return setError("This promo code is not valid or has expired.");
-      }
-    }
-
     const normalizedSignupEmail = normalizeEmail(signup.email);
-
-    if (!normalizedSignupEmail) {
-      setLoading(false);
-      return setError("Please enter the email address for your new account.");
-    }
-
-    setSignup((current) => ({ ...current, email: normalizedSignupEmail }));
-
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedSignupEmail,
-      password: signup.password,
-      options: {
-        data: {
-          role: "user",
-          full_name: signup.full_name.trim(),
-          account_type: "user",
-        },
-      },
-    });
-    if (error) {
-      setLoading(false);
-      return setError(error.message);
-    }
-
-    const userId = data.user?.id;
-    if (!userId) {
-      setLoading(false);
-      return setError("Signup succeeded, but profile setup failed.");
-    }
-
-    const { error: profileError } = await supabase.from("user_profiles").upsert(
-      {
-        id: userId,
-        full_name: signup.full_name.trim(),
-        mobile_number: signup.mobile_number.trim() || null,
-        zip_code: signup.zip_code,
-        derived_city: derived.city,
-        derived_state: derived.state,
-        derived_market_area: derived.marketArea,
-        sms_opt_in: mobileProvided ? smsOptIn : false,
-        sms_opt_in_at: mobileProvided && smsOptIn ? new Date().toISOString() : null,
-        plan: "registered",
-        weekly_search_limit: 3,
-      },
-      { onConflict: "id" },
-    );
-    if (profileError) {
-      setLoading(false);
-      return setError(profileError.message);
-    }
-
-    if (signup.promo_code.trim()) {
-      await fetch("/api/promo-codes/redeem", {
+    try {
+      const response = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: signup.promo_code, audience: "users" }),
+        body: JSON.stringify({
+          full_name: signup.full_name,
+          email: normalizedSignupEmail,
+          password: signup.password,
+          zip_code: signup.zip_code,
+          mobile_number: signup.mobile_number,
+          sms_opt_in: mobileProvided ? smsOptIn : false,
+          turnstileToken,
+        }),
       });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        setLoading(false);
+        return setError(data.error || "We could not create your account.");
+      }
+      window.location.replace(`/signup/check-email?email=${encodeURIComponent(normalizedSignupEmail)}`);
+    } catch {
+      setLoading(false);
+      setError("We could not create your account right now.");
     }
-
-    setLoading(false);
-    setMessage("Please check your email to verify your account before using TheOutHaven.");
   };
 
   return (
@@ -405,7 +352,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
             </form>
           ) : (
             <form onSubmit={handleCreate} className="space-y-4">
-              <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/45">Account creation</p>
+                <p className="mt-1 text-sm text-white/60">Create a free account to save your outings and get 3 searches per week.</p>
+              </div>
+              <div className="hidden grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div
                   className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-xs font-semibold tracking-wide transition ${
                     signupStep === 1
@@ -426,7 +377,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                   Step 2: Preferences
                 </div>
               </div>
-              {signupStep === 1 ? (
+              {true ? (
                 <>
                   <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
                     <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/45">Step 1</p>
@@ -504,13 +455,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                 By checking this box, I agree to receive recurring automated text messages from TheOutHaven, including account updates, reservation alerts, recommendations, promotions, and offers at the mobile number I provided. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to opt out and HELP for help. View our <Link href="/terms" className="underline">Terms of Use</Link> and <Link href="/privacy" className="underline">Privacy Policy</Link>.
               </label>
 
+              <TurnstileWidget onToken={setTurnstileToken} />
+
               <div className="flex gap-2">
                 {signupStep === 2 && <button type="button" onClick={() => setSignupStep(1)} className={`flex-1 ${secondaryButtonClass}`}>Back</button>}
-                {signupStep === 1 ? (
-                  <button type="button" onClick={() => setSignupStep(2)} className={`flex-1 ${primaryButtonClass}`}>Continue</button>
-                ) : (
-                  <button type="submit" disabled={loading} className={`flex-1 ${primaryButtonClass}`}>{loading ? "Creating..." : "Create Account"}</button>
-                )}
+                <button type="submit" disabled={loading} className={`flex-1 ${primaryButtonClass}`}>{loading ? "Creating..." : "Create Account"}</button>
               </div>
             </form>
           )}

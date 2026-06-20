@@ -204,6 +204,7 @@ function PlanPageInner() {
   const [loadingExactCampaign, setLoadingExactCampaign] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
+  const [bookingSaveStatus, setBookingSaveStatus] = useState("");
   const [showBookingDetails, setShowBookingDetails] = useState(false);
   const [outingTime, setOutingTime] = useState<OutingTimeValue>(() =>
     emptyOutingTimeValue(getBrowserTimezone()),
@@ -378,6 +379,40 @@ function PlanPageInner() {
     return names.length ? names.join(" + ") : "Your TheOutHaven Plan";
   }, [restaurant, activity]);
 
+
+  async function saveBookedOutingToDashboard() {
+    setBookingSaveStatus("");
+    const payload = {
+      title: planTitle,
+      prompt: searchParams.get("q") || planTitle,
+      outing_date: outingTime.plannedFor || null,
+      restaurant_id: restaurant?.id || null,
+      restaurant_name: restaurant ? getLocationName(restaurant, "") : null,
+      restaurant_address: restaurant?.address || null,
+      restaurant_image: getLocationImage(restaurant as any) || null,
+      restaurant_url: getExternalReservationUrl(restaurant as any) || restaurant?.website || null,
+      activity_id: activity?.id || null,
+      activity_name: activity ? getLocationName(activity, "") : null,
+      activity_address: activity?.address || null,
+      activity_image: getLocationImage(activity as any) || null,
+      activity_url: activity?.website || null,
+      plan_payload: { plan, outingTime, activeOutingId, activePlanUrl },
+      source: "book_my_outing",
+      status: "booked",
+    };
+    try {
+      const response = await fetch("/api/user/outings/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        try { localStorage.setItem("theouthaven_pending_booked_outing", JSON.stringify(payload)); } catch {}
+        setBookingSaveStatus("Create a free account or log in to save this outing to your dashboard.");
+        return;
+      }
+      setBookingSaveStatus(data.success ? "Your outing was saved to your dashboard." : "We could not save this to your dashboard yet, but you can continue booking.");
+    } catch {
+      setBookingSaveStatus("We could not save this to your dashboard yet, but you can continue booking.");
+    }
+  }
   useEffect(() => {
     if (!activeOutingId || confirmationTrackedFor === activeOutingId) return;
     setConfirmationTrackedFor(activeOutingId);
@@ -567,6 +602,7 @@ function PlanPageInner() {
                 type="button"
                 onClick={() => {
                   setShowBookingDetails(true);
+                  void saveBookedOutingToDashboard();
                   trackPlanAnalyticsEvent({
                     event_name: "book_my_outing_clicked",
                     event_type: "plan_click",
@@ -584,6 +620,7 @@ function PlanPageInner() {
                 Book My Outing
               </button>
             </div>
+            {bookingSaveStatus && <p className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs font-bold text-white/70">{bookingSaveStatus}</p>}
 
           </div>
         </div>
@@ -682,6 +719,7 @@ function PlanPageInner() {
                   type="button"
                   onClick={() => {
                     setShowBookingDetails(true);
+                    void saveBookedOutingToDashboard();
                     trackPlanAnalyticsEvent({
                       event_name: "book_my_outing_clicked",
                       event_type: "plan_click",

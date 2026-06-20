@@ -99,6 +99,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+
+
     if (adminLocationId) {
       await logAdminLocationAction({
         adminUser,
@@ -189,6 +191,26 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (data?.user_id && ["confirmed", "completed", "checked_in", "arrived"].includes(status)) {
+      await supabaseAdmin.from("user_outings").upsert({
+        user_id: data.user_id,
+        reservation_id: data.id,
+        source: "internal_reservation",
+        status: status === "completed" ? "completed" : "reservation_confirmed",
+        title: data.location_name || data.restaurant_name || "TheOutHaven Reservation",
+        outing_date: data.reservation_date && data.reservation_time ? `${data.reservation_date}T${data.reservation_time}` : null,
+        party_size: data.party_size || null,
+        restaurant_id: data.location_type === "restaurant" ? data.location_id : null,
+        restaurant_name: data.location_name || data.restaurant_name || null,
+        activity_id: data.location_type !== "restaurant" ? data.location_id : null,
+        activity_name: data.location_type !== "restaurant" ? data.location_name : null,
+        reservation_payload: data,
+        booked_at: data.created_at || new Date().toISOString(),
+        completed_at: status === "completed" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id,reservation_id" });
     }
 
     if (adminLocationId) {
