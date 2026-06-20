@@ -65,6 +65,52 @@ describe("Google Places import market normalization", () => {
     expect(googlePlacesImport.formatRequestedMarketSourceForDisplay(resolution)).toBe(`Market: ${expected}`);
   });
 
+  it("builds the expanded Northern New Jersey import areas while resolving to the canonical key", () => {
+    expect(googlePlacesImport.parseAreas("northern_nj")).toEqual([
+      "Jersey City NJ",
+      "Hoboken NJ",
+      "Newark NJ",
+      "Montclair NJ",
+      "Fort Lee NJ",
+      "Edgewater NJ",
+      "Hackensack NJ",
+      "Bergen County NJ",
+      "Hudson County NJ",
+      "Essex County NJ",
+    ]);
+    expect(googlePlacesImport.resolveRequestedMarketForImport({ areas: "northern_nj" })).toMatchObject({
+      resolved: "NORTHERN_NJ",
+      source: "settings.areas",
+      confidence: "high",
+    });
+  });
+
+  it("builds Westchester import areas and resolves to Westchester", () => {
+    expect(googlePlacesImport.parseAreas("westchester")).toEqual([
+      "Westchester County NY",
+      "White Plains NY",
+      "Yonkers NY",
+      "New Rochelle NY",
+      "Mount Vernon NY",
+      "Scarsdale NY",
+      "Rye NY",
+      "Tarrytown NY",
+      "Port Chester NY",
+    ]);
+    expect(googlePlacesImport.resolveRequestedMarketForImport({ areas: "westchester" })).toMatchObject({
+      resolved: "WESTCHESTER",
+      source: "settings.areas",
+      confidence: "high",
+    });
+  });
+
+  it("keeps NYC and Long Island area expansions unchanged", () => {
+    expect(googlePlacesImport.parseAreas("nyc")).toEqual(["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"]);
+    expect(googlePlacesImport.parseAreas("long_island")).toEqual(["Nassau County NY", "Suffolk County NY", "Garden City NY", "Huntington NY"]);
+    expect(googlePlacesImport.resolveRequestedMarketForImport({ areas: "nyc" }).resolved).toBe("NYC_CORE");
+    expect(googlePlacesImport.resolveRequestedMarketForImport({ areas: "long_island" }).resolved).toBe("LONG_ISLAND");
+  });
+
   it("formats settings areas as a readable source summary", () => {
     const resolution = googlePlacesImport.resolveRequestedMarketForImport({ areas: "Nassau County NY, Suffolk County NY" });
 

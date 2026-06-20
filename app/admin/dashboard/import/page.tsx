@@ -524,8 +524,9 @@ const importTypeOptions = [
 const areaOptions = [
   { label: "NYC", value: "nyc" },
   { label: "Connecticut", value: "ct" },
-  { label: "New Jersey", value: "nj" },
+  { label: "Northern New Jersey", value: "northern_nj" },
   { label: "Long Island", value: "long_island" },
+  { label: "Westchester", value: "westchester" },
 ];
 
 const primaryTagOptions = [

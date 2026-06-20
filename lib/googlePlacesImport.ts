@@ -17,13 +17,36 @@ const supabaseAdmin = createClient(
 );
 
 const NYC_AREAS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
+const NORTHERN_NJ_AREAS = [
+  "Jersey City NJ",
+  "Hoboken NJ",
+  "Newark NJ",
+  "Montclair NJ",
+  "Fort Lee NJ",
+  "Edgewater NJ",
+  "Hackensack NJ",
+  "Bergen County NJ",
+  "Hudson County NJ",
+  "Essex County NJ",
+];
+
+const WESTCHESTER_AREAS = [
+  "Westchester County NY",
+  "White Plains NY",
+  "Yonkers NY",
+  "New Rochelle NY",
+  "Mount Vernon NY",
+  "Scarsdale NY",
+  "Rye NY",
+  "Tarrytown NY",
+  "Port Chester NY",
+];
+
 const EXTENDED_AREAS = [
   ...NYC_AREAS,
   "Long Island",
-  "Jersey City",
-  "Hoboken",
-  "Newark",
-  "Westchester",
+  ...NORTHERN_NJ_AREAS,
+  ...WESTCHESTER_AREAS,
 ];
 
 const CUISINE_QUERIES = [
@@ -904,12 +927,13 @@ function validateImportMarket(place: GooglePlace, options: GooglePlacesImportOpt
   });
 }
 
-function parseAreas(areas?: string | null) {
+export function parseAreas(areas?: string | null) {
   const value = cleanText(areas || "nyc").toLowerCase();
   if (value === "nyc") return NYC_AREAS;
   if (value === "ct" || value === "connecticut") return ["Stamford", "Norwalk", "Bridgeport", "New Haven", "Hartford"];
-  if (value === "nj" || value === "new_jersey" || value === "new jersey" || value === "northern_nj" || value === "northern jersey") return ["Jersey City NJ", "Hoboken NJ", "Edgewater NJ", "Newark NJ"];
+  if (value === "nj" || value === "new_jersey" || value === "new jersey" || value === "northern_nj" || value === "northern nj" || value === "northern jersey" || value === "north_jersey" || value === "north jersey") return NORTHERN_NJ_AREAS;
   if (value === "long_island" || value === "long island") return ["Nassau County NY", "Suffolk County NY", "Garden City NY", "Huntington NY"];
+  if (value === "westchester") return WESTCHESTER_AREAS;
   if (value === "extended" || value === "all") return EXTENDED_AREAS;
   return cleanText(areas)
     .split(",")
