@@ -1,7 +1,19 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
 export type SearchType = "restaurant" | "activity" | "mixed_outing" | "any";
-export type GeoStrictness = "none" | "soft" | "medium" | "strict" | "default_market" | "current_location" | "user_location";
-export type PairDistanceMode = "short_walk" | "walking" | "nearby" | "same_area" | "any";
+export type GeoStrictness =
+  | "none"
+  | "soft"
+  | "medium"
+  | "strict"
+  | "default_market"
+  | "current_location"
+  | "user_location";
+export type PairDistanceMode =
+  | "short_walk"
+  | "walking"
+  | "nearby"
+  | "same_area"
+  | "any";
 
 export type PairingPreference = {
   requiresPairing: boolean;
@@ -161,7 +173,6 @@ export type EnterpriseLocation = {
   activityQualityScore?: number | null;
   activityQualityReasons?: string[] | null;
   activityQualityPenalties?: string[] | null;
-  ml_score?: number | null;
   intent_score?: number | null;
   intent_boost?: number | null;
   primary_intent?: string | null;
@@ -202,7 +213,6 @@ export type EnterprisePair = {
   isWalkable: boolean;
 };
 
-
 export type EnterpriseSearchDebugMetadata = {
   intentParserSource?: string | null;
   preIntentSource?: string | null;
@@ -226,6 +236,52 @@ export type EnterpriseSearchDebugMetadata = {
   llmFallbackError?: string | null;
 };
 
+export type MlResultDebug = {
+  id: string;
+  name?: string | null;
+  location_type?: string | null;
+  market?: string | null;
+  baseScore?: number | null;
+  finalScore?: number | null;
+  baseRank?: number | null;
+  finalRank?: number | null;
+  rankDelta?: number | null;
+  phase1MlScore?: number | null;
+  phase1MlBoost?: number | null;
+  primaryIntent?: string | null;
+  secondaryIntents?: string[];
+  rankingIntentBuckets?: string[];
+  phase2IntentScore?: number | null;
+  phase2IntentBoost?: number | null;
+  matchedIntentBucket?: string | null;
+  phase2PairScore?: number | null;
+  phase2PairBoost?: number | null;
+  totalMlBoost?: number | null;
+  mlChangedRank?: boolean;
+  mlDebugReason?: string | null;
+};
+
+export type MlSearchDebug = {
+  mlEnabled: boolean;
+  phase1Enabled: boolean;
+  phase2Enabled: boolean;
+  intentClassification?: {
+    primaryIntent: string;
+    secondaryIntents: string[];
+    allIntents: string[];
+    confidence: number;
+    reason: string;
+    inferredSearchMode: string;
+  } | null;
+  rankingIntentBuckets?: string[];
+  mlUnavailableReason?: string | null;
+  resultOrderChangedByMl?: boolean;
+  resultsWithMlBoostCount?: number;
+  maxMlBoostApplied?: number;
+  averageMlBoostApplied?: number;
+  results?: MlResultDebug[];
+};
+
 export type EnterpriseSearchResult = {
   success: boolean;
   restaurants: EnterpriseLocation[];
@@ -233,10 +289,28 @@ export type EnterpriseSearchResult = {
   pairs: EnterprisePair[];
   matched_locations: EnterpriseLocation[];
   matchedLocations?: EnterpriseLocation[];
-  render_mode: "restaurant_cards" | "activity_cards" | "mixed_pairs" | "empty" | "partial_mixed" | "cards" | "text";
+  render_mode:
+    | "restaurant_cards"
+    | "activity_cards"
+    | "mixed_pairs"
+    | "empty"
+    | "partial_mixed"
+    | "cards"
+    | "text";
   renderMode?: string;
   reply: string;
-  card_counts: { restaurants: number; activities: number; matched_locations: number; pairs: number };
-  cardCounts?: { restaurants: number; activities: number; matched_locations: number; pairs: number };
-  debug?: Record<string, unknown> & EnterpriseSearchDebugMetadata;
+  card_counts: {
+    restaurants: number;
+    activities: number;
+    matched_locations: number;
+    pairs: number;
+  };
+  cardCounts?: {
+    restaurants: number;
+    activities: number;
+    matched_locations: number;
+    pairs: number;
+  };
+  debug?: Record<string, unknown> &
+    EnterpriseSearchDebugMetadata & { mlSearchDebug?: MlSearchDebug };
 };

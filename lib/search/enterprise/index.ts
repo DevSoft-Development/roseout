@@ -1,7 +1,10 @@
 import { supabaseAdmin } from "../../supabaseAdmin";
 import type {
   EnterpriseLocation,
+  EnterprisePair,
   EnterpriseSearchResult,
+  MlResultDebug,
+  MlSearchDebug,
   SearchIntent,
 } from "./types";
 import { parseEnterpriseIntent } from "./intent-parser";
@@ -53,8 +56,14 @@ import {
 import { resolveSearchMarket, type UserSearchLocation } from "./markets";
 import { detectGeoIntent } from "./geo-taxonomy";
 import { logSearchHealthEvent } from "./searchHealthLogger";
-import { classifySearchIntent, getRankingIntentBuckets } from "@/lib/ml/intentBuckets";
-import { getLocationIntentScoreMap, getPairScoreMap } from "@/lib/ml/intentScoreLoaders";
+import {
+  classifySearchIntent,
+  getRankingIntentBuckets,
+} from "@/lib/ml/intentBuckets";
+import {
+  getLocationIntentScoreMap,
+  getPairScoreMap,
+} from "@/lib/ml/intentScoreLoaders";
 import { parseOutingDateTime } from "../parse-outing-date-time";
 import { validatePlaceForMarket } from "../../location-market-validation";
 import { getLocationMlScoreMap } from "@/lib/ml/locationMlScores";
@@ -70,9 +79,10 @@ const MIN_ACTIVITY_RESULTS = 4;
 const MIN_PAIR_RESULTS = 3;
 const RECOVERY_LIMIT = 80;
 
-
 function idString(value: unknown) {
-  return typeof value === "string" || typeof value === "number" ? String(value) : null;
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : null;
 }
 
 async function applyIntentBoostsToLocations(
@@ -82,36 +92,196 @@ async function applyIntentBoostsToLocations(
 ) {
   const classification = classifySearchIntent(query);
   const buckets = getRankingIntentBuckets(classification);
-  const ids = items.map((item) => idString(item.id)).filter((id): id is string => Boolean(id));
-  const scoreMap = await getLocationIntentScoreMap({ locationIds: ids, intentBuckets: buckets, market: market ?? null });
-  return items.map((item, index) => {
-    const id = idString(item.id);
-    let matched: string | null = null;
-    let score = 0;
-    if (id) {
-      for (const bucket of buckets) {
-        const value = scoreMap.get(`${id}:${bucket}`);
-        if (value != null) { score = Math.max(0, Number(value)); matched = bucket; break; }
+  const ids = items
+    .map((item) => idString(item.id))
+    .filter((id): id is string => Boolean(id));
+  const scoreMap = await getLocationIntentScoreMap({
+    locationIds: ids,
+    intentBuckets: buckets,
+    market: market ?? null,
+  });
+  return items
+    .map((item, index) => {
+      const id = idString(item.id);
+      let matched: string | null = null;
+      let score = 0;
+      if (id) {
+        for (const bucket of buckets) {
+          const value = scoreMap.get(`${id}:${bucket}`);
+          if (value != null) {
+            score = Math.max(0, Number(value));
+            matched = bucket;
+            break;
+          }
+        }
       }
-    }
-    const intentBoost = Math.min(12, score * 0.12);
-    const existingMlBoost = Math.min(13, Math.max(0, Number((item as any).ml_boost ?? item.ml_score ?? 0)));
-    const cappedBoost = Math.min(25, intentBoost + existingMlBoost);
-    return { ...item, intent_score: score || null, intent_boost: Number(intentBoost.toFixed(2)), primary_intent: classification.primaryIntent, matched_intents: matched ? [matched] : [], search_boost: Number(item.search_boost ?? 0) + cappedBoost, _mlPhase2SortScore: (items.length - index) * 100 + cappedBoost } as EnterpriseLocation;
-  }).sort((a, b) => Number((b as any)._mlPhase2SortScore ?? 0) - Number((a as any)._mlPhase2SortScore ?? 0));
+      const intentBoost = Math.min(12, score * 0.12);
+      const existingMlBoost = Math.min(
+        13,
+        Math.max(0, Number((item as any).ml_boost ?? item.ml_score ?? 0)),
+      );
+      const cappedBoost = Math.min(25, intentBoost + existingMlBoost);
+      return {
+        ...item,
+        intent_score: score || null,
+        intent_boost: Number(intentBoost.toFixed(2)),
+        primary_intent: classification.primaryIntent,
+        matched_intents: matched ? [matched] : [],
+        search_boost: Number(item.search_boost ?? 0) + cappedBoost,
+        _mlPhase2SortScore: (items.length - index) * 100 + cappedBoost,
+        _mlDebugBaseRank: index + 1,
+        _mlDebugBaseScore:
+          Number((item as any).match_score ?? item.search_score ?? 0) || null,
+        _mlDebugPhase1Boost: Number(existingMlBoost.toFixed(2)),
+        _mlDebugTotalBoost: Number(cappedBoost.toFixed(2)),
+        _mlDebugRankingBuckets: buckets,
+        _mlDebugSecondaryIntents: classification.secondaryIntents,
+      } as EnterpriseLocation;
+    })
+    .sort(
+      (a, b) =>
+        Number((b as any)._mlPhase2SortScore ?? 0) -
+        Number((a as any)._mlPhase2SortScore ?? 0),
+    );
 }
 
-async function applyPairBoosts(pairs: import("./types").EnterprisePair[], query: string, market?: string | null) {
+export function buildMlRankDelta(baseRank: number, finalRank: number) {
+  return baseRank - finalRank;
+}
+
+function locationLabel(item: EnterpriseLocation) {
+  return item.name || item.restaurant_name || item.activity_name || null;
+}
+
+function createMlResultDebug(
+  item: EnterpriseLocation,
+  finalRank: number,
+): MlResultDebug {
+  const record = item as any;
+  const baseRank = Number(record._mlDebugBaseRank || finalRank);
+  const totalMlBoost = Number(record._mlDebugTotalBoost ?? 0);
+  const rankDelta = buildMlRankDelta(baseRank, finalRank);
+  return {
+    id: String(item.id ?? ""),
+    name: locationLabel(item),
+    location_type: item.location_type ?? null,
+    market: item.market ?? null,
+    baseScore: record._mlDebugBaseScore ?? null,
+    finalScore:
+      Number(
+        record._mlPhase2SortScore ??
+          record.search_score ??
+          record.match_score ??
+          0,
+      ) || null,
+    baseRank,
+    finalRank,
+    rankDelta,
+    phase1MlScore: item.ml_score ?? null,
+    phase1MlBoost: record._mlDebugPhase1Boost ?? item.ml_boost ?? null,
+    primaryIntent: item.primary_intent ?? null,
+    secondaryIntents: record._mlDebugSecondaryIntents ?? [],
+    rankingIntentBuckets: record._mlDebugRankingBuckets ?? [],
+    phase2IntentScore: item.intent_score ?? null,
+    phase2IntentBoost: item.intent_boost ?? null,
+    matchedIntentBucket: Array.isArray(item.matched_intents)
+      ? (item.matched_intents[0] ?? null)
+      : null,
+    phase2PairScore: null,
+    phase2PairBoost: null,
+    totalMlBoost,
+    mlChangedRank: rankDelta !== 0,
+    mlDebugReason:
+      totalMlBoost > 0
+        ? "ML boost applied and capped before final admin ranking."
+        : "No matching ML score boost applied.",
+  };
+}
+
+function summarizeMlDebug(
+  results: MlResultDebug[],
+  query: string,
+  phase1Loaded: number,
+  phase2Loaded: number,
+): MlSearchDebug {
+  const classification = classifySearchIntent(query);
+  const boosts = results.map((r) => Number(r.totalMlBoost ?? 0));
+  const boosted = boosts.filter((v) => v > 0);
+  return {
+    mlEnabled: true,
+    phase1Enabled: phase1Loaded > 0,
+    phase2Enabled: phase2Loaded > 0,
+    intentClassification: {
+      primaryIntent: classification.primaryIntent,
+      secondaryIntents: classification.secondaryIntents,
+      allIntents: classification.allIntents,
+      confidence: classification.confidence,
+      reason: classification.reason,
+      inferredSearchMode: classification.inferredSearchMode,
+    },
+    rankingIntentBuckets: getRankingIntentBuckets(classification),
+    mlUnavailableReason:
+      phase1Loaded === 0 && phase2Loaded === 0
+        ? "ML tables may be ready, but no scoring data matched these results yet."
+        : null,
+    resultOrderChangedByMl: results.some((r) => r.mlChangedRank),
+    resultsWithMlBoostCount: boosted.length,
+    maxMlBoostApplied: boosted.length ? Math.max(...boosted) : 0,
+    averageMlBoostApplied: boosted.length
+      ? Number(
+          (
+            boosted.reduce((sum, value) => sum + value, 0) / boosted.length
+          ).toFixed(2),
+        )
+      : 0,
+    results,
+  };
+}
+
+async function applyPairBoosts(
+  pairs: EnterprisePair[],
+  query: string,
+  market?: string | null,
+) {
   const classification = classifySearchIntent(query);
   const buckets = getRankingIntentBuckets(classification);
-  const pairKeys = pairs.map((pair) => ({ restaurantLocationId: String(pair.restaurant.id ?? ""), activityLocationId: String(pair.activity.id ?? "") })).filter((p) => p.restaurantLocationId && p.activityLocationId);
-  const scoreMap = await getPairScoreMap({ pairKeys, intentBuckets: buckets, market: market ?? null });
-  return pairs.map((pair) => {
-    let matched: string | null = null; let score = 0;
-    for (const bucket of buckets) { const value = scoreMap.get(`${pair.restaurant.id}:${pair.activity.id}:${bucket}`); if (value != null) { score = Math.max(0, Number(value)); matched = bucket; break; } }
-    const pairBoost = Math.min(15, score * 0.15);
-    return { ...pair, pair_ml_score: score || null, pair_boost: Number(pairBoost.toFixed(2)), primary_intent: classification.primaryIntent, matched_intents: matched ? [matched] : [], score: pair.score + pairBoost, pairScore: pair.pairScore + pairBoost };
-  }).sort((a,b)=>b.score-a.score);
+  const pairKeys = pairs
+    .map((pair) => ({
+      restaurantLocationId: String(pair.restaurant.id ?? ""),
+      activityLocationId: String(pair.activity.id ?? ""),
+    }))
+    .filter((p) => p.restaurantLocationId && p.activityLocationId);
+  const scoreMap = await getPairScoreMap({
+    pairKeys,
+    intentBuckets: buckets,
+    market: market ?? null,
+  });
+  return pairs
+    .map((pair) => {
+      let matched: string | null = null;
+      let score = 0;
+      for (const bucket of buckets) {
+        const value = scoreMap.get(
+          `${pair.restaurant.id}:${pair.activity.id}:${bucket}`,
+        );
+        if (value != null) {
+          score = Math.max(0, Number(value));
+          matched = bucket;
+          break;
+        }
+      }
+      const pairBoost = Math.min(15, score * 0.15);
+      return {
+        ...pair,
+        pair_ml_score: score || null,
+        pair_boost: Number(pairBoost.toFixed(2)),
+        primary_intent: classification.primaryIntent,
+        matched_intents: matched ? [matched] : [],
+        score: pair.score + pairBoost,
+        pairScore: pair.pairScore + pairBoost,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
 function serializeErrorForDebug(error: unknown) {
@@ -563,22 +733,115 @@ function budgetIntentDetected(intent: SearchIntent) {
   );
 }
 
-function activityRecoveryAttempts(intent: SearchIntent): { reason: string; terms: string[]; level: string }[] {
+function activityRecoveryAttempts(
+  intent: SearchIntent,
+): { reason: string; terms: string[]; level: string }[] {
   const q = String(intent.rawQuery || "").toLowerCase();
-  const terms = uniqueStrings([...(intent.activityIntent?.activityTerms ?? []), ...(intent.activityIntent?.categoryTerms ?? [])]);
+  const terms = uniqueStrings([
+    ...(intent.activityIntent?.activityTerms ?? []),
+    ...(intent.activityIntent?.categoryTerms ?? []),
+  ]);
   const attempts: { reason: string; terms: string[]; level: string }[] = [];
-  const add = (reason: string, level: string, values: string[]) => attempts.push({ reason, level, terms: uniqueStrings(values) });
-  if (/karaoke/.test(q)) add("activity_karaoke_recovery", "specific", ["karaoke", "karaoke bar", "karaoke lounge", "bar", "lounge"]);
-  if (/hookah|shisha/.test(q)) add("activity_hookah_recovery", "specific", ["hookah", "hookah lounge", "shisha", "lounge", "bar", "nightlife"]);
-  if (/pool hall|billiards|pool table/.test(q)) add("activity_billiards_recovery", "specific", ["pool hall", "billiards", "pool table", "games", "bar", "lounge"]);
-  if (/bowling/.test(q)) add("activity_bowling_recovery", "specific", ["bowling", "bowling alley", "bowling lanes", "games", "entertainment"]);
-  if (/comedy|stand ?up|improv/.test(q)) add("activity_comedy_recovery", "specific", ["comedy club", "comedy show", "stand up comedy", "improv", "theater", "live entertainment", "nightlife"]);
-  if (/arcade/.test(q)) add("activity_arcade_recovery", "specific", ["arcade", "games", "game room", "entertainment", "bowling", "mini golf"]);
-  if (/family|kid|kids/.test(q)) add("activity_family_recovery", "broad", ["family friendly", "kid friendly", "museum", "bowling", "arcade", "park", "zoo", "aquarium", "activity", "entertainment"]);
-  if (/romantic|date/.test(q)) add("activity_romantic_recovery", "broad", ["date activity", "date idea", "museum", "gallery", "live music", "jazz", "lounge", "dessert", "park"]);
-  if (/outdoor/.test(q)) add("activity_outdoor_recovery", "broad", ["outdoor activity", "park", "garden", "waterfront", "pier", "walking tour", "boat ride", "observation deck"]);
+  const add = (reason: string, level: string, values: string[]) =>
+    attempts.push({ reason, level, terms: uniqueStrings(values) });
+  if (/karaoke/.test(q))
+    add("activity_karaoke_recovery", "specific", [
+      "karaoke",
+      "karaoke bar",
+      "karaoke lounge",
+      "bar",
+      "lounge",
+    ]);
+  if (/hookah|shisha/.test(q))
+    add("activity_hookah_recovery", "specific", [
+      "hookah",
+      "hookah lounge",
+      "shisha",
+      "lounge",
+      "bar",
+      "nightlife",
+    ]);
+  if (/pool hall|billiards|pool table/.test(q))
+    add("activity_billiards_recovery", "specific", [
+      "pool hall",
+      "billiards",
+      "pool table",
+      "games",
+      "bar",
+      "lounge",
+    ]);
+  if (/bowling/.test(q))
+    add("activity_bowling_recovery", "specific", [
+      "bowling",
+      "bowling alley",
+      "bowling lanes",
+      "games",
+      "entertainment",
+    ]);
+  if (/comedy|stand ?up|improv/.test(q))
+    add("activity_comedy_recovery", "specific", [
+      "comedy club",
+      "comedy show",
+      "stand up comedy",
+      "improv",
+      "theater",
+      "live entertainment",
+      "nightlife",
+    ]);
+  if (/arcade/.test(q))
+    add("activity_arcade_recovery", "specific", [
+      "arcade",
+      "games",
+      "game room",
+      "entertainment",
+      "bowling",
+      "mini golf",
+    ]);
+  if (/family|kid|kids/.test(q))
+    add("activity_family_recovery", "broad", [
+      "family friendly",
+      "kid friendly",
+      "museum",
+      "bowling",
+      "arcade",
+      "park",
+      "zoo",
+      "aquarium",
+      "activity",
+      "entertainment",
+    ]);
+  if (/romantic|date/.test(q))
+    add("activity_romantic_recovery", "broad", [
+      "date activity",
+      "date idea",
+      "museum",
+      "gallery",
+      "live music",
+      "jazz",
+      "lounge",
+      "dessert",
+      "park",
+    ]);
+  if (/outdoor/.test(q))
+    add("activity_outdoor_recovery", "broad", [
+      "outdoor activity",
+      "park",
+      "garden",
+      "waterfront",
+      "pier",
+      "walking tour",
+      "boat ride",
+      "observation deck",
+    ]);
   if (terms.length) add("activity_original_relaxed_recovery", "strict", terms);
-  add("activity_entertainment_recovery", "broad", ["entertainment", "activity", "things to do", "nightlife", "games", "lounge"]);
+  add("activity_entertainment_recovery", "broad", [
+    "entertainment",
+    "activity",
+    "things to do",
+    "nightlife",
+    "games",
+    "lounge",
+  ]);
   return attempts;
 }
 
@@ -840,7 +1103,10 @@ export async function runEnterpriseSearch(
         debug,
       );
       let filtered = filterRestaurantResults(restaurantRaw, effectiveIntent);
-      if (filtered.length < MIN_RESTAURANT_RESULTS && restaurantSearchTerms(effectiveIntent).length) {
+      if (
+        filtered.length < MIN_RESTAURANT_RESULTS &&
+        restaurantSearchTerms(effectiveIntent).length
+      ) {
         usedFallback = true;
 
         const restaurantRecoveryAttempts =
@@ -974,8 +1240,10 @@ export async function runEnterpriseSearch(
       activityRpcCountBeforeRecovery = activityRaw.length;
       let filtered = filterActivityResults(activityRaw, effectiveIntent);
       if (
-        (filtered.length < MIN_ACTIVITY_RESULTS && activitySearchTerms(effectiveIntent).length) ||
-        (isBroadGenericActivityIntent(effectiveIntent) && filtered.length < MIN_RESTAURANT_RESULTS)
+        (filtered.length < MIN_ACTIVITY_RESULTS &&
+          activitySearchTerms(effectiveIntent).length) ||
+        (isBroadGenericActivityIntent(effectiveIntent) &&
+          filtered.length < MIN_RESTAURANT_RESULTS)
       ) {
         usedFallback = true;
         if (isRooftopDrinksIntent(effectiveIntent)) {
@@ -1016,10 +1284,18 @@ export async function runEnterpriseSearch(
               attempt.terms,
             );
             activityRaw = uniqueById([...activityRaw, ...recoveredActivityRaw]);
-            filtered = filterActivityResults(activityRaw, cloneIntentForActivityRecovery(effectiveIntent));
+            filtered = filterActivityResults(
+              activityRaw,
+              cloneIntentForActivityRecovery(effectiveIntent),
+            );
             (debug as any).activityRecoveryAttemptResults = [
               ...((debug as any).activityRecoveryAttemptResults ?? []),
-              { reason: attempt.reason, terms: attempt.terms, resultCount: recoveredActivityRaw.length, filteredCount: filtered.length },
+              {
+                reason: attempt.reason,
+                terms: attempt.terms,
+                resultCount: recoveredActivityRaw.length,
+                filteredCount: filtered.length,
+              },
             ];
             if (filtered.length >= MIN_ACTIVITY_RESULTS) {
               (debug as any).activityRecoverySucceeded = true;
@@ -1065,14 +1341,19 @@ export async function runEnterpriseSearch(
         ml_score: scoreMap.get(String(item.id ?? "")) ?? null,
       }));
     };
-    const [restaurantCandidatesWithMl, activityCandidatesWithMl] = await Promise.all([
-      attachMlScores(uniqueById(restaurantRaw)),
-      attachMlScores(uniqueById(activityRaw)),
-    ]);
+    const [restaurantCandidatesWithMl, activityCandidatesWithMl] =
+      await Promise.all([
+        attachMlScores(uniqueById(restaurantRaw)),
+        attachMlScores(uniqueById(activityRaw)),
+      ]);
     (debug as any).mlRanking = {
       enabled: true,
-      restaurantScoresLoaded: restaurantCandidatesWithMl.filter((item) => item.ml_score != null).length,
-      activityScoresLoaded: activityCandidatesWithMl.filter((item) => item.ml_score != null).length,
+      restaurantScoresLoaded: restaurantCandidatesWithMl.filter(
+        (item) => item.ml_score != null,
+      ).length,
+      activityScoresLoaded: activityCandidatesWithMl.filter(
+        (item) => item.ml_score != null,
+      ).length,
       boostFormula: "min(20, max(0, ml_score) * 0.15)",
     };
     let rankedRestaurants = rankRestaurantResults(
@@ -1330,9 +1611,11 @@ export async function runEnterpriseSearch(
     const explicitMarketRequested =
       isExplicitMarket(requestedMarketForResults) &&
       (effectiveIntent.geo as any).explicitMarketRequested !== false;
-    const useLocationFitForLongIsland = requestedMarketForResults === "LONG_ISLAND";
+    const useLocationFitForLongIsland =
+      requestedMarketForResults === "LONG_ISLAND";
     const suppressMarketMismatch = (item: EnterpriseLocation) => {
-      if (!requestedMarketForResults || useLocationFitForLongIsland) return false;
+      if (!requestedMarketForResults || useLocationFitForLongIsland)
+        return false;
       if (
         explicitMarketRequested &&
         !isResultAllowedForResolvedMarket(item, requestedMarketForResults)
@@ -1351,10 +1634,7 @@ export async function runEnterpriseSearch(
     };
     const rejectedForMarketGuardrail = useLocationFitForLongIsland
       ? []
-      : [
-          ...rankedRestaurants,
-          ...rankedActivities,
-        ].filter(
+      : [...rankedRestaurants, ...rankedActivities].filter(
           (item) =>
             explicitMarketRequested &&
             !isResultAllowedForResolvedMarket(item, requestedMarketForResults),
@@ -1366,9 +1646,19 @@ export async function runEnterpriseSearch(
       .filter((item) => !suppressMarketMismatch(item))
       .map((item) => withMarketFit(item, requestedMarketForResults));
 
-    const intentBoostedRestaurants = await applyIntentBoostsToLocations(marketSafeRestaurants, query, requestedMarketForResults);
-    const intentBoostedActivities = await applyIntentBoostsToLocations(marketSafeActivities, query, requestedMarketForResults);
-    const photoSafeRestaurants = filterLivePhotoResults(intentBoostedRestaurants);
+    const intentBoostedRestaurants = await applyIntentBoostsToLocations(
+      marketSafeRestaurants,
+      query,
+      requestedMarketForResults,
+    );
+    const intentBoostedActivities = await applyIntentBoostsToLocations(
+      marketSafeActivities,
+      query,
+      requestedMarketForResults,
+    );
+    const photoSafeRestaurants = filterLivePhotoResults(
+      intentBoostedRestaurants,
+    );
     const photoSafeActivities = filterLivePhotoResults(intentBoostedActivities);
 
     const photoSuppressedRestaurants = marketSafeRestaurants.filter(
@@ -1395,7 +1685,10 @@ export async function runEnterpriseSearch(
     const locationSuppressedActivitiesSample = useLocationFitForLongIsland
       ? []
       : rejectedForMarketGuardrail
-          .filter((item: any) => item.activity_name || item.location_type === "activity")
+          .filter(
+            (item: any) =>
+              item.activity_name || item.location_type === "activity",
+          )
           .slice(0, 8)
           .map((item) => ({
             name: item.name || item.activity_name || null,
@@ -1472,8 +1765,9 @@ export async function runEnterpriseSearch(
       photoSuppressedRestaurants.length;
     (debug as any).photoSuppressedActivityCount =
       photoSuppressedActivities.length;
-    (debug as any).samplePhotoSuppressedRestaurants =
-      photoSuppressedRestaurants.slice(0, 8).map(imageDebugFor);
+    (debug as any).samplePhotoSuppressedRestaurants = photoSuppressedRestaurants
+      .slice(0, 8)
+      .map(imageDebugFor);
     (debug as any).samplePhotoSuppressedActivities = photoSuppressedActivities
       .slice(0, 8)
       .map(imageDebugFor);
@@ -1481,8 +1775,7 @@ export async function runEnterpriseSearch(
     (debug as any).marketGuardrailRejected = marketGuardrailRejected;
     (debug as any).suppressedMarketMismatchCount =
       suppressedMarketMismatchCount;
-    (debug as any).requestedMarketActivityCount =
-      requestedMarketActivityCount;
+    (debug as any).requestedMarketActivityCount = requestedMarketActivityCount;
     (debug as any).nearbyActivityCount = nearbyActivityCount;
     (debug as any).fallbackActivityCount = fallbackActivityCount;
     (debug as any).locationSuppressedActivitiesSample =
@@ -1530,7 +1823,9 @@ export async function runEnterpriseSearch(
             hasUsableLivePhoto(pair.activity),
         )
       : [];
-    let pairs = (await applyPairBoosts(pairedResults, query, requestedMarketForResults))
+    let pairs = (
+      await applyPairBoosts(pairedResults, query, requestedMarketForResults)
+    )
       .filter(
         (pair) =>
           requestedMarketForResults === "LONG_ISLAND" ||
@@ -1587,6 +1882,21 @@ export async function runEnterpriseSearch(
     const matched_locations = requiredPairingSuppressedFallback
       ? []
       : uniqueById([...restaurants, ...activities]).slice(0, displayLimit * 2);
+    const mlDebugResults = matched_locations.map((item, index) =>
+      createMlResultDebug(item, index + 1),
+    );
+    (debug as any).mlSearchDebug =
+      options?.searchHealthDebug || options?.betaDebug
+        ? summarizeMlDebug(
+            mlDebugResults,
+            query,
+            Number((debug as any).mlRanking?.restaurantScoresLoaded ?? 0) +
+              Number((debug as any).mlRanking?.activityScoresLoaded ?? 0),
+            mlDebugResults.filter(
+              (item) => Number(item.phase2IntentScore ?? 0) > 0,
+            ).length,
+          )
+        : undefined;
     const render_mode = requiredPairingSuppressedFallback
       ? "empty"
       : effectiveIntent.wantsPairing
@@ -1674,11 +1984,18 @@ export async function runEnterpriseSearch(
         : null;
     const noPairsReason =
       requiredPairingFailureReasonValue ??
-      (effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS && restaurants.length > 0 && activities.length > 0
+      (effectiveIntent.wantsPairing &&
+      pairs.length < MIN_PAIR_RESULTS &&
+      restaurants.length > 0 &&
+      activities.length > 0
         ? "pair_count_below_recovery_threshold"
-        : effectiveIntent.wantsPairing && restaurants.length > 0 && activities.length === 0
+        : effectiveIntent.wantsPairing &&
+            restaurants.length > 0 &&
+            activities.length === 0
           ? "no_activity_results_for_required_pair"
-          : effectiveIntent.wantsPairing && activities.length > 0 && restaurants.length === 0
+          : effectiveIntent.wantsPairing &&
+              activities.length > 0 &&
+              restaurants.length === 0
             ? "no_restaurant_results_for_required_pair"
             : null) ??
       (effectiveIntent.wantsPairing &&
@@ -1792,8 +2109,7 @@ export async function runEnterpriseSearch(
       fallbackSuppressedBecauseExplicitMarket,
       marketGuardrailRejected,
       sampleRejectedMarkets,
-      rankedRestaurantCountBeforeMarketGuardrail:
-        rankedRestaurants.length,
+      rankedRestaurantCountBeforeMarketGuardrail: rankedRestaurants.length,
       rankedActivityCountBeforeMarketGuardrail: rankedActivities.length,
       marketSafeRestaurantCount: marketSafeRestaurants.length,
       marketSafeActivityCount: marketSafeActivities.length,
@@ -1918,11 +2234,20 @@ export async function runEnterpriseSearch(
       walkablePairsFound: pairingDebug.walkablePairsFound,
       noPairsReason,
       no_pairs_reason: noPairsReason,
-      recoveryLayerUsed: Boolean(debug.restaurantRecoveryUsed || debug.activityRecoveryUsed),
-      recoverySucceeded: Boolean(debug.restaurantRecoverySucceeded || (debug as any).activityRecoverySucceeded),
+      recoveryLayerUsed: Boolean(
+        debug.restaurantRecoveryUsed || debug.activityRecoveryUsed,
+      ),
+      recoverySucceeded: Boolean(
+        debug.restaurantRecoverySucceeded ||
+        (debug as any).activityRecoverySucceeded,
+      ),
       recoveryLevel: (debug as any).activityRecoveryLevel ?? null,
-      partialResultsReturned: effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS && (restaurants.length > 0 || activities.length > 0),
-      pairRecoveryNeeded: effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS,
+      partialResultsReturned:
+        effectiveIntent.wantsPairing &&
+        pairs.length < MIN_PAIR_RESULTS &&
+        (restaurants.length > 0 || activities.length > 0),
+      pairRecoveryNeeded:
+        effectiveIntent.wantsPairing && pairs.length < MIN_PAIR_RESULTS,
       budgetIntentDetected: budgetIntentDetected(effectiveIntent),
       budgetHardFilterDisabled: budgetIntentDetected(effectiveIntent),
       budgetRankingPreferenceApplied: budgetIntentDetected(effectiveIntent),
