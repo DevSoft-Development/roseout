@@ -67,6 +67,12 @@ export default async function CentralDashboardPage() {
       status: "Improve",
     },
     {
+      title: "ML ranking",
+      desc: "Review learned ranking scores and run safe recalculations.",
+      href: "/admin/dashboard/ml",
+      status: "Monitor",
+    },
+    {
       title: "Claims pipeline",
       desc: "Review owner claims, QR codes, and claim outreach readiness.",
       href: "/admin/dashboard/claims",
