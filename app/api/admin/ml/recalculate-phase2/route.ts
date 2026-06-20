@@ -41,6 +41,38 @@ export const maxDuration = 300;
 const PAIR_UPSERT_CONFLICT_TARGET =
   "restaurant_location_id,activity_location_id,intent_bucket,market_key";
 
+const PAIR_FEATURE_COLUMNS = [
+  "restaurant_location_id",
+  "activity_location_id",
+  "intent_bucket",
+  "market",
+  "market_key",
+  "pair_distance_miles",
+  "estimated_travel_minutes",
+  "impressions_7d",
+  "impressions_30d",
+  "clicks_7d",
+  "clicks_30d",
+  "saves_30d",
+  "completed_outings_30d",
+  "reservation_clicks_30d",
+  "call_clicks_30d",
+  "website_clicks_30d",
+  "negative_signals_30d",
+  "ctr_30d",
+  "conversion_rate_30d",
+  "distance_score",
+  "engagement_score",
+  "conversion_score",
+  "confidence_score",
+  "pair_score",
+  "score_version",
+  "metadata",
+  "updated_at",
+] as const;
+
+const PAIR_FEATURE_COLUMN_SET = new Set<string>(PAIR_FEATURE_COLUMNS);
+
 function samplePairRowKeys(pairRows: any[], limit: number) {
   return pairRows.slice(0, limit).map((row) => ({
     restaurant_location_id: row.restaurant_location_id,
@@ -50,6 +82,28 @@ function samplePairRowKeys(pairRows: any[], limit: number) {
     market_key: row.market_key,
     pair_score: row.pair_score,
   }));
+}
+function removedPairRowKeys(pairRows: any[]) {
+  return [
+    ...new Set(
+      pairRows.flatMap((row) =>
+        Object.keys(row).filter((key) => !PAIR_FEATURE_COLUMN_SET.has(key)),
+      ),
+    ),
+  ].sort();
+}
+function sanitizePairFeatureRow(row: any) {
+  const normalized = {
+    ...row,
+    impressions_30d: row.impressions_30d ?? row.views_30d ?? 0,
+    impressions_7d: row.impressions_7d ?? row.views_7d ?? 0,
+  };
+
+  return Object.fromEntries(
+    PAIR_FEATURE_COLUMNS.map((column) => [column, normalized[column]]).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
 }
 function bearer(req: NextRequest) {
   const h = req.headers.get("authorization") || "";
@@ -471,6 +525,8 @@ export async function POST(req: NextRequest) {
   }
   const locRows = [...locAgg.values()].map(finalizeLoc);
   const pairRows = [...pairAgg.values()].map(finalizePair);
+  const sanitizedPairRows = pairRows.map(sanitizePairFeatureRow);
+  const pairRowsRemovedKeys = removedPairRowKeys(pairRows);
   diagnostics.candidateLocationIntentRows = locRows.length;
   diagnostics.candidatePairRows = pairRows.length;
   pairDiagnostics.candidatePairRows = pairRows.length;
@@ -485,10 +541,10 @@ export async function POST(req: NextRequest) {
     if (error) errors.push(`location upsert: ${error.message}`);
     else updatedLoc = locRows.length;
   }
-  if (pairRows.length) {
+  if (sanitizedPairRows.length) {
     const { error } = await supabaseAdmin
       .from("location_pair_ml_features")
-      .upsert(pairRows, {
+      .upsert(sanitizedPairRows, {
         onConflict: PAIR_UPSERT_CONFLICT_TARGET,
       });
     if (error) {
@@ -504,13 +560,15 @@ export async function POST(req: NextRequest) {
         code: error.code,
         details: error.details,
         hint: error.hint,
-        pairRowCount: pairRows.length,
+        pairRowCount: sanitizedPairRows.length,
         conflictTarget: PAIR_UPSERT_CONFLICT_TARGET,
-        samplePairRowKeys: samplePairRowKeys(pairRows, 2),
+        samplePairRowKeys: samplePairRowKeys(sanitizedPairRows, 2),
+        sanitizedPairRowKeys: Object.keys(sanitizedPairRows[0] || {}),
+        removedPairRowKeys: pairRowsRemovedKeys,
       });
       errors.push(`pair upsert: ${error.message}`);
       diagnostics.pairUpsertIssue = error.message;
-    } else updatedPair = pairRows.length;
+    } else updatedPair = sanitizedPairRows.length;
   }
   diagnostics.upsertLocationIntentRows = updatedLoc;
   diagnostics.upsertPairRows = updatedPair;
@@ -546,7 +604,9 @@ export async function POST(req: NextRequest) {
     pairRowsIncludeMarketKey: pairRows.every((row) =>
       Object.prototype.hasOwnProperty.call(row, "market_key"),
     ),
-    samplePairRowKeys: samplePairRowKeys(pairRows, 5),
+    sanitizedPairRowKeys: Object.keys(sanitizedPairRows[0] || {}),
+    removedPairRowKeys: pairRowsRemovedKeys,
+    samplePairRowKeys: samplePairRowKeys(sanitizedPairRows, 5),
     candidatePairRows: pairRows.length,
     upsertPairRows: updatedPair,
     validMlPairsExtracted: pairDiagnostics.validMlPairsExtracted,
