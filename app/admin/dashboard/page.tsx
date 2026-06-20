@@ -24,7 +24,7 @@ const format = (v: number | null | undefined) =>
   Number(v || 0).toLocaleString();
 
 export default async function CentralDashboardPage() {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
   const today = todayKey();
   const [
     restaurants,
@@ -99,7 +99,7 @@ export default async function CentralDashboardPage() {
       href: "/admin/dashboard/crm",
       status: "Operate",
     },
-  ];
+  ].filter((group) => group.title !== "Users" || admin.role === "superadmin");
   const tasks = [
     ["Needs review", "/admin/dashboard/data-quality"],
     ["Missing Google Place ID", "/admin/dashboard/locations/google-enrichment"],

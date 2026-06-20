@@ -20,6 +20,8 @@ const giveawayAdminRoles: AdminRole[] = [
 ];
 
 type PatchBody = {
+  action?: unknown;
+  rejection_reason?: unknown;
   giveaway_status?: unknown;
   giveaway_notes?: unknown;
   duplicate_flag?: unknown;
@@ -36,7 +38,7 @@ export async function PATCH(
   const body = (await request.json().catch(() => ({}))) as PatchBody;
   const { data: entry, error: loadError } = await supabaseAdmin
     .from("launch_waitlist_signups")
-    .select("id,wants_giveaway,email_verified,giveaway_status")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
   if (loadError || !entry)
@@ -45,9 +47,29 @@ export async function PATCH(
       { status: 404 },
     );
 
-  const updates: Record<string, string | boolean | null> = {
+  const updates: Record<string, any> = {
     updated_at: new Date().toISOString(),
   };
+
+  if (body.action === "approve_beta") {
+    const testerType = ["user", "location_owner", "ambassador", "experience_team"].includes(String(entry.tester_type)) ? entry.tester_type : "user";
+    const inviteCode = `BETA-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const { data: beta, error: betaError } = await supabaseAdmin.from("beta_testers").upsert({ application_id: entry.beta_application_id ?? null, name: entry.full_name, email: entry.email, phone: entry.phone, tester_type: testerType, status: "active", weekly_required_tests: 5, invite_code: inviteCode, approved_by: auth.adminUser?.user_id ?? null, approved_at: new Date().toISOString() }, { onConflict: "email" }).select("*").single();
+    if (betaError) return NextResponse.json({ success: false, error: betaError.message }, { status: 500 });
+    await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_status: "approved", beta_approved_at: new Date().toISOString(), beta_approved_by: auth.adminUser?.user_id ?? null }).eq("id", id);
+    if (entry.beta_application_id) await supabaseAdmin.from("beta_applications").update({ status: "approved", reviewed_by: auth.adminUser?.user_id ?? null, reviewed_at: new Date().toISOString() }).eq("id", entry.beta_application_id);
+    await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: entry.email, action: "beta_user_approved", entity_type: "beta_tester", entity_id: beta.id, summary: "Approved launch list signup as beta user", metadata: { launchSignupId: id, testerType } });
+    return NextResponse.json({ success: true, entry: { ...entry, beta_application_status: "approved" }, beta });
+  }
+  if (body.action === "reject_beta") {
+    await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_status: "rejected", giveaway_notes: String(body.rejection_reason || entry.giveaway_notes || "") }).eq("id", id);
+    if (entry.beta_application_id) await supabaseAdmin.from("beta_applications").update({ status: "rejected", reviewed_by: auth.adminUser?.user_id ?? null, reviewed_at: new Date().toISOString(), notes: String(body.rejection_reason || "") }).eq("id", entry.beta_application_id);
+    await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: entry.email, action: "beta_user_rejected", entity_type: "beta_application", entity_id: entry.beta_application_id || id, summary: "Rejected beta application", metadata: { reason: String(body.rejection_reason || "") } });
+    return NextResponse.json({ success: true, entry: { ...entry, beta_application_status: "rejected" } });
+  }
+  if (body.action === "verify_social") { updates.followed_social = true; updates.followed_social_verified_at = new Date().toISOString() as any; updates.followed_social_verified_by = auth.adminUser?.user_id ?? null as any; }
+  if (body.action === "verify_tags") { updates.tagged_two_friends = true; updates.tagged_friends_verified_at = new Date().toISOString() as any; updates.tagged_friends_verified_by = auth.adminUser?.user_id ?? null as any; }
+
   if (typeof body.giveaway_notes === "string")
     updates.giveaway_notes = body.giveaway_notes;
   if (typeof body.duplicate_flag === "boolean") {
@@ -77,12 +99,12 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    if (body.giveaway_status === "verified" && !entry.email_verified) {
+    if (body.giveaway_status === "verified" && (!entry.email_verified || !entry.social_handle || !entry.social_platform || !(entry.followed_social || entry.followed_social_verified_at) || !(entry.tagged_two_friends || entry.tagged_friends_verified_at) || entry.duplicate_flag)) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Email must be verified before this entry can be marked verified.",
+            "Email, social handle/platform, follow, tags, and duplicate checks must pass before marking verified.",
         },
         { status: 400 },
       );
@@ -112,6 +134,7 @@ export async function PATCH(
       { success: false, error: error.message },
       { status: 500 },
     );
+  await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: data.email, action: "giveaway_status_changed", entity_type: "launch_waitlist_signup", entity_id: id, summary: `Giveaway/admin review updated to ${data.giveaway_status}`, before_data: entry, after_data: data, metadata: { action: body.action || null } });
   return NextResponse.json({ success: true, entry: data });
 }
 

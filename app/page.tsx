@@ -73,7 +73,7 @@ function Nav() {
         </Link>
         <div className="flex items-center gap-2 sm:gap-3">
           <a href="#launch-list" className="hidden rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-50 transition hover:bg-rose-500/20 sm:inline-flex">
-            Join Launch List + Enter Giveaway
+            Join Beta Launch List
           </a>
           <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/12">
             Log In
@@ -103,13 +103,13 @@ function Hero() {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <a href="#launch-list" className="rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.02]">
-            Join Launch List + Enter Giveaway
+            Join Beta Launch List
           </a>
           <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.07] px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-white/12">
             Log In
           </Link>
         </div>
-        <p className="text-sm leading-6 text-white/55">Join the Launch List for early access and a chance to win a $100 gift card.</p>
+        <p className="text-sm leading-6 text-white/55">Apply for early access, help test TheOutHaven, and enter the $100 gift card giveaway if eligible.</p>
       </div>
       <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-4 shadow-2xl shadow-black/35 backdrop-blur">
         <div className="rounded-[1.5rem] border border-white/10 bg-[#0d0505] p-5">
@@ -157,8 +157,8 @@ function LaunchFormCard() {
   return (
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl shadow-black/30 sm:p-7">
       <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">TheOutHaven Launch Giveaway</p>
-      <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Join the Launch List.</h2>
-      <p className="mt-3 text-sm leading-6 text-white/62">Join the Launch List for early access and a chance to win a $100 gift card.</p>
+      <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Join the Beta Launch List</h2>
+      <p className="mt-3 text-sm leading-6 text-white/62">Apply for early access, help test TheOutHaven, and enter the $100 gift card giveaway if eligible.</p>
       <div className="mt-6">
         <LaunchWaitlistForm />
       </div>
@@ -174,7 +174,7 @@ function GiveawayRulesCard() {
         <h2 className="mt-3 text-3xl font-black tracking-[-0.03em]">How to enter:</h2>
       </div>
       <ol className="space-y-3 text-sm font-bold leading-6 text-white/78">
-        <li>1. Join the Launch List.</li>
+        <li>1. Join the Beta Launch List</li>
         <li>2. Enter the $100 gift card giveaway.</li>
         <li>3. Follow @TheOutHaven on Instagram or TikTok.</li>
         <li>4. Tag 2 friends in the giveaway post comments.</li>

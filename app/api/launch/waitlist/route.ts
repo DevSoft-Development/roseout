@@ -35,6 +35,7 @@ type RequestBody = {
   turnstileToken?: unknown;
   referrer?: unknown;
   giveawayPostUrl?: unknown;
+  betaInterest?: unknown; testerType?: unknown; notes?: unknown; betaAgreement?: unknown; age18Confirmed?: unknown;
 };
 
 function cleanText(value: unknown) {
@@ -138,6 +139,11 @@ export async function POST(request: Request) {
   const marketingConsent = Boolean(body.marketingConsent);
   const referrer = cleanText(body.referrer);
   const giveawayPostUrl = cleanText(body.giveawayPostUrl);
+  const betaInterest = typeof body.betaInterest === "boolean" ? body.betaInterest : true;
+  const testerType = ["user", "location_owner", "ambassador", "experience_team"].includes(cleanText(body.testerType)) ? cleanText(body.testerType) : "user";
+  const notes = cleanText(body.notes);
+  const betaAgreement = Boolean(body.betaAgreement);
+  const age18Confirmed = Boolean(body.age18Confirmed);
 
   if (fullName.length < 2 || fullName.length > 120) {
     return NextResponse.json({ success: false, message: "Please enter your name." }, { status: 400 });
@@ -148,6 +154,8 @@ export async function POST(request: Request) {
   if (!marketingConsent) {
     return NextResponse.json({ success: false, message: "Please agree to the launch list and giveaway terms to continue." }, { status: 400 });
   }
+  if (betaInterest && !betaAgreement) { return NextResponse.json({ success: false, message: "Please agree to complete beta tasks if approved." }, { status: 400 }); }
+  if (wantsGiveaway && !age18Confirmed) { return NextResponse.json({ success: false, message: "Please confirm you are 18+ to enter the giveaway." }, { status: 400 }); }
   if (wantsGiveaway && !socialHandle) {
     return NextResponse.json({ success: false, message: "Please enter your Instagram or TikTok handle to join the giveaway." }, { status: 400 });
   }
@@ -200,7 +208,7 @@ export async function POST(request: Request) {
         conflictSignupId: conflict.id,
         ipAddress,
         userAgent,
-      }).catch(() => undefined);
+      });
       return NextResponse.json({ success: false, message: DUPLICATE_SOCIAL_MESSAGE }, { status: 409 });
     }
   }
@@ -268,7 +276,12 @@ export async function POST(request: Request) {
     turnstile_verified: turnstileVerified,
     turnstile_action: "launch_waitlist",
     turnstile_hostname: turnstileHostname,
-    metadata: { route: "/api/launch/waitlist" },
+    metadata: { route: "/api/launch/waitlist", betaAgreement, notes },
+    beta_interest: betaInterest,
+    tester_type: testerType,
+    beta_application_status: betaInterest ? "new" : null,
+    age_18_confirmed: age18Confirmed,
+    prize_rules_confirmed: wantsGiveaway && age18Confirmed,
     duplicate_flag: false,
     duplicate_reason: null,
     duplicate_checked_at: now.toISOString(),
@@ -283,6 +296,18 @@ export async function POST(request: Request) {
   if (result.error) {
     return NextResponse.json({ success: false, message: "Something went wrong. Please try again." }, { status: 500 });
   }
+
+  if (betaInterest) {
+    const betaRecord = { name: fullName, email, phone: phone || null, city: usuallyGoOutArea || null, tester_type: testerType, status: "new", notes: notes || null, turnstile_verified: turnstileVerified, turnstile_action: "launch_waitlist", turnstile_hostname: turnstileHostname };
+    const { data: existingBetaApp } = await supabaseAdmin.from("beta_applications").select("id,status").eq("email", email).maybeSingle();
+    const betaResult = existingBetaApp?.id
+      ? await supabaseAdmin.from("beta_applications").update(betaRecord).eq("id", existingBetaApp.id).select("id,status").single()
+      : await supabaseAdmin.from("beta_applications").insert(betaRecord).select("id,status").single();
+    const betaApp = betaResult.data;
+    if (betaApp?.id) await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_id: betaApp.id, beta_application_status: betaApp.status }).eq("id", result.data.id);
+    await supabaseAdmin.from("admin_audit_logs").insert({ action: "beta_user_applied", entity_type: "beta_application", entity_id: betaApp?.id || null, target_email: email, summary: "Beta launch list application submitted", metadata: { testerType } });
+  }
+  await supabaseAdmin.from("admin_audit_logs").insert({ action: "launch_list_signup_created", entity_type: "launch_waitlist_signup", entity_id: result.data.id, target_email: email, summary: existing ? "Launch list signup updated" : "Launch list signup created", metadata: { wantsGiveaway, betaInterest } });
 
   if (!isAlreadyVerified) {
     await sendVerificationEmail({ email, fullName, token: rawToken });

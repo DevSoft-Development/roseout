@@ -27,6 +27,7 @@ type Entry = {
   giveaway_notes: string | null;
   created_at: string | null;
   giveaway_verified_at: string | null;
+  beta_interest?: boolean | null; beta_application_status?: string | null; tester_type?: string | null; age_18_confirmed?: boolean | null;
 };
 
 type DuplicateEvent = {
@@ -378,6 +379,10 @@ export default function GiveawayAdminClient({
           compact ? "grid grid-cols-2 gap-2" : "flex min-w-48 flex-col gap-2"
         }
       >
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "approve_beta" })} className={`${actionButtonClass} bg-emerald-700 text-white`}>Approve as Beta User</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "reject_beta", rejection_reason: "Admin rejected" })} className={`${actionButtonClass} border border-red-300/30 bg-red-500/10 text-red-100`}>Reject Beta</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_social" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify follow</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_tags" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify tags</button>
         {entry.wants_giveaway ? (
           <button
             disabled={isBusy}
@@ -610,9 +615,7 @@ export default function GiveawayAdminClient({
                       {formatText(entry.full_name)}
                     </p>
                     <p className="mt-1 text-white/35">ID {entry.id}</p>
-                    <p className="mt-2 rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/55">
-                      {entry.wants_giveaway ? "Giveaway" : "Launch List"}
-                    </p>
+                    <p className="mt-2 rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/55">{entry.wants_giveaway ? "Giveaway" : "Launch List"}</p><p className="mt-2 rounded-full border border-emerald-300/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100">Beta: {entry.beta_application_status || (entry.beta_interest ? "new" : "none")}</p>
                   </td>
                   <td className="w-64 px-3 py-3">
                     <p className="font-bold text-white/85">
