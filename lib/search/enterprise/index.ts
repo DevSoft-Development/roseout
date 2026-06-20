@@ -53,6 +53,8 @@ import {
 import { resolveSearchMarket, type UserSearchLocation } from "./markets";
 import { detectGeoIntent } from "./geo-taxonomy";
 import { logSearchHealthEvent } from "./searchHealthLogger";
+import { classifySearchIntent, getRankingIntentBuckets } from "@/lib/ml/intentBuckets";
+import { getLocationIntentScoreMap, getPairScoreMap } from "@/lib/ml/intentScoreLoaders";
 import { parseOutingDateTime } from "../parse-outing-date-time";
 import { validatePlaceForMarket } from "../../location-market-validation";
 import {
@@ -66,6 +68,50 @@ const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
 const MIN_PAIR_RESULTS = 3;
 const RECOVERY_LIMIT = 80;
+
+
+function idString(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : null;
+}
+
+async function applyIntentBoostsToLocations(
+  items: EnterpriseLocation[],
+  query: string,
+  market?: string | null,
+) {
+  const classification = classifySearchIntent(query);
+  const buckets = getRankingIntentBuckets(classification);
+  const ids = items.map((item) => idString(item.id)).filter((id): id is string => Boolean(id));
+  const scoreMap = await getLocationIntentScoreMap({ locationIds: ids, intentBuckets: buckets, market: market ?? null });
+  return items.map((item, index) => {
+    const id = idString(item.id);
+    let matched: string | null = null;
+    let score = 0;
+    if (id) {
+      for (const bucket of buckets) {
+        const value = scoreMap.get(`${id}:${bucket}`);
+        if (value != null) { score = Math.max(0, Number(value)); matched = bucket; break; }
+      }
+    }
+    const intentBoost = Math.min(12, score * 0.12);
+    const existingMlBoost = Math.min(13, Math.max(0, Number((item as any).ml_boost ?? item.ml_score ?? 0)));
+    const cappedBoost = Math.min(25, intentBoost + existingMlBoost);
+    return { ...item, intent_score: score || null, intent_boost: Number(intentBoost.toFixed(2)), primary_intent: classification.primaryIntent, matched_intents: matched ? [matched] : [], search_boost: Number(item.search_boost ?? 0) + cappedBoost, _mlPhase2SortScore: (items.length - index) * 100 + cappedBoost } as EnterpriseLocation;
+  }).sort((a, b) => Number((b as any)._mlPhase2SortScore ?? 0) - Number((a as any)._mlPhase2SortScore ?? 0));
+}
+
+async function applyPairBoosts(pairs: import("./types").EnterprisePair[], query: string, market?: string | null) {
+  const classification = classifySearchIntent(query);
+  const buckets = getRankingIntentBuckets(classification);
+  const pairKeys = pairs.map((pair) => ({ restaurantLocationId: String(pair.restaurant.id ?? ""), activityLocationId: String(pair.activity.id ?? "") })).filter((p) => p.restaurantLocationId && p.activityLocationId);
+  const scoreMap = await getPairScoreMap({ pairKeys, intentBuckets: buckets, market: market ?? null });
+  return pairs.map((pair) => {
+    let matched: string | null = null; let score = 0;
+    for (const bucket of buckets) { const value = scoreMap.get(`${pair.restaurant.id}:${pair.activity.id}:${bucket}`); if (value != null) { score = Math.max(0, Number(value)); matched = bucket; break; } }
+    const pairBoost = Math.min(15, score * 0.15);
+    return { ...pair, pair_ml_score: score || null, pair_boost: Number(pairBoost.toFixed(2)), primary_intent: classification.primaryIntent, matched_intents: matched ? [matched] : [], score: pair.score + pairBoost, pairScore: pair.pairScore + pairBoost };
+  }).sort((a,b)=>b.score-a.score);
+}
 
 function serializeErrorForDebug(error: unknown) {
   if (error instanceof Error) {
@@ -1300,8 +1346,10 @@ export async function runEnterpriseSearch(
       .filter((item) => !suppressMarketMismatch(item))
       .map((item) => withMarketFit(item, requestedMarketForResults));
 
-    const photoSafeRestaurants = filterLivePhotoResults(marketSafeRestaurants);
-    const photoSafeActivities = filterLivePhotoResults(marketSafeActivities);
+    const intentBoostedRestaurants = await applyIntentBoostsToLocations(marketSafeRestaurants, query, requestedMarketForResults);
+    const intentBoostedActivities = await applyIntentBoostsToLocations(marketSafeActivities, query, requestedMarketForResults);
+    const photoSafeRestaurants = filterLivePhotoResults(intentBoostedRestaurants);
+    const photoSafeActivities = filterLivePhotoResults(intentBoostedActivities);
 
     const photoSuppressedRestaurants = marketSafeRestaurants.filter(
       (item) => !hasUsableLivePhoto(item),
@@ -1396,6 +1444,7 @@ export async function runEnterpriseSearch(
     (debug as any).rankedActivityCountBeforeMarketGuardrail =
       rankedActivities.length;
     (debug as any).marketSafeRestaurantCount = marketSafeRestaurants.length;
+    (debug as any).mlPhase2Intent = classifySearchIntent(query);
     (debug as any).marketSafeActivityCount = marketSafeActivities.length;
     (debug as any).photoSafeRestaurantCount = photoSafeRestaurants.length;
     (debug as any).photoSafeActivityCount = photoSafeActivities.length;
@@ -1461,7 +1510,7 @@ export async function runEnterpriseSearch(
             hasUsableLivePhoto(pair.activity),
         )
       : [];
-    let pairs = pairedResults
+    let pairs = (await applyPairBoosts(pairedResults, query, requestedMarketForResults))
       .filter(
         (pair) =>
           requestedMarketForResults === "LONG_ISLAND" ||

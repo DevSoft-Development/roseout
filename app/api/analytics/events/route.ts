@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { trackEvent } from "@/lib/analytics/trackEvent";
+import { classifySearchIntent } from "@/lib/ml/intentBuckets";
 
 const EVENT_NAME_REGEX = /^[a-z0-9_:-]{2,64}$/i;
 const MAX_METADATA_BYTES = 4096;
@@ -41,6 +42,8 @@ export async function POST(req: Request) {
     const supabase = await createClient();
     const { data: auth } = await supabase.auth.getUser();
 
+    const mlIntent = classifySearchIntent(body?.query || body?.normalized_query || body?.metadata?.query || "");
+
     await trackEvent({
       event_name: eventName,
       event_type: cleanString(body?.event_type),
@@ -52,7 +55,7 @@ export async function POST(req: Request) {
       source_location_id: cleanString(body?.source_location_id),
       query: cleanString(body?.query),
       normalized_query: cleanString(body?.normalized_query),
-      search_intent: sanitizeObject(body?.search_intent),
+      search_intent: sanitizeObject({ ...(body?.search_intent || {}), primary_intent: mlIntent.primaryIntent, secondary_intents: mlIntent.secondaryIntents, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: mlIntent.inferredSearchMode }),
       page_path: cleanString(body?.page_path),
       referrer: cleanString(body?.referrer),
       source: cleanString(body?.source),
@@ -71,7 +74,7 @@ export async function POST(req: Request) {
       response_time_ms: cleanNumber(body?.response_time_ms),
       conversion_step: cleanString(body?.conversion_step),
       revenue_impact: cleanNumber(body?.revenue_impact),
-      metadata: sanitizeObject(body?.metadata),
+      metadata: sanitizeObject({ ...(body?.metadata || {}), primary_intent: mlIntent.primaryIntent, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: mlIntent.inferredSearchMode }),
     });
 
     return NextResponse.json({ ok: true });
