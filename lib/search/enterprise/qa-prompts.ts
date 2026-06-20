@@ -1,4 +1,3 @@
-
 const SEARCH_RECOVERY_REGRESSION_PROMPTS = [
   "date night in Queens tonight at 8pm with dinner and something fun after",
   "seafood rooftop restaurant in Manhattan this Friday at 7:30pm",
@@ -58,6 +57,17 @@ export const DEFAULT_SEARCH_QA_PROMPTS = [
   "food and activity close together",
   "restaurant and lounge near each other",
   "brunch and activity nearby",
+  "date night in Queens",
+  "romantic dinner near me tonight",
+  "birthday dinner with activity after",
+  "girls night drinks and lounge in Brooklyn",
+  "brunch and museum date",
+  "seafood restaurant in Queens",
+  "steakhouse near me",
+  "bowling near me tonight",
+  "Black-owned romantic restaurant",
+  "wheelchair accessible brunch spot",
+  "date night in Long Island",
   "dinner then drinks less than 20 minutes away",
   "seafood and comedy show walking distance",
   "cute date idea in Queens",
