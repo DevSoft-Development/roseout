@@ -144,6 +144,12 @@ export type MlPairExtractionDiagnostics = {
   samplePairKeys: Array<Record<string, any>>;
   candidatePairRows: number;
   upsertPairRows: number;
+  pairUpsertError?: {
+    message?: string;
+    code?: string;
+    details?: string;
+    hint?: string;
+  };
 };
 export function createPairDiagnostics(): MlPairExtractionDiagnostics {
   return {

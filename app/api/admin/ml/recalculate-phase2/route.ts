@@ -97,11 +97,13 @@ function basePair(
   intent_bucket: string,
   market: string | null,
 ) {
+  const marketKey = typeof market === "string" ? market : "";
   return {
     restaurant_location_id: r,
     activity_location_id: a,
     intent_bucket,
-    market,
+    market: market || null,
+    market_key: marketKey,
     pair_distance_miles: null,
     estimated_travel_minutes: null,
     impressions_7d: 0,
@@ -149,7 +151,10 @@ function finalizeLoc(row: any) {
   };
 }
 function finalizePair(row: any) {
-  row.market_key = row.market || "";
+  const market = typeof row.market === "string" ? row.market : null;
+  const marketKey = typeof market === "string" ? market : "";
+  row.market = market || null;
+  row.market_key = marketKey;
   const conversions =
     row.completed_outings_30d +
     row.reservation_clicks_30d +
@@ -474,6 +479,13 @@ export async function POST(req: NextRequest) {
           "restaurant_location_id,activity_location_id,intent_bucket,market_key",
       });
     if (error) {
+      const pairUpsertError = {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      };
+      pairDiagnostics.pairUpsertError = pairUpsertError;
       errors.push(`pair upsert: ${error.message}`);
       diagnostics.pairUpsertIssue = error.message;
     } else updatedPair = pairRows.length;
@@ -489,9 +501,19 @@ export async function POST(req: NextRequest) {
   if (pairDiagnostics.searchEventsWithMlPairIds > 0 && updatedPair === 0)
     diagnostics.recommendation =
       "Pair IDs were found, but no valid pair rows were upserted. Check pair ID field names and skippedPairReasons.";
-  if (pairDiagnostics.validMlPairsExtracted > 0 && updatedPair === 0)
-    diagnostics.recommendation =
-      "Valid pairs were extracted but not upserted. Check the location_pair_ml_features unique constraint/upsert conflict target.";
+  if (pairDiagnostics.validMlPairsExtracted > 0 && updatedPair === 0) {
+    const pairUpsertErrorText = [
+      pairDiagnostics.pairUpsertError?.message,
+      pairDiagnostics.pairUpsertError?.details,
+      pairDiagnostics.pairUpsertError?.hint,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    diagnostics.recommendation = pairUpsertErrorText.includes("market_key")
+      ? "Database is missing location_pair_ml_features.market_key. Run the pair upsert SQL/migration before rerunning Phase 2."
+      : "Valid pairs were extracted but not upserted. Check the location_pair_ml_features unique constraint/upsert conflict target.";
+  }
   if (pairDiagnostics.searchEventsWithMlPairIds === 0)
     diagnostics.recommendation =
       "No pair IDs found yet. Run a new mixed outing search after the tracking update.";
