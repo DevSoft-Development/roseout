@@ -1590,10 +1590,10 @@ export default function CreatePage() {
                     return (
                       <div key="pairs" className="scroll-mt-24 sm:scroll-mt-28">
                         <ResultSection
-                          title="Paired Date-Night Outings"
-                          subtitle="Dinner-plus-experience combinations matched for the full night"
+                          title="TheOutHaven Recommends"
+                          subtitle="Restaurant and activity combinations matched to your search, location, and vibe."
                         >
-                          {pairs.map((pair, pairIndex) => {
+                          {pairs.slice(0, 3).map((pair, pairIndex) => {
                             const pairRecord = pair as {
                               restaurant?: RestaurantCard | null;
                               activity?: ActivityCard | null;
@@ -1611,54 +1611,66 @@ export default function CreatePage() {
                                   normalizePublicCardImage(activity),
                                 )
                               : null;
-                            const imageUrl = restaurantImage || activityImage;
+                            if (!restaurant && !activity) return null;
 
-                            if (!imageUrl || (!restaurant && !activity))
+                            const restaurantId = restaurant?.id
+                              ? String(restaurant.id)
+                              : "";
+                            const activityId = activity?.id
+                              ? String(activity.id)
+                              : "";
+
+                            if (
+                              restaurantId &&
+                              activityId &&
+                              restaurantId === activityId
+                            ) {
                               return null;
+                            }
+
+                            const isSelectedCombo = Boolean(
+                              restaurant &&
+                                activity &&
+                                selectedRestaurant?.id === restaurant.id &&
+                                selectedActivity?.id === activity.id,
+                            );
 
                             return (
-                              <ResultCard
+                              <ComboResultCard
                                 key={`${restaurant?.id || "restaurant"}-${activity?.id || "activity"}-${pairIndex}`}
                                 index={pairIndex}
-                                type={restaurant ? "restaurant" : "activity"}
-                                imageUrl={imageUrl}
-                                title={[
-                                  restaurant
-                                    ? getLocationName(restaurant)
-                                    : null,
-                                  activity ? getLocationName(activity) : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" + ")}
-                                eyebrow="Date-night pair"
-                                address={
-                                  restaurant
-                                    ? formatAddress(restaurant)
-                                    : activity
-                                      ? formatAddress(activity)
-                                      : ""
-                                }
-                                rating={restaurant?.rating || activity?.rating}
-                                healthDepartmentGrade={restaurant?.health_department_grade}
-                                healthDepartmentScore={restaurant?.health_department_score}
+                                restaurant={restaurant}
+                                activity={activity}
+                                restaurantImageUrl={restaurantImage}
+                                activityImageUrl={activityImage}
                                 distance={
                                   pairRecord.pair_distance_miles ??
+                                  restaurant?.pair_distance_miles ??
+                                  activity?.pair_distance_miles ??
                                   restaurant?.distance_miles ??
                                   activity?.distance_miles
                                 }
-                                primaryTag="Dinner + experience"
-                                selected={Boolean(
-                                  (restaurant &&
-                                    selectedRestaurant?.id === restaurant.id) ||
-                                  (activity &&
-                                    selectedActivity?.id === activity.id),
-                                )}
+                                selected={isSelectedCombo}
                                 priority={pairIndex === 0}
-                                selectLabel="Choose this pair"
+                                selectLabel={
+                                  isSelectedCombo
+                                    ? "Selected combo"
+                                    : "Choose this combo"
+                                }
                                 onSelect={() => {
-                                  if (restaurant)
-                                    selectRestaurantAndMaybeScroll(restaurant);
-                                  if (activity) selectActivity(activity);
+                                  if (restaurant) {
+                                    trackRestaurantClick(String(restaurant.id));
+                                    trackRestaurantSave(String(restaurant.id));
+                                    setSelectedRestaurant(restaurant);
+                                  }
+
+                                  if (activity) {
+                                    trackActivityClick(String(activity.id));
+                                    trackActivitySave(String(activity.id));
+                                    setSelectedActivity(activity);
+                                  }
+
+                                  setShowPlanSummary(false);
                                 }}
                                 onCardClick={() => {
                                   if (restaurant?.id)
@@ -2551,6 +2563,188 @@ function formatHealthDepartmentScore(value: unknown) {
   return String(Math.round(score));
 }
 
+function ComboResultCard({
+  index,
+  restaurant,
+  activity,
+  restaurantImageUrl,
+  activityImageUrl,
+  distance,
+  selected,
+  priority,
+  selectLabel,
+  onSelect,
+  onCardClick,
+  analyticsMetadata,
+}: {
+  index: number;
+  restaurant?: RestaurantCard | null;
+  activity?: ActivityCard | null;
+  restaurantImageUrl?: string | null;
+  activityImageUrl?: string | null;
+  distance?: number | null;
+  selected: boolean;
+  priority: boolean;
+  selectLabel: string;
+  onSelect: () => void;
+  onCardClick?: () => void;
+  analyticsMetadata?: LocationAnalyticsMetadata;
+}) {
+  const viewRef = useTrackLocationView<HTMLElement>(
+    restaurant?.id && activity?.id
+      ? `combo:${restaurant.id}:${activity.id}`
+      : null,
+    analyticsMetadata,
+  );
+  const restaurantName = restaurant
+    ? getLocationName(restaurant)
+    : "Restaurant";
+  const activityName = activity ? getLocationName(activity) : "Activity";
+  const title = [restaurant ? restaurantName : null, activity ? activityName : null]
+    .filter(Boolean)
+    .join(" + ");
+  const whyPicked =
+    restaurant && activity
+      ? "This combination pairs a food spot with an experience that fits your search, location, and vibe."
+      : "This recommendation fits your search, location, and vibe.";
+
+  if (!restaurant && !activity) return null;
+
+  const renderImagePanel = (
+    label: "Restaurant" | "Activity",
+    imageUrl: string | null | undefined,
+    alt: string,
+  ) => {
+    const resolvedImageUrl =
+      typeof imageUrl === "string" && imageUrl.trim().length > 8
+        ? imageUrl.trim()
+        : null;
+
+    return (
+      <div className="relative h-44 overflow-hidden rounded-2xl bg-white/[0.05]">
+        {resolvedImageUrl ? (
+          <>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+                <img
+                  src="/toh_logo.png"
+                  alt=""
+                  aria-hidden="true"
+                  className="h-7 w-7 object-contain opacity-60"
+                />
+              </div>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={resolvedImageUrl}
+              alt={alt}
+              className="relative z-[1] h-full w-full object-cover transition duration-700 group-hover:scale-[1.05]"
+              loading={priority ? "eager" : "lazy"}
+              referrerPolicy="no-referrer"
+              onError={(event) => {
+                event.currentTarget.style.opacity = "0";
+              }}
+            />
+          </>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-xs font-semibold text-neutral-500">
+            Photo Coming Soon
+          </div>
+        )}
+        <div className="absolute inset-0 z-[2] bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
+        <span className="absolute left-3 top-3 z-[3] rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white backdrop-blur">
+          {label}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <article
+      ref={viewRef}
+      data-ui-version={RESULT_CARD_UI_VERSION}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a,button")) return;
+        onCardClick?.();
+      }}
+      className={`group relative flex h-full min-h-[500px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.5rem] border bg-zinc-950/80 p-3 shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:rounded-[1.1rem] ${
+        selected
+          ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
+          : "border-white/10"
+      }`}
+      style={{
+        animation: `cardReveal 360ms ease-out ${index * 70}ms both`,
+      }}
+    >
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {renderImagePanel("Restaurant", restaurantImageUrl, restaurantName)}
+        {renderImagePanel("Activity", activityImageUrl, activityName)}
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col p-1 pt-4">
+        <div className="space-y-2 min-w-0">
+          <p className="line-clamp-1 min-w-0 text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
+            Recommended combo
+          </p>
+
+          <h3 className="line-clamp-2 break-words text-base font-black leading-tight tracking-[-0.03em] text-white transition group-hover:text-red-100 sm:text-lg">
+            {title}
+          </h3>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
+              Food + experience
+            </span>
+            {distance !== null && distance !== undefined ? (
+              <span className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-2.5 py-1 text-[11px] font-black text-red-50">
+                {distance} mi apart
+              </span>
+            ) : null}
+          </div>
+
+          <div className="space-y-1 text-xs font-semibold leading-5 text-white/42">
+            {restaurant ? (
+              <p className="line-clamp-1 break-words">
+                Restaurant: {formatAddress(restaurant)}
+              </p>
+            ) : null}
+            {activity ? (
+              <p className="line-clamp-1 break-words">
+                Activity: {formatAddress(activity)}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
+          <p className="text-[8px] font-black uppercase tracking-[0.18em] text-white/32 sm:text-[9px] sm:tracking-[0.22em]">
+            Why TheOutHaven picked this
+          </p>
+          <p className="mt-1.5 line-clamp-2 break-words text-[11px] font-semibold leading-4 text-white/62 sm:text-xs sm:leading-5">
+            {whyPicked}
+          </p>
+        </div>
+
+        <div className="mt-auto pt-4">
+          <div className="grid grid-cols-1 gap-2 border-t border-white/10 pt-3">
+            <button
+              type="button"
+              onClick={onSelect}
+              className={`rounded-full px-3 py-2.5 text-xs font-black transition ${
+                selected
+                  ? "bg-[#e1062a] text-white"
+                  : "border border-white/12 text-white/85 hover:bg-white hover:text-black"
+              }`}
+            >
+              {selectLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function ResultCard({
   index,
   type,
@@ -3079,18 +3273,37 @@ function buildSelectedPlanText(
   activity: ActivityCard | null,
   resultOrder: ResultSectionKind[],
 ) {
-  return getOrderedResultSections(resultOrder)
-    .map((sectionKind) =>
-      sectionKind === "activities"
-        ? activity
-          ? getLocationName(activity)
-          : null
-        : restaurant
-          ? getLocationName(restaurant)
-          : null,
-    )
-    .filter(Boolean)
-    .join(" + ");
+  const orderedSections = getOrderedResultSections(resultOrder);
+  const parts: string[] = [];
+  const seen = new Set<string>();
+
+  const addRestaurant = () => {
+    if (!restaurant) return;
+    const id = `restaurant:${restaurant.id || getLocationName(restaurant)}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    parts.push(getLocationName(restaurant));
+  };
+
+  const addActivity = () => {
+    if (!activity) return;
+    const id = `activity:${activity.id || getLocationName(activity)}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    parts.push(getLocationName(activity));
+  };
+
+  for (const sectionKind of orderedSections) {
+    if (sectionKind === "restaurants") addRestaurant();
+    if (sectionKind === "activities") addActivity();
+  }
+
+  if (!parts.length) {
+    addRestaurant();
+    addActivity();
+  }
+
+  return parts.join(" + ");
 }
 
 function titleCase(value: string) {

@@ -121,12 +121,12 @@ export function buildPairTitle(
     ) ??
     intent.restaurantIntent.cuisineTerms[0] ??
     intent.restaurantIntent.mealTerms[0] ??
-    "Dinner";
+    "Food";
   const act =
     intent.activityIntent.activityTerms.find(
       (t) => !["activity", "things to do"].includes(t),
     ) ?? "Activity";
-  return `${titleCase(food)} + ${titleCase(act)} Night`;
+  return `${titleCase(food)} + ${titleCase(act)}`;
 }
 export function buildPairExplanation(
   pair: Pick<
@@ -149,7 +149,7 @@ export function buildPairExplanation(
   if (pair.isWalkable && pair.pairWalkingMinutes != null)
     return `This pair is walkable: the restaurant and activity are about a ${pair.pairWalkingMinutes}-minute walk apart.`;
   if (pair.isWalkable)
-    return `Both spots are in ${geo} and close enough for a no-driving date night.`;
+    return `Both spots are in ${geo} and close enough for an easy outing.`;
   const distance =
     pair.pairDistanceMiles != null
       ? `, about ${pair.pairDistanceMiles} miles apart`
@@ -170,6 +170,86 @@ function sortPairs(pairs: EnterprisePair[], pref: PairingPreference) {
   });
 }
 
+function diversifyPairs(
+  sortedPairs: EnterprisePair[],
+  limit = 3,
+  maxPerRestaurant = 1,
+  maxPerActivity = 1,
+) {
+  const finalPairs: EnterprisePair[] = [];
+  const restaurantCounts = new Map<string, number>();
+  const activityCounts = new Map<string, number>();
+
+  const getRestaurantId = (pair: EnterprisePair) =>
+    String(pair.restaurant?.id || "");
+
+  const getActivityId = (pair: EnterprisePair) =>
+    String(pair.activity?.id || "");
+
+  const alreadyAdded = (pair: EnterprisePair) =>
+    finalPairs.some(
+      (existing) =>
+        getRestaurantId(existing) === getRestaurantId(pair) &&
+        getActivityId(existing) === getActivityId(pair),
+    );
+
+  const canAdd = (
+    pair: EnterprisePair,
+    options: { requireNewRestaurant: boolean; requireNewActivity: boolean },
+  ) => {
+    const restaurantId = getRestaurantId(pair);
+    const activityId = getActivityId(pair);
+
+    if (!restaurantId || !activityId) return false;
+    if (restaurantId === activityId) return false;
+    if (alreadyAdded(pair)) return false;
+
+    const restaurantCount = restaurantCounts.get(restaurantId) || 0;
+    const activityCount = activityCounts.get(activityId) || 0;
+
+    if (options.requireNewRestaurant && restaurantCount > 0) return false;
+    if (options.requireNewActivity && activityCount > 0) return false;
+    if (restaurantCount >= maxPerRestaurant) return false;
+    if (activityCount >= maxPerActivity) return false;
+
+    return true;
+  };
+
+  const addPair = (pair: EnterprisePair) => {
+    const restaurantId = getRestaurantId(pair);
+    const activityId = getActivityId(pair);
+
+    finalPairs.push(pair);
+    restaurantCounts.set(
+      restaurantId,
+      (restaurantCounts.get(restaurantId) || 0) + 1,
+    );
+    activityCounts.set(activityId, (activityCounts.get(activityId) || 0) + 1);
+  };
+
+  for (const pair of sortedPairs) {
+    if (finalPairs.length >= limit) break;
+    if (canAdd(pair, { requireNewRestaurant: true, requireNewActivity: true }))
+      addPair(pair);
+  }
+
+  for (const pair of sortedPairs) {
+    if (finalPairs.length >= limit) break;
+    if (canAdd(pair, { requireNewRestaurant: false, requireNewActivity: true }))
+      addPair(pair);
+  }
+
+  for (const pair of sortedPairs) {
+    if (finalPairs.length >= limit) break;
+    if (
+      canAdd(pair, { requireNewRestaurant: false, requireNewActivity: false })
+    )
+      addPair(pair);
+  }
+
+  return finalPairs;
+}
+
 export function createSearchPairs(
   restaurants: EnterpriseLocation[],
   activities: EnterpriseLocation[],
@@ -181,6 +261,9 @@ export function createSearchPairs(
   for (const restaurant of restaurants.slice(0, 12))
     for (const activity of activities.slice(0, 12)) {
       debug.pairCandidatesEvaluated += 1;
+      if (String(restaurant.id) === String(activity.id)) {
+        continue;
+      }
       const walkability = isWalkablePair(restaurant, activity, pref);
       const pairDistanceMiles = walkability.pairDistanceMiles;
       const pairWalkingMinutes =
@@ -246,7 +329,8 @@ export function createSearchPairs(
       pairs.push(pair);
     }
   debug.validPairCountBeforeRender = pairs.length;
-  return sortPairs(pairs, pref).slice(0, 8);
+  const sortedPairs = sortPairs(pairs, pref);
+  return diversifyPairs(sortedPairs, 3);
 }
 export { getPairDistanceMiles };
 
