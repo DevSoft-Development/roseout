@@ -35,7 +35,11 @@ type RequestBody = {
   turnstileToken?: unknown;
   referrer?: unknown;
   giveawayPostUrl?: unknown;
-  betaInterest?: unknown; testerType?: unknown; notes?: unknown; betaAgreement?: unknown; age18Confirmed?: unknown;
+  betaInterest?: unknown;
+  testerType?: unknown;
+  notes?: unknown;
+  age18Confirmed?: unknown;
+  giveawayRulesAgreed?: unknown;
 };
 
 function cleanText(value: unknown) {
@@ -142,8 +146,8 @@ export async function POST(request: Request) {
   const betaInterest = typeof body.betaInterest === "boolean" ? body.betaInterest : true;
   const testerType = ["user", "location_owner", "ambassador", "experience_team"].includes(cleanText(body.testerType)) ? cleanText(body.testerType) : "user";
   const notes = cleanText(body.notes);
-  const betaAgreement = Boolean(body.betaAgreement);
-  const age18Confirmed = Boolean(body.age18Confirmed);
+  const age18Confirmed = wantsGiveaway ? Boolean(body.age18Confirmed) : false;
+  const giveawayRulesAgreed = wantsGiveaway ? Boolean(body.giveawayRulesAgreed) : false;
 
   if (fullName.length < 2 || fullName.length > 120) {
     return NextResponse.json({ success: false, message: "Please enter your name." }, { status: 400 });
@@ -154,13 +158,23 @@ export async function POST(request: Request) {
   if (!marketingConsent) {
     return NextResponse.json({ success: false, message: "Please agree to the launch list and giveaway terms to continue." }, { status: 400 });
   }
-  if (betaInterest && !betaAgreement) { return NextResponse.json({ success: false, message: "Please agree to complete beta tasks if approved." }, { status: 400 }); }
-  if (wantsGiveaway && !age18Confirmed) { return NextResponse.json({ success: false, message: "Please confirm you are 18+ to enter the giveaway." }, { status: 400 }); }
   if (wantsGiveaway && !socialHandle) {
     return NextResponse.json({ success: false, message: "Please enter your Instagram or TikTok handle to join the giveaway." }, { status: 400 });
   }
   if (wantsGiveaway && !socialPlatform) {
-    return NextResponse.json({ success: false, message: "Please choose Instagram, TikTok, or Both." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please choose Instagram or TikTok." }, { status: 400 });
+  }
+  if (wantsGiveaway && !followedSocial) {
+    return NextResponse.json({ success: false, message: "Please confirm you followed @TheOutHaven to enter the giveaway." }, { status: 400 });
+  }
+  if (wantsGiveaway && !taggedTwoFriends) {
+    return NextResponse.json({ success: false, message: "Please confirm you tagged 2 friends to enter the giveaway." }, { status: 400 });
+  }
+  if (wantsGiveaway && !age18Confirmed) {
+    return NextResponse.json({ success: false, message: "Please confirm you are 18+ to enter the giveaway." }, { status: 400 });
+  }
+  if (wantsGiveaway && !giveawayRulesAgreed) {
+    return NextResponse.json({ success: false, message: "Please agree to the giveaway rules to enter the giveaway." }, { status: 400 });
   }
 
   let turnstileVerified = !isTurnstileEnabled();
@@ -276,12 +290,15 @@ export async function POST(request: Request) {
     turnstile_verified: turnstileVerified,
     turnstile_action: "launch_waitlist",
     turnstile_hostname: turnstileHostname,
-    metadata: { route: "/api/launch/waitlist", betaAgreement, notes },
+    metadata: { route: "/api/launch/waitlist" },
     beta_interest: betaInterest,
     tester_type: testerType,
     beta_application_status: betaInterest ? "new" : null,
     age_18_confirmed: age18Confirmed,
-    prize_rules_confirmed: wantsGiveaway && age18Confirmed,
+    prize_rules_confirmed: wantsGiveaway && age18Confirmed && giveawayRulesAgreed,
+    giveaway_rules_agreed: wantsGiveaway && giveawayRulesAgreed,
+    weekly_beta_tasks_required_for_giveaway: true,
+    weekly_task_eligibility_status: wantsGiveaway ? "not_beta_yet" : null,
     duplicate_flag: false,
     duplicate_reason: null,
     duplicate_checked_at: now.toISOString(),
@@ -322,7 +339,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     success: true,
     message: wantsGiveaway
-      ? "Almost done. Check your email and tap Verify Email to complete your giveaway entry."
-      : "Almost done. Check your email and tap Verify Email to confirm your launch list signup.",
+      ? "You’re on the Beta Launch List and your giveaway entry was received. Check your email to verify your entry."
+      : "You’re on the Beta Launch List. Check your email for updates.",
   });
 }
