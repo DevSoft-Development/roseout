@@ -102,7 +102,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     wantsPairing,
     needsRestaurant: wantsPairing || selectedSearchLane !== "activity",
     needsActivity: wantsPairing || selectedSearchLane !== "restaurant",
-    searchBackendUsed: market.requestedMarket === "LONG_ISLAND" ? "legacy_for_long_island" : useCurrentLocation ? "legacy_for_current_location" : "edge",
+    searchBackendUsed: useCurrentLocation ? "legacy_for_current_location" : "edge",
   };
   const searchBody: Record<string, any> = {
     ...body,

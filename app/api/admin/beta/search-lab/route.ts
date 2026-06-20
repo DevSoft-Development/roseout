@@ -52,9 +52,9 @@ export async function POST(req: NextRequest) {
       });
 
     const marketDetection = detectRequestedMarket(query);
-    const forceLegacyForLongIsland = marketDetection.requestedMarket === "LONG_ISLAND";
+    const forceLegacyForLongIsland = false;
     const forceLegacyForUserLocation = normalizedRequest.useCurrentLocation;
-    const searchBackendUsed = forceLegacyForLongIsland ? "legacy_for_long_island" : forceLegacyForUserLocation ? "legacy_for_current_location" : "edge";
+    const searchBackendUsed = forceLegacyForUserLocation ? "legacy_for_current_location" : "edge";
 
     const result = forceLegacyForLongIsland || forceLegacyForUserLocation
       ? await legacySearch()
