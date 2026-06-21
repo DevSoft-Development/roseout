@@ -147,6 +147,42 @@ async function main() {
   assert.equal(parseEnterpriseIntentFastPath("tell me something romantic but not too expensive"), null);
   assert.equal(parseEnterpriseIntentFastPath("things to do in queens"), null);
 
+  for (const query of [
+    "affordable date in Manhattan with food and something unique under $100 total",
+    "last-minute plans near me tonight with dinner and drinks after",
+    "hookah lounge with food near Queens and a rooftop or lounge vibe after",
+    "late-night dinner near me with something open after midnight",
+    "outdoor activity in Brooklyn followed by a cozy restaurant nearby",
+  ] as const) {
+    const fastPathIntent = parseEnterpriseIntentFastPath(query);
+    assert(fastPathIntent, `${query} should match enterprise mixed fast path`);
+    assert.equal(fastPathIntent.searchType, "mixed_outing", `${query} search type`);
+    assert.equal(fastPathIntent.needsRestaurant, true, `${query} needs restaurant`);
+    assert.equal(fastPathIntent.needsActivity, true, `${query} needs activity`);
+
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    assert.equal(parsed.intentParserSource, "fast_path", `${query} parser source`);
+    assert.equal(parsed.fastPathMatched, true, `${query} fast path flag`);
+    assert.equal(parsed.usedLlm, false, `${query} should skip LLM`);
+  }
+
+  for (const query of [
+    "fun friend outing in Long Island with no clubs and easy parking",
+    "things to do with easy parking",
+    "activity in Long Island with no clubs",
+    "friend outing with no clubs",
+  ] as const) {
+    const fastPathIntent = parseEnterpriseIntentFastPath(query);
+    assert(fastPathIntent, `${query} should match activity fast path`);
+    assert.equal(fastPathIntent.searchType, "activity", `${query} search type`);
+    assert.equal(fastPathIntent.needsRestaurant, false, `${query} needs restaurant`);
+    assert.equal(fastPathIntent.needsActivity, true, `${query} needs activity`);
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    assert.equal(parsed.intentParserSource, "fast_path", `${query} parser source`);
+    assert.equal(parsed.fastPathMatched, true, `${query} fast path flag`);
+    assert.equal(parsed.usedLlm, false, `${query} should skip LLM`);
+  }
+
   {
     const intent = normalizeIntent("Seafood dinner with rooftop after");
 

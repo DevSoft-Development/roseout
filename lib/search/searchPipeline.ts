@@ -1,15 +1,46 @@
 import { shouldBypassSearchCache } from "./cache";
 import { searchActivities, searchFallbackActivities, searchFallbackRestaurants, searchRestaurants, type SearchDebug } from "./database";
-
-function mergeSourceErrors(...groups: Array<string[] | undefined>) {
-  return Array.from(new Set(groups.flatMap((group) => group ?? [])));
-}
 import { parseCanonicalIntent } from "./intent";
 import { buildOutingPairs } from "./pairing";
 import { buildActivitySearchInput, buildRestaurantSearchInput } from "./queryBuilders";
 import { rankActivities, rankRestaurants } from "./ranking";
 import { buildSearchResponse } from "./response";
 import type { SearchPipelineResult } from "./types";
+
+function mergeSourceErrors(...groups: Array<string[] | undefined>) {
+  return Array.from(new Set(groups.flatMap((group) => group ?? [])));
+}
+
+function createSafeRestaurantRecoveryIntent(intent: ReturnType<typeof parseCanonicalIntent>) {
+  const recoveryTerms = ["dinner", "restaurant", "food"];
+  if (/late[- ]?night|after midnight|open after midnight/i.test(intent.rawQuery)) {
+    recoveryTerms.unshift("late night dinner");
+  }
+
+  return {
+    ...intent,
+    restaurantSearchInput: [
+      ...intent.boroughs,
+      ...intent.neighborhoods,
+      ...(intent.locations ?? []),
+      ...(intent.cities ?? []),
+      ...recoveryTerms,
+    ].join(" "),
+    normalizedIntent: intent.normalizedIntent
+      ? {
+          ...intent.normalizedIntent,
+          restaurantTerms: recoveryTerms,
+          mealTerms: recoveryTerms,
+          cuisineTerms: [],
+          vibeTerms: [],
+        }
+      : intent.normalizedIntent,
+    specificMealFoodIntents: [],
+    mealFoodIntents: recoveryTerms,
+    cuisines: [],
+    requiredRestaurantCategory: null,
+  };
+}
 
 export async function runTheOutHavenSearch(input: string, body?: any): Promise<SearchPipelineResult> {
   const intent = parseCanonicalIntent(input, body);
@@ -47,10 +78,17 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
   let fallback_used = { restaurants: false, activities: false };
 
   if (intent.needsRestaurant && restaurants.length === 0) {
-    const fallbackRestaurants = await searchFallbackRestaurants(intent);
+    const recoveryIntent =
+      intent.needsActivity && activities.length > 0
+        ? createSafeRestaurantRecoveryIntent(intent)
+        : intent;
+    const fallbackRestaurants = await searchFallbackRestaurants(recoveryIntent);
     restaurants = fallbackRestaurants.records;
     fallback_used.restaurants = true;
     restaurantSearch.debug.sourceErrors = mergeSourceErrors(restaurantSearch.debug.sourceErrors, fallbackRestaurants.debug.sourceErrors);
+    restaurantSearch.debug.restaurantTermsUsed = fallbackRestaurants.debug.restaurantTermsUsed;
+    (restaurantSearch.debug as any).restaurantRecoveryUsed = recoveryIntent !== intent;
+    (restaurantSearch.debug as any).restaurantRecoveryReason = recoveryIntent !== intent ? "mixed_outing_zero_restaurants_safe_recovery" : undefined;
   }
   if (intent.needsActivity && activities.length === 0) {
     const fallbackActivities = await searchFallbackActivities(intent);
@@ -109,6 +147,8 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
     rankedActivityCount: activities.length,
     fallbackRestaurantUsed: fallback_used.restaurants,
     fallbackActivityUsed: fallback_used.activities,
+    restaurantRecoveryUsed: (restaurantSearch.debug as any).restaurantRecoveryUsed ?? false,
+    restaurantRecoveryReason: (restaurantSearch.debug as any).restaurantRecoveryReason ?? null,
     finalCardCounts: { restaurants: restaurants.length, activities: activities.length, matched_locations: matchedLocations.length, pairs: pairs.length },
     cache_status: cache,
     off_topic_result: false,

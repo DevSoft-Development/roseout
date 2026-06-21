@@ -607,6 +607,51 @@ function SearchDebugFields({ result }: { result: SearchLabResult }) {
   );
 }
 
+
+function getQaFlags(result: SearchLabResult) {
+  const intent = getIntent(result);
+  const debug = (result.debug as any) || {};
+  const performance =
+    (result.performance as SearchLabResult | undefined) ||
+    ((result.debug as any)?.performance as SearchLabResult | undefined) ||
+    {};
+  const suspiciousFlags = [
+    ...(((result.suspiciousFlags as any[]) || []) as unknown[]),
+    ...(((debug.suspiciousFlags as any[]) || []) as unknown[]),
+  ].map((flag) => String(flag));
+  const errors = [
+    ...(((result.errors as any[]) || []) as unknown[]),
+    ...(((debug.errors as any[]) || []) as unknown[]),
+  ];
+  const needsRestaurant = Boolean(pickFirst(intent.needsRestaurant, intent.needs_restaurant));
+  const needsActivity = Boolean(pickFirst(intent.needsActivity, intent.needs_activity));
+  const restaurantCount = Number(pickFirst(result.restaurant_count, result.restaurants, debug.restaurant_count, 0));
+  const activityCount = Number(pickFirst(result.activity_count, result.activities, debug.activity_count, 0));
+  const pairCount = Number(pickFirst(result.pair_count, result.pairs, debug.pair_count, 0));
+  const totalMs = Number(result.total_ms || performance.total_ms || 0);
+  const speedStatus = String(pickFirst(result.speed_status, result.speedStatus, performance.speed_status, ""));
+  const parserSource = String(pickFirst(result.intentParserSource, result.parser_source, debug.intentParserSource, ""));
+  const noPairsReason = pickFirst(result.no_pairs_reason, debug.no_pairs_reason, debug.noPairsReason);
+  const flags = [{ label: "PASS", severe: false }];
+
+  const add = (label: string, severe = true) => {
+    if (!flags.some((flag) => flag.label === label)) flags.push({ label, severe });
+  };
+  if (totalMs > 5000 || speedStatus.toLowerCase() === "slow") add("SLOW");
+  if (parserSource.toLowerCase().includes("llm") || suspiciousFlags.includes("llm_used")) add("LLM FALLBACK");
+  if (needsRestaurant && restaurantCount === 0) add("ZERO RESTAURANTS");
+  if (needsActivity && activityCount === 0) add("ZERO ACTIVITIES");
+  if (needsRestaurant && needsActivity && pairCount === 0) add("NO PAIRS");
+  if (noPairsReason || suspiciousFlags.includes("mixed_no_pairs")) add("MIXED NO PAIRS");
+  if (errors.length > 0) add("HAS ERRORS");
+
+  return flags.filter((flag, index) => index === 0 ? flags.length === 1 : true);
+}
+
+function hasSevereQaFlags(result: SearchLabResult) {
+  return getQaFlags(result).some((flag) => flag.severe);
+}
+
 function PerformanceSummary({ result }: { result: SearchLabResult }) {
   const performance =
     (result.performance as SearchLabResult | undefined) ||
@@ -669,6 +714,16 @@ function ResultDetails({ result }: { result: SearchLabResult }) {
   return (
     <>
       <PerformanceSummary result={result} />
+      <div className="mt-3 flex flex-wrap gap-2">
+        {getQaFlags(result).map((flag) => (
+          <span
+            key={flag.label}
+            className={`rounded-full px-3 py-1 text-xs font-black ${flag.severe ? "bg-red-500 text-white" : "bg-emerald-400 text-black"}`}
+          >
+            {flag.label}
+          </span>
+        ))}
+      </div>
       <div className="mt-3 grid gap-3 md:grid-cols-5">
         {[
           ["Restaurants", result.restaurants],
@@ -888,7 +943,7 @@ export default function SearchLabClient({
             {batchResults.map((batchResult, index) => (
               <article
                 key={`${batchResult.query}-${index}`}
-                className={`rounded-3xl border p-5 ${batchResult.success ? "border-white/10 bg-white/[.03]" : "border-red-400/40 bg-red-500/10"}`}
+                className={`rounded-3xl border p-5 ${batchResult.success ? (batchResult.data && hasSevereQaFlags(batchResult.data) ? "border-red-400/50 bg-red-500/10" : "border-white/10 bg-white/[.03]") : "border-red-400/40 bg-red-500/10"}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <h3 className="min-w-0 flex-1 text-xl font-black">
@@ -918,7 +973,7 @@ export default function SearchLabClient({
       ) : null}
 
       {result ? (
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+        <section className={`rounded-3xl border p-5 ${hasSevereQaFlags(result) ? "border-red-400/50 bg-red-500/10" : "border-white/10 bg-[#120d0b]"}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-2xl font-black">Results summary</h2>
