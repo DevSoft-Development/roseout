@@ -18,6 +18,8 @@ export async function POST(req: Request) {
     limit: parseLimit(body.limit, 25, 100),
     batchSize: parseLimit(body.batchSize, 25, 50),
     repairOperatingHours: body.repairOperatingHours === true,
+    forceRefresh: body.forceRefresh === true,
+    overwriteManagedFields: body.overwriteManagedFields === true,
   });
   return Response.json(result);
 }

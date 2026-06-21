@@ -151,6 +151,12 @@ const CANONICAL_LOCATION_EDIT_COLUMNS = new Set([
   "main_image",
   "images",
   "google_place_id",
+  "profile_managed_by",
+  "profile_manual_lock",
+  "profile_owner_verified_at",
+  "profile_last_owner_update_at",
+  "profile_last_admin_update_at",
+  "profile_field_sources",
   "health_department_score",
   "health_department_grade",
   "health_department_source",
@@ -205,6 +211,73 @@ function sanitizeCanonicalLocationPayload(payload: Record<string, unknown>) {
   }
 
   return copy;
+}
+
+const PROFILE_SOURCE_FIELDS = [
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "description",
+  "short_description",
+  "address",
+  "city",
+  "state",
+  "zip_code",
+  "neighborhood",
+  "borough",
+  "latitude",
+  "longitude",
+  "phone",
+  "website",
+  "reservation_url",
+  "booking_url",
+  "operating_hours",
+  "special_hours",
+  "main_image",
+  "image_url",
+  "images",
+  "price_range",
+  "cuisine",
+  "activity_type",
+  "tags",
+  "primary_tag",
+  "category",
+  "is_searchable",
+  "publish_ready",
+  "data_status",
+  "photo_status",
+];
+
+function withManualProfileSource(
+  payload: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  isAdmin: boolean,
+) {
+  const now = new Date().toISOString();
+  const source = isAdmin ? "admin" : "owner";
+  const fieldSources = {
+    ...((existing.profile_field_sources && typeof existing.profile_field_sources === "object" && !Array.isArray(existing.profile_field_sources))
+      ? existing.profile_field_sources as Record<string, unknown>
+      : {}),
+  };
+
+  for (const field of PROFILE_SOURCE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(payload, field)) fieldSources[field] = source;
+  }
+
+  payload.profile_field_sources = fieldSources;
+  payload.profile_manual_lock = true;
+
+  if (isAdmin) {
+    payload.profile_managed_by = existing.profile_managed_by === "owner" ? "owner" : "admin";
+    payload.profile_last_admin_update_at = now;
+  } else {
+    payload.profile_managed_by = "owner";
+    payload.profile_last_owner_update_at = now;
+    payload.profile_owner_verified_at = existing.profile_owner_verified_at || now;
+  }
+
+  return payload;
 }
 
 export async function GET(req: Request) {
@@ -297,7 +370,7 @@ export async function PATCH(req: Request) {
 
     const existingLocation = await supabase
       .from("locations")
-      .select("id, source_id")
+      .select("id, source_id, profile_managed_by, profile_field_sources, profile_owner_verified_at")
       .or(`id.eq.${finalId},and(source_table.eq.${sourceTable},source_id.eq.${finalId})`)
       .maybeSingle();
 
@@ -311,6 +384,8 @@ export async function PATCH(req: Request) {
         { status: 404 },
       );
     }
+
+    withManualProfileSource(locationPayload, existingLocation.data as Record<string, unknown>, auth.access.isAdmin);
 
     const { error } = await supabase
       .from("locations")
