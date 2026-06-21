@@ -293,6 +293,15 @@ export type LocationHoursDisplayInput = {
   time_zone?: string | null;
   city?: string | null;
   state?: string | null;
+  id?: string | number | null;
+  name?: string | null;
+  locationId?: string | number | null;
+  locationName?: string | null;
+  operatingHours?: unknown;
+  specialHours?: unknown;
+  googleCurrentOpeningHours?: unknown;
+  googleRegularOpeningHours?: unknown;
+  googleUtcOffsetMinutes?: number | string | null;
 };
 
 function parseJsonMaybe(value: unknown): unknown {
@@ -321,7 +330,7 @@ function cleanHourText(value: unknown): string[] {
     return text && !/^closed$/i.test(text.trim()) ? [text.trim().replace(/–/g, " - ").replace(/\s+/g, " ")] : [];
   }
   if (typeof parsed !== "string") return [];
-  const text = parsed.trim().replace(/–/g, " - ").replace(/\s+/g, " ");
+  const text = parsed.trim().replace(/–|—/g, " - ").replace(/\s+/g, " ");
   if (!text || /^closed$/i.test(text)) return [];
   return text.split(/\s*[,;]\s*/).map((item) => item.trim()).filter(Boolean);
 }
@@ -350,6 +359,14 @@ export function normalizeWeeklyHoursForDisplay(...sources: unknown[]): Normalize
     const parsed = parseJsonMaybe(source);
     if (!parsed) continue;
     applyGoogleWeekdayDescriptions(parsed, week);
+    if (Array.isArray(parsed)) {
+      parsed.forEach((entry) => {
+        if (typeof entry !== "string") return;
+        const match = entry.match(/^\s*([a-z]+)\s*:?\s*-\s*(.+)$/i);
+        const day = match ? normalizeDayName(match[1]) : null;
+        if (day && match?.[2]) week[day] = cleanHourText(match[2]);
+      });
+    }
     if (typeof parsed === "object" && !Array.isArray(parsed)) {
       Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
         const day = normalizeDayName(key);
@@ -389,8 +406,15 @@ function formatUntil(minutes: number) {
   return `Opens in ${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
+function stripDayPrefix(range: string) {
+  const match = range.match(/^\s*([a-z]+)\s*:?\s*-\s*(.+)$/i);
+  const day = match ? normalizeDayName(match[1]) : null;
+  return day && match?.[2] ? match[2] : range;
+}
+
 function parseDisplayRange(range: string) {
-  const [openRaw, closeRaw] = range.split(/\s*(?:-|–|—|to)\s*/i);
+  const cleaned = stripDayPrefix(range);
+  const [openRaw, closeRaw] = cleaned.split(/\s*(?:-|–|—|to)\s*/i);
   const open = parseTimeString(openRaw);
   const close = parseTimeString(closeRaw);
   if (!open || !close) return null;
@@ -416,7 +440,7 @@ function statusFromWeeklyHours(week: NormalizedWeeklyHours, timezone: string, no
     if (minutes >= range.open && minutes < range.close) return { text: `Open now · Closes at ${range.closeText}`, todayKey: weekday };
     if (minutes < range.open && (nextOpen === null || range.open < nextOpen)) nextOpen = range.open;
   }
-  if (nextOpen !== null) return { text: formatUntil(nextOpen - minutes), todayKey: weekday };
+  if (nextOpen !== null) return { text: `Closed now · ${formatUntil(nextOpen - minutes)}`, todayKey: weekday };
   if (hasUnparseableTodayHours) return { text: "Hours listed below", todayKey: weekday };
   return { text: week[weekday].length ? "Closed now" : "Closed today", todayKey: weekday };
 }
@@ -428,12 +452,16 @@ function resolveTimezone(input: LocationHoursDisplayInput) {
 
 function resolveUtcOffsetMinutes(input: LocationHoursDisplayInput) {
   if (input.timezone || input.time_zone) return null;
-  const offset = Number(input.google_utc_offset_minutes);
+  const offset = Number(input.google_utc_offset_minutes ?? input.googleUtcOffsetMinutes);
   return Number.isFinite(offset) ? offset : null;
 }
 
 export function getLocationHoursDisplay(input: LocationHoursDisplayInput, now = new Date()) {
-  const weeklyHours = normalizeWeeklyHoursForDisplay(input.operating_hours, input.google_current_opening_hours, input.google_regular_opening_hours);
+  const weeklyHours = normalizeWeeklyHoursForDisplay(
+    input.operating_hours ?? input.operatingHours,
+    input.google_current_opening_hours ?? input.googleCurrentOpeningHours,
+    input.google_regular_opening_hours ?? input.googleRegularOpeningHours,
+  );
   const hasUsableHours = DAY_KEYS.some((day) => weeklyHours[day].length > 0);
   if (!hasUsableHours) {
     const todayKey = getNowParts(resolveTimezone(input), now, resolveUtcOffsetMinutes(input)).weekday;

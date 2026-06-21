@@ -833,6 +833,8 @@ export default function LocationDetailPage() {
                   timezone={(location?.timezone || location?.time_zone) as string | null}
                   city={location?.city}
                   state={location?.state}
+                  id={location?.id as string | null}
+                  name={getLocationName(location)}
                 />
                 {reservationSourceLabel && <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">{reservationSourceLabel}</p>}
                 <LocationActionButtons
