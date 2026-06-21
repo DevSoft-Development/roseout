@@ -8,12 +8,15 @@ type BackfillRow = {
   google_place_id?: string | null;
   operating_hours?: unknown;
   special_hours?: unknown;
+  google_regular_opening_hours?: unknown;
+  hours_raw?: unknown;
 };
 
 type BackfillOptions = {
   limit?: number;
   batchSize?: number;
   sleepMs?: number;
+  repairOperatingHours?: boolean;
 };
 
 function googlePlacesApiKey() {
@@ -60,15 +63,61 @@ function asGoogleTimePoint(value: unknown): GoogleTimePoint | undefined {
   return record ? record as GoogleTimePoint : undefined;
 }
 
+const FAKE_HOURS_PLACEHOLDERS = new Set([
+  JSON.stringify({ monday: "9am-5pm" }),
+  JSON.stringify({ Monday: "9am-5pm" }),
+]);
+
+function stableJson(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return JSON.stringify(Object.keys(record).sort().reduce<Record<string, unknown>>((acc, key) => {
+    acc[key] = record[key];
+    return acc;
+  }, {}));
+}
+
+function isFakeHoursPlaceholder(value: unknown): boolean {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === '{"monday":"9am-5pm"}' || trimmed === '{"Monday":"9am-5pm"}') return true;
+    try {
+      return isFakeHoursPlaceholder(JSON.parse(trimmed));
+    } catch {
+      return false;
+    }
+  }
+  return stableJson(value) ? FAKE_HOURS_PLACEHOLDERS.has(stableJson(value)!) : false;
+}
+
 function isBlankHoursValue(value: unknown): boolean {
   if (value == null) return true;
-  if (typeof value === "string") return value.trim().length === 0;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "null" || trimmed === "{}" || trimmed === "[]") return true;
+    return isFakeHoursPlaceholder(trimmed);
+  }
   if (Array.isArray(value)) return value.length === 0 || value.every(isBlankHoursValue);
   if (typeof value === "object") {
+    if (isFakeHoursPlaceholder(value)) return true;
     const entries = Object.values(value as Record<string, unknown>);
     return entries.length === 0 || entries.every(isBlankHoursValue);
   }
   return false;
+}
+
+function normalizeHoursText(value: string) {
+  return value
+    .replace(/[\u00a0\u202f]/g, " ")
+    .replace(/\s*[–—-]\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatReadableTime(hour: number, minute: number) {
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 function formatGoogleTimePoint(point: GoogleTimePoint | undefined) {
@@ -84,12 +133,34 @@ function formatGoogleDate(date: GoogleTimePoint["date"]) {
   return `${String(date.year).padStart(4, "0")}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
 }
 
-function normalizeGoogleRegularOpeningHours(regularOpeningHours: unknown) {
-  if (!regularOpeningHours || typeof regularOpeningHours !== "object") return null;
-  const periods = asRecord(regularOpeningHours)?.periods;
+export function normalizeGoogleRegularOpeningHours(regularOpeningHours: unknown) {
+  const record = asRecord(regularOpeningHours);
+  if (!record) return null;
+
+  const weekdayDescriptions = Array.isArray(record.weekdayDescriptions)
+    ? record.weekdayDescriptions
+    : Array.isArray(record.weekday_descriptions)
+      ? record.weekday_descriptions
+      : null;
+
+  if (weekdayDescriptions?.length) {
+    const normalized: Record<string, string[]> = {};
+    for (const item of weekdayDescriptions) {
+      const description = normalizeHoursText(String(item || ""));
+      const match = description.match(/^([^:]+):\s*(.+)$/);
+      if (!match) continue;
+      const dayKey = match[1].trim().toLowerCase();
+      if (!GOOGLE_DAY_KEYS.includes(dayKey)) continue;
+      const hoursText = normalizeHoursText(match[2]);
+      normalized[dayKey] = hoursText ? [hoursText] : [];
+    }
+    return Object.keys(normalized).length > 0 ? normalized : null;
+  }
+
+  const periods = record.periods;
   if (!Array.isArray(periods) || periods.length === 0) return null;
 
-  const normalized = Object.fromEntries(GOOGLE_DAY_KEYS.map((day) => [day, [] as Array<{ open: string; close: string }>]));
+  const normalized = Object.fromEntries(GOOGLE_DAY_KEYS.map((day) => [day, [] as string[]]));
 
   for (const period of periods) {
     if (!period || typeof period !== "object") continue;
@@ -97,10 +168,12 @@ function normalizeGoogleRegularOpeningHours(regularOpeningHours: unknown) {
     const openPoint = asGoogleTimePoint(periodRecord?.open);
     const closePoint = asGoogleTimePoint(periodRecord?.close);
     const day = typeof openPoint?.day === "number" ? GOOGLE_DAY_KEYS[openPoint.day] : undefined;
-    const open = formatGoogleTimePoint(openPoint);
-    const close = formatGoogleTimePoint(closePoint);
-    if (!day || !open || !close) continue;
-    normalized[day].push({ open, close });
+    const openHour = typeof openPoint?.hour === "number" ? openPoint.hour : 0;
+    const openMinute = typeof openPoint?.minute === "number" ? openPoint.minute : 0;
+    const closeHour = typeof closePoint?.hour === "number" ? closePoint.hour : 0;
+    const closeMinute = typeof closePoint?.minute === "number" ? closePoint.minute : 0;
+    if (!day || openHour < 0 || openHour > 23 || openMinute < 0 || openMinute > 59 || closeHour < 0 || closeHour > 23 || closeMinute < 0 || closeMinute > 59) continue;
+    normalized[day].push(`${formatReadableTime(openHour, openMinute)} - ${formatReadableTime(closeHour, closeMinute)}`);
   }
 
   return Object.values(normalized).some((windows) => windows.length > 0) ? normalized : null;
@@ -169,15 +242,17 @@ async function updateSkippedMissingPlaceId(id: string) {
 }
 
 async function updateSuccess(row: BackfillRow, details: Record<string, unknown>) {
-  const normalizedOperatingHours = normalizeGoogleRegularOpeningHours(details.regularOpeningHours);
-  const normalizedSpecialHours = normalizeGoogleSpecialOpeningHours(details.currentOpeningHours);
+  const regularOpeningHours = details.regularOpeningHours ?? details.regular_opening_hours ?? null;
+  const currentOpeningHours = details.currentOpeningHours ?? details.current_opening_hours ?? null;
+  const normalizedOperatingHours = normalizeGoogleRegularOpeningHours(regularOpeningHours);
+  const normalizedSpecialHours = normalizeGoogleSpecialOpeningHours(currentOpeningHours);
   const update: Record<string, unknown> = {
-    google_current_opening_hours: details.currentOpeningHours ?? null,
-    google_regular_opening_hours: details.regularOpeningHours ?? null,
+    google_current_opening_hours: currentOpeningHours,
+    google_regular_opening_hours: regularOpeningHours,
     google_utc_offset_minutes: typeof details.utcOffsetMinutes === "number" ? details.utcOffsetMinutes : null,
     hours_raw: details,
     hours_source: "google_places_details",
-    hours_confidence: details.currentOpeningHours || details.regularOpeningHours ? "verified" : "unknown",
+    hours_confidence: currentOpeningHours || regularOpeningHours ? "verified" : "unknown",
     hours_backfill_status: "success",
     hours_backfill_error: null,
     hours_last_backfilled_at: new Date().toISOString(),
@@ -192,6 +267,47 @@ async function updateSuccess(row: BackfillRow, details: Record<string, unknown>)
   }
 
   await supabaseAdmin.from("locations").update(update).eq("id", row.id);
+}
+
+async function repairOperatingHoursFromGoogle(limit: number) {
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .select("id, operating_hours, google_regular_opening_hours, hours_raw")
+    .not("google_regular_opening_hours", "is", null)
+    .eq("hours_backfill_status", "success")
+    .order("hours_last_backfilled_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+
+  let repaired = 0;
+  let skipped = 0;
+  const errors: Array<{ id: string; error: string }> = [];
+
+  for (const row of (data ?? []) as BackfillRow[]) {
+    if (!isBlankHoursValue(row.operating_hours)) {
+      skipped += 1;
+      continue;
+    }
+    const raw = asRecord(row.hours_raw);
+    const regularOpeningHours = row.google_regular_opening_hours ?? raw?.regularOpeningHours ?? raw?.regular_opening_hours ?? null;
+    const normalized = normalizeGoogleRegularOpeningHours(regularOpeningHours);
+    if (!normalized) {
+      skipped += 1;
+      continue;
+    }
+    const { error: updateError } = await supabaseAdmin
+      .from("locations")
+      .update({ operating_hours: normalized, hours_last_backfilled_at: new Date().toISOString() })
+      .eq("id", row.id);
+    if (updateError) {
+      if (errors.length < 10) errors.push({ id: row.id, error: updateError.message });
+    } else {
+      repaired += 1;
+    }
+  }
+
+  return { repaired, repairSkipped: skipped, repairErrors: errors };
 }
 
 async function updateFailure(id: string, error: unknown) {
@@ -219,10 +335,20 @@ export async function runLocationHoursBackfill(options: BackfillOptions = {}) {
   let skipped = 0;
   let failed = 0;
   let retryLater = 0;
+  let repaired = 0;
+  let repairSkipped = 0;
+  const repairErrors: Array<{ id: string; error: string }> = [];
+
+  if (options.repairOperatingHours) {
+    const repair = await repairOperatingHoursFromGoogle(limit);
+    repaired = repair.repaired;
+    repairSkipped = repair.repairSkipped;
+    repairErrors.push(...repair.repairErrors);
+  }
 
   const { data, error } = await supabaseAdmin
     .from("locations")
-    .select("id, google_place_id, operating_hours, special_hours, hours_backfill_status, hours_last_backfilled_at")
+    .select("id, google_place_id, operating_hours, special_hours, google_regular_opening_hours, hours_raw, hours_backfill_status, hours_last_backfilled_at")
     .eq("is_searchable", true)
     .or(`hours_last_backfilled_at.is.null,hours_last_backfilled_at.lt.${staleBefore},hours_backfill_status.in.(not_started,failed,retry_later,skipped_missing_place_id)`)
     .order("hours_last_backfilled_at", { ascending: true, nullsFirst: true })
@@ -259,5 +385,5 @@ export async function runLocationHoursBackfill(options: BackfillOptions = {}) {
     }
   }
 
-  return { success: failed === 0, requestedLimit, processed, updated, skipped, failed, retryLater, errors, durationMs: Date.now() - started };
+  return { success: failed === 0 && repairErrors.length === 0, requestedLimit, processed, updated, skipped, failed, retryLater, repaired, repairSkipped, repairErrors, errors, durationMs: Date.now() - started };
 }
