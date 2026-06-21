@@ -12,6 +12,7 @@ import { getIsClaimed } from "@/lib/locationClaim";
 import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
 import { formatFullAddress } from "@/lib/address-utils";
+import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
@@ -71,6 +72,13 @@ type FormState = {
   longitude: string | number;
   google_place_id: string;
   formatted_address: string;
+  google_regular_opening_hours?: unknown;
+  hours_backfill_status?: string | null;
+  hours_confidence?: string | null;
+  hours_source?: string | null;
+  hours_last_backfilled_at?: string | null;
+  hours_backfill_error?: string | null;
+  operating_hours_valid?: boolean;
 };
 
 type LocationRecord = Record<string, unknown> & {
@@ -295,6 +303,13 @@ export default function EditLocationPage() {
           dress_code: data.dress_code || "",
           parking_info: data.parking_info || "",
           operating_hours: data.operating_hours ?? null,
+          google_regular_opening_hours: data.google_regular_opening_hours ?? null,
+          hours_backfill_status: data.hours_backfill_status || null,
+          hours_confidence: data.hours_confidence || null,
+          hours_source: data.hours_source || null,
+          hours_last_backfilled_at: data.hours_last_backfilled_at || null,
+          hours_backfill_error: data.hours_backfill_error || null,
+          operating_hours_valid: true,
           special_hours: data.special_hours ?? null,
           holiday_closures: data.holiday_closures ?? null,
           hours: data.hours || "",
@@ -422,6 +437,10 @@ export default function EditLocationPage() {
   };
 
   const saveLocation = async () => {
+    if (form.operating_hours_valid === false) {
+      setMessage("Weekly Hours contains an invalid line. Fix the warning under Weekly Hours before saving.");
+      return;
+    }
     setSaving(true);
     setMessage("");
 
@@ -939,6 +958,8 @@ export default function EditLocationPage() {
                 <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
               </FieldRow>
               <TextInput label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} placeholder="Mon-Fri 5pm-10pm" />
+              <LocationHoursEditor value={form.operating_hours} theme="light" status={form as Record<string, unknown>} onValidJsonChange={(value, valid) => setForm((prev) => ({ ...prev, operating_hours: value, operating_hours_valid: valid }))} />
+              <details className="rounded-2xl border border-black/10 bg-white p-4 text-sm font-bold text-black/65"><summary className="cursor-pointer">Special/Holiday Hours JSON</summary><textarea readOnly rows={5} value={form.special_hours ? JSON.stringify(form.special_hours, null, 2) : ""} className="mt-3 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 font-mono text-xs text-black outline-none" /></details>
               {type === "restaurants" ? (
                 <FieldRow columns={2}>
                   <TextInput label="Days of Operation" value={(form.days_of_operation || []).join(", ")} onChange={(v) => setForm((prev) => ({ ...prev, days_of_operation: toArray(v) }))} />

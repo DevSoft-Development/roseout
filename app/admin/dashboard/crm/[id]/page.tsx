@@ -18,6 +18,7 @@ import RepairPublishabilityButton from "./RepairPublishabilityButton";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminPageShell, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
+import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
 export const dynamic = "force-dynamic";
 
 const tabs = [
@@ -224,6 +225,10 @@ async function saveLocationProfile(formData: FormData) {
     updated_at: new Date().toISOString(),
   };
 
+  if (formData.get("operating_hours_json_valid") !== "true") redirect(`/admin/dashboard/crm/${locationId}?tab=profile&hours_error=invalid`);
+  const operatingHoursJson = String(formData.get("operating_hours_json") || "");
+  Object.assign(updates, { operating_hours: operatingHoursJson ? JSON.parse(operatingHoursJson) : null });
+
   const { error } = await supabaseAdmin.from("locations").update(updates).eq("id", locationId);
   await logAdminEvent({
     level: error ? "error" : "info",
@@ -417,6 +422,8 @@ function ProfileForm({ business, canEdit }: { business: BusinessCRMRow; canEdit:
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {fields.map(([name, label, value]) => <label key={name} className="space-y-2 text-sm font-bold text-white/65"><span>{label}</span><input name={name} defaultValue={String(value || "")} disabled={!canEdit} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none disabled:opacity-60" /></label>)}
       <label className="space-y-2 text-sm font-bold text-white/65 xl:col-span-3"><span>Description</span><textarea name="description" defaultValue={business.description || ""} disabled={!canEdit} rows={5} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none disabled:opacity-60" /></label>
+      <div className="xl:col-span-3"><LocationHoursEditor value={business.operating_hours} disabled={!canEdit} theme="dark" status={business as Record<string, unknown>} /></div>
+      <details className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/65 xl:col-span-3"><summary className="cursor-pointer">Special/Holiday Hours JSON</summary><textarea readOnly rows={5} value={business.special_hours ? JSON.stringify(business.special_hours, null, 2) : ""} className="mt-3 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 font-mono text-xs text-white outline-none" /></details>
       <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/70"><input type="checkbox" name="is_searchable" defaultChecked={Boolean(business.is_searchable)} disabled={!canEdit} /> Searchable</label>
     </div>
     <div className="mt-5 flex flex-wrap gap-3">
