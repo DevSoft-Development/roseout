@@ -10,15 +10,13 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import TheOutHavenMark from "@/components/brand/TheOutHavenMark";
 import LocationImagePlaceholder from "@/components/public-location/LocationImagePlaceholder";
 import SafeLocationImage from "@/components/public-location/SafeLocationImage";
+import LocationHours from "@/components/public-location/LocationHours";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationScore } from "@/lib/locationScore";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
-import {
-  formatOperatingHoursForDisplay,
-  getOperatingHours,
-} from "@/lib/locationHours";
+import { getOperatingHours } from "@/lib/locationHours";
 import {
   buildGoogleMapsSearchUrl,
   getGoogleMapsUrl,
@@ -546,9 +544,7 @@ export default function LocationDetailPage() {
   const displayBestFor = cleanDisplayTags(bestFor, 10);
   const displaySpecialFeatures = cleanDisplayTags(specialFeatures, 10);
   const displaySignatureItems = cleanDisplayTags(signatureItems, 10);
-  const operatingHoursDisplay = formatOperatingHoursForDisplay(
-    getOperatingHours(location),
-  );
+
   const galleryImages = getPhotoList(location);
   const primaryPhoto = getPrimaryPhoto(location);
   const planLink = buildPlanLink(location, type);
@@ -828,7 +824,16 @@ export default function LocationDetailPage() {
 
             <aside className="space-y-6 lg:sticky lg:top-36 lg:self-start">
               <LuxuryCard eyebrow="Plan your visit" title="Ready when you are.">
-                {operatingHoursDisplay && <InfoRow label="Hours" value={operatingHoursDisplay} />}
+                <LocationHours
+                  operating_hours={getOperatingHours(location)}
+                  special_hours={location?.special_hours}
+                  google_current_opening_hours={location?.google_current_opening_hours}
+                  google_regular_opening_hours={location?.google_regular_opening_hours}
+                  google_utc_offset_minutes={location?.google_utc_offset_minutes as number | string | null}
+                  timezone={(location?.timezone || location?.time_zone) as string | null}
+                  city={location?.city}
+                  state={location?.state}
+                />
                 {reservationSourceLabel && <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">{reservationSourceLabel}</p>}
                 <LocationActionButtons
                   planLink={planLink}
