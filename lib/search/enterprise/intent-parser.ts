@@ -73,6 +73,11 @@ const FAST_PATH_RESTAURANT_SIGNAL_TERMS = [
   "rooftop dining",
   "rooftop restaurant",
   "cocktails with dinner",
+  "late-night dinner",
+  "birthday dinner",
+  "anniversary dinner",
+  "italian dinner",
+  "with food",
 ];
 
 const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
@@ -117,6 +122,12 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "things to do",
   "something to do",
   "something fun",
+  "something unique",
+  "something open",
+  "open after midnight",
+  "after midnight",
+  "plans",
+  "last-minute plans",
   "fun",
   "fun activity",
   "relaxed activity",
@@ -125,6 +136,17 @@ const FAST_PATH_ACTIVITY_SIGNAL_TERMS = [
   "date idea",
   "date activity",
   "outing",
+  "friend outing",
+  "girls night",
+  "double date",
+  "activity after",
+  "followed by",
+  "nearby",
+  "walkable",
+  "lounge vibe",
+  "rooftop vibe",
+  "drinks after",
+  "dessert after",
   "experience",
   "entertainment",
   "indoor activity",
@@ -431,12 +453,12 @@ function emptyGeoIntent() {
 
 function hasMealOrRestaurantTerm(query: string) {
   const q = String(query || "").toLowerCase();
-  return /\b(dinner|brunch|lunch|breakfast|restaurant|food|eat|steakhouse|steak|seafood|sushi|mexican|italian|tacos|pizza|birthday dinner|anniversary dinner)\b/.test(q);
+  return /\b(dinner|late-night dinner|brunch|lunch|breakfast|restaurant|food|with food|eat|steakhouse|steak|seafood|sushi|mexican|italian|italian dinner|tacos|pizza|birthday dinner|anniversary dinner)\b/.test(q);
 }
 
 function hasActivityVenueOrActivityTerm(query: string) {
   const q = String(query || "").toLowerCase();
-  return /\b(activity|things to do|something fun|karaoke|comedy|comedy club|comedy show|bowling|arcade|museum|museum date|hookah|hookah lounge|lounge|cocktail bar|wine bar|bar with|bar showing|sports bar|sports lounge|rooftop bar|rooftop lounge|rooftop drinks|paint and sip|sip and paint|mini golf|live jazz|jazz|live music|pool hall|billiards|game day|watch party)\b/.test(q);
+  return /\b(activity|activities|activity after|things to do|something to do|something fun|something unique|something open|open after midnight|after midnight|plans|last-minute plans|outing|friend outing|girls night|double date|karaoke|comedy|comedy club|comedy show|bowling|arcade|museum|museum date|hookah|hookah lounge|lounge|lounge vibe|cocktail bar|wine bar|bar with|bar showing|sports bar|sports lounge|rooftop|rooftop vibe|rooftop bar|rooftop lounge|rooftop drinks|drinks after|dessert after|paint and sip|sip and paint|mini golf|live jazz|jazz|live music|pool hall|billiards|game day|watch party)\b/.test(q);
 }
 
 function connectorIsRestaurantFeature(query: string) {
@@ -469,7 +491,7 @@ function hasGenericDateNightActivitySignal(query: string) {
 function hasExplicitMixedOutingIntent(query: string) {
   const q = String(query || "").toLowerCase();
   if (connectorIsRestaurantFeature(q)) return false;
-  const hasConnector = /\b(and|with|after|before|then|nearby|close by|walking distance|walk apart|close together)\b/.test(q);
+  const hasConnector = /\b(and|with|after|afterward|afterwards|followed by|before|then|nearby|walkable|close by|walking distance|walk apart|close together)\b/.test(q);
   return hasConnector && hasMealOrRestaurantTerm(q) && hasActivityVenueOrActivityTerm(q);
 }
 
@@ -883,7 +905,7 @@ function createRelaxedMixedFastPathIntent(rawQuery: string) {
 function hasActivityOnlyFastPathIntent(query: string) {
   const q = String(query || "").toLowerCase();
   const hasRestaurantMeal = /\b(dinner|brunch|lunch|breakfast|restaurant|food|steak|seafood|sushi|mexican|italian)\b/.test(q);
-  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|wine bar|chill drinks spot|bar with good music|lounge|speakeasy|karaoke bar|karaoke|comedy club|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live jazz spot|live jazz|live music|bowling|arcade|museum|mini golf|paint and sip|things to do|fun indoor activity|fun activity|date ideas|date idea|football bar|watch basketball|where can i watch basketball)\b/.test(q);
+  const hasActivity = /\b(rooftop drinks|rooftop lounge|rooftop bar|cocktail bar|cocktails|wine bar|chill drinks spot|bar with good music|lounge|speakeasy|karaoke bar|karaoke|comedy club|comedy show|comedy|hookah lounge|hookah|shisha|jazz lounge|live jazz spot|live jazz|live music|bowling|arcade|museum|mini golf|paint and sip|activity|activities|things to do|something to do|something fun|something unique|plans|outing|friend outing|fun indoor activity|fun activity|date ideas|date idea|football bar|watch basketball|where can i watch basketball)\b/.test(q);
   return hasActivity && !hasRestaurantMeal;
 }
 
@@ -902,7 +924,7 @@ function createActivityOnlyFastPathIntent(rawQuery: string) {
   else if (/\bwine bar\b/.test(q)) activityTerms.push("wine bar", "bar", "drinks", "cocktails");
   else if (/\bcocktail|cocktails|bar|drinks\b/.test(q)) activityTerms.push("cocktail bar", "cocktails", "bar", "lounge", "wine bar", "speakeasy", "drinks");
   else if (/\blounge\b/.test(q)) activityTerms.push("lounge", "bar", "cocktails", "nightlife");
-  else if (/\bthings to do|fun activity|date idea|first date|surprise me\b/.test(q)) activityTerms.push("activity", "things to do", "entertainment", "experience", "arcade", "bowling", "mini golf", "museum", "gallery", "comedy", "karaoke");
+  else if (/\bthings to do|something to do|something fun|something unique|plans|outing|fun activity|date idea|first date|surprise me\b/.test(q)) activityTerms.push("activity", "things to do", "entertainment", "experience", "arcade", "bowling", "mini golf", "museum", "gallery", "comedy", "karaoke");
   return {
     rawQuery,
     searchType: "activity",
@@ -1078,7 +1100,7 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
-  if (/^things to do(?:\s|$)/i.test(query)) {
+  if (/^things to do(?:\s|$)/i.test(query) && !/\b(easy parking|parking|no clubs?|not clubs?)\b/i.test(query)) {
     return { intent: null, reason: "generic_activity_query_uses_normal_parser" };
   }
 
