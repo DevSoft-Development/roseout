@@ -18,6 +18,7 @@ export async function POST(req: Request) {
   const result = await runLocationHoursBackfill({
     limit: body.limit,
     batchSize: body.batchSize,
+    repairOperatingHours: body.repairOperatingHours === true,
   });
   return Response.json(result);
 }
