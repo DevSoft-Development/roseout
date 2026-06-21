@@ -277,3 +277,169 @@ function minutesToTimeString(totalMinutes: number) {
   const minute = (totalMinutes % 60).toString().padStart(2, "0");
   return `${hour}:${minute}`;
 }
+
+
+export const WEEKDAY_LABELS = DAY_KEYS.map((key) => ({ key, label: key.charAt(0).toUpperCase() + key.slice(1) })) as { key: string; label: string }[];
+
+export type NormalizedWeeklyHours = Record<string, string[]>;
+
+export type LocationHoursDisplayInput = {
+  operating_hours?: unknown;
+  special_hours?: unknown;
+  google_current_opening_hours?: unknown;
+  google_regular_opening_hours?: unknown;
+  google_utc_offset_minutes?: number | string | null;
+  timezone?: string | null;
+  time_zone?: string | null;
+  city?: string | null;
+  state?: string | null;
+};
+
+function parseJsonMaybe(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try { return JSON.parse(trimmed); } catch { return value; }
+  }
+  return value;
+}
+
+function normalizeDayName(value: string) {
+  const lower = value.trim().toLowerCase();
+  return DAY_KEYS.find((day) => day === lower || day.slice(0, 3) === lower.slice(0, 3)) || null;
+}
+
+function cleanHourText(value: unknown): string[] {
+  const parsed = parseJsonMaybe(value);
+  if (parsed == null || parsed === false) return [];
+  if (Array.isArray(parsed)) return parsed.flatMap(cleanHourText).filter(Boolean);
+  if (typeof parsed === "object") {
+    const record = parsed as Record<string, unknown>;
+    if (record.closed === true || record.is_closed === true) return [];
+    const text = stringifyHoursValue(record);
+    return text && !/^closed$/i.test(text.trim()) ? [text.trim().replace(/–/g, " - ").replace(/\s+/g, " ")] : [];
+  }
+  if (typeof parsed !== "string") return [];
+  const text = parsed.trim().replace(/–/g, " - ").replace(/\s+/g, " ");
+  if (!text || /^closed$/i.test(text)) return [];
+  return text.split(/\s*[,;]\s*/).map((item) => item.trim()).filter(Boolean);
+}
+
+function emptyWeek(): NormalizedWeeklyHours {
+  return Object.fromEntries(DAY_KEYS.map((day) => [day, []])) as NormalizedWeeklyHours;
+}
+
+function applyGoogleWeekdayDescriptions(hours: unknown, week: NormalizedWeeklyHours) {
+  const parsed = parseJsonMaybe(hours);
+  if (!parsed || typeof parsed !== "object") return;
+  const record = parsed as Record<string, unknown>;
+  const descriptions = record.weekdayDescriptions || record.weekday_descriptions || record.weekday_text;
+  if (!Array.isArray(descriptions)) return;
+  descriptions.forEach((entry) => {
+    const [dayRaw, ...rest] = String(entry).split(":");
+    const day = normalizeDayName(dayRaw || "");
+    const text = rest.join(":").trim();
+    if (day) week[day] = cleanHourText(text);
+  });
+}
+
+export function normalizeWeeklyHoursForDisplay(...sources: unknown[]): NormalizedWeeklyHours {
+  const week = emptyWeek();
+  for (const source of sources) {
+    const parsed = parseJsonMaybe(source);
+    if (!parsed) continue;
+    applyGoogleWeekdayDescriptions(parsed, week);
+    if (typeof parsed === "object" && !Array.isArray(parsed)) {
+      Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+        const day = normalizeDayName(key);
+        if (day) week[day] = cleanHourText(value);
+      });
+    }
+  }
+  return week;
+}
+
+function getNowParts(timezone: string, now = new Date(), utcOffsetMinutes?: number | null) {
+  if (typeof utcOffsetMinutes === "number" && Number.isFinite(utcOffsetMinutes)) {
+    const shifted = new Date(now.getTime() + utcOffsetMinutes * 60_000);
+    return { weekday: DAY_KEYS[shifted.getUTCDay()], minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes() };
+  }
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", hour: "numeric", minute: "numeric", hour12: false }).formatToParts(now);
+  const weekday = normalizeDayName(parts.find((part) => part.type === "weekday")?.value || "") || DAY_KEYS[now.getDay()];
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0) % 24;
+  const minute = Number(parts.find((part) => part.type === "minute")?.value || 0);
+  return { weekday, minutes: hour * 60 + minute };
+}
+
+function minutesToDisplay(total: number) {
+  const minutes = ((total % 1440) + 1440) % 1440;
+  let hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${hour}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function formatUntil(minutes: number) {
+  if (minutes < 60) return `Opens in ${Math.max(1, minutes)} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (rest >= 15) return `Opens in ${hours} hour${hours === 1 ? "" : "s"} ${rest} minutes`;
+  return `Opens in ${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
+function parseDisplayRange(range: string) {
+  const [openRaw, closeRaw] = range.split(/\s*(?:-|–|—|to)\s*/i);
+  const open = parseTimeString(openRaw);
+  const close = parseTimeString(closeRaw);
+  if (!open || !close) return null;
+  const openMinutes = timeStringToMinutes(open);
+  let closeMinutes = timeStringToMinutes(close);
+  if (openMinutes == null || closeMinutes == null) return null;
+  if (closeMinutes <= openMinutes) closeMinutes += 1440;
+  return { open: openMinutes, close: closeMinutes, closeText: minutesToDisplay(closeMinutes) };
+}
+
+function statusFromWeeklyHours(week: NormalizedWeeklyHours, timezone: string, now = new Date(), utcOffsetMinutes?: number | null) {
+  const { weekday, minutes } = getNowParts(timezone, now, utcOffsetMinutes);
+  const todayIndex = DAY_KEYS.indexOf(weekday);
+  const previousDay = DAY_KEYS[(todayIndex + 6) % 7];
+  for (const range of week[previousDay].map(parseDisplayRange)) {
+    if (range && range.close > 1440 && minutes < range.close - 1440) return { text: `Open now · Closes at ${range.closeText}`, todayKey: weekday };
+  }
+  let hasUnparseableTodayHours = false;
+  let nextOpen: number | null = null;
+  for (const rangeText of week[weekday]) {
+    const range = parseDisplayRange(rangeText);
+    if (!range) { hasUnparseableTodayHours = true; continue; }
+    if (minutes >= range.open && minutes < range.close) return { text: `Open now · Closes at ${range.closeText}`, todayKey: weekday };
+    if (minutes < range.open && (nextOpen === null || range.open < nextOpen)) nextOpen = range.open;
+  }
+  if (nextOpen !== null) return { text: formatUntil(nextOpen - minutes), todayKey: weekday };
+  if (hasUnparseableTodayHours) return { text: "Hours listed below", todayKey: weekday };
+  return { text: week[weekday].length ? "Closed now" : "Closed today", todayKey: weekday };
+}
+
+function resolveTimezone(input: LocationHoursDisplayInput) {
+  const explicit = String(input.timezone || input.time_zone || "").trim();
+  return explicit || "America/New_York";
+}
+
+function resolveUtcOffsetMinutes(input: LocationHoursDisplayInput) {
+  if (input.timezone || input.time_zone) return null;
+  const offset = Number(input.google_utc_offset_minutes);
+  return Number.isFinite(offset) ? offset : null;
+}
+
+export function getLocationHoursDisplay(input: LocationHoursDisplayInput, now = new Date()) {
+  const weeklyHours = normalizeWeeklyHoursForDisplay(input.operating_hours, input.google_current_opening_hours, input.google_regular_opening_hours);
+  const hasUsableHours = DAY_KEYS.some((day) => weeklyHours[day].length > 0);
+  if (!hasUsableHours) {
+    const todayKey = getNowParts(resolveTimezone(input), now, resolveUtcOffsetMinutes(input)).weekday;
+    return { statusText: "Hours not available", weeklyHours, hasUsableHours, todayKey, timezone: resolveTimezone(input) };
+  }
+  const timezone = resolveTimezone(input);
+  const status = statusFromWeeklyHours(weeklyHours, timezone, now, resolveUtcOffsetMinutes(input));
+  return { statusText: status.text, weeklyHours, hasUsableHours, todayKey: status.todayKey, timezone };
+}
