@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const HOURS_FIELD_MASK = "id,currentOpeningHours,regularOpeningHours,utcOffsetMinutes";
 const RETRYABLE_STATUSES = new Set(["not_started", "failed", "retry_later", "skipped_missing_place_id"]);
+const MANAGED_PROFILE_SOURCES = new Set(["owner", "admin"]);
 
 type BackfillRow = {
   id: string;
@@ -10,6 +11,14 @@ type BackfillRow = {
   special_hours?: unknown;
   google_regular_opening_hours?: unknown;
   hours_raw?: unknown;
+  hours_backfill_status?: string | null;
+  hours_last_backfilled_at?: string | null;
+  profile_managed_by?: string | null;
+  profile_manual_lock?: boolean | null;
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
+  claim_status?: string | null;
+  created_at?: string | null;
 };
 
 type BackfillOptions = {
@@ -17,6 +26,8 @@ type BackfillOptions = {
   batchSize?: number;
   sleepMs?: number;
   repairOperatingHours?: boolean;
+  forceRefresh?: boolean;
+  overwriteManagedFields?: boolean;
 };
 
 function googlePlacesApiKey() {
@@ -90,7 +101,7 @@ function isFakeHoursPlaceholder(value: unknown): boolean {
   return stableJson(value) ? FAKE_HOURS_PLACEHOLDERS.has(stableJson(value)!) : false;
 }
 
-function isBlankHoursValue(value: unknown): boolean {
+export function isBlankHoursValue(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -258,33 +269,79 @@ async function updateSuccess(row: BackfillRow, details: Record<string, unknown>)
     hours_last_backfilled_at: new Date().toISOString(),
   };
 
-  if (isBlankHoursValue(row.operating_hours) && normalizedOperatingHours) {
+  if (canAutomatedProfileUpdateWrite(row, "operating_hours") && isBlankHoursValue(row.operating_hours) && normalizedOperatingHours) {
     update.operating_hours = normalizedOperatingHours;
   }
 
-  if (isBlankHoursValue(row.special_hours) && normalizedSpecialHours) {
+  if (canAutomatedProfileUpdateWrite(row, "special_hours") && isBlankHoursValue(row.special_hours) && normalizedSpecialHours) {
     update.special_hours = normalizedSpecialHours;
   }
 
   await supabaseAdmin.from("locations").update(update).eq("id", row.id);
 }
 
-async function repairOperatingHoursFromGoogle(limit: number) {
-  const { data, error } = await supabaseAdmin
-    .from("locations")
-    .select("id, operating_hours, google_regular_opening_hours, hours_raw")
-    .not("google_regular_opening_hours", "is", null)
-    .eq("hours_backfill_status", "success")
-    .order("hours_last_backfilled_at", { ascending: false, nullsFirst: false })
-    .limit(limit);
+export function isClaimedLocation(row: Pick<BackfillRow, "is_claimed" | "claimed" | "claim_status">) {
+  const claimStatus = String(row.claim_status || "").toLowerCase();
+  return Boolean(row.is_claimed || row.claimed || ["approved", "claimed", "verified", "active"].includes(claimStatus));
+}
+
+export function isOwnerManaged(row: Pick<BackfillRow, "profile_managed_by">) {
+  return String(row.profile_managed_by || "").toLowerCase() === "owner";
+}
+
+export function isAdminManaged(row: Pick<BackfillRow, "profile_managed_by">) {
+  return String(row.profile_managed_by || "").toLowerCase() === "admin";
+}
+
+export function isManuallyProtected(row: Pick<BackfillRow, "profile_managed_by" | "profile_manual_lock">) {
+  return Boolean(row.profile_manual_lock) || MANAGED_PROFILE_SOURCES.has(String(row.profile_managed_by || "").toLowerCase());
+}
+
+export function canAutomatedProfileUpdateWrite(row: BackfillRow, _field: string, options: { overwriteManagedFields?: boolean } = {}) {
+  if (options.overwriteManagedFields === true) return true;
+  return !isManuallyProtected(row);
+}
+
+async function repairOperatingHoursFromGoogle(limit: number, options: { overwriteManagedFields?: boolean } = {}) {
+  const { data, error } = await supabaseAdmin.rpc("get_location_hours_repair_candidates", { max_rows: limit });
 
   if (error) throw new Error(error.message);
 
   let repaired = 0;
   let skipped = 0;
+  let selectedForRepair = 0;
+  let skippedOwnerManaged = 0;
+  let skippedAdminManaged = 0;
+  let skippedManualLocked = 0;
+  let skippedClaimed = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
   for (const row of (data ?? []) as BackfillRow[]) {
+    if (!isBlankHoursValue(row.operating_hours)) {
+      skipped += 1;
+      continue;
+    }
+    selectedForRepair += 1;
+    if (!options.overwriteManagedFields && row.profile_manual_lock) {
+      skippedManualLocked += 1;
+      skipped += 1;
+      continue;
+    }
+    if (!options.overwriteManagedFields && isOwnerManaged(row)) {
+      skippedOwnerManaged += 1;
+      skipped += 1;
+      continue;
+    }
+    if (!options.overwriteManagedFields && isAdminManaged(row)) {
+      skippedAdminManaged += 1;
+      skipped += 1;
+      continue;
+    }
+    if (process.env.HOURS_BACKFILL_REFRESH_CLAIMED !== "true" && isClaimedLocation(row)) {
+      skippedClaimed += 1;
+      skipped += 1;
+      continue;
+    }
     if (!isBlankHoursValue(row.operating_hours)) {
       skipped += 1;
       continue;
@@ -298,7 +355,7 @@ async function repairOperatingHoursFromGoogle(limit: number) {
     }
     const { error: updateError } = await supabaseAdmin
       .from("locations")
-      .update({ operating_hours: normalized, hours_last_backfilled_at: new Date().toISOString() })
+      .update({ operating_hours: normalized, hours_source: "google_places_details_repair", hours_confidence: "verified" })
       .eq("id", row.id);
     if (updateError) {
       if (errors.length < 10) errors.push({ id: row.id, error: updateError.message });
@@ -307,7 +364,7 @@ async function repairOperatingHoursFromGoogle(limit: number) {
     }
   }
 
-  return { repaired, repairSkipped: skipped, repairErrors: errors };
+  return { selectedForRepair, repaired, repairSkipped: skipped, skippedOwnerManaged, skippedAdminManaged, skippedManualLocked, skippedClaimed, repairErrors: errors };
 }
 
 async function updateFailure(id: string, error: unknown) {
@@ -327,7 +384,12 @@ export async function runLocationHoursBackfill(options: BackfillOptions = {}) {
   const limit = Math.min(requestedLimit, maxPerRun);
   const batchSize = parsePositiveInt(options.batchSize ?? process.env.HOURS_BACKFILL_BATCH_SIZE, 25, 1, 100);
   const sleepMs = parsePositiveInt(options.sleepMs ?? process.env.HOURS_BACKFILL_SLEEP_MS, 250, 0, 5000);
-  const staleBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const staleDays = parsePositiveInt(process.env.HOURS_BACKFILL_STALE_DAYS, 365, 1, 3650);
+  const staleBefore = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000).toISOString();
+  const forceRefresh = options.forceRefresh === true;
+  const refreshSuccess = process.env.HOURS_BACKFILL_REFRESH_SUCCESS === "true";
+  const refreshClaimed = process.env.HOURS_BACKFILL_REFRESH_CLAIMED === "true";
+  const overwriteManagedFields = options.overwriteManagedFields === true && process.env.GOOGLE_BACKFILL_OVERWRITE_MANAGED === "true";
   const started = Date.now();
   const errors: Array<{ id: string; error: string }> = [];
   let processed = 0;
@@ -335,32 +397,85 @@ export async function runLocationHoursBackfill(options: BackfillOptions = {}) {
   let skipped = 0;
   let failed = 0;
   let retryLater = 0;
+  let selectedForRepair = 0;
+  let selectedForGoogleBackfill = 0;
+  let alreadyFreshSkipped = 0;
+  let noPlaceIdSkipped = 0;
+  let skippedAlreadySuccessful = 0;
+  let skippedOwnerManaged = 0;
+  let skippedAdminManaged = 0;
+  let skippedManualLocked = 0;
+  let skippedClaimed = 0;
+  let skippedNotEligible = 0;
+  let googleApiCallsMade = 0;
   let repaired = 0;
   let repairSkipped = 0;
   const repairErrors: Array<{ id: string; error: string }> = [];
 
   if (options.repairOperatingHours) {
-    const repair = await repairOperatingHoursFromGoogle(limit);
+    const repair = await repairOperatingHoursFromGoogle(limit, { overwriteManagedFields });
+    selectedForRepair = repair.selectedForRepair;
     repaired = repair.repaired;
     repairSkipped = repair.repairSkipped;
+    skippedOwnerManaged += repair.skippedOwnerManaged;
+    skippedAdminManaged += repair.skippedAdminManaged;
+    skippedManualLocked += repair.skippedManualLocked;
+    skippedClaimed += repair.skippedClaimed;
     repairErrors.push(...repair.repairErrors);
   }
 
   const { data, error } = await supabaseAdmin
     .from("locations")
-    .select("id, google_place_id, operating_hours, special_hours, google_regular_opening_hours, hours_raw, hours_backfill_status, hours_last_backfilled_at")
+    .select("id, google_place_id, operating_hours, special_hours, google_regular_opening_hours, hours_raw, hours_backfill_status, hours_last_backfilled_at, profile_managed_by, profile_manual_lock, is_claimed, claimed, claim_status, created_at")
     .eq("is_searchable", true)
-    .or(`hours_last_backfilled_at.is.null,hours_last_backfilled_at.lt.${staleBefore},hours_backfill_status.in.(not_started,failed,retry_later,skipped_missing_place_id)`)
+    .or(forceRefresh || refreshSuccess
+      ? `google_regular_opening_hours.is.null,hours_last_backfilled_at.is.null,hours_last_backfilled_at.lt.${staleBefore},hours_backfill_status.is.null,hours_backfill_status.in.(not_started,failed,retry_later)`
+      : `google_regular_opening_hours.is.null,hours_backfill_status.is.null,hours_backfill_status.in.(not_started,failed,retry_later)`)
     .order("hours_last_backfilled_at", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true, nullsFirst: true })
+    .order("id", { ascending: true })
     .limit(limit);
 
   if (error) throw new Error(error.message);
 
-  const rows = ((data ?? []) as Array<BackfillRow & { hours_backfill_status?: string | null; hours_last_backfilled_at?: string | null }>).filter((row) => {
-    if (!row.hours_last_backfilled_at) return true;
-    if (new Date(row.hours_last_backfilled_at).toISOString() < staleBefore) return true;
-    return isRetryableStatus(row.hours_backfill_status);
+  const rows = ((data ?? []) as BackfillRow[]).filter((row) => {
+    if (!row.google_place_id) {
+      noPlaceIdSkipped += 1;
+      return false;
+    }
+    if (!overwriteManagedFields && row.profile_manual_lock) {
+      skippedManualLocked += 1;
+      return false;
+    }
+    if (!overwriteManagedFields && isOwnerManaged(row)) {
+      skippedOwnerManaged += 1;
+      return false;
+    }
+    if (!overwriteManagedFields && isAdminManaged(row)) {
+      skippedAdminManaged += 1;
+      return false;
+    }
+    if (!forceRefresh && !refreshClaimed && isClaimedLocation(row)) {
+      skippedClaimed += 1;
+      return false;
+    }
+    const alreadySuccessful = row.hours_backfill_status === "success" && row.google_regular_opening_hours != null;
+    if (!forceRefresh && alreadySuccessful && !refreshSuccess) {
+      skippedAlreadySuccessful += 1;
+      alreadyFreshSkipped += 1;
+      return false;
+    }
+    if (!forceRefresh && alreadySuccessful && row.hours_last_backfilled_at && new Date(row.hours_last_backfilled_at).toISOString() >= staleBefore) {
+      alreadyFreshSkipped += 1;
+      return false;
+    }
+    if (!forceRefresh && row.hours_last_backfilled_at && new Date(row.hours_last_backfilled_at).toISOString() >= staleBefore && !isRetryableStatus(row.hours_backfill_status) && row.google_regular_opening_hours != null) {
+      skippedNotEligible += 1;
+      return false;
+    }
+    return true;
   });
+  selectedForGoogleBackfill = rows.length;
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
@@ -372,6 +487,7 @@ export async function runLocationHoursBackfill(options: BackfillOptions = {}) {
           skipped += 1;
           continue;
         }
+        googleApiCallsMade += 1;
         const details = await fetchPlaceHours(row.google_place_id);
         await updateSuccess(row, details);
         updated += 1;
@@ -385,5 +501,31 @@ export async function runLocationHoursBackfill(options: BackfillOptions = {}) {
     }
   }
 
-  return { success: failed === 0 && repairErrors.length === 0, requestedLimit, processed, updated, skipped, failed, retryLater, repaired, repairSkipped, repairErrors, errors, durationMs: Date.now() - started };
+  return {
+    success: failed === 0 && repairErrors.length === 0,
+    requested: requestedLimit,
+    requestedLimit,
+    selectedForRepair,
+    repaired,
+    repairSkipped,
+    selectedForGoogleBackfill,
+    processed,
+    updated,
+    skipped,
+    failed,
+    retryLater,
+    alreadyFreshSkipped,
+    noPlaceIdSkipped,
+    skippedAlreadySuccessful,
+    skippedOwnerManaged,
+    skippedAdminManaged,
+    skippedManualLocked,
+    skippedClaimed,
+    skippedNotEligible,
+    googleApiCallsPlanned: selectedForGoogleBackfill,
+    googleApiCallsMade,
+    repairErrors,
+    errors,
+    durationMs: Date.now() - started,
+  };
 }

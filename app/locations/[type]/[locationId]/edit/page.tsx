@@ -79,6 +79,12 @@ type FormState = {
   hours_last_backfilled_at?: string | null;
   hours_backfill_error?: string | null;
   operating_hours_valid?: boolean;
+  profile_managed_by?: string | null;
+  profile_manual_lock?: boolean | null;
+  profile_owner_verified_at?: string | null;
+  profile_last_owner_update_at?: string | null;
+  profile_last_admin_update_at?: string | null;
+  profile_field_sources?: Record<string, unknown> | null;
 };
 
 type LocationRecord = Record<string, unknown> & {
@@ -345,6 +351,14 @@ export default function EditLocationPage() {
           is_searchable: typeof data.is_searchable === "boolean" ? String(data.is_searchable) : "",
           data_status: data.data_status || "",
           missing_fields: Array.isArray(data.missing_fields) ? data.missing_fields.join(", ") : data.missing_fields || "",
+          profile_managed_by: data.profile_managed_by || "system",
+          profile_manual_lock: Boolean(data.profile_manual_lock),
+          profile_owner_verified_at: data.profile_owner_verified_at || null,
+          profile_last_owner_update_at: data.profile_last_owner_update_at || null,
+          profile_last_admin_update_at: data.profile_last_admin_update_at || null,
+          profile_field_sources: data.profile_field_sources && typeof data.profile_field_sources === "object" && !Array.isArray(data.profile_field_sources)
+            ? data.profile_field_sources as Record<string, unknown>
+            : null,
         };
 
         setForm(nextForm);
@@ -731,7 +745,21 @@ export default function EditLocationPage() {
                 <StatusPill tone="dark">{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
                 <StatusPill tone={form.claim_status ? "success" : "warning"}>{form.claim_status || "Unclaimed"}</StatusPill>
                 <StatusPill tone={form.data_status ? "success" : "neutral"}>{form.data_status || "Quality Review"}</StatusPill>
+                <StatusPill tone={form.profile_manual_lock ? "success" : "neutral"}>
+                  Profile source: {String(form.profile_managed_by || "system").replace(/_/g, " ")}
+                </StatusPill>
+                {form.profile_manual_lock ? <StatusPill tone="success">Manual lock</StatusPill> : null}
                 {isImpersonating ? <StatusPill tone="dark">Admin View</StatusPill> : null}
+              </div>
+              <div className="mt-4 grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs font-bold text-white/60 sm:grid-cols-2 lg:grid-cols-4">
+                <span>Manual lock: {form.profile_manual_lock ? "Yes" : "No"}</span>
+                <span>Owner verified: {form.profile_owner_verified_at ? new Date(form.profile_owner_verified_at).toLocaleString() : "Not yet"}</span>
+                <span>Last owner update: {form.profile_last_owner_update_at ? new Date(form.profile_last_owner_update_at).toLocaleString() : "—"}</span>
+                <span>Last admin update: {form.profile_last_admin_update_at ? new Date(form.profile_last_admin_update_at).toLocaleString() : "—"}</span>
+                <span>Hours source: {String(form.profile_field_sources?.operating_hours || form.hours_source || form.profile_managed_by || "system")}</span>
+                <span>Contact source: {String(form.profile_field_sources?.phone || form.profile_field_sources?.website || form.profile_managed_by || "system")}</span>
+                <span>Photos source: {String(form.profile_field_sources?.main_image || form.profile_field_sources?.images || form.profile_managed_by || "system")}</span>
+                <span>Booking source: {String(form.profile_field_sources?.reservation_url || form.profile_field_sources?.booking_url || form.profile_managed_by || "system")}</span>
               </div>
             </div>
 
