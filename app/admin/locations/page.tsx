@@ -3,6 +3,7 @@ import Link from "next/link";
 import AdminLocationsSearchBox from "./AdminLocationsSearchBox";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import FoodTermBackfillPanel from "../dashboard/locations/FoodTermBackfillPanel";
+import HoursBackfillPanel from "../dashboard/locations/HoursBackfillPanel";
 import GoogleEnrichmentPanel from "@/components/admin/locations/GoogleEnrichmentPanel";
 import {
   AdminActionButton,
@@ -37,7 +38,7 @@ import {
   type LocationVisibilityFields,
 } from "@/lib/locationVisibility";
 
-const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-05-11";
+const ADMIN_LOCATIONS_VERSION = "admin-locations-refresh-2026-06-21-hours";
 const ADMIN_LOCATIONS_BASE_PATH = "/admin/dashboard/locations";
 const PAGE_SIZE_OPTIONS = [100, 250, 500, 1000] as const;
 
@@ -595,6 +596,13 @@ export default async function AdminLocationsPage({
   const totalAllLocations = totalLocationsResult.count || 0;
 
   const error = locationsResult.error;
+
+  const staleHoursBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const [{ count: missingHoursCount }, { count: staleHoursCount }] = await Promise.all([
+    supabase.from("locations").select("id", { count: "exact", head: true }).eq("is_searchable", true).not("google_place_id", "is", null).is("hours_last_backfilled_at", null),
+    supabase.from("locations").select("id", { count: "exact", head: true }).eq("is_searchable", true).not("google_place_id", "is", null).lt("hours_last_backfilled_at", staleHoursBefore),
+  ]);
+
   const operations = [
     {
       title: "Import & Maintenance",
@@ -733,6 +741,7 @@ export default async function AdminLocationsPage({
         </AdminFilterPanel>
 
         <FoodTermBackfillPanel />
+        <HoursBackfillPanel missingCount={missingHoursCount} staleCount={staleHoursCount} />
 
         <AdminSectionCard>
           <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:flex-row md:items-center md:justify-between">

@@ -4,6 +4,7 @@ import {
 } from "./cuisine-matching";
 import { scoreGeoMatch } from "./geo-matching";
 import type { CanonicalSearchIntent } from "./types";
+import { evaluateSoftHours } from "./hours";
 
 function scoreRecord(record: any, terms: string[]) {
   const text = [
@@ -338,6 +339,10 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     bs -= chainRankPenalty(b, intent);
     as += reviewKeywordScore(a, intent);
     bs += reviewKeywordScore(b, intent);
+    const aHours = evaluateSoftHours(a, intent);
+    const bHours = evaluateSoftHours(b, intent);
+    as += aHours.boost;
+    bs += bHours.boost;
     as += Number(a.search_boost ?? 0);
     bs += Number(b.search_boost ?? 0);
     const ah = JSON.stringify(a).toLowerCase();
@@ -359,14 +364,18 @@ export function rankActivities(records: any[], intent: CanonicalSearchIntent) {
   return [...records].sort((a, b) => {
     const activityTerms =
       intent.normalizedIntent?.activityTerms ?? intent.activityIntents;
+    const aHours = evaluateSoftHours(a, intent);
+    const bHours = evaluateSoftHours(b, intent);
     const aScore =
       scoreRecord(a, activityTerms) +
       scoreGeoMatch(a, intent.geoIntent) * geoWeight +
-      reviewKeywordScore(a, intent);
+      reviewKeywordScore(a, intent) +
+      aHours.boost;
     const bScore =
       scoreRecord(b, activityTerms) +
       scoreGeoMatch(b, intent.geoIntent) * geoWeight +
-      reviewKeywordScore(b, intent);
+      reviewKeywordScore(b, intent) +
+      bHours.boost;
     return bScore - aScore;
   });
 }
