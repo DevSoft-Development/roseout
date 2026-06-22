@@ -4,7 +4,7 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import GiveawayAdminClient from "./GiveawayAdminClient";
 
-export const metadata = { title: "Launch Giveaway Admin" };
+export const metadata = { title: "Beta Tester Reward Admin" };
 
 export default async function AdminGiveawayPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.giveaway);
@@ -32,8 +32,8 @@ export default async function AdminGiveawayPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.35em] text-rose-300">TheOutHaven Admin</p>
-              <h1 className="mt-3 text-4xl font-black">Launch Giveaway Tracking</h1>
-              <p className="mt-3 max-w-3xl text-white/70">Manually verify giveaway entries, review email verification and consent, track duplicate flags, and export launch list CSV data.</p>
+              <h1 className="mt-3 text-4xl font-black">Beta Prize Eligibility</h1>
+              <p className="mt-3 max-w-3xl text-white/70">Manage Beta Reward entries, verify social and tagged-friends requirements, review beta task eligibility, and export program CSV data.</p>
             </div>
             <Link href="/admin/dashboard" className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white">Admin Dashboard</Link>
           </div>
