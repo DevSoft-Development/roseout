@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { importNycDohmhHealthData } from "@/lib/health/nycDohmh";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { requireSuperAdmin } from "@/lib/admin-api-auth";
+import { isCronRequestAuthorized } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +14,10 @@ type ImportOptions = {
   sinceDate?: string | null;
 };
 
-function isAuthorized(req: Request) {
-  if (process.env.NODE_ENV === "development") return true;
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = req.headers.get("authorization") || "";
-  const cronSecret = req.headers.get("x-cron-secret") || "";
-  return auth === `Bearer ${secret}` || cronSecret === secret;
+async function authorizeImport(req: Request) {
+  if (isCronRequestAuthorized(req)) return null;
+  const { error } = await requireSuperAdmin();
+  return error;
 }
 
 function numberOption(value: unknown, fallback: number) {
@@ -43,18 +42,12 @@ async function parseOptions(req: Request): Promise<Required<ImportOptions>> {
 }
 
 async function handleImport(req: Request) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json({ error: "Unauthorized health intelligence import request." }, { status: 401 });
-  }
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) {
-    return NextResponse.json({ error: "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY." }, { status: 500 });
-  }
-  const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const authError = await authorizeImport(req);
+  if (authError) return authError;
+  const supabase = getSupabaseAdminClient();
   const options = await parseOptions(req);
   const summary = await importNycDohmhHealthData({ supabase, ...options });
-  return NextResponse.json(summary, { status: summary.success ? 200 : 500 });
+  return NextResponse.json({ ...summary, action: "health_intelligence_import" }, { status: summary.success ? 200 : 500 });
 }
 
 export async function GET(req: Request) { return handleImport(req); }

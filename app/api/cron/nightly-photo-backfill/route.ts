@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendCronImportSummaryEmail } from "@/lib/admin/nightlyImportEmail";
+import { requireCronRequest } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,13 +32,16 @@ function buildTotals(steps: Array<{ data?: any }>) {
 
 async function callInternal(request: NextRequest, path: string, body: Record<string, unknown>) {
   const baseUrl = getBaseUrl(request);
-  const secret = process.env.IMPORT_SECRET || process.env.CRON_SECRET || "";
+  const secret = process.env.IMPORT_SECRET || process.env.CRON_SECRET;
+  if (!secret) {
+    return { path, ok: false, status: 500, data: { success: false, action: "internal_import", error: "Internal import secret is not configured." } };
+  }
 
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(secret ? { "x-internal-import-secret": secret } : {}),
+      "x-internal-import-secret": secret,
       "x-skip-admin-import-email": "true",
       "x-cron-import-run": "true",
     },
@@ -72,12 +76,8 @@ async function callInternal(request: NextRequest, path: string, body: Record<str
 }
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (process.env.NODE_ENV !== "development" && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ success: false, error: "Unauthorized cron request." }, { status: 401 });
-  }
+  const authError = requireCronRequest(request);
+  if (authError) return authError;
 
   const cronName = "Nightly Automatic Imports";
   const startedAtMs = Date.now();
@@ -98,11 +98,12 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     success,
+    action: "nightly_photo_backfill",
     cronName,
     startedAt,
     finishedAt,
     durationMs,
-    totals,
+    counts: totals,
     steps,
     emailSent: emailResult.sent,
     emailProvider: emailResult.provider,

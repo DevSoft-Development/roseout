@@ -4,6 +4,7 @@ import { createClaimQr } from "@/lib/claimQrServer";
 import { syncActivityToLocation } from "@/lib/sync-location";
 import { extractReservationUrl } from "@/lib/reservation-links";
 import { inferMarketFromPlace, parseGoogleAddressComponents, validatePlaceForMarket } from "@/lib/location-market-validation";
+import { requireSuperAdmin } from "@/lib/admin-api-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,24 +128,25 @@ const SPECIALTY_QUERIES: Record<string, string[]> = {
   ],
 };
 
-function isAuthorized(request: NextRequest) {
+async function authorizeImport(request: NextRequest) {
   const importSecret = process.env.IMPORT_SECRET;
   const cronSecret = process.env.CRON_SECRET;
 
   const internalSecret = request.headers.get("x-internal-import-secret");
   const authorization = request.headers.get("authorization");
 
-  if (importSecret && internalSecret === importSecret) return true;
+  if (importSecret && internalSecret === importSecret) return null;
 
   if (
     cronSecret &&
     authorization?.toLowerCase().startsWith("bearer ") &&
     authorization.replace(/^Bearer\s+/i, "") === cronSecret
   ) {
-    return true;
+    return null;
   }
 
-  return false;
+  const { error } = await requireSuperAdmin();
+  return error;
 }
 
 function getGoogleKey() {
@@ -756,9 +758,8 @@ function getAreas(areaParam: string | null, customQuery: string | null) {
 
 export async function GET(request: NextRequest) {
   try {
-    if (!isAuthorized(request)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authError = await authorizeImport(request);
+    if (authError) return authError;
 
     const { searchParams } = new URL(request.url);
 

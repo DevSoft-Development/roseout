@@ -226,3 +226,15 @@ export async function requireAdminApiRole(allowedRoles: readonly AdminRole[]) {
     supabase,
   };
 }
+
+
+export async function requireSuperAdmin() {
+  return requireAdminApiRole(["superadmin"]);
+}
+
+export function safeAdminError(action = "admin_action", status = 500) {
+  return Response.json(
+    { success: false, action, error: "Request could not be completed." },
+    { status },
+  );
+}
