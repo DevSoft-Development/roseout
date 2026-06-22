@@ -38,6 +38,40 @@ function scoreRecord(record: any, terms: string[]) {
   }, 0);
 }
 
+function sameVenueScore(record: any, intent: CanonicalSearchIntent) {
+  if (!intent.normalizedIntent?.sameVenuePreferred) return 0;
+  const primaryTerms = [
+    ...(intent.normalizedIntent.restaurantTerms ?? []),
+    ...(intent.normalizedIntent.cuisineTerms ?? []),
+    ...(intent.normalizedIntent.mealTerms ?? []),
+  ].filter((term) => !(intent.normalizedIntent?.attributeTerms ?? []).includes(term));
+  const attributeTerms = intent.normalizedIntent.attributeTerms ?? [];
+  const nameText = [record.name, record.restaurant_name, record.activity_name].map((v) => String(v ?? "").toLowerCase()).join(" ");
+  const allText = [
+    nameText,
+    record.description,
+    record.short_description,
+    record.primary_category,
+    record.category,
+    record.subcategory,
+    record.cuisine,
+    record.cuisine_type,
+    record.location_type,
+    record.search_document,
+    record.semantic_search_text,
+    ...(Array.isArray(record.tags) ? record.tags : []),
+    ...(Array.isArray(record.vibe_tags) ? record.vibe_tags : []),
+    ...(Array.isArray(record.amenities) ? record.amenities : []),
+    ...(Array.isArray(record.search_keywords) ? record.search_keywords : []),
+    ...(Array.isArray(record.intent_tags) ? record.intent_tags : []),
+  ].map((v) => String(v ?? "").toLowerCase().replaceAll("_", " ")).join(" ");
+  const primaryMatch = primaryTerms.some((term) => allText.includes(String(term).replaceAll("_", " ")));
+  const secondaryMatch = attributeTerms.some((term) => allText.includes(String(term).replaceAll("_", " ")));
+  const namePrimary = primaryTerms.some((term) => nameText.includes(String(term).replaceAll("_", " ")));
+  const nameSecondary = attributeTerms.some((term) => nameText.includes(String(term).replaceAll("_", " ")));
+  return (primaryMatch && secondaryMatch ? 150 : 0) + (namePrimary && nameSecondary ? 150 : 0) + (primaryMatch ? 25 : 0) + (secondaryMatch ? 50 : 0);
+}
+
 
 function reviewKeywordScore(record: any, intent: CanonicalSearchIntent) {
   const query = [intent.rawQuery, intent.normalizedQuery, ...(intent.vibes ?? []), ...(intent.normalizedIntent?.vibeTerms ?? []), ...(intent.normalizedIntent?.activityTerms ?? []), ...(intent.normalizedIntent?.restaurantTerms ?? [])].join(" ").toLowerCase();
@@ -339,6 +373,8 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     bs -= chainRankPenalty(b, intent);
     as += reviewKeywordScore(a, intent);
     bs += reviewKeywordScore(b, intent);
+    as += sameVenueScore(a, intent);
+    bs += sameVenueScore(b, intent);
     const aHours = evaluateSoftHours(a, intent);
     const bHours = evaluateSoftHours(b, intent);
     as += aHours.boost;
