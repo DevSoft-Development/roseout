@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireSuperAdmin } from "@/lib/admin-api-auth";
 import { getLocationImage, firstImage } from "@/lib/locationImage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const { error: authError } = await requireSuperAdmin();
+  if (authError) return authError;
+
   const url = new URL(request.url);
   const q = url.searchParams.get("q") || "stk";
 
@@ -18,7 +22,7 @@ export async function GET(request: Request) {
     .limit(10);
 
   if (error) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, action: "photo_debug", error: "Photo diagnostics could not be loaded." }, { status: 500 });
   }
 
   return NextResponse.json({

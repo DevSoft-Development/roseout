@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminRole } from "@/lib/admin-auth";
-import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { requireSuperAdmin } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPhotoPublishabilityUpdates } from "@/lib/location-growth/repairPhotoPublishability";
 
@@ -10,7 +9,8 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ locationId: string }> },
 ) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const { error: authError } = await requireSuperAdmin();
+  if (authError) return authError;
 
   const { locationId } = await params;
 
@@ -21,11 +21,11 @@ export async function POST(
     .maybeSingle();
 
   if (fetchError) {
-    return NextResponse.json({ ok: false, error: fetchError.message }, { status: 500 });
+    return NextResponse.json({ success: false, action: "repair_publishability", error: "Location could not be loaded." }, { status: 500 });
   }
 
   if (!location) {
-    return NextResponse.json({ ok: false, error: "Location not found." }, { status: 404 });
+    return NextResponse.json({ success: false, action: "repair_publishability", error: "Location not found." }, { status: 404 });
   }
 
   const updates = getPhotoPublishabilityUpdates(location);
@@ -36,8 +36,8 @@ export async function POST(
     .eq("id", locationId);
 
   if (updateError) {
-    return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+    return NextResponse.json({ success: false, action: "repair_publishability", error: "Location could not be repaired." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, updates });
+  return NextResponse.json({ success: true, action: "repair_publishability", counts: { updated: Object.keys(updates).length }, updates });
 }

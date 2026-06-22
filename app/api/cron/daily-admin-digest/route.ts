@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
+import { requireCronRequest } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isCronAuthorized(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.NODE_ENV !== "production";
-  const auth = request.headers.get("authorization") || "";
-  return auth === `Bearer ${secret}` || request.nextUrl.searchParams.get("secret") === secret;
-}
 
 async function safeCount(table: string, apply: (query: any) => any = (query) => query) {
   const query = apply(supabaseAdmin.from(table).select("id", { count: "exact", head: true }));
@@ -27,9 +21,8 @@ async function safeRows(table: string, select: string, apply: (query: any) => an
 }
 
 export async function GET(request: NextRequest) {
-  if (!isCronAuthorized(request)) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = requireCronRequest(request);
+  if (authError) return authError;
 
   const to = process.env.ADMIN_DIGEST_EMAIL || process.env.THEOUTHAVEN_ADMIN_EMAIL || process.env.SUPERADMIN_EMAIL;
   if (!to || !process.env.RESEND_API_KEY) {
@@ -83,7 +76,7 @@ export async function GET(request: NextRequest) {
     body,
   });
 
-  return NextResponse.json({ success: result.status !== "error", email: result, summary: { zeroResults, missingPhotos, notSearchable, newLocations, publishReady } });
+  return NextResponse.json({ success: result.status !== "error", action: "daily_admin_digest", counts: { zeroResults, missingPhotos, notSearchable, newLocations, publishReady }, emailSent: result.status !== "error" });
 }
 
 export async function POST(request: NextRequest) {
