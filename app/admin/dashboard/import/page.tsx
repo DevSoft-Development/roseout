@@ -659,7 +659,6 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "osm", label: "OSM / Activities" },
   { id: "pictures", label: "Fix Pictures" },
   { id: "database", label: "Fix Database" },
-  { id: "dedupe", label: "Dedupe / Review" },
   { id: "publish", label: "Publish" },
   { id: "qr", label: "QR Codes" },
   { id: "history", label: "Import History" },
@@ -671,7 +670,6 @@ const validTabs: TabId[] = [
   "osm",
   "pictures",
   "database",
-  "dedupe",
   "publish",
   "qr",
   "history",
@@ -777,11 +775,8 @@ function ImportPageContent() {
       return;
     }
 
-    if (tab === "duplicates") {
-      setActiveTabState("dedupe");
-      setActionResult(null);
-      setProgress(0);
-      router.replace("/admin/dashboard/import?tab=dedupe", { scroll: false });
+    if (tab === "duplicates" || tab === "dedupe") {
+      router.replace("/admin/dashboard/locations/duplicates", { scroll: false });
     }
   }, [router, searchParams]);
 
@@ -1236,8 +1231,8 @@ function ImportPageContent() {
                   Import & Maintenance Center
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                  Part of Location Operations: manage Google imports, staged location growth, dedupe,
-                  enrichment, cleanup, publish, photo, QR, and history tools from one safe admin workspace.
+                  Part of Location Operations: manage Google imports, staged location growth, enrichment,
+                  cleanup, publish, photo, QR, and history tools from one safe admin workspace.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1442,32 +1437,6 @@ function ImportPageContent() {
           />
         ) : null}
 
-        {activeTab === "dedupe" ? (
-          <DedupePanel
-            summary={summary}
-            runningAction={runningAction}
-            progress={progress}
-            dedupeScope={dedupeScope}
-            setDedupeScope={setDedupeScope}
-            dedupeBatchId={dedupeBatchId}
-            setDedupeBatchId={setDedupeBatchId}
-            dedupeLimit={dedupeLimit}
-            setDedupeLimit={setDedupeLimit}
-            duplicateBatchId={duplicateBatchId}
-            setDuplicateBatchId={setDuplicateBatchId}
-            duplicates={duplicates}
-            onDedupe={() =>
-              postAction("dedupe", "/api/admin/location-growth/dedupe", {
-                all: dedupeScope !== "batch",
-                batchId: dedupeScope === "batch" ? dedupeBatchId || undefined : undefined,
-                limit: Math.min(Math.max(Number(dedupeLimit || 250), 1), 500),
-              })
-            }
-            onLoadDuplicates={() => loadDuplicates()}
-            onDecision={decideDuplicate}
-          />
-        ) : null}
-
         {activeTab === "publish" ? (
           <PublishPanel
             summary={summary}
@@ -1529,9 +1498,15 @@ function ImportPageContent() {
             stagingBatchId={stagingBatchId}
             onCopy={(batchId) => navigator.clipboard?.writeText(batchId)}
             onDedupe={(batchId) => {
-              setDedupeScope("batch");
-              setDedupeBatchId(batchId);
-              setActiveTab("dedupe");
+              setPublishScope("batch");
+              setPublishBatchId(batchId);
+              setActionResult({
+                success: true,
+                actionKey: "publish",
+                actionLabel: getActionLabel("publish"),
+                message: "Import Staging Dedupe remains internal. Use Publish after staged records are clean, or open Locations > Duplicate Review for live duplicates.",
+              });
+              setActiveTab("publish");
             }}
             onPublish={(batchId) => {
               setPublishScope("batch");
@@ -1539,7 +1514,17 @@ function ImportPageContent() {
               setActiveTab("publish");
             }}
             onViewStaged={loadStagedRecords}
-            onViewDuplicates={(batchId) => loadDuplicates(batchId)}
+            onViewDuplicates={(batchId) => {
+              setPublishScope("batch");
+              setPublishBatchId(batchId);
+              setActionResult({
+                success: true,
+                actionKey: "publish",
+                actionLabel: getActionLabel("publish"),
+                message: "Duplicate Review has moved to Locations > Duplicate Review for live records. Import Staging Dedupe remains an internal publish safeguard.",
+              });
+              setActiveTab("publish");
+            }}
           />
         ) : null}
 
