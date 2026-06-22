@@ -623,6 +623,12 @@ export default async function AdminLocationsPage({
       accent: "amber",
     },
     {
+      title: "Duplicate Review",
+      body: "Review live duplicate location pairs and safely merge/hide duplicate public rows.",
+      href: "/admin/dashboard/locations/duplicates",
+      accent: "rose",
+    },
+    {
       title: "Data Quality",
       body: "Review data quality issues and cleanup opportunities.",
       href: "/admin/dashboard/data-quality",
@@ -656,6 +662,7 @@ export default async function AdminLocationsPage({
               <AdminActionButton href="/admin/dashboard/locations/import" variant="primary">Import / Maintenance</AdminActionButton>
               <AdminActionButton href="/admin/dashboard/crm">Open CRM</AdminActionButton>
               <AdminActionButton href="/admin/dashboard/locations/non-searchable">Review Non-Searchable</AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/locations/duplicates">Duplicate Review</AdminActionButton>
               <AdminActionButton href="/admin/dashboard/locations/google-enrichment" variant="ghost">Google Enrichment</AdminActionButton>
             </>
           }
@@ -689,6 +696,7 @@ export default async function AdminLocationsPage({
               <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Run the existing maintenance workflows from the locations section while keeping the original import center route available.</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <AdminActionButton href="/admin/dashboard/locations/duplicates" variant="ghost">Duplicate Review</AdminActionButton>
               <AdminActionButton href="/admin/dashboard/claim-qrs" variant="ghost">Print Claim QRs</AdminActionButton>
               <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review: "low-level-hidden", page: 1, pageSize })} variant="ghost">Low-Level Hidden</AdminActionButton>
               <AdminActionButton href={buildQueryUrl({ q, type, status, claim, review: "nyc-unverified", page: 1, pageSize })} variant="ghost">NYC Unverified</AdminActionButton>

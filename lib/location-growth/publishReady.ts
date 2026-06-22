@@ -106,6 +106,37 @@ function toLocationInsert(row: StagingRow) {
   return { ...base, ...update, data_status: update.is_searchable ? "clean" : base.data_status };
 }
 
+async function findExistingLiveDuplicate(row: StagingRow) {
+  const filters: string[] = [];
+  if (row.location_key) filters.push(`location_key.eq.${row.location_key}`);
+  if (row.normalized_name && row.normalized_address) {
+    filters.push(`and(normalized_name.eq.${row.normalized_name},normalized_address.eq.${row.normalized_address},city.eq.${row.city},state.eq.${row.state})`);
+  }
+  if (row.source_id) filters.push(`google_place_id.eq.${row.source_id}`);
+  if (row.normalized_phone) filters.push(`normalized_phone.eq.${row.normalized_phone}`);
+  if (!filters.length) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .select("id,normalized_name,normalized_phone,location_key,google_place_id,duplicate_status")
+    .or(filters.join(","))
+    .neq("duplicate_status", "duplicate")
+    .limit(10);
+  if (error) throw new Error(`Publish final duplicate guard lookup failed: ${error.message}`);
+
+  return (data || []).find((candidate: any) => {
+    if (row.location_key && row.location_key === candidate.location_key) return true;
+    if (row.source_id && row.source_id === candidate.google_place_id) return true;
+    if (row.normalized_phone && row.normalized_phone === candidate.normalized_phone) {
+      const stagedTokens = new Set(String(row.normalized_name || "").split(/\s+/).filter(Boolean));
+      const candidateTokens = new Set(String(candidate.normalized_name || "").split(/\s+/).filter(Boolean));
+      const overlap = [...stagedTokens].filter((token) => candidateTokens.has(token)).length;
+      return overlap / Math.max(stagedTokens.size || 1, candidateTokens.size || 1) >= 0.72;
+    }
+    return true;
+  }) || null;
+}
+
 export async function publishReadyStagedLocations({
   limit,
   batchId,
@@ -173,9 +204,22 @@ export async function publishReadyStagedLocations({
     }
   }
 
-  const newRows = rows.filter(
-    (row) => !existingKeys.has(`${row.source}::${row.source_id}`),
-  );
+  const newRows = [];
+  for (const row of rows) {
+    if (existingKeys.has(`${row.source}::${row.source_id}`)) continue;
+    const duplicate = await findExistingLiveDuplicate(row);
+    if (duplicate) {
+      await supabaseAdmin.from("location_import_staging").update({
+        duplicate_status: "duplicate",
+        import_status: "duplicate",
+        matched_location_id: duplicate.id,
+        rejection_reason: "duplicate_existing_location_final_guard",
+        updated_at: new Date().toISOString(),
+      }).eq("id", row.id);
+      continue;
+    }
+    newRows.push(row);
+  }
   const insertRows = newRows.map(toLocationInsert);
   let inserted = 0;
 

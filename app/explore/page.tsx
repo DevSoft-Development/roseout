@@ -39,11 +39,12 @@ async function loadExploreData() {
   const { data, error } = await supabaseAdmin
     .from("locations")
     .select(
-      "id,source_table,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,primary_category,cuisine,cuisine_type,activity_type,tags,vibe_tags,best_for_tags,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,is_featured,created_at,is_searchable,is_hidden,data_status,quality_status,duplicate_status,has_photos,photo_status,is_low_level,public_visibility_tier,curation_tier,source_quality_status,import_confidence",
+      "id,source_table,location_type,name,restaurant_name,activity_name,main_image,image_url,images,city,borough,neighborhood,primary_category,cuisine,cuisine_type,activity_type,tags,vibe_tags,best_for_tags,search_document,description,reservation_url,reservation_link,external_reservation_url,website,rating,review_count,theouthaven_score,is_featured,created_at,is_searchable,is_hidden,data_status,quality_status,duplicate_status,duplicate_of,deleted_at,has_photos,photo_status,is_low_level,public_visibility_tier,curation_tier,source_quality_status,import_confidence",
     )
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .is("duplicate_of", null)
     .eq("has_photos", true)
     .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
@@ -52,6 +53,7 @@ async function loadExploreData() {
     .not("primary_category", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
+    .is("deleted_at", null)
     .or("is_low_level.is.null,is_low_level.eq.false")
     .not("public_visibility_tier", "in", '("low_level","hidden")')
     .not("curation_tier", "eq", "low_level")

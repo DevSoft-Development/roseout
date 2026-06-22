@@ -37,6 +37,8 @@ const CARD_FIELDS = [
   "is_searchable",
   "quality_status",
   "duplicate_status",
+  "duplicate_of",
+  "deleted_at",
   "has_photos",
   "photo_status",
   "is_hidden",
@@ -64,6 +66,7 @@ export async function GET(request: NextRequest) {
     .eq("is_searchable", true)
     .eq("quality_status", "publish_ready")
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .is("duplicate_of", null)
     .eq("has_photos", true)
     .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
@@ -72,6 +75,7 @@ export async function GET(request: NextRequest) {
     .not("primary_category", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
+    .is("deleted_at", null)
     .not("status", "in", '("closed","archived")')
     .or("is_low_level.is.null,is_low_level.eq.false")
     .not("public_visibility_tier", "in", '("low_level","hidden")')

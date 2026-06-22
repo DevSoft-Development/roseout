@@ -27,10 +27,10 @@ const openai = new OpenAI({
 const AI_MODEL = "gpt-4o-mini";
 
 const RESTAURANT_SEARCH_COLUMNS =
-  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at, quality_status, duplicate_status, has_photos, photo_status, is_low_level, low_level_reason, low_level_detected_at, low_level_source, public_visibility_tier, import_confidence, source_quality_status, curation_tier, main_image, image_url, source, source_table, import_source";
+  "id, name, restaurant_name, location_type, primary_category, cuisine, cuisine_type, food_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at, quality_status, duplicate_status, duplicate_of, deleted_at, has_photos, photo_status, is_low_level, low_level_reason, low_level_detected_at, low_level_source, public_visibility_tier, import_confidence, source_quality_status, curation_tier, main_image, image_url, source, source_table, import_source";
 
 const ACTIVITY_SEARCH_COLUMNS =
-  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at, quality_status, duplicate_status, has_photos, photo_status, is_low_level, low_level_reason, low_level_detected_at, low_level_source, public_visibility_tier, import_confidence, source_quality_status, curation_tier, main_image, image_url, source, source_table, import_source";
+  "id, name, activity_name, location_type, primary_category, activity_type, address, city, state, zip_code, neighborhood, latitude, longitude, description, price_range, rating, review_count, main_image, image_url, images, phone, website, instagram_url, external_reservation_url, reservation_url, reservation_link, google_maps_url, google_types, tags, vibe_tags, best_for_tags, primary_tag, best_for, search_keywords, review_keywords, quality_score, popularity_score, trend_score, conversion_score, review_score, theouthaven_score, roseout_score, ranking_badge, is_searchable, data_status, missing_fields, is_hidden, status, reservation_enabled, operating_hours, special_hours, holiday_closures, is_claimed, is_verified, is_featured, last_quality_check_at, quality_status, duplicate_status, duplicate_of, deleted_at, has_photos, photo_status, is_low_level, low_level_reason, low_level_detected_at, low_level_source, public_visibility_tier, import_confidence, source_quality_status, curation_tier, main_image, image_url, source, source_table, import_source";
 
 const CACHE_HOURS = 6;
 
@@ -1701,9 +1701,11 @@ export async function POST(req: Request) {
       .eq("data_status", "clean")
       .eq("quality_status", "publish_ready")
       .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .is("duplicate_of", null)
       .eq("has_photos", true)
       .not("photo_status", "eq", "missing_photo")
       .not("is_hidden", "is", true)
+    .is("deleted_at", null)
       .not("status", "in", '("closed","archived")');
 
     if (locationsError) {
