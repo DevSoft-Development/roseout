@@ -1,4 +1,4 @@
-import Link from "next/link";import SearchLimitsClient from "./SearchLimitsClient";import { supabaseAdmin } from "@/lib/supabaseAdmin";import { DEFAULT_SEARCH_LIMITS } from "@/lib/search-usage-limits";
+import Link from "next/link";import SearchLimitsClient from "./SearchLimitsClient";import SearchMaintenanceClient from "./SearchMaintenanceClient";import { supabaseAdmin } from "@/lib/supabaseAdmin";import { DEFAULT_SEARCH_LIMITS } from "@/lib/search-usage-limits";
 export default async function AdminSettingsPage() {let data:any=null; try { const result=await supabaseAdmin.from('app_settings').select('value').eq('key','search_usage_limits').maybeSingle(); data=result.data; } catch {}return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
@@ -6,7 +6,7 @@ export default async function AdminSettingsPage() {let data:any=null; try { cons
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Link href="/admin/dashboard/settings/promo-codes" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40"><h2 className="text-xl font-bold text-rose-100">Promo Codes</h2><p className="mt-2 text-sm text-white/70">Create and manage promo codes and view redemptions.</p></Link>
           <Link href="/admin/dashboard/launch-checklist" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 transition-all hover:border-rose-300/40 hover:shadow-[0_10px_28px_rgba(120,35,60,0.28)]"><h2 className="text-xl font-bold text-rose-100">Launch Checklist</h2><p className="mt-2 text-sm text-white/70">Monitor production readiness, payments, SEO, communication systems, reservations, and launch status.</p></Link>
-          <div className="md:col-span-2"><SearchLimitsClient initial={{...DEFAULT_SEARCH_LIMITS,...(data?.value||{})}}/></div>
+          <div className="md:col-span-2"><SearchMaintenanceClient/></div><div className="md:col-span-2"><SearchLimitsClient initial={{...DEFAULT_SEARCH_LIMITS,...(data?.value||{})}}/></div>
         </div>
       </div>
     </main>)}

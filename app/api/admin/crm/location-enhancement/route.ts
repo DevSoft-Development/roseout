@@ -14,6 +14,7 @@ import {
   type EnhancementFormState,
   type LocationTableName,
 } from "@/lib/listing-enhancement";
+import { profileUpdateWithSearchDocument } from "@/lib/location-profile-fields";
 
 type RequestBody = { table?: unknown; id?: unknown; updates?: unknown };
 
@@ -62,7 +63,10 @@ export async function PATCH(request: NextRequest) {
   updates.updated_at = new Date().toISOString();
 
   const supabaseAdmin = getSupabaseAdminClient();
-  const { data, error } = await supabaseAdmin.from(table).update(updates).eq("id", id).select("*").maybeSingle();
+  const existing = await supabaseAdmin.from(table).select("*").eq("id", id).maybeSingle();
+  if (existing.error) return NextResponse.json({ success: false, error: existing.error.message }, { status: 500 });
+  const updatesWithSearchDocument = profileUpdateWithSearchDocument((existing.data || {}) as Record<string, unknown>, updates);
+  const { data, error } = await supabaseAdmin.from(table).update(updatesWithSearchDocument).eq("id", id).select("*").maybeSingle();
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   return NextResponse.json({ success: true, data });
 }

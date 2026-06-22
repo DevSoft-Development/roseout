@@ -13,6 +13,7 @@ import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
 import { formatFullAddress } from "@/lib/address-utils";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
+import LocationProfileEditor from "@/components/admin/LocationProfileEditor";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
@@ -817,6 +818,17 @@ export default function EditLocationPage() {
             {message}
           </div>
         )}
+
+
+        <LocationProfileEditor
+          table="locations"
+          id={effectiveId || locationId}
+          type={table}
+          record={form as Record<string, unknown>}
+          canEdit={!saving && !optimizing}
+          canViewAdvancedSystemData={false}
+          saveMode="owner"
+        />
 
         <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_340px]">
           <aside className="xl:sticky xl:top-[152px] xl:self-start">

@@ -251,7 +251,7 @@ export const FOOD_WITH_TERMS = [
   "seafood", "steak", "steakhouse", "brunch", "breakfast", "lunch", "dinner",
   "dessert", "pastries", "coffee", "vegan", "vegetarian", "halal", "jamaican",
   "caribbean", "thai", "italian", "mexican", "soul food", "bbq", "bar food",
-  "small bites", "food",
+  "small bites", "food", "mediterranean", "bottomless mimosas",
 ];
 
 export const VENUE_WITH_TERMS = [
@@ -266,7 +266,7 @@ export const SINGLE_VENUE_FEATURE_TERMS = [
   "drinks", "cocktails", "beer", "wine", "happy hour", "outdoor seating", "patio",
   "rooftop", "views", "hookah", "live music", "dj", "dancing", "karaoke",
   "games", "arcade", "pool", "billiards", "sports", "tv", "game watch",
-  "dessert", "coffee", "pastries", "small bites",
+  "dessert", "coffee", "pastries", "small bites", "bottomless mimosas", "rooftop views", "food",
 ];
 
 export const TRUE_SEQUENCE_CONNECTORS = [
@@ -289,13 +289,13 @@ export function uniqueIntentTerms(items: string[]) {
 
 export function hasTrueSequenceConnector(q: string): boolean {
   const text = String(q || "").toLowerCase();
-  return /\b(then|after|afterwards|before|later)\b/.test(text)
+  return /\b(then|after|afterwards|afterward|followed by|next|second stop|first|before|later)\b/.test(text)
     || /\b(things to do after|activity after|drinks after|bar after|lounge after|hookah after|show after)\b/.test(text);
 }
 
 export function hasSingleVenueWithConnector(q: string): boolean {
   const text = String(q || "").toLowerCase();
-  return /\b(with|serving|that serves|that has|has|have|featuring|including)\b/.test(text);
+  return /\b(with|has|have|that has|that have|serving|serves|offering|offers|featuring|features|including|includes)\b/.test(text);
 }
 
 export function expandVenueTerms(terms: string[]) {
@@ -379,8 +379,13 @@ export function detectSingleVenueWithIntent(q: string): SingleVenueWithIntent {
     return { matched: false, venueTerms: [], foodTerms: [], featureTerms: [], activityLikeFeatureTerms: [], geoText: null };
   }
   const terms = extractSingleVenueWithTerms(text);
-  const hasRestaurantStyleVenue = terms.venueTerms.some((term) => /restaurant|spot|place|cafe|coffee shop|bakery|diner|steakhouse/.test(term));
-  const matched = terms.venueTerms.length > 0 && (terms.foodTerms.length > 0 || (hasRestaurantStyleVenue && terms.featureTerms.length > 0));
+  const hasRestaurantStyleVenue = terms.venueTerms.some((term) => /restaurant|spot|place|cafe|coffee shop|bakery|diner|steakhouse|bar|lounge|rooftop/.test(term));
+  const hasValidPair =
+    (terms.venueTerms.length > 0 && terms.featureTerms.length > 0) ||
+    (terms.venueTerms.length > 0 && terms.foodTerms.length > 0) ||
+    (terms.foodTerms.length > 0 && terms.featureTerms.length > 0) ||
+    (hasRestaurantStyleVenue && terms.featureTerms.length > 0);
+  const matched = hasValidPair;
   return {
     matched,
     ...terms,
