@@ -1,53 +1,44 @@
 
-## Dependency Security Follow-up After Phase 2
+## Phase 2 — Build, Typecheck, Lint, Dependency Fixes
 
 Date: 2026-06-22
 
-### Starting audit count
+### Files changed
 
-- The supplied Phase 2 baseline was 13 vulnerabilities, including 5 high-severity vulnerabilities.
-- In this environment, `npm audit --audit-level=high` could not independently confirm the count because the npm registry audit endpoint returned `403 Forbidden`.
+- `docs/production-hardening-report.md` — created this Phase 2 repair report and recorded verification results.
+
+### Errors fixed
+
+- No build, TypeScript, or ESLint errors were present during the required baseline run.
+- No dependency updates were applied because `npm audit --audit-level=high` could not complete: the npm audit endpoint returned `403 Forbidden`.
+- Existing ESLint warnings remain warnings only and do not block `npm run lint`; broad lint cleanup was intentionally deferred because this phase is strict repair mode and the required commands already pass.
 
 ### Commands run
 
-- `npm audit --audit-level=high` — failed before producing an audit report because `POST https://registry.npmjs.org/-/npm/v1/security/advisories/bulk` returned `403 Forbidden`.
-- `npm audit fix` — attempted the safe automatic repair path and did not use `--force`; it failed for the same audit endpoint `403 Forbidden` response before applying a package update.
-- `npm ls next postcss axios form-data @babel/core playwright @playwright/test resend svix uuid qs js-yaml brace-expansion` — completed successfully and was used to inspect the installed dependency tree.
-- `npm view next@16 version && npm view next@16.2.9 version && npm view @playwright/test version && npm view playwright version && npm view axios version && npm view resend version && npm view eslint-config-next@16 version` — failed with `403 Forbidden` from `GET https://registry.npmjs.org/next`, so live package metadata could not be verified from npm.
-- `npm run typecheck` — completed successfully after the documentation update.
-- `npm run lint` — completed successfully after the documentation update, with existing warnings only.
-- `npm run build` — completed successfully after the documentation update.
+- `cat AGENTS.md && [ -f docs/production-hardening-audit.md ] && sed -n '1,240p' docs/production-hardening-audit.md || true && cat package.json`
+- `find node_modules/next/dist/docs -maxdepth 2 -type f | head -40 && npm run typecheck`
+- `sed -n '1,200p' node_modules/next/dist/docs/01-app/index.md`
+- `npm run lint`
+- `npm run build`
+- `npm audit --audit-level=high`
 
-### Packages updated
+### Commands passed
 
-- No package versions were updated in this pass because both `npm audit fix` and npm package metadata access were blocked by registry `403 Forbidden` responses.
-- The lockfile was left unchanged to preserve package manager lockfile integrity because the failed audit repair did not produce a meaningful dependency security update.
+- `npm run typecheck` — passed.
+- `npm run lint` — passed with 1,839 warnings and 0 errors.
+- `npm run build` — passed; Next.js 16.2.4 production build completed successfully.
 
-### Vulnerabilities fixed
+### Commands failed
 
-- None could be confirmed as fixed in this environment.
-- Safe automatic remediation was attempted, but npm could not fetch audit advisories.
+- `npm audit --audit-level=high` — failed because the npm registry audit endpoint returned `403 Forbidden - POST https://registry.npmjs.org/-/npm/v1/security/advisories/bulk`.
 
-### Remaining vulnerabilities
+### Remaining dependency risks
 
-- The supplied baseline of 13 vulnerabilities, including 5 high-severity vulnerabilities, should be treated as unresolved until `npm audit --audit-level=high` can run successfully in an environment with npm audit access.
-- The inspected dependency tree includes `next@16.2.4`, `postcss@8.4.31` under Next.js, root `postcss@8.5.15`, `@playwright/test@1.51.1`, `playwright@1.51.1`, `resend@6.12.2`, `svix@1.90.0`, `uuid@10.0.0`, `axios@1.15.2`, `form-data@4.0.5`, `qs@6.15.1`, `@babel/core@7.29.0`, `js-yaml@4.1.1`, and `brace-expansion@1.1.14` / `5.0.5`.
+- Dependency vulnerability status remains unknown until `npm audit --audit-level=high` can run successfully in an environment with audit endpoint access.
+- No `npm audit fix` or dependency upgrade was attempted because npm did not return actionable advisory data.
 
-### Next.js controlled-upgrade status
+### Remaining known risks
 
-- `next` is currently pinned to `16.2.4` in `package.json`, with matching `eslint-config-next@16.2.4`.
-- The requested unsafe path, `npm audit fix --force`, was not run.
-- Because npm metadata access failed, this pass could not verify whether a patched same-major Next.js release such as `16.2.9` is available and compatible through the package registry.
-- If the remaining audit finding is only fixed by moving from `next@16.2.4` to a same-major patch release, that should be handled as a controlled Next.js patch upgrade with matching `eslint-config-next`, a clean lockfile update, and full `typecheck`, `lint`, and `build` verification.
-
-### Build, type, and lint results
-
-- `npm run typecheck` passed.
-- `npm run lint` passed with existing warnings.
-- `npm run build` passed.
-
-### Remaining launch blockers
-
-- A successful `npm audit --audit-level=high` remains a launch blocker because the current environment returned `403 Forbidden` before producing an authoritative advisory report.
-- Remaining high-severity dependency findings from the supplied baseline remain unresolved until npm audit access is restored or a trusted advisory report is produced elsewhere.
-- Any Next.js/PostCSS finding that requires a Next.js patch should be handled as a separate controlled upgrade, not with `npm audit fix --force`.
+- Lint still reports 1,839 warnings, primarily `@typescript-eslint/no-explicit-any`, React hook purity/effect warnings, and unused variables. These are non-blocking today but should be reduced in a dedicated cleanup phase.
+- The Phase 1 production hardening audit findings remain open, including admin/debug/cron route hardening, service-role route review, Supabase schema/RLS verification, and live/preview E2E coverage.
+- `npm audit --audit-level=high` remains a release blocker until it completes successfully or an approved alternative vulnerability scan is documented.
