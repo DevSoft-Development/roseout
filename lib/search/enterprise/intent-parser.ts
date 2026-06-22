@@ -490,8 +490,12 @@ function hasGenericDateNightActivitySignal(query: string) {
 
 function hasExplicitMixedOutingIntent(query: string) {
   const q = String(query || "").toLowerCase();
+  const singleVenueWith = detectSingleVenueWithIntent(q);
+  if (singleVenueWith.matched) return false;
   if (connectorIsRestaurantFeature(q)) return false;
-  const hasConnector = /\b(and|with|after|afterward|afterwards|followed by|before|then|nearby|walkable|close by|walking distance|walk apart|close together)\b/.test(q);
+  const withoutNearMe = q.replace(/\bnear me\b/g, "");
+  const hasSequenceOrProximity = /\b(after|afterward|afterwards|followed by|before|then|next|later|second stop|first|near a|near an|near the|nearby a|close to|walking distance to|within walking distance of|around the corner from|next to)\b/.test(withoutNearMe);
+  const hasConnector = hasSequenceOrProximity || /\band\b/.test(withoutNearMe);
   return hasConnector && hasMealOrRestaurantTerm(q) && hasActivityVenueOrActivityTerm(q);
 }
 
@@ -1060,6 +1064,15 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
+  const singleVenueWith = detectSingleVenueWithIntent(query);
+  if (singleVenueWith.matched) {
+    return {
+      intent: deterministicIntentFromQuery(rawQuery),
+      reason: "with_connector_single_venue",
+      confidence: 0.94,
+    };
+  }
+
   if (hasExplicitMixedOutingIntent(query)) {
     return {
       intent: createExplicitMixedFastPathIntent(rawQuery),
@@ -1125,15 +1138,6 @@ function createEnterpriseIntentFastPathResult(
       intent: createRestaurantOnlyFastPathIntent(rawQuery),
       reason: "matched restaurant-only fast path",
       confidence: 0.9,
-    };
-  }
-
-  const singleVenueWith = detectSingleVenueWithIntent(query);
-  if (singleVenueWith.matched) {
-    return {
-      intent: deterministicIntentFromQuery(rawQuery),
-      reason: "with_connector_single_venue",
-      confidence: 0.94,
     };
   }
 

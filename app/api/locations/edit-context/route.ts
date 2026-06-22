@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createAuthClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { profileUpdateWithSearchDocument } from "@/lib/location-profile-fields";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +115,9 @@ const CANONICAL_LOCATION_EDIT_COLUMNS = new Set([
   "external_reservation_url",
   "operating_hours",
   "special_hours",
+  "semantic_tags",
+  "best_for_tags",
+  "best_for",
   "holiday_closures",
   "reservation_phone",
   "booking_url",
@@ -233,6 +237,9 @@ const PROFILE_SOURCE_FIELDS = [
   "booking_url",
   "operating_hours",
   "special_hours",
+  "semantic_tags",
+  "best_for_tags",
+  "best_for",
   "main_image",
   "image_url",
   "images",
@@ -314,8 +321,16 @@ export async function GET(req: Request) {
       );
     }
 
+    const responseLocation = { ...(data as Record<string, unknown>) };
+    if (!auth.access.isAdmin) {
+      delete responseLocation.review_keywords;
+      delete responseLocation.search_document;
+      delete responseLocation.semantic_search_text;
+      delete responseLocation.special_hours;
+    }
+
     return NextResponse.json({
-      location: data,
+      location: responseLocation,
       effectiveId: String((data as Record<string, unknown>).source_id || finalId),
       canonicalId: (data as Record<string, unknown>).id || null,
       isImpersonating: Boolean(isLocationImpersonation),
@@ -385,11 +400,21 @@ export async function PATCH(req: Request) {
       );
     }
 
+    if (!auth.access.isAdmin) {
+      delete locationPayload.review_keywords;
+      delete locationPayload.search_document;
+      delete locationPayload.semantic_search_text;
+      delete locationPayload.special_hours;
+    }
+
     withManualProfileSource(locationPayload, existingLocation.data as Record<string, unknown>, auth.access.isAdmin);
+
+    const fullExistingLocation = await supabase.from("locations").select("*").eq("id", existingLocation.data.id).maybeSingle();
+    const payloadWithSearchDocument = profileUpdateWithSearchDocument((fullExistingLocation.data || existingLocation.data) as Record<string, unknown>, locationPayload);
 
     const { error } = await supabase
       .from("locations")
-      .update(locationPayload)
+      .update(payloadWithSearchDocument)
       .eq("id", existingLocation.data.id);
 
     if (error) {
