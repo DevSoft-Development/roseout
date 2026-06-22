@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "crypto";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { createUserPasswordInvite } from "@/lib/admin/createUserPasswordInvite";
+import { assignWeeklyBetaTasksForTester, createInviteCode } from "@/lib/beta/weeklyTasks";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { buildSiteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -110,16 +112,16 @@ async function sendVerificationEmail(params: { email: string; fullName: string; 
   await sendRawBrandedEmail({
     to: params.email,
     department: "account",
-    subject: "Verify your email for TheOutHaven Launch Giveaway",
+    subject: "Verify your email for TheOutHaven Beta Tester Program",
     heading: "Verify your email",
-    preview: "You're almost entered. Verify your email for TheOutHaven Launch Giveaway.",
+    preview: "You're almost entered. Verify your email for TheOutHaven Beta Tester Program.",
     sections: [
       { type: "paragraph", text: `Hi ${firstName},` },
       { type: "paragraph", text: "You're almost entered." },
-      { type: "paragraph", text: "Thanks for joining TheOutHaven Launch List. Please verify your email to complete your entry for a chance to win a $100 gift card." },
+      { type: "paragraph", text: "Thanks for joining TheOutHaven Beta Tester Program. Please verify your email to keep your beta tester profile and $100 Beta Tester Reward eligibility up to date." },
       { type: "paragraph", text: "Tap the button below to verify your email." },
       { type: "paragraph", text: "This verification link expires in 24 hours." },
-      { type: "paragraph", text: "After verifying, make sure you follow @TheOutHaven on Instagram or TikTok and tag 2 friends in the giveaway post comments." },
+      { type: "paragraph", text: "After verifying, complete your weekly beta tasks and keep your social follow and tagged friends requirements ready for admin verification." },
     ],
     cta: { label: "Verify Email", url },
   });
@@ -156,25 +158,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Please enter a valid email address." }, { status: 400 });
   }
   if (!marketingConsent) {
-    return NextResponse.json({ success: false, message: "Please agree to the launch list and giveaway terms to continue." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please agree to TheOutHaven Beta Tester Program terms to continue." }, { status: 400 });
   }
   if (wantsGiveaway && !socialHandle) {
-    return NextResponse.json({ success: false, message: "Please enter your Instagram or TikTok handle to join the giveaway." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please enter your Instagram or TikTok handle for Beta Tester Reward verification." }, { status: 400 });
   }
   if (wantsGiveaway && !socialPlatform) {
     return NextResponse.json({ success: false, message: "Please choose Instagram or TikTok." }, { status: 400 });
   }
   if (wantsGiveaway && !followedSocial) {
-    return NextResponse.json({ success: false, message: "Please confirm you followed @TheOutHaven to enter the giveaway." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please confirm you followed @TheOutHaven. Admins will verify this for reward eligibility." }, { status: 400 });
   }
   if (wantsGiveaway && !taggedTwoFriends) {
-    return NextResponse.json({ success: false, message: "Please confirm you tagged 2 friends to enter the giveaway." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please confirm you tagged 2 friends. Admins will verify this for reward eligibility." }, { status: 400 });
   }
   if (wantsGiveaway && !age18Confirmed) {
-    return NextResponse.json({ success: false, message: "Please confirm you are 18+ to enter the giveaway." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please confirm you are 18+ to join the Beta Tester Program reward eligibility flow." }, { status: 400 });
   }
   if (wantsGiveaway && !giveawayRulesAgreed) {
-    return NextResponse.json({ success: false, message: "Please agree to the giveaway rules to enter the giveaway." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Please agree to the $100 Beta Tester Reward rules." }, { status: 400 });
   }
 
   let turnstileVerified = !isTurnstileEnabled();
@@ -314,15 +316,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Something went wrong. Please try again." }, { status: 500 });
   }
 
+  let inviteFailed = false;
   if (betaInterest) {
-    const betaRecord = { name: fullName, email, phone: phone || null, city: usuallyGoOutArea || null, tester_type: testerType, status: "new", notes: notes || null, turnstile_verified: turnstileVerified, turnstile_action: "launch_waitlist", turnstile_hostname: turnstileHostname };
+    const autoApprovalValid = Boolean(fullName && email && age18Confirmed && giveawayRulesAgreed && turnstileVerified && !socialHandle.includes(" ") && followedSocial && taggedTwoFriends && socialHandle && socialPlatform);
+    const approvedAt = now.toISOString();
+    const betaRecord = { name: fullName, email, phone: phone || null, city: usuallyGoOutArea || null, tester_type: testerType, status: autoApprovalValid ? "approved" : "new", notes: notes || null, turnstile_verified: turnstileVerified, turnstile_action: "launch_waitlist", turnstile_hostname: turnstileHostname, reviewed_at: autoApprovalValid ? approvedAt : null };
     const { data: existingBetaApp } = await supabaseAdmin.from("beta_applications").select("id,status").eq("email", email).maybeSingle();
     const betaResult = existingBetaApp?.id
       ? await supabaseAdmin.from("beta_applications").update(betaRecord).eq("id", existingBetaApp.id).select("id,status").single()
       : await supabaseAdmin.from("beta_applications").insert(betaRecord).select("id,status").single();
     const betaApp = betaResult.data;
-    if (betaApp?.id) await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_id: betaApp.id, beta_application_status: betaApp.status }).eq("id", result.data.id);
-    await supabaseAdmin.from("admin_audit_logs").insert({ action: "beta_user_applied", entity_type: "beta_application", entity_id: betaApp?.id || null, target_email: email, summary: "Beta launch list application submitted", metadata: { testerType } });
+
+    let testerId: string | null = null;
+    let userId: string | null = null;
+    let inviteResult: Awaited<ReturnType<typeof createUserPasswordInvite>> | null = null;
+    if (autoApprovalValid && betaApp?.id) {
+      inviteResult = await createUserPasswordInvite({
+        email,
+        fullName,
+        role: "user",
+        phone: phone || null,
+        source: "beta_tester_program_signup",
+        betaTesterInvite: true,
+        programName: "TheOutHaven Beta Tester Program",
+        rewardName: "$100 Beta Tester Reward",
+        dashboardUrl: buildSiteUrl("/user/dashboard/beta"),
+      });
+      userId = inviteResult.user_id;
+      inviteFailed = Boolean(inviteResult.invite_error);
+
+      const testerRecord = { user_id: userId, application_id: betaApp.id, name: fullName, email, phone: phone || null, tester_type: testerType, status: "active", weekly_required_tests: 5, weekly_completed_tests: 0, current_week_start: null, approved_at: approvedAt, invite_code: createInviteCode() };
+      const { data: tester } = await supabaseAdmin.from("beta_testers").upsert(testerRecord, { onConflict: "email" }).select("id").single();
+      testerId = tester?.id || null;
+      if (testerId) await assignWeeklyBetaTasksForTester(testerId);
+
+      await supabaseAdmin.from("admin_audit_logs").insert([
+        { action: "beta_tester_auto_approved", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Beta tester auto-approved from public signup", metadata: { testerType, betaApplicationId: betaApp.id } },
+        { action: inviteFailed ? "beta_password_invite_failed" : "beta_password_invite_sent", entity_type: "user", entity_id: userId, target_email: email, summary: inviteFailed ? "Password setup invite failed after beta approval" : "Password setup invite sent after beta approval", metadata: { error: inviteResult.invite_error } },
+        { action: "beta_user_linked", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Beta tester linked to auth user", metadata: { userId } },
+        { action: "beta_tasks_assigned", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Weekly beta tasks assigned after approval", metadata: { required: 5 } },
+      ]);
+    }
+
+    if (betaApp?.id) await supabaseAdmin.from("launch_waitlist_signups").update({
+      beta_application_id: betaApp.id,
+      beta_application_status: betaApp.status,
+      beta_approved_at: autoApprovalValid ? approvedAt : null,
+      weekly_beta_tasks_required_for_giveaway: true,
+      weekly_task_eligibility_status: autoApprovalValid ? "pending_beta_tasks" : "not_beta_yet",
+      giveaway_status: autoApprovalValid ? (isAlreadyVerified ? "pending_beta_tasks" : "email_unverified") : giveawayStatus,
+      metadata: { route: "/api/launch/waitlist", beta_tester_id: testerId, user_id: userId, password_invite_error: inviteResult?.invite_error || null },
+    }).eq("id", result.data.id);
+    await supabaseAdmin.from("admin_audit_logs").insert({ action: "beta_user_applied", entity_type: "beta_application", entity_id: betaApp?.id || null, target_email: email, summary: autoApprovalValid ? "Beta Tester Program application approved" : "Beta Tester Program application submitted", metadata: { testerType } });
   }
   await supabaseAdmin.from("admin_audit_logs").insert({ action: "launch_list_signup_created", entity_type: "launch_waitlist_signup", entity_id: result.data.id, target_email: email, summary: existing ? "Launch list signup updated" : "Launch list signup created", metadata: { wantsGiveaway, betaInterest } });
 
@@ -339,7 +384,9 @@ export async function POST(request: Request) {
   return NextResponse.json({
     success: true,
     message: wantsGiveaway
-      ? "You’re on the Beta Launch List and your giveaway entry was received. Check your email to verify your entry."
-      : "You’re on the Beta Launch List. Check your email for updates.",
+      ? inviteFailed
+      ? "You’re approved for TheOutHaven’s Beta Tester Program, but we could not send the password email. Our team can resend it. Verify your email and complete your beta tester tasks to stay eligible for the $100 Beta Tester Reward."
+      : "You’re approved for TheOutHaven’s Beta Tester Program. Check your email to create your password and start your weekly beta tasks. Verify your email and complete your beta tester tasks to stay eligible for the $100 Beta Tester Reward."
+      : "You’re approved for TheOutHaven’s Beta Tester Program. Check your email for next steps.",
   });
 }

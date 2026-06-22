@@ -55,21 +55,21 @@ type Stats = {
 
 const filters = [
   ["all", "All"],
-  ["launch_list_only", "Launch List only"],
-  ["giveaway_entries", "Giveaway entries only"],
+  ["launch_list_only", "Program only"],
+  ["giveaway_entries", "Beta Reward entries"],
   ["email_unverified", "Email unverified"],
-  ["pending_verification", "Pending verification"],
-  ["verified", "Verified"],
+  ["pending_verification", "Pending Prize Requirements"],
+  ["verified", "Prize Qualified"],
   ["disqualified", "Disqualified"],
-  ["winner", "Winner"],
+  ["winner", "Reward Winner"],
   ["alternate", "Alternate"],
   ["missing_social_handle", "Missing social handle"],
   ["duplicate_flagged", "Duplicate flagged"],
   ["instagram", "Instagram"],
   ["tiktok", "TikTok"],
   ["both", "Both"],
-  ["followed_self_reported", "Followed self-reported"],
-  ["tagged_self_reported", "Tagged self-reported"],
+  ["followed_self_reported", "Social Follow self-reported"],
+  ["tagged_self_reported", "Tagged Friends self-reported"],
 ];
 
 const csvColumns = [
@@ -234,14 +234,14 @@ export default function GiveawayAdminClient({
   const statCards = useMemo(
     () => [
       ["Total signups", stats.total, "Filtered list"],
-      ["Launch List only", stats.launchListOnly, "No giveaway opt-in"],
+      ["Program only", stats.launchListOnly, "No giveaway opt-in"],
       ["Giveaway entries", stats.giveawayEntries, "Opted into giveaway"],
       ["Email unverified", stats.emailUnverified, "Needs email check"],
       ["Pending", stats.pendingVerification, "Awaiting admin review"],
-      ["Verified", stats.verifiedEntries, "Ready for drawing"],
+      ["Prize Qualified", stats.verifiedEntries, "Ready for drawing"],
       ["Missing social", stats.missingSocialHandle, "Needs handle"],
       ["Duplicate flags", stats.duplicateFlagged, "Needs review"],
-      ["Winners", stats.winnerSelected, "Selected entries"],
+      ["Reward Winners", stats.winnerSelected, "Selected entries"],
     ],
     [stats],
   );
@@ -411,7 +411,7 @@ export default function GiveawayAdminClient({
             onClick={() => patchEntry(entry, { giveaway_status: "winner" })}
             className={`${actionButtonClass} bg-amber-400 text-black`}
           >
-            Winner
+            Reward Winner
           </button>
         ) : null}
         <button
@@ -694,7 +694,7 @@ export default function GiveawayAdminClient({
                       Email: {formatDate(entry.email_verified_at)}
                     </p>
                     <p className="mt-1">
-                      Verified: {formatDate(entry.giveaway_verified_at)}
+                      Prize Qualified: {formatDate(entry.giveaway_verified_at)}
                     </p>
                     <p className="mt-1">
                       Consent: {formatDate(entry.marketing_consent_at)}
@@ -765,7 +765,7 @@ export default function GiveawayAdminClient({
               />
               <Field label="Created" value={formatDate(entry.created_at)} />
               <Field
-                label="Verified"
+                label="Prize Qualified"
                 value={formatDate(entry.giveaway_verified_at)}
               />
             </div>
@@ -777,7 +777,7 @@ export default function GiveawayAdminClient({
                 </span>
               </p>
               <p className="mt-1">
-                Followed social:{" "}
+                Social Follow:{" "}
                 <span className="font-black text-white">
                   {yesNo(entry.followed_social)}
                 </span>
