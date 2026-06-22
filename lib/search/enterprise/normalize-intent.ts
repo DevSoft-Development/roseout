@@ -13,6 +13,8 @@ import {
   detectActivityTerms,
   detectCuisineTerms,
   detectSingleVenueWithIntent,
+  hasTrueSequenceConnector,
+  hasTrueProximityPairingConnector,
   detectFoodTerms,
   detectMealTerms,
   expandActivitySynonyms,
@@ -989,7 +991,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     hasGenericActivitySignal(query) ||
     /\b(and|with|then|after|before|plus)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|bowling|karaoke|hookah|museum|arcade|drinks|cocktails|bar|lounge)\b/i.test(query);
   const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
-  if (singleVenueWithIntent && !hasMixedPairingLanguage) return singleVenueWithIntent;
+  if (singleVenueWithIntent && !hasTrueSequenceConnector(query) && !hasTrueProximityPairingConnector(query)) return singleVenueWithIntent;
 
   const food = detectFoodTerms(query);
   const cuisine = detectCuisineTerms(query);
@@ -1357,10 +1359,19 @@ export function normalizeIntent(
     hasGenericActivitySignal(query) ||
     /\b(and|with|then|after|before|plus)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|bowling|karaoke|hookah|museum|arcade|drinks|cocktails|bar|lounge)\b/i.test(query);
   const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
-  if (singleVenueWithIntent && !finalHasMixedPairingLanguage) {
-    return {
+  const sameVenuePreferred = Boolean(singleVenueWithIntent);
+  const sequenceDetected = hasTrueSequenceConnector(query);
+  const proximityDetected = hasTrueProximityPairingConnector(query);
+  if (singleVenueWithIntent && sameVenuePreferred && !sequenceDetected && !proximityDetected) {
+    const singleVenue = detectSingleVenueWithIntent(query);
+    const guarded = {
       ...finalIntent,
       ...singleVenueWithIntent,
+      searchType: "restaurant",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
       geo: finalIntent.geo?.raw ? finalIntent.geo : singleVenueWithIntent.geo,
       restaurantIntent: {
         ...singleVenueWithIntent.restaurantIntent,
@@ -1387,8 +1398,26 @@ export function normalizeIntent(
       },
       activityIntent: createEmptyActivityIntent(),
       pairingPreference: resetPairingPreference(),
-    };
+    } as SearchIntent;
+    (guarded as any).sameVenuePreferred = true;
+    (guarded as any).sequenceDetected = false;
+    (guarded as any).proximityDetected = false;
+    (guarded as any).sameVenueReason = "with_connector_same_location_attribute";
+    (guarded as any).coLocationTermsMatched = uniq([...singleVenue.venueTerms, ...singleVenue.foodTerms, ...singleVenue.featureTerms]);
+    (guarded as any).primaryTerms = uniq([...singleVenue.venueTerms, ...singleVenue.foodTerms]);
+    (guarded as any).secondaryAttributeTerms = singleVenue.featureTerms;
+    (guarded as any).parserPriorityApplied = true;
+    (guarded as any).parserPriorityReason = "same_venue_with_overrode_mixed_outing_without_sequence_or_proximity";
+    (guarded as any).wantsPairingBeforeSameVenueGuard = finalIntent.wantsPairing;
+    (guarded as any).wantsPairingAfterSameVenueGuard = false;
+    (guarded as any).needsActivityBeforeSameVenueGuard = finalIntent.needsActivity;
+    (guarded as any).needsActivityAfterSameVenueGuard = false;
+    return guarded;
   }
+  (finalIntent as any).sameVenuePreferred = sameVenuePreferred;
+  (finalIntent as any).sequenceDetected = sequenceDetected;
+  (finalIntent as any).proximityDetected = proximityDetected;
+  (finalIntent as any).parserPriorityApplied = false;
   return finalIntent;
 }
 

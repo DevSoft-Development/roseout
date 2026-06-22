@@ -828,6 +828,8 @@ export default function EditLocationPage() {
           canEdit={!saving && !optimizing}
           canViewAdvancedSystemData={false}
           saveMode="owner"
+          aiHelperEnabled={true}
+          aiHelperAccessLabel="Availability depends on Admin Settings."
         />
 
         <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_340px]">

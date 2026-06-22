@@ -1929,6 +1929,7 @@ export async function runEnterpriseSearch(
           )
         : undefined;
     const isActivityActivityPairSearch = effectiveIntent.searchType === "activity_pair";
+    const renderModeBeforeSameVenueGuard = effectiveIntent.wantsPairing ? "mixed_pairs" : null;
     const render_mode = requiredPairingSuppressedFallback
       ? "empty"
       : isActivityActivityPairSearch
@@ -2076,6 +2077,21 @@ export async function runEnterpriseSearch(
       wantsPairing: effectiveIntent.wantsPairing,
       needsRestaurant: effectiveIntent.needsRestaurant,
       needsActivity: effectiveIntent.needsActivity,
+      sameVenuePreferred: (effectiveIntent as any).sameVenuePreferred ?? false,
+      sequenceDetected: (effectiveIntent as any).sequenceDetected ?? false,
+      proximityDetected: (effectiveIntent as any).proximityDetected ?? false,
+      sameVenueReason: (effectiveIntent as any).sameVenueReason ?? null,
+      coLocationTermsMatched: (effectiveIntent as any).coLocationTermsMatched ?? [],
+      primaryTerms: (effectiveIntent as any).primaryTerms ?? [],
+      secondaryAttributeTerms: (effectiveIntent as any).secondaryAttributeTerms ?? [],
+      parserPriorityApplied: (effectiveIntent as any).parserPriorityApplied ?? false,
+      parserPriorityReason: (effectiveIntent as any).parserPriorityReason ?? null,
+      renderModeBeforeSameVenueGuard,
+      renderModeAfterSameVenueGuard: render_mode,
+      wantsPairingBeforeSameVenueGuard: (effectiveIntent as any).wantsPairingBeforeSameVenueGuard ?? effectiveIntent.wantsPairing,
+      wantsPairingAfterSameVenueGuard: effectiveIntent.wantsPairing,
+      needsActivityBeforeSameVenueGuard: (effectiveIntent as any).needsActivityBeforeSameVenueGuard ?? effectiveIntent.needsActivity,
+      needsActivityAfterSameVenueGuard: effectiveIntent.needsActivity,
       beta_assignment_id: options?.betaAssignmentId ?? null,
       beta_tester_id: options?.betaTesterId ?? null,
     };
