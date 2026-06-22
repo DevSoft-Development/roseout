@@ -32,6 +32,18 @@ const ACTIVITY_ALIAS_TERMS: Record<string, string[]> = {
   live_music: ["live music", "jazz", "music"],
   paint_and_sip: ["paint and sip", "sip and paint", "painting"],
 };
+const ATTRIBUTE_ALIAS_TERMS: Record<string, string[]> = {
+  hookah: ["hookah", "shisha", "hookah lounge", "lounge"],
+  live_music: ["live music", "music", "jazz", "dj", "live entertainment"],
+  rooftop_views: ["rooftop", "skyline", "views", "terrace"],
+  outdoor_seating: ["outdoor seating", "outdoor", "patio", "terrace"],
+  games: ["games", "arcade", "board games", "bowling", "pool", "darts"],
+  drinks: ["drinks", "cocktails", "bar", "lounge"],
+  food: ["food", "restaurant", "dinner", "menu"],
+  bottomless_mimosas: ["bottomless mimosas", "mimosas", "brunch", "bottomless"],
+  dancing: ["dancing", "dance"],
+  cafe: ["cafe", "coffee"],
+};
 const FOOD_ALIAS_TERMS: Record<string, string[]> = {
   steak: ["steak", "steakhouse", "steak house", "ribeye", "porterhouse", "filet", "filet mignon", "sirloin", "tomahawk", "churrasco", "brazilian steakhouse"],
   sushi: ["sushi", "omakase", "sashimi", "japanese"],
@@ -173,8 +185,43 @@ function includesConnectorBetween(query: string, leftTerms: string[], rightTerms
   }));
 }
 
+function matchedPhrases(query: string, phrases: string[]) {
+  return phrases.filter((phrase) => new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}\\b`).test(query));
+}
+
+function detectCoLocationIntent(query: string) {
+  const withoutNearMe = query.replace(/\bnear\s+me\b/g, " ");
+  const coLocationTermsMatched = matchedPhrases(withoutNearMe, ["with", "has", "have", "that has", "that have", "serving", "serves", "offering", "offers", "including", "includes", "featuring", "features"]);
+  const sequenceTermsMatched = matchedPhrases(withoutNearMe, ["followed by", "second stop", "afterwards", "after", "then", "next", "later", "before", "first"]);
+  const proximityTermsMatched = matchedPhrases(withoutNearMe, ["within walking distance", "walking distance", "around the corner", "close to", "close by", "nearby", "near a", "near an", "near the", "near", "next to", "by"]);
+  const sequenceDetected = sequenceTermsMatched.length > 0;
+  const proximityDetected = proximityTermsMatched.length > 0;
+  const sameVenuePreferred = coLocationTermsMatched.length > 0 && !sequenceDetected && !proximityDetected;
+  return {
+    sameVenuePreferred,
+    sequenceDetected,
+    proximityDetected,
+    coLocationTermsMatched,
+    sequenceTermsMatched,
+    proximityTermsMatched,
+    sameVenueReason: sameVenuePreferred ? "co-location language without sequencing/proximity language" : null,
+  };
+}
+
+function extractSameVenueAttributeTerms(query: string) {
+  const connector = /\b(?:with|has|have|that has|that have|serving|serves|offering|offers|including|includes|featuring|features)\b/;
+  const parts = query.split(connector);
+  const afterConnector = parts.length > 1 ? parts.slice(1).join(" ") : query;
+  const withoutGeo = afterConnector.replace(/\b(?:in|near)\s+(?:manhattan|brooklyn|queens|bronx|staten island|new york|nyc|me)\b.*$/g, " ");
+  return uniq([
+    ...Object.values(ATTRIBUTE_ALIAS_TERMS).flatMap((aliases) => aliases.some((term) => hit(query, norm(term))) ? aliases : []),
+    ...splitTerm(withoutGeo).filter((term) => !BOROUGHS.includes(term) && term !== "new" && term !== "york"),
+  ]);
+}
+
 export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearchIntent {
   const normalizedQuery = norm(input || "");
+  const coLocation = detectCoLocationIntent(normalizedQuery);
   const mealFoodIntents = detectIntents(normalizedQuery, MEAL_FOOD_INTENTS);
   const specificMealFoodIntents = detectIntents(normalizedQuery, SPECIFIC_MEAL_FOOD_INTENTS);
   const addOnFoodIntents = detectIntents(normalizedQuery, ADD_ON_FOOD_INTENTS);
@@ -204,7 +251,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   const hasHookah = activityIntents.includes("hookah");
   const hasLounge = activityIntents.includes("lounge");
   const hookahOrLoungeOnly = (hasHookah || hasLounge) && !hasRealMeal && !explicitHookahRestaurant;
-  const hookahAsSamePlaceAddOn = explicitHookahRestaurant && !includesConnectorBetween(normalizedQuery, ["restaurant", "dinner", "food", "eat"], ["hookah lounge", "hookah", "lounge"]);
+  const hookahAsSamePlaceAddOn = (explicitHookahRestaurant || (coLocation.sameVenuePreferred && hasHookah)) && !coLocation.sequenceDetected && !coLocation.proximityDetected;
   const hookahAsSeparateActivity = (hasHookah || hasLounge) && !hookahAsSamePlaceAddOn;
 
   const dessertAsOutingStop = addOnFoodIntents.includes("dessert") && hasRealMeal && includesConnectorBetween(normalizedQuery, ["dinner", "restaurant", "food", "eat", "meal"], ["dessert"]);
@@ -213,7 +260,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
   if (thingsToDoActivity && !activityIntents.includes("activity")) activityIntents.push("activity");
   const wantsFood = mealFoodIntents.length > 0 || addOnFoodIntents.length > 0 || RESTAURANT_TERMS.some((p) => hit(normalizedQuery, p)) || explicitHookahRestaurant || mealPrimaryHit;
   const wantsActivity = activityIntents.some((intent) => !(intent === "rooftop" && rooftopMealIntent));
-  const wantsFullOuting = (wantsFood && wantsActivity && !hookahAsSamePlaceAddOn) || OUTING_PHRASES.some((p) => hit(normalizedQuery, p));
+  const wantsFullOuting = !coLocation.sameVenuePreferred && ((wantsFood && wantsActivity && !hookahAsSamePlaceAddOn) || OUTING_PHRASES.some((p) => hit(normalizedQuery, p)));
 
   const geoIntent = detectRequestedGeo(normalizedQuery);
   const boroughs = uniq([...BOROUGHS.filter((b) => hit(normalizedQuery, b)), geoIntent?.borough]);
@@ -230,7 +277,9 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
 
   const finalWantsFood = (wantsFood && !thingsToDoActivity) || isLocationOnlySearch;
   const finalWantsRestaurant = (wantsFood && !thingsToDoActivity) || isLocationOnlySearch;
-  const finalWantsActivity = hookahOrLoungeOnly || (wantsActivity && !hookahAsSamePlaceAddOn && !isLocationOnlySearch);
+  const finalWantsActivity = coLocation.sameVenuePreferred
+    ? (!hasRealMeal && !finalWantsFood && wantsActivity && !isLocationOnlySearch)
+    : (hookahOrLoungeOnly || (wantsActivity && !hookahAsSamePlaceAddOn && !isLocationOnlySearch));
   const requestedCuisines = detectRequestedCuisines(normalizedQuery);
   const requestedCategories = detectRequestedRestaurantCategories(normalizedQuery);
   const steakIntentMatch = STEAK_INTENT_TERMS.some((term) => hit(normalizedQuery, term));
@@ -265,9 +314,9 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     rawQuery: input,
     parsedIntent: bodyIntent(_body),
     primaryDomain: provisionalPrimaryDomain,
-    wantsPairing: Boolean((finalWantsRestaurant || hasRealMeal) && (finalWantsActivity || hookahAsSeparateActivity) && !hookahAsSamePlaceAddOn),
+    wantsPairing: !coLocation.sameVenuePreferred && Boolean((finalWantsRestaurant || hasRealMeal) && (finalWantsActivity || hookahAsSeparateActivity) && !hookahAsSamePlaceAddOn),
     needsRestaurant: finalWantsRestaurant || hasRealMeal,
-    needsActivity: finalWantsActivity || hookahAsSeparateActivity,
+    needsActivity: finalWantsActivity || (!coLocation.sameVenuePreferred && hookahAsSeparateActivity),
     mealFoodIntents: isLocationOnlySearch ? [] : normalizedMealFoodIntents,
     specificMealFoodIntents: isLocationOnlySearch ? [] : uniq(specificMealFoodIntents),
     cuisines: isLocationOnlySearch ? [] : uniq([...requestedCuisines, ...normalizedMealFoodIntents.filter((term) => !GENERIC_MEAL_TERMS.includes(term as any))]),
@@ -277,6 +326,15 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     borough,
     neighborhood,
     city,
+  });
+  const attributeTerms = coLocation.sameVenuePreferred ? extractSameVenueAttributeTerms(normalizedQuery) : [];
+  Object.assign(normalizedIntent, {
+    ...coLocation,
+    attributeTerms,
+    restaurantTerms: uniq([...normalizedIntent.restaurantTerms, ...attributeTerms.filter((term) => !["activity"].includes(term))]),
+    wantsPairing: coLocation.sameVenuePreferred ? false : normalizedIntent.wantsPairing,
+    needsActivity: coLocation.sameVenuePreferred && normalizedIntent.needsRestaurant ? false : normalizedIntent.needsActivity,
+    primaryDomain: coLocation.sameVenuePreferred && normalizedIntent.needsRestaurant ? "restaurant" : normalizedIntent.primaryDomain,
   });
   const primaryDomain = normalizedIntent.primaryDomain;
 
@@ -323,6 +381,7 @@ export function parseCanonicalIntent(input: string, _body?: any): CanonicalSearc
     hookahMode: hookahAsSamePlaceAddOn ? "restaurant_add_on" : hookahOrLoungeOnly ? "activity" : hasHookah || hasLounge ? "activity_add_on" : null,
     mealFirst: Boolean(finalWantsRestaurant || hasRealMeal),
     primaryDomain,
+    ...coLocation,
     normalizedIntent,
   };
 }

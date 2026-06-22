@@ -150,6 +150,19 @@ export async function runTheOutHavenSearch(input: string, body?: any): Promise<S
   const devDebug = process.env.NODE_ENV !== "production" ? {
     llmIntentRaw: body?.searchIntent ?? body?.normalizedIntent ?? body?.llmIntent ?? body?.intent ?? null,
     normalizedIntent: intent.normalizedIntent,
+    sameVenuePreferred: intent.sameVenuePreferred ?? intent.normalizedIntent?.sameVenuePreferred ?? false,
+    sequenceDetected: intent.sequenceDetected ?? intent.normalizedIntent?.sequenceDetected ?? false,
+    proximityDetected: intent.proximityDetected ?? intent.normalizedIntent?.proximityDetected ?? false,
+    coLocationTermsMatched: intent.coLocationTermsMatched ?? intent.normalizedIntent?.coLocationTermsMatched ?? [],
+    sequenceTermsMatched: intent.sequenceTermsMatched ?? intent.normalizedIntent?.sequenceTermsMatched ?? [],
+    proximityTermsMatched: intent.proximityTermsMatched ?? intent.normalizedIntent?.proximityTermsMatched ?? [],
+    sameVenueReason: intent.sameVenueReason ?? intent.normalizedIntent?.sameVenueReason ?? null,
+    sameVenueCandidateCount: intent.normalizedIntent?.sameVenuePreferred ? restaurants.length + activities.length : 0,
+    whyNormalizedSearchTypeSelected: intent.normalizedIntent?.sameVenuePreferred
+      ? "sameVenuePreferred suppressed mixed_outing/pair requirement"
+      : intent.wantsPairing
+        ? "sequencing/proximity or explicit multi-stop intent requested pairing"
+        : "single-domain intent",
     restaurantTermsUsed: restaurantSearch.debug.restaurantTermsUsed ?? intent.normalizedIntent?.restaurantTerms ?? [],
     activityTermsUsed: activitySearch.debug.activityTermsUsed ?? intent.normalizedIntent?.activityTerms ?? [],
     geoUsed: intent.normalizedIntent?.geo ?? null,

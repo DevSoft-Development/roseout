@@ -47,7 +47,7 @@ export function buildRestaurantSearchInput(intent: CanonicalSearchIntent): strin
     ...restaurantRelevantVibes(normalized?.vibeTerms ?? intent.vibes),
     ...rooftopSearchTerms,
     "restaurant",
-  ]).filter((term) => !(normalized?.activityTerms ?? intent.activityIntents).includes(term));
+  ]).filter((term) => normalized?.sameVenuePreferred || !(normalized?.activityTerms ?? intent.activityIntents).includes(term));
   return terms.join(" ").trim();
 }
 

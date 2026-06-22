@@ -6,6 +6,14 @@ export type NormalizedLaneSearchIntent = {
   wantsPairing: boolean;
   needsRestaurant: boolean;
   needsActivity: boolean;
+  sameVenuePreferred?: boolean;
+  sequenceDetected?: boolean;
+  proximityDetected?: boolean;
+  coLocationTermsMatched?: string[];
+  sequenceTermsMatched?: string[];
+  proximityTermsMatched?: string[];
+  attributeTerms?: string[];
+  sameVenueReason?: string | null;
   restaurantTerms: string[];
   cuisineTerms: string[];
   mealTerms: string[];
@@ -63,6 +71,13 @@ export type CanonicalSearchIntent = {
   hookahMode?: "restaurant_add_on" | "activity" | "activity_add_on" | null;
   mealFirst?: boolean;
   primaryDomain?: "restaurant" | "activity" | "mixed";
+  sameVenuePreferred?: boolean;
+  sequenceDetected?: boolean;
+  proximityDetected?: boolean;
+  coLocationTermsMatched?: string[];
+  sequenceTermsMatched?: string[];
+  proximityTermsMatched?: string[];
+  sameVenueReason?: string | null;
   normalizedIntent?: NormalizedLaneSearchIntent;
 };
 
