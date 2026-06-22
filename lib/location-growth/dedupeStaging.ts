@@ -38,6 +38,32 @@ function scoreMatch(staged: StagingRow, location: LocationRow) {
     reasons.push("same_location_key");
   }
 
+  const sameCityState =
+    String(staged.city || "").trim().toLowerCase() === String(location.city || "").trim().toLowerCase() &&
+    String(staged.state || "").trim().toLowerCase() === String(location.state || "").trim().toLowerCase();
+  const sameNameAddress =
+    Boolean(staged.normalized_name && staged.normalized_address) &&
+    staged.normalized_name === location.normalized_name &&
+    staged.normalized_address === location.normalized_address &&
+    sameCityState;
+
+  if (sameNameAddress) {
+    score = Math.max(score, 100);
+    reasons.push("same_normalized_name_address");
+    if (String(staged.location_type || "") !== String(location.location_type || "")) {
+      reasons.push("cross_type_restaurant_activity");
+    }
+  }
+
+  if (
+    staged.source_id &&
+    location.google_place_id &&
+    staged.source_id === location.google_place_id
+  ) {
+    score = Math.max(score, 100);
+    reasons.push("same_google_place_id");
+  }
+
   if (
     staged.normalized_phone &&
     location.normalized_phone &&
@@ -90,6 +116,7 @@ async function findPotentialLocations(row: StagingRow) {
     exactFilters.push(
       `and(import_source.eq.${row.source},import_source_id.eq.${row.source_id})`,
     );
+    exactFilters.push(`google_place_id.eq.${row.source_id}`);
   }
 
   const locations: LocationRow[] = [];
@@ -97,12 +124,27 @@ async function findPotentialLocations(row: StagingRow) {
     const { data, error } = await supabaseAdmin
       .from("locations")
       .select(
-        "id,location_key,normalized_phone,import_source,import_source_id,normalized_name,normalized_address",
+        "id,location_type,google_place_id,location_key,normalized_phone,import_source,import_source_id,normalized_name,normalized_address,city,state,is_searchable,duplicate_status",
       )
       .or(exactFilters.join(","))
+      .neq("duplicate_status", "duplicate")
       .limit(25);
 
     if (error) throw new Error(`Dedupe exact lookup failed: ${error.message}`);
+    locations.push(...((data || []) as LocationRow[]));
+  }
+
+  if (row.normalized_address && (row.city || row.state)) {
+    let addressQuery = supabaseAdmin
+      .from("locations")
+      .select("id,location_type,google_place_id,location_key,normalized_phone,import_source,import_source_id,normalized_name,normalized_address,city,state,is_searchable,duplicate_status")
+      .eq("normalized_address", row.normalized_address)
+      .neq("duplicate_status", "duplicate")
+      .limit(25);
+    if (row.city) addressQuery = addressQuery.ilike("city", String(row.city));
+    if (row.state) addressQuery = addressQuery.ilike("state", String(row.state));
+    const { data, error } = await addressQuery;
+    if (error) throw new Error(`Dedupe address lookup failed: ${error.message}`);
     locations.push(...((data || []) as LocationRow[]));
   }
 
@@ -112,9 +154,10 @@ async function findPotentialLocations(row: StagingRow) {
       const { data, error } = await supabaseAdmin
         .from("locations")
         .select(
-          "id,location_key,normalized_phone,import_source,import_source_id,normalized_name,normalized_address",
+          "id,location_type,google_place_id,location_key,normalized_phone,import_source,import_source_id,normalized_name,normalized_address,city,state,is_searchable,duplicate_status",
         )
         .ilike("normalized_name", `%${firstNameToken}%`)
+        .neq("duplicate_status", "duplicate")
         .limit(25);
 
       if (error) throw new Error(`Dedupe similarity lookup failed: ${error.message}`);

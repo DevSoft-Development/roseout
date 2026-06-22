@@ -18,6 +18,7 @@ export function applyPublicLocationFilters(query: any) {
     .eq("quality_status", "publish_ready")
     .in("state", [...ACTIVE_MARKET_STATES])
     .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .is("duplicate_of", null)
     .eq("has_photos", true)
     .not("photo_status", "eq", "missing_photo")
     .not("address", "is", null)
@@ -25,6 +26,7 @@ export function applyPublicLocationFilters(query: any) {
     .not("longitude", "is", null)
     .eq("data_status", "clean")
     .not("is_hidden", "is", true)
+    .is("deleted_at", null)
     .not("status", "in", '("closed","archived","rejected")')
     .or("is_low_level.is.null,is_low_level.eq.false")
     .not("public_visibility_tier", "in", '("low_level","internal","pending_review","hidden","rejected")')
@@ -40,10 +42,12 @@ export function isPublicLocationRecord(item: any) {
   return item?.is_searchable === true &&
     item?.quality_status === "publish_ready" &&
     item?.duplicate_status !== "duplicate" &&
+    item?.duplicate_of == null &&
     item?.has_photos === true &&
     item?.photo_status !== "missing_photo" &&
     item?.data_status === "clean" &&
     item?.is_hidden !== true &&
+    item?.deleted_at == null &&
     status !== "closed" &&
     status !== "archived" &&
     item?.is_low_level !== true &&
