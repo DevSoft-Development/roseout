@@ -293,6 +293,11 @@ export function hasTrueSequenceConnector(q: string): boolean {
     || /\b(things to do after|activity after|drinks after|bar after|lounge after|hookah after|show after)\b/.test(text);
 }
 
+export function hasTrueProximityPairingConnector(q: string): boolean {
+  const text = String(q || "").toLowerCase();
+  return /\b(near a|near the|nearby a|close to|walking distance to|within walking distance of|around the corner from|next to)\b/.test(text);
+}
+
 export function hasSingleVenueWithConnector(q: string): boolean {
   const text = String(q || "").toLowerCase();
   return /\b(with|has|have|that has|that have|serving|serves|offering|offers|featuring|features|including|includes)\b/.test(text);
