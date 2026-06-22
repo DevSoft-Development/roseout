@@ -110,3 +110,64 @@ limit 50;
 - Duplicate rows are hidden, not removed.
 - Ambiguous same-building matches are queued for admin review instead of auto-merged.
 - `public.oh_auto_merge_exact_live_duplicates(limit)` exists for future exact-match maintenance, but is not scheduled or called automatically.
+
+## Troubleshooting: statement timeout during Duplicate Review
+
+### Problem
+
+`canceling statement due to statement timeout`
+
+### Cause
+
+Expensive duplicate scans should not run on page load or as unbounded self-joins. The live duplicate review page should load only existing rows from `public.location_duplicate_review`; scans should run manually in safe batches.
+
+### Fix
+
+- Open `/admin/dashboard/locations/duplicates`.
+- Use **Scan for duplicates** in batches.
+- Start with a limit of `250` or `500`.
+- Review and merge high-confidence rows first.
+
+### Verification SQL
+
+```sql
+-- Fast page load should only query review table:
+select count(*)
+from public.location_duplicate_review
+where status = 'pending';
+
+-- Scan in a small batch:
+select public.oh_find_live_location_duplicates(250);
+
+-- Check high-confidence pending:
+select
+  duplicate_score,
+  match_reasons,
+  status,
+  location_a_id,
+  location_b_id
+from public.location_duplicate_review
+where status = 'pending'
+  and duplicate_score >= 95
+order by duplicate_score desc, created_at desc
+limit 50;
+
+-- Check exact searchable duplicates after merges:
+select
+  normalized_name,
+  normalized_address,
+  city,
+  state,
+  count(*) as searchable_count,
+  array_agg(id) as ids,
+  array_agg(location_type) as types
+from public.locations
+where coalesce(duplicate_status, '') <> 'duplicate'
+  and coalesce(is_searchable, false) = true
+  and coalesce(is_hidden, false) = false
+  and coalesce(trim(normalized_name), '') <> ''
+  and coalesce(trim(normalized_address), '') <> ''
+group by normalized_name, normalized_address, city, state
+having count(*) > 1
+order by searchable_count desc, normalized_name;
+```
