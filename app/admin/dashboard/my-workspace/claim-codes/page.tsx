@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/claim-codes");
+  redirect("/admin/dashboard/crm/outreach?view=claim-codes");
 }

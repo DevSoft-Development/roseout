@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     if (error) throw error;
     await supabaseAdmin.from("claim_code_audit_logs").insert({ claim_code_id: claimCode.id, location_id: locationId, action: "sent", channel, platform: body.platform || null, actor_user_id: user.id, actor_team_member_id: profile.id, target_masked: target, notes: body.notes || null, metadata: { delivery_mode: ["email","sms"].includes(channel) ? "existing_contact_only" : "logged" } });
     await supabaseAdmin.from("team_work_activities").insert({ team_member_id: profile.id, user_id: user.id, activity_type: "claim_code_sent", source_type: "location_claim_codes", source_id: claimCode.id, location_id: locationId, status: "completed", notes: body.notes || null });
-    revalidatePath("/my-workspace/claim-codes"); revalidatePath("/admin/dashboard/team/claim-code-audit");
+    revalidatePath("/admin/dashboard/crm/outreach?view=claim-codes"); revalidatePath("/admin/dashboard/team/claim-code-audit");
     return Response.json({ claimCode: { ...claimCode, code: undefined } });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Could not send claim code." }, { status: 400 }); }
 }

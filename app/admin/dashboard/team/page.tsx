@@ -115,25 +115,25 @@ export default async function AdminTeamPage() {
     ? [
         {
           label: "My Site Visits",
-          href: "/admin/dashboard/crm/site-visits",
+          href: "/admin/dashboard/crm/outreach?view=site-visits",
           enabled: Boolean(profile.can_do_site_visits),
           explanation: "Your team profile does not allow site visit check-ins.",
         },
         {
           label: "My Social Outreach",
-          href: "/admin/dashboard/crm/social-outreach",
+          href: "/admin/dashboard/crm/outreach?view=social-outreach",
           enabled: Boolean(profile.can_do_social_outreach),
           explanation: "Your team profile does not allow social outreach.",
         },
         {
           label: "My Support Work",
-          href: "/admin/dashboard/crm/support",
+          href: "/admin/dashboard/crm/operations?view=support",
           enabled: Boolean(profile.can_work_support_tickets),
           explanation: "Your team profile does not allow support work.",
         },
         {
           label: "My Demo / Training",
-          href: "/admin/dashboard/crm/demo",
+          href: "/admin/dashboard/crm/operations?view=demo",
           enabled: Boolean(profile.can_use_demo_mode),
           explanation: "Your team profile does not allow demo/training mode.",
         },
@@ -157,10 +157,10 @@ export default async function AdminTeamPage() {
             <h1 className="mt-2 text-4xl font-black">Team Tools</h1>
           </div>
           <Link
-            href="/admin/dashboard/crm/my-queue"
+            href="/admin/dashboard/crm/work-queue?view=my-queue"
             className="rounded-full bg-white px-5 py-3 text-sm font-black text-black"
           >
-            Open My Workspace
+            Open CRM Work Queue
           </Link>
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -193,10 +193,10 @@ export default async function AdminTeamPage() {
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">
-                  My Workspace
+                  CRM Work Queue
                 </p>
                 <h2 className="mt-2 text-2xl font-black">
-                  My Workspace actions
+                  CRM work queue actions
                 </h2>
                 <p className="mt-2 text-sm font-bold text-white/55">
                   Admins with an active team member profile can clock in/out
@@ -204,10 +204,10 @@ export default async function AdminTeamPage() {
                 </p>
               </div>
               <Link
-                href="/admin/dashboard/crm/my-queue"
+                href="/admin/dashboard/crm/work-queue?view=my-queue"
                 className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-xs font-black text-white"
               >
-                Open My Workspace
+                Open CRM Work Queue
               </Link>
             </div>
             <TeamWorkSessionClient

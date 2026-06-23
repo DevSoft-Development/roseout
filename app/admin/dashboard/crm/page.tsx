@@ -280,7 +280,7 @@ export default async function CRMPage({
               Export
             </AdminActionButton>
             <AdminActionButton
-              href="/admin/dashboard/crm/tasks"
+              href="/admin/dashboard/crm/work-queue?view=tasks"
               variant="primary"
             >
               Create Task

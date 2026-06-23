@@ -3,21 +3,21 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { formatMinutes, getActiveSession, getAllowedWorkTypesForUser } from "@/lib/team-tools";
 
-export function workspaceActions(profile: any, base = "/my-workspace") {
+export function workspaceActions(profile: any, base = "/admin/dashboard/crm") {
   return [
-    { label: "My Tasks", href: `${base}/tasks`, enabled: true, description: "View assigned CRM, outreach, support, and follow-up work from the workspace task queue.", cta: "Open Tasks", explanation: "Tasks are available to every active workspace profile." },
-    { label: "My CRM", href: `${base}/crm`, enabled: true, description: base.startsWith("/admin") ? "Work Partner Launch locations and partner leads." : "Work assigned partner leads.", cta: "Open CRM", explanation: "Limited CRM access is available to every active workspace profile." },
-    { label: "Site Visits", href: `${base}/site-visits`, enabled: Boolean(profile.can_do_site_visits), description: "Start physical site visit check-ins. GPS is requested only inside this workflow.", cta: "Start Visit", explanation: "Your team profile does not currently allow site visit check-ins." },
-    { label: "Social Outreach", href: `${base}/social-outreach`, enabled: Boolean(profile.can_do_social_outreach), description: "Log social outreach, screenshots, replies, and follow-ups for permitted locations.", cta: "Log Outreach", explanation: "Your team profile does not currently allow social outreach." },
-    { label: "Support Work", href: `${base}/support-work`, enabled: Boolean(profile.can_work_support_tickets), description: "Work existing support tickets remotely without GPS or proof-picture requirements.", cta: "Open Support", explanation: "Your team profile does not currently allow support ticket work." },
-    { label: "Follow-Ups", href: `${base}/follow-ups`, enabled: true, description: "Work today’s partner sales follow-ups.", cta: "Open Follow-Ups", explanation: "Follow-ups are available to every active workspace profile." },
-    { label: "Claim Codes", href: `${base}/claim-codes`, enabled: Boolean(profile.can_send_claim_codes), description: "Send or log claim links and QR delivery.", cta: "Open Claim Codes", explanation: "Claim-code sending is not enabled for your team profile." },
-    { label: "Change Requests", href: `${base}/change-requests`, enabled: true, description: "Track protected location field changes that require manager approval.", cta: "Open Requests", explanation: "Change requests are available to every active workspace profile." },
-    { label: "Demo / Training", href: `${base}/demo`, enabled: Boolean(profile.can_use_demo_mode), description: "Practice with private demo session copies that never write fake businesses into public.locations.", cta: "Open Demo", explanation: "Demo/training mode is not enabled for your team profile." },
-    { label: "Knowledge Base", href: `${base}/knowledge-base`, enabled: true, description: "Sales scripts, objection handling, and setup guides.", cta: "Open KB", explanation: "Knowledge Base is available to every active workspace profile." },
-    { label: "Notifications", href: `${base}/notifications`, enabled: true, description: "Review task, follow-up, correction, payroll, and training notifications.", cta: "Open Notifications", explanation: "Notifications are available to every active workspace profile." },
-    { label: "My Performance", href: `${base}/performance`, enabled: true, description: "Track outreach, claims, and partner readiness.", cta: "View Performance", explanation: "Performance is available to every active workspace profile." },
-    { label: "My Payroll", href: `${base}/payroll`, enabled: true, description: "Review approved sessions, payroll status, and exported batches.", cta: "Open Payroll", explanation: "Payroll history is available to every workspace profile." },
+    { label: "My Tasks", href: `${base}/work-queue?view=tasks`, enabled: true, description: "View assigned CRM, outreach, support, and follow-up work from the workspace task queue.", cta: "Open Tasks", explanation: "Tasks are available to every active workspace profile." },
+    { label: "My CRM", href: `${base}/accounts`, enabled: true, description: base.startsWith("/admin") ? "Work Partner Launch locations and partner leads." : "Work assigned partner leads.", cta: "Open CRM", explanation: "Limited CRM access is available to every active workspace profile." },
+    { label: "Site Visits", href: `${base}/outreach?view=site-visits`, enabled: Boolean(profile.can_do_site_visits), description: "Start physical site visit check-ins. GPS is requested only inside this workflow.", cta: "Start Visit", explanation: "Your team profile does not currently allow site visit check-ins." },
+    { label: "Social Outreach", href: `${base}/outreach?view=social-outreach`, enabled: Boolean(profile.can_do_social_outreach), description: "Log social outreach, screenshots, replies, and follow-ups for permitted locations.", cta: "Log Outreach", explanation: "Your team profile does not currently allow social outreach." },
+    { label: "Support Work", href: `${base}/operations?view=support`, enabled: Boolean(profile.can_work_support_tickets), description: "Work existing support tickets remotely without GPS or proof-picture requirements.", cta: "Open Support", explanation: "Your team profile does not currently allow support ticket work." },
+    { label: "Follow-Ups", href: `${base}/work-queue?view=follow-ups`, enabled: true, description: "Work today’s partner sales follow-ups.", cta: "Open Follow-Ups", explanation: "Follow-ups are available to every active workspace profile." },
+    { label: "Claim Codes", href: `${base}/outreach?view=claim-codes`, enabled: Boolean(profile.can_send_claim_codes), description: "Send or log claim links and QR delivery.", cta: "Open Claim Codes", explanation: "Claim-code sending is not enabled for your team profile." },
+    { label: "Change Requests", href: `${base}/operations?view=change-requests`, enabled: true, description: "Track protected location field changes that require manager approval.", cta: "Open Requests", explanation: "Change requests are available to every active workspace profile." },
+    { label: "Demo / Training", href: `${base}/operations?view=demo`, enabled: Boolean(profile.can_use_demo_mode), description: "Practice with private demo session copies that never write fake businesses into public.locations.", cta: "Open Demo", explanation: "Demo/training mode is not enabled for your team profile." },
+    { label: "Knowledge Base", href: `${base}/operations?view=knowledge-base`, enabled: true, description: "Sales scripts, objection handling, and setup guides.", cta: "Open KB", explanation: "Knowledge Base is available to every active workspace profile." },
+    { label: "Notifications", href: `${base}/work-queue?view=notifications`, enabled: true, description: "Review task, follow-up, correction, payroll, and training notifications.", cta: "Open Notifications", explanation: "Notifications are available to every active workspace profile." },
+    { label: "My Performance", href: `${base}/operations?view=performance`, enabled: true, description: "Track outreach, claims, and partner readiness.", cta: "View Performance", explanation: "Performance is available to every active workspace profile." },
+    { label: "My Payroll", href: `/admin/dashboard/team/payroll`, enabled: true, description: "Review approved sessions, payroll status, and exported batches.", cta: "Open Payroll", explanation: "Payroll history is available to every workspace profile." },
   ];
 }
 
@@ -61,12 +61,12 @@ export async function loadWorkspaceDashboardData(userId: string, profile: any) {
     activeSession,
     recentSessions: recent.data || [],
     metrics: [
-      { label: "Active Partners", value: activePartners.count || 0, href: "/my-workspace/crm?view=active-partners" },
+      { label: "Active Partners", value: activePartners.count || 0, href: "/admin/dashboard/crm/accounts?view=active-partners" },
       { label: "Monthly Partner Revenue", value: `$${((activePartners.count || 0) * 99).toLocaleString()}` },
-      { label: "Partner Sales Today", value: followUps.count || 0, href: "/my-workspace/follow-ups" },
-      { label: "Follow-Ups Due Today", value: followUps.count || 0, href: "/my-workspace/follow-ups" },
-      { label: "Claim Invitations to Send", value: claimToSend.count || 0, href: "/my-workspace/claim-codes" },
-      { label: "Claim Sent but Not Started", value: claimSent.count || 0, href: "/my-workspace/crm?view=claim-sent" },
+      { label: "Partner Sales Today", value: followUps.count || 0, href: "/admin/dashboard/crm/work-queue?view=follow-ups" },
+      { label: "Follow-Ups Due Today", value: followUps.count || 0, href: "/admin/dashboard/crm/work-queue?view=follow-ups" },
+      { label: "Claim Invitations to Send", value: claimToSend.count || 0, href: "/admin/dashboard/crm/outreach?view=claim-codes" },
+      { label: "Claim Sent but Not Started", value: claimSent.count || 0, href: "/admin/dashboard/crm/accounts?view=claim-sent" },
       { label: "Claims Started", value: claimsStarted.count || 0 },
       { label: "Payment Pending", value: paymentPending.count || 0 },
       { label: "Reservation Setup Needed", value: reservationSetup.count || 0 },
@@ -74,9 +74,9 @@ export async function loadWorkspaceDashboardData(userId: string, profile: any) {
       { label: "Embed Install Follow-Up", value: embedFollowUp.count || 0 },
       { label: "Discovery Profile Needed", value: discoveryNeeded.count || 0 },
       { label: "At-Risk Partners", value: atRisk.count || 0 },
-      { label: "Open tasks", value: tasks.count || 0, href: "/my-workspace/tasks" },
-      { label: "Follow-ups due", value: followUps.count || 0, href: "/my-workspace/follow-ups" },
-      { label: "Unread notifications", value: notifications.count || 0, href: "/my-workspace/notifications" },
+      { label: "Open tasks", value: tasks.count || 0, href: "/admin/dashboard/crm/work-queue?view=tasks" },
+      { label: "Follow-ups due", value: followUps.count || 0, href: "/admin/dashboard/crm/work-queue?view=follow-ups" },
+      { label: "Unread notifications", value: notifications.count || 0, href: "/admin/dashboard/crm/work-queue?view=notifications" },
       { label: "Pending hours", value: formatMinutes(sumMinutes(pendingHours.data)) },
       { label: "Approved hours", value: formatMinutes(sumMinutes(approvedHours.data)) },
       { label: "Site visits", value: visits },

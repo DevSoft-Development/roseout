@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/notifications");
+  redirect("/admin/dashboard/crm/work-queue?view=notifications");
 }

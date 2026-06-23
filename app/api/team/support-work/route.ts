@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     await supabaseAdmin.from("support_tickets").update(updates).eq("id", ticket.id).then(undefined, () => undefined);
     const { data, error } = await supabaseAdmin.from("team_work_activities").insert({ team_member_id: profile.id, user_id: user.id, work_session_id: active.id, activity_type: "support_ticket", source_type: "support_ticket", source_id: ticket.id, started_at: new Date().toISOString(), ended_at: new Date().toISOString(), minutes_spent: 1, status: "completed", ticket_number: ticket.ticket_number, ticket_status_before: ticket.status, ticket_status_after: updatedTicket.status, ticket_action: action, ticket_completed_at: action === "marked_complete" ? new Date().toISOString() : null, ticket_resolved_at: action === "resolved" ? new Date().toISOString() : null, ticket_closed_at: action === "closed" ? new Date().toISOString() : null }).select("*").single();
     if (error) throw error;
-    revalidatePath(`/admin/dashboard/support/${ticket.id}`); revalidatePath("/my-workspace/support-work"); revalidatePath("/admin/dashboard/team/support-work");
+    revalidatePath(`/admin/dashboard/support/${ticket.id}`); revalidatePath("/admin/dashboard/crm/operations?view=support"); revalidatePath("/admin/dashboard/team/support-work");
     return Response.json({ activity: data, ticket: updatedTicket });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not log support work." }, { status: 400 });

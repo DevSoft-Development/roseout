@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/change-requests");
+  redirect("/admin/dashboard/crm/operations?view=change-requests");
 }
