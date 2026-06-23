@@ -490,7 +490,7 @@ export default function SearchHealthClient() {
           .length,
     ],
     [
-      "Search Lab Runs",
+      "Search Health Runs",
       data.allSearchStats?.adminSearchLabCount ??
         data.adminSearchLabCount ??
         allSearches.filter((row) => row.source === "admin_search_lab").length,
@@ -1030,9 +1030,9 @@ export default function SearchHealthClient() {
               {selected.raw_query ? (
                 <Link
                   className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-black text-white"
-                  href={`/admin/dashboard/beta/search-lab?q=${encodeURIComponent(selected.raw_query)}`}
+                  href={`/admin/dashboard/search-health?q=${encodeURIComponent(selected.raw_query)}`}
                 >
-                  Re-run in Search Lab
+                  Re-run in Search Health
                 </Link>
               ) : null}
             </div>
@@ -1164,9 +1164,9 @@ function SearchEventCard({
           {event.raw_query ? (
             <Link
               className="rounded-2xl bg-rose-600 px-3 py-2 text-xs font-black text-white transition hover:bg-rose-500"
-              href={`/admin/dashboard/beta/search-lab?query=${encodeURIComponent(event.raw_query)}`}
+              href={`/admin/dashboard/search-health?query=${encodeURIComponent(event.raw_query)}`}
             >
-              Re-run in Search Lab
+              Re-run in Search Health
             </Link>
           ) : null}
           <button

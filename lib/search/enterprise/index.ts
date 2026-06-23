@@ -82,6 +82,21 @@ const MIN_ACTIVITY_RESULTS = 4;
 const MIN_PAIR_RESULTS = 3;
 const RECOVERY_LIMIT = 80;
 
+function envFlag(name: string, fallback: boolean) {
+  const value = process.env[name];
+  if (value == null || value === "") return fallback;
+  return !["0", "false", "off", "no"].includes(value.toLowerCase());
+}
+
+function mlFlags() {
+  const mlEnabled = envFlag("ML_ENABLED", true);
+  return {
+    mlEnabled,
+    phase1Enabled: mlEnabled && envFlag("ML_PHASE1_ENABLED", true),
+    phase2Enabled: mlEnabled && envFlag("ML_PHASE2_ENABLED", true),
+  };
+}
+
 function idString(value: unknown) {
   return typeof value === "string" || typeof value === "number"
     ? String(value)
@@ -92,9 +107,11 @@ async function applyIntentBoostsToLocations(
   items: EnterpriseLocation[],
   query: string,
   market?: string | null,
+  flags = mlFlags(),
 ) {
   const classification = classifySearchIntent(query);
   const buckets = getRankingIntentBuckets(classification);
+  if (!flags.mlEnabled) return items;
   const ids = items
     .map((item) => idString(item.id))
     .filter((id): id is string => Boolean(id));
@@ -108,21 +125,77 @@ async function applyIntentBoostsToLocations(
       const id = idString(item.id);
       let matched: string | null = null;
       let score = 0;
+      const matchedFields: string[] = [];
       if (id) {
         for (const bucket of buckets) {
           const value = scoreMap.get(`${id}:${bucket}`);
           if (value != null) {
             score = Math.max(0, Number(value));
             matched = bucket;
+            matchedFields.push("trained_intent_scores");
             break;
           }
         }
       }
-      const intentBoost = Math.min(12, score * 0.12);
-      const existingMlBoost = Math.min(
-        13,
-        Math.max(0, Number((item as any).ml_boost ?? item.ml_score ?? 0)),
-      );
+      if (flags.phase2Enabled) {
+        const haystack = [
+          item.name,
+          item.restaurant_name,
+          item.activity_name,
+          item.location_type,
+          (item as any).cuisine,
+          (item as any).cuisine_type,
+          (item as any).category,
+          (item as any).primary_category,
+          (item as any).primary_tag,
+          (item as any).activity_type,
+          (item as any).tags,
+          (item as any).semantic_tags,
+          (item as any).intent_tags,
+          (item as any).search_keywords,
+          (item as any).vibe_tags,
+          (item as any).date_style_tags,
+          (item as any).special_features,
+          (item as any).best_for_tags,
+          (item as any).best_for,
+          (item as any).search_document,
+          (item as any).semantic_search_text,
+          (item as any).description,
+          (item as any).review_keywords,
+        ]
+          .flatMap((value) => (Array.isArray(value) ? value : [value]))
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .replace(/[\s_-]+/g, " ");
+        for (const bucket of buckets) {
+          const term = bucket.replace(/_/g, " ");
+          const synonyms =
+            bucket === "hookah"
+              ? ["hookah", "shisha", "hookah lounge"]
+              : bucket === "live_music"
+                ? ["live music", "jazz", "dj", "band"]
+                : bucket === "rooftop"
+                  ? ["rooftop", "skyline", "views"]
+                  : [term];
+          const hit = synonyms.find((candidate) =>
+            haystack.includes(candidate),
+          );
+          if (hit) {
+            const weight = bucket === classification.primaryIntent ? 18 : 10;
+            score += weight;
+            matched = matched ?? bucket;
+            matchedFields.push(hit);
+          }
+        }
+      }
+      const intentBoost = flags.phase2Enabled ? Math.min(12, score * 0.12) : 0;
+      const existingMlBoost = flags.phase1Enabled
+        ? Math.min(
+            13,
+            Math.max(0, Number((item as any).ml_boost ?? item.ml_score ?? 0)),
+          )
+        : 0;
       const cappedBoost = Math.min(25, intentBoost + existingMlBoost);
       return {
         ...item,
@@ -130,6 +203,10 @@ async function applyIntentBoostsToLocations(
         intent_boost: Number(intentBoost.toFixed(2)),
         primary_intent: classification.primaryIntent,
         matched_intents: matched ? [matched] : [],
+        phase2MatchedFields: matchedFields,
+        phase2IntentReason: matchedFields.length
+          ? `Matched ${matchedFields.slice(0, 3).join(", ")}`
+          : null,
         search_boost: Number(item.search_boost ?? 0) + cappedBoost,
         _mlPhase2SortScore: (items.length - index) * 100 + cappedBoost,
         _mlDebugBaseRank: index + 1,
@@ -191,8 +268,10 @@ function createMlResultDebug(
       ? (item.matched_intents[0] ?? null)
       : null,
     phase2PairScore: null,
-    phase2PairBoost: null,
+    phase2PairBoost: record.phase2PairBoost ?? null,
     totalMlBoost,
+    phase2MatchedFields: record.phase2MatchedFields ?? [],
+    phase2IntentReason: record.phase2IntentReason ?? null,
     mlChangedRank: rankDelta !== 0,
     mlDebugReason:
       totalMlBoost > 0
@@ -207,13 +286,20 @@ function summarizeMlDebug(
   phase1Loaded: number,
   phase2Loaded: number,
 ): MlSearchDebug {
+  const flags = mlFlags();
   const classification = classifySearchIntent(query);
   const boosts = results.map((r) => Number(r.totalMlBoost ?? 0));
   const boosted = boosts.filter((v) => v > 0);
   return {
-    mlEnabled: true,
-    phase1Enabled: phase1Loaded > 0,
-    phase2Enabled: phase2Loaded > 0,
+    mlEnabled: flags.mlEnabled,
+    phase1Enabled: flags.phase1Enabled,
+    phase2Enabled: flags.phase2Enabled,
+    mlFeatureFlags: flags,
+    mlAppliedInPublicPath: true,
+    publicSearchUsesMl: flags.mlEnabled,
+    enterpriseSearchUsed: true,
+    edgeSearchUsed: false,
+    edgeSearchUsesMl: false,
     intentClassification: {
       primaryIntent: classification.primaryIntent,
       secondaryIntents: classification.secondaryIntents,
@@ -221,14 +307,56 @@ function summarizeMlDebug(
       confidence: classification.confidence,
       reason: classification.reason,
       inferredSearchMode: classification.inferredSearchMode,
+      intentGroups: classification.intentGroups,
     },
+    mlPhase2Intent: classification,
+    primaryIntent: classification.primaryIntent,
+    secondaryIntents: classification.secondaryIntents,
+    allIntents: classification.allIntents,
+    intentGroups: classification.intentGroups,
+    intentClassificationReason: classification.reason,
+    inferredSearchMode: classification.inferredSearchMode,
     rankingIntentBuckets: getRankingIntentBuckets(classification),
-    mlUnavailableReason:
-      phase1Loaded === 0 && phase2Loaded === 0
-        ? "ML tables may be ready, but no scoring data matched these results yet."
-        : null,
+    phase2Source: flags.phase2Enabled
+      ? "deterministic_intent_rules"
+      : "disabled",
+    phase2FallbackUsed: flags.phase2Enabled,
+    phase2FallbackReason: flags.phase2Enabled
+      ? "trained Phase 2 scores are optional; deterministic intent rules are active"
+      : "ML_PHASE2_ENABLED=false",
+    mlPhase2UnavailableReason: flags.phase2Enabled
+      ? null
+      : "ML_PHASE2_ENABLED=false",
+    mlUnavailableReason: !flags.mlEnabled ? "ML_ENABLED=false" : null,
     resultOrderChangedByMl: results.some((r) => r.mlChangedRank),
+    phase2IntentScoresLoaded: phase2Loaded,
+    phase2IntentBoostedCount: results.filter(
+      (r) => Number(r.phase2IntentBoost ?? 0) > 0,
+    ).length,
+    maxPhase2IntentBoost: Math.max(
+      0,
+      ...results.map((r) => Number(r.phase2IntentBoost ?? 0)),
+    ),
+    averagePhase2IntentBoost: results.length
+      ? Number(
+          (
+            results.reduce(
+              (sum, r) => sum + Number(r.phase2IntentBoost ?? 0),
+              0,
+            ) / results.length
+          ).toFixed(2),
+        )
+      : 0,
     resultsWithMlBoostCount: boosted.length,
+    resultsWithPhase1BoostCount: results.filter(
+      (r) => Number(r.phase1MlBoost ?? 0) > 0,
+    ).length,
+    resultsWithPhase2IntentBoostCount: results.filter(
+      (r) => Number(r.phase2IntentBoost ?? 0) > 0,
+    ).length,
+    resultsWithPhase2PairBoostCount: results.filter(
+      (r) => Number(r.phase2PairBoost ?? 0) > 0,
+    ).length,
     maxMlBoostApplied: boosted.length ? Math.max(...boosted) : 0,
     averageMlBoostApplied: boosted.length
       ? Number(
@@ -245,9 +373,11 @@ async function applyPairBoosts(
   pairs: EnterprisePair[],
   query: string,
   market?: string | null,
+  flags = mlFlags(),
 ) {
   const classification = classifySearchIntent(query);
   const buckets = getRankingIntentBuckets(classification);
+  if (!flags.mlEnabled || !flags.phase2Enabled) return pairs;
   const pairKeys = pairs
     .map((pair) => ({
       restaurantLocationId: String(pair.restaurant.id ?? ""),
@@ -273,11 +403,35 @@ async function applyPairBoosts(
           break;
         }
       }
+      if (!score)
+        score = Math.max(
+          0,
+          12 -
+            Math.min(
+              8,
+              Number(
+                (pair as any).distance_miles ??
+                  (pair as any).pairDistanceMiles ??
+                  4,
+              ),
+            ),
+        );
       const pairBoost = Math.min(15, score * 0.15);
       return {
         ...pair,
         pair_ml_score: score || null,
         pair_boost: Number(pairBoost.toFixed(2)),
+        phase2PairScore: score || null,
+        phase2PairBoost: Number(pairBoost.toFixed(2)),
+        phase2PairReason: matched
+          ? `Trained pair intent bucket ${matched}`
+          : "Deterministic pair compatibility and proximity",
+        phase2PairMatchedIntents: matched ? [matched] : buckets.slice(0, 3),
+        phase2PairDistanceSignal:
+          (pair as any).distance_miles ??
+          (pair as any).pairDistanceMiles ??
+          null,
+        phase2PairCompatibilitySignal: score ? "compatible" : null,
         primary_intent: classification.primaryIntent,
         matched_intents: matched ? [matched] : [],
         score: pair.score + pairBoost,
@@ -1842,15 +1996,18 @@ export async function runEnterpriseSearch(
       .filter((item) => !suppressMarketMismatch(item))
       .map((item) => withMarketFit(item, requestedMarketForResults));
 
+    const resolvedMlFlags = mlFlags();
     const intentBoostedRestaurants = await applyIntentBoostsToLocations(
       marketSafeRestaurants,
       query,
       requestedMarketForResults,
+      resolvedMlFlags,
     );
     const intentBoostedActivities = await applyIntentBoostsToLocations(
       marketSafeActivities,
       query,
       requestedMarketForResults,
+      resolvedMlFlags,
     );
     const photoSafeRestaurants = filterLivePhotoResults(
       intentBoostedRestaurants,
@@ -2050,7 +2207,12 @@ export async function runEnterpriseSearch(
             )
           : [];
     let pairs = (
-      await applyPairBoosts(pairedResults, query, requestedMarketForResults)
+      await applyPairBoosts(
+        pairedResults,
+        query,
+        requestedMarketForResults,
+        resolvedMlFlags,
+      )
     )
       .filter(
         (pair) =>

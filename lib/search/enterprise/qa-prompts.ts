@@ -1,3 +1,30 @@
+const ML_PHASE_2_SEARCH_HEALTH_PROMPTS = [
+  "Caribbean food with hookah",
+  "Italian dinner with live music",
+  "seafood restaurant with rooftop views",
+  "sushi with cocktails",
+  "brunch with bottomless mimosas",
+  "vegan brunch with outdoor seating",
+  "coffee shop with outdoor seating",
+  "dessert spot with private rooms",
+  "steakhouse with a DJ",
+  "pizza with arcade games",
+  "tacos with margaritas",
+  "soul food with live music",
+  "rooftop dinner with cocktails",
+  "restaurant with dancing",
+  "hookah lounge with food",
+  "rooftop bar with food",
+  "lounge with dinner",
+  "bar with games",
+  "bowling with food",
+  "arcade with drinks",
+  "dinner then hookah",
+  "brunch then bowling",
+  "dinner near live music",
+  "Mediterranean Dinner with hookah in Manhattan",
+] as const;
+
 const SEARCH_RECOVERY_REGRESSION_PROMPTS = [
   "date night in Queens tonight at 8pm with dinner and something fun after",
   "seafood rooftop restaurant in Manhattan this Friday at 7:30pm",
@@ -22,6 +49,7 @@ const SEARCH_RECOVERY_REGRESSION_PROMPTS = [
 ] as const;
 
 export const DEFAULT_SEARCH_QA_PROMPTS = [
+  ...ML_PHASE_2_SEARCH_HEALTH_PROMPTS,
   ...SEARCH_RECOVERY_REGRESSION_PROMPTS,
   "Best bar to watch the Knicks game in Harlem",
   "casual dinner relaxed activity no club",
@@ -157,6 +185,7 @@ export const DEFAULT_SEARCH_QA_PROMPTS = [
 ] as const;
 
 export const SEARCH_QA_PROMPT_GROUPS = {
+  mlPhase2: [...ML_PHASE_2_SEARCH_HEALTH_PROMPTS],
   searchRecoveryRegressionPack: [...SEARCH_RECOVERY_REGRESSION_PROMPTS],
   core: [
     "Best bar to watch the Knicks game in Harlem",
