@@ -11,10 +11,10 @@ async function maybeSingle(table:string, select="*", col="id", value?:string|nul
 async function list(table:string, userId:string, limit=20){
   try { const {data}=await supabaseAdmin.from(table).select("*").eq("user_id",userId).order("created_at",{ascending:false}).limit(limit); return data||[]; } catch { return []; }
 }
-export async function requireUserForDashboard(next="/user/dashboard"){
+export async function requireUserForDashboard(next="/user/dashboard",loginPath="/login"){
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
-  if(!user) redirect(`/login?next=${encodeURIComponent(next)}`);
+  if(!user) redirect(`${loginPath}?next=${encodeURIComponent(next)}`);
   return user;
 }
 export async function getUserProfileForDashboard(userId:string){
@@ -59,6 +59,15 @@ export async function getUserWeeklyUsage(userId:string){
 }
 export async function getCurrentUserDashboardContext(){
   const user=await requireUserForDashboard();
+  const [profiles,saved,booked,reservations,beta]=await Promise.all([
+    getUserProfileForDashboard(user.id), getUserSavedOutings(user.id,6), getUserBookedOutings(user.id,6), getUserInternalReservations(user.id,5), getUserBetaStatus(user.id,user.email)
+  ]);
+  const [plan, weeklyUsage]=await Promise.all([getUserSearchPlan(user.id,Boolean(beta)),getUserWeeklyUsage(user.id)]);
+  return {user, profile:profiles.merged, userProfile:profiles.profile, usersRow:profiles.legacy, savedOutings:saved, bookedOutings:booked, reservations, beta, isBeta:Boolean(beta), plan, weeklyUsage};
+}
+
+export async function getCurrentBetaUserDashboardContext(){
+  const user=await requireUserForDashboard("/user/dashboard/beta","/beta/login");
   const [profiles,saved,booked,reservations,beta]=await Promise.all([
     getUserProfileForDashboard(user.id), getUserSavedOutings(user.id,6), getUserBookedOutings(user.id,6), getUserInternalReservations(user.id,5), getUserBetaStatus(user.id,user.email)
   ]);

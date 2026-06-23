@@ -1,6 +1,6 @@
 import Link from "next/link";
 import UserDashboardShell, { DashboardCard } from "@/components/user/UserDashboardShell";
-import { getCurrentUserDashboardContext } from "@/lib/user-dashboard";
+import { getCurrentBetaUserDashboardContext } from "@/lib/user-dashboard";
 import { assignWeeklyBetaTasksForTester, getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import BetaCommandCenter from "@/components/user/beta/BetaCommandCenter";
@@ -8,7 +8,7 @@ import BetaCommandCenter from "@/components/user/beta/BetaCommandCenter";
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const ctx = await getCurrentUserDashboardContext();
+  const ctx = await getCurrentBetaUserDashboardContext();
   if (!ctx.isBeta) {
     return <UserDashboardShell><DashboardCard><h1 className="text-3xl font-black">Beta access required</h1><p className="mt-2 text-white/60">This area is for active beta testers.</p><Link href="/user/dashboard" className="mt-5 inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Back to dashboard</Link></DashboardCard></UserDashboardShell>;
   }
