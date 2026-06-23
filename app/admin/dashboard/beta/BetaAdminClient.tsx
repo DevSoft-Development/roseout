@@ -134,10 +134,10 @@ export default function BetaAdminClient({
           </button>
         ))}
         <Link
-          href="/admin/dashboard/beta/search-lab"
+          href="/admin/dashboard/search-health"
           className="rounded-full border border-white/10 bg-black/20 px-4 py-2 text-xs font-black text-white/70"
         >
-          Search Lab
+          Search Health
         </Link>
       </div>
       {tab === "Overview" && (
@@ -411,10 +411,10 @@ export default function BetaAdminClient({
             ]}
             actions={(r: any) => (
               <Link
-                href={`/admin/dashboard/beta/search-lab?q=${encodeURIComponent(r.submitted_prompt || r.search_query || "")}`}
+                href={`/admin/dashboard/search-health?q=${encodeURIComponent(r.submitted_prompt || r.search_query || "")}`}
                 className="text-rose-200"
               >
-                Run in Search Lab
+                Run in Search Health
               </Link>
             )}
           />

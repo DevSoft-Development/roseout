@@ -22,7 +22,9 @@ type AnalyticsArgs = {
 };
 
 function objectOrNull(value: unknown): Record<string, any> | null {
-  return value && typeof value === "object" ? (value as Record<string, any>) : null;
+  return value && typeof value === "object"
+    ? (value as Record<string, any>)
+    : null;
 }
 
 function firstObject(...values: unknown[]): Record<string, any> | null {
@@ -37,7 +39,10 @@ function hasArray(value: unknown) {
   return Array.isArray(value) && value.length > 0;
 }
 
-export function extractCreateSearchNormalizedIntent(result: any, debug: any = result?.debug) {
+export function extractCreateSearchNormalizedIntent(
+  result: any,
+  debug: any = result?.debug,
+) {
   return firstObject(
     debug?.normalizedIntent,
     debug?.intent,
@@ -52,7 +57,12 @@ export function extractCreateSearchNormalizedIntent(result: any, debug: any = re
   );
 }
 
-export function inferCreateSearchIntentFromResult({ result, responsePayload = result, debug = result?.debug, counts }: AnalyticsArgs) {
+export function inferCreateSearchIntentFromResult({
+  result,
+  responsePayload = result,
+  debug = result?.debug,
+  counts,
+}: AnalyticsArgs) {
   const renderMode =
     responsePayload?.render_mode ??
     responsePayload?.renderMode ??
@@ -61,7 +71,8 @@ export function inferCreateSearchIntentFromResult({ result, responsePayload = re
     debug?.render_mode ??
     debug?.renderMode ??
     null;
-  if (renderMode !== "mixed_pairs" && renderMode !== "partial_mixed") return null;
+  if (renderMode !== "mixed_pairs" && renderMode !== "partial_mixed")
+    return null;
 
   const restaurantCount = counts.restaurants ?? 0;
   const activityCount = counts.activities ?? 0;
@@ -69,16 +80,32 @@ export function inferCreateSearchIntentFromResult({ result, responsePayload = re
     searchType: "mixed_outing",
     primaryDomain: "mixed",
     wantsPairing: true,
-    needsRestaurant: restaurantCount > 0 || hasArray(result?.restaurants) || hasArray(responsePayload?.restaurants),
-    needsActivity: activityCount > 0 || hasArray(result?.activities) || hasArray(responsePayload?.activities),
+    needsRestaurant:
+      restaurantCount > 0 ||
+      hasArray(result?.restaurants) ||
+      hasArray(responsePayload?.restaurants),
+    needsActivity:
+      activityCount > 0 ||
+      hasArray(result?.activities) ||
+      hasArray(responsePayload?.activities),
     pairingPreference: debug?.pairingPreference ?? null,
-    geo: debug?.effectiveGeo ?? debug?.geo ?? result?.geo ?? responsePayload?.geo ?? null,
+    geo:
+      debug?.effectiveGeo ??
+      debug?.geo ??
+      result?.geo ??
+      responsePayload?.geo ??
+      null,
     inferredFromRenderMode: renderMode,
   };
 }
 
-export function getCreateSearchAnalyticsIntent(args: AnalyticsArgs): Record<string, any> | null {
-  return extractCreateSearchNormalizedIntent(args.result, args.debug) ?? inferCreateSearchIntentFromResult(args);
+export function getCreateSearchAnalyticsIntent(
+  args: AnalyticsArgs,
+): Record<string, any> | null {
+  return (
+    extractCreateSearchNormalizedIntent(args.result, args.debug) ??
+    inferCreateSearchIntentFromResult(args)
+  );
 }
 
 export function buildCreateSearchDebugParity(args: {
@@ -101,6 +128,7 @@ export function buildCreateSearchDebugParity(args: {
   counts: CreateSearchAnalyticsCounts;
   intentParserSource?: string | null;
   existing?: Record<string, any>;
+  [key: string]: any;
 }) {
   return {
     ...(args.existing ?? {}),
@@ -127,7 +155,9 @@ export function buildCreateSearchDebugParity(args: {
     restaurantCount: args.counts.restaurants,
     activityCount: args.counts.activities,
     pairCount: args.counts.pairs,
-    resultCount: args.counts.finalDisplayedResultCount ?? args.counts.restaurants + args.counts.activities + args.counts.pairs,
+    resultCount:
+      args.counts.finalDisplayedResultCount ??
+      args.counts.restaurants + args.counts.activities + args.counts.pairs,
     intentParserSource: args.intentParserSource ?? null,
   };
 }
