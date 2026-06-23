@@ -52,7 +52,7 @@ const rotating: Record<string, string[]> = {
 export function getDefaultBetaTaskLinks(testerType: string) {
   return rotating[testerType] ?? rotating.user;
 }
-export function getDefaultBetaPromptTasks(_testerType: string) {
+export function getDefaultBetaPromptTasks() {
   return [
     "Search quality test",
     "Test group night search",
@@ -60,6 +60,130 @@ export function getDefaultBetaPromptTasks(_testerType: string) {
     "Try your own search prompt",
     "Create plan flow test",
   ];
+}
+
+type BetaTaskRow = {
+  id?: string;
+  title: string;
+  [key: string]: unknown;
+};
+
+const starterWeeklyBetaTasks = [
+  {
+    title: "Run a search",
+    description:
+      "Try one full-sentence search such as “birthday dinner in Queens” or “date night in Long Island” and check if the results make sense.",
+    feature_area: "search",
+    priority: "high",
+    test_url: "/create",
+  },
+  {
+    title: "Test a location page",
+    description:
+      "Open one result card and confirm the photo, address, vibe, and details look correct.",
+    feature_area: "locations",
+    priority: "medium",
+    test_url: "/create",
+  },
+  {
+    title: "Try a nearby-area search",
+    description:
+      "Search for a place or outing near your area and check whether the results are close enough.",
+    feature_area: "location_search",
+    priority: "high",
+    test_url: "/create",
+  },
+  {
+    title: "Submit feedback",
+    description:
+      "Use the beta feedback form to tell us what worked, what felt off, or what results should improve.",
+    feature_area: "feedback",
+    priority: "high",
+    test_url: "/user/dashboard/beta/feedback",
+  },
+  {
+    title: "Report a bug or confirm none",
+    description:
+      "If something breaks, report it. If nothing breaks, submit a quick note saying the test worked.",
+    feature_area: "bug_report",
+    priority: "medium",
+    test_url: "/user/dashboard/beta/report-bug",
+  },
+] as const;
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function normalizeWeekStart(weekStart?: string | Date | null) {
+  if (!weekStart) return getCurrentWeekStart();
+  const date = weekStart instanceof Date ? weekStart : new Date(weekStart);
+  if (Number.isNaN(date.getTime())) return getCurrentWeekStart();
+  return getCurrentWeekStart(date);
+}
+
+export async function createStarterWeeklyTasks({
+  weekStart,
+  createdBy,
+}: {
+  weekStart?: string | Date | null;
+  createdBy?: string | null;
+} = {}) {
+  const normalizedWeekStart = normalizeWeekStart(weekStart);
+  const dueAt = addDays(new Date(`${normalizedWeekStart}T00:00:00.000Z`), 7).toISOString();
+  const titles = starterWeeklyBetaTasks.map((task) => task.title);
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("beta_tasks")
+    .select("*")
+    .in("title", titles)
+    .eq("tester_type", "user")
+    .in("status", ["active", "draft"]);
+  if (existingError) throw existingError;
+
+  const existingTasks = (existing ?? []) as BetaTaskRow[];
+  const existingTitles = new Set(existingTasks.map((task) => task.title));
+  const rows = starterWeeklyBetaTasks
+    .filter((task) => !existingTitles.has(task.title))
+    .map((task) => ({
+      title: task.title,
+      description: task.description,
+      tester_type: "user",
+      feature_area: task.feature_area,
+      priority: task.priority,
+      status: "active",
+      due_at: dueAt,
+      test_url: task.test_url,
+      button_label: "Start Task",
+      estimated_minutes: 10,
+      instructions: task.description,
+      prompt_mode: "predefined",
+      allow_custom_prompt: false,
+      custom_prompt_required: false,
+      created_by: createdBy ?? null,
+    }));
+
+  let created: BetaTaskRow[] = [];
+  if (rows.length) {
+    const { data, error } = await supabaseAdmin
+      .from("beta_tasks")
+      .insert(rows)
+      .select("*");
+    if (error) throw error;
+    created = (data ?? []) as BetaTaskRow[];
+  }
+
+  const taskByTitle = new Map(
+    [...existingTasks, ...created].map((task) => [task.title, task]),
+  );
+
+  return {
+    weekStart: normalizedWeekStart,
+    createdCount: created.length,
+    tasks: titles.map((title) => taskByTitle.get(title)).filter(Boolean),
+  };
 }
 
 async function ensureDefaultTasks() {
@@ -211,13 +335,14 @@ export async function assignWeeklyBetaTasksForTester(testerId: string) {
     .eq("status", "active")
     .order("created_at", { ascending: true })
     .limit(20);
-  const selected = (tasks ?? []).slice(0, 5);
-  while (selected.length < 5 && tasks?.length)
-    selected.push(tasks[selected.length % tasks.length]);
+  const availableTasks = (tasks ?? []) as BetaTaskRow[];
+  const selected = availableTasks.slice(0, 5);
+  while (selected.length < 5 && availableTasks.length)
+    selected.push(availableTasks[selected.length % availableTasks.length]);
   const links = getDefaultBetaTaskLinks(tester.tester_type as BetaTesterType);
   const rows = selected
     .slice(0, 5 - (existing?.length ?? 0))
-    .map((task: any, index: number) => ({
+    .map((task, index: number) => ({
       task_id: task.id,
       tester_id: testerId,
       status: "assigned",
@@ -235,8 +360,8 @@ export async function assignWeeklyBetaTasksForTester(testerId: string) {
     await supabaseAdmin
       .from("beta_task_assignments")
       .upsert(rows, { onConflict: "task_id,tester_id,assigned_week_start" });
-  const completed = (existing ?? []).filter(
-    (a: any) => a.status === "completed",
+  const completed = ((existing ?? []) as { status?: string }[]).filter(
+    (assignment) => assignment.status === "completed",
   ).length;
   await supabaseAdmin
     .from("beta_testers")
