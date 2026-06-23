@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type ButtonHTMLAttributes } from "react";
 
 type Entry = {
   id: string;
@@ -20,6 +20,8 @@ type Entry = {
   email_consent_at: string | null;
   followed_social: boolean | null;
   tagged_two_friends: boolean | null;
+  followed_social_verified_at?: string | null;
+  tagged_friends_verified_at?: string | null;
   giveaway_status: string | null;
   duplicate_flag: boolean | null;
   duplicate_reason: string | null;
@@ -27,7 +29,7 @@ type Entry = {
   giveaway_notes: string | null;
   created_at: string | null;
   giveaway_verified_at: string | null;
-  beta_interest?: boolean | null; beta_application_status?: string | null; age_18_confirmed?: boolean | null; giveaway_rules_agreed?: boolean | null; weekly_task_eligibility_status?: string | null; beta_giveaway_eligibility?: { isBetaTester: boolean; betaStatus: string | null; completedThisWeek: number; requiredThisWeek: number; weeklyTasksComplete: boolean; eligibilityStatus: string; reason: string; } | null;
+  beta_interest?: boolean | null; beta_application_status?: string | null; age_18_confirmed?: boolean | null; giveaway_rules_agreed?: boolean | null; weekly_task_eligibility_status?: string | null; beta_giveaway_eligibility?: { isBetaTester: boolean; betaStatus: string | null; testerId?: string | null; userId?: string | null; completedThisWeek: number; requiredThisWeek: number; weeklyTasksComplete: boolean; eligibilityStatus: string; reason: string; } | null;
 };
 
 type DuplicateEvent = {
@@ -222,6 +224,38 @@ function Field({
   );
 }
 
+
+function WeeklyTasksPanel({ setMessage, setError }: { setMessage: (v: string) => void; setError: (v: string) => void }) {
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [draft, setDraft] = useState({ title: "Run one search and rate the results", description: "Complete one quick TheOutHaven search and tell us if results match.", test_url: "/create", feature_area: "search_quality", priority: "medium", status: "draft" });
+  async function load() { const r = await fetch("/api/admin/beta/weekly-tasks"); const p = await r.json().catch(() => ({})); if (p.success) setTasks(p.tasks || []); }
+  useEffect(() => { load(); }, []);
+  async function run(label: string, url: string, body?: any) { setLoading(true); setError(""); const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); const p = await r.json().catch(() => ({})); if (!r.ok || !p.success) setError(p.error || `${label} failed.`); else { setMessage(`${label} complete.`); await load(); } setLoading(false); }
+  async function saveTask(task: any, updates: any) { setLoading(true); const r = await fetch(`/api/admin/beta/weekly-tasks/${task.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates) }); const p = await r.json().catch(() => ({})); if (!r.ok || !p.success) setError(p.error || "Task update failed."); else { setMessage("Task updated."); await load(); } setLoading(false); }
+  const preview = `Hi there,\n\nThis week’s beta tasks should take less than 10 minutes each.\n\n${tasks.map((t, i) => `${i + 1}. ${t.email_summary || t.title}`).join("\n")}\n\nComplete weekly tasks to stay eligible for the $100 Beta Tester Reward.\n\nOpen your beta dashboard: /user/dashboard/beta`;
+  return <section className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-black">Weekly Tasks</h2><p className="mt-1 text-sm text-white/55">Create, review, approve, assign, and email tasks for TheOutHaven Beta Tester Program.</p></div><div className="flex flex-wrap gap-2"><button disabled={loading} onClick={() => run("Starter tasks", "/api/admin/beta/weekly-tasks/create-starter-set")} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black">Create This Week’s Starter Tasks</button><button disabled={loading} onClick={() => run("Assigned tasks", "/api/admin/beta/weekly-tasks/assign")} className="rounded-full bg-white px-4 py-2 text-sm font-black text-[#120606]">Assign to Beta Testers</button><button disabled={loading} onClick={() => run("Weekly email", "/api/admin/beta/weekly-tasks/send-email")} className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-sm font-black">Send Weekly Email</button></div></div>
+    <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]"><div className="space-y-3">{tasks.map((task) => <article key={task.id} className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="grid gap-3 md:grid-cols-2"><input defaultValue={task.title} onBlur={(e) => saveTask(task, { title: e.target.value })} className="rounded-xl border border-white/10 bg-white/[0.06] p-3 text-sm font-bold text-white"/><input defaultValue={task.test_url || ""} onBlur={(e) => saveTask(task, { test_url: e.target.value })} placeholder="Task URL" className="rounded-xl border border-white/10 bg-white/[0.06] p-3 text-sm text-white"/></div><textarea defaultValue={task.description || task.instructions || ""} onBlur={(e) => saveTask(task, { description: e.target.value, instructions: e.target.value })} className="mt-3 h-20 w-full rounded-xl border border-white/10 bg-white/[0.06] p-3 text-sm text-white"/><div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/55"><span>{task.estimated_minutes || 10} min</span><span>Assigned: {task.assigned_count || 0}</span><span>Completed: {task.completed_count || 0}</span><button onClick={() => saveTask(task, { status: task.status === "active" ? "draft" : "active" })} className="rounded-full bg-emerald-600 px-3 py-1 font-black text-white">{task.status === "active" ? "Active" : "Approve/Activate"}</button><button onClick={() => run("Archived task", `/api/admin/beta/weekly-tasks/${task.id}/archive`)} className="rounded-full border border-white/10 px-3 py-1 font-black">Archive</button></div></article>)}{!tasks.length ? <div className="rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">No tasks for this week yet. Create this week’s starter tasks to auto-generate five quick tasks.</div> : null}</div><aside className="rounded-2xl border border-white/10 bg-black/20 p-4"><h3 className="text-lg font-black">Quick Task Builder</h3><p className="mt-1 text-xs text-white/50">Use a preset, then approve it before assigning.</p><input value={draft.title} onChange={(e)=>setDraft({...draft,title:e.target.value})} className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.06] p-3 text-sm font-bold text-white"/><textarea value={draft.description} onChange={(e)=>setDraft({...draft,description:e.target.value})} className="mt-3 h-24 w-full rounded-xl border border-white/10 bg-white/[0.06] p-3 text-sm text-white"/><button disabled={loading} onClick={() => run("Task created", "/api/admin/beta/weekly-tasks", draft)} className="mt-3 rounded-full bg-white px-4 py-2 text-sm font-black text-[#120606]">Use Preset / Create Task</button><h3 className="mt-6 text-lg font-black">Preview tester email</h3><pre className="mt-2 whitespace-pre-wrap rounded-2xl bg-black/30 p-3 text-xs leading-5 text-white/65">{preview}</pre></aside></div>
+  </section>;
+}
+
+
+function ResultsFeedback({ entries, exportCsv }: { entries: Entry[]; exportCsv: () => void }) {
+  const total = entries.length;
+  const active = entries.filter((e) => e.beta_giveaway_eligibility?.userId).length;
+  const assigned = entries.reduce((sum, e) => sum + Number(e.beta_giveaway_eligibility?.requiredThisWeek || 0), 0);
+  const completed = entries.reduce((sum, e) => sum + Number(e.beta_giveaway_eligibility?.completedThisWeek || 0), 0);
+  const qualified = entries.filter((e) => e.giveaway_status === "verified").length;
+  const pending = entries.filter((e) => !["verified", "winner", "alternate", "disqualified"].includes(String(e.giveaway_status))).length;
+  return <section className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5"><div className="flex items-center justify-between gap-3"><div><h2 className="text-2xl font-black">Results & Feedback</h2><p className="mt-1 text-sm text-white/55">Enterprise view of beta task progress, reward readiness, feedback, and bug-report outcomes.</p></div><button onClick={exportCsv} className="rounded-full bg-white px-4 py-2 text-sm font-black text-[#120606]">Export CSV</button></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">{[["Total beta testers",total],["Active beta testers",active],["Weekly tasks assigned",assigned],["Weekly tasks completed",completed],["Completion rate",assigned?`${Math.round((completed/assigned)*100)}%`:"0%"],["Prize qualified",qualified],["Pending requirements",pending],["Open feedback","Review in Beta Admin"],["Open bug reports","Review in Beta Admin"]].map(([label,value])=><div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">{label}</p><p className="mt-2 text-xl font-black text-white">{value}</p></div>)}</div><div className="space-y-3">{entries.map((entry)=><article key={entry.id} className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-white">{formatText(entry.full_name)}</p><p className="text-sm text-white/55">{formatText(entry.email)} · {formatText(entry.social_handle)}</p></div><p className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1 text-xs font-black text-white/70">{entry.beta_giveaway_eligibility?.completedThisWeek || 0}/{entry.beta_giveaway_eligibility?.requiredThisWeek || 0} tasks</p></div><div className="mt-3 grid gap-3 text-sm text-white/60 md:grid-cols-4"><span>Account: {entry.beta_giveaway_eligibility?.userId ? "Login Ready" : "Needs setup"}</span><span>Feedback: see Beta Admin</span><span>Bugs: see Beta Admin</span><span>Prize: {formatText(entry.giveaway_status).replace(/_/g," ")}</span></div></article>)}</div></section>;
+}
+
+function PrizeOutcomes({ entries, patchEntry, busyEntryId }: { entries: Entry[]; patchEntry: (entry: Entry, updates: Record<string, unknown>) => Promise<void>; busyEntryId: string | null }) {
+  const buckets = ["verified", "winner", "alternate", "disqualified", "pending_verification"];
+  return <section className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5"><h2 className="text-2xl font-black">Prize Outcomes</h2><p className="text-sm text-white/55">Mark Reward Winner or Alternate only after an entry is Prize Qualified. Qualification is enforced by the server.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{buckets.map((status)=><div key={status} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">{status.replace(/_/g," ")}</p><p className="mt-2 text-2xl font-black">{entries.filter((e)=>String(e.giveaway_status||"pending_verification")===status).length}</p></div>)}</div><div className="space-y-3">{entries.filter((e)=>e.wants_giveaway).map((entry)=><article key={entry.id} className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black">{formatText(entry.full_name)}</p><p className="text-sm text-white/55">{formatText(entry.email)} · {formatText(entry.giveaway_status).replace(/_/g," ")}</p></div><div className="flex flex-wrap gap-2"><button disabled={busyEntryId===entry.id || entry.giveaway_status!=="verified"} onClick={()=>patchEntry(entry,{giveaway_status:"winner"})} className="rounded-full bg-amber-400 px-3 py-1.5 text-xs font-black text-black disabled:opacity-40">Reward Winner</button><button disabled={busyEntryId===entry.id || entry.giveaway_status!=="verified"} onClick={()=>patchEntry(entry,{giveaway_status:"alternate"})} className="rounded-full bg-sky-600 px-3 py-1.5 text-xs font-black text-white disabled:opacity-40">Alternate</button><button disabled={busyEntryId===entry.id} onClick={()=>patchEntry(entry,{giveaway_status:"disqualified"})} className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-black text-white disabled:opacity-40">Disqualify</button><button disabled={busyEntryId===entry.id} onClick={()=>patchEntry(entry,{giveaway_status:"pending_verification"})} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black disabled:opacity-40">Reset</button></div></div></article>)}</div></section>;
+}
+
 export default function GiveawayAdminClient({
   initialEntries,
   initialStats,
@@ -241,6 +275,7 @@ export default function GiveawayAdminClient({
   const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("Overview");
 
   const statCards = useMemo(
     () => [
@@ -387,128 +422,98 @@ export default function GiveawayAdminClient({
     URL.revokeObjectURL(url);
   }
 
-  function renderActions(entry: Entry, compact = false) {
-    const isBusy = busyEntryId === entry.id;
-    return (
-      <div
-        className={
-          compact ? "grid grid-cols-2 gap-2" : "flex min-w-48 flex-col gap-2"
-        }
-      >
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "approve_beta" })} className={`${actionButtonClass} bg-emerald-700 text-white`}>Approve as Beta User</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "resend_beta_invite" })} className={`${actionButtonClass} border border-sky-300/30 bg-sky-500/10 text-sky-100`}>Resend verify/create-password email</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "link_beta_user" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Link beta user account</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "assign_beta_tasks" })} className={`${actionButtonClass} border border-amber-300/20 bg-amber-500/10 text-amber-100`}>Assign weekly beta tasks</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "repair_beta_access" })} className={`${actionButtonClass} bg-rose-700 text-white`}>Repair beta access</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "reject_beta", rejection_reason: "Admin rejected" })} className={`${actionButtonClass} border border-red-300/30 bg-red-500/10 text-red-100`}>Reject Beta</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_social" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify follow</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_tags" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify tags</button>
-        <button disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "pending_beta_tasks" })} className={`${actionButtonClass} border border-amber-300/20 bg-amber-500/10 text-amber-100`}>Pending beta tasks</button>
-        {entry.wants_giveaway ? (
-          <button
-            disabled={isBusy}
-            onClick={() => patchEntry(entry, { giveaway_status: "verified" })}
-            className={`${actionButtonClass} bg-emerald-500 text-white`}
-          >
-            Mark Prize Qualified
-          </button>
-        ) : null}
-        <button
-          disabled={isBusy}
-          onClick={() => patchEntry(entry, { giveaway_status: "disqualified" })}
-          className={`${actionButtonClass} bg-red-600 text-white`}
-        >
-          Disqualify
-        </button>
-        {entry.wants_giveaway ? (
-          <button
-            disabled={isBusy}
-            onClick={() => patchEntry(entry, { giveaway_status: "winner" })}
-            className={`${actionButtonClass} bg-amber-400 text-black`}
-          >
-            Reward Winner
-          </button>
-        ) : null}
-        <button
-          disabled={isBusy}
-          onClick={() => patchEntry(entry, { giveaway_status: "alternate" })}
-          className={`${actionButtonClass} bg-sky-600 text-white`}
-        >
-          Alternate
-        </button>
-        <button
-          disabled={isBusy}
-          onClick={() =>
-            patchEntry(entry, { giveaway_status: "pending_verification" })
-          }
-          className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
-        >
-          Reset
-        </button>
-        <button
-          disabled={isBusy}
-          onClick={() =>
-            patchEntry(entry, { duplicate_flag: false, duplicate_reason: "" })
-          }
-          className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
-        >
-          Clear duplicate
-        </button>
-        <button
-          disabled={isBusy}
-          onClick={() =>
-            patchEntry(entry, {
-              duplicate_flag: true,
-              duplicate_reason: "Admin marked for review",
-            })
-          }
-          className={`${actionButtonClass} bg-rose-700 text-white`}
-        >
-          Flag duplicate
-        </button>
-        {deleteConfirmId === entry.id ? (
-          <div
-            className={
-              compact
-                ? "col-span-2 rounded-2xl border border-red-300/25 bg-red-950/30 p-2"
-                : "rounded-2xl border border-red-300/25 bg-red-950/30 p-2"
-            }
-          >
-            <p className="text-[11px] font-bold leading-4 text-red-100">
-              Delete this entry permanently?
-            </p>
-            <div className="mt-2 flex gap-2">
-              <button
-                disabled={isBusy}
-                onClick={() => deleteEntry(entry)}
-                className="flex-1 rounded-full bg-red-600 px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-50"
-              >
-                {isBusy ? "Deleting..." : "Confirm"}
-              </button>
-              <button
-                disabled={isBusy}
-                onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            disabled={isBusy}
-            onClick={() => setDeleteConfirmId(entry.id)}
-            className={`${actionButtonClass} border border-red-300/30 bg-red-500/10 text-red-100`}
-          >
-            Delete
-          </button>
-        )}
-      </div>
-    );
+  function smartPrimary(entry: Entry) {
+    const eligibility = entry.beta_giveaway_eligibility;
+    const hasTester = Boolean(eligibility?.isBetaTester);
+    const hasUser = Boolean(eligibility?.userId);
+    if (!hasTester) return { label: "Repair Beta Access", updates: { action: "repair_beta_access" }, tone: "rose" };
+    if (!hasUser) return { label: "Link Account", updates: { action: "link_beta_user" }, tone: "sky" };
+    if (entry.beta_application_status === "approved" && !hasUser) return { label: "Resend Setup Email", updates: { action: "resend_beta_invite" }, tone: "sky" };
+    if (eligibility?.requiredThisWeek === 0) return { label: "Assign Weekly Tasks", updates: { action: "assign_beta_tasks" }, tone: "amber" };
+    if (!entry.followed_social_verified_at) return { label: "Verify Social Follow", updates: { action: "verify_social" }, tone: "white" };
+    if (!entry.tagged_friends_verified_at) return { label: "Verify Tagged Friends", updates: { action: "verify_tags" }, tone: "white" };
+    if (!eligibility?.weeklyTasksComplete) return { label: "View Task Progress", updates: {}, tone: "amber", tab: "Results & Feedback" };
+    if (entry.giveaway_status !== "verified") return { label: "Mark Prize Qualified", updates: { giveaway_status: "verified" }, tone: "emerald" };
+    return { label: "Mark Reward Winner", updates: { giveaway_status: "winner" }, tone: "gold" };
   }
+
+  function betaAccessLabel(entry: Entry) {
+    if (entry.beta_application_status === "rejected") return "Rejected";
+    if (entry.beta_giveaway_eligibility?.isBetaTester && ["active", "approved"].includes(String(entry.beta_giveaway_eligibility.betaStatus || ""))) return entry.beta_giveaway_eligibility.userId ? "Active Beta Tester" : "Pending Setup";
+    if (entry.beta_application_status === "approved") return "Pending Setup";
+    return "Not Started";
+  }
+  function accountLabel(entry: Entry) { return entry.beta_giveaway_eligibility?.userId ? "Login Ready" : entry.beta_giveaway_eligibility?.isBetaTester || entry.beta_application_status === "approved" ? "Needs Password Setup" : "Account Linked"; }
+  function weeklyTaskCleanLabel(entry: Entry) {
+    const e = entry.beta_giveaway_eligibility;
+    if (!e?.isBetaTester) return "Beta tester record missing";
+    if (!e.userId) return "Account not linked yet";
+    if (!e.requiredThisWeek) return "Tasks not assigned";
+    if (!e.weeklyTasksComplete) return "Weekly tasks incomplete";
+    return "Weekly goal complete";
+  }
+  function prizeLabel(entry: Entry) {
+    if (entry.giveaway_status === "winner") return "Reward Winner";
+    if (entry.giveaway_status === "alternate") return "Alternate";
+    if (entry.giveaway_status === "disqualified") return "Disqualified";
+    if (entry.giveaway_status === "verified") return "Prize Qualified";
+    return "Pending Reward Requirements";
+  }
+  function badge(label: string, tone = "white") {
+    const colors: Record<string,string> = { emerald: "border-emerald-300/30 bg-emerald-400/10 text-emerald-100", amber: "border-amber-300/30 bg-amber-400/10 text-amber-100", rose: "border-rose-300/30 bg-rose-500/10 text-rose-100", sky: "border-sky-300/30 bg-sky-400/10 text-sky-100", gold: "border-yellow-300/40 bg-yellow-300/15 text-yellow-100", white: "border-white/10 bg-white/[0.07] text-white/70" };
+    return <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${colors[tone]}`}>{label}</span>;
+  }
+
+  function renderActions(entry: Entry) {
+    const isBusy = busyEntryId === entry.id;
+    const primary = smartPrimary(entry);
+    const primaryClass = primary.tone === "emerald" ? "bg-emerald-500 text-white" : primary.tone === "gold" ? "bg-amber-400 text-black" : primary.tone === "sky" ? "bg-sky-600 text-white" : primary.tone === "amber" ? "bg-amber-500 text-black" : primary.tone === "rose" ? "bg-rose-700 text-white" : "bg-white text-[#120606]";
+    return <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      <button disabled={isBusy} onClick={() => primary.tab ? setActiveTab(primary.tab) : patchEntry(entry, primary.updates)} className={`${actionButtonClass} ${primaryClass}`}>{isBusy ? "Working..." : primary.label}</button>
+      {entry.beta_application_status !== "approved" ? <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "approve_beta" })} className={`${actionButtonClass} border border-emerald-300/30 bg-emerald-500/10 text-emerald-100`}>Approve Beta</button> : null}
+      <details className="relative">
+        <summary className="cursor-pointer list-none rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-[11px] font-black text-white">More Actions</summary>
+        <div className="absolute right-0 z-20 mt-2 w-80 space-y-3 rounded-3xl border border-white/10 bg-[#130807] p-4 shadow-2xl">
+          <ActionGroup title="Access actions">
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "approve_beta" })}>Approve as Beta User</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "resend_beta_invite" })}>Resend Setup Email</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "link_beta_user" })}>Link Account</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "assign_beta_tasks" })}>Assign Weekly Tasks</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "repair_beta_access" })}>Repair Beta Access</MiniAction>
+          </ActionGroup>
+          <ActionGroup title="Verification actions">
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_social" })}>Verify Social Follow</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_tags" })}>Verify Tagged Friends</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "pending_beta_tasks" })}>Mark Pending Tasks</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "verified" })}>Mark Prize Qualified</MiniAction>
+          </ActionGroup>
+          <ActionGroup title="Outcome actions">
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "disqualified" })}>Disqualify</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "winner" })}>Reward Winner</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "alternate" })}>Alternate</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { giveaway_status: "pending_verification" })}>Reset</MiniAction>
+          </ActionGroup>
+          <ActionGroup title="Danger Zone">
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { duplicate_flag: false, duplicate_reason: "" })}>Clear duplicate</MiniAction>
+            <MiniAction disabled={isBusy} onClick={() => patchEntry(entry, { duplicate_flag: true, duplicate_reason: "Admin marked for review" })}>Flag duplicate</MiniAction>
+            {deleteConfirmId === entry.id ? <MiniAction disabled={isBusy} onClick={() => deleteEntry(entry)}>Confirm Delete</MiniAction> : <MiniAction disabled={isBusy} onClick={() => setDeleteConfirmId(entry.id)}>Delete</MiniAction>}
+          </ActionGroup>
+        </div>
+      </details>
+    </div>;
+  }
+
+  function ActionGroup({ title, children }: { title: string; children: ReactNode }) { return <details open={title !== "Danger Zone"} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><summary className="cursor-pointer text-xs font-black text-white/75">{title}</summary><div className="mt-2 grid grid-cols-1 gap-2">{children}</div></details>; }
+  function MiniAction({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className="rounded-xl border border-white/10 bg-white/[0.07] px-3 py-2 text-left text-xs font-bold text-white hover:bg-white/[0.12] disabled:opacity-50">{children}</button>; }
+
 
   return (
     <div className="space-y-5">
+      <section className="flex flex-wrap gap-2 rounded-3xl border border-white/10 bg-white/[0.04] p-3">{["Overview","Testers","Weekly Tasks","Results & Feedback","Prize Outcomes","Settings"].map((tab) => <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-full px-4 py-2 text-sm font-black ${activeTab === tab ? "bg-rose-600 text-white" : "border border-white/10 bg-white/[0.06] text-white/65"}`}>{tab}</button>)}</section>
+      {activeTab === "Weekly Tasks" ? <WeeklyTasksPanel setMessage={setMessage} setError={setError} /> : null}
+      {activeTab === "Results & Feedback" ? <ResultsFeedback entries={entries} exportCsv={exportCsv} /> : null}
+      {activeTab === "Prize Outcomes" ? <PrizeOutcomes entries={entries} patchEntry={patchEntry} busyEntryId={busyEntryId} /> : null}
+      {activeTab !== "Weekly Tasks" && activeTab !== "Results & Feedback" && activeTab !== "Prize Outcomes" ? <>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
         {statCards.map(([label, value, description]) => (
           <div
@@ -614,9 +619,12 @@ export default function GiveawayAdminClient({
                 <p className="mt-1 break-words text-sm font-bold text-white/70">{formatText(entry.email)}</p>
                 <p className="mt-1 text-sm text-white/45">{formatText(entry.phone)}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <StatusBadge status={entry.giveaway_status} />
-                  <span className="rounded-full border border-emerald-300/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100">{betaStatusLabel(entry)}</span>
-                  {accountStatusLabels(entry).map((label) => <span key={label} className="rounded-full border border-amber-300/25 bg-amber-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-100">{label}</span>)}
+                  {badge(`Beta Access: ${betaAccessLabel(entry)}`, betaAccessLabel(entry).includes("Active") ? "emerald" : "amber")}
+                  {badge(`Account: ${accountLabel(entry)}`, accountLabel(entry).includes("Login") ? "emerald" : "amber")}
+                  {badge(entry.email_verified ? "Email Verified" : "Email Pending", entry.email_verified ? "emerald" : "amber")}
+                  {badge(weeklyTaskCleanLabel(entry), weeklyTaskCleanLabel(entry).includes("complete") ? "emerald" : "amber")}
+                  {badge(entry.followed_social_verified_at && entry.tagged_friends_verified_at ? "Social Verified" : "Needs Social Verification", entry.followed_social_verified_at && entry.tagged_friends_verified_at ? "emerald" : "amber")}
+                  {badge(prizeLabel(entry), entry.giveaway_status === "verified" ? "emerald" : entry.giveaway_status === "winner" ? "gold" : "white")}
                 </div>
               </div>
               <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -627,7 +635,7 @@ export default function GiveawayAdminClient({
                 <Field label="Weekly beta tasks" value={weeklyTaskLabel(entry)} />
                 <Field label="Created" value={formatDate(entry.created_at)} />
               </div>
-              <div className="lg:w-80">{renderActions(entry, true)}</div>
+              <div className="lg:w-80">{renderActions(entry)}</div>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
               <textarea defaultValue={entry.giveaway_notes || ""} onBlur={(event) => patchEntry(entry, { giveaway_notes: event.target.value })} placeholder="Admin notes" className="h-20 w-full max-w-full rounded-2xl border border-white/10 bg-black/20 p-3 text-white outline-none placeholder:text-white/30 focus:border-rose-300/50" />
@@ -726,7 +734,7 @@ export default function GiveawayAdminClient({
               placeholder="Admin notes"
               className="mt-4 h-24 w-full rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-rose-300/50"
             />
-            <div className="mt-4">{renderActions(entry, true)}</div>
+            <div className="mt-4">{renderActions(entry)}</div>
           </article>
         ))}
         {!entries.length ? (
@@ -736,7 +744,9 @@ export default function GiveawayAdminClient({
         ) : null}
       </section>
 
-      {duplicateEvents.length ? (
+      </> : null}
+
+      {duplicateEvents.length && activeTab !== "Weekly Tasks" && activeTab !== "Results & Feedback" && activeTab !== "Prize Outcomes" ? (
         <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/20 sm:p-5">
           <h2 className="text-xl font-black">Duplicate audit events</h2>
           <div className="mt-4 overflow-x-auto">
