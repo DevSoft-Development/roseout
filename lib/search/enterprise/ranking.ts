@@ -481,6 +481,426 @@ function hasSingleVenueWithSportsSignal(terms: string[]) {
   );
 }
 
+const SAME_VENUE_PRIMARY_FIELDS = [
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "category",
+  "primary_category",
+  "primary_tag",
+  "search_document",
+  "semantic_search_text",
+  "description",
+];
+
+const SAME_VENUE_SECONDARY_FIELDS = [
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "search_document",
+  "semantic_tags",
+  "review_keywords",
+  "tags",
+  "search_keywords",
+  "intent_tags",
+  "vibe_tags",
+  "date_style_tags",
+  "special_features",
+  "best_for_tags",
+  "best_for",
+  "semantic_search_text",
+  "description",
+  "primary_category",
+  "primary_tag",
+];
+
+const SAME_VENUE_PRIMARY_FOOD_TERMS = [
+  "mediterranean",
+  "middle eastern",
+  "italian",
+  "seafood",
+  "sushi",
+  "steakhouse",
+  "steak",
+  "soul food",
+  "caribbean",
+  "jamaican",
+  "latin",
+  "mexican",
+  "tacos",
+  "taco",
+  "vegan",
+  "vegetarian",
+  "brunch",
+  "breakfast",
+  "lunch",
+  "dinner",
+  "dessert",
+  "coffee",
+  "cafe",
+  "bakery",
+  "pizza",
+  "burgers",
+  "burger",
+  "wings",
+  "barbecue",
+  "bbq",
+  "thai",
+  "chinese",
+  "korean",
+  "japanese",
+  "indian",
+  "halal",
+  "greek",
+  "spanish",
+  "tapas",
+  "restaurant",
+  "lounge",
+  "bar",
+  "food",
+  "drinks",
+  "cocktails",
+  "hookah lounge",
+  "rooftop bar",
+  "bowling",
+  "arcade",
+];
+
+const SAME_VENUE_SECONDARY_ATTRIBUTE_TERMS = [
+  "hookah",
+  "shisha",
+  "live music",
+  "jazz",
+  "dj",
+  "dancing",
+  "rooftop",
+  "rooftop views",
+  "skyline views",
+  "outdoor seating",
+  "patio",
+  "garden",
+  "waterfront",
+  "water view",
+  "cocktails",
+  "margaritas",
+  "bottomless mimosas",
+  "happy hour",
+  "games",
+  "arcade",
+  "bowling",
+  "karaoke",
+  "private room",
+  "private rooms",
+  "private dining",
+  "birthday",
+  "anniversary",
+  "romantic",
+  "cozy",
+  "upscale",
+  "late night",
+  "open late",
+  "lounge",
+  "sports",
+  "tvs",
+  "cigar",
+  "speakeasy",
+  "comedy",
+  "trivia",
+  "board games",
+  "food",
+  "drinks",
+];
+
+const SAME_VENUE_SECONDARY_SYNONYMS: Record<string, string[]> = {
+  hookah: ["hookah", "shisha", "hookah lounge", "lounge"],
+  shisha: ["hookah", "shisha", "hookah lounge", "lounge"],
+  "live music": ["live music", "music", "jazz", "band", "dj", "performance"],
+  jazz: ["live music", "music", "jazz", "band", "performance"],
+  dj: ["dj", "live dj", "music", "dancing"],
+  rooftop: [
+    "rooftop",
+    "roof top",
+    "skyline",
+    "rooftop views",
+    "city views",
+    "view",
+    "views",
+  ],
+  "rooftop views": [
+    "rooftop",
+    "roof top",
+    "skyline",
+    "rooftop views",
+    "city views",
+    "view",
+    "views",
+  ],
+  "outdoor seating": [
+    "outdoor seating",
+    "patio",
+    "garden",
+    "terrace",
+    "sidewalk seating",
+    "outdoor",
+  ],
+  patio: ["outdoor seating", "patio", "garden", "terrace", "outdoor"],
+  "bottomless mimosas": [
+    "bottomless",
+    "mimosas",
+    "bottomless mimosas",
+    "brunch cocktails",
+  ],
+  cocktails: ["cocktails", "drinks", "bar", "mixology"],
+  margaritas: ["margaritas", "cocktails", "drinks", "bar"],
+  games: [
+    "games",
+    "arcade",
+    "board games",
+    "bowling",
+    "darts",
+    "pool table",
+    "billiards",
+  ],
+  arcade: ["games", "arcade", "board games", "drinks"],
+  bowling: ["bowling", "games", "arcade"],
+  "private room": [
+    "private room",
+    "private rooms",
+    "private dining",
+    "event room",
+    "group dining",
+  ],
+  "private rooms": [
+    "private room",
+    "private rooms",
+    "private dining",
+    "event room",
+    "group dining",
+  ],
+  "late night": ["late night", "open late", "after hours"],
+  "open late": ["late night", "open late", "after hours"],
+};
+
+function uniqLowerTerms(terms: unknown[]): string[] {
+  return Array.from(
+    new Set(
+      terms
+        .flat()
+        .map((term) =>
+          String(term ?? "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  );
+}
+
+function matchTermsInFields(
+  record: EnterpriseLocation,
+  terms: string[],
+  fields: string[],
+) {
+  const matchedTerms: string[] = [];
+  const matchedFields: string[] = [];
+  for (const field of fields) {
+    const text = fieldText(record, [field]);
+    if (!text) continue;
+    for (const term of terms) {
+      const pattern = new RegExp(
+        `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\s+/g, "\\\\s+")}\\b`,
+        "i",
+      );
+      if (pattern.test(text)) {
+        if (!matchedTerms.includes(term)) matchedTerms.push(term);
+        if (!matchedFields.includes(field)) matchedFields.push(field);
+      }
+    }
+  }
+  return { matchedTerms, matchedFields };
+}
+
+export function sameVenueSearchTerms(intent: SearchIntent) {
+  const singleVenue = detectSingleVenueWithIntent(intent.rawQuery);
+  const sameVenuePreferred =
+    Boolean((intent as any).sameVenuePreferred) || singleVenue.matched;
+  if (!sameVenuePreferred) {
+    return {
+      primaryFoodTerms: [],
+      secondaryAttributeTerms: [],
+      expandedSecondaryAttributeTerms: [],
+    };
+  }
+
+  const primaryCandidates = uniqLowerTerms([
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.mealTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+    ...singleVenue.foodTerms,
+    ...singleVenue.venueTerms,
+    ...SAME_VENUE_PRIMARY_FOOD_TERMS.filter((term) =>
+      intent.rawQuery.toLowerCase().includes(term),
+    ),
+  ]);
+
+  const connectorSplit = String(intent.rawQuery ?? "")
+    .toLowerCase()
+    .split(
+      /\b(?:with|has|have|serving|serves|offering|offers|featuring|features|including|includes)\b/,
+    );
+  const afterWith = connectorSplit.slice(1).join(" ");
+  const secondaryCandidates = uniqLowerTerms([
+    ...((intent as any).secondaryAttributeTerms ?? []),
+    ...singleVenue.featureTerms,
+    ...SAME_VENUE_SECONDARY_ATTRIBUTE_TERMS.filter(
+      (term) =>
+        afterWith.includes(term) ||
+        (singleVenue.featureTerms.length &&
+          intent.rawQuery.toLowerCase().includes(term)),
+    ),
+  ]);
+
+  const expandedSecondaryAttributeTerms = uniqLowerTerms(
+    secondaryCandidates.flatMap(
+      (term) => SAME_VENUE_SECONDARY_SYNONYMS[term] ?? [term],
+    ),
+  );
+
+  return {
+    primaryFoodTerms: primaryCandidates,
+    secondaryAttributeTerms: secondaryCandidates,
+    expandedSecondaryAttributeTerms,
+  };
+}
+
+export function scoreSameVenueAttributeMatch(
+  record: EnterpriseLocation,
+  intent: SearchIntent,
+) {
+  const terms = sameVenueSearchTerms(intent);
+  if (
+    !terms.primaryFoodTerms.length ||
+    !terms.expandedSecondaryAttributeTerms.length
+  ) {
+    return {
+      score: 0,
+      primaryMatched: false,
+      secondaryMatched: false,
+      ...terms,
+      primaryTermsMatched: [],
+      secondaryTermsMatched: [],
+      primaryFieldsMatched: [],
+      secondaryFieldsMatched: [],
+      reason: "not_same_venue_attribute_query",
+    };
+  }
+
+  const primary = matchTermsInFields(
+    record,
+    terms.primaryFoodTerms,
+    SAME_VENUE_PRIMARY_FIELDS,
+  );
+  const secondary = matchTermsInFields(
+    record,
+    terms.expandedSecondaryAttributeTerms,
+    SAME_VENUE_SECONDARY_FIELDS,
+  );
+  const namePrimary =
+    matchTermsInFields(record, terms.primaryFoodTerms, [
+      "name",
+      "restaurant_name",
+      "activity_name",
+    ]).matchedTerms.length > 0;
+  const nameSecondary =
+    matchTermsInFields(record, terms.expandedSecondaryAttributeTerms, [
+      "name",
+      "restaurant_name",
+      "activity_name",
+    ]).matchedTerms.length > 0;
+  const docPrimary =
+    matchTermsInFields(record, terms.primaryFoodTerms, ["search_document"])
+      .matchedTerms.length > 0;
+  const docSecondary =
+    matchTermsInFields(record, terms.expandedSecondaryAttributeTerms, [
+      "search_document",
+    ]).matchedTerms.length > 0;
+  const primaryMatched = primary.matchedTerms.length > 0;
+  const secondaryMatched = secondary.matchedTerms.length > 0;
+
+  let score = 0;
+  let reason = "missing_primary_and_secondary";
+  if (primaryMatched && secondaryMatched) {
+    score = 260;
+    reason = "matched_primary_and_secondary_same_venue_terms";
+    if (namePrimary && nameSecondary) score += 120;
+    if (docPrimary && docSecondary) score += 120;
+    if (
+      primary.matchedFields.some((f) =>
+        [
+          "cuisine",
+          "cuisine_type",
+          "primary_category",
+          "primary_tag",
+          "search_document",
+        ].includes(f),
+      ) &&
+      secondary.matchedFields.some((f) =>
+        [
+          "semantic_tags",
+          "review_keywords",
+          "search_document",
+          "name",
+          "tags",
+          "search_keywords",
+          "intent_tags",
+        ].includes(f),
+      )
+    )
+      score += 80;
+    if (
+      secondary.matchedFields.some((f) =>
+        ["description", "semantic_search_text"].includes(f),
+      )
+    )
+      score += 40;
+  } else if (primaryMatched) {
+    score = -90;
+    reason = "primary_only_missing_same_venue_attribute";
+  } else if (secondaryMatched) {
+    score = 35;
+    reason = "secondary_only_missing_primary_food_intent";
+  }
+
+  (record as any).sameVenuePrimaryMatched = primaryMatched;
+  (record as any).sameVenueSecondaryMatched = secondaryMatched;
+  (record as any).sameVenuePrimaryTermsMatched = primary.matchedTerms;
+  (record as any).sameVenueAttributeTermsMatched = secondary.matchedTerms;
+  (record as any).sameVenuePrimaryFieldsMatched = primary.matchedFields;
+  (record as any).sameVenueSecondaryFieldsMatched = secondary.matchedFields;
+  (record as any).sameVenueScore = score;
+  (record as any).sameVenueBoostApplied = score > 0;
+  (record as any).sameVenueRankingReason = reason;
+  (record as any).matchedFields = uniqLowerTerms([
+    primary.matchedFields,
+    secondary.matchedFields,
+  ]);
+  return {
+    score,
+    primaryMatched,
+    secondaryMatched,
+    ...terms,
+    primaryTermsMatched: primary.matchedTerms,
+    secondaryTermsMatched: secondary.matchedTerms,
+    primaryFieldsMatched: primary.matchedFields,
+    secondaryFieldsMatched: secondary.matchedFields,
+    reason,
+  };
+}
+
 export function scoreSingleVenueWithMatch(
   record: EnterpriseLocation,
   intent: SearchIntent,
@@ -1369,8 +1789,11 @@ function relevance(
     domain === "restaurant"
       ? scoreRestaurantQuality(r, intent).score
       : scoreActivityQuality(r, intent).score;
-  const singleVenueWithScore =
+  const legacySingleVenueScore =
     domain === "restaurant" ? scoreSingleVenueWithMatch(r, intent).score : 0;
+  const sameVenueAttributeScore =
+    domain === "restaurant" ? scoreSameVenueAttributeMatch(r, intent).score : 0;
+  const singleVenueWithScore = legacySingleVenueScore + sameVenueAttributeScore;
   const quality =
     Number(r.theouthaven_score ?? r.quality_score ?? 0) +
     Number(r.rating ?? 0) * 2 +
