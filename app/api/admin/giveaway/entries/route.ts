@@ -3,6 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
+import { getBetaAccountReadinessForEntries } from "@/lib/beta/accountReadiness";
 
 export async function GET(request: Request) {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.giveaway);
@@ -27,15 +28,19 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  const entries = await Promise.all((data || []).map(async (entry) => ({
+  const baseEntries = data || [];
+  const readinessList = await getBetaAccountReadinessForEntries(baseEntries);
+  const entries = await Promise.all(baseEntries.map(async (entry, index) => ({
     ...entry,
+    beta_account_readiness: readinessList[index],
     beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || ""),
   })));
   const stats = {
     total: entries.length,
     launchListOnly: entries.filter((entry) => !entry.wants_giveaway).length,
     giveawayEntries: entries.filter((entry) => entry.wants_giveaway).length,
-    emailUnverified: entries.filter((entry) => entry.giveaway_status === "email_unverified").length,
+    loginReady: entries.filter((entry) => entry.beta_account_readiness?.loginReady).length,
+    needsSetup: entries.filter((entry) => entry.beta_account_readiness?.needsSetupEmail).length,
     pendingVerification: entries.filter((entry) => entry.giveaway_status === "pending_verification").length,
     verifiedEntries: entries.filter((entry) => entry.giveaway_status === "verified").length,
     missingSocialHandle: entries.filter((entry) => entry.wants_giveaway && !entry.social_handle).length,
