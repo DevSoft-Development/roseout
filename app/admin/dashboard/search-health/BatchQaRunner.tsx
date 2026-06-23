@@ -11,6 +11,9 @@ type QaSummary = {
   restaurant_count: number;
   activity_count: number;
   pair_count: number;
+  fallback_pair_count?: number;
+  fallbackPairsUsedAsPrimary?: boolean;
+  primaryResultType?: string | null;
   timing_ms: number | null;
   speed_status: string | null;
   intentParserSource: string | null;
@@ -78,6 +81,9 @@ const csvColumns: (keyof QaSummary)[] = [
   "restaurant_count",
   "activity_count",
   "pair_count",
+  "fallback_pair_count",
+  "primaryResultType",
+  "fallbackPairsUsedAsPrimary",
   "timing_ms",
   "speed_status",
   "intentParserSource",
@@ -743,7 +749,12 @@ export default function BatchQaRunner() {
                       <td className="px-3 py-3">{row.primary_domain ?? "—"}</td>
                       <td className="px-3 py-3">{row.restaurant_count}</td>
                       <td className="px-3 py-3">{row.activity_count}</td>
-                      <td className="px-3 py-3">{row.pair_count}</td>
+                      <td className="px-3 py-3">
+                        {row.pair_count}
+                        {row.fallback_pair_count
+                          ? ` / F${row.fallback_pair_count}`
+                          : ""}
+                      </td>
                       <td className="px-3 py-3">{row.speed_status ?? "—"}</td>
                       <td className="px-3 py-3">{row.timing_ms ?? "—"}</td>
                       <td className="px-3 py-3">{row.llm_ms ?? "—"}</td>
@@ -831,6 +842,7 @@ function SummaryStrip({ row }: { row: QaSummary }) {
         {row.normalized_search_type ?? "—"} · {row.speed_status ?? "—"} ·{" "}
         {row.timing_ms ?? "—"}ms · R{row.restaurant_count}/A{row.activity_count}
         /P{row.pair_count}
+        {row.fallback_pair_count ? `/F${row.fallback_pair_count}` : ""}
       </div>
       {row.suspiciousFlags.length ? (
         <div className="mt-2 text-xs font-bold text-amber-100">

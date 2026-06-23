@@ -314,6 +314,8 @@ export type EnterpriseSearchResult = {
   fallbackPairs?: EnterprisePair[];
   recommendedFallbackPairs?: EnterprisePair[];
   pairedFallbackUsed?: boolean;
+  fallbackPairsUsedAsPrimary?: boolean;
+  primaryResultType?: string;
   matched_locations: EnterpriseLocation[];
   matchedLocations?: EnterpriseLocation[];
   render_mode:
@@ -333,6 +335,7 @@ export type EnterpriseSearchResult = {
     matched_locations: number;
     pairs: number;
     fallbackPairs?: number;
+    fallback_pair_count?: number;
   };
   cardCounts?: {
     restaurants: number;
@@ -340,6 +343,7 @@ export type EnterpriseSearchResult = {
     matched_locations: number;
     pairs: number;
     fallbackPairs?: number;
+    fallback_pair_count?: number;
   };
   debug?: Record<string, unknown> &
     EnterpriseSearchDebugMetadata & { mlSearchDebug?: MlSearchDebug };

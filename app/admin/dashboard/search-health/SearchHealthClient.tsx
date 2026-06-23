@@ -83,6 +83,8 @@ function formatSearchEventForCopy(row: any): string {
     `Restaurants: ${cleanValue(row.restaurant_count)}`,
     `Activities: ${cleanValue(row.activity_count)}`,
     `Pairs: ${cleanValue(row.pair_count)}`,
+    `Fallback Pairs: ${cleanValue(row.metadata?.fallback_pair_count ?? row.debug?.fallback_pair_count)}`,
+    `Primary Result Type: ${cleanValue(row.metadata?.primaryResultType ?? row.debug?.primaryResultType)}`,
     `Results: ${cleanValue(row.result_count)}`,
     "",
     "Performance:",
@@ -1192,6 +1194,19 @@ function SearchEventCard({
         <Stat label="Restaurants" value={event.restaurant_count} />
         <Stat label="Activities" value={event.activity_count} />
         <Stat label="Pairs" value={event.pair_count} />
+        <Stat
+          label="Fallback pairs"
+          value={
+            event.metadata?.fallback_pair_count ??
+            event.debug?.fallback_pair_count ??
+            "—"
+          }
+          sub={
+            event.metadata?.primaryResultType ??
+            event.debug?.primaryResultType ??
+            undefined
+          }
+        />
         <Stat label="Results" value={event.result_count} />
         <Stat
           label="Time"
