@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 const VALID_TABLES = new Set(["locations", "restaurants", "activities"]);
 const TEXT_MASK =
@@ -904,6 +905,8 @@ async function runFoodProbes(
 }
 
 serve(async (req) => {
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
   if (
     req.headers.get("x-cron-secret") !==
       Deno.env.get("GOOGLE_LOCATION_ENRICHMENT_CRON_SECRET") &&
@@ -1201,5 +1204,22 @@ serve(async (req) => {
     ["pending_review", "auto_apply_ready", "auto_applied"].includes(row.status),
   );
 
+  await logCronJobRun(supabase, {
+    job_name: "google-location-enrichment",
+    function_name: "google-location-enrichment",
+    route_path: "supabase/functions/google-location-enrichment",
+    description: "Enriches location search terms from Google Places data.",
+    schedule_hint: "No repo schedule found",
+    status: counters.failed > 0 ? "warning" : "success",
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    duration_ms: Date.now() - startedMs,
+    checked_count: counters.scanned,
+    success_count: counters.suggestions_created + counters.auto_applied + counters.pending_review + counters.auto_apply_ready,
+    skipped_count: counters.no_match + counters.no_useful_terms,
+    failed_count: counters.failed,
+    message: "Google location enrichment processed.",
+    details: counters,
+  });
   return json(counters);
 });
