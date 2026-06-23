@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import GiveawayAdminClient from "./GiveawayAdminClient";
 
 export const metadata = { title: "Beta Tester Reward Admin" };
@@ -12,7 +13,10 @@ export default async function AdminGiveawayPage() {
     supabaseAdmin.from("launch_waitlist_signups").select("*").order("created_at", { ascending: false }).limit(500),
     supabaseAdmin.from("launch_waitlist_duplicate_events").select("*").order("created_at", { ascending: false }).limit(50),
   ]);
-  const list = entries || [];
+  const list = await Promise.all((entries || []).map(async (entry) => ({
+    ...entry,
+    beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || ""),
+  })));
   const stats = {
     total: list.length,
     launchListOnly: list.filter((entry) => !entry.wants_giveaway).length,
