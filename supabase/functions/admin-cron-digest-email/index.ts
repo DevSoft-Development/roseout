@@ -366,7 +366,7 @@ Deno.serve(async (req) => {
     }
     await logCronJobRun(supabase, {
       job_name: "admin-cron-digest-email",
-      function_name: "admin-cron-digest-email",
+      function_name: "admin-cron-digest-email", route_path: "supabase/functions/admin-cron-digest-email", description: "Emails admins a cron and import monitoring digest.", schedule_hint: "Edge Function / scheduled",
       source: "digest_self",
       status: "success",
       started_at: startedAt,
@@ -383,7 +383,7 @@ Deno.serve(async (req) => {
     return ok({ success: true, digest, scheduledCronJobs: scheduledHealth, email: emailResult });
   } catch (error) {
     const message = safeError(error);
-    await logCronJobRun(supabase, { job_name: "admin-cron-digest-email", function_name: "admin-cron-digest-email", source: "digest_self", status: "failed", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), failed_count: 1, error_message: message, metadata: { selfDigest: true, authSource } });
+    await logCronJobRun(supabase, { job_name: "admin-cron-digest-email", function_name: "admin-cron-digest-email", route_path: "supabase/functions/admin-cron-digest-email", description: "Emails admins a cron and import monitoring digest.", schedule_hint: "Edge Function / scheduled", source: "digest_self", status: "failed", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), failed_count: 1, error_message: message, metadata: { selfDigest: true, authSource } });
     await logEdgeFunctionRun(supabase, { function_name: "admin-cron-digest-email", status: "error", error_message: message, duration_ms: timer() });
     return serverError("admin-cron-digest-email failed", message);
   }

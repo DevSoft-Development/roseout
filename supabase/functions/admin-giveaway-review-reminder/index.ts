@@ -308,6 +308,9 @@ Deno.serve(async (req) => {
       await logCronJobRun(supabase, {
         job_name: SOURCE,
         function_name: SOURCE,
+        route_path: "supabase/functions/admin-giveaway-review-reminder",
+        description: "Emails admins about giveaway entries needing review.",
+        schedule_hint: "Edge Function / scheduled",
         source,
         status: "skipped",
         started_at: startedAt,
@@ -365,6 +368,9 @@ Deno.serve(async (req) => {
     await logCronJobRun(supabase, {
       job_name: SOURCE,
       function_name: SOURCE,
+      route_path: "supabase/functions/admin-giveaway-review-reminder",
+      description: "Emails admins about giveaway entries needing review.",
+      schedule_hint: "Edge Function / scheduled",
       source,
       status: "success",
       started_at: startedAt,
@@ -381,6 +387,9 @@ Deno.serve(async (req) => {
       await logCronJobRun(supabase, {
         job_name: SOURCE,
         function_name: SOURCE,
+        route_path: "supabase/functions/admin-giveaway-review-reminder",
+        description: "Emails admins about giveaway entries needing review.",
+        schedule_hint: "Edge Function / scheduled",
         source,
         status: "failed",
         started_at: startedAt,

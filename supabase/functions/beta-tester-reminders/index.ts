@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     if (!found.table) {
       await logCronJobRun(supabase, {
         job_name: "beta-tester-reminders",
-        function_name: "beta-tester-reminders",
+        function_name: "beta-tester-reminders", route_path: "supabase/functions/beta-tester-reminders", description: "Sends beta testing reminder emails.", schedule_hint: "Edge Function / scheduled",
         source,
         status: "skipped",
         started_at: startedAt,
@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
 
     await logCronJobRun(supabase, {
       job_name: "beta-tester-reminders",
-      function_name: "beta-tester-reminders",
+      function_name: "beta-tester-reminders", route_path: "supabase/functions/beta-tester-reminders", description: "Sends beta testing reminder emails.", schedule_hint: "Edge Function / scheduled",
       source,
       status: failed ? "warning" : "success",
       started_at: startedAt,
@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     return ok({ success: true, table: found.table, checked: found.rows.length, sent, skipped, failed });
   } catch (error) {
     const message = safeError(error);
-    await logCronJobRun(supabase, { job_name: "beta-tester-reminders", function_name: "beta-tester-reminders", source, status: "failed", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), failed_count: 1, error_message: message });
+    await logCronJobRun(supabase, { job_name: "beta-tester-reminders", function_name: "beta-tester-reminders", route_path: "supabase/functions/beta-tester-reminders", description: "Sends beta testing reminder emails.", schedule_hint: "Edge Function / scheduled", source, status: "failed", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), failed_count: 1, error_message: message });
     await logEdgeFunctionRun(supabase, { function_name: "beta-tester-reminders", status: "error", error_message: message, duration_ms: timer() });
     return serverError("beta-tester-reminders failed", message);
   }

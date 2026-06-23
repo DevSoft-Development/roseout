@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     await logCronJobRun(supabase, {
       job_name: "team-session-watchdog",
-      function_name: "team-session-watchdog",
+      function_name: "team-session-watchdog", route_path: "supabase/functions/team-session-watchdog", description: "Expires stale team sessions.", schedule_hint: "Edge Function / scheduled",
       source: "cron",
       status: "success",
       started_at: startedAt,
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : String(error);
     await logCronJobRun(supabase, {
       job_name: "team-session-watchdog",
-      function_name: "team-session-watchdog",
+      function_name: "team-session-watchdog", route_path: "supabase/functions/team-session-watchdog", description: "Expires stale team sessions.", schedule_hint: "Edge Function / scheduled",
       source: "cron",
       status: "failed",
       started_at: startedAt,

@@ -1029,7 +1029,7 @@ Deno.serve(async (req) => {
     if (locationsError) {
       await logCronJobRun(supabase, {
         job_name: "nightly-photo-backfill",
-        function_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
         source,
         status: "failed",
         started_at: new Date(startedAt).toISOString(),
@@ -1040,7 +1040,7 @@ Deno.serve(async (req) => {
         metadata: { stage: "load_locations" },
       });
       await logEdgeFunctionRun(supabase, {
-        function_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
         status: "error",
         source,
         error_message: locationsError.message,
@@ -1093,7 +1093,7 @@ Deno.serve(async (req) => {
       if (!dryRun) {
         await logCronJobRun(supabase, {
           job_name: "nightly-photo-backfill",
-          function_name: "nightly-photo-backfill",
+          function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
           source,
           status: "success",
           started_at: new Date(startedAt).toISOString(),
@@ -1107,7 +1107,7 @@ Deno.serve(async (req) => {
           metadata: optionMetadata,
         });
         await logEdgeFunctionRun(supabase, {
-          function_name: "nightly-photo-backfill",
+          function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
           status: "success",
           source,
           duration_ms: timer(),
@@ -1215,7 +1215,7 @@ Deno.serve(async (req) => {
       const eligible = locations.length;
       await logCronJobRun(supabase, {
         job_name: "nightly-photo-backfill",
-        function_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
         source,
         status: "success",
         started_at: new Date(startedAt).toISOString(),
@@ -1233,7 +1233,7 @@ Deno.serve(async (req) => {
         },
       });
       await logEdgeFunctionRun(supabase, {
-        function_name: "nightly-photo-backfill",
+        function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
         status: "success",
         source,
         duration_ms: timer(),
@@ -1383,7 +1383,7 @@ Deno.serve(async (req) => {
     const eligible = locations.length;
     await logCronJobRun(supabase, {
       job_name: "nightly-photo-backfill",
-      function_name: "nightly-photo-backfill",
+      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
       source,
       status: failed ? "warning" : "success",
       started_at: new Date(startedAt).toISOString(),
@@ -1404,7 +1404,7 @@ Deno.serve(async (req) => {
       },
     });
     await logEdgeFunctionRun(supabase, {
-      function_name: "nightly-photo-backfill",
+      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
       status: "success",
       source,
       duration_ms: timer(),
@@ -1451,7 +1451,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     await logCronJobRun(supabase, {
       job_name: "nightly-photo-backfill",
-      function_name: "nightly-photo-backfill",
+      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
       source,
       status: "failed",
       started_at: new Date(startedAt).toISOString(),
@@ -1461,7 +1461,7 @@ Deno.serve(async (req) => {
       error_message: safeError(error),
     });
     await logEdgeFunctionRun(supabase, {
-      function_name: "nightly-photo-backfill",
+      function_name: "nightly-photo-backfill", route_path: "supabase/functions/nightly-photo-backfill", description: "Backfills location photos overnight.", schedule_hint: "Edge Function / nightly",
       status: "error",
       source,
       error_message: safeError(error),

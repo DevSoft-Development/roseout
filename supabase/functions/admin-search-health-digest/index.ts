@@ -258,7 +258,7 @@ Deno.serve(async (req) => {
       const message = error instanceof Error ? error.message : String(error);
       await logCronJobRun(supabase, {
         job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
         source,
         status: "failed",
         started_at: startedAt,
@@ -282,7 +282,7 @@ Deno.serve(async (req) => {
       const digestRunInsertError = await recordRun(supabase, { source, sent: false, recipient_count: 0, total_events: 0, error_count: 0, warning_count: 0, no_pair_count: 0, no_result_count: 0, slow_count: 0, response });
       await logCronJobRun(supabase, {
         job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
         source,
         status: "skipped",
         started_at: startedAt,
@@ -312,7 +312,7 @@ Deno.serve(async (req) => {
       const details = safeEmailErrorDetails(error);
       await logCronJobRun(supabase, {
         job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
         source,
         status: "failed",
         started_at: startedAt,
@@ -334,7 +334,7 @@ Deno.serve(async (req) => {
     const digestRunInsertError = await recordRun(supabase, { source, sent: true, recipient_count: to.length, total_events: summary.totalEvents, error_count: summary.errorCount, warning_count: summary.warningCount, no_pair_count: summary.noPairCount, no_result_count: summary.noResultCount, slow_count: summary.slowCount, response });
     await logCronJobRun(supabase, {
       job_name: "admin-search-health-digest",
-      function_name: "admin-search-health-digest",
+      function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
       source,
       status: issueCount > 0 ? "warning" : "success",
       started_at: startedAt,
@@ -352,7 +352,7 @@ Deno.serve(async (req) => {
     if (supabaseForFailure) {
       await logCronJobRun(supabaseForFailure, {
         job_name: "admin-search-health-digest",
-        function_name: "admin-search-health-digest",
+        function_name: "admin-search-health-digest", route_path: "supabase/functions/admin-search-health-digest", description: "Emails admins a search health digest.", schedule_hint: "Edge Function / scheduled",
         source: sourceForFailure,
         status: "failed",
         started_at: startedAt,
