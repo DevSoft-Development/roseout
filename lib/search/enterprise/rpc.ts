@@ -656,6 +656,7 @@ export async function searchEnterpriseLane(
     }
 
     let rows = (data ?? []).map(mapRpcLocation);
+    if (debug) (debug as any).sameVenueRecoveryResultCount = rows.length;
     const market = explicitMarketForIntent(intent);
     if (
       market &&
@@ -706,10 +707,12 @@ export async function recoverEnterpriseLane(
   try {
     const p = params(intent, domain, 80, overrideTerms);
 
-    debug?.rpcCalls.push(`enterprise_search_recovery:${domain}`);
+    debug?.rpcCalls.push(`enterprise_search_locations:recovery:${domain}`);
 
     if (debug) {
       debug.recoveryTerms = p.p_search_terms;
+      (debug as any).sameVenueRecoveryFallbackUsed = true;
+      (debug as any).sameVenueRecoverySkipped = false;
     }
 
     if (domain === "restaurant" && debug) {
@@ -729,12 +732,17 @@ export async function recoverEnterpriseLane(
     delete (p as any).__debug_before_terms;
     delete (p as any).__debug_removed_terms;
 
-    const { data, error } = await supabase.rpc("enterprise_search_recovery", p);
+    const { data, error } = await supabase.rpc("enterprise_search_locations", p);
 
     if (error) {
-      const message = addDebugError(debug, error.message);
+      const message = String(error.message ?? error);
+      if (debug) {
+        (debug as any).sameVenueRecoveryError = message;
+        (debug as any).sameVenueRecoveryWarning =
+          "same venue recovery skipped or failed; primary results returned";
+      }
 
-      console.error("[enterprise_search_recovery] RPC failed", {
+      console.warn("[enterprise_search_locations:recovery] RPC failed", {
         domain,
         message,
       });
@@ -752,6 +760,7 @@ export async function recoverEnterpriseLane(
     }
 
     let rows = (data ?? []).map(mapRpcLocation);
+    if (debug) (debug as any).sameVenueRecoveryResultCount = rows.length;
     const market = explicitMarketForIntent(intent);
     if (market) {
       rows = mergeMarketFallbackRows(
@@ -768,9 +777,14 @@ export async function recoverEnterpriseLane(
 
     return rows;
   } catch (error) {
-    const message = addDebugError(debug, error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (debug) {
+      (debug as any).sameVenueRecoveryError = message;
+      (debug as any).sameVenueRecoveryWarning =
+        "same venue recovery skipped or failed; primary results returned";
+    }
 
-    console.error("[enterprise_search_recovery] RPC crashed", {
+    console.warn("[enterprise_search_locations:recovery] RPC crashed", {
       domain,
       message,
     });

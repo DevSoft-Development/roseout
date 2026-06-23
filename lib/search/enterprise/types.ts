@@ -311,6 +311,9 @@ export type EnterpriseSearchResult = {
   restaurants: EnterpriseLocation[];
   activities: EnterpriseLocation[];
   pairs: EnterprisePair[];
+  fallbackPairs?: EnterprisePair[];
+  recommendedFallbackPairs?: EnterprisePair[];
+  pairedFallbackUsed?: boolean;
   matched_locations: EnterpriseLocation[];
   matchedLocations?: EnterpriseLocation[];
   render_mode:
@@ -329,12 +332,14 @@ export type EnterpriseSearchResult = {
     activities: number;
     matched_locations: number;
     pairs: number;
+    fallbackPairs?: number;
   };
   cardCounts?: {
     restaurants: number;
     activities: number;
     matched_locations: number;
     pairs: number;
+    fallbackPairs?: number;
   };
   debug?: Record<string, unknown> &
     EnterpriseSearchDebugMetadata & { mlSearchDebug?: MlSearchDebug };
