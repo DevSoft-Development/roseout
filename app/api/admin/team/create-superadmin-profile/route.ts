@@ -30,6 +30,6 @@ export async function POST() {
   }, { onConflict: "user_id" }).select("*").single();
   if (error) return Response.json({ error: error.message }, { status: 400 });
   await supabaseAdmin.from("workspace_audit_logs").insert({ actor_user_id: adminUser.user_id, actor_team_member_id: data.id, action: "create_superadmin_team_profile", entity_type: "team_member_profile", entity_id: data.id, new_value: data }).then(undefined, () => undefined);
-  revalidatePath("/admin/dashboard/my-workspace");
+  revalidatePath("/admin/dashboard/crm/work-queue?view=my-queue");
   return Response.json({ profile: data });
 }

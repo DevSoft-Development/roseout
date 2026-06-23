@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     await supabaseAdmin.from("ambassador_site_visits").update({ photo_uploaded: true }).eq("id", visit.id);
     await supabaseAdmin.from("team_work_activities").insert({ team_member_id: profile.id, user_id: user.id, work_session_id: active.id, activity_type: "site_visit", source_type: "site_visit", source_id: visit.id, location_id: locationId, notes: form.get("notes") || null });
     await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: `Site visit completed. Verification: ${verification}.`, note_type: "site_visit", created_by: user.id }).then(undefined, () => undefined);
-    revalidatePath("/my-workspace/site-visits"); revalidatePath("/admin/dashboard/team/site-visits");
+    revalidatePath("/admin/dashboard/crm/outreach?view=site-visits"); revalidatePath("/admin/dashboard/team/site-visits");
     return Response.json({ visit: { ...visit, photo_uploaded: true } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not save site visit." }, { status: 400 });

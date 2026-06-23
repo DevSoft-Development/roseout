@@ -1,2 +1,5 @@
 import { redirect } from "next/navigation";
-export default function CrmLocationsRedirect() { redirect("/admin/dashboard/crm"); }
+
+export default function RedirectPage() {
+  redirect("/admin/dashboard/crm/accounts");
+}

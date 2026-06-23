@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     }
     await supabaseAdmin.from("team_work_activities").insert({ team_member_id: profile.id, user_id: user.id, work_session_id: active.id, activity_type: "social_outreach", source_type: "social_outreach", source_id: outreach.id, location_id: locationId, status: "completed", notes: form.get("notes") || null });
     await supabaseAdmin.from("business_crm_notes").insert({ location_id: locationId, note: `Social outreach logged on ${platform}. Status: ${form.get("messageStatus") || "sent"}.`, note_type: "social_outreach", created_by: user.id }).then(undefined, () => undefined);
-    revalidatePath("/my-workspace/social-outreach"); revalidatePath("/admin/dashboard/team/social-outreach");
+    revalidatePath("/admin/dashboard/crm/outreach?view=social-outreach"); revalidatePath("/admin/dashboard/team/social-outreach");
     return Response.json({ outreach });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not save social outreach." }, { status: 400 });

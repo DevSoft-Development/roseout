@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function BusinessCRMRedirectPage() {
-  redirect("/admin/dashboard/crm");
+export default function RedirectPage() {
+  redirect("/admin/dashboard/crm/accounts");
 }

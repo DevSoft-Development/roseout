@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/knowledge-base");
+  redirect("/admin/dashboard/crm/operations?view=knowledge-base");
 }

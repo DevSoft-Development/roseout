@@ -1,0 +1,8 @@
+import Link from "next/link";
+import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
+import { requireAdminRole } from "@/lib/admin-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+
+export const dynamic = "force-dynamic";
+const views = [["claims","Claims","Claim review workspace and owner relationship handoff."],["claim-codes","Claim Codes","Audited claim-code delivery workspace. Public verification remains /business/claim?code=TOH-XXXX-XXXX."],["social-outreach","Social Outreach","Social outreach planning and status tracking."],["site-visits","Site Visits","Plan and record site visit CRM work."],["mailers","Mailer Tracking","Partner outreach and claim-code mailer tracking."]] as const;
+export default async function OutreachPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) { await requireAdminRole(ADMIN_PAGE_ACCESS.crm); const { view = "claims" } = await searchParams; const active = views.find(([key]) => key === view) || views[0]; return <CrmWorkspaceShell><section className="rounded-3xl border border-white/10 bg-[#111] p-6"><p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Outreach</p><h2 className="mt-2 text-3xl font-black text-white">{active[1]}</h2><p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">{active[2]}</p><div className="mt-6 flex flex-wrap gap-2">{views.map(([key,label]) => <Link key={key} href={`/admin/dashboard/crm/outreach?view=${key}`} className={`rounded-full border px-4 py-2 text-xs font-black ${active[0] === key ? "border-rose-300/40 bg-[#ec0b5b] text-white" : "border-white/10 bg-white/[0.04] text-white/65 hover:text-white"}`}>{label}</Link>)}</div></section></CrmWorkspaceShell>; }

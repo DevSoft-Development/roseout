@@ -89,7 +89,7 @@ export function resolvePostLoginRedirect(input: RedirectResolutionInput): string
   );
 
   if (isTeamWorkspaceUser) {
-    return "/my-workspace";
+    return "/admin/dashboard/crm/work-queue?view=my-queue";
   }
 
   const isOwner =

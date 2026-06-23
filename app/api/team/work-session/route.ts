@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         is_remote: ["experience_team", "support_team"].includes(profile.team_type) || ["social_outreach", "phone_outreach", "email_outreach", "support_ticket", "admin_work"].includes(workType),
       }).select("*").single();
       if (error) throw error;
-      revalidatePath("/my-workspace");
+      revalidatePath("/admin/dashboard/crm/work-queue?view=my-queue");
       revalidatePath("/admin/dashboard/team/work-sessions");
       return Response.json({ session: data });
     }
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       updated_at: now.toISOString(),
     }).eq("id", sessionId).eq("user_id", user.id).select("*").single();
     if (error) throw error;
-    revalidatePath("/my-workspace");
+    revalidatePath("/admin/dashboard/crm/work-queue?view=my-queue");
     revalidatePath("/admin/dashboard/team/work-sessions");
     return Response.json({ session: data });
   } catch (error) {
