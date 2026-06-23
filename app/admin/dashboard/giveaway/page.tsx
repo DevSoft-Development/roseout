@@ -9,9 +9,10 @@ export const metadata = { title: "Beta Tester Reward Admin" };
 
 export default async function AdminGiveawayPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.giveaway);
-  const [{ data: entries }, { data: duplicateEvents }] = await Promise.all([
+  const [{ data: entries }, { data: duplicateEvents }, { data: weeklyTasks }] = await Promise.all([
     supabaseAdmin.from("launch_waitlist_signups").select("*").order("created_at", { ascending: false }).limit(500),
     supabaseAdmin.from("launch_waitlist_duplicate_events").select("*").order("created_at", { ascending: false }).limit(50),
+    supabaseAdmin.from("beta_tasks").select("*").order("created_at", { ascending: false }).limit(50),
   ]);
   const list = await Promise.all((entries || []).map(async (entry) => ({
     ...entry,
@@ -42,7 +43,7 @@ export default async function AdminGiveawayPage() {
             <Link href="/admin/dashboard" className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white">Admin Dashboard</Link>
           </div>
         </section>
-        <GiveawayAdminClient initialEntries={list} initialStats={stats} duplicateEvents={duplicateEvents || []} />
+        <GiveawayAdminClient initialEntries={list} initialStats={stats} duplicateEvents={duplicateEvents || []} initialWeeklyTasks={weeklyTasks || []} />
       </div>
     </main>
   );

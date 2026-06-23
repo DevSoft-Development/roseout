@@ -4,8 +4,22 @@ import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 import type { BetaReminderType } from "@/types/beta";
 
 type EmailInput = { name?: string | null; completed: number; required?: number; taskLinks: { title: string; href: string }[] };
-const subjects: Record<BetaReminderType,string>={weekly_tasks:"Your 5 TheOutHaven beta tests for this week",midweek_reminder:"Reminder: complete your TheOutHaven beta tests",daily_incomplete_reminder:"You still have beta tests waiting",friday_final_reminder:"Final reminder: finish this week’s beta tests",completed_weekly_goal:"Thank you — you completed your weekly beta tests"};
-function body(input:EmailInput){const required=input.required??5;const remaining=Math.max(0,required-input.completed);return `Hi ${input.name||"there"},\n\nThank you for helping shape TheOutHaven before launch. Your feedback helps us improve search quality, search speed, real user prompts, location pages, reservations, claims, and the overall planning experience.\n\nYour goal this week is to complete ${required} quick beta tests. Each one should only take about 2–5 minutes.\n\nYour progress: ${input.completed}/${required} completed. ${remaining} remaining.\n\nYour tasks:\n${input.taskLinks.map((t,i)=>`${i+1}. ${t.title} — ${t.href}`).join("\n")}\n\nSome search tasks let you use your own prompt. Please type what you would naturally search for on TheOutHaven.\n\nStart here: /beta/dashboard\n\nQuestions? Email support@theouthaven.com.\n\nThank you,\nTheOutHaven Team`;}
+const subjects: Record<BetaReminderType,string>={weekly_tasks:"Your TheOutHaven beta tasks for this week",midweek_reminder:"Reminder: complete your TheOutHaven beta tasks",daily_incomplete_reminder:"You still have beta tasks waiting",friday_final_reminder:"Final reminder: finish this week’s beta tasks",completed_weekly_goal:"Thank you — you completed your weekly beta tasks"};
+function body(input:EmailInput){const required=input.required??5;const remaining=Math.max(0,required-input.completed);return `Hi ${input.name||"there"},
+
+Your TheOutHaven Beta Tester Program tasks for this week are ready. Each task should take less than 10 minutes.
+
+Complete your Weekly Beta Tasks to stay eligible for the $100 Beta Tester Reward.
+
+Progress: ${input.completed}/${required} complete. ${remaining} remaining.
+
+This week’s tasks:
+${input.taskLinks.map((t,i)=>`${i+1}. ${t.title} — ${t.href}`).join("\n")}
+
+Open your beta dashboard: /user/dashboard/beta
+
+Thank you,
+TheOutHaven Team`; }
 export function buildBetaWeeklyTasksEmail(input:EmailInput){return {subject:subjects.weekly_tasks,body:body(input)};} export function buildBetaMidweekReminderEmail(input:EmailInput){return {subject:subjects.midweek_reminder,body:body(input)};} export function buildBetaFridayReminderEmail(input:EmailInput){return {subject:subjects.friday_final_reminder,body:body(input)};} export function buildBetaCompletedGoalEmail(input:EmailInput){return {subject:subjects.completed_weekly_goal,body:body(input)};}
 export async function shouldSendBetaReminder(testerId:string,reminderType:BetaReminderType,weekStart=getCurrentWeekStart()){const {data}=await supabaseAdmin.from("beta_email_reminders").select("id").eq("tester_id",testerId).eq("reminder_type",reminderType).eq("week_start",weekStart).in("status",["sent","pending"]).limit(1);return !data?.length;}
 async function taskLinks(testerId:string,weekStart:string){const {data}=await supabaseAdmin.from("beta_task_assignments").select("id,status,assigned_prompt,beta_tasks(title,predefined_prompt,prompt_mode,custom_prompt_required)").eq("tester_id",testerId).eq("assigned_week_start",weekStart).neq("status","completed").limit(5);return (data||[]).map((a:any)=>{const prompt=a.assigned_prompt||a.beta_tasks?.predefined_prompt; const needsCustom=a.beta_tasks?.custom_prompt_required; return {title:a.beta_tasks?.title||"Beta task",href:needsCustom?`/beta/dashboard?task=${a.id}`:`/beta/start-task/${a.id}${prompt?`?prompt=${encodeURIComponent(prompt)}&usedCustomPrompt=false`:""}`};});}
