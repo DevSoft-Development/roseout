@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
+import BetaLaunchHeader from "@/components/BetaLaunchHeader";
 import RecoveryRedirect from "@/components/RecoveryRedirect";
 import LaunchWaitlistForm from "@/components/launch/LaunchWaitlistForm";
 import { buildMetadata } from "@/lib/seo";
@@ -45,7 +45,7 @@ export default function HomePage() {
     <main className="min-h-screen overflow-hidden bg-[#070303] text-white">
       <RecoveryRedirect />
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_10%,rgba(225,29,72,0.34),transparent_30%),radial-gradient(circle_at_85%_5%,rgba(255,255,255,0.10),transparent_23%),linear-gradient(140deg,#070303_0%,#170808_47%,#050202_100%)]" />
-      <Nav />
+      <BetaLaunchHeader />
       <section className="px-5 pb-16 pt-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl space-y-16">
           <Hero />
@@ -60,27 +60,6 @@ export default function HomePage() {
       </section>
       <Footer />
     </main>
-  );
-}
-
-function Nav() {
-  return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#070303]/82 px-5 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-3" aria-label="TheOutHaven home">
-          <Image src="/toh_logo.png" alt="TheOutHaven" width={44} height={44} className="rounded-xl" priority />
-          <span className="text-sm font-black uppercase tracking-[0.24em] text-white/85">TheOutHaven</span>
-        </Link>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <a href="#launch-list" className="hidden rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-50 transition hover:bg-rose-500/20 sm:inline-flex">
-            Join Beta Launch List
-          </a>
-          <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-white/12">
-            Log In
-          </Link>
-        </div>
-      </nav>
-    </header>
   );
 }
 
