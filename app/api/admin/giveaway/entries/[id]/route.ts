@@ -70,13 +70,13 @@ export async function PATCH(
       return NextResponse.json({ success: true, entry: { ...entry, beta_application_status: "approved", beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(email) }, beta });
     } catch (error) {
       await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: email, action: "beta_approve_failed", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Beta approval failed", metadata: { error: error instanceof Error ? error.message : "Unknown error" } });
-      return NextResponse.json({ success: false, error: "Beta approval could not be completed. Please try Repair beta access or resend the verify/create-password email." }, { status: 500 });
+      return NextResponse.json({ success: false, error: "Beta approval could not be completed. Please try Repair Beta Access or Resend Setup Email." }, { status: 500 });
     }
   }
   if (["resend_beta_invite", "link_beta_user", "assign_beta_tasks", "repair_beta_access"].includes(String(body.action))) {
     try {
       const repaired = await repairBetaAccessForEmail({ email: entry.email, fullName: entry.full_name, phone: entry.phone, testerType: entry.tester_type, applicationId: entry.beta_application_id, actor: auth.adminUser, sendInviteIfNeeded: body.action === "resend_beta_invite" || body.action === "repair_beta_access" });
-      return NextResponse.json({ success: true, entry: { ...entry, beta_application_status: "approved", beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || "") }, repair: repaired });
+      return NextResponse.json({ success: true, message: body.action === "resend_beta_invite" ? "Setup email resent and beta access checked." : "Beta access repaired. Account links and weekly tasks were checked.", entry: { ...entry, beta_application_status: "approved", beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || "") }, repair: repaired });
     } catch (error) {
       return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Unable to repair beta access." }, { status: 500 });
     }
