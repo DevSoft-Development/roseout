@@ -3,6 +3,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
+import { getBetaAccountReadinessForEntries } from "@/lib/beta/accountReadiness";
 import GiveawayAdminClient from "./GiveawayAdminClient";
 
 export const metadata = { title: "Beta Tester Reward Admin" };
@@ -14,15 +15,19 @@ export default async function AdminGiveawayPage() {
     supabaseAdmin.from("launch_waitlist_duplicate_events").select("*").order("created_at", { ascending: false }).limit(50),
     supabaseAdmin.from("beta_tasks").select("*").order("created_at", { ascending: false }).limit(50),
   ]);
-  const list = await Promise.all((entries || []).map(async (entry) => ({
+  const baseEntries = entries || [];
+  const readinessList = await getBetaAccountReadinessForEntries(baseEntries);
+  const list = await Promise.all(baseEntries.map(async (entry, index) => ({
     ...entry,
+    beta_account_readiness: readinessList[index],
     beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || ""),
   })));
   const stats = {
     total: list.length,
     launchListOnly: list.filter((entry) => !entry.wants_giveaway).length,
     giveawayEntries: list.filter((entry) => entry.wants_giveaway).length,
-    emailUnverified: list.filter((entry) => entry.giveaway_status === "email_unverified").length,
+    loginReady: list.filter((entry) => entry.beta_account_readiness?.loginReady).length,
+    needsSetup: list.filter((entry) => entry.beta_account_readiness?.needsSetupEmail).length,
     pendingVerification: list.filter((entry) => entry.giveaway_status === "pending_verification").length,
     verifiedEntries: list.filter((entry) => entry.giveaway_status === "verified").length,
     missingSocialHandle: list.filter((entry) => entry.wants_giveaway && !entry.social_handle).length,
