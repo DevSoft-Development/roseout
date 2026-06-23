@@ -6,8 +6,8 @@ export const metadata = { title: "Beta Login | TheOutHaven" };
 
 export default function BetaLoginPage() {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(225,29,72,0.18),transparent_34%),linear-gradient(135deg,#090706,#140c0b_52%,#090706)] px-4 py-10 text-white">
-      <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-xl items-center justify-center">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(225,29,72,0.18),transparent_34%),linear-gradient(135deg,#090706,#140c0b_52%,#090706)] px-4 pb-12 pt-28 text-white sm:pt-32">
+      <section className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-xl items-center justify-center">
         <div className="w-full overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.045] shadow-2xl shadow-black/45 backdrop-blur-xl">
           <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.22),transparent_38%),rgba(0,0,0,0.22)] p-7 text-center sm:p-8">
             <Link href="/beta" className="mx-auto inline-flex items-center gap-3" aria-label="TheOutHaven beta home">
