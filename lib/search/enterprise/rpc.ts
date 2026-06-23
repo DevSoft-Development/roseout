@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EnterpriseLocation, SearchDomain, SearchIntent } from "./types";
-import { isExplicitMarket, isResultAllowedForResolvedMarket } from "../market-guardrails";
+import {
+  isExplicitMarket,
+  isResultAllowedForResolvedMarket,
+} from "../market-guardrails";
 import {
   activityRpcTerms,
   activitySearchTermsOriginal,
@@ -13,7 +16,10 @@ import {
   restaurantSearchTerms,
   restaurantSearchTermsOriginal,
 } from "./normalize-intent";
-import { userAskedForPlaceOfWorship } from "./taxonomy";
+import {
+  detectSingleVenueWithIntent,
+  userAskedForPlaceOfWorship,
+} from "./taxonomy";
 
 type RpcDebug = {
   rpcTermsBeforeCap?: string[];
@@ -82,11 +88,15 @@ export function mapRpcLocation(row: any): EnterpriseLocation {
   };
 }
 
-
 function explicitMarketForIntent(intent: SearchIntent): string | null {
-  const market = (intent.geo as any)?.resolvedMarket ?? (intent.geo as any)?.requestedMarket ?? null;
+  const market =
+    (intent.geo as any)?.resolvedMarket ??
+    (intent.geo as any)?.requestedMarket ??
+    null;
   const explicit = (intent.geo as any)?.explicitMarketRequested !== false;
-  return explicit && isExplicitMarket(market) ? String(market).toUpperCase() : null;
+  return explicit && isExplicitMarket(market)
+    ? String(market).toUpperCase()
+    : null;
 }
 
 function stateForMarket(market: string) {
@@ -148,19 +158,23 @@ async function searchExplicitMarketLaneFallback(
     return [];
   }
 
-  const rows = (data ?? []).map(mapRpcLocation).filter((row) =>
-    isResultAllowedForResolvedMarket(row, market),
-  );
+  const rows = (data ?? [])
+    .map(mapRpcLocation)
+    .filter((row) => isResultAllowedForResolvedMarket(row, market));
 
   if (debug) {
-    if (domain === "restaurant") debug.marketFallbackRestaurantCount = rows.length;
+    if (domain === "restaurant")
+      debug.marketFallbackRestaurantCount = rows.length;
     if (domain === "activity") debug.marketFallbackActivityCount = rows.length;
   }
 
   return rows;
 }
 
-function mergeMarketFallbackRows(rows: EnterpriseLocation[], fallbackRows: EnterpriseLocation[]) {
+function mergeMarketFallbackRows(
+  rows: EnterpriseLocation[],
+  fallbackRows: EnterpriseLocation[],
+) {
   if (!fallbackRows.length) return rows;
   const seen = new Set(rows.map((row) => row.id).filter(Boolean));
   return [
@@ -187,7 +201,10 @@ function originalTermsFor(intent: SearchIntent, domain: SearchDomain) {
     ? restaurantSearchTermsOriginal(intent)
     : domain === "activity"
       ? activitySearchTermsOriginal(intent)
-      : [...restaurantSearchTermsOriginal(intent), ...activitySearchTermsOriginal(intent)];
+      : [
+          ...restaurantSearchTermsOriginal(intent),
+          ...activitySearchTermsOriginal(intent),
+        ];
 }
 
 function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
@@ -214,29 +231,287 @@ function laneLimitFor(intent: SearchIntent, domain: SearchDomain) {
   return intent.strictness === "high" ? 24 : 40;
 }
 
-
 const WEAK_RPC_TERMS = new Set([
-  "and", "to", "do", "with", "after", "before", "in", "near", "around",
-  "night", "friday", "saturday", "sunday", "monday", "tuesday", "wednesday", "thursday",
-  "tonight", "tomorrow", "today", "this friday", "this weekend", "weekend",
+  "and",
+  "to",
+  "do",
+  "with",
+  "after",
+  "before",
+  "in",
+  "near",
+  "around",
+  "night",
+  "friday",
+  "saturday",
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "tonight",
+  "tomorrow",
+  "today",
+  "this friday",
+  "this weekend",
+  "weekend",
 ]);
 
-function capRpcTerms(terms: string[], domain: SearchDomain, recovery = false) {
-  const max = recovery ? 10 : domain === "restaurant" ? 12 : domain === "activity" ? 14 : 16;
-  const normalized = Array.from(new Set(terms.map((term) => String(term || "").trim().toLowerCase()).filter(Boolean)));
-  const hasSpecific = normalized.some((term) => term.includes(" ") || !["restaurant", "activity", "food", "dinner"].includes(term));
-  const kept = normalized
-    .filter((term) => !WEAK_RPC_TERMS.has(term))
-    .filter((term) => !(hasSpecific && term === "activity" && domain === "activity"))
-    .filter((term) => !(hasSpecific && term === "restaurant" && domain === "restaurant"))
-    .sort((a, b) => (Number(b.includes(" ")) - Number(a.includes(" "))) || b.length - a.length)
-    .slice(0, max);
-  return { terms: kept.length ? kept : normalized.slice(0, max), removed: normalized.filter((term) => !kept.includes(term)) };
+const SAME_VENUE_SECONDARY_SYNONYMS_FOR_RPC: Record<string, string[]> = {
+  hookah: ["hookah", "shisha", "hookah lounge", "lounge"],
+  shisha: ["hookah", "shisha", "hookah lounge", "lounge"],
+  "live music": ["live music", "music", "jazz", "band", "dj", "performance"],
+  jazz: ["live music", "music", "jazz", "band", "performance"],
+  dj: ["dj", "live dj", "music", "dancing"],
+  rooftop: [
+    "rooftop",
+    "roof top",
+    "skyline",
+    "rooftop views",
+    "city views",
+    "view",
+    "views",
+  ],
+  "rooftop views": [
+    "rooftop",
+    "roof top",
+    "skyline",
+    "rooftop views",
+    "city views",
+    "view",
+    "views",
+  ],
+  "outdoor seating": [
+    "outdoor seating",
+    "patio",
+    "garden",
+    "terrace",
+    "sidewalk seating",
+    "outdoor",
+  ],
+  patio: ["outdoor seating", "patio", "garden", "terrace", "outdoor"],
+  "bottomless mimosas": [
+    "bottomless",
+    "mimosas",
+    "bottomless mimosas",
+    "brunch cocktails",
+  ],
+  cocktails: ["cocktails", "drinks", "bar", "mixology"],
+  margaritas: ["margaritas", "cocktails", "drinks", "bar"],
+  games: [
+    "games",
+    "arcade",
+    "board games",
+    "bowling",
+    "darts",
+    "pool table",
+    "billiards",
+  ],
+  arcade: ["games", "arcade", "board games", "drinks"],
+  bowling: ["bowling", "games", "arcade"],
+  "private room": [
+    "private room",
+    "private rooms",
+    "private dining",
+    "event room",
+    "group dining",
+  ],
+  "private rooms": [
+    "private room",
+    "private rooms",
+    "private dining",
+    "event room",
+    "group dining",
+  ],
+  "late night": ["late night", "open late", "after hours"],
+  "open late": ["late night", "open late", "after hours"],
+};
+
+function uniqLowerRpcTerms(terms: unknown[]) {
+  return Array.from(
+    new Set(
+      terms
+        .flat()
+        .map((term) =>
+          String(term ?? "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  );
 }
 
-function params(intent: SearchIntent, domain: SearchDomain, limit: number, overrideTerms?: string[]) {
-  const sourceTerms = overrideTerms ?? termsFor(intent, domain);
-  const capped = capRpcTerms(sourceTerms, domain, Boolean(overrideTerms));
+function buildBalancedSameVenueRestaurantTerms(
+  intent: SearchIntent,
+  sourceTerms: string[],
+) {
+  const singleVenue = detectSingleVenueWithIntent(intent.rawQuery);
+  const sameVenuePreferred =
+    Boolean((intent as any).sameVenuePreferred) || singleVenue.matched;
+  if (!sameVenuePreferred) return null;
+  const query = String(intent.rawQuery ?? "").toLowerCase();
+  const connectorSplit = query.split(
+    /\b(?:with|has|have|serving|serves|offering|offers|featuring|features|including|includes)\b/,
+  );
+  const afterWith = connectorSplit.slice(1).join(" ");
+  const primaryFoodTerms = uniqLowerRpcTerms([
+    ...(intent.restaurantIntent?.cuisineTerms ?? []),
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.mealTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+    ...singleVenue.foodTerms,
+    ...singleVenue.venueTerms,
+    ...sourceTerms.filter((term) => query.includes(String(term).toLowerCase())),
+  ]);
+  const secondaryAttributeTerms = uniqLowerRpcTerms([
+    ...((intent as any).secondaryAttributeTerms ?? []),
+    ...singleVenue.featureTerms,
+    ...Object.keys(SAME_VENUE_SECONDARY_SYNONYMS_FOR_RPC).filter((term) =>
+      afterWith.includes(term),
+    ),
+  ]);
+  const expandedSecondaryAttributeTerms = uniqLowerRpcTerms(
+    secondaryAttributeTerms.flatMap(
+      (term) => SAME_VENUE_SECONDARY_SYNONYMS_FOR_RPC[term] ?? [term],
+    ),
+  );
+  if (!primaryFoodTerms.length || !expandedSecondaryAttributeTerms.length)
+    return null;
+
+  const normalizedSource = uniqLowerRpcTerms(sourceTerms);
+  const explicitPrimary = primaryFoodTerms.filter((term) =>
+    query.includes(term),
+  );
+  const explicitSecondary = secondaryAttributeTerms.filter((term) =>
+    query.includes(term),
+  );
+  const strongSecondarySynonyms = expandedSecondaryAttributeTerms.filter(
+    (term) => !explicitSecondary.includes(term),
+  );
+  const inferredPrimary = primaryFoodTerms.filter(
+    (term) => !explicitPrimary.includes(term),
+  );
+  const genericMeal = normalizedSource.filter((term) =>
+    ["dinner", "brunch", "lunch", "breakfast"].includes(term),
+  );
+  const balanced = uniqLowerRpcTerms([
+    ...explicitPrimary,
+    ...explicitSecondary,
+    ...strongSecondarySynonyms,
+    ...inferredPrimary,
+    ...normalizedSource.filter(
+      (term) =>
+        ![
+          ...genericMeal,
+          ...explicitPrimary,
+          ...explicitSecondary,
+          ...strongSecondarySynonyms,
+          ...inferredPrimary,
+        ].includes(term),
+    ),
+    ...genericMeal,
+  ]);
+
+  return {
+    terms: balanced,
+    primaryFoodTerms,
+    secondaryAttributeTerms,
+    expandedSecondaryAttributeTerms,
+  };
+}
+
+function capRpcTerms(
+  terms: string[],
+  domain: SearchDomain,
+  recovery = false,
+  preserve?: string[],
+) {
+  const max = recovery
+    ? 10
+    : domain === "restaurant"
+      ? 12
+      : domain === "activity"
+        ? 14
+        : 16;
+  const normalized = Array.from(
+    new Set(
+      terms
+        .map((term) =>
+          String(term || "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  );
+  const required = Array.from(
+    new Set(
+      (preserve ?? [])
+        .map((term) =>
+          String(term || "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  );
+  const hasSpecific = normalized.some(
+    (term) =>
+      term.includes(" ") ||
+      !["restaurant", "activity", "food", "dinner"].includes(term),
+  );
+  const kept = normalized
+    .filter((term) => !WEAK_RPC_TERMS.has(term))
+    .filter(
+      (term) => !(hasSpecific && term === "activity" && domain === "activity"),
+    )
+    .filter(
+      (term) =>
+        !(hasSpecific && term === "restaurant" && domain === "restaurant"),
+    )
+    .sort(
+      (a, b) =>
+        Number(b.includes(" ")) - Number(a.includes(" ")) ||
+        b.length - a.length,
+    );
+  const balancedKept = Array.from(
+    new Set([...required.filter((term) => normalized.includes(term)), ...kept]),
+  ).slice(0, max);
+  const finalKept = balancedKept.length
+    ? balancedKept
+    : normalized.slice(0, max);
+  return {
+    terms: finalKept,
+    removed: normalized.filter((term) => !finalKept.includes(term)),
+  };
+}
+
+function params(
+  intent: SearchIntent,
+  domain: SearchDomain,
+  limit: number,
+  overrideTerms?: string[],
+) {
+  const baseTerms = overrideTerms ?? termsFor(intent, domain);
+  const balanced =
+    !overrideTerms && domain === "restaurant"
+      ? buildBalancedSameVenueRestaurantTerms(intent, baseTerms)
+      : null;
+  const sourceTerms = balanced?.terms ?? baseTerms;
+  const preserve = balanced
+    ? [
+        balanced.primaryFoodTerms[0],
+        balanced.secondaryAttributeTerms[0] ??
+          balanced.expandedSecondaryAttributeTerms[0],
+      ].filter(Boolean)
+    : undefined;
+  const capped = capRpcTerms(
+    sourceTerms,
+    domain,
+    Boolean(overrideTerms),
+    preserve,
+  );
   const terms = capped.terms;
   const allowPlacesOfWorship = userAskedForPlaceOfWorship(intent.rawQuery);
 
@@ -256,10 +531,15 @@ function params(intent: SearchIntent, domain: SearchDomain, limit: number, overr
     p_allow_places_of_worship: allowPlacesOfWorship,
     __debug_before_terms: sourceTerms,
     __debug_removed_terms: capped.removed,
+    __debug_same_venue_balanced: balanced,
   } as any;
 }
 
-function locationParams(intent: SearchIntent, domain: SearchDomain, limit: number) {
+function locationParams(
+  intent: SearchIntent,
+  domain: SearchDomain,
+  limit: number,
+) {
   return {
     ...params(intent, domain, limit),
     p_allow_low_level: false,
@@ -287,26 +567,52 @@ export async function searchEnterpriseLane(
       debug.restaurantRpcTerms = p.p_search_terms;
       debug.restaurantRpcTermsOriginal = originalTermsFor(intent, domain);
       debug.restaurantRpcTermsPruned = p.p_search_terms;
+      const balanced = (p as any).__debug_same_venue_balanced;
+      if (balanced) {
+        (debug as any).primaryFoodTerms = balanced.primaryFoodTerms;
+        (debug as any).secondaryAttributeTerms =
+          balanced.secondaryAttributeTerms;
+        (debug as any).expandedSecondaryAttributeTerms =
+          balanced.expandedSecondaryAttributeTerms;
+        (debug as any).sameVenueBalancedTermsPreserved = true;
+      }
     }
 
     if (domain === "activity" && debug) {
       const activityTermsOriginal = activitySearchTermsOriginal(intent);
-      const activityTermsAfterHookah = pruneActivityRpcTerms(intent, activityTermsOriginal);
-      const activityTermsAfterSportsWatch = pruneSportsWatchActivityTerms(intent, activityTermsAfterHookah);
-      const activityTermsPruned = pruneRelaxedActivityTerms(intent, activityTermsAfterSportsWatch);
+      const activityTermsAfterHookah = pruneActivityRpcTerms(
+        intent,
+        activityTermsOriginal,
+      );
+      const activityTermsAfterSportsWatch = pruneSportsWatchActivityTerms(
+        intent,
+        activityTermsAfterHookah,
+      );
+      const activityTermsPruned = pruneRelaxedActivityTerms(
+        intent,
+        activityTermsAfterSportsWatch,
+      );
       const rpcTerms = activityRpcTerms(intent);
-      const prunedNormalized = new Set(activityTermsPruned.map((term) => term.toLowerCase()));
+      const prunedNormalized = new Set(
+        activityTermsPruned.map((term) => term.toLowerCase()),
+      );
       const relaxedActivityIntent = hasRelaxedActivityIntent(intent.rawQuery);
 
       debug.activityRpcTerms = p.p_search_terms;
       debug.activityRpcTermsOriginal = activityTermsOriginal;
       debug.activityRpcTermsPruned = rpcTerms.terms;
-      debug.compactGenericActivityRpcApplied = Boolean((rpcTerms as any).compactGenericActivityRpcApplied);
-      debug.expandedGenericActivityRpcTerms = (rpcTerms as any).expandedTerms ?? [];
-      debug.activityRpcTermsRemovedForSportsWatchIntent = (rpcTerms as any).removedForSportsWatchIntent ?? [];
+      debug.compactGenericActivityRpcApplied = Boolean(
+        (rpcTerms as any).compactGenericActivityRpcApplied,
+      );
+      debug.expandedGenericActivityRpcTerms =
+        (rpcTerms as any).expandedTerms ?? [];
+      debug.activityRpcTermsRemovedForSportsWatchIntent =
+        (rpcTerms as any).removedForSportsWatchIntent ?? [];
       debug.relaxedActivityPruningApplied = relaxedActivityIntent;
       debug.activityTermsRemovedForRelaxedIntent = relaxedActivityIntent
-        ? activityTermsAfterHookah.filter((term) => !prunedNormalized.has(term.toLowerCase()))
+        ? activityTermsAfterHookah.filter(
+            (term) => !prunedNormalized.has(term.toLowerCase()),
+          )
         : [];
       debug.relaxedActivityRpcSlimmingApplied = relaxedActivityIntent;
       debug.activityTermsRemovedFromRpcForRelaxedIntent = relaxedActivityIntent
@@ -317,12 +623,17 @@ export async function searchEnterpriseLane(
     if (debug) {
       debug.rpcTermsBeforeCap = (p as any).__debug_before_terms;
       debug.rpcTermsAfterCap = p.p_search_terms;
-      debug.rpcTermsRemovedForPerformance = (p as any).__debug_removed_terms ?? [];
+      debug.rpcTermsRemovedForPerformance =
+        (p as any).__debug_removed_terms ?? [];
     }
     delete (p as any).__debug_before_terms;
     delete (p as any).__debug_removed_terms;
+    delete (p as any).__debug_same_venue_balanced;
 
-    const { data, error } = await supabase.rpc("enterprise_search_locations", p);
+    const { data, error } = await supabase.rpc(
+      "enterprise_search_locations",
+      p,
+    );
 
     if (error) {
       const message = addDebugError(debug, error.message);
@@ -341,16 +652,26 @@ export async function searchEnterpriseLane(
       );
       if (fallbackRows.length) return fallbackRows;
 
-
       return [];
     }
 
     let rows = (data ?? []).map(mapRpcLocation);
     const market = explicitMarketForIntent(intent);
-    if (market && rows.filter((row: EnterpriseLocation) => isResultAllowedForResolvedMarket(row, market)).length < Math.min(3, laneLimitFor(intent, domain))) {
+    if (
+      market &&
+      rows.filter((row: EnterpriseLocation) =>
+        isResultAllowedForResolvedMarket(row, market),
+      ).length < Math.min(3, laneLimitFor(intent, domain))
+    ) {
       rows = mergeMarketFallbackRows(
         rows,
-        await searchExplicitMarketLaneFallback(supabase, intent, domain, laneLimitFor(intent, domain), debug),
+        await searchExplicitMarketLaneFallback(
+          supabase,
+          intent,
+          domain,
+          laneLimitFor(intent, domain),
+          debug,
+        ),
       );
     }
 
@@ -402,7 +723,8 @@ export async function recoverEnterpriseLane(
     if (debug) {
       debug.rpcTermsBeforeCap = (p as any).__debug_before_terms;
       debug.rpcTermsAfterCap = p.p_search_terms;
-      debug.rpcTermsRemovedForPerformance = (p as any).__debug_removed_terms ?? [];
+      debug.rpcTermsRemovedForPerformance =
+        (p as any).__debug_removed_terms ?? [];
     }
     delete (p as any).__debug_before_terms;
     delete (p as any).__debug_removed_terms;
@@ -434,7 +756,13 @@ export async function recoverEnterpriseLane(
     if (market) {
       rows = mergeMarketFallbackRows(
         rows,
-        await searchExplicitMarketLaneFallback(supabase, intent, domain, 80, debug),
+        await searchExplicitMarketLaneFallback(
+          supabase,
+          intent,
+          domain,
+          80,
+          debug,
+        ),
       );
     }
 
@@ -464,7 +792,9 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     activityRecoveryUsed: false,
     relaxedActivityPruningApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedForRelaxedIntent: [],
-    relaxedActivityRpcSlimmingApplied: hasRelaxedActivityIntent(intent.rawQuery),
+    relaxedActivityRpcSlimmingApplied: hasRelaxedActivityIntent(
+      intent.rawQuery,
+    ),
     activityTermsRemovedFromRpcForRelaxedIntent: [],
     compactGenericActivityRpcApplied: isBroadGenericActivityIntent(intent),
     expandedGenericActivityRpcTerms: [],

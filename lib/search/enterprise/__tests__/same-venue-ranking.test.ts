@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeIntent } from "../normalize-intent";
+import { searchEnterpriseLane } from "../rpc";
 import { rankRestaurantResults } from "../ranking";
 import type { EnterpriseLocation } from "../types";
 
@@ -128,4 +129,27 @@ describe("same-venue food intent ranking", () => {
       expect(rankedNames(query, [a, b])[0]).toBe(expected);
     },
   );
+});
+
+describe("same-venue RPC term preservation", () => {
+  it("preserves explicit primary and secondary terms before the RPC cap", async () => {
+    const intent = normalizeIntent("Mediterranean Dinner with hookah");
+    (intent as any).sameVenuePreferred = true;
+    const calls: any[] = [];
+    const supabase = {
+      rpc: async (_name: string, params: any) => {
+        calls.push(params);
+        return { data: [], error: null };
+      },
+    } as any;
+    const debug: any = { rpcCalls: [], errors: [] };
+
+    await searchEnterpriseLane(supabase, intent, "restaurant", debug);
+
+    const terms = calls[0].p_search_terms;
+    expect(terms).toContain("mediterranean");
+    expect(terms).toContain("hookah");
+    expect(terms).not.toEqual(["middle eastern"]);
+    expect(debug.sameVenueBalancedTermsPreserved).toBe(true);
+  });
 });

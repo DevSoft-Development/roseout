@@ -27,6 +27,7 @@ import {
   rankActivityResults,
   rankRestaurantResults,
   scoreSingleVenueWithMatch,
+  scoreSameVenueAttributeMatch,
   sameVenueSearchTerms,
 } from "./ranking";
 import {
@@ -1343,6 +1344,43 @@ export async function runEnterpriseSearch(
         ml_score: scoreMap.get(String(item.id ?? "")) ?? null,
       }));
     };
+    const sameVenueTermsBeforeRanking = sameVenueSearchTerms(effectiveIntent);
+    const shouldRecoverSameVenueRestaurants =
+      (Boolean((effectiveIntent as any).sameVenuePreferred) ||
+        detectSingleVenueWithIntent(effectiveIntent.rawQuery).matched) &&
+      sameVenueTermsBeforeRanking.expandedSecondaryAttributeTerms.length > 0 &&
+      restaurantRaw.length > 0 &&
+      restaurantRaw.filter((item) => {
+        const match = scoreSameVenueAttributeMatch(item, effectiveIntent);
+        return match.primaryMatched && match.secondaryMatched;
+      }).length === 0;
+    if (shouldRecoverSameVenueRestaurants) {
+      const recoveryTerms =
+        sameVenueTermsBeforeRanking.expandedSecondaryAttributeTerms.slice(0, 8);
+      (debug as any).sameVenueRecoveryAttempted = true;
+      (debug as any).sameVenueRecoveryReason =
+        "no_combined_primary_secondary_candidates";
+      (debug as any).sameVenueRecoveryTerms = recoveryTerms;
+      const recoveredSameVenueRaw = await recoverEnterpriseLane(
+        supabase,
+        effectiveIntent,
+        "restaurant",
+        debug,
+        recoveryTerms,
+      );
+      (debug as any).sameVenueRecoveryCandidateCount =
+        recoveredSameVenueRaw.length;
+      restaurantRaw = uniqueById([...restaurantRaw, ...recoveredSameVenueRaw]);
+      (debug as any).sameVenueCandidateCount = restaurantRaw.length;
+    } else {
+      (debug as any).sameVenueRecoveryAttempted = false;
+      (debug as any).sameVenueRecoveryReason = shouldRecoverSameVenueRestaurants
+        ? "attempted"
+        : null;
+      (debug as any).sameVenueRecoveryTerms = [];
+      (debug as any).sameVenueRecoveryCandidateCount = 0;
+    }
+
     const [restaurantCandidatesWithMl, activityCandidatesWithMl] =
       await Promise.all([
         attachMlScores(uniqueById(restaurantRaw)),
@@ -1622,6 +1660,22 @@ export async function runEnterpriseSearch(
         )
           ? {
               foundInCandidates: Boolean(mira),
+              searchedPrimaryTerms: sameVenueTermsForDebug.primaryFoodTerms,
+              searchedSecondaryTerms:
+                sameVenueTermsForDebug.secondaryAttributeTerms,
+              searchedExpandedSecondaryTerms:
+                sameVenueTermsForDebug.expandedSecondaryAttributeTerms,
+              rpcTermsOriginal: (debug as any).restaurantRpcTermsOriginal ?? [],
+              rpcTermsPruned: (debug as any).restaurantRpcTermsPruned ?? [],
+              rpcTermsAfterCap: (debug as any).rpcTermsAfterCap ?? [],
+              recoveryAttempted:
+                (debug as any).sameVenueRecoveryAttempted ?? false,
+              recoveryTerms: (debug as any).sameVenueRecoveryTerms ?? [],
+              foundInRecoveryCandidates: mira
+                ? ((mira.restaurant as any).search_recovery_reason ?? null) !=
+                  null
+                : false,
+              foundAfterMerge: Boolean(mira),
               filteredByMarket: null,
               filteredByCityBorough: null,
               filteredByIsSearchable: mira
