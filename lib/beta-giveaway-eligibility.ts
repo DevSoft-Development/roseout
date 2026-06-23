@@ -6,6 +6,8 @@ export type BetaGiveawayEligibilityStatus = "not_beta_yet" | "pending_beta_tasks
 export type BetaGiveawayEligibility = {
   isBetaTester: boolean;
   betaStatus: string | null;
+  testerId?: string | null;
+  userId?: string | null;
   weeklyRequiredTasks: number;
   completedThisWeek: number;
   requiredThisWeek: number;
@@ -22,6 +24,8 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
     return {
       isBetaTester: false,
       betaStatus: null,
+      testerId: null,
+      userId: null,
       weeklyRequiredTasks: 0,
       completedThisWeek: 0,
       requiredThisWeek: 0,
@@ -33,7 +37,7 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
 
   const { data: tester, error: testerError } = await supabaseAdmin
     .from("beta_testers")
-    .select("id,status,weekly_required_tests,weekly_completed_tests,current_week_start")
+    .select("id,user_id,status,weekly_required_tests,weekly_completed_tests,current_week_start")
     .eq("email", normalizedEmail)
     .maybeSingle();
 
@@ -41,6 +45,8 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
     return {
       isBetaTester: false,
       betaStatus: null,
+      testerId: null,
+      userId: null,
       weeklyRequiredTasks: 0,
       completedThisWeek: 0,
       requiredThisWeek: 0,
@@ -55,6 +61,8 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
     return {
       isBetaTester: true,
       betaStatus,
+      testerId: tester.id,
+      userId: tester.user_id,
       weeklyRequiredTasks: Number(tester.weekly_required_tests || DEFAULT_REQUIRED_TASKS),
       completedThisWeek: 0,
       requiredThisWeek: Number(tester.weekly_required_tests || DEFAULT_REQUIRED_TASKS),
@@ -79,6 +87,8 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
     return {
       isBetaTester: true,
       betaStatus,
+      testerId: tester.id,
+      userId: tester.user_id,
       weeklyRequiredTasks: requiredThisWeek,
       completedThisWeek: completedFromTester,
       requiredThisWeek,
@@ -93,6 +103,8 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
   return {
     isBetaTester: true,
     betaStatus,
+    testerId: tester.id,
+    userId: tester.user_id,
     weeklyRequiredTasks: requiredThisWeek,
     completedThisWeek,
     requiredThisWeek,

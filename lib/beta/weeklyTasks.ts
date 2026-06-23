@@ -188,10 +188,10 @@ async function ensureDefaultTasks() {
         .from("beta_tasks")
         .insert({ ...task, status: "active" });
   }
+  return created;
 }
 
-export async function assignWeeklyBetaTasksForTester(testerId: string) {
-  await ensureDefaultTasks();
+async function currentActiveTasks() {
   const weekStart = getCurrentWeekStart();
   const { data: tester } = await supabaseAdmin
     .from("beta_testers")
