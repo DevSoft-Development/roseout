@@ -23,8 +23,9 @@ type Props = {
 };
 
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+const SCRIPT_LOAD_TIMEOUT_MS = 10000;
 
-function loadTurnstileScript(onError?: () => void) {
+function loadTurnstileScript() {
   const existing = document.querySelector<HTMLScriptElement>(`script[src="${SCRIPT_SRC}"]`);
   if (existing) return existing;
 
@@ -32,7 +33,6 @@ function loadTurnstileScript(onError?: () => void) {
   script.src = SCRIPT_SRC;
   script.async = true;
   script.defer = true;
-  script.onerror = () => onError?.();
   document.head.appendChild(script);
   return script;
 }
@@ -40,33 +40,68 @@ function loadTurnstileScript(onError?: () => void) {
 export default function TurnstileWidget({ action, onToken, onExpire, onError, onReady, resetKey, className, theme = "auto" }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
+  const onTokenRef = useRef(onToken);
+  const onExpireRef = useRef(onExpire);
+  const onErrorRef = useRef(onError);
+  const onReadyRef = useRef(onReady);
+  const scriptErrorReportedRef = useRef(false);
   const [ready, setReady] = useState(false);
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
+    onTokenRef.current = onToken;
+    onExpireRef.current = onExpire;
+    onErrorRef.current = onError;
+    onReadyRef.current = onReady;
+  }, [onError, onExpire, onReady, onToken]);
+
+  useEffect(() => {
     if (!siteKey) return;
-    if (window.turnstile) {
+
+    function reportLoadError() {
+      if (scriptErrorReportedRef.current) return;
+      scriptErrorReportedRef.current = true;
+      setLoadTimedOut(true);
+      onErrorRef.current?.();
+    }
+
+    function markReady() {
+      if (!window.turnstile) return;
       setReady(true);
-      onReady?.();
+      setLoadTimedOut(false);
+      onReadyRef.current?.();
+    }
+
+    if (window.turnstile) {
+      markReady();
       return;
     }
 
-    const script = loadTurnstileScript(onError);
-    const markReady = () => {
-      setReady(true);
-      onReady?.();
+    const script = loadTurnstileScript();
+    const timeout = window.setTimeout(() => {
+      if (!window.turnstile) reportLoadError();
+    }, SCRIPT_LOAD_TIMEOUT_MS);
+
+    const handleLoad = () => {
+      window.clearTimeout(timeout);
+      if (window.turnstile) markReady();
+      else reportLoadError();
+    };
+    const handleError = () => {
+      window.clearTimeout(timeout);
+      reportLoadError();
     };
 
-    const markError = () => onError?.();
-
-    script.addEventListener("load", markReady);
-    script.addEventListener("error", markError);
+    script.addEventListener("load", handleLoad);
+    script.addEventListener("error", handleError);
 
     return () => {
-      script.removeEventListener("load", markReady);
-      script.removeEventListener("error", markError);
+      window.clearTimeout(timeout);
+      script.removeEventListener("load", handleLoad);
+      script.removeEventListener("error", handleError);
     };
-  }, [onError, onReady, siteKey]);
+  }, [siteKey]);
 
   useEffect(() => {
     if (!ready || !siteKey || !ref.current || !window.turnstile) return;
@@ -80,14 +115,14 @@ export default function TurnstileWidget({ action, onToken, onExpire, onError, on
       sitekey: siteKey,
       action,
       theme,
-      callback: (token: string) => onToken(token),
+      callback: (token: string) => onTokenRef.current(token),
       "expired-callback": () => {
-        onToken("");
-        onExpire?.();
+        onTokenRef.current("");
+        onExpireRef.current?.();
       },
       "error-callback": () => {
-        onToken("");
-        onError?.();
+        onTokenRef.current("");
+        onErrorRef.current?.();
       },
     });
 
@@ -95,7 +130,7 @@ export default function TurnstileWidget({ action, onToken, onExpire, onError, on
       if (widgetId.current && window.turnstile?.remove) window.turnstile.remove(widgetId.current);
       widgetId.current = null;
     };
-  }, [action, onError, onExpire, onToken, ready, resetKey, siteKey, theme]);
+  }, [action, ready, resetKey, siteKey, theme]);
 
   if (!siteKey) {
     const message =
@@ -104,6 +139,10 @@ export default function TurnstileWidget({ action, onToken, onExpire, onError, on
         : "Verification is not configured in this environment. Set NEXT_PUBLIC_TURNSTILE_SITE_KEY or disable Turnstile for local testing.";
 
     return <div className={`rounded-2xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100 ${className ?? ""}`}>{message}</div>;
+  }
+
+  if (loadTimedOut) {
+    return <div className={`rounded-2xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100 ${className ?? ""}`}>Verification is taking too long. Refresh the page and try again.</div>;
   }
 
   return <div className={className}><div ref={ref} /></div>;

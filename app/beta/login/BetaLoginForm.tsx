@@ -29,6 +29,19 @@ export default function BetaLoginForm() {
     setTurnstileResetKey((value) => value + 1);
   }, []);
 
+  const handleTurnstileToken = useCallback((token: string) => {
+    setTurnstileToken(token);
+    if (token) setTurnstileMessage("");
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    resetTurnstile("Verification expired. Please try again.");
+  }, [resetTurnstile]);
+
+  const handleTurnstileError = useCallback(() => {
+    resetTurnstile("Verification failed. Please try again.");
+  }, [resetTurnstile]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -95,12 +108,9 @@ export default function BetaLoginForm() {
           action="beta-login"
           theme="dark"
           resetKey={turnstileResetKey}
-          onToken={(token) => {
-            setTurnstileToken(token);
-            if (token) setTurnstileMessage("");
-          }}
-          onExpire={() => resetTurnstile("Verification expired. Please try again.")}
-          onError={() => resetTurnstile("Verification failed. Please try again.")}
+          onToken={handleTurnstileToken}
+          onExpire={handleTurnstileExpire}
+          onError={handleTurnstileError}
           className="flex min-h-[70px] items-center justify-center rounded-2xl border border-white/10 bg-black/20 p-3"
         />
         {turnstileMessage ? <p className="text-sm font-semibold text-amber-100">{turnstileMessage}</p> : null}
