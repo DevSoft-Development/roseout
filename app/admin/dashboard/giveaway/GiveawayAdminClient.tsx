@@ -122,7 +122,7 @@ const csvColumns = [
   "giveaway_verified_at",
 ] as const;
 const actionButtonClass =
-  "inline-flex min-w-max items-center justify-center whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-black transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-w-[88px] shrink-0 items-center justify-center whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-black transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50";
 function escapeCsv(value: unknown) {
   const text = value == null ? "" : String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -531,10 +531,10 @@ export default function GiveawayAdminClient({
     ] as const;
     return (
       <details className="relative">
-        <summary className="inline-flex min-w-[72px] cursor-pointer items-center justify-center whitespace-nowrap rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-[11px] font-black text-white">
+        <summary className="inline-flex min-w-[72px] shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-[11px] font-black text-white">
           More
         </summary>
-        <div className="absolute right-0 z-20 mt-2 grid w-56 gap-1 rounded-2xl border border-white/10 bg-[#130807] p-2 shadow-2xl">
+        <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1 rounded-2xl border border-white/10 bg-[#130807] p-2 shadow-2xl">
           {actions.map(([label, updates]) => (
             <button
               key={label}
@@ -550,14 +550,14 @@ export default function GiveawayAdminClient({
   }
   function TesterTable() {
     return (
-      <section className="rounded-[1.35rem] border border-white/10 bg-[#101012]/90 p-3 shadow-xl shadow-black/20 sm:p-4 shadow-black/20">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="flex flex-wrap gap-2">
+      <section className="w-full min-w-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#101012]/90 p-3 shadow-xl shadow-black/20 sm:p-4">
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 flex-wrap gap-2">
             {filters.map(([value, label]) => (
               <button
                 key={value}
                 onClick={() => setFilter(value)}
-                className={`rounded-full px-3 py-2 text-xs font-black ${filter === value ? "bg-rose-600 text-white" : "bg-white/[0.06] text-white/60"}`}
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-black ${filter === value ? "bg-rose-600 text-white" : "bg-white/[0.06] text-white/60"}`}
               >
                 {label}
               </button>
@@ -576,7 +576,7 @@ export default function GiveawayAdminClient({
             Export CSV
           </button>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+        <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
           <span className="py-1.5 text-xs font-black text-white/50">
             {selectedIds.length} selected
           </span>
@@ -597,8 +597,8 @@ export default function GiveawayAdminClient({
             </button>
           ))}
         </div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[1280px] table-fixed border-separate border-spacing-y-2 text-left text-sm">
+        <div className="mt-4 w-full max-w-full overflow-x-auto rounded-2xl border border-white/10">
+          <table className="w-full min-w-[1320px] table-fixed border-separate border-spacing-y-2 text-left text-sm">
             <thead className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
               <tr>
                 <th className="w-10 px-3 py-2">
@@ -625,9 +625,8 @@ export default function GiveawayAdminClient({
                   ["Tasks", "w-[135px]"],
                   ["Social", "w-[155px]"],
                   ["Prize Status", "w-[145px]"],
-                  ["Last Activity / Created", "w-[155px]"],
-                  ["Primary Action", "w-[170px]"],
-                  ["More", "w-[210px]"],
+                  ["Primary Action", "w-[180px]"],
+                  ["Details / More", "w-[220px]"],
                 ].map(([h, w]) => (
                   <th key={h} className={`${w} px-3 py-2 whitespace-nowrap`}>
                     {h}
@@ -709,11 +708,6 @@ export default function GiveawayAdminClient({
                         {s.prize}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3 text-white/60">
-                      {formatDate(
-                        entry.giveaway_verified_at || entry.created_at,
-                      )}
-                    </td>
                     <td className="px-3 py-3">
                       <ActionButton
                         entry={entry}
@@ -723,7 +717,7 @@ export default function GiveawayAdminClient({
                       />
                     </td>
                     <td className="rounded-r-2xl px-3 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-w-max items-center gap-2">
                         <button
                           onClick={() => setDetailsId(entry.id)}
                           className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
@@ -743,8 +737,8 @@ export default function GiveawayAdminClient({
     );
   }
   return (
-    <div className="space-y-5">
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-4">
+    <div className="w-full min-w-0 space-y-6">
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map(([l, v, d]) => (
           <div
             key={l}
@@ -758,12 +752,12 @@ export default function GiveawayAdminClient({
           </div>
         ))}
       </section>
-      <nav className="flex gap-2 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-white/[0.04] p-2">
+      <nav className="flex min-w-0 gap-2 overflow-x-auto rounded-[1.35rem] border border-white/10 bg-white/[0.04] p-2">
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`rounded-full px-4 py-2 text-xs font-black ${activeTab === tab ? "bg-rose-600 text-white" : "bg-white/[0.06] text-white/60"}`}
+            className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-black ${activeTab === tab ? "bg-rose-600 text-white" : "bg-white/[0.06] text-white/60"}`}
           >
             {tab}
           </button>

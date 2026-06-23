@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { AdminKpiCard, AdminKpiGrid, AdminPageHeader, AdminSectionCard, AdminTableScroll } from "@/components/admin/AdminDesignSystem";
 
 type Job = any;
 type Run = any;
@@ -117,43 +118,30 @@ export default function CronJobsClient() {
   ];
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 py-2">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">
-            Settings · Operations
-          </p>
-          <h1 className="mt-2 text-3xl font-black">Cron Jobs</h1>
-          <p className="mt-1 max-w-4xl text-sm leading-6 text-white/60">
-            Monitor Next.js/Vercel cron routes, Supabase Edge Function jobs, run
-            history, schedules, diagnostics, and notification settings.
-          </p>
-        </div>
-        <button
-          onClick={load}
-          className="inline-flex min-h-10 items-center justify-center whitespace-nowrap rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80"
-        >
-          Refresh
-        </button>
-      </div>
+      <AdminPageHeader
+        eyebrow="Settings · Operations"
+        title="Cron Jobs"
+        subtitle="Monitor scheduled jobs, run history, diagnostics, and notification settings."
+        actions={
+          <button
+            onClick={load}
+            className="inline-flex min-h-10 min-w-[88px] shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80"
+          >
+            Refresh
+          </button>
+        }
+      />
       {error && (
         <p className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">
           {error}
         </p>
       )}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+      <AdminKpiGrid>
         {cards.map(([l, v]) => (
-          <div
-            key={l}
-            className="rounded-[18px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,0.10),transparent_35%),linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-4 shadow-xl shadow-black/20"
-          >
-            <p className="text-xs font-black uppercase tracking-widest text-white/45">
-              {l}
-            </p>
-            <p className="mt-2 text-3xl font-black">{v ?? 0}</p>
-          </div>
+          <AdminKpiCard key={l} label={String(l)} value={v ?? 0} />
         ))}
-      </section>
-      <section className="overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#101012]/90 shadow-xl shadow-black/20">
+      </AdminKpiGrid>
+      <AdminSectionCard>
         {loading ? (
           <p className="p-6 text-white/60">Loading cron jobs…</p>
         ) : jobs.length === 0 ? (
@@ -162,8 +150,8 @@ export default function CronJobsClient() {
             public.cron_jobs even before their first run.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1320px] table-fixed text-left text-sm">
+          <AdminTableScroll>
+            <table className="w-full min-w-[1180px] table-fixed text-left text-sm">
               <thead className="bg-white/[0.03] text-xs uppercase tracking-widest text-white/45">
                 <tr>
                   {[
@@ -171,11 +159,10 @@ export default function CronJobsClient() {
                     ["Source", "w-[170px]"],
                     ["Schedule", "w-[170px]"],
                     ["Status", "w-[190px]"],
-                    ["Run history", "w-[150px]"],
-                    ["Last success/failure", "w-[230px]"],
+                    ["Run History", "w-[150px]"],
+                    ["Last Success/Failure", "w-[220px]"],
                     ["Duration", "w-[100px]"],
-                    ["Success email", "w-[120px]"],
-                    ["Failure email", "w-[120px]"],
+                    ["Alerts", "w-[150px]"],
                     ["Details", "w-[120px]"],
                   ].map(([h, w]) => (
                     <th key={h} className={`${w} whitespace-nowrap px-4 py-3`}>
@@ -240,30 +227,10 @@ export default function CronJobsClient() {
                       {dur(job.last_duration_ms)}
                     </td>
                     <td className="px-4 py-4">
-                      <button
-                        disabled={Boolean(saving)}
-                        onClick={() => toggle(job, "send_success_email")}
-                        className={`inline-flex min-w-[52px] items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${job.send_success_email ? "bg-emerald-500 text-white" : "bg-white/10 text-white/55"}`}
-                      >
-                        {saving === `${job.job_key}:send_success_email`
-                          ? "Saving…"
-                          : job.send_success_email
-                            ? "On"
-                            : "Off"}
-                      </button>
-                    </td>
-                    <td className="px-4 py-4">
-                      <button
-                        disabled={Boolean(saving)}
-                        onClick={() => toggle(job, "send_failure_email")}
-                        className={`inline-flex min-w-[52px] items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${job.send_failure_email ? "bg-rose-600 text-white" : "bg-white/10 text-white/55"}`}
-                      >
-                        {saving === `${job.job_key}:send_failure_email`
-                          ? "Saving…"
-                          : job.send_failure_email
-                            ? "On"
-                            : "Off"}
-                      </button>
+                      <div className="flex flex-col items-start gap-2">
+                        <button disabled={Boolean(saving)} onClick={() => toggle(job, "send_success_email")} className={`inline-flex min-w-[112px] items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${job.send_success_email ? "bg-emerald-500 text-white" : "bg-white/10 text-white/55"}`}>Success: {saving === `${job.job_key}:send_success_email` ? "Saving…" : job.send_success_email ? "On" : "Off"}</button>
+                        <button disabled={Boolean(saving)} onClick={() => toggle(job, "send_failure_email")} className={`inline-flex min-w-[112px] items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${job.send_failure_email ? "bg-rose-600 text-white" : "bg-white/10 text-white/55"}`}>Failure: {saving === `${job.job_key}:send_failure_email` ? "Saving…" : job.send_failure_email ? "On" : "Off"}</button>
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <button
@@ -277,9 +244,9 @@ export default function CronJobsClient() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </AdminTableScroll>
         )}
-      </section>
+      </AdminSectionCard>
       {selected && (
         <section className="rounded-[1.35rem] border border-white/10 bg-[#101012]/90 p-6 shadow-xl shadow-black/20">
           <div className="flex justify-between gap-3">

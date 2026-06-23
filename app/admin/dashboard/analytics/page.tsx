@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { unstable_noStore as noStore } from "next/cache";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getAdminSaasAnalytics } from "@/lib/admin/analytics/getAdminSaasAnalytics";
@@ -11,6 +10,7 @@ import {
   AdminPageShell,
   AdminSectionCard,
 } from "@/components/admin/AdminDesignSystem";
+import AnalyticsTabs from "./AnalyticsTabs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -46,39 +46,6 @@ function Stat({
         {formatted}
       </p>
     </div>
-  );
-}
-
-function MetricSection({
-  title,
-  description,
-  children,
-  defaultOpen = false,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-}) {
-  return (
-    <details
-      open={defaultOpen}
-      className="group rounded-[1.35rem] border border-white/10 bg-[#101012]/90 shadow-xl shadow-black/20"
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5">
-        <div>
-          <h2 className="text-xl font-black text-white">{title}</h2>
-          <p className="mt-1 text-sm text-white/55">{description}</p>
-        </div>
-        <span className="inline-flex min-w-[92px] justify-center rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-black text-white/70 group-open:hidden">
-          Expand
-        </span>
-        <span className="hidden min-w-[92px] justify-center rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-black text-white/70 group-open:inline-flex">
-          Collapse
-        </span>
-      </summary>
-      <div className="border-t border-white/10 p-5">{children}</div>
-    </details>
   );
 }
 
@@ -178,7 +145,6 @@ export default async function AdminAnalyticsPage() {
     "proLocations",
     "pendingClaims",
     "supportTicketsOpen",
-    "dataQualityIssues",
   ] as const;
 
   return (
@@ -226,85 +192,109 @@ export default async function AdminAnalyticsPage() {
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <MetricSection
-          title="Search Performance"
-          description="Search volume, result quality, failures, latency, and most common searches."
-          defaultOpen
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {searchMetrics.map((key) => (
-              <Stat
-                key={key}
-                label={overviewLabels[key]}
-                value={analytics.overview[key] || 0}
-                compact
-              />
-            ))}
-          </div>
-          <div className="mt-4">
-            {analytics.search.topSearches.length ? (
-              <ul className="space-y-2 text-sm text-white/70">
-                {analytics.search.topSearches.map((item) => (
-                  <li
-                    key={item.label}
-                    className="flex justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 p-3"
-                  >
-                    <span className="truncate">{item.label}</span>
-                    <b>{fmt(item.count)}</b>
-                  </li>
+      <AnalyticsTabs
+        tabs={[
+          {
+            key: "search",
+            label: "Search",
+            description:
+              "Search volume, result quality, failures, latency, and common search intent.",
+            content: (
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {searchMetrics.map((key) => (
+                    <Stat
+                      key={key}
+                      label={overviewLabels[key]}
+                      value={analytics.overview[key] || 0}
+                      compact
+                    />
+                  ))}
+                </div>
+                {analytics.search.topSearches.length ? (
+                  <AdminSectionCard className="p-4">
+                    <h3 className="font-black text-white">Most common searches</h3>
+                    <ul className="mt-3 space-y-2 text-sm text-white/70">
+                      {analytics.search.topSearches.map((item) => (
+                        <li
+                          key={item.label}
+                          className="flex min-w-0 justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 p-3"
+                        >
+                          <span className="truncate">{item.label}</span>
+                          <b className="shrink-0">{fmt(item.count)}</b>
+                        </li>
+                      ))}
+                    </ul>
+                  </AdminSectionCard>
+                ) : (
+                  <Empty text="Top searches will appear after analytics_events or search_events records include raw_query, normalized_query, or search_query." />
+                )}
+              </div>
+            ),
+          },
+          {
+            key: "engagement",
+            label: "Engagement",
+            description:
+              "Reservations, click signals, saved plans, completed outings, and conversion rates.",
+            content: (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {engagementMetrics.map((key) => (
+                  <Stat
+                    key={key}
+                    label={overviewLabels[key]}
+                    value={analytics.overview[key] || 0}
+                    compact
+                  />
                 ))}
-              </ul>
-            ) : (
-              <Empty text="Top searches will appear after analytics_events or search_events records include raw_query, normalized_query, or search_query." />
-            )}
-          </div>
-        </MetricSection>
+              </div>
+            ),
+          },
+          {
+            key: "operations",
+            label: "Operations",
+            description:
+              "Location inventory, ownership status, claims, and experience inbox health.",
+            content: (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {operationsMetrics.map((key) => (
+                  <Stat
+                    key={key}
+                    label={overviewLabels[key]}
+                    value={analytics.overview[key] || 0}
+                    compact
+                  />
+                ))}
+              </div>
+            ),
+          },
+          {
+            key: "quality",
+            label: "Data Quality",
+            description:
+              "Quality issue counts and cleanup-related operational metrics from existing analytics sources.",
+            content: (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Stat
+                  label={overviewLabels.dataQualityIssues}
+                  value={analytics.overview.dataQualityIssues || 0}
+                  compact
+                />
+                {Object.entries(analytics.operations).map(([key, value]) => (
+                  <Stat
+                    key={key}
+                    label={key.replace(/([A-Z])/g, " $1")}
+                    value={value}
+                    compact
+                  />
+                ))}
+              </div>
+            ),
+          },
+        ]}
+      />
 
-        <MetricSection
-          title="Conversion & Engagement"
-          description="Clicks, completed outings, saved plans, and conversion rates grouped away from the primary summary."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {engagementMetrics.map((key) => (
-              <Stat
-                key={key}
-                label={overviewLabels[key]}
-                value={analytics.overview[key] || 0}
-                compact
-              />
-            ))}
-          </div>
-        </MetricSection>
-
-        <MetricSection
-          title="Operations & Data Quality"
-          description="Location inventory, ownership status, support, claims, and operational issue counts."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {operationsMetrics.map((key) => (
-              <Stat
-                key={key}
-                label={overviewLabels[key]}
-                value={analytics.overview[key] || 0}
-                compact
-              />
-            ))}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {Object.entries(analytics.operations).map(([key, value]) => (
-              <Stat
-                key={key}
-                label={key.replace(/([A-Z])/g, " $1")}
-                value={value}
-                compact
-              />
-            ))}
-          </div>
-        </MetricSection>
-      </div>
-
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-3">
         {[
           ["Top performing locations", analytics.locations.top],
           ["Upgrade opportunities", analytics.locations.upgradeOpportunities],
