@@ -2,10 +2,10 @@ import { createHash, randomBytes } from "crypto";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createUserPasswordInvite } from "@/lib/admin/createUserPasswordInvite";
-import { assignWeeklyBetaTasksForTester, createInviteCode } from "@/lib/beta/weeklyTasks";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { buildSiteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { safeUpsertBetaTester } from "@/lib/beta/programAccess";
 import { isTurnstileEnabled, verifyTurnstileToken } from "@/lib/security/turnstile";
 
 const CONSENT_TEXT =
@@ -317,6 +317,7 @@ export async function POST(request: Request) {
   }
 
   let inviteFailed = false;
+  let passwordInviteSent = false;
   if (betaInterest) {
     const autoApprovalValid = Boolean(fullName && email && age18Confirmed && giveawayRulesAgreed && turnstileVerified && !socialHandle.includes(" ") && followedSocial && taggedTwoFriends && socialHandle && socialPlatform);
     const approvedAt = now.toISOString();
@@ -344,17 +345,15 @@ export async function POST(request: Request) {
       });
       userId = inviteResult.user_id;
       inviteFailed = Boolean(inviteResult.invite_error);
+      passwordInviteSent = Boolean(inviteResult.invite_sent && !inviteResult.invite_error);
 
-      const testerRecord = { user_id: userId, application_id: betaApp.id, name: fullName, email, phone: phone || null, tester_type: testerType, status: "active", weekly_required_tests: 5, weekly_completed_tests: 0, current_week_start: null, approved_at: approvedAt, invite_code: createInviteCode() };
-      const { data: tester } = await supabaseAdmin.from("beta_testers").upsert(testerRecord, { onConflict: "email" }).select("id").single();
-      testerId = tester?.id || null;
-      if (testerId) await assignWeeklyBetaTasksForTester(testerId);
+      const tester = await safeUpsertBetaTester({ applicationId: betaApp.id, fullName, email, phone: phone || null, testerType, userId, status: "approved" });
+      testerId = tester.data?.id || null;
 
       await supabaseAdmin.from("admin_audit_logs").insert([
-        { action: "beta_tester_auto_approved", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Beta tester auto-approved from public signup", metadata: { testerType, betaApplicationId: betaApp.id } },
-        { action: inviteFailed ? "beta_password_invite_failed" : "beta_password_invite_sent", entity_type: "user", entity_id: userId, target_email: email, summary: inviteFailed ? "Password setup invite failed after beta approval" : "Password setup invite sent after beta approval", metadata: { error: inviteResult.invite_error } },
-        { action: "beta_user_linked", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Beta tester linked to auth user", metadata: { userId } },
-        { action: "beta_tasks_assigned", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Weekly beta tasks assigned after approval", metadata: { required: 5 } },
+        { action: "beta_tester_auto_approved", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Beta tester auto-approved pending password creation", metadata: { testerType, betaApplicationId: betaApp.id } },
+        { action: inviteFailed ? "beta_initial_password_email_failed" : "beta_initial_password_email_sent", entity_type: "user", entity_id: userId, target_email: email, summary: inviteFailed ? "Initial verify/create-password email failed" : "Initial verify/create-password email sent", metadata: { error: inviteResult.invite_error } },
+        { action: "beta_user_linked", entity_type: "beta_tester", entity_id: testerId, target_email: email, summary: "Beta tester linked to auth user pending password creation", metadata: { userId } }
       ]);
     }
 
@@ -364,19 +363,20 @@ export async function POST(request: Request) {
       beta_approved_at: autoApprovalValid ? approvedAt : null,
       weekly_beta_tasks_required_for_giveaway: true,
       weekly_task_eligibility_status: autoApprovalValid ? "pending_beta_tasks" : "not_beta_yet",
-      giveaway_status: autoApprovalValid ? (isAlreadyVerified ? "pending_beta_tasks" : "email_unverified") : giveawayStatus,
+      giveaway_status: autoApprovalValid ? "pending_beta_tasks" : giveawayStatus,
       metadata: { route: "/api/launch/waitlist", beta_tester_id: testerId, user_id: userId, password_invite_error: inviteResult?.invite_error || null },
     }).eq("id", result.data.id);
     await supabaseAdmin.from("admin_audit_logs").insert({ action: "beta_user_applied", entity_type: "beta_application", entity_id: betaApp?.id || null, target_email: email, summary: autoApprovalValid ? "Beta Tester Program application approved" : "Beta Tester Program application submitted", metadata: { testerType } });
   }
   await supabaseAdmin.from("admin_audit_logs").insert({ action: "launch_list_signup_created", entity_type: "launch_waitlist_signup", entity_id: result.data.id, target_email: email, summary: existing ? "Launch list signup updated" : "Launch list signup created", metadata: { wantsGiveaway, betaInterest } });
 
-  if (!isAlreadyVerified) {
+  const shouldSendVerificationEmail = !isAlreadyVerified && !passwordInviteSent;
+  if (shouldSendVerificationEmail) {
     await sendVerificationEmail({ email, fullName, token: rawToken });
   }
 
   if (existing && !isAlreadyVerified) {
-    return NextResponse.json({ success: true, message: "You're already on the Launch List. We updated your details and sent a new verification email." });
+    return NextResponse.json({ success: true, message: passwordInviteSent ? "You're already in TheOutHaven Beta Tester Program flow. We updated your details and sent one verify/create-password email." : "You're already on the Launch List. We updated your details and sent a new verification email." });
   }
   if (existing && isAlreadyVerified) {
     return NextResponse.json({ success: true, message: "You're already on the Launch List. We updated your giveaway details." });
@@ -385,8 +385,8 @@ export async function POST(request: Request) {
     success: true,
     message: wantsGiveaway
       ? inviteFailed
-      ? "You’re approved for TheOutHaven’s Beta Tester Program, but we could not send the password email. Our team can resend it. Verify your email and complete your beta tester tasks to stay eligible for the $100 Beta Tester Reward."
-      : "You’re approved for TheOutHaven’s Beta Tester Program. Check your email to create your password and start your weekly beta tasks. Verify your email and complete your beta tester tasks to stay eligible for the $100 Beta Tester Reward."
+      ? "We received your TheOutHaven Beta Tester Program signup, but we could not send the verify/create-password email. Our team can resend it."
+      : "Check your email to verify your email and create your beta password. After your password is created, we’ll send your approval email with the beta dashboard link."
       : "You’re approved for TheOutHaven’s Beta Tester Program. Check your email for next steps.",
   });
 }

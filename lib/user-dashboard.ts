@@ -25,7 +25,22 @@ export async function getUserProfileForDashboard(userId:string){
   return {profile, legacy, merged:{...((legacy as any)||{}),...((profile as any)||{})}};
 }
 export async function getUserBetaStatus(userId:string,email?:string|null){
-  try { const ors=[`user_id.eq.${userId}`]; if(email) ors.push(`email.eq.${email}`); const {data}=await supabaseAdmin.from("beta_testers").select("*").or(ors.join(",")).in("status",["active","approved"]).maybeSingle(); return data; } catch { return null; }
+  try {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const byUser = await supabaseAdmin.from("beta_testers").select("*").eq("user_id", userId).in("status",["active","approved"]).maybeSingle();
+    if (byUser.data) return byUser.data;
+    if (!normalizedEmail) return null;
+    const byEmail = await supabaseAdmin.from("beta_testers").select("*").eq("email", normalizedEmail).in("status",["active","approved"]).maybeSingle();
+    if (byEmail.data) {
+      if (!byEmail.data.user_id) {
+        await supabaseAdmin.from("beta_testers").update({ user_id: userId }).eq("id", byEmail.data.id);
+        await supabaseAdmin.from("admin_audit_logs").insert({ action: "beta_user_linked", entity_type: "beta_tester", entity_id: byEmail.data.id, target_email: normalizedEmail, target_user_id: userId, summary: "Beta tester user_id auto-linked from dashboard email match", metadata: { source: "getUserBetaStatus" } });
+        return { ...byEmail.data, user_id: userId };
+      }
+      return byEmail.data;
+    }
+    return null;
+  } catch { return null; }
 }
 export async function getUserSavedOutings(userId:string,limit=12){ return list("saved_plans",userId,limit); }
 export async function getUserBookedOutings(userId:string,limit=12){ return list("user_outings",userId,limit); }

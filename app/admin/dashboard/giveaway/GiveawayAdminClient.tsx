@@ -101,17 +101,6 @@ const csvColumns = [
   "giveaway_verified_at",
 ] as const;
 
-const tableColumns = [
-  "Entrant",
-  "Contact",
-  "Social",
-  "Checks",
-  "Status",
-  "Timing",
-  "Notes",
-  "Actions",
-];
-
 const actionButtonClass =
   "rounded-full px-3 py-1.5 text-[11px] font-black transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -180,6 +169,28 @@ function statusBadgeClass(status: string | null) {
     default:
       return "border-white/10 bg-white/[0.07] text-white/70";
   }
+}
+
+
+function betaStatusLabel(entry: Entry) {
+  const status = entry.beta_giveaway_eligibility?.betaStatus;
+  if (entry.beta_application_status === "approved" || ["active", "approved"].includes(String(status || ""))) return "Beta: Approved";
+  if (!entry.beta_giveaway_eligibility?.isBetaTester) return "Beta: Needs account link";
+  return `Beta: ${formatText(status)}`;
+}
+
+function accountStatusLabels(entry: Entry) {
+  const labels: string[] = [];
+  if (!entry.email_verified) labels.push("Email verification pending");
+  if (entry.beta_application_status === "approved" && !entry.beta_giveaway_eligibility?.isBetaTester) labels.push("Password/account not completed");
+  return labels;
+}
+
+function weeklyTaskLabel(entry: Entry) {
+  const eligibility = entry.beta_giveaway_eligibility;
+  if (!eligibility?.isBetaTester) return entry.beta_application_status === "approved" ? "No beta tester row or account link missing" : "No beta tester row";
+  if (eligibility.requiredThisWeek > 0 && eligibility.completedThisWeek === 0 && eligibility.reason?.includes("pending")) return `Tasks assigned/incomplete: 0 / ${eligibility.requiredThisWeek}`;
+  return `${eligibility.completedThisWeek} / ${eligibility.requiredThisWeek} completed — ${eligibility.reason}`;
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -385,6 +396,10 @@ export default function GiveawayAdminClient({
         }
       >
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "approve_beta" })} className={`${actionButtonClass} bg-emerald-700 text-white`}>Approve as Beta User</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "resend_beta_invite" })} className={`${actionButtonClass} border border-sky-300/30 bg-sky-500/10 text-sky-100`}>Resend verify/create-password email</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "link_beta_user" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Link beta user account</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "assign_beta_tasks" })} className={`${actionButtonClass} border border-amber-300/20 bg-amber-500/10 text-amber-100`}>Assign weekly beta tasks</button>
+        <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "repair_beta_access" })} className={`${actionButtonClass} bg-rose-700 text-white`}>Repair beta access</button>
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "reject_beta", rejection_reason: "Admin rejected" })} className={`${actionButtonClass} border border-red-300/30 bg-red-500/10 text-red-100`}>Reject Beta</button>
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_social" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify follow</button>
         <button disabled={isBusy} onClick={() => patchEntry(entry, { action: "verify_tags" })} className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}>Verify tags</button>
@@ -395,7 +410,7 @@ export default function GiveawayAdminClient({
             onClick={() => patchEntry(entry, { giveaway_status: "verified" })}
             className={`${actionButtonClass} bg-emerald-500 text-white`}
           >
-            Verify
+            Mark Prize Qualified
           </button>
         ) : null}
         <button
@@ -583,146 +598,48 @@ export default function GiveawayAdminClient({
         </p>
       ) : null}
 
-      <section className="hidden overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/20 md:block">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+      <section className="hidden space-y-4 md:block">
+        <div className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-3 shadow-2xl shadow-black/20">
           <div>
-            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white/70">
-              Entries
-            </h2>
-            <p className="mt-1 text-xs text-white/35">
-              Compact desktop view. Scroll sideways for admin actions.
-            </p>
+            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-white/70">Entries</h2>
+            <p className="mt-1 text-xs text-white/35">Compact card rows with stacked actions; no horizontal scrolling needed.</p>
           </div>
-          {isLoading ? (
-            <span className="rounded-full bg-rose-500/10 px-3 py-1 text-[11px] font-black text-rose-100">
-              Refreshing...
-            </span>
-          ) : null}
+          {isLoading ? <span className="rounded-full bg-rose-500/10 px-3 py-1 text-[11px] font-black text-rose-100">Refreshing...</span> : null}
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-[1500px] text-left text-xs text-white/70">
-            <thead className="bg-white/[0.06] text-[10px] uppercase tracking-[0.16em] text-white/45">
-              <tr>
-                {tableColumns.map((head) => (
-                  <th key={head} className="px-3 py-3 font-black">
-                    {head}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="border-t border-white/10 align-top transition hover:bg-white/[0.03]"
-                >
-                  <td className="w-56 px-3 py-3">
-                    <p className="font-black text-white">
-                      {formatText(entry.full_name)}
-                    </p>
-                    <p className="mt-1 text-white/35">ID {entry.id}</p>
-                    <p className="mt-2 rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/55">{entry.wants_giveaway ? "Giveaway" : "Launch List"}</p><p className="mt-2 rounded-full border border-emerald-300/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100">Beta: {entry.beta_application_status || (entry.beta_interest ? "new" : "none")}</p>
-                  </td>
-                  <td className="w-64 px-3 py-3">
-                    <p className="font-bold text-white/85">
-                      {formatText(entry.email)}
-                    </p>
-                    <p className="mt-1 text-white/50">
-                      {formatText(entry.phone)}
-                    </p>
-                    <p className="mt-2 text-[11px] text-white/40">
-                      Marketing: {yesNo(entry.marketing_consent)}
-                    </p>
-                  </td>
-                  <td className="w-48 px-3 py-3">
-                    <p className="font-bold text-white/85">
-                      {formatText(entry.social_handle)}
-                    </p>
-                    <p className="mt-1 capitalize text-white/45">
-                      {formatText(entry.social_platform)}
-                    </p>
-                    <p className="mt-2 text-[11px] text-white/40">
-                      Area: {formatText(entry.usually_go_out_area)}
-                    </p>
-                  </td>
-                  <td className="w-56 px-3 py-3">
-                    <p>
-                      Email verified:{" "}
-                      <span className="font-bold text-white">
-                        {yesNo(entry.email_verified)}
-                      </span>
-                    </p>
-                    <p className="mt-1">
-                      Followed:{" "}
-                      <span className="font-bold text-white">
-                        {yesNo(entry.followed_social)}
-                      </span>
-                    </p>
-                    <p className="mt-1">
-                      Tagged friends:{" "}
-                      <span className="font-bold text-white">
-                        {yesNo(entry.tagged_two_friends)}
-                      </span>
-                    </p>
-                    <p className="mt-1">
-                      Duplicate:{" "}
-                      <span className="font-bold text-white">
-                        {yesNo(entry.duplicate_flag)}
-                      </span>
-                    </p>
-                    <p className="mt-1">
-                      18+ confirmed: <span className="font-bold text-white">{yesNo(entry.age_18_confirmed)}</span>
-                    </p>
-                    <p className="mt-1">
-                      Rules agreed: <span className="font-bold text-white">{yesNo(entry.giveaway_rules_agreed)}</span>
-                    </p>
-                    <p className="mt-1">
-                      Weekly beta tasks: <span className="font-bold text-white">{entry.beta_giveaway_eligibility?.isBetaTester ? `${entry.beta_giveaway_eligibility.completedThisWeek} / ${entry.beta_giveaway_eligibility.requiredThisWeek} completed` : "Not approved as beta yet"}</span>
-                    </p>
-                    {entry.duplicate_reason ? (
-                      <p className="mt-2 text-red-100/80">
-                        {entry.duplicate_reason}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="w-44 px-3 py-3">
-                    <StatusBadge status={entry.giveaway_status} />
-                  </td>
-                  <td className="w-48 px-3 py-3">
-                    <p>Created: {formatDate(entry.created_at)}</p>
-                    <p className="mt-1">
-                      Email: {formatDate(entry.email_verified_at)}
-                    </p>
-                    <p className="mt-1">
-                      Prize Qualified: {formatDate(entry.giveaway_verified_at)}
-                    </p>
-                    <p className="mt-1">
-                      Consent: {formatDate(entry.marketing_consent_at)}
-                    </p>
-                  </td>
-                  <td className="w-64 px-3 py-3">
-                    <textarea
-                      defaultValue={entry.giveaway_notes || ""}
-                      onBlur={(event) =>
-                        patchEntry(entry, {
-                          giveaway_notes: event.target.value,
-                        })
-                      }
-                      placeholder="Admin notes"
-                      className="h-24 w-60 rounded-2xl border border-white/10 bg-black/20 p-3 text-white outline-none placeholder:text-white/30 focus:border-rose-300/50"
-                    />
-                  </td>
-                  <td className="px-3 py-3">{renderActions(entry)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {!entries.length ? (
-          <p className="border-t border-white/10 px-4 py-8 text-center text-sm font-bold text-white/45">
-            No entries match this view.
-          </p>
-        ) : null}
+        {entries.map((entry) => (
+          <article key={entry.id} className="rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-2xl shadow-black/20">
+            <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr_auto] lg:items-start">
+              <div className="min-w-0">
+                <p className="text-lg font-black text-white">{formatText(entry.full_name)}</p>
+                <p className="mt-1 break-words text-sm font-bold text-white/70">{formatText(entry.email)}</p>
+                <p className="mt-1 text-sm text-white/45">{formatText(entry.phone)}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <StatusBadge status={entry.giveaway_status} />
+                  <span className="rounded-full border border-emerald-300/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-100">{betaStatusLabel(entry)}</span>
+                  {accountStatusLabels(entry).map((label) => <span key={label} className="rounded-full border border-amber-300/25 bg-amber-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-100">{label}</span>)}
+                </div>
+              </div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <Field label="Social" value={`${formatText(entry.social_handle)} / ${formatText(entry.social_platform)}`} />
+                <Field label="Email verified" value={yesNo(entry.email_verified)} />
+                <Field label="Follow" value={yesNo(entry.followed_social)} />
+                <Field label="Tagged friends" value={yesNo(entry.tagged_two_friends)} />
+                <Field label="Weekly beta tasks" value={weeklyTaskLabel(entry)} />
+                <Field label="Created" value={formatDate(entry.created_at)} />
+              </div>
+              <div className="lg:w-80">{renderActions(entry, true)}</div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+              <textarea defaultValue={entry.giveaway_notes || ""} onBlur={(event) => patchEntry(entry, { giveaway_notes: event.target.value })} placeholder="Admin notes" className="h-20 w-full max-w-full rounded-2xl border border-white/10 bg-black/20 p-3 text-white outline-none placeholder:text-white/30 focus:border-rose-300/50" />
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/55">
+                <p>ID {entry.id}</p>
+                <p className="mt-1">Area: {formatText(entry.usually_go_out_area)} · Consent: {formatDate(entry.marketing_consent_at)}</p>
+                {entry.duplicate_flag || entry.duplicate_reason ? <p className="mt-1 text-red-100">Duplicate: {yesNo(entry.duplicate_flag)} {entry.duplicate_reason || ""}</p> : null}
+              </div>
+            </div>
+          </article>
+        ))}
+        {!entries.length ? <p className="rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-8 text-center text-sm font-bold text-white/45">No entries match this view.</p> : null}
       </section>
 
       <section className="space-y-3 md:hidden">
@@ -796,7 +713,7 @@ export default function GiveawayAdminClient({
               </p>
               <p className="mt-1">18+ confirmed: <span className="font-black text-white">{yesNo(entry.age_18_confirmed)}</span></p>
               <p className="mt-1">Giveaway rules agreed: <span className="font-black text-white">{yesNo(entry.giveaway_rules_agreed)}</span></p>
-              <p className="mt-1">Weekly beta tasks: <span className="font-black text-white">{entry.beta_giveaway_eligibility?.isBetaTester ? `${entry.beta_giveaway_eligibility.completedThisWeek} / ${entry.beta_giveaway_eligibility.requiredThisWeek} completed` : "Not approved as beta yet"}</span></p>
+              <p className="mt-1">Weekly beta tasks: <span className="font-black text-white">{weeklyTaskLabel(entry)}</span></p>
               {entry.duplicate_reason ? (
                 <p className="mt-2 text-red-100">{entry.duplicate_reason}</p>
               ) : null}
