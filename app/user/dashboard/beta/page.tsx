@@ -1,1 +1,23 @@
-import Link from "next/link";import UserDashboardShell,{DashboardCard} from "@/components/user/UserDashboardShell";import { getCurrentUserDashboardContext } from "@/lib/user-dashboard";import { assignWeeklyBetaTasksForTester,getCurrentWeekStart } from "@/lib/beta/weeklyTasks";import { supabaseAdmin } from "@/lib/supabaseAdmin";import BetaDashboardClient from "@/app/beta/dashboard/BetaDashboardClient";export const dynamic="force-dynamic";export default async function Page(){const ctx=await getCurrentUserDashboardContext();if(!ctx.isBeta)return <UserDashboardShell><DashboardCard><h1 className="text-3xl font-black">Beta access required</h1><p className="mt-2 text-white/60">This area is for active beta testers.</p><Link href="/user/dashboard" className="mt-5 inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Back to dashboard</Link></DashboardCard></UserDashboardShell>;await assignWeeklyBetaTasksForTester(ctx.beta.id);const week=getCurrentWeekStart();const {data:assignments}=await supabaseAdmin.from('beta_task_assignments').select('*, beta_tasks(*)').eq('tester_id',ctx.beta.id).eq('assigned_week_start',week).order('created_at',{ascending:true});const completed=(assignments||[]).filter((a:any)=>a.status==='completed').length;return <UserDashboardShell isBeta><section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,.18),transparent_30%),#120d0b] p-6"><p className="text-xs font-black uppercase tracking-[.32em] text-rose-200">TheOutHaven Beta Member</p><h1 className="mt-3 text-4xl font-black">0/5 weekly beta tasks complete</h1><p className="mt-3 text-white/70">Each task takes less than 10 minutes. Complete your Weekly Beta Tasks to stay eligible for the $100 Beta Tester Reward.</p><div className="mt-5 h-3 rounded-full bg-white/10"><div className="h-3 rounded-full bg-rose-600" style={{width:`${Math.min(100,completed*20)}%`}}/></div><p className="mt-2 text-sm text-white/65">{completed}/5 weekly beta tasks complete</p></section><div className="mt-4 flex gap-2"><Link href="/user/dashboard/beta/feedback" className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold">Submit Feedback</Link><Link href="/user/dashboard/beta/report-bug" className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold">Report Bug</Link></div>{assignments?.length?<div className="mt-6"><BetaDashboardClient assignments={assignments}/></div>:<DashboardCard className="mt-6"><h2 className="text-2xl font-black">Weekly Beta Tasks</h2><p className="mt-2 text-white/60">This week’s beta tasks are being prepared. Check back soon.</p></DashboardCard>}</UserDashboardShell>}
+import Link from "next/link";
+import UserDashboardShell, { DashboardCard } from "@/components/user/UserDashboardShell";
+import { getCurrentUserDashboardContext } from "@/lib/user-dashboard";
+import { assignWeeklyBetaTasksForTester, getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import BetaCommandCenter from "@/components/user/beta/BetaCommandCenter";
+
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
+  const ctx = await getCurrentUserDashboardContext();
+  if (!ctx.isBeta) {
+    return <UserDashboardShell><DashboardCard><h1 className="text-3xl font-black">Beta access required</h1><p className="mt-2 text-white/60">This area is for active beta testers.</p><Link href="/user/dashboard" className="mt-5 inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Back to dashboard</Link></DashboardCard></UserDashboardShell>;
+  }
+  await assignWeeklyBetaTasksForTester(ctx.beta.id);
+  const week = getCurrentWeekStart();
+  const [{ data: assignments }, { count: feedbackCount }] = await Promise.all([
+    supabaseAdmin.from("beta_task_assignments").select("*, beta_tasks(*)").eq("tester_id", ctx.beta.id).eq("assigned_week_start", week).order("created_at", { ascending: true }),
+    supabaseAdmin.from("beta_feedback").select("id", { count: "exact", head: true }).eq("tester_id", ctx.beta.id).gte("created_at", `${week}T00:00:00.000Z`),
+  ]);
+  const profileComplete = Boolean(ctx.profile?.zip_code && ctx.profile?.preferences && Object.keys(ctx.profile?.preferences || {}).length > 0);
+  return <UserDashboardShell isBeta><BetaCommandCenter assignments={assignments || []} weekStart={week} giveawayStatus={ctx.beta?.giveaway_status || ctx.beta?.weekly_task_eligibility_status || null} feedbackCount={feedbackCount || 0} profileComplete={profileComplete}/></UserDashboardShell>;
+}
