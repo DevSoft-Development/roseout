@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendCronImportSummaryEmail } from "@/lib/admin/nightlyImportEmail";
+import { runTrackedCron } from "@/lib/cron/runTrackedCron";
 import { requireCronRequest } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
@@ -79,6 +79,13 @@ export async function GET(request: NextRequest) {
   const authError = requireCronRequest(request);
   if (authError) return authError;
 
+  return runTrackedCron({
+    jobKey: "nightly-photo-backfill",
+    jobName: "Nightly Photo Backfill",
+    routePath: "/api/cron/nightly-photo-backfill",
+    description: "Runs nightly location photo repair, migration, and high-value enrichment imports.",
+    scheduleHint: "Daily at 6:30 AM UTC via Vercel Cron.",
+    handler: async () => {
   const cronName = "Nightly Automatic Imports";
   const startedAtMs = Date.now();
   const startedAt = new Date().toISOString();
@@ -94,9 +101,10 @@ export async function GET(request: NextRequest) {
   const success = steps.every((step) => step.ok);
   const totals = buildTotals(steps);
 
-  const emailResult = await sendCronImportSummaryEmail({ success, cronName, startedAt, finishedAt, durationMs, steps });
-
-  return NextResponse.json({
+  return {
+    message: success ? "Nightly photo backfill completed." : "Nightly photo backfill completed with errors.",
+    details: { action: "nightly_photo_backfill", counts: totals, steps },
+    response: NextResponse.json({
     success,
     action: "nightly_photo_backfill",
     cronName,
@@ -105,8 +113,11 @@ export async function GET(request: NextRequest) {
     durationMs,
     counts: totals,
     steps,
-    emailSent: emailResult.sent,
-    emailProvider: emailResult.provider,
-    emailError: emailResult.error || null,
+    emailSent: false,
+    emailProvider: "tracked_cron_settings",
+    emailError: null,
+  })
+  };
+    },
   });
 }

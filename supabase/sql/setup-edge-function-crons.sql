@@ -62,3 +62,6 @@ select cron.schedule('team-session-watchdog','*/30 * * * *',$$
     body := jsonb_build_object('source','cron')
   );
 $$);
+
+-- Note: Next.js cron routes now report to public.cron_jobs and public.cron_job_runs through lib/cron/runTrackedCron.ts.
+-- Future Supabase Edge Functions that behave like cron jobs should also write to those tables so the admin cron jobs dashboard stays centralized.
