@@ -1,5 +1,10 @@
 export type SearchDomain = "restaurant" | "activity" | "mixed" | "any";
-export type SearchType = "restaurant" | "activity" | "mixed_outing" | "activity_pair" | "any";
+export type SearchType =
+  | "restaurant"
+  | "activity"
+  | "mixed_outing"
+  | "activity_pair"
+  | "any";
 export type GeoStrictness =
   | "none"
   | "soft"
@@ -274,6 +279,8 @@ export type MlResultDebug = {
   totalMlBoost?: number | null;
   mlChangedRank?: boolean;
   mlDebugReason?: string | null;
+  phase2MatchedFields?: string[];
+  phase2IntentReason?: string | null;
 };
 
 export type MlSearchDebug = {
@@ -287,7 +294,9 @@ export type MlSearchDebug = {
     confidence: number;
     reason: string;
     inferredSearchMode: string;
+    intentGroups?: Record<string, string[]>;
   } | null;
+  [key: string]: any;
   rankingIntentBuckets?: string[];
   mlUnavailableReason?: string | null;
   resultOrderChangedByMl?: boolean;
