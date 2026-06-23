@@ -29,6 +29,7 @@ import {
   scoreSingleVenueWithMatch,
   scoreSameVenueAttributeMatch,
   sameVenueSearchTerms,
+  isStrongSameVenueMatch,
 } from "./ranking";
 import {
   createPairingDebug,
@@ -1535,6 +1536,88 @@ export async function runEnterpriseSearch(
       (debug as any).sameVenueRecoveryCandidateCount = 0;
     }
 
+    const shouldAttemptSameVenuePairFallback =
+      (Boolean((effectiveIntent as any).sameVenuePreferred) ||
+        detectSingleVenueWithIntent(effectiveIntent.rawQuery).matched) &&
+      !effectiveIntent.wantsPairing &&
+      sameVenueTermsBeforeRanking.expandedSecondaryAttributeTerms.length > 0;
+    let sameVenuePairFallbackIntent: SearchIntent | null = null;
+    if (shouldAttemptSameVenuePairFallback) {
+      const strongCount = restaurantRaw.filter((item) =>
+        isStrongSameVenueMatch(item, effectiveIntent),
+      ).length;
+      const supportingOnlyCount = restaurantRaw.filter((item) => {
+        const match = scoreSameVenueAttributeMatch(item, effectiveIntent);
+        return (
+          match.primaryMatched &&
+          match.secondaryMatched &&
+          !match.secondaryStrongMatched
+        );
+      }).length;
+      (debug as any).sameVenueStrongMatchCount = strongCount;
+      (debug as any).sameVenueSupportingOnlyMatchCount = supportingOnlyCount;
+      (debug as any).sameVenueFallbackToPairingAttempted = strongCount === 0;
+      if (strongCount === 0) {
+        const secondaryTerms = [
+          ...sameVenueTermsBeforeRanking.explicitSecondaryTerms,
+          ...sameVenueTermsBeforeRanking.strongSecondarySynonyms,
+        ].slice(0, 12);
+        const primaryTerms = sameVenueTermsBeforeRanking.primaryFoodTerms.filter(
+          (term) =>
+            !["food", "restaurant", "dinner", "lunch", "brunch"].includes(
+              term,
+            ),
+        );
+        sameVenuePairFallbackIntent = {
+          ...effectiveIntent,
+          searchType: "mixed_outing",
+          primaryDomain: "mixed",
+          needsRestaurant: true,
+          needsActivity: true,
+          wantsPairing: true,
+          restaurantIntent: {
+            ...effectiveIntent.restaurantIntent,
+            foodTerms: primaryTerms.length
+              ? primaryTerms
+              : effectiveIntent.restaurantIntent.foodTerms,
+            cuisineTerms: effectiveIntent.restaurantIntent.cuisineTerms,
+          },
+          activityIntent: {
+            ...effectiveIntent.activityIntent,
+            activityTerms: secondaryTerms.length
+              ? secondaryTerms
+              : sameVenueTermsBeforeRanking.expandedSecondaryAttributeTerms,
+            categoryTerms: [],
+            featureTerms: secondaryTerms,
+          },
+          pairingPreference: {
+            requiresPairing: false,
+            distanceMode: "nearby",
+            maxPairDistanceMiles: null,
+            maxPairWalkingMinutes: null,
+            requireWalkablePair: false,
+          },
+        };
+        (debug as any).sameVenueFallbackReason =
+          supportingOnlyCount > 0
+            ? "only_supporting_secondary_same_venue_matches"
+            : "no_strong_same_venue_match";
+        (debug as any).fallbackPrimaryTerms = primaryTerms;
+        (debug as any).fallbackSecondaryTerms = secondaryTerms;
+        const fallbackActivityRaw = await searchEnterpriseLane(
+          supabase,
+          sameVenuePairFallbackIntent,
+          "activity",
+          debug,
+        );
+        activityRaw = uniqueById([...activityRaw, ...fallbackActivityRaw]);
+        (debug as any).fallbackActivityRawCount = fallbackActivityRaw.length;
+      }
+    } else {
+      (debug as any).sameVenueFallbackToPairingAttempted = false;
+      (debug as any).sameVenueFallbackToPairingUsed = false;
+    }
+
     const [restaurantCandidatesWithMl, activityCandidatesWithMl] =
       await Promise.all([
         attachMlScores(uniqueById(restaurantRaw)),
@@ -1788,6 +1871,14 @@ export async function runEnterpriseSearch(
             (restaurant as any).sameVenuePrimaryMatched ?? false,
           sameVenueSecondaryMatched:
             (restaurant as any).sameVenueSecondaryMatched ?? false,
+          sameVenueSecondaryStrongMatched:
+            (restaurant as any).sameVenueSecondaryStrongMatched ?? false,
+          sameVenueSecondarySupportingMatched:
+            (restaurant as any).sameVenueSecondarySupportingMatched ?? false,
+          sameVenueAttributeMatchStrength:
+            (restaurant as any).sameVenueAttributeMatchStrength ?? "none",
+          phase2IntentMatchStrength:
+            (restaurant as any).phase2IntentMatchStrength ?? null,
           sameVenuePrimaryTermsMatched:
             (restaurant as any).sameVenuePrimaryTermsMatched ?? [],
           sameVenueAttributeTermsMatched:
@@ -2237,6 +2328,70 @@ export async function runEnterpriseSearch(
 
         return !walkingLimitCheck.hide;
       });
+    let fallbackPairs: EnterprisePair[] = [];
+    if (sameVenuePairFallbackIntent) {
+      const fallbackPairingDebug = createPairingDebug();
+      const fallbackRestaurants = restaurants.length
+        ? restaurants
+        : photoSafeRestaurants.slice(0, displayLimit);
+      const fallbackActivities = photoSafeActivities.slice(0, displayLimit);
+      const rawFallbackPairs = createSearchPairs(
+        fallbackRestaurants,
+        fallbackActivities,
+        sameVenuePairFallbackIntent,
+        fallbackPairingDebug,
+      ).filter(
+        (pair) =>
+          hasUsableLivePhoto(pair.restaurant) &&
+          hasUsableLivePhoto(pair.activity) &&
+          isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
+      );
+      fallbackPairs = (
+        await applyPairBoosts(
+          rawFallbackPairs,
+          query,
+          requestedMarketForResults,
+          resolvedMlFlags,
+        )
+      )
+        .slice(0, 3)
+        .map((pair) => ({
+          ...pair,
+          fallbackPair: true,
+          fallbackReason:
+            (debug as any).sameVenueFallbackReason ??
+            "no_strong_single_venue_match",
+          restaurantName:
+            pair.restaurant.name || pair.restaurant.restaurant_name || null,
+          activityName:
+            pair.activity.name || pair.activity.activity_name || null,
+          primaryMatchedIntent: (debug as any).fallbackPrimaryTerms ?? [],
+          secondaryMatchedIntent: (debug as any).fallbackSecondaryTerms ?? [],
+        }));
+      (debug as any).fallbackPairScoringApplied = true;
+      (debug as any).fallbackRestaurantCount = fallbackRestaurants.length;
+      (debug as any).fallbackActivityCount = fallbackActivities.length;
+      (debug as any).fallbackPairCount = fallbackPairs.length;
+      (debug as any).fallbackPairDistanceMiles = fallbackPairs.map(
+        (pair) => pair.pairDistanceMiles,
+      );
+      (debug as any).sameVenueFallbackToPairingUsed = fallbackPairs.length > 0;
+      (debug as any).sameVenueFallbackPairDebug = fallbackPairs.map((pair) => ({
+        fallbackPair: true,
+        fallbackReason: (pair as any).fallbackReason,
+        restaurantName: (pair as any).restaurantName,
+        activityName: (pair as any).activityName,
+        pairDistanceMiles: pair.pairDistanceMiles,
+        phase2PairScore: (pair as any).phase2PairScore ?? null,
+        phase2PairReason: (pair as any).phase2PairReason ?? null,
+        primaryMatchedIntent: (pair as any).primaryMatchedIntent,
+        secondaryMatchedIntent: (pair as any).secondaryMatchedIntent,
+      }));
+    } else if ((debug as any).sameVenueFallbackToPairingUsed == null) {
+      (debug as any).sameVenueFallbackToPairingUsed = false;
+      (debug as any).fallbackPairCount = 0;
+    }
+
     perf.pairing_ms = Date.now() - pairingStarted;
     const candidatePairCountBeforeRequiredPairSuppression = pairs.length;
     const fallbackSuppressedBecauseExplicitMarket =
@@ -2314,6 +2469,7 @@ export async function runEnterpriseSearch(
       activities: activities.length,
       matched_locations: matched_locations.length,
       pairs: pairs.length,
+      fallbackPairs: fallbackPairs.length,
     };
     const pairDisplayLabels = pairs
       .map((pair) =>
@@ -2709,7 +2865,7 @@ export async function runEnterpriseSearch(
       requireWalkablePair:
         effectiveIntent.pairingPreference?.requireWalkablePair ?? false,
       distanceMode: effectiveIntent.pairingPreference?.distanceMode ?? "any",
-      renderMode: render_mode,
+      renderMode: fallbackPairs.length > 0 ? "fallback_pairs" : render_mode,
       timingMs: perf.total_ms,
       performance: performanceDebug,
       restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed),
@@ -2766,10 +2922,20 @@ export async function runEnterpriseSearch(
           }));
     const response: EnterpriseSearchResult = {
       success: true,
-      reply: responseReply,
+      reply:
+        fallbackPairs.length > 0
+          ? `No strong single-venue match found. Here is a ${
+              ((debug as any).fallbackPrimaryTerms ?? [])[0] ?? "restaurant"
+            } + ${
+              ((debug as any).fallbackSecondaryTerms ?? [])[0] ?? "activity"
+            } plan nearby.`
+          : responseReply,
       restaurants,
       activities,
       pairs,
+      fallbackPairs,
+      recommendedFallbackPairs: fallbackPairs,
+      pairedFallbackUsed: fallbackPairs.length > 0,
       matched_locations,
       matchedLocations: matched_locations,
       render_mode,

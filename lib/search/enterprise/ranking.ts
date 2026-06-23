@@ -615,10 +615,29 @@ const SAME_VENUE_SECONDARY_ATTRIBUTE_TERMS = [
 ];
 
 const SAME_VENUE_SECONDARY_SYNONYMS: Record<string, string[]> = {
-  hookah: ["hookah", "shisha", "hookah lounge", "lounge"],
-  shisha: ["hookah", "shisha", "hookah lounge", "lounge"],
-  "live music": ["live music", "music", "jazz", "band", "dj", "performance"],
-  jazz: ["live music", "music", "jazz", "band", "performance"],
+  hookah: [
+    "hookah",
+    "shisha",
+    "hookah lounge",
+    "hookah bar",
+    "hookah restaurant",
+  ],
+  shisha: [
+    "hookah",
+    "shisha",
+    "hookah lounge",
+    "hookah bar",
+    "hookah restaurant",
+  ],
+  "live music": [
+    "live music",
+    "jazz",
+    "band",
+    "dj",
+    "performance",
+    "music venue",
+  ],
+  jazz: ["live music", "jazz", "band", "performance", "music venue"],
   dj: ["dj", "live dj", "music", "dancing"],
   rooftop: [
     "rooftop",
@@ -684,6 +703,94 @@ const SAME_VENUE_SECONDARY_SYNONYMS: Record<string, string[]> = {
   "open late": ["late night", "open late", "after hours"],
 };
 
+export type SameVenueSecondaryMatchStrength =
+  | "explicit"
+  | "strong_synonym"
+  | "supporting"
+  | "generic"
+  | "none";
+
+const SECONDARY_ATTRIBUTE_TAXONOMY: Record<
+  string,
+  {
+    explicit: string[];
+    strong: string[];
+    supporting: string[];
+    generic: string[];
+  }
+> = {
+  hookah: {
+    explicit: ["hookah"],
+    strong: ["shisha", "hookah lounge", "hookah bar", "hookah restaurant"],
+    supporting: ["lounge", "nightlife"],
+    generic: ["food", "restaurant", "bar", "activity"],
+  },
+  shisha: {
+    explicit: ["shisha"],
+    strong: ["hookah", "hookah lounge", "hookah bar", "hookah restaurant"],
+    supporting: ["lounge", "nightlife"],
+    generic: ["food", "restaurant", "bar", "activity"],
+  },
+  "live music": {
+    explicit: ["live music"],
+    strong: ["jazz", "band", "dj", "performance", "music venue"],
+    supporting: ["nightlife", "lounge", "music"],
+    generic: ["entertainment", "activity"],
+  },
+  "outdoor seating": {
+    explicit: ["outdoor seating"],
+    strong: ["patio", "outdoor dining", "terrace", "garden seating"],
+    supporting: ["outdoor", "garden"],
+    generic: ["seating"],
+  },
+  rooftop: {
+    explicit: ["rooftop"],
+    strong: ["roof top", "skyline", "rooftop views", "city views"],
+    supporting: ["views", "lounge"],
+    generic: ["bar"],
+  },
+  "rooftop views": {
+    explicit: ["rooftop views"],
+    strong: ["rooftop", "roof top", "skyline", "city views"],
+    supporting: ["views", "lounge"],
+    generic: ["bar"],
+  },
+  "bottomless mimosas": {
+    explicit: ["bottomless mimosas"],
+    strong: ["bottomless", "mimosas", "brunch cocktails"],
+    supporting: ["brunch", "cocktails"],
+    generic: ["drinks"],
+  },
+  games: {
+    explicit: ["games"],
+    strong: ["arcade", "bowling", "darts", "billiards", "pool table", "board games"],
+    supporting: ["entertainment"],
+    generic: ["activity"],
+  },
+};
+
+function secondaryBuckets(secondaryCandidates: string[]) {
+  const explicit = uniqLowerTerms(secondaryCandidates.flatMap((term) => SECONDARY_ATTRIBUTE_TAXONOMY[term]?.explicit ?? [term]));
+  const strong = uniqLowerTerms(secondaryCandidates.flatMap((term) => SECONDARY_ATTRIBUTE_TAXONOMY[term]?.strong ?? []));
+  const supporting = uniqLowerTerms(secondaryCandidates.flatMap((term) => SECONDARY_ATTRIBUTE_TAXONOMY[term]?.supporting ?? []));
+  const generic = uniqLowerTerms(secondaryCandidates.flatMap((term) => SECONDARY_ATTRIBUTE_TAXONOMY[term]?.generic ?? []));
+  return { explicitSecondaryTerms: explicit, strongSecondarySynonyms: strong, supportingSecondaryTerms: supporting, genericSecondaryTerms: generic };
+}
+
+function strengthFromMatches(matched: string[], buckets: ReturnType<typeof secondaryBuckets>): SameVenueSecondaryMatchStrength {
+  const has = (terms: string[]) => matched.some((term) => terms.includes(term));
+  if (has(buckets.explicitSecondaryTerms)) return "explicit";
+  if (has(buckets.strongSecondarySynonyms)) return "strong_synonym";
+  if (has(buckets.supportingSecondaryTerms)) return "supporting";
+  if (has(buckets.genericSecondaryTerms)) return "generic";
+  return "none";
+}
+
+export function isStrongSameVenueMatch(record: EnterpriseLocation, intent: SearchIntent) {
+  const match = scoreSameVenueAttributeMatch(record, intent);
+  return Boolean(match.primaryMatched && match.secondaryStrongMatched && match.score >= 180);
+}
+
 function uniqLowerTerms(terms: unknown[]): string[] {
   return Array.from(
     new Set(
@@ -732,6 +839,10 @@ export function sameVenueSearchTerms(intent: SearchIntent) {
       primaryFoodTerms: [],
       secondaryAttributeTerms: [],
       expandedSecondaryAttributeTerms: [],
+      explicitSecondaryTerms: [],
+      strongSecondarySynonyms: [],
+      supportingSecondaryTerms: [],
+      genericSecondaryTerms: [],
     };
   }
 
@@ -755,25 +866,27 @@ export function sameVenueSearchTerms(intent: SearchIntent) {
   const afterWith = connectorSplit.slice(1).join(" ");
   const secondaryCandidates = uniqLowerTerms([
     ...((intent as any).secondaryAttributeTerms ?? []),
-    ...singleVenue.featureTerms,
     ...SAME_VENUE_SECONDARY_ATTRIBUTE_TERMS.filter(
-      (term) =>
-        afterWith.includes(term) ||
-        (singleVenue.featureTerms.length &&
-          intent.rawQuery.toLowerCase().includes(term)),
+      (term) => afterWith.includes(term),
     ),
   ]);
 
-  const expandedSecondaryAttributeTerms = uniqLowerTerms(
-    secondaryCandidates.flatMap(
+  const buckets = secondaryBuckets(secondaryCandidates);
+  const expandedSecondaryAttributeTerms = uniqLowerTerms([
+    ...buckets.explicitSecondaryTerms,
+    ...buckets.strongSecondarySynonyms,
+    ...buckets.supportingSecondaryTerms,
+    ...buckets.genericSecondaryTerms,
+    ...secondaryCandidates.flatMap(
       (term) => SAME_VENUE_SECONDARY_SYNONYMS[term] ?? [term],
     ),
-  );
+  ]);
 
   return {
     primaryFoodTerms: primaryCandidates,
     secondaryAttributeTerms: secondaryCandidates,
     expandedSecondaryAttributeTerms,
+    ...buckets,
   };
 }
 
@@ -796,6 +909,9 @@ export function scoreSameVenueAttributeMatch(
       primaryFieldsMatched: [],
       secondaryFieldsMatched: [],
       reason: "not_same_venue_attribute_query",
+      secondaryStrongMatched: false,
+      secondarySupportingMatched: false,
+      secondaryMatchStrength: "none" as SameVenueSecondaryMatchStrength,
     };
   }
 
@@ -830,16 +946,36 @@ export function scoreSameVenueAttributeMatch(
     ]).matchedTerms.length > 0;
   const primaryMatched = primary.matchedTerms.length > 0;
   const secondaryMatched = secondary.matchedTerms.length > 0;
+  const secondaryMatchStrength = strengthFromMatches(secondary.matchedTerms, terms);
+  const secondaryStrongMatched =
+    secondaryMatchStrength === "explicit" ||
+    secondaryMatchStrength === "strong_synonym";
+  const secondarySupportingMatched =
+    secondaryMatchStrength === "supporting" || secondaryMatchStrength === "generic";
+  const primaryGenericOnly =
+    primaryMatched && primary.matchedTerms.every((term) => ["food", "restaurant", "dinner", "lunch", "brunch", "bar", "lounge", "drinks", "cocktails"].includes(term));
 
   let score = 0;
   let reason = "missing_primary_and_secondary";
   if (primaryMatched && secondaryMatched) {
-    score = 260;
-    reason = "matched_primary_and_secondary_same_venue_terms";
-    if (namePrimary && nameSecondary) score += 120;
-    if (docPrimary && docSecondary) score += 120;
-    if (
-      primary.matchedFields.some((f) =>
+    if (secondaryStrongMatched && !primaryGenericOnly) {
+      score = 320;
+      reason = "strong_matched_primary_and_explicit_secondary_same_venue_terms";
+    } else if (secondaryStrongMatched) {
+      score = 150;
+      reason = "generic_primary_with_explicit_secondary_same_venue_terms";
+    } else if (!primaryGenericOnly) {
+      score = 90;
+      reason = "primary_with_supporting_secondary_same_venue_terms";
+    } else {
+      score = 25;
+      reason = "generic_primary_with_supporting_secondary_same_venue_terms";
+    }
+    if (secondaryStrongMatched) {
+      if (namePrimary && nameSecondary) score += 120;
+      if (docPrimary && docSecondary) score += 120;
+      if (
+        primary.matchedFields.some((f) =>
         [
           "cuisine",
           "cuisine_type",
@@ -859,14 +995,15 @@ export function scoreSameVenueAttributeMatch(
           "intent_tags",
         ].includes(f),
       )
-    )
-      score += 80;
-    if (
-      secondary.matchedFields.some((f) =>
-        ["description", "semantic_search_text"].includes(f),
       )
-    )
-      score += 40;
+        score += 80;
+      if (
+        secondary.matchedFields.some((f) =>
+          ["description", "semantic_search_text"].includes(f),
+        )
+      )
+        score += 40;
+    }
   } else if (primaryMatched) {
     score = -90;
     reason = "primary_only_missing_same_venue_attribute";
@@ -879,6 +1016,10 @@ export function scoreSameVenueAttributeMatch(
   (record as any).sameVenueSecondaryMatched = secondaryMatched;
   (record as any).sameVenuePrimaryTermsMatched = primary.matchedTerms;
   (record as any).sameVenueAttributeTermsMatched = secondary.matchedTerms;
+  (record as any).sameVenueSecondaryStrongMatched = secondaryStrongMatched;
+  (record as any).sameVenueSecondarySupportingMatched = secondarySupportingMatched;
+  (record as any).sameVenueAttributeMatchStrength = secondaryMatchStrength;
+  (record as any).phase2IntentMatchStrength = secondaryMatchStrength;
   (record as any).sameVenuePrimaryFieldsMatched = primary.matchedFields;
   (record as any).sameVenueSecondaryFieldsMatched = secondary.matchedFields;
   (record as any).sameVenueScore = score;
@@ -892,6 +1033,9 @@ export function scoreSameVenueAttributeMatch(
     score,
     primaryMatched,
     secondaryMatched,
+    secondaryStrongMatched,
+    secondarySupportingMatched,
+    secondaryMatchStrength,
     ...terms,
     primaryTermsMatched: primary.matchedTerms,
     secondaryTermsMatched: secondary.matchedTerms,
