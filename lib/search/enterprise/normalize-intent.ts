@@ -1506,6 +1506,7 @@ export function restaurantSearchTerms(intent: SearchIntent) {
         "roof deck",
       ]
     : [];
+  const mealTermsToStrip = new Set<string>();
   return finalCleanTermList(stripBlockedTerms(
     stripBlockedTerms(
       uniq([
@@ -1517,7 +1518,7 @@ export function restaurantSearchTerms(intent: SearchIntent) {
       ...(intent.restaurantIntent.alternativeGroups ?? []).flat(),
       ...rooftopRestaurantTerms,
       ]),
-      new Set(["dinner"]),
+      mealTermsToStrip,
     ),
     RESTAURANT_SEARCH_TERM_BLOCKLIST,
   ), RESTAURANT_ALLOWED_SINGLE_WORDS);
