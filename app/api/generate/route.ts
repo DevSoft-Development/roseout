@@ -211,6 +211,22 @@ function emptySearchResponse(reply: string) {
   };
 }
 
+function isLoadTestRateLimitBypassAllowed(request: Request): boolean {
+  const configuredSecret = process.env.LOAD_TEST_SECRET;
+  if (!configuredSecret) return false;
+
+  const productionBypassAllowed =
+    process.env.VERCEL_ENV !== "production" ||
+    process.env.ALLOW_PRODUCTION_LOAD_TEST_BYPASS === "true";
+  if (!productionBypassAllowed) return false;
+
+  // Controlled k6/load-test bypass: this skips only the public search
+  // rate-limit gate below so synthetic traffic can exercise the complete
+  // /api/generate flow. Auth, validation, search, analytics, Supabase writes,
+  // and response handling must continue to run normally.
+  return request.headers.get("x-load-test-secret") === configuredSecret;
+}
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   let searchHealthRawQuery: string | null = null;
@@ -252,12 +268,17 @@ export async function POST(request: Request) {
     }
 
     const searchIdentity = await getCurrentSearchIdentity(request);
-    const limitCheck = await checkSearchLimit(searchIdentity, cleanInput);
-    if (!limitCheck.allowed) {
-      await recordSearchUsageEvent({ identity: searchIdentity, query: cleanInput, allowed: false, reason: "weekly_limit_reached", planKey: limitCheck.plan.planKey });
-      const blocked = Response.json({ success: false, error: "SEARCH_LIMIT_REACHED", limit: { planKey: limitCheck.plan.planKey, weeklyLimit: limitCheck.weeklyLimit, usedThisWeek: limitCheck.usedThisWeek, resetWindow: "weekly", message: limitCheck.message } }, { status: 429 });
-      if (searchIdentity.setGuestCookie && searchIdentity.guestId) blocked.headers.append("Set-Cookie", `guest_search_id=${searchIdentity.guestId}; Path=/; Max-Age=31536000; SameSite=Lax`);
-      return blocked;
+    const loadTestRateLimitBypass = isLoadTestRateLimitBypassAllowed(request);
+    let limitCheck: Awaited<ReturnType<typeof checkSearchLimit>> | null = null;
+
+    if (!loadTestRateLimitBypass) {
+      limitCheck = await checkSearchLimit(searchIdentity, cleanInput);
+      if (!limitCheck.allowed) {
+        await recordSearchUsageEvent({ identity: searchIdentity, query: cleanInput, allowed: false, reason: "weekly_limit_reached", planKey: limitCheck.plan.planKey });
+        const blocked = Response.json({ success: false, error: "SEARCH_LIMIT_REACHED", limit: { planKey: limitCheck.plan.planKey, weeklyLimit: limitCheck.weeklyLimit, usedThisWeek: limitCheck.usedThisWeek, resetWindow: "weekly", message: limitCheck.message } }, { status: 429 });
+        if (searchIdentity.setGuestCookie && searchIdentity.guestId) blocked.headers.append("Set-Cookie", `guest_search_id=${searchIdentity.guestId}; Path=/; Max-Age=31536000; SameSite=Lax`);
+        return blocked;
+      }
     }
 
     console.log("[api/generate] request", {
@@ -851,7 +872,12 @@ export async function POST(request: Request) {
       }),
     );
 
-    await recordSearchUsageEvent({ identity: searchIdentity, query: cleanInput, allowed: true, planKey: limitCheck.plan.planKey });
+    await recordSearchUsageEvent({
+      identity: searchIdentity,
+      query: cleanInput,
+      allowed: true,
+      planKey: limitCheck?.plan.planKey ?? "load_test_bypass",
+    });
     const finalResponse = Response.json(response);
     if (searchIdentity.setGuestCookie && searchIdentity.guestId) finalResponse.headers.append("Set-Cookie", `guest_search_id=${searchIdentity.guestId}; Path=/; Max-Age=31536000; SameSite=Lax`);
     return finalResponse;
