@@ -39,6 +39,9 @@ type QaSummary = {
   restaurant_count: number;
   activity_count: number;
   pair_count: number;
+  fallback_pair_count?: number;
+  fallbackPairsUsedAsPrimary?: boolean;
+  primaryResultType?: string | null;
   timing_ms: number | null;
   speed_status: string | null;
   intentParserSource: string | null;
@@ -60,7 +63,12 @@ type QaSummary = {
   needsActivity: boolean;
 };
 
-function clampInteger(value: unknown, fallback: number, min: number, max: number) {
+function clampInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(numeric)));
@@ -90,7 +98,12 @@ function getDebug(fullJson: any) {
 }
 
 function getNormalizedIntent(debug: any, fullJson: any) {
-  return debug?.normalizedIntent ?? fullJson?.normalizedIntent ?? debug?.parsedIntent ?? {};
+  return (
+    debug?.normalizedIntent ??
+    fullJson?.normalizedIntent ??
+    debug?.parsedIntent ??
+    {}
+  );
 }
 
 function getPerformance(debug: any, fullJson: any) {
@@ -135,8 +148,11 @@ function containsTerm(values: string[], terms: string[]) {
 }
 
 function isSportsWatch(query: string, normalizedIntent: any) {
-  const text = `${query} ${normalizedIntent?.searchType ?? ""} ${normalizedIntent?.primaryDomain ?? ""}`.toLowerCase();
-  return /\b(sports?|watch|game|knicks|giants|mets|nba|ufc|football|basketball|bar with tv|big screens?)\b/.test(text);
+  const text =
+    `${query} ${normalizedIntent?.searchType ?? ""} ${normalizedIntent?.primaryDomain ?? ""}`.toLowerCase();
+  return /\b(sports?|watch|game|knicks|giants|mets|nba|ufc|football|basketball|bar with tv|big screens?)\b/.test(
+    text,
+  );
 }
 
 function hasRelaxedNoClubQuery(query: string) {
@@ -146,12 +162,20 @@ function hasRelaxedNoClubQuery(query: string) {
 
 function walkingOverLimitPossible(fullJson: any, debug: any) {
   const max = numberOrNull(
-    debug?.maxPairWalkingMinutes ?? debug?.pairingPreference?.maxPairWalkingMinutes,
+    debug?.maxPairWalkingMinutes ??
+      debug?.pairingPreference?.maxPairWalkingMinutes,
   );
   if (!max) return false;
   const minuteValues = [
-    ...stringArray(debug?.displayedWalkingMinuteLabels).map((label) => label.match(/\d+/)?.[0]),
-    ...asArray(fullJson?.pairs).map((pair) => pair?.walking_minutes ?? pair?.safe_walking_minutes ?? pair?.pair_walking_minutes),
+    ...stringArray(debug?.displayedWalkingMinuteLabels).map(
+      (label) => label.match(/\d+/)?.[0],
+    ),
+    ...asArray(fullJson?.pairs).map(
+      (pair) =>
+        pair?.walking_minutes ??
+        pair?.safe_walking_minutes ??
+        pair?.pair_walking_minutes,
+    ),
   ]
     .map(numberOrNull)
     .filter((value): value is number => value !== null);
@@ -182,8 +206,10 @@ function getSuspiciousFlags(summary: QaSummary, fullJson: any) {
   ) {
     flags.add("mixed_no_pairs");
   }
-  if (summary.needsRestaurant && summary.restaurant_count === 0) flags.add("zero_restaurants");
-  if (summary.needsActivity && summary.activity_count === 0) flags.add("zero_activities");
+  if (summary.needsRestaurant && summary.restaurant_count === 0)
+    flags.add("zero_restaurants");
+  if (summary.needsActivity && summary.activity_count === 0)
+    flags.add("zero_activities");
   if (
     isSportsWatch(summary.query, normalizedIntent) &&
     containsTerm(summary.activityTerms, SPORTS_WATCH_BAD_TERMS)
@@ -197,21 +223,30 @@ function getSuspiciousFlags(summary: QaSummary, fullJson: any) {
     flags.add("relaxed_no_club_bad_terms");
     flags.add("broad_activity_terms");
   }
-  if (walkingOverLimitPossible(fullJson, debug)) flags.add("walking_over_limit_possible");
+  if (walkingOverLimitPossible(fullJson, debug))
+    flags.add("walking_over_limit_possible");
   if (summary.errors.length) flags.add("errors");
   if (summary.warnings.length) flags.add("warnings");
 
   return Array.from(flags);
 }
 
-function buildSummary(index: number, query: string, fullJson: any, fallbackMs: number, caughtError?: unknown): QaSummary {
+function buildSummary(
+  index: number,
+  query: string,
+  fullJson: any,
+  fallbackMs: number,
+  caughtError?: unknown,
+): QaSummary {
   const debug = getDebug(fullJson);
   const normalizedIntent = getNormalizedIntent(debug, fullJson);
   const performance = getPerformance(debug, fullJson);
   const restaurants = asArray(fullJson?.restaurants);
   const activities = asArray(fullJson?.activities);
   const pairs = asArray(fullJson?.pairs);
-  const matched = asArray(fullJson?.matched_locations ?? fullJson?.matchedLocations);
+  const matched = asArray(
+    fullJson?.matched_locations ?? fullJson?.matchedLocations,
+  );
   const warnings = [
     ...stringArray(fullJson?.warnings),
     ...stringArray(debug?.warnings),
@@ -221,30 +256,77 @@ function buildSummary(index: number, query: string, fullJson: any, fallbackMs: n
     ...stringArray(fullJson?.errors),
     ...stringArray(debug?.errors),
     ...(fullJson?.error ? [String(fullJson.error)] : []),
-    ...(caughtError instanceof Error ? [caughtError.message] : caughtError ? [String(caughtError)] : []),
+    ...(caughtError instanceof Error
+      ? [caughtError.message]
+      : caughtError
+        ? [String(caughtError)]
+        : []),
   ];
 
   const summary: QaSummary = {
     index,
     query,
     ok: Boolean(fullJson?.success) && errors.length === 0,
-    normalized_search_type: stringOrNull(normalizedIntent?.searchType ?? normalizedIntent?.search_type ?? fullJson?.render_mode ?? fullJson?.renderMode),
-    primary_domain: stringOrNull(normalizedIntent?.primaryDomain ?? normalizedIntent?.primary_domain),
+    normalized_search_type: stringOrNull(
+      normalizedIntent?.searchType ??
+        normalizedIntent?.search_type ??
+        fullJson?.render_mode ??
+        fullJson?.renderMode,
+    ),
+    primary_domain: stringOrNull(
+      normalizedIntent?.primaryDomain ?? normalizedIntent?.primary_domain,
+    ),
     restaurant_count: restaurants.length,
     activity_count: activities.length,
     pair_count: pairs.length,
-    timing_ms: numberOrNull(performance?.total_ms ?? performance?.totalMs ?? debug?.timingMs) ?? fallbackMs,
-    speed_status: stringOrNull(performance?.speed_status ?? performance?.speedStatus ?? fullJson?.searchPerformance?.speedStatus),
-    intentParserSource: stringOrNull(debug?.intentParserSource ?? performance?.intentParserSource),
-    fastPathMatched: Boolean(debug?.fastPathMatched ?? performance?.fastPathMatched),
-    fastPathReason: stringOrNull(debug?.fastPathReason ?? performance?.fastPathReason),
+    fallback_pair_count: Number(
+      fullJson?.fallbackPairs?.length ??
+        fullJson?.recommendedFallbackPairs?.length ??
+        debug?.fallback_pair_count ??
+        debug?.fallbackPairCount ??
+        0,
+    ),
+    fallbackPairsUsedAsPrimary: Boolean(
+      fullJson?.fallbackPairsUsedAsPrimary ?? debug?.fallbackPairsUsedAsPrimary,
+    ),
+    primaryResultType: stringOrNull(
+      fullJson?.primaryResultType ?? debug?.primaryResultType,
+    ),
+    timing_ms:
+      numberOrNull(
+        performance?.total_ms ?? performance?.totalMs ?? debug?.timingMs,
+      ) ?? fallbackMs,
+    speed_status: stringOrNull(
+      performance?.speed_status ??
+        performance?.speedStatus ??
+        fullJson?.searchPerformance?.speedStatus,
+    ),
+    intentParserSource: stringOrNull(
+      debug?.intentParserSource ?? performance?.intentParserSource,
+    ),
+    fastPathMatched: Boolean(
+      debug?.fastPathMatched ?? performance?.fastPathMatched,
+    ),
+    fastPathReason: stringOrNull(
+      debug?.fastPathReason ?? performance?.fastPathReason,
+    ),
     llm_ms: numberOrNull(performance?.llm_ms ?? performance?.llmMs),
     rpc_ms: numberOrNull(performance?.rpc_ms ?? performance?.rpcMs),
-    intent_parse_ms: numberOrNull(performance?.intent_parse_ms ?? performance?.intentParseMs),
+    intent_parse_ms: numberOrNull(
+      performance?.intent_parse_ms ?? performance?.intentParseMs,
+    ),
     ranking_ms: numberOrNull(performance?.ranking_ms ?? performance?.rankingMs),
-    result_count: numberOrNull(performance?.result_count ?? performance?.resultCount) ?? matched.length,
-    no_results_reason: stringOrNull(debug?.noResultsReason ?? debug?.no_results_reason ?? fullJson?.diagnostics?.no_results_reason),
-    no_pairs_reason: stringOrNull(debug?.noPairsReason ?? debug?.no_pairs_reason),
+    result_count:
+      numberOrNull(performance?.result_count ?? performance?.resultCount) ??
+      matched.length,
+    no_results_reason: stringOrNull(
+      debug?.noResultsReason ??
+        debug?.no_results_reason ??
+        fullJson?.diagnostics?.no_results_reason,
+    ),
+    no_pairs_reason: stringOrNull(
+      debug?.noPairsReason ?? debug?.no_pairs_reason,
+    ),
     warnings,
     errors,
     suspiciousFlags: [],
@@ -271,8 +353,18 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error;
 
   const body = await request.json().catch(() => ({}));
-  const delayMs = clampInteger(body?.delayMs, DEFAULT_DELAY_MS, 0, MAX_DELAY_MS);
-  const requestedMaxQueries = clampInteger(body?.maxQueries, MAX_QUERIES, 1, MAX_QUERIES);
+  const delayMs = clampInteger(
+    body?.delayMs,
+    DEFAULT_DELAY_MS,
+    0,
+    MAX_DELAY_MS,
+  );
+  const requestedMaxQueries = clampInteger(
+    body?.maxQueries,
+    MAX_QUERIES,
+    1,
+    MAX_QUERIES,
+  );
   const includeFullDebug = body?.includeFullDebug !== false;
   const queries = stringArray(body?.queries).slice(0, requestedMaxQueries);
 
@@ -321,7 +413,8 @@ export async function POST(request: NextRequest) {
         fullJson = {
           ...fullJson,
           success: false,
-          error: fullJson?.error ?? `Search failed with status ${response.status}`,
+          error:
+            fullJson?.error ?? `Search failed with status ${response.status}`,
         };
       }
     } catch (error) {
@@ -335,9 +428,19 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const itemSummary = buildSummary(index, query, fullJson, Date.now() - queryStarted, caughtError);
+    const itemSummary = buildSummary(
+      index,
+      query,
+      fullJson,
+      Date.now() - queryStarted,
+      caughtError,
+    );
     summary.push(itemSummary);
-    results.push(includeFullDebug ? { index, query, summary: itemSummary, result: fullJson } : { index, query, summary: itemSummary });
+    results.push(
+      includeFullDebug
+        ? { index, query, summary: itemSummary, result: fullJson }
+        : { index, query, summary: itemSummary },
+    );
 
     if (index < queries.length - 1 && delayMs > 0) {
       await sleep(delayMs);

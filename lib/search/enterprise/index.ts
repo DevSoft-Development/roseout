@@ -1562,12 +1562,13 @@ export async function runEnterpriseSearch(
           ...sameVenueTermsBeforeRanking.explicitSecondaryTerms,
           ...sameVenueTermsBeforeRanking.strongSecondarySynonyms,
         ].slice(0, 12);
-        const primaryTerms = sameVenueTermsBeforeRanking.primaryFoodTerms.filter(
-          (term) =>
-            !["food", "restaurant", "dinner", "lunch", "brunch"].includes(
-              term,
-            ),
-        );
+        const primaryTerms =
+          sameVenueTermsBeforeRanking.primaryFoodTerms.filter(
+            (term) =>
+              !["food", "restaurant", "dinner", "lunch", "brunch"].includes(
+                term,
+              ),
+          );
         sameVenuePairFallbackIntent = {
           ...effectiveIntent,
           searchType: "mixed_outing",
@@ -2330,11 +2331,12 @@ export async function runEnterpriseSearch(
       });
     let fallbackPairs: EnterprisePair[] = [];
     if (sameVenuePairFallbackIntent) {
+      const fallbackPairStarted = Date.now();
       const fallbackPairingDebug = createPairingDebug();
-      const fallbackRestaurants = restaurants.length
-        ? restaurants
-        : photoSafeRestaurants.slice(0, displayLimit);
-      const fallbackActivities = photoSafeActivities.slice(0, displayLimit);
+      const fallbackRestaurants = (
+        restaurants.length ? restaurants : photoSafeRestaurants
+      ).slice(0, 5);
+      const fallbackActivities = photoSafeActivities.slice(0, 5);
       const rawFallbackPairs = createSearchPairs(
         fallbackRestaurants,
         fallbackActivities,
@@ -2346,32 +2348,39 @@ export async function runEnterpriseSearch(
           hasUsableLivePhoto(pair.activity) &&
           isPairAllowedForResolvedMarket(pair, requestedMarketForResults),
       );
-      fallbackPairs = (
-        await applyPairBoosts(
-          rawFallbackPairs,
-          query,
-          requestedMarketForResults,
-          resolvedMlFlags,
-        )
-      )
-        .slice(0, 3)
-        .map((pair) => ({
-          ...pair,
-          fallbackPair: true,
-          fallbackReason:
-            (debug as any).sameVenueFallbackReason ??
-            "no_strong_single_venue_match",
-          restaurantName:
-            pair.restaurant.name || pair.restaurant.restaurant_name || null,
-          activityName:
-            pair.activity.name || pair.activity.activity_name || null,
-          primaryMatchedIntent: (debug as any).fallbackPrimaryTerms ?? [],
-          secondaryMatchedIntent: (debug as any).fallbackSecondaryTerms ?? [],
-        }));
+      const boostedFallbackPairs = await applyPairBoosts(
+        rawFallbackPairs.slice(0, 3),
+        query,
+        requestedMarketForResults,
+        resolvedMlFlags,
+      );
+      fallbackPairs = boostedFallbackPairs.slice(0, 3).map((pair) => ({
+        ...pair,
+        fallbackPair: true,
+        fallbackReason:
+          (debug as any).sameVenueFallbackReason ??
+          "no_strong_single_venue_match",
+        restaurantName:
+          pair.restaurant.name || pair.restaurant.restaurant_name || null,
+        activityName: pair.activity.name || pair.activity.activity_name || null,
+        primaryMatchedIntent: (debug as any).fallbackPrimaryTerms ?? [],
+        secondaryMatchedIntent: (debug as any).fallbackSecondaryTerms ?? [],
+      }));
       (debug as any).fallbackPairScoringApplied = true;
       (debug as any).fallbackRestaurantCount = fallbackRestaurants.length;
       (debug as any).fallbackActivityCount = fallbackActivities.length;
       (debug as any).fallbackPairCount = fallbackPairs.length;
+      (debug as any).fallback_pair_count = fallbackPairs.length;
+      (debug as any).fallbackPairBuildMs = Date.now() - fallbackPairStarted;
+      (debug as any).fallbackPairCandidatesEvaluated =
+        fallbackPairingDebug.pairCandidatesEvaluated;
+      (debug as any).fallbackPairDistanceChecks =
+        fallbackPairingDebug.pairCandidatesEvaluated;
+      (debug as any).fallbackPairsBeforeLimit = rawFallbackPairs.length;
+      (debug as any).fallbackPairsAfterLimit = fallbackPairs.length;
+      (debug as any).fallbackPairEarlyStopUsed =
+        fallbackPairingDebug.pairCandidatesEvaluated <
+        fallbackRestaurants.length * fallbackActivities.length;
       (debug as any).fallbackPairDistanceMiles = fallbackPairs.map(
         (pair) => pair.pairDistanceMiles,
       );
@@ -2390,6 +2399,7 @@ export async function runEnterpriseSearch(
     } else if ((debug as any).sameVenueFallbackToPairingUsed == null) {
       (debug as any).sameVenueFallbackToPairingUsed = false;
       (debug as any).fallbackPairCount = 0;
+      (debug as any).fallback_pair_count = 0;
     }
 
     perf.pairing_ms = Date.now() - pairingStarted;
@@ -2464,12 +2474,27 @@ export async function runEnterpriseSearch(
             : activities.length
               ? "activity_cards"
               : "empty";
+    const fallbackPairsUsedAsPrimary =
+      Boolean((debug as any).sameVenueFallbackToPairingUsed) &&
+      Number((debug as any).sameVenueStrongMatchCount ?? 0) === 0 &&
+      fallbackPairs.length > 0;
+    const primaryResultType = fallbackPairsUsedAsPrimary
+      ? "fallback_pairs"
+      : render_mode === "restaurant_cards"
+        ? "restaurant_cards"
+        : render_mode === "mixed_pairs"
+          ? "pairs"
+          : render_mode;
+    (debug as any).fallbackPairsUsedAsPrimary = fallbackPairsUsedAsPrimary;
+    (debug as any).primaryResultType = primaryResultType;
+    (debug as any).fallback_pair_count = fallbackPairs.length;
     const card_counts = {
       restaurants: restaurants.length,
       activities: activities.length,
       matched_locations: matched_locations.length,
       pairs: pairs.length,
       fallbackPairs: fallbackPairs.length,
+      fallback_pair_count: fallbackPairs.length,
     };
     const pairDisplayLabels = pairs
       .map((pair) =>
@@ -2581,6 +2606,9 @@ export async function runEnterpriseSearch(
       restaurant_count: restaurants.length,
       activity_count: activities.length,
       pair_count: pairs.length,
+      fallback_pair_count: fallbackPairs.length,
+      fallbackPairsUsedAsPrimary,
+      primaryResultType,
       source: options?.source ?? "enterprise_search",
       route: options?.route ?? null,
       used_custom_prompt: Boolean(options?.usedCustomPrompt),
@@ -2865,7 +2893,10 @@ export async function runEnterpriseSearch(
       requireWalkablePair:
         effectiveIntent.pairingPreference?.requireWalkablePair ?? false,
       distanceMode: effectiveIntent.pairingPreference?.distanceMode ?? "any",
-      renderMode: fallbackPairs.length > 0 ? "fallback_pairs" : render_mode,
+      renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
+      primaryResultType,
+      fallbackPairsUsedAsPrimary,
+      fallback_pair_count: fallbackPairs.length,
       timingMs: perf.total_ms,
       performance: performanceDebug,
       restaurantRecoveryUsed: Boolean(debug.restaurantRecoveryUsed),
@@ -2922,24 +2953,25 @@ export async function runEnterpriseSearch(
           }));
     const response: EnterpriseSearchResult = {
       success: true,
-      reply:
-        fallbackPairs.length > 0
-          ? `No strong single-venue match found. Here is a ${
-              ((debug as any).fallbackPrimaryTerms ?? [])[0] ?? "restaurant"
-            } + ${
-              ((debug as any).fallbackSecondaryTerms ?? [])[0] ?? "activity"
-            } plan nearby.`
-          : responseReply,
+      reply: fallbackPairsUsedAsPrimary
+        ? `No strong single-venue match found. Here is a ${
+            ((debug as any).fallbackPrimaryTerms ?? [])[0] ?? "restaurant"
+          } + ${
+            ((debug as any).fallbackSecondaryTerms ?? [])[0] ?? "activity"
+          } plan nearby.`
+        : responseReply,
       restaurants,
       activities,
       pairs,
       fallbackPairs,
       recommendedFallbackPairs: fallbackPairs,
       pairedFallbackUsed: fallbackPairs.length > 0,
+      fallbackPairsUsedAsPrimary,
+      primaryResultType,
       matched_locations,
       matchedLocations: matched_locations,
       render_mode,
-      renderMode: render_mode,
+      renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
       card_counts,
       cardCounts: card_counts,
       debug: responseDebug,

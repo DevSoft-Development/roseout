@@ -188,6 +188,61 @@ function mergeMarketFallbackRows(
   ];
 }
 
+const GENERIC_MEAL_RESTAURANT_TERMS = new Set([
+  "dinner",
+  "brunch",
+  "lunch",
+  "breakfast",
+  "food",
+  "restaurant",
+]);
+
+function maybeExpandGenericMealRestaurantTerms(
+  intent: SearchIntent,
+  domain: SearchDomain,
+  terms: string[],
+  debug?: RpcDebug,
+) {
+  if (
+    domain !== "restaurant" ||
+    !intent.wantsPairing ||
+    !intent.needsActivity
+  ) {
+    return terms;
+  }
+
+  const normalized = uniqLowerRpcTerms(terms);
+  const onlyGenericMeal =
+    normalized.length > 0 &&
+    normalized.every((term) => GENERIC_MEAL_RESTAURANT_TERMS.has(term));
+
+  if (!onlyGenericMeal) {
+    if (debug) {
+      (debug as any).restaurantTermsExpandedForGenericMeal = false;
+      (debug as any).restaurantTermsBeforeExpansion = normalized;
+      (debug as any).restaurantTermsAfterExpansion = normalized;
+    }
+    return terms;
+  }
+
+  const expanded = uniqLowerRpcTerms([
+    ...normalized,
+    "restaurant",
+    "dining",
+    "food",
+    "date night",
+    "dinner",
+  ]);
+  if (debug) {
+    (debug as any).restaurantTermsExpandedForGenericMeal = true;
+    (debug as any).restaurantGenericMealExpansionReason =
+      "mixed_outing_generic_meal_restaurant_lane";
+    (debug as any).restaurantTermsBeforeExpansion = normalized;
+    (debug as any).restaurantTermsAfterExpansion = expanded;
+  }
+  return expanded;
+}
+
 function termsFor(intent: SearchIntent, domain: SearchDomain) {
   return domain === "restaurant"
     ? restaurantSearchTerms(intent)
@@ -492,8 +547,14 @@ function params(
   domain: SearchDomain,
   limit: number,
   overrideTerms?: string[],
+  debug?: RpcDebug,
 ) {
-  const baseTerms = overrideTerms ?? termsFor(intent, domain);
+  const baseTerms = maybeExpandGenericMealRestaurantTerms(
+    intent,
+    domain,
+    overrideTerms ?? termsFor(intent, domain),
+    debug,
+  );
   const balanced =
     !overrideTerms && domain === "restaurant"
       ? buildBalancedSameVenueRestaurantTerms(intent, baseTerms)
@@ -539,9 +600,10 @@ function locationParams(
   intent: SearchIntent,
   domain: SearchDomain,
   limit: number,
+  debug?: RpcDebug,
 ) {
   return {
-    ...params(intent, domain, limit),
+    ...params(intent, domain, limit, undefined, debug),
     p_allow_low_level: false,
   };
 }
@@ -559,7 +621,12 @@ export async function searchEnterpriseLane(
   debug?: RpcDebug,
 ) {
   try {
-    const p = locationParams(intent, domain, laneLimitFor(intent, domain));
+    const p = locationParams(
+      intent,
+      domain,
+      laneLimitFor(intent, domain),
+      debug,
+    );
 
     debug?.rpcCalls.push(`enterprise_search_locations:${domain}`);
 
@@ -705,7 +772,7 @@ export async function recoverEnterpriseLane(
   overrideTerms?: string[],
 ) {
   try {
-    const p = params(intent, domain, 80, overrideTerms);
+    const p = params(intent, domain, 80, overrideTerms, debug);
 
     debug?.rpcCalls.push(`enterprise_search_locations:recovery:${domain}`);
 
@@ -732,7 +799,10 @@ export async function recoverEnterpriseLane(
     delete (p as any).__debug_before_terms;
     delete (p as any).__debug_removed_terms;
 
-    const { data, error } = await supabase.rpc("enterprise_search_locations", p);
+    const { data, error } = await supabase.rpc(
+      "enterprise_search_locations",
+      p,
+    );
 
     if (error) {
       const message = String(error.message ?? error);
