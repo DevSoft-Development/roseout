@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
 import TurnstileWidget from "@/components/security/TurnstileWidget";
 
 const inputClass =
@@ -14,7 +13,6 @@ function normalizeEmail(email: string) {
 }
 
 export default function BetaLoginForm() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
@@ -73,6 +71,15 @@ export default function BetaLoginForm() {
 
       const data = await response.json().catch(() => null);
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log("BETA_LOGIN_RESULT", {
+          ok: response.ok,
+          status: response.status,
+          redirectTo: data?.redirectTo,
+          message: data?.message,
+        });
+      }
+
       if (!response.ok || !data?.ok) {
         setError(data?.message || "We could not sign you in. Please try again.");
         resetTurnstile();
@@ -80,8 +87,12 @@ export default function BetaLoginForm() {
         return;
       }
 
-      window.location.replace(data.redirectTo || "/user/dashboard/beta");
-      router.refresh();
+      const redirectTo = typeof data?.redirectTo === "string" && data.redirectTo
+        ? data.redirectTo
+        : "/user/dashboard/beta";
+
+      window.location.replace(redirectTo);
+      return;
     } catch (err) {
       console.error("Beta sign in failed", err);
       setError("We could not sign you in. Please check your connection and try again.");
