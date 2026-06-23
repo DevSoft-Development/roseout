@@ -1,3 +1,5 @@
+-- beta-tester-reminders is disabled; use /api/cron/beta-reminders.
+select cron.unschedule('beta-tester-reminders') where exists (select 1 from cron.job where jobname = 'beta-tester-reminders');
 -- TheOutHaven Edge Function cron setup.
 -- Safe to rerun: existing job names are unscheduled before scheduling replacements.
 -- Replace YOUR_PROJECT_REF and YOUR_CRON_SECRET or use Vault/templating in deployment.
@@ -22,14 +24,7 @@ select cron.schedule('nightly-photo-backfill','30 6 * * *',$$
   );
 $$);
 
-select cron.schedule('beta-tester-reminders','0 14 * * 1-5',$$
-  select net.http_post(
-    url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/beta-tester-reminders',
-    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer YOUR_CRON_SECRET','x-cron-secret','YOUR_CRON_SECRET'),
-    body := jsonb_build_object('source','cron')
-  );
-$$);
-
+-- Disabled/replaced by Next.js /api/cron/beta-reminders.
 
 select cron.schedule('admin-search-health-digest','30 12 * * *',$$
   select net.http_post(

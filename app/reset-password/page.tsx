@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase-browser";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const OFFICIAL_RESET_ORIGIN = "https://www.theouthaven.com";
 const OFFICIAL_RESET_PATH = "/reset-password";
@@ -17,9 +16,10 @@ function shouldRedirectToOfficialHost(hostname: string) {
   );
 }
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const router = useRouter();
-  const supabase = createClient();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") || "";
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -60,12 +60,19 @@ export default function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-      });
+      if (!token) {
+        setError("This reset link is invalid or expired. Please request a new reset email.");
+        return;
+      }
 
-      if (updateError) {
-        setError(updateError.message);
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        setError(result.error || "Password could not be updated.");
         return;
       }
 
@@ -111,7 +118,7 @@ export default function ResetPasswordPage() {
                 Secure reset
               </p>
               <p className="mt-3 text-sm leading-6 text-white/60">
-                This page only accepts active recovery sessions. If your link expired, request a
+                This page only accepts active TheOutHaven reset links. If your link expired, request a
                 fresh reset email from the login page.
               </p>
             </div>
@@ -182,5 +189,14 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[#070303] px-5 py-10 text-white">Loading reset form...</main>}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }

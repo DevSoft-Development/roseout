@@ -1,8 +1,6 @@
-import { Resend } from "resend";
-import { resolveEmailSender } from "@/lib/email/brand";
+import { sendRenderedEmail } from "@/lib/email/sender";
 import twilio from "twilio";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const twilioClient =
   process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
@@ -36,14 +34,14 @@ export async function sendNotification({
     errors: [],
   };
 
-  if (toEmail && emailHtml && process.env.RESEND_API_KEY) {
+  if (toEmail && emailHtml) {
     try {
-      const email = await resend.emails.send({
-        from: from || resolveEmailSender("account").from,
+      const email = await sendRenderedEmail({
         to: toEmail,
-        subject,
-        html: emailHtml,
-        replyTo: replyTo || resolveEmailSender("account").replyTo,
+        department: "account",
+        replyTo: replyTo || undefined,
+        rendered: { subject, preview: subject, html: emailHtml, text: emailHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(), department: "account" as any },
+        templateKey: "notification",
       });
 
       results.email = email;

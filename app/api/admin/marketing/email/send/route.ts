@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 import { renderBrandedEmail } from "@/lib/email/render";
+import { sendRenderedEmail } from "@/lib/email/sender";
 import { resolveEmailSender } from "@/lib/email/brand";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -15,7 +15,6 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 type MarketingUserRow = {
   id: string;
@@ -112,12 +111,13 @@ export async function POST(req: Request) {
     const attemptedAt = nowIso();
     const recipientEmail = recipient.email!;
     try {
-      const result = await resend.emails.send({
-        from: resolveEmailSender("marketing").from,
+      const html = marketingHtml(campaign.email_subject, campaign.email_body, unsubscribeUrl(recipient.id, recipientEmail));
+      const result = await sendRenderedEmail({
         to: recipientEmail,
-        subject: campaign.email_subject,
+        department: "marketing",
         replyTo: resolveEmailSender("marketing").replyTo,
-        html: marketingHtml(campaign.email_subject, campaign.email_body, unsubscribeUrl(recipient.id, recipientEmail)),
+        rendered: { subject: campaign.email_subject, preview: campaign.email_subject, html, text: campaign.email_body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(), department: "marketing" as any },
+        templateKey: "marketing_campaign",
       });
 
       sent += 1;
@@ -129,7 +129,7 @@ export async function POST(req: Request) {
         provider: "resend",
         recipient_email: recipientEmail,
         status: "sent",
-        provider_response: { id: result.data?.id || null },
+        provider_response: { id: result.id || null },
         attempted_at: attemptedAt,
         sent_at: nowIso(),
       });
