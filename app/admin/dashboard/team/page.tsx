@@ -85,7 +85,7 @@ export default async function AdminTeamPage() {
   const links = [
     ["Overview", ""],
     ["Members", "members"],
-    ["Assign Locations", "../my-workspace/assign-locations"],
+    ["Assign Locations", "assignments"],
     ["Work Sessions", "work-sessions"],
     ["Manager Review", "review"],
     ["Site Visits", "site-visits"],
@@ -115,31 +115,31 @@ export default async function AdminTeamPage() {
     ? [
         {
           label: "My Site Visits",
-          href: "/admin/dashboard/my-workspace/site-visits",
+          href: "/admin/dashboard/crm/site-visits",
           enabled: Boolean(profile.can_do_site_visits),
           explanation: "Your team profile does not allow site visit check-ins.",
         },
         {
           label: "My Social Outreach",
-          href: "/admin/dashboard/my-workspace/social-outreach",
+          href: "/admin/dashboard/crm/social-outreach",
           enabled: Boolean(profile.can_do_social_outreach),
           explanation: "Your team profile does not allow social outreach.",
         },
         {
           label: "My Support Work",
-          href: "/admin/dashboard/my-workspace/support-work",
+          href: "/admin/dashboard/crm/support",
           enabled: Boolean(profile.can_work_support_tickets),
           explanation: "Your team profile does not allow support work.",
         },
         {
           label: "My Demo / Training",
-          href: "/admin/dashboard/my-workspace/demo",
+          href: "/admin/dashboard/crm/demo",
           enabled: Boolean(profile.can_use_demo_mode),
           explanation: "Your team profile does not allow demo/training mode.",
         },
         {
           label: "My Payroll",
-          href: "/admin/dashboard/my-workspace/payroll",
+          href: "/admin/dashboard/team/payroll",
           enabled: true,
           explanation:
             "Payroll history is available for every workspace profile.",
@@ -157,7 +157,7 @@ export default async function AdminTeamPage() {
             <h1 className="mt-2 text-4xl font-black">Team Tools</h1>
           </div>
           <Link
-            href="/admin/dashboard/my-workspace"
+            href="/admin/dashboard/crm/my-queue"
             className="rounded-full bg-white px-5 py-3 text-sm font-black text-black"
           >
             Open My Workspace
@@ -204,7 +204,7 @@ export default async function AdminTeamPage() {
                 </p>
               </div>
               <Link
-                href="/admin/dashboard/my-workspace"
+                href="/admin/dashboard/crm/my-queue"
                 className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-xs font-black text-white"
               >
                 Open My Workspace

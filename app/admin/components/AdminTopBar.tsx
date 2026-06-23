@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Building2, CheckSquare, ClipboardCheck, CreditCard, Flag, Gift, Home, LineChart, LogOut, MapPin, QrCode, Search, Settings, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, ClipboardCheck, CreditCard, Home, LineChart, LogOut, QrCode, Search, Settings, ShieldCheck, Users, Wrench } from "lucide-react";
 import type { AdminRole } from "@/lib/users/roles";
 import { ADMIN_ROLE_LABELS } from "@/lib/admin-permissions";
 import { createClient } from "@/lib/supabase-browser";
@@ -12,18 +12,17 @@ type Props = { adminName: string; adminEmail: string; adminRole: AdminRole };
 
 const navItems = [
   ["Overview", "/admin/dashboard", Home],
-  ["CRM", "/admin/dashboard/crm", Users],
-  ["Partner Launch", "/admin/dashboard/businesses/outreach", Flag],
+  ["CRM Workspace", "/admin/dashboard/crm", Users],
+  ["Team", "/admin/dashboard/team", Users],
+  ["Location Tools", "/admin/dashboard/settings/location-tools", Wrench],
+  ["Search Health", "/admin/dashboard/search-health", LineChart],
+  ["Settings", "/admin/dashboard/settings", Settings],
+  ["Users", "/admin/dashboard/users", ShieldCheck],
+  ["Logs", "/admin/dashboard/logs", ClipboardCheck],
   ["Claims", "/admin/dashboard/claims", ClipboardCheck],
   ["Claim QRs", "/admin/dashboard/claim-qrs", QrCode],
-  ["Locations", "/admin/dashboard/locations", MapPin],
   ["Analytics", "/admin/dashboard/analytics", BarChart3],
-  ["Search Health", "/admin/dashboard/search-health", LineChart],
-  ["Giveaway", "/admin/dashboard/giveaway", Gift],
-  ["Businesses", "/admin/dashboard/businesses", Building2],
-  ["Tasks", "/admin/dashboard/my-workspace/tasks", CheckSquare],
   ["Billing", "/admin/dashboard/billing", CreditCard],
-  ["Settings", "/admin/dashboard/settings", Settings],
 ] as const;
 
 function initials(name: string) {

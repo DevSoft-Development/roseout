@@ -97,7 +97,7 @@ export default function AdminAssignLocationsClient({
       setSearchMsg(`${Array.isArray(data.locations) ? data.locations.length : 0} location(s) found.`);
 
       startTransition(() => {
-        router.replace(`/admin/dashboard/my-workspace/assign-locations${query ? `?${query}` : ""}`, {
+        router.replace(`/admin/dashboard/team/assignments${query ? `?${query}` : ""}`, {
           scroll: false,
         });
       });

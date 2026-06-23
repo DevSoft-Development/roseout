@@ -1,3 +1,5 @@
-import Link from "next/link"; import { ensureTeamProfileForCurrentUser, formatDateTime, formatMinutes } from "@/lib/team-tools"; import { supabaseAdmin } from "@/lib/supabase-admin";
-export const dynamic="force-dynamic";
-export default async function MyPayroll(){ const {user,profile}=await ensureTeamProfileForCurrentUser(); const {data=[]}=await supabaseAdmin.from("team_work_sessions").select("*").eq("user_id",user.id).order("clock_in_at",{ascending:false}).limit(100); const rows=data||[]; const approved=rows.filter((s:any)=>s.approval_status==='approved').reduce((n:number,s:any)=>n+Number(s.total_minutes||0),0); return <main className="min-h-screen bg-[#080808] px-4 py-8 text-white"><div className="mx-auto max-w-5xl"><Link href="/my-workspace" className="text-sm font-black text-rose-200">← My Workspace</Link><h1 className="mt-6 text-3xl font-black">My Payroll</h1><p className="mt-2 text-sm font-bold text-white/55">Payroll inclusion: {profile.include_in_payroll?'Enabled':'Disabled'}.</p><div className="mt-6 rounded-3xl border border-white/10 bg-[#111] p-5"><p className="text-xs font-black uppercase tracking-widest text-white/40">Approved hours</p><p className="mt-2 text-4xl font-black">{formatMinutes(approved)}</p></div><div className="mt-6 grid gap-3">{rows.map((s:any)=><div key={s.id} className="rounded-2xl border border-white/10 bg-[#111] p-4"><p className="font-black">{s.work_type}</p><p className="text-xs text-white/45">{formatDateTime(s.clock_in_at)} · {formatMinutes(s.total_minutes)} · {s.approval_status} · {s.exported_at?'Exported':'Not exported'}</p></div>)}</div></div></main>}
+import { redirect } from "next/navigation";
+
+export default function RedirectPage() {
+  redirect("/admin/dashboard/team/payroll");
+}

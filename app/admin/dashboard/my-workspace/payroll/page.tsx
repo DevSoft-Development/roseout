@@ -1,3 +1,5 @@
-import Page from "@/app/my-workspace/payroll/page";
-export const dynamic = "force-dynamic";
-export default Page;
+import { redirect } from "next/navigation";
+
+export default function RedirectPage() {
+  redirect("/admin/dashboard/team/payroll");
+}

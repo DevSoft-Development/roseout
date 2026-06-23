@@ -1,0 +1,4 @@
+import Link from "next/link";
+import { requireAdminRole } from "@/lib/admin-auth";
+export const dynamic="force-dynamic";
+export default async function Page(){ await requireAdminRole(["superadmin","admin"]); return <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-7xl"><Link href="/admin/dashboard/settings/location-tools" className="text-sm font-black text-rose-200">← Location Tools</Link><section className="mt-6 rounded-3xl border border-white/10 bg-[#111] p-6"><p className="text-xs font-black uppercase tracking-[.28em] text-rose-300">Location Tools</p><h1 className="mt-2 text-3xl font-black">Claim URLs</h1><p className="mt-3 text-sm font-bold text-white/55">Technical claim urls maintenance has moved under Admin Settings / Location Tools. Existing APIs and legacy tools remain unchanged in this pass.</p></section></div></main>; }

@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { Building2, CheckCircle, Clock, DollarSign, Download, Filter, Plus, Send, Users } from "lucide-react";
 import AdminCrmWorkspace from "@/components/admin/crm/AdminCrmWorkspace";
+import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
 import {
   AdminActionButton,
   AdminEmptyState,
   AdminKpiCard,
   AdminKpiGrid,
   AdminPageHeader,
-  AdminPageShell,
   AdminFilterChip,
   AdminFilterGroup,
   AdminFilterPanel,
@@ -268,7 +267,7 @@ export default async function CRMPage({
   ).filter((n) => n >= 1 && n <= totalPages);
 
   return (
-    <AdminPageShell>
+    <CrmWorkspaceShell>
       <AdminPageHeader
         eyebrow="Location Operations · SaaS CRM"
         title="CRM"
@@ -281,7 +280,7 @@ export default async function CRMPage({
               Export
             </AdminActionButton>
             <AdminActionButton
-              href="/admin/dashboard/my-workspace/tasks"
+              href="/admin/dashboard/crm/tasks"
               variant="primary"
             >
               Create Task
@@ -292,7 +291,7 @@ export default async function CRMPage({
       />
       <AdminKpiGrid>
         <AdminKpiCard
-          label="All Locations"
+          label="Total CRM records"
           value={summary.total}
           helper="100% of total"
         />
@@ -478,6 +477,6 @@ export default async function CRMPage({
           </AdminPagination>
         }
       />
-    </AdminPageShell>
+    </CrmWorkspaceShell>
   );
 }
