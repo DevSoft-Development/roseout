@@ -27,6 +27,7 @@ import {
   rankActivityResults,
   rankRestaurantResults,
   scoreSingleVenueWithMatch,
+  sameVenueSearchTerms,
 } from "./ranking";
 import {
   createPairingDebug,
@@ -1510,22 +1511,41 @@ export async function runEnterpriseSearch(
         ? [...featureMatches, ...featureMissing]
         : rankedRestaurants;
     }
+    const sameVenueTermsForDebug = sameVenueSearchTerms(effectiveIntent);
     const rankedActivities = rankActivityResults(
       activityCandidatesWithMl,
       effectiveIntent,
     );
     const activityPairIntent = effectiveIntent.activityPairIntent ?? null;
     const firstActivityRankingIntent: SearchIntent = activityPairIntent
-      ? { ...effectiveIntent, activityIntent: { ...effectiveIntent.activityIntent, activityTerms: activityPairIntent.firstActivityTerms } }
+      ? {
+          ...effectiveIntent,
+          activityIntent: {
+            ...effectiveIntent.activityIntent,
+            activityTerms: activityPairIntent.firstActivityTerms,
+          },
+        }
       : effectiveIntent;
     const secondActivityRankingIntent: SearchIntent = activityPairIntent
-      ? { ...effectiveIntent, activityIntent: { ...effectiveIntent.activityIntent, activityTerms: activityPairIntent.secondActivityTerms } }
+      ? {
+          ...effectiveIntent,
+          activityIntent: {
+            ...effectiveIntent.activityIntent,
+            activityTerms: activityPairIntent.secondActivityTerms,
+          },
+        }
       : effectiveIntent;
     const rankedFirstActivities = activityPairIntent
-      ? rankActivityResults(activityCandidatesWithMl, firstActivityRankingIntent)
+      ? rankActivityResults(
+          activityCandidatesWithMl,
+          firstActivityRankingIntent,
+        )
       : [];
     const rankedSecondActivities = activityPairIntent
-      ? rankActivityResults(activityCandidatesWithMl, secondActivityRankingIntent)
+      ? rankActivityResults(
+          activityCandidatesWithMl,
+          secondActivityRankingIntent,
+        )
       : [];
     const singleVenueWith = detectSingleVenueWithIntent(
       effectiveIntent.rawQuery,
@@ -1544,6 +1564,114 @@ export async function runEnterpriseSearch(
       (debug as any).singleVenueWithVenueTerms = singleVenueWith.venueTerms;
       (debug as any).singleVenueWithFoodTerms = singleVenueWith.foodTerms;
       (debug as any).singleVenueWithFeatureTerms = singleVenueWith.featureTerms;
+      (debug as any).primaryFoodTerms = sameVenueTermsForDebug.primaryFoodTerms;
+      (debug as any).secondaryAttributeTerms =
+        sameVenueTermsForDebug.secondaryAttributeTerms;
+      (debug as any).expandedSecondaryAttributeTerms =
+        sameVenueTermsForDebug.expandedSecondaryAttributeTerms;
+      (debug as any).sameVenueCandidateCount = scoredSingleVenue.length;
+      (debug as any).combinedPrimarySecondaryMatchCount =
+        scoredSingleVenue.filter(
+          ({ restaurant }) =>
+            (restaurant as any).sameVenuePrimaryMatched &&
+            (restaurant as any).sameVenueSecondaryMatched,
+        ).length;
+      (debug as any).primaryOnlyMatchCount = scoredSingleVenue.filter(
+        ({ restaurant }) =>
+          (restaurant as any).sameVenuePrimaryMatched &&
+          !(restaurant as any).sameVenueSecondaryMatched,
+      ).length;
+      (debug as any).secondaryOnlyMatchCount = scoredSingleVenue.filter(
+        ({ restaurant }) =>
+          !(restaurant as any).sameVenuePrimaryMatched &&
+          (restaurant as any).sameVenueSecondaryMatched,
+      ).length;
+      (debug as any).sameVenueResultDebug = scoredSingleVenue
+        .slice(0, 25)
+        .map(({ restaurant }, index) => ({
+          rank: index + 1,
+          id: restaurant.id ?? null,
+          name: restaurant.name || restaurant.restaurant_name || null,
+          sameVenuePrimaryMatched:
+            (restaurant as any).sameVenuePrimaryMatched ?? false,
+          sameVenueSecondaryMatched:
+            (restaurant as any).sameVenueSecondaryMatched ?? false,
+          sameVenuePrimaryTermsMatched:
+            (restaurant as any).sameVenuePrimaryTermsMatched ?? [],
+          sameVenueAttributeTermsMatched:
+            (restaurant as any).sameVenueAttributeTermsMatched ?? [],
+          sameVenuePrimaryFieldsMatched:
+            (restaurant as any).sameVenuePrimaryFieldsMatched ?? [],
+          sameVenueSecondaryFieldsMatched:
+            (restaurant as any).sameVenueSecondaryFieldsMatched ?? [],
+          sameVenueScore: (restaurant as any).sameVenueScore ?? 0,
+          sameVenueBoostApplied:
+            (restaurant as any).sameVenueBoostApplied ?? false,
+          sameVenueRankingReason:
+            (restaurant as any).sameVenueRankingReason ?? null,
+          matchedFields: (restaurant as any).matchedFields ?? [],
+        }));
+      const mira = scoredSingleVenue.find(({ restaurant }) =>
+        String(restaurant.name || restaurant.restaurant_name || "")
+          .toLowerCase()
+          .includes("mira mediterranean"),
+      );
+      (debug as any).miraSameVenueDiagnostic =
+        /mediterranean dinner with hookah in manhattan/i.test(
+          effectiveIntent.rawQuery,
+        )
+          ? {
+              foundInCandidates: Boolean(mira),
+              filteredByMarket: null,
+              filteredByCityBorough: null,
+              filteredByIsSearchable: mira
+                ? (mira.restaurant as any).is_searchable === false
+                : null,
+              filteredByPublishReady: mira
+                ? !["publish_ready", "approved", undefined, null].includes(
+                    (mira.restaurant as any).quality_status as any,
+                  )
+                : null,
+              filteredByDataStatus: mira
+                ? ((mira.restaurant as any).data_status ?? null)
+                : null,
+              filteredByLocationType: mira
+                ? ((mira.restaurant as any).location_type ?? null)
+                : null,
+              filteredByCoordinates: mira
+                ? !(
+                    (mira.restaurant as any).latitude &&
+                    (mira.restaurant as any).longitude
+                  )
+                : null,
+              filteredByMissingSearchDocument: mira
+                ? !(mira.restaurant as any).search_document
+                : null,
+              rankedBelowResultLimit: mira
+                ? scoredSingleVenue.findIndex((item) => item === mira) >= 12
+                : null,
+              missingHookahMediterraneanTerms: mira
+                ? !(
+                    (mira.restaurant as any).sameVenuePrimaryMatched &&
+                    (mira.restaurant as any).sameVenueSecondaryMatched
+                  )
+                : null,
+              primaryTermsMatched: mira
+                ? ((mira.restaurant as any).sameVenuePrimaryTermsMatched ?? [])
+                : [],
+              attributeTermsMatched: mira
+                ? ((mira.restaurant as any).sameVenueAttributeTermsMatched ??
+                  [])
+                : [],
+              primaryFieldsMatched: mira
+                ? ((mira.restaurant as any).sameVenuePrimaryFieldsMatched ?? [])
+                : [],
+              secondaryFieldsMatched: mira
+                ? ((mira.restaurant as any).sameVenueSecondaryFieldsMatched ??
+                  [])
+                : [],
+            }
+          : null;
       (debug as any).singleVenueWithStrongDualMatchCount =
         strongDualMatches.length;
       if (strongDualMatches.length >= 3) {
@@ -1808,10 +1936,18 @@ export async function runEnterpriseSearch(
     let restaurants = photoSafeRestaurants.slice(0, displayLimit);
     let activities = photoSafeActivities.slice(0, displayLimit);
     const firstActivityCandidates = activityPairIntent
-      ? filterLivePhotoResults(rankedFirstActivities.filter((item) => isResultAllowedForResolvedMarket(item, requestedMarketForResults))).slice(0, displayLimit)
+      ? filterLivePhotoResults(
+          rankedFirstActivities.filter((item) =>
+            isResultAllowedForResolvedMarket(item, requestedMarketForResults),
+          ),
+        ).slice(0, displayLimit)
       : [];
     const secondActivityCandidates = activityPairIntent
-      ? filterLivePhotoResults(rankedSecondActivities.filter((item) => isResultAllowedForResolvedMarket(item, requestedMarketForResults))).slice(0, displayLimit)
+      ? filterLivePhotoResults(
+          rankedSecondActivities.filter((item) =>
+            isResultAllowedForResolvedMarket(item, requestedMarketForResults),
+          ),
+        ).slice(0, displayLimit)
       : [];
     const candidateRestaurantCountBeforeRequiredPairSuppression =
       restaurants.length;
@@ -1831,29 +1967,34 @@ export async function runEnterpriseSearch(
 
     const pairingDebug = createPairingDebug();
     const pairingStarted = Date.now();
-    const pairedResults = effectiveIntent.searchType === "activity_pair"
-      ? createActivityActivityPairs(
-          firstActivityCandidates.length ? firstActivityCandidates : activities,
-          secondActivityCandidates.length ? secondActivityCandidates : activities,
-          effectiveIntent,
-          pairingDebug,
-        ).filter(
-          (pair) =>
-            hasUsableLivePhoto(pair.restaurant) &&
-            hasUsableLivePhoto(pair.activity),
-        )
-      : effectiveIntent.wantsPairing
-        ? createSearchPairs(
-          restaurants,
-          activities,
-          effectiveIntent,
-          pairingDebug,
-        ).filter(
-          (pair) =>
-            hasUsableLivePhoto(pair.restaurant) &&
-            hasUsableLivePhoto(pair.activity),
-        )
-      : [];
+    const pairedResults =
+      effectiveIntent.searchType === "activity_pair"
+        ? createActivityActivityPairs(
+            firstActivityCandidates.length
+              ? firstActivityCandidates
+              : activities,
+            secondActivityCandidates.length
+              ? secondActivityCandidates
+              : activities,
+            effectiveIntent,
+            pairingDebug,
+          ).filter(
+            (pair) =>
+              hasUsableLivePhoto(pair.restaurant) &&
+              hasUsableLivePhoto(pair.activity),
+          )
+        : effectiveIntent.wantsPairing
+          ? createSearchPairs(
+              restaurants,
+              activities,
+              effectiveIntent,
+              pairingDebug,
+            ).filter(
+              (pair) =>
+                hasUsableLivePhoto(pair.restaurant) &&
+                hasUsableLivePhoto(pair.activity),
+            )
+          : [];
     let pairs = (
       await applyPairBoosts(pairedResults, query, requestedMarketForResults)
     )
@@ -1928,8 +2069,11 @@ export async function runEnterpriseSearch(
             ).length,
           )
         : undefined;
-    const isActivityActivityPairSearch = effectiveIntent.searchType === "activity_pair";
-    const renderModeBeforeSameVenueGuard = effectiveIntent.wantsPairing ? "mixed_pairs" : null;
+    const isActivityActivityPairSearch =
+      effectiveIntent.searchType === "activity_pair";
+    const renderModeBeforeSameVenueGuard = effectiveIntent.wantsPairing
+      ? "mixed_pairs"
+      : null;
     const render_mode = requiredPairingSuppressedFallback
       ? "empty"
       : isActivityActivityPairSearch
@@ -1938,17 +2082,17 @@ export async function runEnterpriseSearch(
           : activities.length
             ? "activity_cards"
             : "empty"
-      : effectiveIntent.wantsPairing
-        ? pairs.length
-          ? "mixed_pairs"
-          : restaurants.length || activities.length
-            ? "partial_mixed"
-            : "empty"
-        : restaurants.length
-          ? "restaurant_cards"
-          : activities.length
-            ? "activity_cards"
-            : "empty";
+        : effectiveIntent.wantsPairing
+          ? pairs.length
+            ? "mixed_pairs"
+            : restaurants.length || activities.length
+              ? "partial_mixed"
+              : "empty"
+          : restaurants.length
+            ? "restaurant_cards"
+            : activities.length
+              ? "activity_cards"
+              : "empty";
     const card_counts = {
       restaurants: restaurants.length,
       activities: activities.length,
@@ -2081,16 +2225,24 @@ export async function runEnterpriseSearch(
       sequenceDetected: (effectiveIntent as any).sequenceDetected ?? false,
       proximityDetected: (effectiveIntent as any).proximityDetected ?? false,
       sameVenueReason: (effectiveIntent as any).sameVenueReason ?? null,
-      coLocationTermsMatched: (effectiveIntent as any).coLocationTermsMatched ?? [],
+      coLocationTermsMatched:
+        (effectiveIntent as any).coLocationTermsMatched ?? [],
       primaryTerms: (effectiveIntent as any).primaryTerms ?? [],
-      secondaryAttributeTerms: (effectiveIntent as any).secondaryAttributeTerms ?? [],
-      parserPriorityApplied: (effectiveIntent as any).parserPriorityApplied ?? false,
-      parserPriorityReason: (effectiveIntent as any).parserPriorityReason ?? null,
+      secondaryAttributeTerms:
+        (effectiveIntent as any).secondaryAttributeTerms ?? [],
+      parserPriorityApplied:
+        (effectiveIntent as any).parserPriorityApplied ?? false,
+      parserPriorityReason:
+        (effectiveIntent as any).parserPriorityReason ?? null,
       renderModeBeforeSameVenueGuard,
       renderModeAfterSameVenueGuard: render_mode,
-      wantsPairingBeforeSameVenueGuard: (effectiveIntent as any).wantsPairingBeforeSameVenueGuard ?? effectiveIntent.wantsPairing,
+      wantsPairingBeforeSameVenueGuard:
+        (effectiveIntent as any).wantsPairingBeforeSameVenueGuard ??
+        effectiveIntent.wantsPairing,
       wantsPairingAfterSameVenueGuard: effectiveIntent.wantsPairing,
-      needsActivityBeforeSameVenueGuard: (effectiveIntent as any).needsActivityBeforeSameVenueGuard ?? effectiveIntent.needsActivity,
+      needsActivityBeforeSameVenueGuard:
+        (effectiveIntent as any).needsActivityBeforeSameVenueGuard ??
+        effectiveIntent.needsActivity,
       needsActivityAfterSameVenueGuard: effectiveIntent.needsActivity,
       beta_assignment_id: options?.betaAssignmentId ?? null,
       beta_tester_id: options?.betaTesterId ?? null,
@@ -2202,11 +2354,26 @@ export async function runEnterpriseSearch(
       activityPairIntent,
       firstActivityCandidateCount: firstActivityCandidates.length,
       secondActivityCandidateCount: secondActivityCandidates.length,
-      activityActivityPairCandidateCount: isActivityActivityPairSearch ? pairingDebug.validPairCountBeforeRender : 0,
-      activityActivityPairCount: isActivityActivityPairSearch ? pairs.length : 0,
-      activityActivityPairsRejectedForDistance: isActivityActivityPairSearch ? pairingDebug.pairsRejectedForDistance : 0,
-      activityPairFallbackReason: isActivityActivityPairSearch && pairs.length === 0 && activities.length > 0 ? "no_valid_activity_activity_pairs_showing_activity_fallback" : null,
-      pair_type: isActivityActivityPairSearch ? "activity_activity" : pairs.length ? "restaurant_activity" : null,
+      activityActivityPairCandidateCount: isActivityActivityPairSearch
+        ? pairingDebug.validPairCountBeforeRender
+        : 0,
+      activityActivityPairCount: isActivityActivityPairSearch
+        ? pairs.length
+        : 0,
+      activityActivityPairsRejectedForDistance: isActivityActivityPairSearch
+        ? pairingDebug.pairsRejectedForDistance
+        : 0,
+      activityPairFallbackReason:
+        isActivityActivityPairSearch &&
+        pairs.length === 0 &&
+        activities.length > 0
+          ? "no_valid_activity_activity_pairs_showing_activity_fallback"
+          : null,
+      pair_type: isActivityActivityPairSearch
+        ? "activity_activity"
+        : pairs.length
+          ? "restaurant_activity"
+          : null,
       pairDistanceMiles: pairs.map((p) => p.pairDistanceMiles),
       pairGeoPriorities,
       pairGeoSummary,
