@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { resolveLoginDestination } from "@/lib/auth/login-destination";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
+import { verifyTurnstileToken } from "@/lib/security/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,29 @@ export async function POST(request: NextRequest) {
       },
       { status: 400 },
     );
+  }
+
+  if (body?.requireTurnstile === true) {
+    const verification = await verifyTurnstileToken({
+      token: typeof body?.turnstileToken === "string" ? body.turnstileToken : null,
+      expectedAction: typeof body?.turnstileAction === "string" ? body.turnstileAction : undefined,
+      source: typeof body?.source === "string" ? body.source : "sign-in",
+      remoteIp:
+        request.headers.get("cf-connecting-ip") ||
+        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+        null,
+      metadata: { route: "/api/auth/sign-in" },
+    });
+
+    if (!verification.success) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: "Verification failed. Please complete the security check and try again.",
+        },
+        { status: 403 },
+      );
+    }
   }
 
   const cookieResponse = NextResponse.json({

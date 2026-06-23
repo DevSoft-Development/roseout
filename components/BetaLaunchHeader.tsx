@@ -31,7 +31,7 @@ export default function BetaLaunchHeader({ launchListHref = "#launch-list" }: Be
             Join Beta Launch List
           </a>
           <Link
-            href="/login"
+            href="/beta/login"
             className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-center text-[0.65rem] font-black uppercase tracking-[0.12em] text-white transition hover:bg-white/12 sm:px-4 sm:text-xs sm:tracking-[0.16em]"
           >
             Log In
