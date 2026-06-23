@@ -39,9 +39,9 @@ export function getReadinessTone(score: number | null | undefined) {
 
 export function AdminPageShell({ children }: { children: ReactNode }) {
   return (
-    <main className="admin-page-shell min-h-screen max-w-full overflow-x-hidden bg-[radial-gradient(circle_at_top_right,rgba(236,11,91,0.08),transparent_26%),#050505] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8 xl:px-10">
-      <div className="mx-auto w-full max-w-[1600px] min-w-0 space-y-5">
-        {children}
+    <main className="admin-page-shell w-full min-w-0 overflow-x-hidden bg-[radial-gradient(circle_at_top_right,rgba(236,11,91,0.08),transparent_26%),#050505] text-white">
+      <div className="mx-auto w-full max-w-[1440px] min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="min-w-0 space-y-6">{children}</div>
       </div>
     </main>
   );
@@ -119,7 +119,7 @@ export function AdminActionButton({
 
 export function AdminKpiGrid({ children }: { children: ReactNode }) {
   return (
-    <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+    <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {children}
     </section>
   );
@@ -236,7 +236,7 @@ export function AdminSearchInput(props: InputHTMLAttributes<HTMLInputElement>) {
 
 export function AdminToolbar({ children }: { children: ReactNode }) { return <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">{children}</div>; }
 export function AdminDataCard({ children, active }: { children: ReactNode; active?: boolean }) { return <div className={`rounded-2xl border p-4 transition ${active ? "border-[#ec0b5b]/70 bg-rose-500/[0.045]" : "border-white/10 bg-white/[0.025] hover:bg-white/[0.045]"}`}>{children}</div>; }
-export function AdminDataTableShell({ children }: { children: ReactNode }) { return <AdminSectionCard className="max-w-full p-3 sm:p-4"><div className="max-w-full overflow-x-auto">{children}</div></AdminSectionCard>; }
+export function AdminDataTableShell({ children }: { children: ReactNode }) { return <AdminSectionCard className="w-full max-w-full p-3 sm:p-4"><div className="w-full max-w-full overflow-x-auto rounded-2xl border border-white/10">{children}</div></AdminSectionCard>; }
 export function AdminDetailPanel({ children, className = "" }: { children: ReactNode; className?: string }) { return <aside className={`min-w-0 rounded-[1.35rem] border border-white/10 bg-[#101012] p-5 shadow-2xl shadow-black/30 xl:sticky xl:top-6 xl:h-fit ${className}`}>{children}</aside>; }
 export function AdminDetailSection({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-center justify-between gap-3"><h3 className="font-black text-white">{title}</h3>{action}</div><div className="mt-3">{children}</div></section>; }
 export function AdminPagination({ children }: { children: ReactNode }) { return <div className="flex flex-wrap items-center gap-2">{children}</div>; }
@@ -244,3 +244,8 @@ export function AdminReadinessIndicator({ score }: { score: number }) { const to
 export function AdminIconButton({ children, label }: { children: ReactNode; label: string }) { return <button type="button" aria-label={label} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-white/70 hover:border-rose-300/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-300/50">{children}</button>; }
 export function AdminSkeletonCard() { return <div className="h-32 animate-pulse rounded-[1.35rem] border border-white/10 bg-white/[0.04]" />; }
 export function AdminErrorCard({ title = "Something went wrong", body = "We could not load this admin data. Please try again." }: { title?: string; body?: string }) { return <div className="rounded-[1.35rem] border border-red-300/20 bg-red-500/10 p-5"><h2 className="font-black text-red-100">{title}</h2><p className="mt-1 text-sm text-red-100/70">{body}</p></div>; }
+
+export const AdminMetricGrid = AdminKpiGrid;
+export const AdminMetricCard = AdminKpiCard;
+export const AdminTableCard = AdminDataTableShell;
+export function AdminTableScroll({ children }: { children: ReactNode }) { return <div className="w-full max-w-full overflow-x-auto rounded-2xl border border-white/10">{children}</div>; }
