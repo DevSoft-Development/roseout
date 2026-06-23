@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
 
     await logCronJobRun(supabase, {
       job_name: "nightly-demo-reset",
-      function_name: "nightly-demo-reset",
+      function_name: "nightly-demo-reset", route_path: "supabase/functions/nightly-demo-reset", description: "Resets demo data overnight.", schedule_hint: "Edge Function / nightly",
       source: "cron",
       status: summary.errors.length ? "warning" : "success",
       started_at: startedAt,
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
 
     await logCronJobRun(supabase, {
       job_name: "nightly-demo-reset",
-      function_name: "nightly-demo-reset",
+      function_name: "nightly-demo-reset", route_path: "supabase/functions/nightly-demo-reset", description: "Resets demo data overnight.", schedule_hint: "Edge Function / nightly",
       source: "cron",
       status: "failed",
       started_at: startedAt,
