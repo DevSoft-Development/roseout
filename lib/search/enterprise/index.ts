@@ -638,6 +638,27 @@ const RESTAURANT_GENERIC_RECOVERY_TERMS = [
   "food",
 ];
 
+const GENERIC_MEAL_RESTAURANT_RECOVERY_TERMS = new Set([
+  "dinner",
+  "lunch",
+  "brunch",
+  "breakfast",
+  "food",
+  "restaurant",
+  "dining",
+  "meal",
+  "eat",
+  "eats",
+]);
+
+const GENERIC_MEAL_RESTAURANT_RECOVERY_EXPANSIONS: Record<string, string[]> = {
+  dinner: ["restaurant", "dinner", "dining", "food", "date night"],
+  brunch: ["brunch", "restaurant", "brunch spot", "breakfast", "mimosas", "food"],
+  lunch: ["lunch", "restaurant", "dining", "lunch spot", "food"],
+  breakfast: ["breakfast", "brunch", "cafe", "coffee", "restaurant", "food"],
+  food: ["food", "restaurant", "dining", "dinner", "lunch"],
+};
+
 const RESTAURANT_ROOFTOP_FEATURE_ONLY_RECOVERY_TERMS = [
   "restaurant",
   "dinner",
@@ -670,6 +691,51 @@ function restaurantFoodCuisineTerms(intent: SearchIntent): string[] {
     ...(intent.restaurantIntent?.foodTerms ?? []),
     ...(intent.restaurantIntent?.cuisineTerms ?? []),
     ...(intent.restaurantIntent?.categoryTerms ?? []),
+  ]);
+}
+
+function genericMealRestaurantTerms(intent: SearchIntent): string[] {
+  return uniqueStrings([
+    ...restaurantSearchTerms(intent),
+    ...(intent.restaurantIntent?.mealTerms ?? []),
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    ...(intent.restaurantIntent?.categoryTerms ?? []),
+  ]).filter((term) => GENERIC_MEAL_RESTAURANT_RECOVERY_TERMS.has(term));
+}
+
+function mixedOutingGenericMealRecoveryTerms(intent: SearchIntent): string[] {
+  const terms = genericMealRestaurantTerms(intent);
+  if (
+    intent.searchType !== "mixed_outing" ||
+    intent.needsRestaurant !== true ||
+    intent.needsActivity !== true ||
+    terms.length === 0
+  ) {
+    return [];
+  }
+
+  const currentRestaurantTerms = restaurantSearchTerms(intent);
+  const hasCuisine = (intent.restaurantIntent?.cuisineTerms ?? []).length > 0;
+  const onlyGenericMeal =
+    !hasCuisine &&
+    currentRestaurantTerms.some((term) =>
+      GENERIC_MEAL_RESTAURANT_RECOVERY_TERMS.has(term),
+    );
+  if (!onlyGenericMeal) return [];
+
+  return uniqueStrings([
+    ...terms,
+    ...terms.flatMap(
+      (term) =>
+        GENERIC_MEAL_RESTAURANT_RECOVERY_EXPANSIONS[term] ??
+        (term === "meal" ||
+        term === "eat" ||
+        term === "eats" ||
+        term === "dining" ||
+        term === "restaurant"
+          ? GENERIC_MEAL_RESTAURANT_RECOVERY_EXPANSIONS.food
+          : [term]),
+    ),
   ]);
 }
 
@@ -746,6 +812,15 @@ function buildGenericRestaurantRecoveryAttempts(intent: SearchIntent) {
     relaxFeature?: boolean;
     strictness?: SearchIntent["strictness"];
   }[] = [];
+
+  const mixedGenericMealTerms = mixedOutingGenericMealRecoveryTerms(intent);
+  if (mixedGenericMealTerms.length) {
+    attempts.push({
+      reason: "mixed_outing_generic_meal_restaurant_recovery",
+      terms: mixedGenericMealTerms,
+      strictness: "medium",
+    });
+  }
 
   if (hasRooftopFeatureOnlySafety) {
     attempts.push({
@@ -1280,6 +1355,9 @@ export async function runEnterpriseSearch(
                 strictness: attempt.strictness,
               },
             );
+            const isMixedGenericMealRecovery =
+              attempt.reason === "mixed_outing_generic_meal_restaurant_recovery";
+            const mixedGenericMealRecoveryStarted = Date.now();
 
             debug.restaurantRecoveryUsed = true;
             debug.restaurantRecoveryReason = attempt.reason;
@@ -1293,19 +1371,43 @@ export async function runEnterpriseSearch(
             debug.restaurantRecoveryRelaxedFeature =
               Boolean(debug.restaurantRecoveryRelaxedFeature) ||
               Boolean(attempt.relaxFeature);
+            if (isMixedGenericMealRecovery) {
+              (debug as any).mixedOutingRestaurantRecoveryAttempted = true;
+              (debug as any).mixedOutingRestaurantRecoveryUsed = false;
+              (debug as any).mixedOutingRestaurantRecoveryCount = 0;
+              (debug as any).mixedOutingRestaurantRecoveryError = null;
+            }
 
-            const recoveredRaw = await recoverEnterpriseLane(
-              supabase,
-              recoveryIntent,
-              "restaurant",
-              debug,
-              attempt.terms,
-            );
+            let recoveredRaw: EnterpriseLocation[] = [];
+            try {
+              recoveredRaw = await recoverEnterpriseLane(
+                supabase,
+                recoveryIntent,
+                "restaurant",
+                debug,
+                attempt.terms,
+              );
+            } catch (error) {
+              if (isMixedGenericMealRecovery) {
+                (debug as any).mixedOutingRestaurantRecoveryError =
+                  error instanceof Error ? error.message : String(error);
+              }
+              recoveredRaw = [];
+            } finally {
+              if (isMixedGenericMealRecovery) {
+                (debug as any).mixedOutingRestaurantRecoveryMs =
+                  Date.now() - mixedGenericMealRecoveryStarted;
+              }
+            }
 
             const recoveredFiltered = filterRestaurantResults(
               recoveredRaw,
               recoveryIntent,
             );
+            if (isMixedGenericMealRecovery) {
+              (debug as any).mixedOutingRestaurantRecoveryCount =
+                recoveredFiltered.length;
+            }
 
             debug.restaurantRecoveryAttemptResults = [
               ...(debug.restaurantRecoveryAttemptResults ?? []),
@@ -1327,20 +1429,44 @@ export async function runEnterpriseSearch(
               filtered = recoveredFiltered;
               restaurantRankingIntent = recoveryIntent;
               debug.restaurantRecoverySucceeded = true;
+              if (isMixedGenericMealRecovery) {
+                (debug as any).mixedOutingRestaurantRecoveryUsed = true;
+              }
               break;
             }
           }
         }
 
         if (!filtered.length) {
+          const recoveryTerms = restaurantSearchTerms(effectiveIntent).slice(
+            0,
+            RECOVERY_LIMIT,
+          );
+          const isMixedGenericMealRecovery =
+            mixedOutingGenericMealRecoveryTerms(effectiveIntent).length > 0;
+          const mixedGenericMealRecoveryStarted = Date.now();
+          if (isMixedGenericMealRecovery) {
+            (debug as any).mixedOutingRestaurantRecoveryAttempted = true;
+            (debug as any).mixedOutingRestaurantRecoveryUsed = false;
+            (debug as any).mixedOutingRestaurantRecoveryCount = 0;
+            (debug as any).mixedOutingRestaurantRecoveryError = null;
+          }
           restaurantRaw = await recoverEnterpriseLane(
             supabase,
             effectiveIntent,
             "restaurant",
             debug,
-            restaurantSearchTerms(effectiveIntent).slice(0, RECOVERY_LIMIT),
+            recoveryTerms,
           );
           filtered = filterRestaurantResults(restaurantRaw, effectiveIntent);
+          if (isMixedGenericMealRecovery) {
+            (debug as any).mixedOutingRestaurantRecoveryMs =
+              Date.now() - mixedGenericMealRecoveryStarted;
+            (debug as any).mixedOutingRestaurantRecoveryCount =
+              filtered.length;
+            (debug as any).mixedOutingRestaurantRecoveryUsed =
+              filtered.length > 0;
+          }
         }
       }
       if (
@@ -2565,7 +2691,7 @@ export async function runEnterpriseSearch(
     const noPairsReason =
       requiredPairingFailureReasonValue ??
       (effectiveIntent.wantsPairing &&
-      pairs.length < MIN_PAIR_RESULTS &&
+      pairs.length === 0 &&
       restaurants.length > 0 &&
       activities.length > 0
         ? "pair_count_below_recovery_threshold"

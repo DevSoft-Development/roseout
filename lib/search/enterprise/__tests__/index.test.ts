@@ -9,6 +9,19 @@ vi.mock("@/lib/search/performance", () => ({
   logSearchPerformance: vi.fn(),
 }));
 
+vi.mock("../searchHealthLogger", () => ({
+  logSearchHealthEvent: vi.fn(),
+}));
+
+vi.mock("@/lib/ml/locationMlScores", () => ({
+  getLocationMlScoreMap: async () => new Map(),
+}));
+
+vi.mock("@/lib/ml/intentScoreLoaders", () => ({
+  getLocationIntentScoreMap: async () => new Map(),
+  getPairScoreMap: async () => new Map(),
+}));
+
 import { runEnterpriseSearch } from "../index";
 import type { EnterpriseLocation } from "../types";
 
@@ -50,6 +63,55 @@ function restaurant(input: Partial<EnterpriseLocation> & { id: string; name: str
     row.primary_category,
     row.category,
     row.cuisine,
+    row.tags,
+    row.description,
+    row.city,
+    row.borough,
+    row.county,
+    row.state,
+    row.google_types,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ");
+
+  return row;
+}
+
+function activity(input: Partial<EnterpriseLocation> & { id: string; name: string }): EnterpriseLocation {
+  const { id, name, ...rest } = input;
+  const row: EnterpriseLocation = {
+    id,
+    name,
+    activity_name: name,
+    location_type: "activity",
+    city: "New York",
+    borough: "Queens",
+    county: "Queens County",
+    state: "NY",
+    latitude: 40.729,
+    longitude: -73.795,
+    rating: 4.6,
+    review_count: 500,
+    image_url: photo,
+    main_image: photo,
+    has_photos: true,
+    primary_category: "hookah lounge",
+    category: "lounge",
+    activity_type: "hookah_lounge",
+    google_types: ["bar", "point_of_interest"],
+    tags: ["hookah", "shisha", "lounge"],
+    description: "Hookah lounge with shisha.",
+    ...rest,
+  };
+
+  row.search_document = [
+    row.name,
+    row.activity_name,
+    row.location_type,
+    row.primary_category,
+    row.category,
+    row.activity_type,
     row.tags,
     row.description,
     row.city,
@@ -383,6 +445,101 @@ describe("runEnterpriseSearch restaurant cuisine + feature recovery", () => {
         }),
       ]),
     );
+  });
+});
+
+describe("runEnterpriseSearch mixed outing generic meal restaurant lane", () => {
+  const dinnerRows = [
+    restaurant({
+      id: "dinner-1",
+      name: "Queens Dinner Spot",
+      tags: ["dinner", "date night", "restaurant"],
+      description: "Full-service dinner spot near hookah lounges.",
+    }),
+  ];
+  const hookahRows = [
+    activity({
+      id: "hookah-1",
+      name: "Queens Hookah Lounge",
+      latitude: 40.7295,
+      longitude: -73.7952,
+    }),
+  ];
+
+  it("expands generic dinner terms before restaurant RPC for dinner then hookah", async () => {
+    const calls: RpcCall[] = [];
+    const supabase = {
+      rpc: async (name: string, params: Record<string, any>) => {
+        calls.push({ name, params });
+        if (name !== "enterprise_search_locations") return { data: [], error: null };
+        if (params.p_domain === "activity") return { data: hookahRows, error: null };
+        if (
+          params.p_domain === "restaurant" &&
+          params.p_search_terms.includes("dinner spot") &&
+          params.p_search_terms.includes("date night")
+        ) {
+          return { data: dinnerRows, error: null };
+        }
+        return { data: [], error: null };
+      },
+    };
+
+    const result = await runEnterpriseSearch("dinner then hookah", {
+      supabase,
+      useLLM: false,
+      betaDebug: true,
+    });
+
+    expect(result.debug?.searchType).toBe("mixed_outing");
+    expect(result.debug?.needsRestaurant).toBe(true);
+    expect(result.debug?.needsActivity).toBe(true);
+    expect(result.debug?.restaurantTermsExpandedForGenericMeal).toBe(true);
+    expect(result.debug?.restaurantTermsBeforeExpansion).toContain("dinner");
+    expect(result.debug?.restaurantTermsAfterExpansion).toEqual(
+      expect.arrayContaining([
+        "restaurant",
+        "dining",
+        "dinner spot",
+        "date night",
+        "food",
+      ]),
+    );
+    expect(result.restaurants.length).toBeGreaterThan(0);
+    expect(result.activities.length).toBeGreaterThan(0);
+    expect(result.pairs.length).toBeGreaterThan(0);
+    expect(result.primaryResultType).toBe("pairs");
+    expect(result.debug?.noPairsReason).toBeNull();
+    expect(calls.some((call) => call.params.p_search_terms?.includes("dinner spot"))).toBe(true);
+  });
+
+  it("uses non-fatal mixed-outing restaurant recovery when first dinner lane is empty", async () => {
+    const calls: RpcCall[] = [];
+    const supabase = {
+      rpc: async (name: string, params: Record<string, any>) => {
+        calls.push({ name, params });
+        if (name !== "enterprise_search_locations") return { data: [], error: null };
+        if (params.p_domain === "activity") return { data: hookahRows, error: null };
+        if (params.p_domain === "restaurant" && params.p_limit === 80) {
+          return { data: dinnerRows, error: null };
+        }
+        return { data: [], error: null };
+      },
+    };
+
+    const result = await runEnterpriseSearch("dinner then hookah", {
+      supabase,
+      useLLM: false,
+      betaDebug: true,
+    });
+
+    expect(result.reply).toBeTruthy();
+    expect(result.debug?.mixedOutingRestaurantRecoveryAttempted).toBe(true);
+    expect(result.debug?.mixedOutingRestaurantRecoveryUsed).toBe(true);
+    expect(result.debug?.mixedOutingRestaurantRecoveryCount).toBeGreaterThan(0);
+    expect(result.restaurants.length).toBeGreaterThan(0);
+    expect(result.activities.length).toBeGreaterThan(0);
+    expect(result.pairs.length).toBeGreaterThan(0);
+    expect(result.debug?.noPairsReason).not.toBe("no_restaurant_results_for_required_pair");
   });
 });
 

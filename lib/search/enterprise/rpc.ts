@@ -59,6 +59,11 @@ type RpcDebug = {
   restaurantRecoveryRelaxedFood?: boolean;
   restaurantRecoveryRelaxedFeature?: boolean;
   restaurantRecoverySucceeded?: boolean;
+  mixedOutingRestaurantRecoveryAttempted?: boolean;
+  mixedOutingRestaurantRecoveryUsed?: boolean;
+  mixedOutingRestaurantRecoveryCount?: number;
+  mixedOutingRestaurantRecoveryMs?: number | null;
+  mixedOutingRestaurantRecoveryError?: string | null;
   activityRecoveryUsed?: boolean;
   recoveryTerms?: string[];
   activityRecoveryReason?: string | null;
@@ -195,7 +200,34 @@ const GENERIC_MEAL_RESTAURANT_TERMS = new Set([
   "breakfast",
   "food",
   "restaurant",
+  "dining",
+  "meal",
+  "eat",
+  "eats",
 ]);
+
+const GENERIC_MEAL_RESTAURANT_EXPANSIONS: Record<string, string[]> = {
+  dinner: [
+    "dinner",
+    "restaurant",
+    "dining",
+    "dinner spot",
+    "dinner restaurant",
+    "date night",
+    "food",
+  ],
+  brunch: [
+    "brunch",
+    "restaurant",
+    "brunch spot",
+    "breakfast",
+    "mimosas",
+    "food",
+  ],
+  lunch: ["lunch", "restaurant", "dining", "lunch spot", "food"],
+  breakfast: ["breakfast", "brunch", "cafe", "coffee", "restaurant", "food"],
+  food: ["food", "restaurant", "dining", "dinner", "lunch"],
+};
 
 function maybeExpandGenericMealRestaurantTerms(
   intent: SearchIntent,
@@ -205,8 +237,10 @@ function maybeExpandGenericMealRestaurantTerms(
 ) {
   if (
     domain !== "restaurant" ||
+    intent.searchType !== "mixed_outing" ||
+    intent.needsRestaurant !== true ||
     !intent.wantsPairing ||
-    !intent.needsActivity
+    intent.needsActivity !== true
   ) {
     return terms;
   }
@@ -227,11 +261,17 @@ function maybeExpandGenericMealRestaurantTerms(
 
   const expanded = uniqLowerRpcTerms([
     ...normalized,
-    "restaurant",
-    "dining",
-    "food",
-    "date night",
-    "dinner",
+    ...normalized.flatMap(
+      (term) =>
+        GENERIC_MEAL_RESTAURANT_EXPANSIONS[term] ??
+        (term === "meal" ||
+        term === "eat" ||
+        term === "eats" ||
+        term === "dining" ||
+        term === "restaurant"
+          ? GENERIC_MEAL_RESTAURANT_EXPANSIONS.food
+          : [term]),
+    ),
   ]);
   if (debug) {
     (debug as any).restaurantTermsExpandedForGenericMeal = true;
@@ -873,6 +913,11 @@ export function createRpcDebug(intent: SearchIntent): RpcDebug {
     restaurantRecoveryRelaxedFood: false,
     restaurantRecoveryRelaxedFeature: false,
     restaurantRecoverySucceeded: false,
+    mixedOutingRestaurantRecoveryAttempted: false,
+    mixedOutingRestaurantRecoveryUsed: false,
+    mixedOutingRestaurantRecoveryCount: 0,
+    mixedOutingRestaurantRecoveryMs: null,
+    mixedOutingRestaurantRecoveryError: null,
     activityRecoveryUsed: false,
     relaxedActivityPruningApplied: hasRelaxedActivityIntent(intent.rawQuery),
     activityTermsRemovedForRelaxedIntent: [],
