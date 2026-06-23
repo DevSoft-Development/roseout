@@ -7,6 +7,7 @@ import { findAuthUserIdByEmail, repairBetaAccessForEmail, safeUpsertBetaTester }
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import { getBetaAccountReadinessForEmail } from "@/lib/beta/accountReadiness";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
+import { buildSiteUrl } from "@/lib/site-url";
 import type { AdminRole } from "@/lib/users/roles";
 
 const allowedStatuses = new Set([
@@ -173,6 +174,7 @@ export async function PATCH(
           { type: "paragraph", text: "Your social follow and tagged friends requirements were verified. You are now prize qualified for the $100 Beta Tester Reward." },
           { type: "paragraph", text: "Keep an eye on your email for winner updates. Thank you for helping shape TheOutHaven." },
         ],
+        cta: { label: "Open Beta Dashboard", url: buildSiteUrl("/user/dashboard/beta") },
       });
       await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: data.email, action: "prize_qualified", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Prize qualified email sent", metadata: { rewardName: "$100 Beta Tester Reward" } });
     } catch (emailError) {

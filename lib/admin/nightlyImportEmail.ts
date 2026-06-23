@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import { sendRenderedEmail } from "@/lib/email/sender";
 
 type CronImportStep = {
@@ -135,14 +134,7 @@ async function sendAdminHtmlEmail({ to, from, subject, html, text }: { to: strin
     if (existingResult.status === "sent") return { sent: true, provider: "existing-email-helper" };
     if (existingResult.status === "error") return { sent: false, provider: "existing-email-helper", error: existingResult.error || "Email helper failed" };
 
-    if (!process.env.RESEND_API_KEY) {
-      console.warn("Cron import summary email skipped: RESEND_API_KEY is missing.");
-      return { sent: false, provider: "none", error: "RESEND_API_KEY is missing and no existing email helper was able to send." };
-    }
-
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({ from, to, subject, html, text });
-    return { sent: true, provider: "resend" };
+    return { sent: false, provider: "existing-email-helper", error: "Email helper skipped sending; RESEND_API_KEY may be missing." };
   } catch (error: any) {
     console.error("Failed to send admin import summary email:", error);
     return { sent: false, provider: "error", error: error?.message || "Unknown email error" };

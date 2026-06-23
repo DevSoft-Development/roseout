@@ -90,3 +90,8 @@ curl -X POST "$SUPABASE_URL/functions/v1/admin-cron-digest-email" \
 ## Cron setup
 
 Run `supabase/sql/setup-edge-function-crons.sql` after replacing `YOUR_PROJECT_REF` and `YOUR_CRON_SECRET`. Prefer Supabase Vault for production secrets if available.
+
+
+## Disabled beta tester reminders
+
+`beta-tester-reminders` is disabled and replaced by the Next.js `/api/cron/beta-reminders` system. Do not deploy or schedule it for active email sending.
