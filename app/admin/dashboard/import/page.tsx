@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 
-export default function RedirectPage() {
+export const dynamic = "force-dynamic";
+
+export default function Page() {
   redirect("/admin/dashboard/settings/location-tools/import");
 }
