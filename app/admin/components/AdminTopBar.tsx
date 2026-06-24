@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ClipboardCheck, CreditCard, Home, LineChart, LogOut, QrCode, Search, Settings, ShieldCheck, Users, Wrench } from "lucide-react";
+import { BarChart3, ClipboardCheck, CreditCard, Gift, Home, LineChart, LogOut, QrCode, Search, Settings, ShieldCheck, Users, Wrench } from "lucide-react";
 import type { AdminRole } from "@/lib/users/roles";
 import { ADMIN_ROLE_LABELS } from "@/lib/admin-permissions";
 import { createClient } from "@/lib/supabase-browser";
@@ -18,6 +18,7 @@ const navItems = [
   ["Search Health", "/admin/dashboard/search-health", LineChart],
   ["Settings", "/admin/dashboard/settings", Settings],
   ["Users", "/admin/dashboard/users", ShieldCheck],
+  ["Giveaway", "/admin/dashboard/giveaway", Gift],
   ["Logs", "/admin/dashboard/logs", ClipboardCheck],
   ["Claims", "/admin/dashboard/claims", ClipboardCheck],
   ["Claim QRs", "/admin/dashboard/claim-qrs", QrCode],
