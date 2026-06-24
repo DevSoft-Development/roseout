@@ -265,6 +265,109 @@ type ExistingLocationClaim = {
 
 type SaveLocationError = { message: string };
 
+type DuplicateMatchType = "google_place_id" | "website" | "phone" | "name_address" | "unknown";
+
+type DuplicateCheckResult = {
+  isDuplicate: boolean;
+  reason: string;
+  matchedBy: DuplicateMatchType;
+  existingId?: string;
+  existingName?: string;
+};
+
+function normalizeWebsite(value: unknown) {
+  const raw = cleanText(value).toLowerCase();
+  if (!raw) return "";
+  const withoutFragment = raw.split("#")[0]?.split("?")[0] || "";
+  return withoutFragment.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "").trim();
+}
+
+function normalizePhone(value: unknown) {
+  return cleanText(value).replace(/\D/g, "");
+}
+
+function normalizeNameAddress(value: unknown) {
+  return cleanAddress(cleanText(value))
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function duplicateReason(matchedBy: DuplicateMatchType) {
+  if (matchedBy === "google_place_id") return "Skipped because this Google Place ID already exists.";
+  if (matchedBy === "website") return "Skipped because this website already exists on another record.";
+  if (matchedBy === "phone") return "Skipped because this phone number already exists on another record.";
+  if (matchedBy === "name_address") return "Skipped because this name and address already exist on another record.";
+  return "Skipped because this location appears to already exist.";
+}
+
+function duplicateFromRow(row: Record<string, unknown>, matchedBy: DuplicateMatchType): DuplicateCheckResult {
+  return {
+    isDuplicate: true,
+    matchedBy,
+    existingId: row.id ? String(row.id) : undefined,
+    existingName: cleanText(row.name || row.restaurant_name || row.activity_name) || undefined,
+    reason: duplicateReason(matchedBy),
+  };
+}
+
+export async function findDuplicateLocationBeforeInsert(table: ImportTable, place: GooglePlace, addressParts?: ReturnType<typeof parseAddressParts>): Promise<DuplicateCheckResult> {
+  try {
+    const placeId = cleanText(place.place_id);
+    const website = normalizeWebsite(place.website || place.websiteUri || place.url);
+    const phone = normalizePhone(place.formatted_phone_number || place.international_phone_number);
+    const name = normalizeNameAddress(place.name);
+    const address = normalizeNameAddress(addressParts?.address || place.formatted_address || place.vicinity);
+    const city = normalizeNameAddress(addressParts?.city);
+    const state = normalizeNameAddress(addressParts?.state);
+
+    if (placeId) {
+      const nameColumn = table === "restaurants" ? "restaurant_name" : "activity_name";
+      const { data, error } = await supabaseAdmin.from(table).select(`id,name,${nameColumn},google_place_id`).eq("google_place_id", placeId).limit(1);
+      if (!error && data?.[0]) return duplicateFromRow(data[0] as Record<string, unknown>, "google_place_id");
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .select(`id,name,${table === "restaurants" ? "restaurant_name" : "activity_name"},address,city,state,phone,website,google_place_id`)
+      .limit(5000);
+
+    if (error || !Array.isArray(data)) return { isDuplicate: false, matchedBy: "unknown", reason: "No duplicate found." };
+
+    for (const row of data as Record<string, unknown>[]) {
+      if (website && normalizeWebsite(row.website) === website) return duplicateFromRow(row, "website");
+    }
+    for (const row of data as Record<string, unknown>[]) {
+      if (phone && normalizePhone(row.phone) === phone) return duplicateFromRow(row, "phone");
+    }
+    for (const row of data as Record<string, unknown>[]) {
+      const sameName = name && normalizeNameAddress(row.name || row.restaurant_name || row.activity_name) === name;
+      const sameAddress = address && normalizeNameAddress(row.address) === address;
+      const sameCity = !city || !row.city || normalizeNameAddress(row.city) === city;
+      const sameState = !state || !row.state || normalizeNameAddress(row.state) === state;
+      if (sameName && sameAddress && sameCity && sameState) return duplicateFromRow(row, "name_address");
+    }
+  } catch (error) {
+    console.warn("Google import duplicate check failed", { table, error: getErrorMessage(error) });
+  }
+
+  return { isDuplicate: false, matchedBy: "unknown", reason: "No duplicate found." };
+}
+
+function formatDuplicateSkipped(place: GooglePlace, duplicate: DuplicateCheckResult, locationType: "restaurant" | "activity", address?: string) {
+  return {
+    name: cleanText(place.name) || "Unknown Google Place",
+    address: cleanAddress(address || place.formatted_address || place.vicinity || ""),
+    locationType,
+    matchedBy: duplicate.matchedBy,
+    existingId: duplicate.existingId || null,
+    existingName: duplicate.existingName || null,
+    reason: duplicate.reason,
+  };
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -717,7 +820,10 @@ async function upsertRestaurant(
   const reservationUrl = extractReservationUrl(merged);
   const website = merged.website || merged.websiteUri || null;
   const googleMapsUrl = merged.url || merged.googleMapsUri || null;
-  const existing = await findExistingLocation("restaurants", place.place_id);
+  const duplicate = await findDuplicateLocationBeforeInsert("restaurants", merged, addressParts);
+  if (duplicate.isDuplicate) {
+    return { status: "skipped_duplicate" as const, duplicate: formatDuplicateSkipped(merged, duplicate, "restaurant", addressParts.address) };
+  }
 
   const row = await addClaimFields({
     restaurant_name: merged.name,
@@ -752,19 +858,19 @@ async function upsertRestaurant(
     borough: marketValidation.borough || null,
     county: marketValidation.county || null,
     neighborhood: marketValidation.neighborhood || null,
-  }, existing, "restaurant");
+  }, null, "restaurant");
 
   const { data: restaurant, error } = await saveLocationRow(
     "restaurants",
     row,
-    existing,
+    null,
   );
 
   if (error) return { status: "failed" as const, error: error.message };
 
   try {
     await syncRestaurantToLocation(
-      (restaurant || { ...row, id: existing?.id }) as Record<string, unknown> & {
+      (restaurant || row) as Record<string, unknown> & {
         id: string | number;
       },
     );
@@ -803,7 +909,10 @@ async function upsertActivity(
   const reservationUrl = extractReservationUrl(merged);
   const website = merged.website || merged.websiteUri || null;
   const googleMapsUrl = merged.url || merged.googleMapsUri || null;
-  const existing = await findExistingLocation("activities", place.place_id);
+  const duplicate = await findDuplicateLocationBeforeInsert("activities", merged, addressParts);
+  if (duplicate.isDuplicate) {
+    return { status: "skipped_duplicate" as const, duplicate: formatDuplicateSkipped(merged, duplicate, "activity", addressParts.address) };
+  }
 
   const row = await addClaimFields({
     activity_name: merged.name,
@@ -837,19 +946,19 @@ async function upsertActivity(
     borough: marketValidation.borough || null,
     county: marketValidation.county || null,
     neighborhood: marketValidation.neighborhood || null,
-  }, existing, "activity");
+  }, null, "activity");
 
   const { data: activity, error } = await saveLocationRow(
     "activities",
     row,
-    existing,
+    null,
   );
 
   if (error) return { status: "failed" as const, error: error.message };
 
   try {
     await syncActivityToLocation(
-      (activity || { ...row, id: existing?.id }) as Record<string, unknown> & {
+      (activity || row) as Record<string, unknown> & {
         id: string | number;
       },
     );
@@ -1046,7 +1155,7 @@ async function runGroup(
         for (const place of places.slice(0, limit)) {
           if (!place.place_id) continue;
           stats.checked += 1;
-          if (seenPlaceIds.has(place.place_id)) { stats.skipped += 1; stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (stats.duplicate_examples.length < 10) stats.duplicate_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, reason: "duplicate" }); continue; }
+          if (seenPlaceIds.has(place.place_id)) { stats.skipped += 1; stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (stats.duplicate_examples.length < 10) stats.duplicate_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, matchedBy: "google_place_id", existingId: null, reason: "Skipped because this Google Place ID was already returned earlier in this import run." }); continue; }
           seenPlaceIds.add(place.place_id);
 
           const result =
@@ -1055,6 +1164,12 @@ async function runGroup(
               : await upsertActivity(place, query, options);
           if (result.status === "imported") { stats.imported += 1; if (result.location) stats.addedLocations.push(result.location); const m = normalizeMarketKey(result.validation?.correctedMarket || result.validation?.inferredMarket || options.requestedMarket); stats.imported_by_market[m] = (stats.imported_by_market[m] || 0) + 1; }
           if (result.status === "skipped") { stats.skipped += 1; stats.skipped_by_reason.low_quality = (stats.skipped_by_reason.low_quality || 0) + 1; }
+          if (result.status === "skipped_duplicate") {
+            stats.skipped += 1;
+            stats.skipped_duplicate += 1;
+            stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1;
+            if (result.duplicate && stats.duplicate_examples.length < 25) stats.duplicate_examples.push(result.duplicate);
+          }
           if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") {
             stats.skipped += 1;
             if (result.status === "skipped_wrong_state") { stats.skipped_wrong_state += 1; stats.skipped_by_reason.wrong_state = (stats.skipped_by_reason.wrong_state || 0) + 1; } else { stats.skipped_wrong_market += 1; stats.skipped_by_reason.wrong_market = (stats.skipped_by_reason.wrong_market || 0) + 1; stats.market_mismatch_count = stats.skipped_wrong_market; }
@@ -1134,6 +1249,8 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     restaurant,
     activity,
     skipped_duplicate: restaurant.skipped_duplicate + activity.skipped_duplicate,
+    duplicateCount: restaurant.skipped_duplicate + activity.skipped_duplicate,
+    duplicatesSkipped: [...restaurant.duplicate_examples, ...activity.duplicate_examples].slice(0, 25),
     skipped_wrong_state: restaurant.skipped_wrong_state + activity.skipped_wrong_state,
     skipped_wrong_market: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     skipped_out_of_area: restaurant.skipped_out_of_area + activity.skipped_out_of_area,
@@ -1168,6 +1285,8 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     restaurant,
     activity,
     skipped_duplicate: restaurant.skipped_duplicate + activity.skipped_duplicate,
+    duplicateCount: restaurant.skipped_duplicate + activity.skipped_duplicate,
+    duplicatesSkipped: [...restaurant.duplicate_examples, ...activity.duplicate_examples].slice(0, 25),
     skipped_wrong_state: restaurant.skipped_wrong_state + activity.skipped_wrong_state,
     skipped_wrong_market: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     skipped_out_of_area: restaurant.skipped_out_of_area + activity.skipped_out_of_area,
