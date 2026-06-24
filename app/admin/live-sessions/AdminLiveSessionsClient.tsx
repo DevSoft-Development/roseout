@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { FriendlyKeyValueList, JsonDeveloperDetails } from "@/components/admin/FriendlyJsonView";
 
 type EventItem = {
   id: string;
@@ -457,9 +458,10 @@ export default function AdminLiveSessionsClient() {
 
                   {event.metadata &&
                     Object.keys(event.metadata).length > 0 && (
-                      <pre className="mt-3 overflow-x-auto rounded-xl bg-black/40 p-3 text-xs text-white/50">
-                        {JSON.stringify(event.metadata, null, 2)}
-                      </pre>
+                      <div className="mt-3 space-y-3 rounded-xl bg-black/30 p-3">
+                        <FriendlyKeyValueList data={event.metadata} />
+                        <JsonDeveloperDetails data={event.metadata} title="Developer metadata" />
+                      </div>
                     )}
                 </div>
               ))}
