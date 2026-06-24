@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { betaSuggestedPromptCategories } from "@/lib/betaSuggestedPrompts";
 const tabs = [
+  "Weekly Program",
   "Overview",
   "Applications",
   "Testers",
@@ -60,6 +61,7 @@ export default function BetaAdminClient({
   customPrompts,
   reminders,
   turnstile,
+  weeklySessions,
 }: {
   overview: any;
   applications: any[];
@@ -71,8 +73,9 @@ export default function BetaAdminClient({
   customPrompts: any;
   reminders: any[];
   turnstile: any;
+  weeklySessions: any[];
 }) {
-  const [tab, setTab] = useState("Overview");
+  const [tab, setTab] = useState("Weekly Program");
   const promptInsightCards = [
     [
       "Group night prompts",
@@ -140,6 +143,33 @@ export default function BetaAdminClient({
           Search Health
         </Link>
       </div>
+
+      {tab === "Weekly Program" && (
+        <div className="space-y-4">
+          <section className="rounded-3xl border border-white/10 bg-white/[.04] p-5">
+            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">Weekly Beta Program</p>
+            <h2 className="mt-2 text-3xl font-black">Weekly Beta Program</h2>
+            <p className="mt-2 text-sm text-white/60">Each tester completes one guided beta session per week with 5 tracked steps.</p>
+          </section>
+          <section className="grid gap-3 md:grid-cols-5">
+            <Stat label="Active beta testers" value={overview.active_testers ?? 0} />
+            <Stat label="Weekly sessions started" value={weeklySessions.filter((s) => s.status !== "not_started").length} />
+            <Stat label="Weekly sessions completed" value={weeklySessions.filter((s) => s.status === "completed").length} />
+            <Stat label="Average steps completed" value={averageSteps(weeklySessions)} />
+            <Stat label="Needs reminder" value={weeklySessions.filter((s) => s.status !== "completed").length} />
+          </section>
+          <Table
+            rows={weeklySessions}
+            cols={["tester", "week", "status", "steps_completed", "outing_sentence", "result_mode", "selected_result", "last_activity"]}
+            actions={(r: any) => (
+              <>
+                <Link href={`/admin/dashboard/beta?session=${r.id}`} className="text-rose-200">View details</Link>
+                <button className="text-sky-200">Send reminder</button>
+              </>
+            )}
+          />
+        </div>
+      )}
       {tab === "Overview" && (
         <>
           <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -257,7 +287,7 @@ export default function BetaAdminClient({
       )}{" "}
       {tab === "Tasks" && (
         <>
-          <TaskForm />
+          <h2 className="text-2xl font-black">Task Templates</h2><p className="mb-4 text-sm text-white/55">Internal setup only. Active/draft templates are deduped by title and tester type.</p><TaskForm />
           <section className="mb-4 rounded-3xl border border-white/10 bg-white/[.04] p-4">
             <p className="text-xs font-black uppercase tracking-[.2em] text-white/45">
               Category filter
@@ -497,6 +527,8 @@ export default function BetaAdminClient({
     </div>
   );
 }
+function Stat({ label, value }: { label: string; value: any }) { return <div className="rounded-2xl border border-white/10 bg-white/[.04] p-4"><p className="text-xs text-white/55">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div>; }
+function averageSteps(rows: any[]) { if (!rows.length) return "0/5"; const avg = rows.reduce((sum, row) => sum + Number(String(row.steps_completed || "0").split("/")[0] || 0), 0) / rows.length; return `${avg.toFixed(1)}/5`; }
 function Table({
   rows,
   cols,
