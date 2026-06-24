@@ -2,6 +2,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { LocationToolShell, ToolCard } from "@/components/admin/location-tools/LocationToolShell";
 import { ActionToolsClient } from "@/components/admin/location-tools/ActionToolsClient";
 import { GoogleImportFormClient } from "@/components/admin/location-tools/GoogleImportFormClient";
+import { FriendlyKeyValueList, JsonDeveloperDetails } from "@/components/admin/FriendlyJsonView";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,19 @@ export default async function Page() {
       </ToolCard>
 
       <ToolCard title="Recent import logs">
-        <pre className="max-h-[420px] overflow-auto rounded-2xl bg-black/50 p-4 text-xs text-white/70">
-          {JSON.stringify(logs, null, 2)}
-        </pre>
+        <ImportLogsPanel logs={logs} />
       </ToolCard>
     </LocationToolShell>
   );
+}
+
+
+function ImportLogsPanel({ logs }: { logs: any }) {
+  const rows = Array.isArray(logs?.logs) ? logs.logs : Array.isArray(logs) ? logs : [];
+  if (!rows.length) return <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/45">No recent import logs found.</div>;
+  return <div className="space-y-3">{rows.slice(0, 20).map((log: any, i: number) => {
+    const status = log.status || (log.error ? "Failed" : log.partial ? "Partial" : log.success === true ? "Success" : "Unknown");
+    const metrics = { inserted: log.inserted ?? log.inserted_count, updated: log.updated ?? log.updated_count, skipped: log.skipped ?? log.skipped_count, duplicates: log.duplicates ?? log.duplicate_count };
+    return <article key={log.id || i} className="rounded-2xl border border-white/10 bg-black/25 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-white/40">{log.job_name || log.name || log.import_name || "Import job"}</p><h3 className="mt-1 font-black text-white">{log.summary || log.message || "Import log"}</h3><p className="mt-1 text-sm text-white/55">{log.created_at || log.run_date ? new Date(log.created_at || log.run_date).toLocaleString() : "No date"}</p></div><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/75">{status}</span></div><div className="mt-3"><FriendlyKeyValueList data={metrics} /></div>{log.error ? <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm font-bold text-red-100">{log.error}</p> : null}<div className="mt-3"><JsonDeveloperDetails data={log} /></div></article>;
+  })}</div>;
 }

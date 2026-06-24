@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import MlSearchDebugPanel from "@/components/admin/search-health/MlSearchDebugPanel";
+import { FriendlyKeyValueList, JsonDeveloperDetails } from "@/components/admin/FriendlyJsonView";
 
 const examples = [
   "steak dinner with bowling in Astoria",
@@ -746,21 +747,10 @@ function ResultDetails({ result }: { result: SearchLabResult }) {
         }
       />
       <h3 className="mt-5 font-black">Search speed breakdown</h3>
-      <pre className="mt-2 overflow-auto rounded-2xl bg-black/40 p-4 text-xs text-white/60">
-        {JSON.stringify(result.performance, null, 2)}
-      </pre>
+      <div className="mt-2 rounded-2xl bg-black/30 p-4"><FriendlyKeyValueList data={result.performance} /></div>
       <h3 className="mt-5 font-black">Parsed intent</h3>
-      <pre className="mt-2 overflow-auto rounded-2xl bg-black/40 p-4 text-xs text-white/60">
-        {JSON.stringify(result.parsedIntent, null, 2)}
-      </pre>
-      <details className="mt-5">
-        <summary className="cursor-pointer font-black text-rose-200">
-          Debug accordion
-        </summary>
-        <pre className="mt-2 overflow-auto rounded-2xl bg-black/40 p-4 text-xs text-white/60">
-          {JSON.stringify(result.debug, null, 2)}
-        </pre>
-      </details>
+      <div className="mt-2 rounded-2xl bg-black/30 p-4"><FriendlyKeyValueList data={result.parsedIntent} /></div>
+      <div className="mt-5"><JsonDeveloperDetails data={result.debug} title="Developer debug JSON" /></div>
     </>
   );
 }

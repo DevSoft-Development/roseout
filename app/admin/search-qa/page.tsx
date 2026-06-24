@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FriendlyKeyValueList, JsonDeveloperDetails } from "@/components/admin/FriendlyJsonView";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +45,14 @@ export default function AdminSearchQaPage() {
         {report && (
           <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.05] p-6">
             <h2 className="text-2xl font-black">{report.success ? "Search QA Complete" : "Search QA Result"}</h2>
-            <pre className="mt-4 overflow-x-auto rounded-2xl bg-black/40 p-4 text-sm text-white/75">
-              {JSON.stringify(report, null, 2)}
-            </pre>
+            <div className="mt-4 grid gap-3 md:grid-cols-4"><Metric label="Total tests" value={report.total ?? report.totalTests ?? report.summary?.total} /><Metric label="Passed" value={report.passed ?? report.summary?.passed} /><Metric label="Failed" value={report.failed ?? report.summary?.failed} /><Metric label="Warnings" value={report.warnings?.length ?? report.summary?.warnings} /></div>
+            <div className="mt-4"><FriendlyKeyValueList data={report.summary || report.results || report} /></div>
+            <div className="mt-4"><JsonDeveloperDetails data={report} title="Developer JSON" /></div>
           </div>
         )}
       </section>
     </main>
   );
 }
+
+function Metric({ label, value }: { label: string; value: unknown }) { return <div className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-xs font-black uppercase tracking-widest text-white/40">{label}</p><p className="mt-2 text-2xl font-black text-white">{String(value ?? "—")}</p></div>; }

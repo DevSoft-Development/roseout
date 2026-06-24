@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FriendlyKeyValueList, JsonDeveloperDetails } from "@/components/admin/FriendlyJsonView";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +61,8 @@ export default function AdminRankingsPage() {
               {result.success ? "Ranking Complete" : "Ranking Result"}
             </h2>
 
-            <pre className="mt-4 overflow-x-auto rounded-2xl bg-black/40 p-4 text-sm text-white/70">
-              {JSON.stringify(result, null, 2)}
-            </pre>
+            <div className="mt-4"><FriendlyKeyValueList data={result.summary || result.metrics || result} /></div>
+            <div className="mt-4"><JsonDeveloperDetails data={result} title="Developer JSON" /></div>
           </div>
         )}
       </section>
