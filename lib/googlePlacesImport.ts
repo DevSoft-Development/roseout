@@ -226,6 +226,12 @@ type GooglePlace = {
   photos?: { photo_reference?: string }[];
   geometry?: { location?: { lat?: number; lng?: number } };
   address_components?: Array<{ long_name?: string; short_name?: string; types?: string[] }>;
+  opening_hours?: unknown;
+  current_opening_hours?: unknown;
+  regularOpeningHours?: unknown;
+  business_hours?: unknown;
+  hours?: unknown;
+  weekday_text?: unknown;
 };
 
 type GoogleTextSearchResponse = {
@@ -277,6 +283,7 @@ export type GooglePlacesImportOptions = {
   requireWebsite?: boolean;
   requireLocation?: boolean;
   requireCuisineType?: boolean;
+  requireHours?: boolean;
   requestedMarket?: MarketKey | string | null;
   requested_market?: MarketKey | string | null;
   market?: MarketKey | string | null;
@@ -372,8 +379,30 @@ function hasRequiredImportFields(
   if (options.requirePhone !== false && !hasPhone) return false;
   if (options.requireWebsite !== false && !hasWebsite) return false;
   if (options.requireLocation !== false && !hasLocation) return false;
+  if (options.requireHours !== false && !hasUsableHours(place)) return false;
 
   return true;
+}
+
+function hasUsableHours(place: GooglePlace) {
+  const candidates = [
+    place.opening_hours,
+    (place.opening_hours as { weekday_text?: unknown; periods?: unknown } | undefined)?.weekday_text,
+    (place.opening_hours as { weekday_text?: unknown; periods?: unknown } | undefined)?.periods,
+    place.current_opening_hours,
+    place.regularOpeningHours,
+    place.business_hours,
+    place.hours,
+    place.weekday_text,
+  ];
+
+  return candidates.some((value) => {
+    if (!value) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "string") return value.trim().length > 0;
+    if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+    return false;
+  });
 }
 
 function inferCuisine(textInput: string) {
@@ -632,6 +661,8 @@ async function googleDetails(placeId: string) {
       "geometry",
       "address_components",
       "price_level",
+      "opening_hours",
+      "current_opening_hours",
     ].join(",")
   );
   url.searchParams.set("key", key);
@@ -1065,8 +1096,8 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     batch: primaryTag,
     primaryTag,
     minRating: Number(options.minRating || 3.8),
-    requiredFields: ["photo", "phone", "website", "type", "location"],
-    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
+    requiredFields: [options.requirePhoto !== false && "photo", options.requirePhone !== false && "phone", options.requireWebsite !== false && "website", options.requireCuisineType !== false && "type", options.requireLocation !== false && "location", options.requireHours !== false && "hours"].filter(Boolean),
+    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas, requirePhoto: options.requirePhoto !== false, requirePhone: options.requirePhone !== false, requireWebsite: options.requireWebsite !== false, requireLocation: options.requireLocation !== false, requireCuisineType: options.requireCuisineType !== false, requireHours: options.requireHours !== false },
     maxQueries,
     areas,
     requested_market: requestedMarket,
@@ -1136,6 +1167,6 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     state_counts: mergeCountMaps(restaurant.state_counts, activity.state_counts),
     market_mismatch_count: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     errors: errors.slice(0, 30),
-    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas },
+    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas, requirePhoto: options.requirePhoto !== false, requirePhone: options.requirePhone !== false, requireWebsite: options.requireWebsite !== false, requireLocation: options.requireLocation !== false, requireCuisineType: options.requireCuisineType !== false, requireHours: options.requireHours !== false },
   };
 }
