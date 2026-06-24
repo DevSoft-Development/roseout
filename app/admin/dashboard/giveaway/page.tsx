@@ -29,6 +29,7 @@ export default async function AdminGiveawayPage() {
       supabaseAdmin
         .from("beta_tasks")
         .select("*")
+        .in("status", ["active", "draft"])
         .order("created_at", { ascending: false })
         .limit(50),
     ]);

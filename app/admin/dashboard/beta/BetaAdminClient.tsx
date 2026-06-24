@@ -76,6 +76,11 @@ export default function BetaAdminClient({
   weeklySessions: any[];
 }) {
   const [tab, setTab] = useState("Weekly Program");
+  const [taskStatusFilter, setTaskStatusFilter] = useState<"active" | "draft">("active");
+  const filteredTasks = useMemo(
+    () => tasks.filter((task) => String(task.status || "active") === taskStatusFilter),
+    [tasks, taskStatusFilter],
+  );
   const promptInsightCards = [
     [
       "Group night prompts",
@@ -290,6 +295,22 @@ export default function BetaAdminClient({
           <h2 className="text-2xl font-black">Task Templates</h2><p className="mb-4 text-sm text-white/55">Internal setup only. Active/draft templates are deduped by title and tester type.</p><TaskForm />
           <section className="mb-4 rounded-3xl border border-white/10 bg-white/[.04] p-4">
             <p className="text-xs font-black uppercase tracking-[.2em] text-white/45">
+              Status filter
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(["active", "draft"] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setTaskStatusFilter(status)}
+                  className={`rounded-full px-3 py-2 text-xs font-black ${taskStatusFilter === status ? "bg-rose-600 text-white" : "border border-white/10 bg-black/20 text-white/70"}`}
+                >
+                  {status === "active" ? "Active" : "Draft"}
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="mb-4 rounded-3xl border border-white/10 bg-white/[.04] p-4">
+            <p className="text-xs font-black uppercase tracking-[.2em] text-white/45">
               Category filter
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -304,7 +325,7 @@ export default function BetaAdminClient({
             </div>
           </section>
           <Table
-            rows={tasks}
+            rows={filteredTasks}
             cols={[
               "title",
               "tester_type",
@@ -315,6 +336,7 @@ export default function BetaAdminClient({
               "allow_custom_prompt",
               "custom_prompt_required",
             ]}
+            emptyMessage={taskStatusFilter === "active" ? "No active beta task templates found." : "No draft beta task templates found."}
           />
         </>
       )}{" "}
@@ -533,10 +555,12 @@ function Table({
   rows,
   cols,
   actions,
+  emptyMessage = "No records yet.",
 }: {
   rows: any[];
   cols: string[];
   actions?: (r: any) => any;
+  emptyMessage?: string;
 }) {
   return (
     <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#120d0b]">
@@ -586,7 +610,7 @@ function Table({
             ) : (
               <tr>
                 <td className="p-6 text-white/60" colSpan={cols.length + 1}>
-                  No records yet.
+                  {emptyMessage}
                 </td>
               </tr>
             )}
