@@ -161,13 +161,16 @@ export function AdminKpiCard({
 export function AdminSectionCard({
   children,
   className = "",
+  id,
 }: {
   children: ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
     <section
-      className={`min-w-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#101012]/90 shadow-xl shadow-black/20 ${className}`}
+      id={id}
+      className={`min-w-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,0.055),transparent_34%),#101012] shadow-xl shadow-black/20 ${className}`}
     >
       {children}
     </section>
@@ -236,7 +239,7 @@ export function AdminSearchInput(props: InputHTMLAttributes<HTMLInputElement>) {
 
 export function AdminToolbar({ children }: { children: ReactNode }) { return <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">{children}</div>; }
 export function AdminDataCard({ children, active }: { children: ReactNode; active?: boolean }) { return <div className={`rounded-2xl border p-4 transition ${active ? "border-[#ec0b5b]/70 bg-rose-500/[0.045]" : "border-white/10 bg-white/[0.025] hover:bg-white/[0.045]"}`}>{children}</div>; }
-export function AdminDataTableShell({ children }: { children: ReactNode }) { return <AdminSectionCard className="w-full max-w-full p-3 sm:p-4"><div className="w-full max-w-full overflow-x-auto rounded-2xl border border-white/10">{children}</div></AdminSectionCard>; }
+export function AdminDataTableShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) { return <AdminSectionCard className="w-full max-w-full p-3 sm:p-4"><div className="w-full max-w-full overflow-x-auto rounded-2xl border border-white/10 bg-black/20">{children}</div>{footer ? <div className="border-t border-white/10 px-1 pt-4 sm:px-2">{footer}</div> : null}</AdminSectionCard>; }
 export function AdminDetailPanel({ children, className = "" }: { children: ReactNode; className?: string }) { return <aside className={`min-w-0 rounded-[1.35rem] border border-white/10 bg-[#101012] p-5 shadow-2xl shadow-black/30 xl:sticky xl:top-6 xl:h-fit ${className}`}>{children}</aside>; }
 export function AdminDetailSection({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-center justify-between gap-3"><h3 className="font-black text-white">{title}</h3>{action}</div><div className="mt-3">{children}</div></section>; }
 export function AdminPagination({ children }: { children: ReactNode }) { return <div className="flex flex-wrap items-center gap-2">{children}</div>; }
