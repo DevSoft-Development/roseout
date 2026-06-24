@@ -194,7 +194,7 @@ export function AdminStatusBadge({
   };
   return (
     <span
-      className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-xs font-black capitalize ${tones[tone]}`}
+      className={`inline-flex max-w-full items-center truncate whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black capitalize ${tones[tone]}`}
     >
       {children}
     </span>
