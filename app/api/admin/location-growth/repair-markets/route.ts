@@ -1,0 +1,8 @@
+import { NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { inferMarketFromCityStateCounty, normalizeMarketKey } from "@/lib/location-markets";
+export const dynamic = "force-dynamic";
+type Row = { id:string; market?:string|null; city?:string|null; state?:string|null; county?:string|null; borough?:string|null; address?:string|null };
+function bounded(v:unknown){ const n=Number(v||25); return Number.isFinite(n)?Math.min(Math.max(Math.trunc(n),1),100):25; }
+export async function POST(request: Request){ const auth=await requireAdminApiRole(["superadmin","admin"]); if(auth.error) return auth.error; const body=await request.json().catch(()=>({})); const dryRun=body.dryRun !== false; const limit=bounded(body.limit); const {data,error}=await supabaseAdmin.from("locations").select("id,market,city,state,county,borough,address").or("market.is.null,market.eq.,market.eq.UNKNOWN").limit(limit); if(error) return NextResponse.json({success:false,error:error.message},{status:500}); let changed=0; const samples=[]; for(const row of (data||[]) as Row[]){ const inferred=inferMarketFromCityStateCounty(row); const normalized=normalizeMarketKey(inferred); if(normalized === "UNKNOWN") { samples.push({id:row.id, market:row.market, inferred:normalized, skipped:"unknown"}); continue; } changed++; samples.push({id:row.id, before:row.market, after:normalized, city:row.city, state:row.state}); if(!dryRun) await supabaseAdmin.from("locations").update({market: normalized, updated_at: new Date().toISOString()}).eq("id",row.id).throwOnError(); } return NextResponse.json({success:true,dryRun,scanned:data?.length||0,changed,samples}); }
