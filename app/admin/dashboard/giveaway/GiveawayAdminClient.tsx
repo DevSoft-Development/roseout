@@ -90,15 +90,16 @@ const tabs = [
 ] as const;
 const filters = [
   ["all", "All"],
-  ["needs_setup", "Needs Setup"],
-  ["active_beta", "Active Beta Testers"],
-  ["missing_weekly", "Missing Weekly Tasks"],
-  ["missing_social", "Missing Social Verification"],
-  ["verified", "Prize Qualified"],
-  ["winner", "Winners"],
+  ["active_beta", "Active beta tester"],
+  ["needs_setup", "Needs account setup"],
+  ["missing_social", "Needs social verification"],
+  ["missing_weekly", "Missing weekly tasks"],
+  ["verified", "Prize qualified"],
   ["disqualified", "Disqualified"],
-  ["duplicate_flagged", "Duplicate Review"],
+  ["winner", "Reward winner"],
 ] as const;
+const weekFilters = [["all", "All weeks"], ["1", "Week 1"], ["2", "Week 2"], ["3", "Week 3"], ["4", "Week 4"]] as const;
+const readinessFilters = [["all", "All"], ["ready", "Ready"], ["missing", "Missing requirements"], ["review", "Needs admin review"]] as const;
 const csvColumns = [
   "full_name",
   "email",
@@ -212,9 +213,9 @@ function getStatuses(entry: Entry) {
     entry.beta_application_status === "rejected"
       ? "Rejected"
       : activeBeta(entry)
-        ? "Active Beta Tester"
-        : "Pending Setup";
-  const account = ready(entry) ? "Login Ready" : "Needs Setup";
+        ? "Active"
+        : "Needs setup";
+  const account = ready(entry) ? "Account linked" : "Setup needs review";
   const el = entry.beta_giveaway_eligibility;
   const tasks = !activeBeta(entry)
     ? "Not Assigned"
@@ -222,8 +223,8 @@ function getStatuses(entry: Entry) {
       ? "Not Assigned"
       : el?.weeklyTasksComplete
         ? "Complete"
-        : "Incomplete";
-  const social = socialReady(entry) ? "Verified" : "Needs Verification";
+        : "Tasks incomplete";
+  const social = socialReady(entry) ? "Verified" : "Needs review";
   const prize =
     entry.giveaway_status === "winner"
       ? "Winner"
@@ -232,8 +233,8 @@ function getStatuses(entry: Entry) {
         : entry.giveaway_status === "disqualified"
           ? "Disqualified"
           : entry.giveaway_status === "verified"
-            ? "Prize Qualified"
-            : "Pending";
+            ? "Prize qualified"
+            : "Missing requirements";
   return { betaAccess, account, tasks, social, prize };
 }
 function weeklyTaskLabel(entry: Entry) {
@@ -242,7 +243,7 @@ function weeklyTaskLabel(entry: Entry) {
     return entry.beta_account_readiness?.authUserExists
       ? "Auth exists, beta access not active"
       : "Tasks not assigned";
-  if (!ready(entry)) return "Login setup not ready";
+  if (!ready(entry)) return "Setup needs review";
   if ((el?.requiredThisWeek || 0) < 1) return "Tasks not assigned";
   if (el?.weeklyTasksComplete) return "Weekly goal complete";
   return `Weekly tasks incomplete (${el?.completedThisWeek || 0}/${el?.requiredThisWeek || 0})`;
@@ -251,7 +252,7 @@ function missingRequirements(entry: Entry) {
   const missing: string[] = [];
   const el = entry.beta_giveaway_eligibility;
   if (!activeBeta(entry)) missing.push("active beta tester");
-  if (!ready(entry)) missing.push("login account ready");
+  if (!ready(entry)) missing.push("account linked or setup reviewed");
   if (!el?.weeklyTasksComplete) missing.push("weekly beta tasks");
   if (!entry.followed_social) missing.push("social follow verification");
   if (!entry.tagged_two_friends) missing.push("tagged friends verification");
@@ -292,7 +293,7 @@ function checklist(entry: Entry) {
   const el = entry.beta_giveaway_eligibility;
   return [
     ["Active beta tester", activeBeta(entry)],
-    ["Login account ready", ready(entry)],
+    ["Account linked", ready(entry)],
     ["Weekly tasks complete", Boolean(el?.weeklyTasksComplete)],
     ["Social follow verified", Boolean(entry.followed_social)],
     ["Tagged friends verified", Boolean(entry.tagged_two_friends)],
@@ -362,25 +363,16 @@ export default function GiveawayAdminClient({
   );
   const statCards = useMemo(
     () => [
-      ["Total beta signups", stats.total, "Loaded rows"],
+      ["Total Beta Entrants", stats.giveawayEntries, "Opted into giveaway"],
+      ["Active Beta Testers", entries.filter(activeBeta).length, "Active or approved"],
+      ["Eligible for Giveaway", entries.filter(requirementsMet).length, "Meets current requirements"],
+      ["Needs Review", entries.filter((e) => missingRequirements(e).length > 0).length, "Missing one or more items"],
       [
-        "Active beta testers",
-        entries.filter(activeBeta).length,
-        "Active/approved",
+        "Missing Weekly Tasks",
+        entries.filter((e) => activeBeta(e) && !e.beta_giveaway_eligibility?.weeklyTasksComplete).length,
+        "Weekly steps incomplete",
       ],
-      ["Login ready", stats.loginReady, "Auth + beta linked"],
-      ["Needs setup", stats.needsSetup, "True setup gaps"],
-      [
-        "Missing weekly tasks",
-        entries.filter(
-          (e) =>
-            activeBeta(e) && !e.beta_giveaway_eligibility?.weeklyTasksComplete,
-        ).length,
-        "Blocks prize",
-      ],
-      ["Prize qualified", stats.verifiedEntries, "Eligible entries"],
-      ["Winners", stats.winnerSelected, "Selected"],
-      ["Duplicate review", stats.duplicateFlagged, "Needs admin review"],
+      ["Prize Qualified", stats.verifiedEntries, "Marked prize-ready"],
     ],
     [entries, stats],
   );
@@ -405,7 +397,7 @@ export default function GiveawayAdminClient({
     setMessage("");
     setError("");
     if (updates.giveaway_status === "verified" && !requirementsMet(entry)) {
-      setError(`Missing: ${missingRequirements(entry).join(", ")}.`);
+      setError(`This tester is not prize-ready yet. They still need: ${missingRequirements(entry).join(", ")}.`);
       return;
     }
     setBusyEntryId(entry.id);
@@ -438,7 +430,7 @@ export default function GiveawayAdminClient({
       const blocked = chosen.filter((e) => !requirementsMet(e));
       if (blocked.length) {
         setError(
-          `Cannot bulk mark prize qualified. ${blocked[0].email || "A selected user"} is missing: ${missingRequirements(blocked[0]).join(", ")}.`,
+          `Cannot bulk mark prize qualified. ${blocked[0].email || "A selected user"} still needs: ${missingRequirements(blocked[0]).join(", ")}.`,
         );
         return;
       }
@@ -490,7 +482,7 @@ export default function GiveawayAdminClient({
       return ["Verify Tags", { action: "verify_tags" }];
     if (requirementsMet(entry) && entry.giveaway_status !== "verified")
       return ["Mark Prize Qualified", { giveaway_status: "verified" }];
-    return ["View Details", {}];
+    return ["View", {}];
   }
   function ActionButton({
     entry,
@@ -566,14 +558,21 @@ export default function GiveawayAdminClient({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, social, phone"
+            placeholder="Search by name, email, or username"
             className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/30"
           />
+          <select className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none" aria-label="Week filter">
+            {weekFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <select className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none" aria-label="Giveaway readiness filter">
+            {readinessFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
           <button
+            id="export"
             onClick={exportCsv}
             className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
           >
-            Export CSV
+            Export Review List
           </button>
         </div>
         <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -618,15 +617,14 @@ export default function GiveawayAdminClient({
                   />
                 </th>
                 {[
-                  ["Name", "w-[170px]"],
-                  ["Email", "w-[220px]"],
-                  ["Beta Access", "w-[155px]"],
-                  ["Account", "w-[135px]"],
-                  ["Tasks", "w-[135px]"],
-                  ["Social", "w-[155px]"],
-                  ["Prize Status", "w-[145px]"],
-                  ["Primary Action", "w-[180px]"],
-                  ["Details / More", "w-[220px]"],
+                  ["Tester", "w-[260px]"],
+                  ["Beta Status", "w-[145px]"],
+                  ["Account", "w-[155px]"],
+                  ["Weekly Progress", "w-[170px]"],
+                  ["Social Verification", "w-[175px]"],
+                  ["Giveaway Readiness", "w-[180px]"],
+                  ["Last Activity", "w-[150px]"],
+                  ["Actions", "w-[230px]"],
                 ].map(([h, w]) => (
                   <th key={h} className={`${w} px-3 py-2 whitespace-nowrap`}>
                     {h}
@@ -637,7 +635,7 @@ export default function GiveawayAdminClient({
             <tbody>
               {visibleEntries.map((entry) => {
                 const s = getStatuses(entry);
-                const [label, updates] = smartAction(entry);
+                const [, updates] = smartAction(entry);
                 return (
                   <tr key={entry.id} className="rounded-2xl bg-white/[0.045]">
                     <td className="rounded-l-2xl px-3 py-3">
@@ -653,16 +651,7 @@ export default function GiveawayAdminClient({
                         }
                       />
                     </td>
-                    <td className="px-3 py-3 font-black text-white">
-                      <span className="line-clamp-2">
-                        {formatText(entry.full_name)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-white/70">
-                      <span className="block truncate">
-                        {formatText(entry.email)}
-                      </span>
-                    </td>
+                    <td className="px-3 py-3"><p className="font-black text-white">{formatText(entry.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(entry.email)}</p><p className="truncate text-xs text-white/40">{entry.social_handle ? `${entry.social_handle} · ${formatText(entry.social_platform)}` : "No social handle"}</p></td>
                     <td className="px-3 py-3">
                       <Badge
                         tone={
@@ -678,7 +667,7 @@ export default function GiveawayAdminClient({
                     </td>
                     <td className="px-3 py-3">
                       <Badge
-                        tone={s.account === "Login Ready" ? "green" : "amber"}
+                        tone={s.account === "Account linked" ? "green" : "amber"}
                       >
                         {s.account}
                       </Badge>
@@ -696,7 +685,7 @@ export default function GiveawayAdminClient({
                     <td className="px-3 py-3">
                       <Badge
                         tone={
-                          s.prize === "Prize Qualified"
+                          s.prize === "Prize qualified"
                             ? "green"
                             : s.prize === "Winner"
                               ? "amber"
@@ -708,22 +697,16 @@ export default function GiveawayAdminClient({
                         {s.prize}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
-                      <ActionButton
-                        entry={entry}
-                        label={label}
-                        updates={updates}
-                        tone="primary"
-                      />
-                    </td>
+                    <td className="px-3 py-3 text-xs font-bold text-white/55">{formatDate(entry.giveaway_verified_at || entry.created_at)}</td>
                     <td className="rounded-r-2xl px-3 py-3">
                       <div className="flex min-w-max items-center gap-2">
                         <button
                           onClick={() => setDetailsId(entry.id)}
                           className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
                         >
-                          View Details
+                          View
                         </button>
+                        <ActionButton entry={entry} label="Review" updates={updates} tone="primary" />
                         <MoreActions entry={entry} />
                       </div>
                     </td>
@@ -867,19 +850,19 @@ export default function GiveawayAdminClient({
                 value={`${formatText(detailEntry.social_handle)} / ${formatText(detailEntry.social_platform)} · Follow ${yesNo(detailEntry.followed_social)} · Tags ${yesNo(detailEntry.tagged_two_friends)}`}
               />
               <Field
-                label="Account readiness"
+                label="Account Status"
                 value={detailEntry.beta_account_readiness?.reason}
               />
               <Field
-                label="Auth user"
+                label="Linked beta user account"
                 value={
                   detailEntry.beta_account_readiness?.authUserExists
-                    ? "Found"
-                    : "Not found"
+                    ? "Account linked"
+                    : "Setup needs review"
                 }
               />
               <Field
-                label="Auth email confirmed"
+                label="Email verification"
                 value={yesNo(
                   detailEntry.beta_account_readiness?.authEmailConfirmed,
                 )}

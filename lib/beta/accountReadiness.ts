@@ -36,12 +36,12 @@ export function buildBetaAccountReadiness(input: { entry: LaunchEntry; betaTeste
   const usableAuthAccount = authUserExists && (authEmailConfirmed || Boolean(tester?.user_id) || launchEmailVerified);
   const loginReady = betaTesterLinked && activeOrApproved && usableAuthAccount;
 
-  let reason = "Account setup is missing.";
+  let reason = "Setup needs review. We could not confirm this setup field from the available data.";
   if (!betaTesterLinked) reason = authUserExists ? "Auth user exists, but no beta tester row is linked." : "No linked beta tester account found.";
   else if (!activeOrApproved) reason = `Beta tester status is ${betaTesterStatus || "unknown"}.`;
-  else if (loginReady && launchEmailVerified) reason = "Linked beta tester account is ready.";
-  else if (loginReady) reason = "Linked beta tester account is ready; launch email flag is not synced.";
-  else if (authUserExists) reason = "Auth user exists, but setup is not confirmed as usable yet.";
+  else if (loginReady && launchEmailVerified) reason = "Account setup complete.";
+  else if (loginReady) reason = "Account linked. Email verification is unknown from the launch-list field.";
+  else if (authUserExists) reason = "Account linked, but setup needs review. We could not confirm this setup field from the available data.";
 
   return { loginReady, authUserExists, authEmailConfirmed, betaTesterLinked, betaTesterUserId, betaTesterStatus, launchEmailVerified, launchEmailVerifiedAt: input.entry.email_verified_at || null, needsSetupEmail: !loginReady, reason };
 }

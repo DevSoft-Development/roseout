@@ -10,7 +10,7 @@ import {
   AdminPageShell,
 } from "@/components/admin/AdminDesignSystem";
 
-export const metadata = { title: "Beta Tester Reward Admin" };
+export const metadata = { title: "Giveaway" };
 
 export default async function AdminGiveawayPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.giveaway);
@@ -70,12 +70,17 @@ export default async function AdminGiveawayPage() {
     <AdminPageShell>
       <AdminPageHeader
         eyebrow="TheOutHaven Admin · Beta Rewards"
-        title="Beta Prize Eligibility"
-        subtitle="Manage Beta Reward entries, verify social and tagged-friends requirements, review beta task eligibility, and export program CSV data."
+        title="Giveaway"
+        subtitle="Review beta giveaway eligibility, social verification, weekly task progress, and prize readiness."
         actions={
-          <AdminActionButton href="/admin/dashboard">
-            Admin Dashboard
-          </AdminActionButton>
+          <>
+            <AdminActionButton href="/admin/dashboard/giveaway" variant="primary">
+              Refresh Giveaway Status
+            </AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/giveaway#export">
+              Export Review List
+            </AdminActionButton>
+          </>
         }
       />
       <GiveawayAdminClient
