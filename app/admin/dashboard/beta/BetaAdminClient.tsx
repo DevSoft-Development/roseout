@@ -61,6 +61,7 @@ export default function BetaAdminClient({
   customPrompts,
   reminders,
   turnstile,
+  weeklySettings,
   weeklySessions,
 }: {
   overview: any;
@@ -73,6 +74,7 @@ export default function BetaAdminClient({
   customPrompts: any;
   reminders: any[];
   turnstile: any;
+  weeklySettings: any;
   weeklySessions: any[];
 }) {
   const [tab, setTab] = useState("Weekly Program");
@@ -121,6 +123,12 @@ export default function BetaAdminClient({
     ],
     [overview],
   );
+  async function post(url: string, payload: any = {}) {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({}));
+    alert(data.message || (res.ok ? "Done." : "Request failed."));
+    location.reload();
+  }
   async function patch(url: string, payload: any) {
     await fetch(url, {
       method: "PATCH",
@@ -156,20 +164,29 @@ export default function BetaAdminClient({
             <h2 className="mt-2 text-3xl font-black">Weekly Beta Program</h2>
             <p className="mt-2 text-sm text-white/60">Each tester completes one guided beta session per week with 5 tracked steps.</p>
           </section>
-          <section className="grid gap-3 md:grid-cols-5">
-            <Stat label="Active beta testers" value={overview.active_testers ?? 0} />
-            <Stat label="Weekly sessions started" value={weeklySessions.filter((s) => s.status !== "not_started").length} />
-            <Stat label="Weekly sessions completed" value={weeklySessions.filter((s) => s.status === "completed").length} />
-            <Stat label="Average steps completed" value={averageSteps(weeklySessions)} />
-            <Stat label="Needs reminder" value={weeklySessions.filter((s) => s.status !== "completed").length} />
+          <section className="grid gap-3 md:grid-cols-2">
+            <ControlCard title="Run real weekly beta task" description="When this is on, active beta testers can receive and complete the real weekly 5-step beta task." enabled={Boolean(weeklySettings.weekly_beta_enabled)} onToggle={() => patch("/api/admin/beta/weekly-settings", { weekly_beta_enabled: !weeklySettings.weekly_beta_enabled })} actions={<button onClick={() => post("/api/admin/beta/weekly-sessions")} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black">Create Real Weekly Sessions</button>} />
+            <ControlCard title="End-to-end weekly beta test mode" description="Run the full weekly beta flow, including emails, reminders, search, feedback, and admin review, without counting anything toward real beta progress, giveaway eligibility, prize entries, or real analytics." enabled={Boolean(weeklySettings.weekly_beta_e2e_test_mode_enabled)} onToggle={() => patch("/api/admin/beta/weekly-settings", { weekly_beta_e2e_test_mode_enabled: !weeklySettings.weekly_beta_e2e_test_mode_enabled })} actions={<div className="flex flex-wrap gap-2"><button onClick={() => post("/api/admin/beta/test-weekly-session", { action: "create" })} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black">Create Test Weekly Session</button></div>} />
+          </section>
+          <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <Stat label="Active Beta Testers" value={overview.active_testers ?? 0} />
+            <Stat label="Weekly Sessions Started" value={weeklySessions.filter((s) => !s.test_mode && s.status !== "not_started").length} />
+            <Stat label="Weekly Sessions Completed" value={weeklySessions.filter((s) => !s.test_mode && s.status === "completed").length} />
+            <Stat label="Average Steps Completed" value={averageSteps(weeklySessions.filter((s) => !s.test_mode))} />
+            <Stat label="Needs Reminder" value={weeklySessions.filter((s) => !s.test_mode && s.status !== "completed").length} />
+            <Stat label="Test Sessions" value={weeklySessions.filter((s) => s.test_mode).length} />
           </section>
           <Table
             rows={weeklySessions}
-            cols={["tester", "week", "status", "steps_completed", "outing_sentence", "result_mode", "selected_result", "last_activity"]}
+            cols={["tester", "week", "mode", "status", "steps_completed", "outing_sentence", "result_mode", "selected_result", "last_activity"]}
+            emptyMessage="No weekly beta sessions yet. Turn on the weekly beta task or run a test session to make sure everything is working."
             actions={(r: any) => (
               <>
                 <Link href={`/admin/dashboard/beta?session=${r.id}`} className="text-rose-200">View details</Link>
-                <button className="text-sky-200">Send reminder</button>
+                <button onClick={() => r.test_mode ? post("/api/admin/beta/test-weekly-session", { action: "send_reminder", session_id: r.id }) : post("/api/admin/beta/reminders", { reminderType: "midweek_reminder" })} className="text-sky-200">Send reminder</button>
+                <button className="text-emerald-200">Mark reviewed</button>
+                {r.test_mode && <button onClick={() => confirm("Reset this test weekly task? This only clears test-mode progress and does not affect real beta testers.") && post("/api/admin/beta/test-weekly-session", { action: "reset", session_id: r.id })} className="text-orange-200">Reset test session</button>}
+                {r.test_mode && <button onClick={() => confirm("Delete this test session? This only removes test-mode records.") && post("/api/admin/beta/test-weekly-session", { action: "delete", session_id: r.id })} className="text-red-200">Delete test session</button>}
               </>
             )}
           />
@@ -709,3 +726,5 @@ function ReminderButtons() {
     </div>
   );
 }
+
+function ControlCard({ title, description, enabled, onToggle, actions }: any) { return <section className="rounded-3xl border border-white/10 bg-white/[.04] p-5"><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-black">{title}</h3><p className="mt-2 text-sm leading-6 text-white/60">{description}</p></div><button onClick={onToggle} className={`rounded-full px-4 py-2 text-xs font-black ${enabled ? "bg-emerald-500/20 text-emerald-100" : "bg-white/10 text-white/70"}`}>{enabled ? "On" : "Off"}</button></div><div className="mt-4 flex flex-wrap gap-2">{actions}</div></section>; }

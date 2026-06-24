@@ -16,8 +16,7 @@ function missingPrizeRequirements(entry: any, eligibility: any, readiness: any) 
   if (!readiness?.loginReady) missing.push("login account ready");
   if (!eligibility?.weeklyTasksComplete) missing.push("weekly beta tasks");
   if (!entry.followed_social) missing.push("social follow verification");
-  if (!entry.tagged_two_friends) missing.push("tagged friends verification");
-  if (!entry.age_18_confirmed) missing.push("18+ confirmation");
+    if (!entry.age_18_confirmed) missing.push("18+ confirmation");
   if (!(entry.giveaway_rules_agreed || entry.prize_rules_confirmed)) missing.push("reward rules agreement");
   if (entry.duplicate_flag) missing.push("duplicate review");
   if (!entry.wants_giveaway) missing.push("reward opt-in");
