@@ -5,6 +5,11 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 async function currentTester() { const supabase = await createClient(); const { data:{user} } = await supabase.auth.getUser(); let tester:any=null; if (user?.id || user?.email) { const or=[`user_id.eq.${user.id}`]; if(user.email) or.push(`email.eq.${user.email}`); const {data}=await supabaseAdmin.from("beta_testers").select("*").or(or.join(",")).maybeSingle(); tester=data; } return {user,tester}; }
 function endOfWeek(start?: string) { if (!start) return null; const d = new Date(`${start}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); }
 function titleFor(item: any) { return item?.title || item?.pair_title || item?.name || item?.restaurant_name || item?.activity_name || item?.business_name || "Beta result"; }
+function completedStepsFor(action: string, existing?: number[]) {
+  const current = Array.isArray(existing) ? existing : [];
+  const next = action === "feedback" ? [1, 2, 3, 4, 5] : action === "selection" ? [1, 2, 3] : [1, 2];
+  return Array.from(new Set([...current, ...next])).sort();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,8 +17,8 @@ export async function POST(req: NextRequest) {
     const { user, tester } = await currentTester();
     if (!user && !tester) return NextResponse.json({ error: "Beta access is required." }, { status: 401 });
     const week = Math.min(4, Math.max(1, Number(body.week_number || 1)));
-    const sessionPayload = { user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, week_number: week, week_start_date: body.week_start_date || null, week_end_date: endOfWeek(body.week_start_date), status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: body.action === "feedback" ? [1,2,3,4,5] : body.action === "selection" ? [1,2,3] : [1,2] };
-    const existing = tester?.id ? await supabaseAdmin.from("beta_test_sessions").select("id").eq("tester_id", tester.id).eq("week_number", week).eq("week_start_date", body.week_start_date || null).maybeSingle() : { data: null } as any;
+    const existing = tester?.id ? await supabaseAdmin.from("beta_test_sessions").select("id,completed_steps").eq("tester_id", tester.id).eq("week_number", week).eq("week_start_date", body.week_start_date || null).maybeSingle() : { data: null } as any;
+    const sessionPayload = { user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, week_number: week, week_start_date: body.week_start_date || null, week_end_date: endOfWeek(body.week_start_date), status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: completedStepsFor(String(body.action || ""), existing.data?.completed_steps) };
     const session = existing.data?.id ? await supabaseAdmin.from("beta_test_sessions").update({ ...sessionPayload, updated_at: new Date().toISOString(), completed_at: body.action === "feedback" ? new Date().toISOString() : null }).eq("id", existing.data.id).select("*").single() : await supabaseAdmin.from("beta_test_sessions").insert(sessionPayload).select("*").single();
     if (session.error) throw session.error;
 
