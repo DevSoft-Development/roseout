@@ -123,12 +123,12 @@ export async function PATCH(
     }
     const betaEligibility = await getBetaGiveawayEligibilityForEmail(entry.email || "");
     const accountReadiness = await getBetaAccountReadinessForEmail(entry);
-    if (body.giveaway_status === "verified" && (!betaEligibility.isBetaTester || !["active", "approved"].includes(String(betaEligibility.betaStatus || "")) || !betaEligibility.weeklyTasksComplete || !accountReadiness.loginReady || !entry.wants_giveaway || !entry.social_handle || !entry.social_platform || !entry.followed_social || !(entry.followed_social_verified_at || entry.followed_social_verified_by) || !entry.tagged_two_friends || !(entry.tagged_friends_verified_at || entry.tagged_friends_verified_by) || !entry.age_18_confirmed || !(entry.giveaway_rules_agreed || entry.prize_rules_confirmed) || entry.duplicate_flag || entry.giveaway_status === "disqualified")) {
+    if (body.giveaway_status === "verified" && (!betaEligibility.isBetaTester || !["active", "approved"].includes(String(betaEligibility.betaStatus || "")) || !betaEligibility.weeklyTasksComplete || !accountReadiness.loginReady || !entry.wants_giveaway || !entry.age_18_confirmed || !(entry.giveaway_rules_agreed || entry.prize_rules_confirmed) || entry.duplicate_flag || entry.giveaway_status === "disqualified")) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Beta tester must be active, weekly beta tasks complete, login ready, social follow and tagged friends admin verified, 18+ and reward rules confirmed, opted into the reward, and not duplicate/disqualified before marking Prize Qualified.",
+            "Beta tester must be active, weekly beta steps complete, login ready, 18+ and reward rules confirmed, opted into the reward, and not duplicate/disqualified before marking Prize Qualified. Instagram and TikTok follows are optional bonus entries.",
         },
         { status: 400 },
       );
@@ -171,7 +171,7 @@ export async function PATCH(
         sections: [
           { type: "paragraph", text: `Congratulations ${firstName},` },
           { type: "paragraph", text: "You completed the required beta tester requirements for TheOutHaven’s Beta Tester Program." },
-          { type: "paragraph", text: "Your social follow and tagged friends requirements were verified. You are now prize qualified for the $100 Beta Tester Reward." },
+          { type: "paragraph", text: "Your required beta/account requirements were verified. You are now prize-ready for the $100 Beta Tester Reward. Instagram and TikTok follows are optional bonus entries." },
           { type: "paragraph", text: "Keep an eye on your email for winner updates. Thank you for helping shape TheOutHaven." },
         ],
         cta: { label: "Open Beta Dashboard", url: buildSiteUrl("/user/dashboard/beta") },

@@ -304,3 +304,70 @@ export async function assignWeeklyBetaTasksForAllActiveTesters() {
 export function createInviteCode() {
   return randomUUID().replace(/-/g, "").slice(0, 12);
 }
+
+export async function getFeatureFlagEnabled(key: string) {
+  const { data } = await supabaseAdmin.from("feature_flags").select("enabled").eq("key", key).maybeSingle();
+  return Boolean((data as any)?.enabled);
+}
+
+export async function setFeatureFlagEnabled(key: string, enabled: boolean, updatedBy?: string | null) {
+  const now = new Date().toISOString();
+  const payload: any = { key, name: key, enabled, rollout_percentage: enabled ? 100 : 0, category: "beta", environment: "production", updated_at: now };
+  const { data, error } = await supabaseAdmin.from("feature_flags").upsert(payload, { onConflict: "key" }).select("*").maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export const getWeeklyBetaEnabled = () => getFeatureFlagEnabled("weekly_beta_enabled");
+export const setWeeklyBetaEnabled = (enabled: boolean, updatedBy?: string | null) => setFeatureFlagEnabled("weekly_beta_enabled", enabled, updatedBy);
+export const getWeeklyBetaE2ETestModeEnabled = () => getFeatureFlagEnabled("weekly_beta_e2e_test_mode_enabled");
+export const setWeeklyBetaE2ETestModeEnabled = (enabled: boolean, updatedBy?: string | null) => setFeatureFlagEnabled("weekly_beta_e2e_test_mode_enabled", enabled, updatedBy);
+
+export function getCurrentBetaWeekNumber() { return getProgramWeek(getCurrentWeekStart()); }
+
+export async function getOrCreateWeeklyBetaSessionForUser(userId: string, testMode = false) {
+  const weekStart = getCurrentWeekStart();
+  const weekNumber = getProgramWeek(weekStart);
+  const { data: tester } = await supabaseAdmin.from("beta_testers").select("id,user_id,status").eq("user_id", userId).maybeSingle();
+  const query = supabaseAdmin.from("beta_test_sessions").select("*").eq("week_start_date", weekStart).eq("test_mode", testMode).eq("user_id", userId);
+  const { data: existing, error } = await query.maybeSingle();
+  if (error) throw error;
+  if (existing) return { session: existing, created: false, weekStart, weekNumber };
+  const { data, error: insertError } = await supabaseAdmin.from("beta_test_sessions").insert({ user_id: userId, tester_id: tester?.id ?? null, week_number: weekNumber, week_start_date: weekStart, week_end_date: getWeekEnd(weekStart), status: "not_started", completed_steps: [], test_mode: testMode }).select("*").single();
+  if (insertError) throw insertError;
+  return { session: data, created: true, weekStart, weekNumber };
+}
+
+export async function getOrCreateWeeklyBetaSessionsForActiveTesters() {
+  const { data: testers } = await supabaseAdmin.from("beta_testers").select("id,user_id,status").in("status", ["active", "approved"]);
+  let created = 0, alreadyExisted = 0, skipped = 0; const errors: string[] = [];
+  for (const tester of testers ?? []) {
+    try {
+      if (!tester.user_id) { skipped++; continue; }
+      const res = await getOrCreateWeeklyBetaSessionForUser(tester.user_id, false);
+      if (res.created) created++; else alreadyExisted++;
+    } catch (e: any) { errors.push(e.message || "Unknown error"); }
+  }
+  return { created, alreadyExisted, skipped, errors, testerCount: testers?.length ?? 0 };
+}
+
+export async function createTestWeeklyBetaSession(userId: string) { return getOrCreateWeeklyBetaSessionForUser(userId, true); }
+
+export async function resetTestWeeklyBetaSession(sessionId: string) {
+  const { data: session, error } = await supabaseAdmin.from("beta_test_sessions").select("id,test_mode").eq("id", sessionId).maybeSingle();
+  if (error || !session || !(session as any).test_mode) throw new Error("Only test-mode sessions can be reset.");
+  const { data: runs } = await supabaseAdmin.from("beta_search_runs").select("id").eq("beta_session_id", sessionId).eq("test_mode", true);
+  const runIds = (runs ?? []).map((r: any) => r.id);
+  if (runIds.length) await supabaseAdmin.from("beta_search_results").delete().in("beta_search_run_id", runIds).eq("test_mode", true);
+  if (runIds.length) await supabaseAdmin.from("beta_search_runs").delete().in("id", runIds).eq("test_mode", true);
+  await supabaseAdmin.from("beta_feedback").delete().eq("beta_session_id", sessionId).eq("test_mode", true);
+  const { data, error: updateError } = await supabaseAdmin.from("beta_test_sessions").update({ status: "not_started", completed_steps: [], completed_at: null, updated_at: new Date().toISOString() }).eq("id", sessionId).eq("test_mode", true).select("*").single();
+  if (updateError) throw updateError;
+  return data;
+}
+
+export async function deleteTestWeeklyBetaSession(sessionId: string) {
+  const { error } = await supabaseAdmin.from("beta_test_sessions").delete().eq("id", sessionId).eq("test_mode", true);
+  if (error) throw error;
+  return { deleted: true };
+}

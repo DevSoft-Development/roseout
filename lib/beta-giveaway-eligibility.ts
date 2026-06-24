@@ -66,14 +66,14 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
 
   const weekStart = getCurrentWeekStart();
   const requiredThisWeek = Number(tester.weekly_required_tests || DEFAULT_REQUIRED_TASKS);
-  const { data: assignments, error: assignmentsError } = await supabaseAdmin
-    .from("beta_task_assignments")
-    .select("id,status,completed_at,counts_toward_weekly_goal")
+  const { data: sessions, error: sessionsError } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("id,status,completed_at,completed_steps")
     .eq("tester_id", tester.id)
-    .eq("assigned_week_start", weekStart)
-    .eq("counts_toward_weekly_goal", true);
+    .eq("week_start_date", weekStart)
+    .eq("test_mode", false);
 
-  if (assignmentsError) {
+  if (sessionsError) {
     const completedFromTester = Number(tester.weekly_completed_tests || 0);
     const completeFromTester = completedFromTester >= requiredThisWeek;
     return {
@@ -88,7 +88,7 @@ export async function getBetaGiveawayEligibilityForEmail(email: string): Promise
     };
   }
 
-  const completedThisWeek = (assignments || []).filter((assignment) => assignment.status === "completed" || Boolean(assignment.completed_at)).length;
+  const completedThisWeek = Math.max(...(sessions || []).map((session: any) => Array.isArray(session.completed_steps) ? session.completed_steps.length : (session.status === "completed" || session.completed_at ? requiredThisWeek : 0)), 0);
   const weeklyTasksComplete = completedThisWeek >= requiredThisWeek;
   return {
     isBetaTester: true,

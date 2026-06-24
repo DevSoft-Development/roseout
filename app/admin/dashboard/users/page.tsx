@@ -14,6 +14,7 @@ import {
 } from "@/components/admin/AdminDesignSystem";
 import { listAdminUsers, requireAdminOrSupport } from "@/lib/admin-users";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import BetaAccessSelect from "./BetaAccessSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -191,7 +192,7 @@ function UserDates({ user }: { user: AdminUserRow }) {
 }
 
 function UserActions({ user }: { user: AdminUserRow }) {
-  return <div className="flex shrink-0 flex-wrap items-center justify-end gap-2"><Link className="inline-flex min-w-16 whitespace-nowrap rounded-lg border border-rose-300/25 bg-rose-500/10 px-3 py-1.5 text-center text-xs font-black text-rose-100 transition hover:border-rose-200/50" href={user.detailHref || `/admin/dashboard/users/${user.id}`}>View</Link>{user.hasAccount ? <Link className="inline-flex min-w-16 whitespace-nowrap rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-black text-white/70 transition hover:border-white/20 hover:text-white" href={`/admin/dashboard/users/${user.id}#profile`}>Edit</Link> : null}</div>;
+  return <div className="flex shrink-0 flex-wrap items-center justify-end gap-2"><Link className="inline-flex min-w-16 whitespace-nowrap rounded-lg border border-rose-300/25 bg-rose-500/10 px-3 py-1.5 text-center text-xs font-black text-rose-100 transition hover:border-rose-200/50" href={user.detailHref || `/admin/dashboard/users/${user.id}`}>View</Link>{user.hasAccount ? <Link className="inline-flex min-w-16 whitespace-nowrap rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-black text-white/70 transition hover:border-white/20 hover:text-white" href={`/admin/dashboard/users/${user.id}#profile`}>Edit</Link> : null}<BetaAccessSelect userId={user.id} value={user.beta_status || "none"} /></div>;
 }
 
 function BadgeGroup({ badges, limit = 3 }: { badges: { label: string; tone: BadgeTone }[]; limit?: number }) {

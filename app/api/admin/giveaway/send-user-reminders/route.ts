@@ -23,7 +23,6 @@ type GiveawayEntry = {
 const REQUIREMENT_LABELS = {
   email: "Verify your email",
   follow: "Follow @TheOutHaven",
-  tags: "Tag 2 friends on the giveaway post",
   handle: "Add your Instagram/social handle",
 } as const;
 
@@ -41,7 +40,6 @@ function missingRequirements(entry: GiveawayEntry) {
   if (!entry.email_verified || !entry.email_verified_at)
     missing.push(REQUIREMENT_LABELS.email);
   if (!entry.followed_social) missing.push(REQUIREMENT_LABELS.follow);
-  if (!entry.tagged_two_friends) missing.push(REQUIREMENT_LABELS.tags);
   if (!hasUsableHandle(entry.social_handle))
     missing.push(REQUIREMENT_LABELS.handle);
   return missing;
@@ -56,7 +54,7 @@ async function sendUserReminder(entry: GiveawayEntry, missing: string[]) {
     { type: "paragraph" as const, text: `Hi ${firstName},` },
     {
       type: "paragraph" as const,
-      text: "A quick reminder from TheOutHaven: your launch giveaway entry is not complete yet. Finish the items below so admins can review your entry before the drawing.",
+      text: "A quick reminder from TheOutHaven: your launch giveaway entry is not complete yet. Finish the required beta/account items below so admins can review your entry before the drawing. Instagram and TikTok follows are optional bonus entries.",
     },
     {
       type: "infoList" as const,

@@ -255,8 +255,7 @@ function missingRequirements(entry: Entry) {
   if (!ready(entry)) missing.push("account linked or setup reviewed");
   if (!el?.weeklyTasksComplete) missing.push("weekly beta tasks");
   if (!entry.followed_social) missing.push("social follow verification");
-  if (!entry.tagged_two_friends) missing.push("tagged friends verification");
-  if (!entry.age_18_confirmed) missing.push("18+ confirmation");
+    if (!entry.age_18_confirmed) missing.push("18+ confirmation");
   if (!(entry.giveaway_rules_agreed || entry.prize_rules_confirmed))
     missing.push("reward rules agreement");
   if (entry.duplicate_flag) missing.push("duplicate review");
@@ -296,7 +295,6 @@ function checklist(entry: Entry) {
     ["Account linked", ready(entry)],
     ["Weekly tasks complete", Boolean(el?.weeklyTasksComplete)],
     ["Social follow verified", Boolean(entry.followed_social)],
-    ["Tagged friends verified", Boolean(entry.tagged_two_friends)],
     ["18+ confirmed", Boolean(entry.age_18_confirmed)],
     [
       "Reward rules agreed",
@@ -478,9 +476,7 @@ export default function GiveawayAdminClient({
       return ["Assign Weekly Tasks", { action: "assign_beta_tasks" }];
     if (!entry.followed_social)
       return ["Verify Social", { action: "verify_social" }];
-    if (!entry.tagged_two_friends)
-      return ["Verify Tags", { action: "verify_tags" }];
-    if (requirementsMet(entry) && entry.giveaway_status !== "verified")
+        if (requirementsMet(entry) && entry.giveaway_status !== "verified")
       return ["Mark Prize Qualified", { giveaway_status: "verified" }];
     return ["View", {}];
   }
@@ -514,7 +510,7 @@ export default function GiveawayAdminClient({
       ["Repair Beta Access", { action: "repair_beta_access" }],
       ["Resend Setup Email", { action: "resend_beta_invite" }],
       ["Verify Social", { action: "verify_social" }],
-      ["Verify Tagged Friends", { action: "verify_tags" }],
+      ["View Bonus Entries", { action: "verify_tags" }],
       ["Mark Prize Qualified", { giveaway_status: "verified" }],
       ["Disqualify", { giveaway_status: "disqualified" }],
       ["Mark Reward Winner", { giveaway_status: "winner" }],
@@ -948,7 +944,7 @@ export default function GiveawayAdminClient({
               />
               <ActionButton
                 entry={detailEntry}
-                label="Verify Tagged Friends"
+                label="View Bonus Entries"
                 updates={{ action: "verify_tags" }}
               />
               <ActionButton
