@@ -20,7 +20,7 @@ async function audit(auth: Awaited<ReturnType<typeof requireBetaAdmin>>, action:
 export async function GET() {
   const auth = await requireBetaAdmin();
   if (auth.error) return auth.error;
-  const { data, error } = await supabaseAdmin.from("beta_tasks").select("*").order("created_at", { ascending: false }).limit(100);
+  const { data, error } = await supabaseAdmin.from("beta_tasks").select("*").in("status", ["active", "draft"]).order("created_at", { ascending: false }).limit(100);
   if (error) return safeError("Unable to load weekly beta tasks.", 500);
   return NextResponse.json({ success: true, tasks: data || [] });
 }
