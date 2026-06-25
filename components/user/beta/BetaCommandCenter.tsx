@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { forwardRef, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 type Assignment = {
   id: string;
@@ -217,6 +218,138 @@ function pairParts(p: PairItem) {
     p.activity || p.secondary || p.second || p.location_b,
   ].filter(Boolean);
 }
+
+function titleCaseLabel(value: string) {
+  return value
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function inferPairLabelsFromQuery(query: string) {
+  const normalized = query.toLowerCase().replace(/\s+/g, " ").trim();
+  const knownTerms = [
+    "sip and paint",
+    "live music",
+    "game night",
+    "date night",
+    "restaurant",
+    "dinner",
+    "brunch",
+    "lunch",
+    "breakfast",
+    "bar",
+    "lounge",
+    "cafe",
+    "coffee",
+    "dessert",
+    "rooftop",
+    "activity",
+    "museum",
+    "bowling",
+    "arcade",
+    "paint",
+    "painting",
+    "jazz",
+    "comedy",
+    "movie",
+    "theater",
+    "park",
+    "walk",
+    "spa",
+    "karaoke",
+  ];
+  const foodTerms = [
+    "restaurant",
+    "dinner",
+    "brunch",
+    "lunch",
+    "breakfast",
+    "bar",
+    "lounge",
+    "cafe",
+    "coffee",
+    "dessert",
+    "rooftop",
+  ];
+  const activityTerms = [
+    "activity",
+    "museum",
+    "bowling",
+    "arcade",
+    "paint",
+    "painting",
+    "sip and paint",
+    "live music",
+    "jazz",
+    "comedy",
+    "movie",
+    "theater",
+    "park",
+    "walk",
+    "spa",
+    "karaoke",
+    "game night",
+  ];
+  const found = knownTerms.filter((term) => normalized.includes(term));
+  const firstFood = found.find((term) => foodTerms.includes(term));
+  const firstActivity = found.find((term) => activityTerms.includes(term));
+
+  if (firstFood && firstActivity) {
+    return [titleCaseLabel(firstFood), titleCaseLabel(firstActivity)] as const;
+  }
+  if (firstFood && normalized.includes("activity")) {
+    return [titleCaseLabel(firstFood), "Activity"] as const;
+  }
+  if (normalized.includes("restaurant") && firstActivity) {
+    return ["Restaurant", titleCaseLabel(firstActivity)] as const;
+  }
+  if (found.length >= 2) {
+    return [titleCaseLabel(found[0]), titleCaseLabel(found[1])] as const;
+  }
+  return ["Restaurant", "Activity"] as const;
+}
+
+function buildMatchReason({
+  query,
+  isPair,
+  primaryLabel,
+  secondaryLabel,
+}: {
+  query: string;
+  isPair?: boolean;
+  primaryLabel?: string;
+  secondaryLabel?: string;
+}) {
+  const cleanedQuery = query.trim();
+
+  if (!cleanedQuery) {
+    return isPair
+      ? "This pairing gives you more than one stop so the outing feels complete."
+      : "This spot lines up with the kind of outing you were looking for.";
+  }
+
+  if (isPair) {
+    const first = (primaryLabel || "one stop").toLowerCase();
+    const second = (secondaryLabel || "another stop").toLowerCase();
+    return `We picked this because your search mentioned “${cleanedQuery}.” This pairing brings together ${first} and ${second} so the outing stays close to what you asked for.`;
+  }
+
+  return `We picked this because your search mentioned “${cleanedQuery}.” This spot lines up with the kind of outing, location, and vibe you described.`;
+}
+
+function getChooseButtonLabel(
+  kind?: "pair" | "restaurant" | "activity" | "single",
+  selected?: boolean,
+) {
+  if (selected) return "Selected";
+  if (kind === "pair") return "Choose This Pairing";
+  if (kind === "restaurant") return "Choose This Restaurant";
+  if (kind === "activity") return "Choose This Activity";
+  return "Choose This Outing";
+}
+
 function readableList(values: string[]) {
   return values.length ? values.join(", ") : "Nothing else selected";
 }
@@ -239,6 +372,7 @@ export default function BetaCommandCenter({
   const week = WEEKS[weekNumber - 1];
   const [step, setStep] = useState(1);
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
   const [restaurants, setRestaurants] = useState<ResultItem[]>([]);
   const [activities, setActivities] = useState<ResultItem[]>([]);
@@ -259,6 +393,8 @@ export default function BetaCommandCenter({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const restaurantSectionRef = useRef<HTMLElement | null>(null);
+  const activitySectionRef = useRef<HTMLElement | null>(null);
   const feedbackSectionRef = useRef<HTMLElement | null>(null);
   const refineSectionRef = useRef<HTMLElement | null>(null);
   const progress = useMemo(
@@ -274,6 +410,7 @@ export default function BetaCommandCenter({
       })),
     [step, week.steps],
   );
+  const displayQuery = submittedQuery || query;
   const pairRequested = pairWords.some((w) => query.toLowerCase().includes(w));
   const activeAssignment = assignments[0];
   const activeTestMode = Boolean(testMode || activeAssignment?.test_mode);
@@ -296,6 +433,15 @@ export default function BetaCommandCenter({
     });
     return `Week of ${fmt.format(start)} - ${fmt.format(weekEnd)}`;
   })();
+
+  function scrollToSection(ref: RefObject<HTMLElement | null>) {
+    window.setTimeout(() => {
+      ref.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 180);
+  }
 
   function scrollToNextBetaStep(nextStep: number) {
     window.setTimeout(() => {
@@ -331,15 +477,17 @@ export default function BetaCommandCenter({
     return data;
   }
   async function runSearch(updated = false) {
-    if (!query.trim()) return;
+    const cleanedQuery = query.trim();
+    if (!cleanedQuery) return;
+    setSubmittedQuery(cleanedQuery);
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const finalQuery =
         updated && (refine.length || refineText)
-          ? `${query}. Please refine by: ${[...refine, refineText].filter(Boolean).join(", ")}`
-          : query;
+          ? `${cleanedQuery}. Please refine by: ${[...refine, refineText].filter(Boolean).join(", ")}`
+          : cleanedQuery;
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -362,7 +510,7 @@ export default function BetaCommandCenter({
       setPairs(normalized.pairs);
       setMode(normalized.mode);
       const savedRun = await persist("search_run", {
-        outing_sentence: query,
+        outing_sentence: cleanedQuery,
         enterprise_search_query_used: finalQuery,
         result_mode: normalized.mode,
         pair_requested: pairRequested || normalized.mode === "paired_outing",
@@ -487,8 +635,8 @@ export default function BetaCommandCenter({
       );
       setNotice(
         type === "paired_outing"
-          ? "Pairing bookmarked for beta review."
-          : "Bookmarked for beta review.",
+          ? "Pairing saved for beta review."
+          : "Result saved for beta review.",
       );
     } catch (e: any) {
       setError(e.message || "We could not save that result.");
@@ -596,51 +744,18 @@ export default function BetaCommandCenter({
         </div>
       </section>
 
-      <section className={card}>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-              Journey map
-            </p>
-            <h2 className="mt-2 text-2xl font-black">
-              Five-step progress tracker
-            </h2>
-          </div>
-          <p className="text-sm font-bold text-white/50">
-            {completedSteps === 5
-              ? "Complete"
-              : `Next: ${week.steps[Math.min(step - 1, 4)]}`}
-          </p>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-5">
-          {progress.map((p, i) => {
-            const isActive = i + 1 === step;
-            const isDone = i + 1 < step;
-            return (
-              <div
-                key={p.label}
-                className={`relative overflow-hidden rounded-2xl border p-3 transition ${isActive ? "border-rose-300/45 bg-rose-500/15 shadow-lg shadow-rose-950/25" : isDone ? "border-emerald-300/20 bg-emerald-500/10" : "border-white/10 bg-black/25"}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={`grid h-8 w-8 place-items-center rounded-full text-xs font-black ${isDone ? "bg-emerald-400 text-black" : isActive ? "bg-rose-500 text-white" : "bg-white/10 text-white/45"}`}
-                  >
-                    {isDone ? "✓" : i + 1}
-                  </span>
-                  <span className="text-[10px] font-black uppercase tracking-[.18em] text-white/35">
-                    {p.status}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm font-black leading-5 text-white/85">
-                  {p.label}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <div className="xl:hidden">
+        <JourneyMapCard
+          completedSteps={completedSteps}
+          progress={progress}
+          step={step}
+          week={week}
+        />
+      </div>
 
-      {(notice || error) && (
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <main className="min-w-0 space-y-5 lg:space-y-6">
+          {(notice || error) && (
         <p
           className={`rounded-2xl border p-4 text-sm font-bold shadow-lg shadow-black/20 ${error ? "border-red-300/20 bg-red-500/10 text-red-100" : "border-emerald-300/20 bg-emerald-500/10 text-emerald-100"}`}
         >
@@ -713,8 +828,8 @@ export default function BetaCommandCenter({
                 Review the matches we found
               </h2>
               <p className="mt-2 text-sm text-white/60">
-                Pick the result that best matches your test search, or bookmark
-                anything you want us to review.
+                Pick the result that best matches your test search and answer
+                the beta feedback prompts.
               </p>
             </div>
             <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-black text-white/55">
@@ -736,16 +851,18 @@ export default function BetaCommandCenter({
                     disabled={busy}
                     selected={isSelectedResult(p)}
                     saved={isSavedResult(p)}
-                    onSelect={() =>
-                      choose(p, "paired_outing", { was_selected: true })
-                    }
-                    onSave={() => saveItem(p, "paired_outing")}
+                    query={displayQuery}
+                    onSelect={async () => {
+                      await choose(p, "paired_outing", { was_selected: true });
+                      scrollToSection(feedbackSectionRef);
+                    }}
                   />
                 ))}
               </BetaResultSection>
             )}
             {restaurants.length > 0 && (
               <BetaResultSection
+                ref={restaurantSectionRef}
                 title="Restaurant Picks"
                 subtitle="Food spots matched to cuisine, vibe, and location."
               >
@@ -757,16 +874,18 @@ export default function BetaCommandCenter({
                     disabled={busy}
                     selected={isSelectedResult(r)}
                     saved={isSavedResult(r)}
-                    onSelect={() =>
-                      choose(r, "single_location", { was_selected: true })
-                    }
-                    onSave={() => saveItem(r, "single_location")}
+                    query={displayQuery}
+                    onSelect={async () => {
+                      await choose(r, "single_location", { was_selected: true });
+                      scrollToSection(activitySectionRef);
+                    }}
                   />
                 ))}
               </BetaResultSection>
             )}
             {activities.length > 0 && (
               <BetaResultSection
+                ref={activitySectionRef}
                 title="Experience Picks"
                 subtitle="Activities matched to your outing plan."
               >
@@ -778,10 +897,11 @@ export default function BetaCommandCenter({
                     disabled={busy}
                     selected={isSelectedResult(r)}
                     saved={isSavedResult(r)}
-                    onSelect={() =>
-                      choose(r, "single_location", { was_selected: true })
-                    }
-                    onSave={() => saveItem(r, "single_location")}
+                    query={displayQuery}
+                    onSelect={async () => {
+                      await choose(r, "single_location", { was_selected: true });
+                      scrollToSection(feedbackSectionRef);
+                    }}
                   />
                 ))}
               </BetaResultSection>
@@ -802,10 +922,13 @@ export default function BetaCommandCenter({
                       disabled={busy}
                       selected={isSelectedResult(r)}
                       saved={isSavedResult(r)}
-                      onSelect={() =>
-                        choose(r, "single_location", { was_selected: true })
-                      }
-                      onSave={() => saveItem(r, "single_location")}
+                      query={displayQuery}
+                      onSelect={async () => {
+                        await choose(r, "single_location", {
+                          was_selected: true,
+                        });
+                        scrollToSection(feedbackSectionRef);
+                      }}
                     />
                   ))}
                 </BetaResultSection>
@@ -887,7 +1010,9 @@ export default function BetaCommandCenter({
           <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
             Final step · Feedback
           </p>
-          <h2 className="mt-2 text-2xl font-black">Tell us how well we did</h2>
+          <h2 className="mt-2 text-2xl font-black">
+            How well did this match your outing idea?
+          </h2>
           <FeedbackFields
             weekNumber={weekNumber}
             mode={mode}
@@ -906,9 +1031,9 @@ export default function BetaCommandCenter({
           </button>
         </section>
       )}
-      <section
-        className={`${card} bg-[linear-gradient(145deg,rgba(225,29,72,.08),rgba(255,255,255,.025))]`}
-      >
+          <section
+            className={`${card} bg-[linear-gradient(145deg,rgba(225,29,72,.08),rgba(255,255,255,.025))]`}
+          >
         <h2 className="text-2xl font-black">Beta Help / Tips</h2>
         <p className="mt-3 text-sm leading-6 text-white/65">
           Use real searches you would actually use for dates, birthdays, brunch,
@@ -929,7 +1054,76 @@ export default function BetaCommandCenter({
               : "not selected yet"}
         </p>
       </section>
+        </main>
+        <aside className="hidden xl:block">
+          <div className="sticky top-24">
+            <JourneyMapCard
+              completedSteps={completedSteps}
+              progress={progress}
+              step={step}
+              week={week}
+            />
+          </div>
+        </aside>
+      </div>
     </div>
+  );
+}
+function JourneyMapCard({
+  completedSteps,
+  progress,
+  step,
+  week,
+}: {
+  completedSteps: number;
+  progress: { label: string; status: string }[];
+  step: number;
+  week: { theme: string; steps: string[] };
+}) {
+  return (
+    <section className={card}>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
+            Journey map
+          </p>
+          <h2 className="mt-2 text-2xl font-black">
+            Five-step progress tracker
+          </h2>
+        </div>
+        <p className="text-sm font-bold text-white/50">
+          {completedSteps === 5
+            ? "Complete"
+            : `Next: ${week.steps[Math.min(step - 1, 4)]}`}
+        </p>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-5 xl:grid-cols-1">
+        {progress.map((p, i) => {
+          const isActive = i + 1 === step;
+          const isDone = i + 1 < step;
+          return (
+            <div
+              key={p.label}
+              className={`relative overflow-hidden rounded-2xl border p-3 transition ${isActive ? "border-rose-300/45 bg-rose-500/15 shadow-lg shadow-rose-950/25" : isDone ? "border-emerald-300/20 bg-emerald-500/10" : "border-white/10 bg-black/25"}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`grid h-8 w-8 place-items-center rounded-full text-xs font-black ${isDone ? "bg-emerald-400 text-black" : isActive ? "bg-rose-500 text-white" : "bg-white/10 text-white/45"}`}
+                >
+                  {isDone ? "✓" : i + 1}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-[.18em] text-white/35">
+                  {p.status}
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-black leading-5 text-white/85">
+                {p.label}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 function Pill({ label, value }: { label: string; value: string }) {
@@ -942,17 +1136,18 @@ function Pill({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-function BetaResultSection({ title, subtitle, children }: any) {
-  return (
-    <div>
+const BetaResultSection = forwardRef<HTMLElement, any>(
+  ({ title, subtitle, children }, ref) => (
+    <section ref={ref}>
       <div className="mb-3">
         <h3 className="text-xl font-black text-white">{title}</h3>
         <p className="mt-1 text-sm text-white/55">{subtitle}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>
-    </div>
-  );
-}
+    </section>
+  ),
+);
+BetaResultSection.displayName = "BetaResultSection";
 function imageFor(item: any) {
   const candidates = [
     item?.image_url,
@@ -1005,22 +1200,11 @@ function tagsFor(item: any) {
 
   return Array.from(new Set(tags.map(String))).slice(0, 4);
 }
-function whyFor(item: any, type?: string) {
-  return (
-    item?.reason ||
-    item?.why_picked ||
-    item?.why_matched ||
-    item?.match_reason ||
-    item?.description ||
-    item?.review_snippet ||
-    `This ${type === "activity" ? "experience" : type === "restaurant" ? "food spot" : "place"} matched your real outing search.`
-  );
-}
 function ResultCard({
   result,
   type,
+  query,
   onSelect,
-  onSave,
   disabled,
   selected,
   saved,
@@ -1033,7 +1217,7 @@ function ResultCard({
     <article
       className={`group flex h-full min-h-[460px] flex-col overflow-hidden rounded-[1.35rem] border bg-zinc-950/80 shadow-xl shadow-black/30 transition hover:border-[#e1062a]/55 hover:bg-[#141414] ${selected ? "border-rose-300/60 ring-2 ring-rose-500/25" : saved ? "border-amber-200/35" : "border-white/10"}`}
     >
-      <div className="relative h-[220px] overflow-hidden bg-neutral-950">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-neutral-950">
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
           <img
             src="/toh_logo.png"
@@ -1093,40 +1277,29 @@ function ResultCard({
         )}
         <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.045] p-3">
           <p className="text-[9px] font-black uppercase tracking-[.2em] text-white/35">
-            Why TheOutHaven picked this
+            Why this match works
           </p>
           <p className="mt-1.5 line-clamp-3 text-xs font-semibold leading-5 text-white/62">
-            {whyFor(result, type)}
+            {buildMatchReason({ query: query || "" })}
           </p>
         </div>
-        <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+        <div className="mt-auto border-t border-white/10 pt-3">
           <button
             type="button"
             disabled={disabled}
             onClick={onSelect}
             className={secondary}
           >
-            {selected ? "Result selected" : "This result fits"}
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onSave}
-            className={secondary}
-          >
-            {saved ? "Bookmarked" : "Bookmark for review"}
+            {getChooseButtonLabel(type === "restaurant" || type === "activity" ? type : "single", selected)}
           </button>
         </div>
       </div>
     </article>
   );
 }
-function PairCard({ pair, onSelect, onSave, disabled, selected, saved }: any) {
+function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
   const parts = pairParts(pair);
-  const firstKind = getResultKind(parts[0]);
-  const secondKind = getResultKind(parts[1]);
-  const bothActivityLike =
-    firstKind === "activity" && secondKind === "activity";
+  const [primaryDisplayLabel, secondaryDisplayLabel] = inferPairLabelsFromQuery(query || "");
   const distance =
     pair.distance_text ||
     pair.travel_fit ||
@@ -1137,17 +1310,11 @@ function PairCard({ pair, onSelect, onSave, disabled, selected, saved }: any) {
     >
       <div className="grid grid-cols-2 gap-2">
         {parts.slice(0, 2).map((part, index) => {
-          const label = bothActivityLike
-            ? index === 0
-              ? "First Pick"
-              : "Next Pick"
-            : getResultKind(part) === "restaurant" || index === 0
-              ? "Restaurant"
-              : "Activity";
+          const label = index === 0 ? primaryDisplayLabel : secondaryDisplayLabel;
           return (
             <div
               key={`${label}-${index}`}
-              className="relative h-40 overflow-hidden rounded-2xl bg-neutral-950"
+              className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-neutral-950"
             >
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <img
@@ -1195,31 +1362,25 @@ function PairCard({ pair, onSelect, onSave, disabled, selected, saved }: any) {
         )}
         <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.045] p-3">
           <p className="text-[9px] font-black uppercase tracking-[.2em] text-white/35">
-            Why TheOutHaven picked this
+            Why this pairing works
           </p>
           <p className="mt-1.5 line-clamp-3 text-xs font-semibold leading-5 text-white/62">
-            {pair.reason ||
-              pair.why_matched ||
-              pair.match_reason ||
-              "This paired outing matched your request for more than one part of an outing."}
+            {buildMatchReason({
+              query: query || "",
+              isPair: true,
+              primaryLabel: primaryDisplayLabel,
+              secondaryLabel: secondaryDisplayLabel,
+            })}
           </p>
         </div>
-        <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+        <div className="mt-auto border-t border-white/10 pt-3">
           <button
             type="button"
             disabled={disabled}
             onClick={onSelect}
             className={secondary}
           >
-            {selected ? "Pairing selected" : "This pairing fits"}
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onSave}
-            className={secondary}
-          >
-            {saved ? "Bookmarked" : "Bookmark for review"}
+            {getChooseButtonLabel("pair", selected)}
           </button>
         </div>
       </div>
@@ -1227,10 +1388,6 @@ function PairCard({ pair, onSelect, onSave, disabled, selected, saved }: any) {
   );
 }
 function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
-  const q2 =
-    mode === "paired_outing"
-      ? "Were the paired outings the right combination of places?"
-      : "Were the locations the right type of places?";
   const planning =
     weekNumber === 3
       ? "What details would you need before deciding?"
@@ -1240,7 +1397,7 @@ function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
   return (
     <div className="mt-4 grid gap-3">
       <Select
-        label="Did the results match the outing you wrote?"
+        label="Did this feel like the kind of outing you were looking for?"
         value={feedback.match}
         onChange={(v: string) => setFeedback((f: any) => ({ ...f, match: v }))}
         options={[
@@ -1252,7 +1409,7 @@ function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
         ]}
       />
       <Select
-        label={weekNumber === 2 ? "Which results are better?" : q2}
+        label="Was this close to what you had in mind?"
         value={feedback.q2}
         onChange={(v: string) => setFeedback((f: any) => ({ ...f, q2: v }))}
         options={
@@ -1274,11 +1431,7 @@ function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
         }
       />
       <Select
-        label={
-          weekNumber === 4
-            ? "How confident would you feel using this result for a real outing?"
-            : "Did the results match the vibe or occasion you wanted?"
-        }
+        label="Would you actually consider this outing?"
         value={feedback.vibe}
         onChange={(v: string) => setFeedback((f: any) => ({ ...f, vibe: v }))}
         options={
