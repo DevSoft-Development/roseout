@@ -3,6 +3,20 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 
+async function resolveBetaAssignmentId(value: unknown, sessionId?: string | null) {
+  const id = typeof value === "string" ? value.trim() : "";
+  if (!id || id === sessionId) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("beta_task_assignments")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data?.id) return null;
+  return data.id;
+}
+
 async function currentTester() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -90,6 +104,7 @@ export async function POST(req: NextRequest) {
   let user: any = null;
   let tester: any = null;
   let week = 1;
+  let betaAssignmentId: string | null = null;
   try {
     body = await req.json().catch(() => ({}));
     const auth = await currentTester();
@@ -105,7 +120,8 @@ export async function POST(req: NextRequest) {
     const session = update.data;
 
     if (body.action === "search_run") {
-      const run = await supabaseAdmin.from("beta_search_runs").insert({ beta_session_id: session.id, user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, beta_assignment_id: body.beta_assignment_id || null, week_number: week, outing_sentence: String(body.outing_sentence || ""), enterprise_search_query_used: body.enterprise_search_query_used || null, result_mode: body.result_mode === "paired_outing" ? "paired_outing" : "single_location", pair_requested: Boolean(body.pair_requested), refinement_choices: Array.isArray(body.refinement_choices) ? body.refinement_choices : [], refinement_text: body.refinement_text || null, updated_enterprise_search_query: body.result_set === "updated" ? body.enterprise_search_query_used || null : null, test_mode: testMode }).select("*").single();
+      betaAssignmentId = await resolveBetaAssignmentId(body.beta_assignment_id, session.id);
+      const run = await supabaseAdmin.from("beta_search_runs").insert({ beta_session_id: session.id, user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, beta_assignment_id: betaAssignmentId, week_number: week, outing_sentence: String(body.outing_sentence || ""), enterprise_search_query_used: body.enterprise_search_query_used || null, result_mode: body.result_mode === "paired_outing" ? "paired_outing" : "single_location", pair_requested: Boolean(body.pair_requested), refinement_choices: Array.isArray(body.refinement_choices) ? body.refinement_choices : [], refinement_text: body.refinement_text || null, updated_enterprise_search_query: body.result_set === "updated" ? body.enterprise_search_query_used || null : null, test_mode: testMode }).select("*").single();
       if (run.error) throw run.error;
       const rows = [...(body.results || []).map((r:any,i:number)=>({ beta_search_run_id: run.data.id, result_type: "single_location", result_position: i+1, result_title: titleFor(r), result_data: r, result_set: body.result_set || "original", test_mode: testMode })), ...(body.pairs || []).map((p:any,i:number)=>({ beta_search_run_id: run.data.id, result_type: "paired_outing", pair_id: p.id || p.pair_id || null, result_position: i+1, result_title: titleFor(p), result_data: p, result_set: body.result_set || "original", test_mode: testMode }))];
       if (rows.length) await supabaseAdmin.from("beta_search_results").insert(rows);
@@ -131,6 +147,11 @@ export async function POST(req: NextRequest) {
       hasTester: Boolean(tester?.id),
       week: body.week_number || null,
       weekStart: body.week_start_date || null,
+      betaAssignmentId,
+      isLikelySessionIdMisusedAsAssignmentId: Boolean(body.beta_assignment_id && body.beta_assignment_id === body.beta_session_id),
+      supabaseCode: typeof error === "object" && error && "code" in error ? (error as any).code : null,
+      supabaseDetails: typeof error === "object" && error && "details" in error ? (error as any).details : null,
+      supabaseHint: typeof error === "object" && error && "hint" in error ? (error as any).hint : null,
       error: error instanceof Error ? error.message : String(error),
     });
     return NextResponse.json({ error: "We could not save beta progress." }, { status: 500 });
