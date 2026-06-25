@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createTestWeeklyBetaSession,
+  getCurrentTestWeeklyBetaSessionForUser,
   resetTestWeeklyBetaSession,
   deleteTestWeeklyBetaSession,
 } from "@/lib/beta/weeklyTasks";
@@ -62,15 +63,19 @@ export async function POST(req: NextRequest) {
     if (action === "reset" || action === "delete") {
       let sessionId = String(b.session_id || "");
       if (!sessionId) {
-        const made = await createTestWeeklyBetaSession(
-          String(b.user_id || a.adminUser?.user_id || ""),
-        );
-        sessionId = made.session.id;
+        const userId = String(b.user_id || a.adminUser?.user_id || "");
+        const session = userId ? await getCurrentTestWeeklyBetaSessionForUser(userId) : null;
+        if (!session) {
+          return action === "reset"
+            ? safeError("Create a test weekly session first.", 404)
+            : NextResponse.json({ success: true, message: "No test session found." });
+        }
+        sessionId = session.id;
       }
       return action === "reset"
         ? NextResponse.json({
             success: true,
-            message: "Test weekly task reset.",
+            message: "Test weekly task reset. You can rerun the test now.",
             session: await resetTestWeeklyBetaSession(sessionId),
           })
         : NextResponse.json({
