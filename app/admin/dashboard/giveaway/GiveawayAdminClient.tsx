@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/static-components */
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Readiness = {
   loginReady: boolean;
@@ -342,6 +343,7 @@ export default function GiveawayAdminClient({
   initialWeeklySessions = [],
   initialOverview = {},
   initialActiveBetaUsers = [],
+  initialWeeklyBetaEnabled = false,
 }: {
   initialEntries: Entry[];
   initialStats: Stats;
@@ -352,7 +354,9 @@ export default function GiveawayAdminClient({
   initialWeeklySessions?: WeeklySession[];
   initialOverview?: Overview;
   initialActiveBetaUsers?: ActiveBetaUser[];
+  initialWeeklyBetaEnabled?: boolean;
 }) {
+  const router = useRouter();
   const [entries, setEntries] = useState(initialEntries);
   const [stats, setStats] = useState(initialStats);
   const [filter, setFilter] = useState("all");
@@ -365,6 +369,8 @@ export default function GiveawayAdminClient({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState("");
+  const [weeklyBetaEnabled, setWeeklyBetaEnabled] = useState(Boolean(initialWeeklyBetaEnabled));
+  const [weeklySettingsSaving, setWeeklySettingsSaving] = useState(false);
   const detailEntry = entries.find((entry) => entry.id === detailsId) || null;
   const visibleEntries = useMemo(
     () =>
@@ -601,7 +607,37 @@ export default function GiveawayAdminClient({
           ) / realRows.length
         ).toFixed(1)
       : "0";
+    async function saveWeeklyBetaEnabled(nextEnabled: boolean) {
+      setError("");
+      setMessage("");
+      setWeeklySettingsSaving(true);
+      try {
+        const response = await fetch("/api/admin/giveaway/weekly-beta", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weekly_beta_enabled: nextEnabled }),
+        });
+        const payload = await response
+          .json()
+          .catch(() => ({ success: false, error: "We couldn’t update the weekly beta setting. Please try again." }));
+        if (!response.ok || !payload.success || typeof payload.weekly_beta_enabled !== "boolean") {
+          setError(payload.error || "We couldn’t update the weekly beta setting. Please try again.");
+          return;
+        }
+        setWeeklyBetaEnabled(payload.weekly_beta_enabled);
+        setMessage(payload.message || (payload.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off."));
+        router.refresh();
+      } catch {
+        setError("We couldn’t update the weekly beta setting. Please try again.");
+      } finally {
+        setWeeklySettingsSaving(false);
+      }
+    }
     async function weeklyPost(url: string, body?: Record<string, unknown>) {
+      if (body?.action === "create_real_sessions" && !weeklyBetaEnabled) {
+        setError("Turn on the real weekly beta task before creating real sessions.");
+        return;
+      }
       setError("");
       setMessage("");
       const r = await fetch(url, {
@@ -667,41 +703,44 @@ export default function GiveawayAdminClient({
           <h3 className="text-xl font-black">Weekly Beta Controls</h3>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="font-black">Run real weekly beta task</p>
-              <p className="mt-2 text-sm text-white/55">
-                When this is on, approved beta testers can receive and complete
-                the real weekly 5-step beta task.
-              </p>
-              <button
-                onClick={() =>
-                  fetch("/api/admin/giveaway/weekly-beta", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ weekly_beta_enabled: true }),
-                  }).then(() => setMessage("Weekly beta controls updated."))
-                }
-                className="mt-3 rounded-full bg-rose-600 px-4 py-2 text-xs font-black"
-              >
-                On
-              </button>
-              <button
-                onClick={() =>
-                  fetch("/api/admin/giveaway/weekly-beta", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ weekly_beta_enabled: false }),
-                  }).then(() => setMessage("Weekly beta controls updated."))
-                }
-                className="ml-2 mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black"
-              >
-                Off
-              </button>
-              <button
-                onClick={() => weeklyPost("/api/admin/giveaway/weekly-beta", { action: "create_real_sessions" })}
-                className="ml-2 mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black"
-              >
-                Create Real Weekly Sessions
-              </button>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-black">Run real weekly beta task</p>
+                  <p className="mt-2 text-sm text-white/55">
+                    {weeklyBetaEnabled
+                      ? "Approved beta testers can access this week’s beta task."
+                      : "Real weekly beta access is paused. Test mode is still available."}
+                  </p>
+                </div>
+                <Badge tone={weeklyBetaEnabled ? "green" : "amber"}>
+                  {weeklyBetaEnabled ? "Real weekly task: On" : "Real weekly task: Off"}
+                </Badge>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  disabled={weeklySettingsSaving || weeklyBetaEnabled}
+                  onClick={() => saveWeeklyBetaEnabled(true)}
+                  className={`rounded-full px-4 py-2 text-xs font-black transition disabled:cursor-not-allowed ${weeklyBetaEnabled ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"}`}
+                >
+                  {weeklySettingsSaving ? "Saving…" : "On"}
+                </button>
+                <button
+                  disabled={weeklySettingsSaving || !weeklyBetaEnabled}
+                  onClick={() => saveWeeklyBetaEnabled(false)}
+                  className={`rounded-full px-4 py-2 text-xs font-black transition disabled:cursor-not-allowed ${!weeklyBetaEnabled ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"}`}
+                >
+                  {weeklySettingsSaving ? "Saving…" : "Off"}
+                </button>
+                <button
+                  disabled={!weeklyBetaEnabled}
+                  onClick={() => weeklyPost("/api/admin/giveaway/weekly-beta", { action: "create_real_sessions" })}
+                  className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-xs font-black text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-45"
+                  title={!weeklyBetaEnabled ? "Turn on the real weekly beta task before creating real sessions." : undefined}
+                >
+                  Create Real Weekly Sessions
+                </button>
+              </div>
+              {!weeklyBetaEnabled ? <p className="mt-3 text-xs font-bold text-amber-100/80">Turn on the real weekly beta task before creating real sessions.</p> : null}
             </div>
             <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 p-4">
               <p className="font-black">End-to-end weekly beta test</p>
@@ -886,55 +925,69 @@ export default function GiveawayAdminClient({
 
   function TesterTable() {
     return (
-      <section className="w-full min-w-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#101012]/90 p-3 shadow-xl shadow-black/20 sm:p-4">
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="flex min-w-0 flex-wrap gap-2">
+      <section className="w-full min-w-0 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#101012]/90 p-4 shadow-2xl shadow-black/25 sm:p-5">
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[1.35fr_minmax(220px,0.8fr)_minmax(150px,0.45fr)_minmax(180px,0.55fr)_auto] xl:items-end">
+          <div className="min-w-0">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Status</p>
+            <div className="flex min-w-0 flex-wrap gap-2">
             {filters.map(([value, label]) => (
               <button
                 key={value}
                 onClick={() => setFilter(value)}
-                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-black ${filter === value ? "bg-rose-600 text-white" : "bg-white/[0.06] text-white/60"}`}
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-black transition ${filter === value ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "bg-white/[0.06] text-white/60 hover:bg-white/[0.1] hover:text-white"}`}
               >
                 {label}
               </button>
             ))}
+            </div>
           </div>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, or username"
-            className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/30"
-          />
-          <select
-            className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none"
-            aria-label="Week filter"
-          >
+          <label className="grid min-w-0 gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
+            Search by name/email
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name, email, or username"
+              className="min-h-11 min-w-0 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-bold normal-case tracking-normal text-white outline-none placeholder:text-white/30 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10"
+            />
+          </label>
+          <label className="grid min-w-0 gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
+            Week
+            <select
+              className="min-h-11 rounded-2xl border border-white/10 bg-[#151518] px-3 py-5 text-xs font-black normal-case tracking-normal text-white outline-none focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10"
+              aria-label="Week filter"
+            >
             {weekFilters.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
             ))}
-          </select>
-          <select
-            className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none"
-            aria-label="Giveaway readiness filter"
-          >
+            </select>
+          </label>
+          <label className="grid min-w-0 gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
+            Readiness
+            <select
+              className="min-h-11 rounded-2xl border border-white/10 bg-[#151518] px-3 py-5 text-xs font-black normal-case tracking-normal text-white outline-none focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10"
+              aria-label="Giveaway readiness filter"
+            >
             {readinessFilters.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
             ))}
-          </select>
-          <button
-            id="export"
-            onClick={exportCsv}
-            className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
-          >
-            Export Review List
-          </button>
+            </select>
+          </label>
+          <div className="flex items-end">
+            <button
+              id="export"
+              onClick={exportCsv}
+              className={`${actionButtonClass} min-h-11 border border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.12]`}
+            >
+              Export Review List
+            </button>
+          </div>
         </div>
-        <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-          <span className="py-1.5 text-xs font-black text-white/50">
+        {selectedIds.length ? <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-3">
+          <span className="py-1.5 text-xs font-black text-rose-100">
             {selectedIds.length} selected
           </span>
           {[
@@ -952,9 +1005,9 @@ export default function GiveawayAdminClient({
               {bulkBusy === action ? "Working..." : label}
             </button>
           ))}
-        </div>
-        <div className="mt-4 w-full max-w-full overflow-x-auto rounded-2xl border border-white/10">
-          <table className="w-full min-w-[1320px] table-fixed border-separate border-spacing-y-2 text-left text-sm">
+        </div> : null}
+        <div className="mt-4 w-full max-w-full overflow-x-auto rounded-[1.25rem] border border-white/10 bg-black/20 pb-2 [scrollbar-color:rgba(244,63,94,0.55)_rgba(255,255,255,0.08)] [scrollbar-width:thin]">
+          <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-left text-sm">
             <thead className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
               <tr>
                 <th className="w-10 px-3 py-2">
@@ -974,15 +1027,15 @@ export default function GiveawayAdminClient({
                   />
                 </th>
                 {[
-                  ["Tester", "w-[260px]"],
-                  ["Beta Status", "w-[145px]"],
-                  ["Account", "w-[155px]"],
-                  ["Weekly Progress", "w-[170px]"],
-                  ["Bonus Entries", "w-[175px]"],
-                  ["Total Entries", "w-[130px]"],
-                  ["Prize Readiness", "w-[180px]"],
-                  ["Last Activity", "w-[150px]"],
-                  ["Actions", "w-[230px]"],
+                  ["Tester", "w-[240px]"],
+                  ["Beta Status", "w-[125px]"],
+                  ["Account", "w-[145px]"],
+                  ["Weekly Progress", "w-[150px]"],
+                  ["Bonus Entries", "w-[135px]"],
+                  ["Total Entries", "w-[115px]"],
+                  ["Prize Readiness", "w-[155px]"],
+                  ["Last Activity", "w-[130px]"],
+                  ["Actions", "w-[145px]"],
                 ].map(([h, w]) => (
                   <th key={h} className={`${w} px-3 py-2 whitespace-nowrap`}>
                     {h}
@@ -999,24 +1052,23 @@ export default function GiveawayAdminClient({
                   </td>
                 </tr>
               ) : visibleEntries.length === 0 ? standaloneActiveBetaUsers.map((tester) => (
-                <tr key={tester.id} className="rounded-2xl bg-white/[0.045]">
-                  <td className="rounded-l-2xl px-3 py-3" />
-                  <td className="px-3 py-3"><p className="font-black text-white">{formatText(tester.name || tester.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(tester.email)}</p><p className="truncate text-xs text-white/40">{tester.tester_type || "user"}</p></td>
-                  <td className="px-3 py-3"><Badge tone="green">Active</Badge></td>
-                  <td className="px-3 py-3"><Badge tone={tester.user_id ? "green" : "amber"}>{tester.user_id ? "Account linked" : "Needs account link"}</Badge></td>
-                  <td className="px-3 py-3"><Badge tone="amber">{`Weekly ${tester.weekly_completed_tests || 0}/${tester.weekly_required_tests || 5}`}</Badge></td>
-                  <td className="px-3 py-3"><Badge>Not required</Badge></td>
-                  <td className="px-3 py-3 text-sm font-black text-white">0</td>
-                  <td className="px-3 py-3"><Badge>Beta access only</Badge></td>
-                  <td className="px-3 py-3 text-xs font-bold text-white/55">{formatDate(tester.last_active_at || tester.updated_at || tester.created_at)}</td>
-                  <td className="rounded-r-2xl px-3 py-3"><span className="text-xs font-bold text-white/45">Manage from Users</span></td>
+                <tr key={tester.id} className="border-t border-white/10 bg-white/[0.035] transition hover:bg-white/[0.06]">
+                  <td className="px-3 py-5" />
+                  <td className="px-3 py-5"><p className="font-black text-white">{formatText(tester.name || tester.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(tester.email)}</p><p className="truncate text-xs text-white/40">{tester.tester_type || "user"}</p></td>
+                  <td className="px-3 py-5"><Badge tone="green">Active</Badge></td>
+                  <td className="px-3 py-5"><Badge tone={tester.user_id ? "green" : "amber"}>{tester.user_id ? "Account linked" : "Needs account link"}</Badge></td>
+                  <td className="px-3 py-5"><Badge tone="amber">{`Weekly ${tester.weekly_completed_tests || 0}/${tester.weekly_required_tests || 5}`}</Badge></td>
+                  <td className="px-3 py-5"><Badge>Not required</Badge></td>
+                  <td className="px-3 py-5 text-sm font-black text-white">0</td>
+                  <td className="px-3 py-5"><Badge>Beta access only</Badge></td>
+                  <td className="px-3 py-5 text-xs font-bold text-white/55">{formatDate(tester.last_active_at || tester.updated_at || tester.created_at)}</td>
+                  <td className="px-3 py-5"><span className="text-xs font-bold text-white/45">Manage from Users</span></td>
                 </tr>
               )) : visibleEntries.map((entry) => {
                 const s = getStatuses(entry);
-                const [, updates] = smartAction(entry);
                 return (
-                  <tr key={entry.id} className="rounded-2xl bg-white/[0.045]">
-                    <td className="rounded-l-2xl px-3 py-3">
+                  <tr key={entry.id} className="border-t border-white/10 bg-white/[0.035] transition hover:bg-white/[0.06]">
+                    <td className="px-3 py-5">
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(entry.id)}
@@ -1029,20 +1081,20 @@ export default function GiveawayAdminClient({
                         }
                       />
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-5">
                       <p className="font-black text-white">
                         {formatText(entry.full_name)}
                       </p>
-                      <p className="truncate text-xs text-white/58">
+                      <p className="max-w-[220px] break-words text-xs leading-5 text-white/58" title={formatText(entry.email)}>
                         {formatText(entry.email)}
                       </p>
-                      <p className="truncate text-xs text-white/40">
+                      <p className="max-w-[220px] break-words text-xs leading-5 text-white/40" title={entry.social_handle || undefined}>
                         {entry.social_handle
                           ? `${entry.social_handle} · ${formatText(entry.social_platform)}`
                           : "No social handle"}
                       </p>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-5">
                       <Badge
                         tone={
                           s.betaAccess.includes("Active")
@@ -1055,7 +1107,7 @@ export default function GiveawayAdminClient({
                         {s.betaAccess}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-5">
                       <Badge
                         tone={
                           s.account === "Account linked" ? "green" : "amber"
@@ -1064,12 +1116,12 @@ export default function GiveawayAdminClient({
                         {s.account}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-5">
                       <Badge tone={s.tasks === "Complete" ? "green" : "amber"}>
                         {s.tasks}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-5">
                       <div className="flex flex-wrap gap-1">
                         {instagramBonus(entry) ? (
                           <Badge tone="green">IG +1</Badge>
@@ -1082,10 +1134,11 @@ export default function GiveawayAdminClient({
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-sm font-black text-white">
-                      {totalEntries(entry)}
+                    <td className="px-3 py-5 text-sm font-black text-white">
+                      <p>{totalEntries(entry)}</p>
+                      {!requirementsMet(entry) ? <p className="mt-1 text-[11px] font-bold text-white/40">Not prize-ready yet</p> : null}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-5">
                       <Badge
                         tone={
                           s.prize === "Prize qualified"
@@ -1100,25 +1153,19 @@ export default function GiveawayAdminClient({
                         {s.prize}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3 text-xs font-bold text-white/55">
+                    <td className="px-3 py-5 text-xs font-bold text-white/55">
                       {formatDate(
                         entry.giveaway_verified_at || entry.created_at,
                       )}
                     </td>
-                    <td className="rounded-r-2xl px-3 py-3">
-                      <div className="flex min-w-max items-center gap-2">
+                    <td className="px-3 py-5">
+                      <div className="flex min-w-max items-center justify-end gap-2">
                         <button
                           onClick={() => setDetailsId(entry.id)}
                           className={`${actionButtonClass} border border-white/10 bg-white/[0.08] text-white`}
                         >
                           View
                         </button>
-                        <ActionButton
-                          entry={entry}
-                          label="Review"
-                          updates={updates}
-                          tone="primary"
-                        />
                         <MoreActions entry={entry} />
                       </div>
                     </td>
@@ -1126,17 +1173,17 @@ export default function GiveawayAdminClient({
                 );
               })}
               {visibleEntries.length > 0 ? standaloneActiveBetaUsers.map((tester) => (
-                <tr key={tester.id} className="rounded-2xl bg-white/[0.045]">
-                  <td className="rounded-l-2xl px-3 py-3" />
-                  <td className="px-3 py-3"><p className="font-black text-white">{formatText(tester.name || tester.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(tester.email)}</p><p className="truncate text-xs text-white/40">{tester.tester_type || "user"}</p></td>
-                  <td className="px-3 py-3"><Badge tone="green">Active</Badge></td>
-                  <td className="px-3 py-3"><Badge tone={tester.user_id ? "green" : "amber"}>{tester.user_id ? "Account linked" : "Needs account link"}</Badge></td>
-                  <td className="px-3 py-3"><Badge tone="amber">{`Weekly ${tester.weekly_completed_tests || 0}/${tester.weekly_required_tests || 5}`}</Badge></td>
-                  <td className="px-3 py-3"><Badge>Not required</Badge></td>
-                  <td className="px-3 py-3 text-sm font-black text-white">0</td>
-                  <td className="px-3 py-3"><Badge>Beta access only</Badge></td>
-                  <td className="px-3 py-3 text-xs font-bold text-white/55">{formatDate(tester.last_active_at || tester.updated_at || tester.created_at)}</td>
-                  <td className="rounded-r-2xl px-3 py-3"><span className="text-xs font-bold text-white/45">Manage from Users</span></td>
+                <tr key={tester.id} className="border-t border-white/10 bg-white/[0.035] transition hover:bg-white/[0.06]">
+                  <td className="px-3 py-5" />
+                  <td className="px-3 py-5"><p className="font-black text-white">{formatText(tester.name || tester.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(tester.email)}</p><p className="truncate text-xs text-white/40">{tester.tester_type || "user"}</p></td>
+                  <td className="px-3 py-5"><Badge tone="green">Active</Badge></td>
+                  <td className="px-3 py-5"><Badge tone={tester.user_id ? "green" : "amber"}>{tester.user_id ? "Account linked" : "Needs account link"}</Badge></td>
+                  <td className="px-3 py-5"><Badge tone="amber">{`Weekly ${tester.weekly_completed_tests || 0}/${tester.weekly_required_tests || 5}`}</Badge></td>
+                  <td className="px-3 py-5"><Badge>Not required</Badge></td>
+                  <td className="px-3 py-5 text-sm font-black text-white">0</td>
+                  <td className="px-3 py-5"><Badge>Beta access only</Badge></td>
+                  <td className="px-3 py-5 text-xs font-bold text-white/55">{formatDate(tester.last_active_at || tester.updated_at || tester.created_at)}</td>
+                  <td className="px-3 py-5"><span className="text-xs font-bold text-white/45">Manage from Users</span></td>
                 </tr>
               )) : null}
             </tbody>

@@ -10,6 +10,7 @@ import {
   getBetaGiveawayOverview,
   getWeeklyBetaSessionsForAdmin,
   getActiveBetaUsersForAdmin,
+  getWeeklyBetaSettings,
 } from "@/lib/giveaway/betaProgram";
 import GiveawayAdminClient from "./GiveawayAdminClient";
 import {
@@ -48,7 +49,7 @@ function GiveawayLoadError() {
 
 async function loadGiveawayDashboardData() {
   try {
-    const [entriesResult, duplicatesResult, applications, feedback, bugs, weeklySessions, overview, activeBetaUsers] =
+    const [entriesResult, duplicatesResult, applications, feedback, bugs, weeklySessions, overview, activeBetaUsers, weeklyBetaSettings] =
       await Promise.all([
         supabaseAdmin
           .from("launch_waitlist_signups")
@@ -66,6 +67,7 @@ async function loadGiveawayDashboardData() {
         safeLoad("weekly_beta_sessions", getWeeklyBetaSessionsForAdmin, []),
         safeLoad("beta_giveaway_overview", async () => getBetaGiveawayOverview() as Promise<Record<string, number>>, {}),
         safeLoad("active_beta_users", getActiveBetaUsersForAdmin, []),
+        safeLoad("weekly_beta_settings", getWeeklyBetaSettings, { weekly_beta_enabled: false }),
       ]);
 
     if (entriesResult.error)
@@ -119,7 +121,7 @@ async function loadGiveawayDashboardData() {
       winnerSelected: list.filter((entry) => entry.giveaway_status === "winner")
         .length,
     };
-    return { ok: true as const, list, stats, duplicateEvents: duplicatesResult.data || [], applications, feedback, bugs, weeklySessions, overview, activeBetaUsers };
+    return { ok: true as const, list, stats, duplicateEvents: duplicatesResult.data || [], applications, feedback, bugs, weeklySessions, overview, activeBetaUsers, weeklyBetaSettings };
   } catch (error) {
     console.error("ADMIN_GIVEAWAY_LOAD_FATAL", error);
     return { ok: false as const };
@@ -170,6 +172,7 @@ export default async function AdminGiveawayPage() {
         initialWeeklySessions={loaded.weeklySessions || []}
         initialOverview={loaded.overview}
         initialActiveBetaUsers={loaded.activeBetaUsers || []}
+        initialWeeklyBetaEnabled={Boolean(loaded.weeklyBetaSettings?.weekly_beta_enabled)}
       />
     </AdminPageShell>
   );

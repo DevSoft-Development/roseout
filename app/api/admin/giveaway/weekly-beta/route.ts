@@ -21,10 +21,20 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireBetaAdmin();
   if (auth.error) return auth.error;
   const body = await req.json().catch(() => ({}));
-  if (typeof body.weekly_beta_enabled === "boolean") {
-    await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
+  if (typeof body.weekly_beta_enabled !== "boolean") {
+    return safeError("weekly_beta_enabled must be true or false.", 400);
   }
-  return NextResponse.json({ success: true, message: "Weekly beta controls updated.", ...(await getWeeklyBetaSettings()) });
+  try {
+    await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
+    const settings = await getWeeklyBetaSettings();
+    return NextResponse.json({
+      success: true,
+      weekly_beta_enabled: settings.weekly_beta_enabled,
+      message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off.",
+    });
+  } catch {
+    return safeError("We couldn’t update the weekly beta setting. Please try again.", 500);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -34,6 +44,8 @@ export async function POST(req: NextRequest) {
   const action = String(body.action || "create_real_sessions");
   try {
     if (action === "create_real_sessions" || action === "assign") {
+      const settings = await getWeeklyBetaSettings();
+      if (!settings.weekly_beta_enabled) return safeError("Turn on the real weekly beta task before creating real sessions.", 409);
       const result = await getOrCreateWeeklyBetaSessionsForActiveTesters();
       return NextResponse.json({ success: true, message: `Created ${result.created}; already existed ${result.alreadyExisted}; skipped ${result.skipped}.`, ...result });
     }
@@ -60,7 +72,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Test session deleted.", ...(await deleteTestWeeklyBetaSession(sessionId)) });
     }
     return safeError("Unsupported weekly beta action.", 400);
-  } catch (e: any) {
-    return safeError(e.message || "Weekly beta action failed.", 500);
+  } catch {
+    return safeError("Weekly beta action failed.", 500);
   }
 }
