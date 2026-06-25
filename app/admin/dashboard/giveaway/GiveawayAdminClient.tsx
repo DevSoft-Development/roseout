@@ -83,23 +83,35 @@ type WeeklyTask = {
 const tabs = [
   "Overview",
   "Testers",
-  "Weekly Tasks",
+  "Weekly Beta",
+  "Bonus Entries",
   "Results & Feedback",
   "Prize Outcomes",
   "Settings",
+  "Legacy Task Templates",
 ] as const;
 const filters = [
   ["all", "All"],
   ["active_beta", "Active beta tester"],
   ["needs_setup", "Needs account setup"],
-  ["missing_social", "Needs social verification"],
   ["missing_weekly", "Missing weekly tasks"],
   ["verified", "Prize qualified"],
   ["disqualified", "Disqualified"],
   ["winner", "Reward winner"],
 ] as const;
-const weekFilters = [["all", "All weeks"], ["1", "Week 1"], ["2", "Week 2"], ["3", "Week 3"], ["4", "Week 4"]] as const;
-const readinessFilters = [["all", "All"], ["ready", "Ready"], ["missing", "Missing requirements"], ["review", "Needs admin review"]] as const;
+const weekFilters = [
+  ["all", "All weeks"],
+  ["1", "Week 1"],
+  ["2", "Week 2"],
+  ["3", "Week 3"],
+  ["4", "Week 4"],
+] as const;
+const readinessFilters = [
+  ["all", "All"],
+  ["ready", "Ready"],
+  ["missing", "Missing requirements"],
+  ["review", "Needs admin review"],
+] as const;
 const csvColumns = [
   "full_name",
   "email",
@@ -200,13 +212,26 @@ function activeBeta(entry: Entry) {
     ) && ["active", "approved"].includes(status)
   );
 }
-function socialReady(entry: Entry) {
+function instagramBonus(entry: Entry) {
   return Boolean(
     entry.followed_social &&
-    entry.tagged_two_friends &&
-    (entry.followed_social_verified_at || entry.followed_social) &&
-    (entry.tagged_friends_verified_at || entry.tagged_two_friends),
+    ["instagram", "both"].includes(
+      String(entry.social_platform || "").toLowerCase(),
+    ),
   );
+}
+function tiktokBonus(entry: Entry) {
+  return Boolean(
+    entry.followed_social &&
+    ["tiktok", "both"].includes(
+      String(entry.social_platform || "").toLowerCase(),
+    ),
+  );
+}
+function totalEntries(entry: Entry) {
+  return requirementsMet(entry)
+    ? 1 + (instagramBonus(entry) ? 1 : 0) + (tiktokBonus(entry) ? 1 : 0)
+    : 0;
 }
 function getStatuses(entry: Entry) {
   const betaAccess =
@@ -224,7 +249,10 @@ function getStatuses(entry: Entry) {
       : el?.weeklyTasksComplete
         ? "Complete"
         : "Tasks incomplete";
-  const social = socialReady(entry) ? "Verified" : "Needs review";
+  const social =
+    instagramBonus(entry) || tiktokBonus(entry)
+      ? "Bonus earned"
+      : "No bonus yet";
   const prize =
     entry.giveaway_status === "winner"
       ? "Winner"
@@ -254,8 +282,7 @@ function missingRequirements(entry: Entry) {
   if (!activeBeta(entry)) missing.push("active beta tester");
   if (!ready(entry)) missing.push("account linked or setup reviewed");
   if (!el?.weeklyTasksComplete) missing.push("weekly beta tasks");
-  if (!entry.followed_social) missing.push("social follow verification");
-    if (!entry.age_18_confirmed) missing.push("18+ confirmation");
+  if (!entry.age_18_confirmed) missing.push("18+ confirmation");
   if (!(entry.giveaway_rules_agreed || entry.prize_rules_confirmed))
     missing.push("reward rules agreement");
   if (entry.duplicate_flag) missing.push("duplicate review");
@@ -294,7 +321,7 @@ function checklist(entry: Entry) {
     ["Active beta tester", activeBeta(entry)],
     ["Account linked", ready(entry)],
     ["Weekly tasks complete", Boolean(el?.weeklyTasksComplete)],
-    ["Social follow verified", Boolean(entry.followed_social)],
+    ["Optional bonus follows are not required", true],
     ["18+ confirmed", Boolean(entry.age_18_confirmed)],
     [
       "Reward rules agreed",
@@ -323,7 +350,8 @@ export default function GiveawayAdminClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Testers");
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Overview");
+  const [weeklyFilter, setWeeklyFilter] = useState("include");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState("");
@@ -348,7 +376,6 @@ export default function GiveawayAdminClient({
             activeBeta(entry) &&
             !entry.beta_giveaway_eligibility?.weeklyTasksComplete
           );
-        if (filter === "missing_social") return !socialReady(entry);
         if (filter === "verified") return entry.giveaway_status === "verified";
         if (filter === "winner") return entry.giveaway_status === "winner";
         if (filter === "disqualified")
@@ -362,12 +389,27 @@ export default function GiveawayAdminClient({
   const statCards = useMemo(
     () => [
       ["Total Beta Entrants", stats.giveawayEntries, "Opted into giveaway"],
-      ["Active Beta Testers", entries.filter(activeBeta).length, "Active or approved"],
-      ["Eligible for Giveaway", entries.filter(requirementsMet).length, "Meets current requirements"],
-      ["Needs Review", entries.filter((e) => missingRequirements(e).length > 0).length, "Missing one or more items"],
+      [
+        "Active Beta Testers",
+        entries.filter(activeBeta).length,
+        "Active or approved",
+      ],
+      [
+        "Prize-ready",
+        entries.filter(requirementsMet).length,
+        "Tags and social follows excluded",
+      ],
+      [
+        "Needs Review",
+        entries.filter((e) => missingRequirements(e).length > 0).length,
+        "Missing one or more items",
+      ],
       [
         "Missing Weekly Tasks",
-        entries.filter((e) => activeBeta(e) && !e.beta_giveaway_eligibility?.weeklyTasksComplete).length,
+        entries.filter(
+          (e) =>
+            activeBeta(e) && !e.beta_giveaway_eligibility?.weeklyTasksComplete,
+        ).length,
         "Weekly steps incomplete",
       ],
       ["Prize Qualified", stats.verifiedEntries, "Marked prize-ready"],
@@ -395,7 +437,9 @@ export default function GiveawayAdminClient({
     setMessage("");
     setError("");
     if (updates.giveaway_status === "verified" && !requirementsMet(entry)) {
-      setError(`This tester is not prize-ready yet. They still need: ${missingRequirements(entry).join(", ")}.`);
+      setError(
+        `This tester is not prize-ready yet. They still need: ${missingRequirements(entry).join(", ")}.`,
+      );
       return;
     }
     setBusyEntryId(entry.id);
@@ -474,9 +518,7 @@ export default function GiveawayAdminClient({
       return ["Resend Setup Email", { action: "resend_beta_invite" }];
     if (!entry.beta_giveaway_eligibility?.weeklyTasksComplete)
       return ["Assign Weekly Tasks", { action: "assign_beta_tasks" }];
-    if (!entry.followed_social)
-      return ["Verify Social", { action: "verify_social" }];
-        if (requirementsMet(entry) && entry.giveaway_status !== "verified")
+    if (requirementsMet(entry) && entry.giveaway_status !== "verified")
       return ["Mark Prize Qualified", { giveaway_status: "verified" }];
     return ["View", {}];
   }
@@ -509,8 +551,7 @@ export default function GiveawayAdminClient({
     const actions = [
       ["Repair Beta Access", { action: "repair_beta_access" }],
       ["Resend Setup Email", { action: "resend_beta_invite" }],
-      ["Verify Social", { action: "verify_social" }],
-      ["View Bonus Entries", { action: "verify_tags" }],
+      ["Verify bonus follow", { action: "verify_social" }],
       ["Mark Prize Qualified", { giveaway_status: "verified" }],
       ["Disqualify", { giveaway_status: "disqualified" }],
       ["Mark Reward Winner", { giveaway_status: "winner" }],
@@ -536,6 +577,301 @@ export default function GiveawayAdminClient({
       </details>
     );
   }
+
+  function WeeklyBetaPanel() {
+    const realRows = entries.filter(activeBeta);
+    const avg = realRows.length
+      ? (
+          realRows.reduce(
+            (sum, e) =>
+              sum + (e.beta_giveaway_eligibility?.completedThisWeek || 0),
+            0,
+          ) / realRows.length
+        ).toFixed(1)
+      : "0";
+    async function weeklyPost(url: string, body?: Record<string, unknown>) {
+      setError("");
+      setMessage("");
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const p = await r
+        .json()
+        .catch(() => ({ error: "Weekly beta action failed." }));
+      if (!r.ok || !p.success)
+        setError(p.error || "Weekly beta action failed.");
+      else setMessage(p.message || "Weekly beta action completed.");
+    }
+    return (
+      <section className="space-y-4">
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">
+            Weekly Beta Program
+          </p>
+          <h2 className="mt-2 text-2xl font-black">Weekly Beta Program</h2>
+          <p className="mt-2 text-sm text-white/60">
+            Run the real weekly beta task or test the full weekly flow without
+            counting it toward giveaway eligibility.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            [
+              "Real Sessions Started",
+              realRows.filter(
+                (e) =>
+                  (e.beta_giveaway_eligibility?.completedThisWeek || 0) > 0,
+              ).length,
+            ],
+            [
+              "Real Sessions Completed",
+              realRows.filter(
+                (e) => e.beta_giveaway_eligibility?.weeklyTasksComplete,
+              ).length,
+            ],
+            ["Test Sessions", 0],
+            ["Average Steps Completed", avg],
+            [
+              "Needs Reminder",
+              realRows.filter(
+                (e) => !e.beta_giveaway_eligibility?.weeklyTasksComplete,
+              ).length,
+            ],
+          ].map(([l, v]) => (
+            <div
+              key={l}
+              className="rounded-2xl border border-white/10 bg-white/[0.06] p-4"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                {l}
+              </p>
+              <p className="mt-2 text-2xl font-black text-white">{v}</p>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <h3 className="text-xl font-black">Weekly Beta Controls</h3>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="font-black">Run real weekly beta task</p>
+              <p className="mt-2 text-sm text-white/55">
+                When this is on, approved beta testers can receive and complete
+                the real weekly 5-step beta task.
+              </p>
+              <button
+                onClick={() =>
+                  fetch("/api/admin/beta/weekly-settings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ weekly_beta_enabled: true }),
+                  }).then(() => setMessage("Weekly beta controls updated."))
+                }
+                className="mt-3 rounded-full bg-rose-600 px-4 py-2 text-xs font-black"
+              >
+                On
+              </button>
+              <button
+                onClick={() =>
+                  fetch("/api/admin/beta/weekly-settings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ weekly_beta_enabled: false }),
+                  }).then(() => setMessage("Weekly beta controls updated."))
+                }
+                className="ml-2 mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black"
+              >
+                Off
+              </button>
+              <button
+                onClick={() => weeklyPost("/api/admin/beta/weekly-sessions")}
+                className="ml-2 mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black"
+              >
+                Create Real Weekly Sessions
+              </button>
+            </div>
+            <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 p-4">
+              <p className="font-black">End-to-end weekly beta test</p>
+              <p className="mt-2 text-sm text-white/60">
+                Test the full weekly beta flow, including emails, search,
+                feedback, admin review, and reset, without counting anything
+                toward real beta progress, giveaway eligibility, prize entries,
+                or analytics.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ["Create Test Weekly Session", "create"],
+                  ["Send Test Weekly Email", "send_weekly_email"],
+                  ["Send Test Reminder", "send_reminder"],
+                  ["Reset Test Weekly Task", "reset"],
+                  ["Delete Test Session", "delete"],
+                ].map(([label, action]) => (
+                  <button
+                    key={action}
+                    onClick={() =>
+                      action === "reset" &&
+                      !confirm(
+                        "Reset this test weekly task? This only clears test-mode progress and does not affect real beta testers.",
+                      )
+                        ? null
+                        : weeklyPost("/api/admin/beta/test-weekly-session", {
+                            action,
+                          })
+                    }
+                    className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-black"
+                  >
+                    {label}
+                  </button>
+                ))}
+                <a
+                  href="/user/dashboard/beta/weekly?test=1"
+                  className="rounded-full bg-rose-600 px-3 py-2 text-xs font-black"
+                >
+                  Open Test Weekly Task
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {[
+            ["include", "Include test sessions"],
+            ["real", "Real only"],
+            ["test", "Test only"],
+          ].map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => setWeeklyFilter(v)}
+              className={`rounded-full px-3 py-2 text-xs font-black ${weeklyFilter === v ? "bg-rose-600" : "bg-white/[0.06]"}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-x-auto rounded-2xl border border-white/10">
+          <table className="w-full min-w-[1100px] text-left text-sm">
+            <thead className="text-[10px] uppercase tracking-[0.16em] text-white/35">
+              <tr>
+                {[
+                  "Tester",
+                  "Mode",
+                  "Week",
+                  "Status",
+                  "Steps Completed",
+                  "Outing Sentence",
+                  "Result Mode",
+                  "Selected Result",
+                  "Last Activity",
+                  "Actions",
+                ].map((h) => (
+                  <th key={h} className="p-3">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.filter(activeBeta).map((e) => (
+                <tr key={e.id} className="border-t border-white/10">
+                  <td className="p-3 font-bold">
+                    {formatText(e.full_name)}
+                    <br />
+                    <span className="text-xs text-white/45">
+                      {formatText(e.email)}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <Badge tone="green">Real</Badge>
+                  </td>
+                  <td className="p-3">Current</td>
+                  <td className="p-3">
+                    <Badge
+                      tone={
+                        e.beta_giveaway_eligibility?.weeklyTasksComplete
+                          ? "green"
+                          : "amber"
+                      }
+                    >
+                      {e.beta_giveaway_eligibility?.weeklyTasksComplete
+                        ? "Completed"
+                        : "In progress"}
+                    </Badge>
+                  </td>
+                  <td className="p-3">
+                    {e.beta_giveaway_eligibility?.completedThisWeek || 0}/5
+                  </td>
+                  <td className="p-3">User-written sentence</td>
+                  <td className="p-3">Single or paired</td>
+                  <td className="p-3">Reviewed in details</td>
+                  <td className="p-3">
+                    {formatDate(e.giveaway_verified_at || e.created_at)}
+                  </td>
+                  <td className="p-3">
+                    <button
+                      onClick={() => setDetailsId(e.id)}
+                      className="text-sky-200"
+                    >
+                      View details
+                    </button>{" "}
+                    ·{" "}
+                    <button
+                      onClick={() =>
+                        weeklyPost("/api/admin/beta/reminders", {
+                          reminderType: "midweek_reminder",
+                        })
+                      }
+                      className="text-sky-200"
+                    >
+                      Send reminder
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+  function BonusEntriesPanel() {
+    return (
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+        <h2 className="text-2xl font-black">Bonus Entries</h2>
+        <p className="mt-2 text-sm text-white/60">
+          Following @theouthaven on Instagram or TikTok is optional and adds
+          bonus giveaway entries.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {entries.map((e) => (
+            <div
+              key={e.id}
+              className="rounded-2xl border border-white/10 bg-white/[0.05] p-4"
+            >
+              <p className="font-black">{formatText(e.full_name)}</p>
+              <p className="text-xs text-white/45">{formatText(e.email)}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {instagramBonus(e) ? (
+                  <Badge tone="green">
+                    Instagram follow: Bonus entry earned
+                  </Badge>
+                ) : (
+                  <Badge>Instagram follow: Not verified</Badge>
+                )}
+                {tiktokBonus(e) ? (
+                  <Badge tone="green">TikTok follow: Bonus entry earned</Badge>
+                ) : (
+                  <Badge>TikTok follow: Not verified</Badge>
+                )}
+                <Badge tone="sky">{`Total giveaway entries: ${totalEntries(e)}`}</Badge>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   function TesterTable() {
     return (
       <section className="w-full min-w-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#101012]/90 p-3 shadow-xl shadow-black/20 sm:p-4">
@@ -557,11 +893,25 @@ export default function GiveawayAdminClient({
             placeholder="Search by name, email, or username"
             className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/30"
           />
-          <select className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none" aria-label="Week filter">
-            {weekFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select
+            className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none"
+            aria-label="Week filter"
+          >
+            {weekFilters.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
-          <select className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none" aria-label="Giveaway readiness filter">
-            {readinessFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select
+            className="rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-xs font-black text-white outline-none"
+            aria-label="Giveaway readiness filter"
+          >
+            {readinessFilters.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
           <button
             id="export"
@@ -578,8 +928,7 @@ export default function GiveawayAdminClient({
           {[
             ["resend_setup_email", "Resend setup email"],
             ["repair_beta_access", "Repair beta access"],
-            ["verify_social", "Verify social follow"],
-            ["verify_tags", "Verify tagged friends"],
+            ["verify_social", "Verify bonus follow"],
             ["mark_disqualified", "Mark disqualified"],
           ].map(([action, label]) => (
             <button
@@ -617,8 +966,9 @@ export default function GiveawayAdminClient({
                   ["Beta Status", "w-[145px]"],
                   ["Account", "w-[155px]"],
                   ["Weekly Progress", "w-[170px]"],
-                  ["Social Verification", "w-[175px]"],
-                  ["Giveaway Readiness", "w-[180px]"],
+                  ["Bonus Entries", "w-[175px]"],
+                  ["Total Entries", "w-[130px]"],
+                  ["Prize Readiness", "w-[180px]"],
                   ["Last Activity", "w-[150px]"],
                   ["Actions", "w-[230px]"],
                 ].map(([h, w]) => (
@@ -647,7 +997,19 @@ export default function GiveawayAdminClient({
                         }
                       />
                     </td>
-                    <td className="px-3 py-3"><p className="font-black text-white">{formatText(entry.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(entry.email)}</p><p className="truncate text-xs text-white/40">{entry.social_handle ? `${entry.social_handle} · ${formatText(entry.social_platform)}` : "No social handle"}</p></td>
+                    <td className="px-3 py-3">
+                      <p className="font-black text-white">
+                        {formatText(entry.full_name)}
+                      </p>
+                      <p className="truncate text-xs text-white/58">
+                        {formatText(entry.email)}
+                      </p>
+                      <p className="truncate text-xs text-white/40">
+                        {entry.social_handle
+                          ? `${entry.social_handle} · ${formatText(entry.social_platform)}`
+                          : "No social handle"}
+                      </p>
+                    </td>
                     <td className="px-3 py-3">
                       <Badge
                         tone={
@@ -663,7 +1025,9 @@ export default function GiveawayAdminClient({
                     </td>
                     <td className="px-3 py-3">
                       <Badge
-                        tone={s.account === "Account linked" ? "green" : "amber"}
+                        tone={
+                          s.account === "Account linked" ? "green" : "amber"
+                        }
                       >
                         {s.account}
                       </Badge>
@@ -674,9 +1038,20 @@ export default function GiveawayAdminClient({
                       </Badge>
                     </td>
                     <td className="px-3 py-3">
-                      <Badge tone={s.social === "Verified" ? "green" : "amber"}>
-                        {s.social}
-                      </Badge>
+                      <div className="flex flex-wrap gap-1">
+                        {instagramBonus(entry) ? (
+                          <Badge tone="green">IG +1</Badge>
+                        ) : null}
+                        {tiktokBonus(entry) ? (
+                          <Badge tone="green">TikTok +1</Badge>
+                        ) : null}
+                        {!instagramBonus(entry) && !tiktokBonus(entry) ? (
+                          <Badge>No bonus yet</Badge>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-sm font-black text-white">
+                      {totalEntries(entry)}
                     </td>
                     <td className="px-3 py-3">
                       <Badge
@@ -693,7 +1068,11 @@ export default function GiveawayAdminClient({
                         {s.prize}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3 text-xs font-bold text-white/55">{formatDate(entry.giveaway_verified_at || entry.created_at)}</td>
+                    <td className="px-3 py-3 text-xs font-bold text-white/55">
+                      {formatDate(
+                        entry.giveaway_verified_at || entry.created_at,
+                      )}
+                    </td>
                     <td className="rounded-r-2xl px-3 py-3">
                       <div className="flex min-w-max items-center gap-2">
                         <button
@@ -702,7 +1081,12 @@ export default function GiveawayAdminClient({
                         >
                           View
                         </button>
-                        <ActionButton entry={entry} label="Review" updates={updates} tone="primary" />
+                        <ActionButton
+                          entry={entry}
+                          label="Review"
+                          updates={updates}
+                          tone="primary"
+                        />
                         <MoreActions entry={entry} />
                       </div>
                     </td>
@@ -755,21 +1139,29 @@ export default function GiveawayAdminClient({
       {activeTab === "Testers" || activeTab === "Overview" ? (
         <TesterTable />
       ) : null}
-      {activeTab === "Weekly Tasks" ? (
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {initialWeeklyTasks.map((task) => (
-            <div
-              key={task.id}
-              className="rounded-2xl border border-white/10 bg-white/[0.05] p-4"
-            >
-              <p className="font-black">{task.title}</p>
-              <p className="mt-2 text-sm text-white/55">
-                {task.feature_area || "General"} · {task.priority || "normal"} ·{" "}
-                {task.status || "draft"}
-              </p>
-            </div>
-          ))}
-        </section>
+      {activeTab === "Weekly Beta" ? <WeeklyBetaPanel /> : null}
+      {activeTab === "Bonus Entries" ? <BonusEntriesPanel /> : null}
+      {activeTab === "Legacy Task Templates" ? (
+        <>
+          <p className="rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold text-amber-100">
+            These are legacy/internal beta task templates. They are not the
+            weekly beta tester task.
+          </p>
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {initialWeeklyTasks.map((task) => (
+              <div
+                key={task.id}
+                className="rounded-2xl border border-white/10 bg-white/[0.05] p-4"
+              >
+                <p className="font-black">{task.title}</p>
+                <p className="mt-2 text-sm text-white/55">
+                  {task.feature_area || "General"} · {task.priority || "normal"}{" "}
+                  · {task.status || "draft"}
+                </p>
+              </div>
+            ))}
+          </section>
+        </>
       ) : null}
       {activeTab === "Results & Feedback" ? (
         <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-white/70">
@@ -843,7 +1235,7 @@ export default function GiveawayAdminClient({
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <Field
                 label="Social info"
-                value={`${formatText(detailEntry.social_handle)} / ${formatText(detailEntry.social_platform)} · Follow ${yesNo(detailEntry.followed_social)} · Tags ${yesNo(detailEntry.tagged_two_friends)}`}
+                value={`${formatText(detailEntry.social_handle)} / ${formatText(detailEntry.social_platform)} · Follow ${yesNo(detailEntry.followed_social)} · Historical tags ${yesNo(detailEntry.tagged_two_friends)} (historical only — tags are no longer required)`}
               />
               <Field
                 label="Account Status"
@@ -939,13 +1331,8 @@ export default function GiveawayAdminClient({
               />
               <ActionButton
                 entry={detailEntry}
-                label="Verify Social"
+                label="Verify bonus follow"
                 updates={{ action: "verify_social" }}
-              />
-              <ActionButton
-                entry={detailEntry}
-                label="View Bonus Entries"
-                updates={{ action: "verify_tags" }}
               />
               <ActionButton
                 entry={detailEntry}
