@@ -2,7 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-async function currentTester() { const supabase = await createClient(); const { data:{user} } = await supabase.auth.getUser(); let tester:any=null; if (user?.id || user?.email) { const or=[`user_id.eq.${user.id}`]; if(user.email) or.push(`email.eq.${user.email}`); const {data}=await supabaseAdmin.from("beta_testers").select("*").or(or.join(",")).maybeSingle(); tester=data; } return {user,tester}; }
+async function currentTester() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  let tester: any = null;
+  let isAdmin = false;
+  if (user?.id || user?.email) {
+    const or = [`user_id.eq.${user.id}`];
+    if (user.email) or.push(`email.eq.${user.email}`);
+    const { data } = await supabaseAdmin.from("beta_testers").select("*").or(or.join(",")).maybeSingle();
+    tester = data;
+    const { data: admin } = await supabaseAdmin.from("admin_users").select("role").eq("user_id", user.id).maybeSingle();
+    isAdmin = ["admin", "superadmin"].includes(String(admin?.role || ""));
+  }
+  return { user, tester, isAdmin };
+}
 function endOfWeek(start?: string) { if (!start) return null; const d = new Date(`${start}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); }
 function titleFor(item: any) { return item?.title || item?.pair_title || item?.name || item?.restaurant_name || item?.activity_name || item?.business_name || "Beta result"; }
 function completedStepsFor(action: string, existing?: number[]) {
@@ -10,18 +24,83 @@ function completedStepsFor(action: string, existing?: number[]) {
   const next = action === "feedback" ? [1, 2, 3, 4, 5] : action === "selection" ? [1, 2, 3] : [1, 2];
   return Array.from(new Set([...current, ...next])).sort();
 }
+function ownsSession(session: any, user: any, tester: any, isAdmin: boolean) {
+  return Boolean(
+    (user?.id && session.user_id === user.id) ||
+    (tester?.id && session.tester_id === tester.id) ||
+    isAdmin,
+  );
+}
+async function resolveSession({ body, user, tester, isAdmin, week, testMode }: any) {
+  const weekStart = body.week_start_date || null;
+  if (body.beta_session_id) {
+    const { data, error } = await supabaseAdmin.from("beta_test_sessions").select("*").eq("id", body.beta_session_id).maybeSingle();
+    if (error) throw error;
+    if (!data || Boolean(data.test_mode) !== testMode || !ownsSession(data, user, tester, isAdmin)) throw new Error("Beta session not found.");
+    return data;
+  }
+
+  const basePayload = {
+    user_id: user?.id ?? tester?.user_id ?? null,
+    tester_id: tester?.id ?? null,
+    week_number: week,
+    week_start_date: weekStart,
+    week_end_date: endOfWeek(weekStart),
+    status: "not_started",
+    completed_steps: [],
+    test_mode: testMode,
+  };
+
+  if (testMode) {
+    if (!user?.id) throw new Error("A user account is required for test mode.");
+    const { data: existing, error } = await supabaseAdmin
+      .from("beta_test_sessions")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("week_start_date", weekStart)
+      .eq("test_mode", true)
+      .maybeSingle();
+    if (error) throw error;
+    if (existing) return existing;
+    const { data, error: insertError } = await supabaseAdmin.from("beta_test_sessions").insert({ ...basePayload, user_id: user.id }).select("*").single();
+    if (insertError) throw insertError;
+    return data;
+  }
+
+  if (!tester?.id) throw new Error("Beta tester access is required.");
+  const { data: existing, error } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("*")
+    .eq("tester_id", tester.id)
+    .eq("week_start_date", weekStart)
+    .eq("test_mode", false)
+    .maybeSingle();
+  if (error) throw error;
+  if (existing) return existing;
+  const { data, error: insertError } = await supabaseAdmin.from("beta_test_sessions").insert({ ...basePayload, tester_id: tester.id }).select("*").single();
+  if (insertError) throw insertError;
+  return data;
+}
 
 export async function POST(req: NextRequest) {
+  let body: any = {};
+  let testMode = false;
+  let user: any = null;
+  let tester: any = null;
+  let week = 1;
   try {
-    const body = await req.json().catch(() => ({}));
-    const { user, tester } = await currentTester();
+    body = await req.json().catch(() => ({}));
+    const auth = await currentTester();
+    user = auth.user;
+    tester = auth.tester;
     if (!user && !tester) return NextResponse.json({ error: "Beta access is required." }, { status: 401 });
-    const week = Math.min(4, Math.max(1, Number(body.week_number || 1)));
-    const testMode = Boolean(body.test_mode);
-    const existing = tester?.id ? await supabaseAdmin.from("beta_test_sessions").select("id,completed_steps").eq("tester_id", tester.id).eq("week_number", week).eq("week_start_date", body.week_start_date || null).eq("test_mode", testMode).maybeSingle() : { data: null } as any;
-    const sessionPayload = { user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, week_number: week, week_start_date: body.week_start_date || null, week_end_date: endOfWeek(body.week_start_date), status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: completedStepsFor(String(body.action || ""), existing.data?.completed_steps), test_mode: testMode };
-    const session = existing.data?.id ? await supabaseAdmin.from("beta_test_sessions").update({ ...sessionPayload, updated_at: new Date().toISOString(), completed_at: body.action === "feedback" ? new Date().toISOString() : null }).eq("id", existing.data.id).select("*").single() : await supabaseAdmin.from("beta_test_sessions").insert(sessionPayload).select("*").single();
-    if (session.error) throw session.error;
+    week = Math.min(4, Math.max(1, Number(body.week_number || 1)));
+    testMode = Boolean(body.test_mode);
+    const resolved = await resolveSession({ body, user, tester, isAdmin: auth.isAdmin, week, testMode });
+    const completedSteps = completedStepsFor(String(body.action || ""), resolved.completed_steps);
+    const update = await supabaseAdmin.from("beta_test_sessions").update({ status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: completedSteps, completed_at: body.action === "feedback" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", resolved.id).eq("test_mode", testMode).select("*").single();
+    if (update.error) throw update.error;
+    const session = update;
 
     if (body.action === "search_run") {
       const run = await supabaseAdmin.from("beta_search_runs").insert({ beta_session_id: session.data.id, user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, beta_assignment_id: body.beta_assignment_id || null, week_number: week, outing_sentence: String(body.outing_sentence || ""), enterprise_search_query_used: body.enterprise_search_query_used || null, result_mode: body.result_mode === "paired_outing" ? "paired_outing" : "single_location", pair_requested: Boolean(body.pair_requested), refinement_choices: Array.isArray(body.refinement_choices) ? body.refinement_choices : [], refinement_text: body.refinement_text || null, updated_enterprise_search_query: body.result_set === "updated" ? body.enterprise_search_query_used || null : null, test_mode: testMode }).select("*").single();
@@ -42,7 +121,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ success: true, session: session.data });
   } catch (error) {
-    console.error("GUIDED_BETA_ERROR", error);
+    console.error("GUIDED_BETA_ERROR", { action: body.action, testMode, betaSessionId: body.beta_session_id || null, hasUser: Boolean(user?.id), hasTester: Boolean(tester?.id), week, weekStart: body.week_start_date || null, error });
     return NextResponse.json({ error: "We could not save beta progress." }, { status: 500 });
   }
 }
