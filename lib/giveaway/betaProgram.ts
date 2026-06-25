@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { repairBetaAccessForEmail } from "@/lib/beta/programAccess";
+import { repairBetaAccessForEmail, syncUserBetaAccess } from "@/lib/beta/programAccess";
 import { sendBetaRemindersForActiveTesters } from "@/lib/beta/reminderEmails";
 import {
   getWeeklyBetaEnabled,
@@ -42,9 +42,8 @@ export async function getBetaGiveawayOverview() {
 export async function getBetaApplications() { const { data, error } = await supabaseAdmin.from("beta_applications").select("*").order("created_at", { ascending: false }).limit(500); if (error) throw error; return data ?? []; }
 export async function approveBetaApplicant(applicationId: string, actor?: any) {
   const { data: app, error } = await supabaseAdmin.from("beta_applications").select("*").eq("id", applicationId).maybeSingle(); if (error || !app) throw new Error("Application not found.");
-  await repairBetaAccessForEmail({ email: app.email, fullName: app.full_name ?? app.name, phone: app.phone, testerType: app.tester_type ?? "user", applicationId, actor, sendInviteIfNeeded: true });
-  await supabaseAdmin.from("beta_applications").update({ status: "approved", reviewed_at: new Date().toISOString(), reviewed_by: actor?.user_id ?? null }).eq("id", applicationId);
-  return { approved: true };
+  const synced = await syncUserBetaAccess({ email: app.email, name: app.full_name ?? app.name, phone: app.phone, testerType: app.tester_type ?? "user", applicationId, requestedBetaStatus: "approved", source: "giveaway_applications", adminUserId: actor?.user_id ?? null, actor });
+  return { approved: true, synced };
 }
 export async function updateBetaAccessForUser(userId: string, status: string) { const { data, error } = await supabaseAdmin.from("beta_testers").update({ status, updated_at: new Date().toISOString() }).eq("user_id", userId).select("*"); if (error) throw error; return data ?? []; }
 export async function getWeeklyBetaSettings() { return { weekly_beta_enabled: await getWeeklyBetaEnabled() }; }
@@ -66,3 +65,13 @@ export async function calculateGiveawayEntries(entry: any) { const eligibility: 
 export async function updateBonusFollowVerification(entryId: string, platform: "instagram" | "tiktok" | "both", verifiedBy?: string | null) { const { data, error } = await supabaseAdmin.from("launch_waitlist_signups").update({ followed_social: true, social_platform: platform, followed_social_verified_at: new Date().toISOString(), followed_social_verified_by: verifiedBy ?? null }).eq("id", entryId).select("*").single(); if (error) throw error; return data; }
 export async function updatePrizeOutcome(entryId: string, status: string) { const { data, error } = await supabaseAdmin.from("launch_waitlist_signups").update({ giveaway_status: status, updated_at: new Date().toISOString() }).eq("id", entryId).select("*").single(); if (error) throw error; return data; }
 export async function getWeeklyBetaCardForUser(userId: string, testMode = false) { const res = await getOrCreateWeeklyBetaSessionForUser(userId, testMode); return { ...res, assignment: weeklySessionToVirtualAssignment(res.session) }; }
+
+export { syncUserBetaAccess };
+
+export async function getActiveBetaUsersForAdmin() {
+  const { data: testers, error } = await supabaseAdmin.from("beta_testers").select("*").in("status", ["active", "approved"]).order("created_at", { ascending: false }).limit(500);
+  if (error) throw error;
+  const profileCount = await supabaseAdmin.from("launch_waitlist_signups").select("id", { count: "exact", head: true }).eq("beta_application_status", "approved");
+  console.info("ACTIVE_BETA_USERS_DIAGNOSTICS", { profileApprovedCount: profileCount.count ?? 0, betaTesterActiveCount: testers?.length ?? 0, excludedByRoleFilter: 0 });
+  return testers ?? [];
+}

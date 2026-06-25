@@ -9,6 +9,7 @@ import {
   getBetaFeedbackForAdmin,
   getBetaGiveawayOverview,
   getWeeklyBetaSessionsForAdmin,
+  getActiveBetaUsersForAdmin,
 } from "@/lib/giveaway/betaProgram";
 import GiveawayAdminClient from "./GiveawayAdminClient";
 import {
@@ -47,7 +48,7 @@ function GiveawayLoadError() {
 
 async function loadGiveawayDashboardData() {
   try {
-    const [entriesResult, duplicatesResult, applications, feedback, bugs, weeklySessions, overview] =
+    const [entriesResult, duplicatesResult, applications, feedback, bugs, weeklySessions, overview, activeBetaUsers] =
       await Promise.all([
         supabaseAdmin
           .from("launch_waitlist_signups")
@@ -64,6 +65,7 @@ async function loadGiveawayDashboardData() {
         safeLoad("beta_bug_reports", getBetaBugReportsForAdmin, []),
         safeLoad("weekly_beta_sessions", getWeeklyBetaSessionsForAdmin, []),
         safeLoad("beta_giveaway_overview", async () => getBetaGiveawayOverview() as Promise<Record<string, number>>, {}),
+        safeLoad("active_beta_users", getActiveBetaUsersForAdmin, []),
       ]);
 
     if (entriesResult.error)
@@ -117,7 +119,7 @@ async function loadGiveawayDashboardData() {
       winnerSelected: list.filter((entry) => entry.giveaway_status === "winner")
         .length,
     };
-    return { ok: true as const, list, stats, duplicateEvents: duplicatesResult.data || [], applications, feedback, bugs, weeklySessions, overview };
+    return { ok: true as const, list, stats, duplicateEvents: duplicatesResult.data || [], applications, feedback, bugs, weeklySessions, overview, activeBetaUsers };
   } catch (error) {
     console.error("ADMIN_GIVEAWAY_LOAD_FATAL", error);
     return { ok: false as const };
@@ -167,6 +169,7 @@ export default async function AdminGiveawayPage() {
         initialBugReports={loaded.bugs || []}
         initialWeeklySessions={loaded.weeklySessions || []}
         initialOverview={loaded.overview}
+        initialActiveBetaUsers={loaded.activeBetaUsers || []}
       />
     </AdminPageShell>
   );

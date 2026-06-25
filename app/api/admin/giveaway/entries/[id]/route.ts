@@ -4,9 +4,8 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { assignWeeklyBetaTasksForTester } from "@/lib/beta/weeklyTasks";
 import {
-  findAuthUserIdByEmail,
   repairBetaAccessForEmail,
-  safeUpsertBetaTester,
+  syncUserBetaAccess,
 } from "@/lib/beta/programAccess";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import { getBetaAccountReadinessForEmail } from "@/lib/beta/accountReadiness";
@@ -63,99 +62,25 @@ export async function PATCH(
   };
 
   if (body.action === "approve_beta") {
-    const email = String(entry.email || "")
-      .trim()
-      .toLowerCase();
-    const testerType = [
-      "user",
-      "location_owner",
-      "ambassador",
-      "experience_team",
-    ].includes(String(entry.tester_type))
-      ? entry.tester_type
-      : "user";
+    const email = String(entry.email || "").trim().toLowerCase();
+    const testerType = ["user", "location_owner", "ambassador", "experience_team", "admin", "superadmin"].includes(String(entry.tester_type)) ? entry.tester_type : "user";
     try {
-      const userId = await findAuthUserIdByEmail(email);
-      const { data: beta, error: betaError } = await safeUpsertBetaTester({
-        applicationId: entry.beta_application_id ?? null,
-        fullName: entry.full_name,
-        email,
-        phone: entry.phone,
-        testerType,
-        userId,
-        approvedBy: auth.adminUser?.user_id ?? null,
-        status: userId ? "active" : "approved",
-      });
-      if (betaError || !beta)
-        throw new Error(betaError?.message || "Unable to approve beta tester.");
-      await assignWeeklyBetaTasksForTester(beta.id);
-      await supabaseAdmin
-        .from("launch_waitlist_signups")
-        .update({
-          beta_application_status: "approved",
-          beta_approved_at: new Date().toISOString(),
-          beta_approved_by: auth.adminUser?.user_id ?? null,
-          weekly_task_eligibility_status: "pending_beta_tasks",
-          giveaway_status: entry.email_verified
-            ? "pending_beta_tasks"
-            : entry.giveaway_status,
-        })
-        .eq("id", id);
-      if (entry.beta_application_id)
-        await supabaseAdmin
-          .from("beta_applications")
-          .update({
-            status: "approved",
-            reviewed_by: auth.adminUser?.user_id ?? null,
-            reviewed_at: new Date().toISOString(),
-          })
-          .eq("id", entry.beta_application_id);
-      await supabaseAdmin
-        .from("admin_audit_logs")
-        .insert({
-          actor_user_id: auth.adminUser?.user_id ?? null,
-          actor_email: auth.adminUser?.email ?? null,
-          actor_role: auth.adminUser?.role ?? null,
-          target_email: email,
-          action: "beta_user_approved",
-          entity_type: "beta_tester",
-          entity_id: beta.id,
-          summary: "Approved launch list signup as beta user",
-          metadata: { launchSignupId: id, testerType },
-        });
+      const sync = await syncUserBetaAccess({ email, name: entry.full_name, phone: entry.phone, testerType, applicationId: entry.beta_application_id ?? null, requestedBetaStatus: "approved", source: "giveaway_admin", adminUserId: auth.adminUser?.user_id ?? null, actor: auth.adminUser });
       return NextResponse.json({
         success: true,
+        message: "Applicant approved and beta access synced.",
         entry: {
           ...entry,
           beta_application_status: "approved",
           beta_account_readiness: await getBetaAccountReadinessForEmail(entry),
-          beta_giveaway_eligibility:
-            await getBetaGiveawayEligibilityForEmail(email),
+          beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(email),
         },
-        beta,
+        beta: sync.tester,
+        sync,
       });
     } catch (error) {
-      await supabaseAdmin
-        .from("admin_audit_logs")
-        .insert({
-          actor_user_id: auth.adminUser?.user_id ?? null,
-          target_email: email,
-          action: "beta_approve_failed",
-          entity_type: "launch_waitlist_signup",
-          entity_id: id,
-          summary: "Beta approval failed",
-          metadata: {
-            error: error instanceof Error ? error.message : "Unknown error",
-          },
-        });
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Beta approval could not be completed. Please try Repair Beta Access or Resend Setup Email.",
-        },
-        { status: 500 },
-      );
+      await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: email, action: "beta_approve_failed", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Beta approval failed", metadata: { error: error instanceof Error ? error.message : "Unknown error" } });
+      return NextResponse.json({ success: false, error: "Beta approval could not be completed. Please try Repair Beta Access or Resend Setup Email." }, { status: 500 });
     }
   }
   if (

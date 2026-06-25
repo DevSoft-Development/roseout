@@ -77,6 +77,7 @@ type Feedback = { id: string; message?: string | null; feedback_type?: string | 
 type BugReport = { id: string; title?: string | null; severity?: string | null; status?: string | null; priority?: string | null; feature_area?: string | null; created_at?: string | null; beta_testers?: { email?: string | null; name?: string | null; full_name?: string | null } | null };
 type WeeklySession = { id: string; status?: string | null; test_mode?: boolean | null; week_number?: number | null; completed_steps?: unknown[] | null; created_at?: string | null; beta_testers?: { email?: string | null; name?: string | null; full_name?: string | null } | null };
 type Overview = Record<string, number>;
+type ActiveBetaUser = { id: string; user_id?: string | null; email?: string | null; name?: string | null; full_name?: string | null; status?: string | null; tester_type?: string | null; weekly_completed_tests?: number | null; weekly_required_tests?: number | null; created_at?: string | null; updated_at?: string | null; last_active_at?: string | null };
 
 const tabs = [
   "Overview",
@@ -340,6 +341,7 @@ export default function GiveawayAdminClient({
   initialBugReports = [],
   initialWeeklySessions = [],
   initialOverview = {},
+  initialActiveBetaUsers = [],
 }: {
   initialEntries: Entry[];
   initialStats: Stats;
@@ -349,6 +351,7 @@ export default function GiveawayAdminClient({
   initialBugReports?: BugReport[];
   initialWeeklySessions?: WeeklySession[];
   initialOverview?: Overview;
+  initialActiveBetaUsers?: ActiveBetaUser[];
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [stats, setStats] = useState(initialStats);
@@ -393,12 +396,13 @@ export default function GiveawayAdminClient({
       }),
     [entries, filter, search],
   );
+  const standaloneActiveBetaUsers = initialActiveBetaUsers.filter((tester) => !visibleEntries.some((entry) => String(entry.email || "").toLowerCase() === String(tester.email || "").toLowerCase()));
   const statCards = useMemo(
     () => [
       ["Total beta applicants", initialOverview.totalApplicants ?? stats.total, "Applications received"],
       [
         "Active Beta Testers",
-        entries.filter(activeBeta).length,
+        initialActiveBetaUsers.length || entries.filter(activeBeta).length,
         "Active or approved",
       ],
       [
@@ -421,7 +425,7 @@ export default function GiveawayAdminClient({
       ],
       ["Total giveaway entries", initialOverview.totalGiveawayEntries ?? 0, "Base + optional bonuses"],
     ],
-    [entries, stats, initialOverview],
+    [entries, stats, initialOverview, initialActiveBetaUsers],
   );
   async function loadEntries(nextFilter = "all") {
     setError("");
@@ -987,14 +991,27 @@ export default function GiveawayAdminClient({
               </tr>
             </thead>
             <tbody>
-              {visibleEntries.length === 0 ? (
+              {visibleEntries.length === 0 && standaloneActiveBetaUsers.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-10 text-center">
-                    <p className="text-lg font-black text-white">No giveaway entries yet.</p>
-                    <p className="mt-2 text-sm text-white/55">Approved beta testers and launch giveaway applicants will appear here once they apply or are added.</p>
+                    <p className="text-lg font-black text-white">No active beta testers yet.</p>
+                    <p className="mt-2 text-sm text-white/55">Approve users for beta access from Users or Applications. Users with active beta access will appear here, including admin or superadmin test accounts.</p>
                   </td>
                 </tr>
-              ) : visibleEntries.map((entry) => {
+              ) : visibleEntries.length === 0 ? standaloneActiveBetaUsers.map((tester) => (
+                <tr key={tester.id} className="rounded-2xl bg-white/[0.045]">
+                  <td className="rounded-l-2xl px-3 py-3" />
+                  <td className="px-3 py-3"><p className="font-black text-white">{formatText(tester.name || tester.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(tester.email)}</p><p className="truncate text-xs text-white/40">{tester.tester_type || "user"}</p></td>
+                  <td className="px-3 py-3"><Badge tone="green">Active</Badge></td>
+                  <td className="px-3 py-3"><Badge tone={tester.user_id ? "green" : "amber"}>{tester.user_id ? "Account linked" : "Needs account link"}</Badge></td>
+                  <td className="px-3 py-3"><Badge tone="amber">{`Weekly ${tester.weekly_completed_tests || 0}/${tester.weekly_required_tests || 5}`}</Badge></td>
+                  <td className="px-3 py-3"><Badge>Not required</Badge></td>
+                  <td className="px-3 py-3 text-sm font-black text-white">0</td>
+                  <td className="px-3 py-3"><Badge>Beta access only</Badge></td>
+                  <td className="px-3 py-3 text-xs font-bold text-white/55">{formatDate(tester.last_active_at || tester.updated_at || tester.created_at)}</td>
+                  <td className="rounded-r-2xl px-3 py-3"><span className="text-xs font-bold text-white/45">Manage from Users</span></td>
+                </tr>
+              )) : visibleEntries.map((entry) => {
                 const s = getStatuses(entry);
                 const [, updates] = smartAction(entry);
                 return (
@@ -1108,6 +1125,20 @@ export default function GiveawayAdminClient({
                   </tr>
                 );
               })}
+              {visibleEntries.length > 0 ? standaloneActiveBetaUsers.map((tester) => (
+                <tr key={tester.id} className="rounded-2xl bg-white/[0.045]">
+                  <td className="rounded-l-2xl px-3 py-3" />
+                  <td className="px-3 py-3"><p className="font-black text-white">{formatText(tester.name || tester.full_name)}</p><p className="truncate text-xs text-white/58">{formatText(tester.email)}</p><p className="truncate text-xs text-white/40">{tester.tester_type || "user"}</p></td>
+                  <td className="px-3 py-3"><Badge tone="green">Active</Badge></td>
+                  <td className="px-3 py-3"><Badge tone={tester.user_id ? "green" : "amber"}>{tester.user_id ? "Account linked" : "Needs account link"}</Badge></td>
+                  <td className="px-3 py-3"><Badge tone="amber">{`Weekly ${tester.weekly_completed_tests || 0}/${tester.weekly_required_tests || 5}`}</Badge></td>
+                  <td className="px-3 py-3"><Badge>Not required</Badge></td>
+                  <td className="px-3 py-3 text-sm font-black text-white">0</td>
+                  <td className="px-3 py-3"><Badge>Beta access only</Badge></td>
+                  <td className="px-3 py-3 text-xs font-bold text-white/55">{formatDate(tester.last_active_at || tester.updated_at || tester.created_at)}</td>
+                  <td className="rounded-r-2xl px-3 py-3"><span className="text-xs font-bold text-white/45">Manage from Users</span></td>
+                </tr>
+              )) : null}
             </tbody>
           </table>
         </div>

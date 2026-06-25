@@ -126,6 +126,81 @@ export async function safeUpsertBetaTester(input: {
   return { data: inserted.data, error: inserted.error || upsert.error };
 }
 
+export async function syncUserBetaAccess(input: {
+  userId?: string | null;
+  email?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  requestedBetaStatus: string;
+  source: string;
+  adminUserId?: string | null;
+  applicationId?: string | null;
+  testerType?: string | null;
+  actor?: Actor;
+}) {
+  const now = new Date().toISOString();
+  let userId = input.userId || null;
+  let email = normalizeBetaEmail(input.email);
+  let name = input.name || null;
+  let phone = input.phone || null;
+
+  if (userId) {
+    const { data: userRow } = await supabaseAdmin.from("users").select("id,email,full_name,phone").eq("id", userId).maybeSingle();
+    const authUser = await supabaseAdmin.auth.admin.getUserById(userId).then((r) => r.data.user, () => null);
+    email = email || normalizeBetaEmail((userRow as any)?.email || authUser?.email);
+    name = name || (userRow as any)?.full_name || (authUser?.user_metadata as any)?.full_name || (authUser?.user_metadata as any)?.name || null;
+    phone = phone || (userRow as any)?.phone || null;
+  }
+  if (!userId && email) userId = await findAuthUserIdByEmail(email);
+  if (!email && userId) throw new Error("User email is required before beta access can be updated.");
+  if (!email) throw new Error("Email is required before beta access can be updated.");
+
+  const requested = String(input.requestedBetaStatus || "").toLowerCase();
+  const removing = ["none", "remove", "removed", "inactive", "paused"].includes(requested);
+  const testerStatus = removing ? "removed" : "active";
+  const applicationStatus = removing ? "rejected" : requested === "invite" || requested === "invited" ? "invited" : "approved";
+  let updatedProfile = false;
+
+  if (userId) {
+    await supabaseAdmin.from("user_profiles").upsert({ id: userId, email, full_name: name, phone, updated_at: now } as any, { onConflict: "id" }).then((r) => { if (!r.error) updatedProfile = true; });
+    await supabaseAdmin.from("users").upsert({ id: userId, email, full_name: name, phone, updated_at: now } as any, { onConflict: "id" }).then(() => undefined, () => undefined);
+  }
+
+  const { data: existingByUser } = userId ? await supabaseAdmin.from("beta_testers").select("*").eq("user_id", userId).maybeSingle() : { data: null } as any;
+  const { data: existingByEmail } = !existingByUser ? await supabaseAdmin.from("beta_testers").select("*").eq("email", email).maybeSingle() : { data: null } as any;
+  const existing = existingByUser || existingByEmail;
+  const payload: any = {
+    user_id: existing?.user_id || userId || null,
+    application_id: existing?.application_id || input.applicationId || null,
+    name: name || existing?.name || null,
+    email,
+    phone: phone || existing?.phone || null,
+    tester_type: input.testerType || existing?.tester_type || "user",
+    status: testerStatus,
+    weekly_required_tests: existing?.weekly_required_tests || 5,
+    weekly_completed_tests: existing?.weekly_completed_tests || 0,
+    approved_by: existing?.approved_by || input.adminUserId || input.actor?.user_id || null,
+    approved_at: existing?.approved_at || (!removing ? now : null),
+    updated_at: now,
+  };
+  if (!existing?.invite_code) payload.invite_code = createInviteCode();
+  const result = existing?.id
+    ? await supabaseAdmin.from("beta_testers").update(payload).eq("id", existing.id).select("*").single()
+    : await supabaseAdmin.from("beta_testers").insert(payload).select("*").single();
+  if (result.error || !result.data) throw new Error(result.error?.message || "Unable to sync beta access.");
+
+  if (input.applicationId) {
+    await supabaseAdmin.from("beta_applications").update({ status: applicationStatus, reviewed_by: input.adminUserId || input.actor?.user_id || null, reviewed_at: now, updated_at: now }).eq("id", input.applicationId);
+  } else {
+    await supabaseAdmin.from("beta_applications").update({ status: applicationStatus, reviewed_by: input.adminUserId || input.actor?.user_id || null, reviewed_at: now, updated_at: now }).eq("email", email);
+  }
+  await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_status: applicationStatus === "rejected" ? "rejected" : "approved", beta_approved_at: removing ? null : now, beta_approved_by: input.adminUserId || input.actor?.user_id || null, weekly_task_eligibility_status: removing ? null : "pending_beta_tasks", updated_at: now }).eq("email", email);
+
+  if (!removing) await assignWeeklyBetaTasksForTester(result.data.id).catch((error) => console.error("BETA_SYNC_ASSIGN_WEEKLY_FAILED", error));
+  await logBetaProgramAudit({ action: removing ? "beta_access_removed" : "beta_access_synced", entityType: "beta_tester", entityId: result.data.id, targetEmail: email, actor: input.actor, summary: removing ? "Beta access removed" : "Beta access synced", metadata: { userId, source: input.source, requestedBetaStatus: requested } });
+  return { success: true, status: testerStatus, message: removing ? "Beta access removed." : requested === "approve" || requested === "approved" ? "User approved as a beta tester." : "Beta access updated.", user_id: userId, beta_record_id: result.data.id, created_beta_record: !existing?.id, updated_profile: updatedProfile, tester: result.data };
+}
+
 export async function sendBetaApprovalEmailOnce(input: {
   email: string;
   fullName?: string | null;
