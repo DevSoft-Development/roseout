@@ -371,6 +371,7 @@ export default function GiveawayAdminClient({
   const [bulkBusy, setBulkBusy] = useState("");
   const [weeklyBetaEnabled, setWeeklyBetaEnabled] = useState(Boolean(initialWeeklyBetaEnabled));
   const [weeklySettingsSaving, setWeeklySettingsSaving] = useState(false);
+  const [weeklyActionBusy, setWeeklyActionBusy] = useState("");
   const detailEntry = entries.find((entry) => entry.id === detailsId) || null;
   const visibleEntries = useMemo(
     () =>
@@ -634,23 +635,34 @@ export default function GiveawayAdminClient({
       }
     }
     async function weeklyPost(url: string, body?: Record<string, unknown>) {
-      if (body?.action === "create_real_sessions" && !weeklyBetaEnabled) {
+      const action = String(body?.action || "weekly_action");
+      if (action === "create_real_sessions" && !weeklyBetaEnabled) {
         setError("Turn on the real weekly beta task before creating real sessions.");
         return;
       }
       setError("");
       setMessage("");
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const p = await r
-        .json()
-        .catch(() => ({ error: "Weekly beta action failed." }));
-      if (!r.ok || !p.success)
-        setError(p.error || "Weekly beta action failed.");
-      else setMessage(p.message || "Weekly beta action completed.");
+      setWeeklyActionBusy(action);
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const payload = await response
+          .json()
+          .catch(() => ({ success: false, error: "Weekly beta action failed." }));
+        if (!response.ok || !payload.success) {
+          setError(payload.error || "Weekly beta action failed.");
+          return;
+        }
+        setMessage(payload.message || "Weekly beta action completed.");
+        if (["create_test_session", "reset_test_session", "delete_test_session", "create_real_sessions"].includes(action)) router.refresh();
+      } catch {
+        setError("Weekly beta action failed.");
+      } finally {
+        setWeeklyActionBusy("");
+      }
     }
     return (
       <section className="space-y-4">
@@ -752,25 +764,26 @@ export default function GiveawayAdminClient({
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
-                  ["Create Test Weekly Session", "create"],
-                  ["Send Test Weekly Email", "send_weekly_email"],
-                  ["Send Test Reminder", "send_reminder"],
-                  ["Reset Test Weekly Task", "reset"],
-                  ["Delete Test Session", "delete"],
+                  ["Create Test Weekly Session", "create_test_session"],
+                  ["Send Test Weekly Email", "send_test_email"],
+                  ["Send Test Reminder", "send_test_reminder"],
+                  ["Reset Test Weekly Task", "reset_test_session"],
+                  ["Delete Test Session", "delete_test_session"],
                 ].map(([label, action]) => (
                   <button
                     key={action}
                     onClick={() =>
-                      action === "reset" &&
+                      action === "reset_test_session" &&
                       !confirm(
                         "Reset this test weekly task? This only clears test-mode progress and does not affect real beta testers.",
                       )
                         ? null
                         : weeklyPost("/api/admin/giveaway/weekly-beta", { action })
                     }
-                    className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-black"
+                    disabled={weeklyActionBusy === action}
+                    className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {label}
+                    {weeklyActionBusy === action ? "Working…" : label}
                   </button>
                 ))}
                 <a

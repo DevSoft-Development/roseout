@@ -3,9 +3,12 @@ import { requireBetaAdmin, safeError } from "@/app/api/admin/beta/_shared";
 import {
   createTestWeeklyBetaSession,
   deleteTestWeeklyBetaSession,
+  getCurrentTestWeeklyBetaSessionForUser,
   getOrCreateWeeklyBetaSessionsForActiveTesters,
   getWeeklyBetaSettings,
   resetTestWeeklyBetaSession,
+  sendTestWeeklyBetaEmailForUser,
+  sendTestWeeklyBetaReminderForUser,
   sendWeeklyBetaEmail,
   sendWeeklyBetaReminder,
   setWeeklyBetaEnabled,
@@ -21,20 +24,18 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireBetaAdmin();
   if (auth.error) return auth.error;
   const body = await req.json().catch(() => ({}));
-  if (typeof body.weekly_beta_enabled !== "boolean") {
-    return safeError("weekly_beta_enabled must be true or false.", 400);
-  }
+  if (typeof body.weekly_beta_enabled !== "boolean") return safeError("weekly_beta_enabled must be true or false.", 400);
   try {
     await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
     const settings = await getWeeklyBetaSettings();
-    return NextResponse.json({
-      success: true,
-      weekly_beta_enabled: settings.weekly_beta_enabled,
-      message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off.",
-    });
+    return NextResponse.json({ success: true, weekly_beta_enabled: settings.weekly_beta_enabled, message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off." });
   } catch {
     return safeError("We couldn’t update the weekly beta setting. Please try again.", 500);
   }
+}
+
+function currentAdminUserId(auth: any) {
+  return String(auth.adminUser?.user_id || "");
 }
 
 export async function POST(req: NextRequest) {
@@ -57,22 +58,32 @@ export async function POST(req: NextRequest) {
       const results = await sendWeeklyBetaReminder();
       return NextResponse.json({ success: true, message: "Weekly beta reminder job completed.", total: results.length, sent: results.filter((r: any) => r.status === "sent").length });
     }
-    if (["create", "create_test_session"].includes(action)) {
-      const userId = String(body.user_id || auth.adminUser?.user_id || "");
-      if (!userId) return safeError("No test user found.", 400);
-      return NextResponse.json({ success: true, message: "Test weekly session ready.", ...(await createTestWeeklyBetaSession(userId)) });
+
+    const userId = currentAdminUserId(auth);
+    if (["create_test_session", "send_test_email", "send_test_reminder", "reset_test_session", "delete_test_session"].includes(action) && !userId) return safeError("No test user found.", 400);
+
+    if (action === "create_test_session") {
+      const result = await createTestWeeklyBetaSession(userId);
+      return NextResponse.json({ success: true, message: "Test weekly session is ready.", session_id: result.session.id, test_url: "/user/dashboard/beta/weekly?test=1", ...result });
     }
-    if (["reset", "delete"].includes(action)) {
-      let sessionId = String(body.session_id || "");
-      if (!sessionId) {
-        const made = await createTestWeeklyBetaSession(String(body.user_id || auth.adminUser?.user_id || ""));
-        sessionId = made.session.id;
-      }
-      if (action === "reset") return NextResponse.json({ success: true, message: "Test weekly task reset.", session: await resetTestWeeklyBetaSession(sessionId) });
-      return NextResponse.json({ success: true, message: "Test session deleted.", ...(await deleteTestWeeklyBetaSession(sessionId)) });
+    if (action === "send_test_email") {
+      return NextResponse.json({ success: true, ...(await sendTestWeeklyBetaEmailForUser(userId, auth.adminUser?.email)) });
+    }
+    if (action === "send_test_reminder") {
+      return NextResponse.json({ success: true, ...(await sendTestWeeklyBetaReminderForUser(userId, auth.adminUser?.email)) });
+    }
+    if (action === "reset_test_session") {
+      const session = await getCurrentTestWeeklyBetaSessionForUser(userId);
+      if (!session) return safeError("Create a test weekly session first.", 404);
+      return NextResponse.json({ success: true, message: "Test weekly task reset. You can rerun the test now.", session: await resetTestWeeklyBetaSession(session.id) });
+    }
+    if (action === "delete_test_session") {
+      const session = await getCurrentTestWeeklyBetaSessionForUser(userId);
+      if (!session) return NextResponse.json({ success: true, message: "No test session found." });
+      return NextResponse.json({ success: true, message: "Test session deleted.", ...(await deleteTestWeeklyBetaSession(session.id)) });
     }
     return safeError("Unsupported weekly beta action.", 400);
-  } catch {
-    return safeError("Weekly beta action failed.", 500);
+  } catch (e: any) {
+    return safeError(e.message || "Weekly beta action failed.", 500);
   }
 }

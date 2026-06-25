@@ -3,6 +3,7 @@ import { repairBetaAccessForEmail, syncUserBetaAccess } from "@/lib/beta/program
 import { sendBetaRemindersForActiveTesters } from "@/lib/beta/reminderEmails";
 import {
   getWeeklyBetaEnabled,
+  getCurrentWeekStart,
   setWeeklyBetaEnabled as setWeeklyBetaEnabledFlag,
   getOrCreateWeeklyBetaSessionForUser,
   getOrCreateWeeklyBetaSessionsForActiveTesters,
@@ -12,6 +13,7 @@ import {
   weeklySessionToVirtualAssignment,
 } from "@/lib/beta/weeklyTasks";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
+import { sendRawBrandedEmail } from "@/lib/email";
 
 export async function getBetaGiveawayOverview() {
   const [applications, testers, sessions, feedback, bugs, signups] = await Promise.all([
@@ -37,6 +39,59 @@ export async function getBetaGiveawayOverview() {
     totalGiveawayEntries: entries.reduce((sum, e) => sum + e.totalEntries, 0),
     needsReview: (signups.data ?? []).filter((e: any) => e.duplicate_flag || e.giveaway_status === "pending_verification").length,
   };
+}
+
+
+export async function getCurrentTestWeeklyBetaSessionForUser(userId: string) {
+  const weekStart = getCurrentWeekStart();
+  const { data, error } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("week_start_date", weekStart)
+    .eq("test_mode", true)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function getOrCreateCurrentTestWeeklyBetaSessionForUser(userId: string) {
+  const result = await createTestWeeklyBetaSession(userId);
+  return result.session;
+}
+
+async function sendTestWeeklyBetaMessageForUser(userId: string, fallbackEmail: string | null | undefined, type: "weekly" | "reminder") {
+  await getOrCreateCurrentTestWeeklyBetaSessionForUser(userId);
+  const email = fallbackEmail?.trim();
+  if (!email) throw new Error("Test recipient email is unavailable.");
+  const subject = type === "weekly"
+    ? "[TEST] Your weekly TheOutHaven beta test is ready"
+    : "[TEST] Reminder: complete your weekly TheOutHaven beta test";
+  await sendRawBrandedEmail({
+    to: email,
+    department: "support",
+    subject,
+    heading: subject,
+    body: "This is a test email. It lets admins verify the weekly beta flow end-to-end. It does not count toward real beta progress, giveaway eligibility, prize entries, or analytics.",
+    cta: {
+      label: "Continue Test Weekly Beta Task",
+      url: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/user/dashboard/beta/weekly?test=1`,
+    },
+  });
+  return {
+    sent: true,
+    message: type === "weekly"
+      ? "Test weekly email sent. No real beta testers were contacted."
+      : "Test reminder sent. No real beta testers were contacted.",
+  };
+}
+
+export async function sendTestWeeklyBetaEmailForUser(userId: string, fallbackEmail?: string | null) {
+  return sendTestWeeklyBetaMessageForUser(userId, fallbackEmail, "weekly");
+}
+
+export async function sendTestWeeklyBetaReminderForUser(userId: string, fallbackEmail?: string | null) {
+  return sendTestWeeklyBetaMessageForUser(userId, fallbackEmail, "reminder");
 }
 
 export async function getBetaApplications() { const { data, error } = await supabaseAdmin.from("beta_applications").select("*").order("created_at", { ascending: false }).limit(500); if (error) throw error; return data ?? []; }

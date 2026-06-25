@@ -371,7 +371,47 @@ export async function resetTestWeeklyBetaSession(sessionId: string) {
 }
 
 export async function deleteTestWeeklyBetaSession(sessionId: string) {
-  const { error } = await supabaseAdmin.from("beta_test_sessions").delete().eq("id", sessionId).eq("test_mode", true);
+  const { data: session, error: sessionError } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("id,test_mode")
+    .eq("id", sessionId)
+    .eq("test_mode", true)
+    .maybeSingle();
+  if (sessionError) throw sessionError;
+  if (!session) throw new Error("Test session not found.");
+
+  await supabaseAdmin
+    .from("beta_feedback")
+    .delete()
+    .eq("beta_session_id", sessionId)
+    .eq("test_mode", true);
+
+  const { data: runs, error: runsError } = await supabaseAdmin
+    .from("beta_search_runs")
+    .select("id")
+    .eq("beta_session_id", sessionId)
+    .eq("test_mode", true);
+  if (runsError) throw runsError;
+  const runIds = (runs ?? []).map((run: any) => run.id);
+
+  if (runIds.length) {
+    await supabaseAdmin
+      .from("beta_search_results")
+      .delete()
+      .in("beta_search_run_id", runIds)
+      .eq("test_mode", true);
+    await supabaseAdmin
+      .from("beta_search_runs")
+      .delete()
+      .in("id", runIds)
+      .eq("test_mode", true);
+  }
+
+  const { error } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .delete()
+    .eq("id", sessionId)
+    .eq("test_mode", true);
   if (error) throw error;
   return { deleted: true };
 }
