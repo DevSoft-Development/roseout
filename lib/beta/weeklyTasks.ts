@@ -341,6 +341,8 @@ export async function getOrCreateWeeklyBetaSessionForUser(userId: string, testMo
 }
 
 export async function getOrCreateWeeklyBetaSessionsForActiveTesters() {
+  const enabled = await getWeeklyBetaEnabled();
+  if (!enabled) throw new Error("Turn on the real weekly beta task before creating real sessions.");
   const { data: testers } = await supabaseAdmin.from("beta_testers").select("id,user_id,status").in("status", ["active", "approved"]);
   let created = 0, alreadyExisted = 0, skipped = 0; const errors: string[] = [];
   for (const tester of testers ?? []) {
