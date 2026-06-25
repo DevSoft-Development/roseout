@@ -220,6 +220,7 @@ export async function getOrCreateWeeklyBetaSessionForTester(testerId: string) {
     .select("*")
     .eq("tester_id", testerId)
     .eq("week_start_date", weekStart)
+    .eq("test_mode", false)
     .maybeSingle();
   if (existingError) throw existingError;
 
@@ -231,6 +232,7 @@ export async function getOrCreateWeeklyBetaSessionForTester(testerId: string) {
     week_end_date: getWeekEnd(weekStart),
     status: "not_started",
     completed_steps: [],
+    test_mode: false,
   };
 
   const session = existing
@@ -270,6 +272,9 @@ export function weeklySessionToVirtualAssignment(session: any) {
   return {
     id: session?.id ?? "weekly-beta-session",
     status,
+    test_mode: Boolean(session?.test_mode),
+    week_start_date: session?.week_start_date,
+    week_number: session?.week_number,
     assigned_week_start: session?.week_start_date,
     completed_steps_count: completed,
     total_steps: 5,
@@ -353,6 +358,25 @@ export async function getOrCreateWeeklyBetaSessionsForActiveTesters() {
     } catch (e: any) { errors.push(e.message || "Unknown error"); }
   }
   return { created, alreadyExisted, skipped, errors, testerCount: testers?.length ?? 0 };
+}
+
+
+export async function getCurrentTestWeeklyBetaSessionForUser(userId: string) {
+  const weekStart = getCurrentWeekStart();
+  const { data, error } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("week_start_date", weekStart)
+    .eq("test_mode", true)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function getOrCreateCurrentTestWeeklyBetaSessionForUser(userId: string) {
+  const result = await getOrCreateWeeklyBetaSessionForUser(userId, true);
+  return result.session;
 }
 
 export async function createTestWeeklyBetaSession(userId: string) { return getOrCreateWeeklyBetaSessionForUser(userId, true); }

@@ -8,6 +8,8 @@ import {
   getOrCreateWeeklyBetaSessionForUser,
   getOrCreateWeeklyBetaSessionsForActiveTesters,
   createTestWeeklyBetaSession,
+  getCurrentTestWeeklyBetaSessionForUser,
+  getOrCreateCurrentTestWeeklyBetaSessionForUser,
   resetTestWeeklyBetaSession,
   deleteTestWeeklyBetaSession,
   weeklySessionToVirtualAssignment,
@@ -42,24 +44,6 @@ export async function getBetaGiveawayOverview() {
 }
 
 
-export async function getCurrentTestWeeklyBetaSessionForUser(userId: string) {
-  const weekStart = getCurrentWeekStart();
-  const { data, error } = await supabaseAdmin
-    .from("beta_test_sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("week_start_date", weekStart)
-    .eq("test_mode", true)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-export async function getOrCreateCurrentTestWeeklyBetaSessionForUser(userId: string) {
-  const result = await createTestWeeklyBetaSession(userId);
-  return result.session;
-}
-
 async function sendTestWeeklyBetaMessageForUser(userId: string, fallbackEmail: string | null | undefined, type: "weekly" | "reminder") {
   await getOrCreateCurrentTestWeeklyBetaSessionForUser(userId);
   const email = fallbackEmail?.trim();
@@ -67,7 +51,7 @@ async function sendTestWeeklyBetaMessageForUser(userId: string, fallbackEmail: s
   const subject = type === "weekly"
     ? "[TEST] Your weekly TheOutHaven beta test is ready"
     : "[TEST] Reminder: complete your weekly TheOutHaven beta test";
-  await sendRawBrandedEmail({
+  const sendResult = await sendRawBrandedEmail({
     to: email,
     department: "support",
     subject,
@@ -78,6 +62,12 @@ async function sendTestWeeklyBetaMessageForUser(userId: string, fallbackEmail: s
       url: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/user/dashboard/beta/weekly?test=1`,
     },
   });
+  if (sendResult.status !== "sent") {
+    return {
+      sent: false,
+      message: "Test email could not be sent because email service is not configured.",
+    };
+  }
   return {
     sent: true,
     message: type === "weekly"
@@ -103,7 +93,7 @@ export async function approveBetaApplicant(applicationId: string, actor?: any) {
 export async function updateBetaAccessForUser(userId: string, status: string) { const { data, error } = await supabaseAdmin.from("beta_testers").update({ status, updated_at: new Date().toISOString() }).eq("user_id", userId).select("*"); if (error) throw error; return data ?? []; }
 export async function getWeeklyBetaSettings() { return { weekly_beta_enabled: await getWeeklyBetaEnabled() }; }
 export async function setWeeklyBetaEnabled(enabled: boolean, updatedBy?: string | null) { return setWeeklyBetaEnabledFlag(enabled, updatedBy); }
-export { getOrCreateWeeklyBetaSessionForUser, getOrCreateWeeklyBetaSessionsForActiveTesters, createTestWeeklyBetaSession, resetTestWeeklyBetaSession, deleteTestWeeklyBetaSession };
+export { getOrCreateWeeklyBetaSessionForUser, getOrCreateWeeklyBetaSessionsForActiveTesters, createTestWeeklyBetaSession, getCurrentTestWeeklyBetaSessionForUser, getOrCreateCurrentTestWeeklyBetaSessionForUser, resetTestWeeklyBetaSession, deleteTestWeeklyBetaSession };
 export async function sendWeeklyBetaEmail() { return sendBetaRemindersForActiveTesters("weekly_tasks"); }
 export async function sendWeeklyBetaReminder() { return sendBetaRemindersForActiveTesters("midweek_reminder" as any); }
 export async function sendTestWeeklyBetaEmail() { return { sent: false, message: "Use the weekly-beta API to send a test email to the current admin test session." }; }

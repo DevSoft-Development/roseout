@@ -638,7 +638,7 @@ export default function GiveawayAdminClient({
       const action = String(body?.action || "weekly_action");
       if (action === "create_real_sessions" && !weeklyBetaEnabled) {
         setError("Turn on the real weekly beta task before creating real sessions.");
-        return;
+        return null;
       }
       setError("");
       setMessage("");
@@ -651,18 +651,24 @@ export default function GiveawayAdminClient({
         });
         const payload = await response
           .json()
-          .catch(() => ({ success: false, error: "Weekly beta action failed." }));
+          .catch(() => ({ success: false, error: `${action.replaceAll("_", " ")} failed.` }));
         if (!response.ok || !payload.success) {
-          setError(payload.error || "Weekly beta action failed.");
-          return;
+          setError(payload.error || payload.message || `${action.replaceAll("_", " ")} failed.`);
+          return null;
         }
-        setMessage(payload.message || "Weekly beta action completed.");
+        setMessage(payload.message || `${action.replaceAll("_", " ")} completed.`);
         if (["create_test_session", "reset_test_session", "delete_test_session", "create_real_sessions"].includes(action)) router.refresh();
+        return payload;
       } catch {
-        setError("Weekly beta action failed.");
+        setError(`${action.replaceAll("_", " ")} failed.`);
+        return null;
       } finally {
         setWeeklyActionBusy("");
       }
+    }
+    async function openTestWeeklyTask() {
+      const payload = await weeklyPost("/api/admin/giveaway/weekly-beta", { action: "create_test_session" });
+      if (payload?.success) router.push(payload.test_url || "/user/dashboard/beta/weekly?test=1");
     }
     return (
       <section className="space-y-4">
@@ -786,12 +792,14 @@ export default function GiveawayAdminClient({
                     {weeklyActionBusy === action ? "Working…" : label}
                   </button>
                 ))}
-                <a
-                  href="/user/dashboard/beta/weekly?test=1"
-                  className="rounded-full bg-rose-600 px-3 py-2 text-xs font-black"
+                <button
+                  type="button"
+                  onClick={openTestWeeklyTask}
+                  disabled={weeklyActionBusy === "create_test_session"}
+                  className="rounded-full bg-rose-600 px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Open Test Weekly Task
-                </a>
+                  {weeklyActionBusy === "create_test_session" ? "Opening…" : "Open Test Weekly Task"}
+                </button>
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
 
 async function currentTester() {
   const supabase = await createClient();
@@ -32,11 +33,12 @@ function ownsSession(session: any, user: any, tester: any, isAdmin: boolean) {
   );
 }
 async function resolveSession({ body, user, tester, isAdmin, week, testMode }: any) {
-  const weekStart = body.week_start_date || null;
+  const weekStart = body.week_start_date || getCurrentWeekStart();
   if (body.beta_session_id) {
     const { data, error } = await supabaseAdmin.from("beta_test_sessions").select("*").eq("id", body.beta_session_id).maybeSingle();
     if (error) throw error;
-    if (!data || Boolean(data.test_mode) !== testMode || !ownsSession(data, user, tester, isAdmin)) throw new Error("Beta session not found.");
+    if (!data || !ownsSession(data, user, tester, isAdmin)) throw new Error("Beta session not found.");
+    if (body.test_mode === true && !data.test_mode) throw new Error("Beta session not found.");
     return data;
   }
 
@@ -67,7 +69,7 @@ async function resolveSession({ body, user, tester, isAdmin, week, testMode }: a
     return data;
   }
 
-  if (!tester?.id) throw new Error("Beta tester access is required.");
+  if (!tester?.id) throw new Error("Beta access is required to save weekly progress.");
   const { data: existing, error } = await supabaseAdmin
     .from("beta_test_sessions")
     .select("*")
@@ -98,30 +100,39 @@ export async function POST(req: NextRequest) {
     testMode = Boolean(body.test_mode);
     const resolved = await resolveSession({ body, user, tester, isAdmin: auth.isAdmin, week, testMode });
     const completedSteps = completedStepsFor(String(body.action || ""), resolved.completed_steps);
-    const update = await supabaseAdmin.from("beta_test_sessions").update({ status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: completedSteps, completed_at: body.action === "feedback" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", resolved.id).eq("test_mode", testMode).select("*").single();
+    const update = await supabaseAdmin.from("beta_test_sessions").update({ status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: completedSteps, completed_at: body.action === "feedback" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", resolved.id).eq("test_mode", Boolean(resolved.test_mode)).select("*").single();
     if (update.error) throw update.error;
-    const session = update;
+    const session = update.data;
 
     if (body.action === "search_run") {
-      const run = await supabaseAdmin.from("beta_search_runs").insert({ beta_session_id: session.data.id, user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, beta_assignment_id: body.beta_assignment_id || null, week_number: week, outing_sentence: String(body.outing_sentence || ""), enterprise_search_query_used: body.enterprise_search_query_used || null, result_mode: body.result_mode === "paired_outing" ? "paired_outing" : "single_location", pair_requested: Boolean(body.pair_requested), refinement_choices: Array.isArray(body.refinement_choices) ? body.refinement_choices : [], refinement_text: body.refinement_text || null, updated_enterprise_search_query: body.result_set === "updated" ? body.enterprise_search_query_used || null : null, test_mode: testMode }).select("*").single();
+      const run = await supabaseAdmin.from("beta_search_runs").insert({ beta_session_id: session.id, user_id: user?.id ?? tester?.user_id ?? null, tester_id: tester?.id ?? null, beta_assignment_id: body.beta_assignment_id || null, week_number: week, outing_sentence: String(body.outing_sentence || ""), enterprise_search_query_used: body.enterprise_search_query_used || null, result_mode: body.result_mode === "paired_outing" ? "paired_outing" : "single_location", pair_requested: Boolean(body.pair_requested), refinement_choices: Array.isArray(body.refinement_choices) ? body.refinement_choices : [], refinement_text: body.refinement_text || null, updated_enterprise_search_query: body.result_set === "updated" ? body.enterprise_search_query_used || null : null, test_mode: testMode }).select("*").single();
       if (run.error) throw run.error;
       const rows = [...(body.results || []).map((r:any,i:number)=>({ beta_search_run_id: run.data.id, result_type: "single_location", result_position: i+1, result_title: titleFor(r), result_data: r, result_set: body.result_set || "original", test_mode: testMode })), ...(body.pairs || []).map((p:any,i:number)=>({ beta_search_run_id: run.data.id, result_type: "paired_outing", pair_id: p.id || p.pair_id || null, result_position: i+1, result_title: titleFor(p), result_data: p, result_set: body.result_set || "original", test_mode: testMode }))];
       if (rows.length) await supabaseAdmin.from("beta_search_results").insert(rows);
-      return NextResponse.json({ success: true, session: session.data, run: run.data });
+      return NextResponse.json({ success: true, session, run: run.data });
     }
     if (body.action === "selection") {
       if (body.beta_search_run_id) await supabaseAdmin.from("beta_search_results").insert({ beta_search_run_id: body.beta_search_run_id, result_type: body.result_type || body.chosen_result_type || "none", result_title: titleFor(body.result), result_data: body.result || {}, was_selected: Boolean(body.was_selected || body.selected_none), was_saved: Boolean(body.was_saved), was_top_pick: Boolean(body.was_top_pick), was_chosen_action_result: Boolean(body.was_chosen_action_result), test_mode: testMode });
-      return NextResponse.json({ success: true, session: session.data });
+      return NextResponse.json({ success: true, session });
     }
     if (body.action === "feedback") {
       const entries = Object.entries(body.feedback || {});
-      const rows = entries.map(([key, value]) => ({ tester_id: tester?.id ?? null, user_id: user?.id ?? null, beta_session_id: session.data.id, beta_search_run_id: body.beta_search_run_id || null, week_number: week, feedback_type: "general", feature_area: "guided_beta", message: `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`, question_key: key, question_text: key, answer_value: value == null ? null : value, answer_text: typeof value === "string" ? value : null, result_mode: body.result_mode || null, selected_none: Boolean(body.selected_none), search_query: body.outing_sentence || null, test_mode: testMode }));
+      const rows = entries.map(([key, value]) => ({ tester_id: tester?.id ?? null, user_id: user?.id ?? null, beta_session_id: session.id, beta_search_run_id: body.beta_search_run_id || null, week_number: week, feedback_type: "general", feature_area: "guided_beta", message: `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`, question_key: key, question_text: key, answer_value: value == null ? null : value, answer_text: typeof value === "string" ? value : null, result_mode: body.result_mode || null, selected_none: Boolean(body.selected_none), search_query: body.outing_sentence || null, test_mode: testMode }));
       if (rows.length) await supabaseAdmin.from("beta_feedback").insert(rows);
-      return NextResponse.json({ success: true, session: session.data });
+      return NextResponse.json({ success: true, session });
     }
-    return NextResponse.json({ success: true, session: session.data });
+    return NextResponse.json({ success: true, session });
   } catch (error) {
-    console.error("GUIDED_BETA_ERROR", { action: body.action, testMode, betaSessionId: body.beta_session_id || null, hasUser: Boolean(user?.id), hasTester: Boolean(tester?.id), week, weekStart: body.week_start_date || null, error });
+    console.error("GUIDED_BETA_SAVE_ERROR", {
+      action: body.action || null,
+      testMode: Boolean(body.test_mode),
+      betaSessionId: body.beta_session_id || null,
+      hasUser: Boolean(user?.id),
+      hasTester: Boolean(tester?.id),
+      week: body.week_number || null,
+      weekStart: body.week_start_date || null,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ error: "We could not save beta progress." }, { status: 500 });
   }
 }

@@ -44,6 +44,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const action = String(body.action || "create_real_sessions");
   try {
+    if (action === "set_weekly_enabled") {
+      if (typeof body.weekly_beta_enabled !== "boolean") return safeError("weekly_beta_enabled must be true or false.", 400);
+      await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
+      const settings = await getWeeklyBetaSettings();
+      return NextResponse.json({ success: true, weekly_beta_enabled: settings.weekly_beta_enabled, message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off." });
+    }
     if (action === "create_real_sessions" || action === "assign") {
       const settings = await getWeeklyBetaSettings();
       if (!settings.weekly_beta_enabled) return safeError("Turn on the real weekly beta task before creating real sessions.", 409);
@@ -84,6 +90,11 @@ export async function POST(req: NextRequest) {
     }
     return safeError("Unsupported weekly beta action.", 400);
   } catch (e: any) {
-    return safeError(e.message || "Weekly beta action failed.", 500);
+    console.error("GIVEAWAY_WEEKLY_BETA_ACTION_ERROR", {
+      action,
+      hasAdminUser: Boolean(auth.adminUser?.user_id),
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return safeError("Weekly beta action failed. Please try again.", 500);
   }
 }
