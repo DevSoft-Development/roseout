@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assignWeeklyBetaTasksForTester } from "@/lib/beta/weeklyTasks";
-import { findAuthUserIdByEmail, safeUpsertBetaTester } from "@/lib/beta/programAccess";
+import { syncUserBetaAccess } from "@/lib/beta/programAccess";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireBetaAdmin, safeError } from "../_shared";
 
@@ -27,18 +26,17 @@ export async function PATCH(req: NextRequest) {
       .select("*")
       .single();
     if (updateError || !app) return safeError("Unable to update beta application.", 500);
+    let sync = null;
     if (status === "approved") {
       const email = String(app.email || "").trim().toLowerCase();
-      const userId = await findAuthUserIdByEmail(email);
-      const tester = await safeUpsertBetaTester({ applicationId: app.id, fullName: app.name, email, phone: app.phone, testerType: app.tester_type, userId, approvedBy: a.adminUser?.user_id, status: userId ? "active" : "approved" });
-      if (tester.error || !tester.data) {
-        await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: a.adminUser?.user_id ?? null, target_email: email, action: "beta_approve_failed", entity_type: "beta_application", entity_id: app.id, summary: "Beta application approval failed", metadata: { error: tester.error?.message || "Unknown error" } });
+      try {
+        sync = await syncUserBetaAccess({ applicationId: app.id, email, name: app.name, phone: app.phone, testerType: app.tester_type, requestedBetaStatus: "approved", source: "giveaway_applications", adminUserId: a.adminUser?.user_id ?? null, actor: a.adminUser });
+      } catch (error) {
+        await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: a.adminUser?.user_id ?? null, target_email: email, action: "beta_approve_failed", entity_type: "beta_application", entity_id: app.id, summary: "Beta application approval failed", metadata: { error: error instanceof Error ? error.message : "Unknown error" } });
         return safeError("Beta approval could not be completed. Please use Repair beta access from the reward admin page.", 500);
       }
-      await assignWeeklyBetaTasksForTester(tester.data.id);
-      await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: a.adminUser?.user_id ?? null, target_email: email, action: "beta_tasks_assigned", entity_type: "beta_tester", entity_id: tester.data.id, summary: "Weekly beta tasks assigned after admin approval", metadata: {} });
     }
-    return NextResponse.json({ success: true, application: app });
+    return NextResponse.json({ success: true, application: app, sync, message: status === "approved" ? "Applicant approved and beta access synced." : "Application updated." });
   } catch (error) {
     console.error("ADMIN_BETA_APP_PATCH", error);
     return safeError("Beta application update failed.", 500);
