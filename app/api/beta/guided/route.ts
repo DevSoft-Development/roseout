@@ -128,8 +128,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, session, run: run.data });
     }
     if (body.action === "selection") {
-      if (body.beta_search_run_id) await supabaseAdmin.from("beta_search_results").insert({ beta_search_run_id: body.beta_search_run_id, result_type: body.result_type || body.chosen_result_type || "none", result_title: titleFor(body.result), result_data: body.result || {}, was_selected: Boolean(body.was_selected || body.selected_none), was_saved: Boolean(body.was_saved), was_top_pick: Boolean(body.was_top_pick), was_chosen_action_result: Boolean(body.was_chosen_action_result), test_mode: testMode });
-      return NextResponse.json({ success: true, session });
+      if (body.result_type !== "none" && !body.beta_search_run_id) {
+        return NextResponse.json(
+          { error: "Missing beta search run for selection." },
+          { status: 400 },
+        );
+      }
+
+      let selection = null;
+
+      if (body.beta_search_run_id) {
+        const { data, error } = await supabaseAdmin
+          .from("beta_search_results")
+          .insert({ beta_search_run_id: body.beta_search_run_id, result_type: body.result_type || body.chosen_result_type || "none", result_title: titleFor(body.result), result_data: body.result || {}, was_selected: Boolean(body.was_selected || body.selected_none), was_saved: Boolean(body.was_saved), was_top_pick: Boolean(body.was_top_pick), was_chosen_action_result: Boolean(body.was_chosen_action_result), test_mode: testMode })
+          .select("*")
+          .single();
+
+        if (error) throw error;
+        selection = data;
+      }
+
+      return NextResponse.json({ success: true, session, selection });
     }
     if (body.action === "feedback") {
       const entries = Object.entries(body.feedback || {});
