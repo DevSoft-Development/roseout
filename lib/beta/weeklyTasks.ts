@@ -52,6 +52,8 @@ const rotating: Record<string, string[]> = {
 export function getDefaultBetaTaskLinks(testerType: string) {
   return rotating[testerType] ?? rotating.user;
 }
+// Deprecated beta_tasks template labels retained only for server-side historical compatibility.
+// Do not render these in admin giveaway or user beta UI and do not assign them.
 export function getDefaultBetaPromptTasks() {
   return [
     "Search quality test",

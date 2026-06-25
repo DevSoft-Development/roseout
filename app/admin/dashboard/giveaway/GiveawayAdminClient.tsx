@@ -72,23 +72,22 @@ type Stats = {
   duplicateFlagged: number;
   winnerSelected: number;
 };
-type WeeklyTask = {
-  id: string;
-  title: string;
-  status?: string | null;
-  feature_area?: string | null;
-  priority?: string | null;
-};
+type Application = { id: string; full_name?: string | null; name?: string | null; email?: string | null; status?: string | null; created_at?: string | null; tester_type?: string | null };
+type Feedback = { id: string; message?: string | null; feedback_type?: string | null; feature_area?: string | null; search_query?: string | null; result_accuracy_rating?: number | null; created_at?: string | null; beta_testers?: { email?: string | null; name?: string | null; full_name?: string | null } | null };
+type BugReport = { id: string; title?: string | null; severity?: string | null; status?: string | null; priority?: string | null; feature_area?: string | null; created_at?: string | null; beta_testers?: { email?: string | null; name?: string | null; full_name?: string | null } | null };
+type WeeklySession = { id: string; status?: string | null; test_mode?: boolean | null; week_number?: number | null; completed_steps?: unknown[] | null; created_at?: string | null; beta_testers?: { email?: string | null; name?: string | null; full_name?: string | null } | null };
+type Overview = Record<string, number>;
 
 const tabs = [
   "Overview",
+  "Applications",
   "Testers",
   "Weekly Beta",
-  "Bonus Entries",
   "Results & Feedback",
+  "Bug Reports",
+  "Bonus Entries",
   "Prize Outcomes",
   "Settings",
-  "Legacy Task Templates",
 ] as const;
 const filters = [
   ["all", "All"],
@@ -336,12 +335,20 @@ export default function GiveawayAdminClient({
   initialEntries,
   initialStats,
   duplicateEvents,
-  initialWeeklyTasks = [],
+  initialApplications = [],
+  initialFeedback = [],
+  initialBugReports = [],
+  initialWeeklySessions = [],
+  initialOverview = {},
 }: {
   initialEntries: Entry[];
   initialStats: Stats;
   duplicateEvents: DuplicateEvent[];
-  initialWeeklyTasks?: WeeklyTask[];
+  initialApplications?: Application[];
+  initialFeedback?: Feedback[];
+  initialBugReports?: BugReport[];
+  initialWeeklySessions?: WeeklySession[];
+  initialOverview?: Overview;
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [stats, setStats] = useState(initialStats);
@@ -388,7 +395,7 @@ export default function GiveawayAdminClient({
   );
   const statCards = useMemo(
     () => [
-      ["Total Beta Entrants", stats.giveawayEntries, "Opted into giveaway"],
+      ["Total beta applicants", initialOverview.totalApplicants ?? stats.total, "Applications received"],
       [
         "Active Beta Testers",
         entries.filter(activeBeta).length,
@@ -412,9 +419,9 @@ export default function GiveawayAdminClient({
         ).length,
         "Weekly steps incomplete",
       ],
-      ["Prize Qualified", stats.verifiedEntries, "Marked prize-ready"],
+      ["Total giveaway entries", initialOverview.totalGiveawayEntries ?? 0, "Base + optional bonuses"],
     ],
-    [entries, stats],
+    [entries, stats, initialOverview],
   );
   async function loadEntries(nextFilter = "all") {
     setError("");
@@ -631,7 +638,7 @@ export default function GiveawayAdminClient({
                 (e) => e.beta_giveaway_eligibility?.weeklyTasksComplete,
               ).length,
             ],
-            ["Test Sessions", 0],
+            ["Test Sessions", initialWeeklySessions.filter((s) => s.test_mode).length],
             ["Average Steps Completed", avg],
             [
               "Needs Reminder",
@@ -662,7 +669,7 @@ export default function GiveawayAdminClient({
               </p>
               <button
                 onClick={() =>
-                  fetch("/api/admin/beta/weekly-settings", {
+                  fetch("/api/admin/giveaway/weekly-beta", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ weekly_beta_enabled: true }),
@@ -674,7 +681,7 @@ export default function GiveawayAdminClient({
               </button>
               <button
                 onClick={() =>
-                  fetch("/api/admin/beta/weekly-settings", {
+                  fetch("/api/admin/giveaway/weekly-beta", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ weekly_beta_enabled: false }),
@@ -685,7 +692,7 @@ export default function GiveawayAdminClient({
                 Off
               </button>
               <button
-                onClick={() => weeklyPost("/api/admin/beta/weekly-sessions")}
+                onClick={() => weeklyPost("/api/admin/giveaway/weekly-beta", { action: "create_real_sessions" })}
                 className="ml-2 mt-3 rounded-full border border-white/10 px-4 py-2 text-xs font-black"
               >
                 Create Real Weekly Sessions
@@ -715,9 +722,7 @@ export default function GiveawayAdminClient({
                         "Reset this test weekly task? This only clears test-mode progress and does not affect real beta testers.",
                       )
                         ? null
-                        : weeklyPost("/api/admin/beta/test-weekly-session", {
-                            action,
-                          })
+                        : weeklyPost("/api/admin/giveaway/weekly-beta", { action })
                     }
                     className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-black"
                   >
@@ -817,9 +822,7 @@ export default function GiveawayAdminClient({
                     ·{" "}
                     <button
                       onClick={() =>
-                        weeklyPost("/api/admin/beta/reminders", {
-                          reminderType: "midweek_reminder",
-                        })
+                        weeklyPost("/api/admin/giveaway/weekly-beta", { action: "send_reminder" })
                       }
                       className="text-sky-200"
                     >
@@ -834,6 +837,10 @@ export default function GiveawayAdminClient({
       </section>
     );
   }
+  function SimpleList({ title, rows }: { title: string; rows: { id: string; title: string; meta: string; date?: string | null }[] }) {
+    return <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5"><h2 className="text-2xl font-black">{title}</h2><div className="mt-4 grid gap-3">{rows.length ? rows.map((r) => <div key={r.id} className="rounded-2xl border border-white/10 bg-white/[0.05] p-4"><p className="font-black text-white">{r.title}</p><p className="mt-1 text-sm text-white/60">{r.meta}</p><p className="mt-1 text-xs text-white/35">{formatDate(r.date)}</p></div>) : <p className="text-sm text-white/55">No records yet.</p>}</div></section>;
+  }
+
   function BonusEntriesPanel() {
     return (
       <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
@@ -1139,36 +1146,11 @@ export default function GiveawayAdminClient({
       {activeTab === "Testers" || activeTab === "Overview" ? (
         <TesterTable />
       ) : null}
+      {activeTab === "Applications" ? <SimpleList title="Applications" rows={initialApplications.map((a) => ({ id: a.id, title: a.full_name || a.name || a.email || "Applicant", meta: `${a.email || "No email"} · ${a.status || "pending"} · ${a.tester_type || "user"}`, date: a.created_at }))} /> : null}
       {activeTab === "Weekly Beta" ? <WeeklyBetaPanel /> : null}
       {activeTab === "Bonus Entries" ? <BonusEntriesPanel /> : null}
-      {activeTab === "Legacy Task Templates" ? (
-        <>
-          <p className="rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold text-amber-100">
-            These are legacy/internal beta task templates. They are not the
-            weekly beta tester task.
-          </p>
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {initialWeeklyTasks.map((task) => (
-              <div
-                key={task.id}
-                className="rounded-2xl border border-white/10 bg-white/[0.05] p-4"
-              >
-                <p className="font-black">{task.title}</p>
-                <p className="mt-2 text-sm text-white/55">
-                  {task.feature_area || "General"} · {task.priority || "normal"}{" "}
-                  · {task.status || "draft"}
-                </p>
-              </div>
-            ))}
-          </section>
-        </>
-      ) : null}
-      {activeTab === "Results & Feedback" ? (
-        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-white/70">
-          Feedback and bug summaries remain available from each tester detail
-          panel.
-        </section>
-      ) : null}
+      {activeTab === "Results & Feedback" ? <SimpleList title="Results & Feedback" rows={initialFeedback.map((f) => ({ id: f.id, title: f.message || f.feedback_type || "Feedback", meta: `${f.beta_testers?.email || "Unknown tester"} · ${f.feature_area || "general"} · Rating ${f.result_accuracy_rating ?? "—"} · ${f.search_query || "No search query"}`, date: f.created_at }))} /> : null}
+      {activeTab === "Bug Reports" ? <SimpleList title="Bug Reports" rows={initialBugReports.map((b) => ({ id: b.id, title: b.title || "Bug report", meta: `${b.beta_testers?.email || "Unknown tester"} · ${b.severity || b.priority || "medium"} · ${b.status || "open"} · ${b.feature_area || "general"}`, date: b.created_at }))} /> : null}
       {activeTab === "Prize Outcomes" ? (
         <section className="grid gap-4 lg:grid-cols-3">
           {["winner", "alternate", "disqualified"].map((status) => (
