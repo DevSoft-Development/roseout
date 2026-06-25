@@ -271,6 +271,8 @@ export function weeklySessionToVirtualAssignment(session: any) {
       : "assigned";
   return {
     id: session?.id ?? "weekly-beta-session",
+    real_assignment_id: null,
+    is_virtual_weekly_session: true,
     status,
     test_mode: Boolean(session?.test_mode),
     week_start_date: session?.week_start_date,
