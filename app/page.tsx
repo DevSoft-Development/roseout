@@ -10,7 +10,7 @@ export const revalidate = 300;
 export const metadata: Metadata = buildMetadata({
   title: "Stop searching 10 tabs. Plan the night in one place.",
   description:
-    "Join TheOutHaven Launch List for early access, NYC outing ideas, and a chance to win a $100 gift card.",
+    "Join TheOutHaven Launch List for early access, NYC outing ideas, and a chance to win a $500 gift card.",
   path: "/",
 });
 
@@ -50,7 +50,10 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl space-y-16">
           <Hero />
           <FullSentenceSearch />
-          <section id="launch-list" className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+          <section
+            id="launch-list"
+            className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-start"
+          >
             <LaunchFormCard />
             <GiveawayRulesCard />
           </section>
@@ -71,24 +74,39 @@ function Hero() {
           Launching Late Summer 2026
         </div>
         <div className="space-y-5">
-          <p className="text-sm font-black uppercase tracking-[0.32em] text-white/55">TheOutHaven Launch Giveaway</p>
+          <p className="text-sm font-black uppercase tracking-[0.32em] text-white/55">
+            TheOutHaven Launch Giveaway
+          </p>
           <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-5xl">
             Stop searching 10 tabs. Plan the night in one place.
           </h1>
           <p className="max-w-3xl text-base leading-7 text-white/76 sm:text-lg">
-            Tell us the whole plan once — dinner, drinks, activities, or something after — and TheOutHaven helps turn it into a complete outing.
+            Tell us the whole plan once — dinner, drinks, activities, or
+            something after — and TheOutHaven helps turn it into a complete
+            outing.
           </p>
-          <p className="max-w-2xl text-sm font-bold leading-6 text-white/62 sm:text-base">Your AI outing assistant for better nights out.</p>
+          <p className="max-w-2xl text-sm font-bold leading-6 text-white/62 sm:text-base">
+            Your AI outing assistant for better nights out.
+          </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <a href="#launch-list" className="rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.02]">
+          <a
+            href="#launch-list"
+            className="rounded-full bg-gradient-to-r from-rose-500 to-red-700 px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white shadow-2xl shadow-rose-950/40 transition hover:scale-[1.02]"
+          >
             Join Beta Launch List
           </a>
-          <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.07] px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-white/12">
+          <Link
+            href="/login"
+            className="rounded-full border border-white/10 bg-white/[0.07] px-7 py-4 text-center text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-white/12"
+          >
             Log In
           </Link>
         </div>
-        <p className="text-sm leading-6 text-white/55">Apply for early access, help test TheOutHaven, and enter the $100 gift card giveaway if eligible.</p>
+        <p className="text-sm leading-6 text-white/55">
+          Apply for early access, help test TheOutHaven, and enter the $500 gift
+          card giveaway if eligible.
+        </p>
       </div>
       <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-4 shadow-2xl shadow-black/35 backdrop-blur">
         <div className="rounded-[1.5rem] border border-white/10 bg-[#0d0505] p-5">
@@ -98,13 +116,18 @@ function Hero() {
             <span className="h-3 w-3 rounded-full bg-green-400" />
           </div>
           <div className="space-y-5 pt-5">
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Try a full-sentence search</p>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">
+              Try a full-sentence search
+            </p>
             <div className="rounded-3xl border border-rose-300/20 bg-rose-500/10 p-4 text-base font-black leading-7 text-white sm:text-lg">
               dinner, drinks, and something fun after
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {searchExamples.map((example) => (
-                <span key={example} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/75 sm:text-sm">
+                <span
+                  key={example}
+                  className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/75 sm:text-sm"
+                >
                   {example}
                 </span>
               ))}
@@ -121,11 +144,18 @@ function FullSentenceSearch() {
     <section className="rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.025))] p-6 shadow-2xl shadow-black/25 sm:p-8">
       <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">Full-sentence search</p>
-          <h2 className="mt-3 text-3xl font-black tracking-[-0.035em] sm:text-4xl">Search like you text your friends.</h2>
+          <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">
+            Full-sentence search
+          </p>
+          <h2 className="mt-3 text-3xl font-black tracking-[-0.035em] sm:text-4xl">
+            Search like you text your friends.
+          </h2>
         </div>
         <div className="space-y-3 text-base leading-7 text-white/70">
-          <p>Type the plan naturally. We’ll help match the food, the vibe, and what to do after.</p>
+          <p>
+            Type the plan naturally. We’ll help match the food, the vibe, and
+            what to do after.
+          </p>
         </div>
       </div>
     </section>
@@ -135,9 +165,16 @@ function FullSentenceSearch() {
 function LaunchFormCard() {
   return (
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl shadow-black/30 sm:p-7">
-      <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">TheOutHaven Launch Giveaway</p>
-      <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] sm:text-4xl">Join the Beta Launch List</h2>
-      <p className="mt-3 text-sm leading-6 text-white/62">Apply for early access, help test TheOutHaven, and enter the $100 gift card giveaway if eligible.</p>
+      <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">
+        TheOutHaven Launch Giveaway
+      </p>
+      <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] sm:text-4xl">
+        Join the Beta Launch List
+      </h2>
+      <p className="mt-3 text-sm leading-6 text-white/62">
+        Apply for early access, help test TheOutHaven, and enter the $500 gift
+        card giveaway if eligible.
+      </p>
       <div className="mt-6">
         <LaunchWaitlistForm />
       </div>
@@ -149,20 +186,34 @@ function GiveawayRulesCard() {
   return (
     <aside className="space-y-5 rounded-[2rem] border border-rose-300/18 bg-[radial-gradient(circle_at_top_right,rgba(225,29,72,0.18),transparent_36%),rgba(255,255,255,0.045)] p-6 shadow-2xl shadow-black/25">
       <div>
-        <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">$100 gift card</p>
-        <h2 className="mt-3 text-3xl font-black tracking-[-0.03em]">How to enter:</h2>
+        <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">
+          $500 gift card
+        </p>
+        <h2 className="mt-3 text-3xl font-black tracking-[-0.03em]">
+          How to enter:
+        </h2>
       </div>
       <ol className="space-y-3 text-sm font-bold leading-6 text-white/78">
         <li>1. Join the Beta Launch List</li>
-        <li>2. Enter the $100 gift card giveaway.</li>
-        <li>3. Follow @TheOutHaven on Instagram or TikTok.</li>
-        <li>4. Tag 2 friends in the giveaway post comments.</li>
-        <li>5. Verify your email.</li>
+        <li>2. Enter the $500 gift card giveaway.</li>
+        <li>
+          3. Optional: follow @TheOutHaven on Instagram and/or TikTok for bonus
+          entries.
+        </li>
+        <li>4. Verify your email.</li>
+        <li>
+          5. Complete the required weekly beta steps to become prize-ready.
+        </li>
       </ol>
       <div className="rounded-3xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-white/58">
-        Almost done means almost done: you are not shown “You&rsquo;ve been entered into the prize giveaway.” until email verification succeeds.
+        Almost done means almost done: you are not shown “You&rsquo;ve been
+        entered into the prize giveaway.” until email verification succeeds.
       </div>
-      <p className="text-xs leading-5 text-white/45">No purchase necessary. Must be 18+. One winner selected at random. Prize is a $100 gift card. TheOutHaven is not responsible for third-party availability, terms, or restrictions.</p>
+      <p className="text-xs leading-5 text-white/45">
+        No purchase necessary. Must be 18+. One winner selected at random. Prize
+        is a $500 gift card. TheOutHaven is not responsible for third-party
+        availability, terms, or restrictions.
+      </p>
     </aside>
   );
 }
@@ -171,13 +222,22 @@ function HowItWorks() {
   return (
     <section className="space-y-6">
       <div className="max-w-3xl">
-        <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">How it works</p>
-        <h2 className="mt-3 text-4xl font-black tracking-[-0.035em] sm:text-5xl">Plan around the whole outing.</h2>
+        <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">
+          How it works
+        </p>
+        <h2 className="mt-3 text-4xl font-black tracking-[-0.035em] sm:text-5xl">
+          Plan around the whole outing.
+        </h2>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {howItWorks.map((step, index) => (
-          <div key={step.title} className="rounded-3xl border border-white/10 bg-white/[0.055] p-5">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-sm font-black">{index + 1}</span>
+          <div
+            key={step.title}
+            className="rounded-3xl border border-white/10 bg-white/[0.055] p-5"
+          >
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-sm font-black">
+              {index + 1}
+            </span>
             <h3 className="mt-4 text-xl font-black">{step.title}</h3>
             <p className="mt-3 text-sm leading-6 text-white/58">{step.copy}</p>
           </div>
@@ -190,12 +250,31 @@ function HowItWorks() {
 function SocialFollow() {
   return (
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-center sm:p-8">
-      <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">Social step</p>
-      <h2 className="mt-3 text-3xl font-black tracking-[-0.03em]">Follow @TheOutHaven on Instagram/TikTok</h2>
-      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/62">After joining, follow @TheOutHaven on Instagram or TikTok and tag 2 friends on the giveaway post. Social actions are manually reviewed before an entry is marked verified.</p>
+      <p className="text-xs font-black uppercase tracking-[0.30em] text-rose-200">
+        Optional social
+      </p>
+      <h2 className="mt-3 text-3xl font-black tracking-[-0.03em]">
+        Optional Bonus Entries
+      </h2>
+      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/62">
+        Complete the required weekly beta steps to become prize-ready. Optional
+        bonus entries: follow @theouthaven on Instagram and/or TikTok. Each
+        verified follow adds one bonus entry. Following is optional and is not
+        required to qualify.
+      </p>
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        <a href="https://www.instagram.com/TheOutHaven" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white">Follow on Instagram</a>
-        <a href="https://www.tiktok.com/@TheOutHaven" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white">Follow on TikTok</a>
+        <a
+          href="https://www.instagram.com/TheOutHaven"
+          className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white"
+        >
+          Follow on Instagram
+        </a>
+        <a
+          href="https://www.tiktok.com/@TheOutHaven"
+          className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white"
+        >
+          Follow on TikTok
+        </a>
       </div>
     </section>
   );
@@ -204,7 +283,12 @@ function SocialFollow() {
 function Footer() {
   return (
     <footer className="border-t border-white/10 px-5 py-8 text-center text-xs leading-5 text-white/45 sm:px-6 lg:px-8">
-      <p>TheOutHaven · Launching Late Summer 2026. No purchase necessary. Must be 18+. One winner selected at random. Prize is a $100 gift card. TheOutHaven is not responsible for third-party availability, terms, or restrictions.</p>
+      <p>
+        TheOutHaven · Launching Late Summer 2026. No purchase necessary. Must be
+        18+. One winner selected at random. Prize is a $500 gift card.
+        TheOutHaven is not responsible for third-party availability, terms, or
+        restrictions.
+      </p>
     </footer>
   );
 }

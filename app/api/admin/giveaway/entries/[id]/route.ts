@@ -3,7 +3,11 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { assignWeeklyBetaTasksForTester } from "@/lib/beta/weeklyTasks";
-import { findAuthUserIdByEmail, repairBetaAccessForEmail, safeUpsertBetaTester } from "@/lib/beta/programAccess";
+import {
+  findAuthUserIdByEmail,
+  repairBetaAccessForEmail,
+  safeUpsertBetaTester,
+} from "@/lib/beta/programAccess";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import { getBetaAccountReadinessForEmail } from "@/lib/beta/accountReadiness";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
@@ -59,38 +63,213 @@ export async function PATCH(
   };
 
   if (body.action === "approve_beta") {
-    const email = String(entry.email || "").trim().toLowerCase();
-    const testerType = ["user", "location_owner", "ambassador", "experience_team"].includes(String(entry.tester_type)) ? entry.tester_type : "user";
+    const email = String(entry.email || "")
+      .trim()
+      .toLowerCase();
+    const testerType = [
+      "user",
+      "location_owner",
+      "ambassador",
+      "experience_team",
+    ].includes(String(entry.tester_type))
+      ? entry.tester_type
+      : "user";
     try {
       const userId = await findAuthUserIdByEmail(email);
-      const { data: beta, error: betaError } = await safeUpsertBetaTester({ applicationId: entry.beta_application_id ?? null, fullName: entry.full_name, email, phone: entry.phone, testerType, userId, approvedBy: auth.adminUser?.user_id ?? null, status: userId ? "active" : "approved" });
-      if (betaError || !beta) throw new Error(betaError?.message || "Unable to approve beta tester.");
+      const { data: beta, error: betaError } = await safeUpsertBetaTester({
+        applicationId: entry.beta_application_id ?? null,
+        fullName: entry.full_name,
+        email,
+        phone: entry.phone,
+        testerType,
+        userId,
+        approvedBy: auth.adminUser?.user_id ?? null,
+        status: userId ? "active" : "approved",
+      });
+      if (betaError || !beta)
+        throw new Error(betaError?.message || "Unable to approve beta tester.");
       await assignWeeklyBetaTasksForTester(beta.id);
-      await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_status: "approved", beta_approved_at: new Date().toISOString(), beta_approved_by: auth.adminUser?.user_id ?? null, weekly_task_eligibility_status: "pending_beta_tasks", giveaway_status: entry.email_verified ? "pending_beta_tasks" : entry.giveaway_status }).eq("id", id);
-      if (entry.beta_application_id) await supabaseAdmin.from("beta_applications").update({ status: "approved", reviewed_by: auth.adminUser?.user_id ?? null, reviewed_at: new Date().toISOString() }).eq("id", entry.beta_application_id);
-      await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: email, action: "beta_user_approved", entity_type: "beta_tester", entity_id: beta.id, summary: "Approved launch list signup as beta user", metadata: { launchSignupId: id, testerType } });
-      return NextResponse.json({ success: true, entry: { ...entry, beta_application_status: "approved", beta_account_readiness: await getBetaAccountReadinessForEmail(entry), beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(email) }, beta });
+      await supabaseAdmin
+        .from("launch_waitlist_signups")
+        .update({
+          beta_application_status: "approved",
+          beta_approved_at: new Date().toISOString(),
+          beta_approved_by: auth.adminUser?.user_id ?? null,
+          weekly_task_eligibility_status: "pending_beta_tasks",
+          giveaway_status: entry.email_verified
+            ? "pending_beta_tasks"
+            : entry.giveaway_status,
+        })
+        .eq("id", id);
+      if (entry.beta_application_id)
+        await supabaseAdmin
+          .from("beta_applications")
+          .update({
+            status: "approved",
+            reviewed_by: auth.adminUser?.user_id ?? null,
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq("id", entry.beta_application_id);
+      await supabaseAdmin
+        .from("admin_audit_logs")
+        .insert({
+          actor_user_id: auth.adminUser?.user_id ?? null,
+          actor_email: auth.adminUser?.email ?? null,
+          actor_role: auth.adminUser?.role ?? null,
+          target_email: email,
+          action: "beta_user_approved",
+          entity_type: "beta_tester",
+          entity_id: beta.id,
+          summary: "Approved launch list signup as beta user",
+          metadata: { launchSignupId: id, testerType },
+        });
+      return NextResponse.json({
+        success: true,
+        entry: {
+          ...entry,
+          beta_application_status: "approved",
+          beta_account_readiness: await getBetaAccountReadinessForEmail(entry),
+          beta_giveaway_eligibility:
+            await getBetaGiveawayEligibilityForEmail(email),
+        },
+        beta,
+      });
     } catch (error) {
-      await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: email, action: "beta_approve_failed", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Beta approval failed", metadata: { error: error instanceof Error ? error.message : "Unknown error" } });
-      return NextResponse.json({ success: false, error: "Beta approval could not be completed. Please try Repair Beta Access or Resend Setup Email." }, { status: 500 });
+      await supabaseAdmin
+        .from("admin_audit_logs")
+        .insert({
+          actor_user_id: auth.adminUser?.user_id ?? null,
+          target_email: email,
+          action: "beta_approve_failed",
+          entity_type: "launch_waitlist_signup",
+          entity_id: id,
+          summary: "Beta approval failed",
+          metadata: {
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
+        });
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Beta approval could not be completed. Please try Repair Beta Access or Resend Setup Email.",
+        },
+        { status: 500 },
+      );
     }
   }
-  if (["resend_beta_invite", "link_beta_user", "assign_beta_tasks", "repair_beta_access"].includes(String(body.action))) {
+  if (
+    [
+      "resend_beta_invite",
+      "link_beta_user",
+      "assign_beta_tasks",
+      "repair_beta_access",
+    ].includes(String(body.action))
+  ) {
     try {
-      const repaired = await repairBetaAccessForEmail({ email: entry.email, fullName: entry.full_name, phone: entry.phone, testerType: entry.tester_type, applicationId: entry.beta_application_id, actor: auth.adminUser, sendInviteIfNeeded: body.action === "resend_beta_invite" || body.action === "repair_beta_access" });
-      return NextResponse.json({ success: true, message: body.action === "resend_beta_invite" ? "Setup email resent and beta access checked." : "Beta access repaired. Account links and weekly tasks were checked.", entry: { ...entry, beta_application_status: "approved", beta_account_readiness: await getBetaAccountReadinessForEmail(entry), beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(entry.email || "") }, repair: repaired });
+      const repaired = await repairBetaAccessForEmail({
+        email: entry.email,
+        fullName: entry.full_name,
+        phone: entry.phone,
+        testerType: entry.tester_type,
+        applicationId: entry.beta_application_id,
+        actor: auth.adminUser,
+        sendInviteIfNeeded:
+          body.action === "resend_beta_invite" ||
+          body.action === "repair_beta_access",
+      });
+      return NextResponse.json({
+        success: true,
+        message:
+          body.action === "resend_beta_invite"
+            ? "Setup email resent and beta access checked."
+            : "Beta access repaired. Account links and weekly tasks were checked.",
+        entry: {
+          ...entry,
+          beta_application_status: "approved",
+          beta_account_readiness: await getBetaAccountReadinessForEmail(entry),
+          beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(
+            entry.email || "",
+          ),
+        },
+        repair: repaired,
+      });
     } catch (error) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Unable to repair beta access." }, { status: 500 });
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to repair beta access.",
+        },
+        { status: 500 },
+      );
     }
   }
   if (body.action === "reject_beta") {
-    await supabaseAdmin.from("launch_waitlist_signups").update({ beta_application_status: "rejected", giveaway_notes: String(body.rejection_reason || entry.giveaway_notes || "") }).eq("id", id);
-    if (entry.beta_application_id) await supabaseAdmin.from("beta_applications").update({ status: "rejected", reviewed_by: auth.adminUser?.user_id ?? null, reviewed_at: new Date().toISOString(), notes: String(body.rejection_reason || "") }).eq("id", entry.beta_application_id);
-    await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: entry.email, action: "beta_user_rejected", entity_type: "beta_application", entity_id: entry.beta_application_id || id, summary: "Rejected beta application", metadata: { reason: String(body.rejection_reason || "") } });
-    return NextResponse.json({ success: true, entry: { ...entry, beta_application_status: "rejected" } });
+    await supabaseAdmin
+      .from("launch_waitlist_signups")
+      .update({
+        beta_application_status: "rejected",
+        giveaway_notes: String(
+          body.rejection_reason || entry.giveaway_notes || "",
+        ),
+      })
+      .eq("id", id);
+    if (entry.beta_application_id)
+      await supabaseAdmin
+        .from("beta_applications")
+        .update({
+          status: "rejected",
+          reviewed_by: auth.adminUser?.user_id ?? null,
+          reviewed_at: new Date().toISOString(),
+          notes: String(body.rejection_reason || ""),
+        })
+        .eq("id", entry.beta_application_id);
+    await supabaseAdmin
+      .from("admin_audit_logs")
+      .insert({
+        actor_user_id: auth.adminUser?.user_id ?? null,
+        actor_email: auth.adminUser?.email ?? null,
+        actor_role: auth.adminUser?.role ?? null,
+        target_email: entry.email,
+        action: "beta_user_rejected",
+        entity_type: "beta_application",
+        entity_id: entry.beta_application_id || id,
+        summary: "Rejected beta application",
+        metadata: { reason: String(body.rejection_reason || "") },
+      });
+    return NextResponse.json({
+      success: true,
+      entry: { ...entry, beta_application_status: "rejected" },
+    });
   }
-  if (body.action === "verify_social") { updates.followed_social = true; updates.followed_social_verified_at = new Date().toISOString() as any; updates.followed_social_verified_by = auth.adminUser?.user_id ?? null as any; await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: entry.email, action: "beta_social_verified", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Social follow verified for Beta Tester Reward", metadata: {} }); }
-  if (body.action === "verify_tags") { updates.tagged_two_friends = true; updates.tagged_friends_verified_at = new Date().toISOString() as any; updates.tagged_friends_verified_by = auth.adminUser?.user_id ?? null as any; await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: entry.email, action: "beta_tags_verified", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Tagged friends verified for Beta Tester Reward", metadata: {} }); }
+  if (
+    [
+      "verify_social",
+      "verify_instagram_follow",
+      "verify_tiktok_follow",
+      "verify_bonus_follow",
+    ].includes(String(body.action))
+  ) {
+    updates.followed_social = true;
+    updates.followed_social_verified_at = new Date().toISOString() as any;
+    updates.followed_social_verified_by =
+      auth.adminUser?.user_id ?? (null as any);
+    await supabaseAdmin
+      .from("admin_audit_logs")
+      .insert({
+        actor_user_id: auth.adminUser?.user_id ?? null,
+        target_email: entry.email,
+        action: "beta_bonus_follow_verified",
+        entity_type: "launch_waitlist_signup",
+        entity_id: id,
+        summary:
+          "Optional bonus social follow verified for $500 gift card giveaway",
+        metadata: { action: body.action },
+      });
+  }
 
   if (typeof body.giveaway_notes === "string")
     updates.giveaway_notes = body.giveaway_notes;
@@ -121,9 +300,24 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    const betaEligibility = await getBetaGiveawayEligibilityForEmail(entry.email || "");
+    const betaEligibility = await getBetaGiveawayEligibilityForEmail(
+      entry.email || "",
+    );
     const accountReadiness = await getBetaAccountReadinessForEmail(entry);
-    if (body.giveaway_status === "verified" && (!betaEligibility.isBetaTester || !["active", "approved"].includes(String(betaEligibility.betaStatus || "")) || !betaEligibility.weeklyTasksComplete || !accountReadiness.loginReady || !entry.wants_giveaway || !entry.age_18_confirmed || !(entry.giveaway_rules_agreed || entry.prize_rules_confirmed) || entry.duplicate_flag || entry.giveaway_status === "disqualified")) {
+    if (
+      body.giveaway_status === "verified" &&
+      (!betaEligibility.isBetaTester ||
+        !["active", "approved"].includes(
+          String(betaEligibility.betaStatus || ""),
+        ) ||
+        !betaEligibility.weeklyTasksComplete ||
+        !accountReadiness.loginReady ||
+        !entry.wants_giveaway ||
+        !entry.age_18_confirmed ||
+        !(entry.giveaway_rules_agreed || entry.prize_rules_confirmed) ||
+        entry.duplicate_flag ||
+        entry.giveaway_status === "disqualified")
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -134,7 +328,9 @@ export async function PATCH(
       );
     }
     updates.giveaway_status = body.giveaway_status;
-    updates.weekly_task_eligibility_status = (await getBetaGiveawayEligibilityForEmail(entry.email || "")).eligibilityStatus;
+    updates.weekly_task_eligibility_status = (
+      await getBetaGiveawayEligibilityForEmail(entry.email || "")
+    ).eligibilityStatus;
     if (
       body.giveaway_status === "verified" ||
       body.giveaway_status === "winner"
@@ -159,31 +355,115 @@ export async function PATCH(
       { success: false, error: error.message },
       { status: 500 },
     );
-  if (data.giveaway_status === "verified" && entry.giveaway_status !== "verified") {
-    const firstName = String(data.full_name || "there").split(/\s+/)[0] || "there";
+  if (
+    data.giveaway_status === "verified" &&
+    entry.giveaway_status !== "verified"
+  ) {
+    const firstName =
+      String(data.full_name || "there").split(/\s+/)[0] || "there";
     try {
       await sendRawBrandedEmail({
         to: data.email,
         department: "account",
-        subject: "You’re prize qualified for TheOutHaven’s Beta Tester Reward",
+        subject:
+          "You’re prize qualified for TheOutHaven’s $500 gift card giveaway",
         heading: "Prize Qualified",
-        preview: "You are now prize qualified for the $100 Beta Tester Reward.",
+        preview: "You are now prize qualified for the $500 gift card giveaway.",
         sections: [
           { type: "paragraph", text: `Congratulations ${firstName},` },
-          { type: "paragraph", text: "You completed the required beta tester requirements for TheOutHaven’s Beta Tester Program." },
-          { type: "paragraph", text: "Your required beta/account requirements were verified. You are now prize-ready for the $100 Beta Tester Reward. Instagram and TikTok follows are optional bonus entries." },
-          { type: "paragraph", text: "Keep an eye on your email for winner updates. Thank you for helping shape TheOutHaven." },
+          {
+            type: "paragraph",
+            text: "You completed the required beta tester requirements for TheOutHaven’s Beta Tester Program.",
+          },
+          {
+            type: "paragraph",
+            text: "Your required beta/account requirements were verified. You are now prize-ready for the $500 gift card giveaway. Instagram and TikTok follows are optional bonus entries.",
+          },
+          {
+            type: "paragraph",
+            text: "Keep an eye on your email for winner updates. Thank you for helping shape TheOutHaven.",
+          },
         ],
-        cta: { label: "Open Beta Dashboard", url: buildSiteUrl("/user/dashboard/beta") },
+        cta: {
+          label: "Open Beta Dashboard",
+          url: buildSiteUrl("/user/dashboard/beta"),
+        },
       });
-      await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: data.email, action: "prize_qualified", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Prize qualified email sent", metadata: { rewardName: "$100 Beta Tester Reward" } });
+      await supabaseAdmin
+        .from("admin_audit_logs")
+        .insert({
+          actor_user_id: auth.adminUser?.user_id ?? null,
+          target_email: data.email,
+          action: "prize_qualified",
+          entity_type: "launch_waitlist_signup",
+          entity_id: id,
+          summary: "Prize qualified email sent",
+          metadata: { rewardName: "$500 gift card giveaway" },
+        });
     } catch (emailError) {
-      await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: data.email, action: "beta_reminder_failed", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Prize qualified email failed", metadata: { error: emailError instanceof Error ? emailError.message : "Unknown error" } });
+      await supabaseAdmin
+        .from("admin_audit_logs")
+        .insert({
+          actor_user_id: auth.adminUser?.user_id ?? null,
+          target_email: data.email,
+          action: "beta_reminder_failed",
+          entity_type: "launch_waitlist_signup",
+          entity_id: id,
+          summary: "Prize qualified email failed",
+          metadata: {
+            error:
+              emailError instanceof Error
+                ? emailError.message
+                : "Unknown error",
+          },
+        });
     }
   }
-  if (data.giveaway_status === "disqualified" && entry.giveaway_status !== "disqualified") await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, target_email: data.email, action: "beta_entry_disqualified", entity_type: "launch_waitlist_signup", entity_id: id, summary: "Beta Tester Reward entry disqualified", metadata: { notes: data.giveaway_notes } });
-  await supabaseAdmin.from("admin_audit_logs").insert({ actor_user_id: auth.adminUser?.user_id ?? null, actor_email: auth.adminUser?.email ?? null, actor_role: auth.adminUser?.role ?? null, target_email: data.email, action: data.giveaway_status === "winner" ? "reward_winner_selected" : data.giveaway_status === "alternate" ? "alternate_selected" : "beta_prize_status_changed", entity_type: "launch_waitlist_signup", entity_id: id, summary: `Beta Prize Eligibility updated to ${data.giveaway_status}`, before_data: entry, after_data: data, metadata: { action: body.action || null } });
-  return NextResponse.json({ success: true, entry: { ...data, beta_account_readiness: await getBetaAccountReadinessForEmail(data), beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(data.email || "") } });
+  if (
+    data.giveaway_status === "disqualified" &&
+    entry.giveaway_status !== "disqualified"
+  )
+    await supabaseAdmin
+      .from("admin_audit_logs")
+      .insert({
+        actor_user_id: auth.adminUser?.user_id ?? null,
+        target_email: data.email,
+        action: "beta_entry_disqualified",
+        entity_type: "launch_waitlist_signup",
+        entity_id: id,
+        summary: "$500 gift card giveaway entry disqualified",
+        metadata: { notes: data.giveaway_notes },
+      });
+  await supabaseAdmin
+    .from("admin_audit_logs")
+    .insert({
+      actor_user_id: auth.adminUser?.user_id ?? null,
+      actor_email: auth.adminUser?.email ?? null,
+      actor_role: auth.adminUser?.role ?? null,
+      target_email: data.email,
+      action:
+        data.giveaway_status === "winner"
+          ? "reward_winner_selected"
+          : data.giveaway_status === "alternate"
+            ? "alternate_selected"
+            : "beta_prize_status_changed",
+      entity_type: "launch_waitlist_signup",
+      entity_id: id,
+      summary: `Beta Prize Eligibility updated to ${data.giveaway_status}`,
+      before_data: entry,
+      after_data: data,
+      metadata: { action: body.action || null },
+    });
+  return NextResponse.json({
+    success: true,
+    entry: {
+      ...data,
+      beta_account_readiness: await getBetaAccountReadinessForEmail(data),
+      beta_giveaway_eligibility: await getBetaGiveawayEligibilityForEmail(
+        data.email || "",
+      ),
+    },
+  });
 }
 
 export async function DELETE(

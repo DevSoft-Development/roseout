@@ -1,7 +1,103 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTestWeeklyBetaSession, resetTestWeeklyBetaSession, deleteTestWeeklyBetaSession } from "@/lib/beta/weeklyTasks";
+import {
+  createTestWeeklyBetaSession,
+  resetTestWeeklyBetaSession,
+  deleteTestWeeklyBetaSession,
+} from "@/lib/beta/weeklyTasks";
 import { requireBetaAdmin, safeError } from "../_shared";
 import { sendRawBrandedEmail } from "@/lib/email";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-async function sendTest(sessionId:string,type:"weekly"|"reminder"){const {data:s}=await supabaseAdmin.from("beta_test_sessions").select("*, beta_testers(email,name)").eq("id",sessionId).eq("test_mode",true).maybeSingle(); if(!s) throw new Error("Test session not found."); const email=s.beta_testers?.email; if(!email) throw new Error("Test recipient email is unavailable."); const subject=type==="weekly"?"[TEST] Your weekly TheOutHaven beta test is ready":"[TEST] Reminder: complete your weekly TheOutHaven beta test"; await sendRawBrandedEmail({to:email,department:"support",subject,heading:subject,body:`This is a test email. It lets admins verify the weekly beta flow end-to-end. It does not count toward real beta progress, giveaway eligibility, prize entries, or analytics.`,cta:{label:"Continue Test Weekly Beta Task",url:`${process.env.NEXT_PUBLIC_SITE_URL||""}/user/dashboard/beta/weekly?test=1`}}); return {sent:true,message:type==="weekly"?"Test weekly email sent. No real beta testers were contacted.":"Test reminder sent. No real beta testers were contacted."}}
-export async function POST(req:NextRequest){const a=await requireBetaAdmin(); if(a.error)return a.error; const b=await req.json().catch(()=>({})); try{const action=String(b.action||"create"); if(action==="create"){const userId=String(b.user_id||a.adminUser?.user_id||""); if(!userId)return safeError("No test user found.",400); return NextResponse.json({success:true,message:"Test weekly session ready.",...(await createTestWeeklyBetaSession(userId))});} if(action==="reset")return NextResponse.json({success:true,message:"Test weekly task reset.",session:await resetTestWeeklyBetaSession(String(b.session_id))}); if(action==="delete")return NextResponse.json({success:true,message:"Test session deleted.",...(await deleteTestWeeklyBetaSession(String(b.session_id)))}); if(action==="send_weekly_email")return NextResponse.json({success:true,...await sendTest(String(b.session_id),"weekly")}); if(action==="send_reminder")return NextResponse.json({success:true,...await sendTest(String(b.session_id),"reminder")}); return safeError("Unsupported test action.",400)}catch(e:any){return safeError(e.message||"Test weekly session action failed.",500)}}
+async function sendTest(
+  sessionId: string,
+  type: "weekly" | "reminder",
+  fallbackEmail?: string | null,
+) {
+  const { data: s } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("*, beta_testers(email,name)")
+    .eq("id", sessionId)
+    .eq("test_mode", true)
+    .maybeSingle();
+  if (!s) throw new Error("Test session not found.");
+  const email = s.beta_testers?.email || fallbackEmail;
+  if (!email) throw new Error("Test recipient email is unavailable.");
+  const subject =
+    type === "weekly"
+      ? "[TEST] Your weekly TheOutHaven beta test is ready"
+      : "[TEST] Reminder: complete your weekly TheOutHaven beta test";
+  await sendRawBrandedEmail({
+    to: email,
+    department: "support",
+    subject,
+    heading: subject,
+    body: `This is a test email. It lets admins verify the weekly beta flow end-to-end. It does not count toward real beta progress, giveaway eligibility, prize entries, or analytics.`,
+    cta: {
+      label: "Continue Test Weekly Beta Task",
+      url: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/user/dashboard/beta/weekly?test=1`,
+    },
+  });
+  return {
+    sent: true,
+    message:
+      type === "weekly"
+        ? "Test weekly email sent. No real beta testers were contacted."
+        : "Test reminder sent. No real beta testers were contacted.",
+  };
+}
+export async function POST(req: NextRequest) {
+  const a = await requireBetaAdmin();
+  if (a.error) return a.error;
+  const b = await req.json().catch(() => ({}));
+  try {
+    const action = String(b.action || "create");
+    if (action === "create") {
+      const userId = String(b.user_id || a.adminUser?.user_id || "");
+      if (!userId) return safeError("No test user found.", 400);
+      return NextResponse.json({
+        success: true,
+        message: "Test weekly session ready.",
+        ...(await createTestWeeklyBetaSession(userId)),
+      });
+    }
+    if (action === "reset" || action === "delete") {
+      let sessionId = String(b.session_id || "");
+      if (!sessionId) {
+        const made = await createTestWeeklyBetaSession(
+          String(b.user_id || a.adminUser?.user_id || ""),
+        );
+        sessionId = made.session.id;
+      }
+      return action === "reset"
+        ? NextResponse.json({
+            success: true,
+            message: "Test weekly task reset.",
+            session: await resetTestWeeklyBetaSession(sessionId),
+          })
+        : NextResponse.json({
+            success: true,
+            message: "Test session deleted.",
+            ...(await deleteTestWeeklyBetaSession(sessionId)),
+          });
+    }
+    if (action === "send_weekly_email" || action === "send_reminder") {
+      let sessionId = String(b.session_id || "");
+      if (!sessionId) {
+        const made = await createTestWeeklyBetaSession(
+          String(b.user_id || a.adminUser?.user_id || ""),
+        );
+        sessionId = made.session.id;
+      }
+      return NextResponse.json({
+        success: true,
+        ...(await sendTest(
+          sessionId,
+          action === "send_weekly_email" ? "weekly" : "reminder",
+          a.adminUser?.email,
+        )),
+      });
+    }
+    return safeError("Unsupported test action.", 400);
+  } catch (e: any) {
+    return safeError(e.message || "Test weekly session action failed.", 500);
+  }
+}
