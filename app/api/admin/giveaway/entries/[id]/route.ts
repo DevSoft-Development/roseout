@@ -322,7 +322,7 @@ export async function PATCH(
         {
           success: false,
           error:
-            "Beta tester must be active, weekly beta steps complete, login ready, 18+ and reward rules confirmed, opted into the reward, and not duplicate/disqualified before marking Prize Qualified. Instagram and TikTok follows are optional bonus entries.",
+            "Beta tester must be active, weekly beta steps complete, login ready, 18+ and giveaway rules confirmed, opted into the giveaway, and not duplicate/disqualified before marking Prize Qualified. Instagram and TikTok follows are optional bonus entries.",
         },
         { status: 400 },
       );

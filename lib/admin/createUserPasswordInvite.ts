@@ -48,13 +48,21 @@ export async function createUserPasswordInvite(input: CreateUserPasswordInviteIn
     authUser = created.data.user;
   }
 
+  const { data: existingProfile } = await supabaseAdmin
+    .from("users")
+    .select("role,status")
+    .eq("id", authUser.id)
+    .maybeSingle();
+  const existingRole = normalizeRole(String(existingProfile?.role || "user"));
+  const preservedRole = isAdminRole(existingRole) && !isAdminRole(role) ? existingRole : publicRole;
+
   await supabaseAdmin.from("users").upsert({
     id: authUser.id,
     email,
     full_name: fullName || null,
     phone: input.phone || null,
-    role: publicRole,
-    status: "invited",
+    role: preservedRole,
+    status: existingProfile?.status || "invited",
   }, { onConflict: "id" });
 
   if (isAdminRole(role)) await supabaseAdmin.from("admin_users").upsert({ user_id: authUser.id, role }, { onConflict: "user_id" });

@@ -7,7 +7,7 @@ const CONSENT_TEXT =
   "I agree to receive email and SMS updates from TheOutHaven about beta tester updates, reward details, early access, and outing ideas. Message and data rates may apply. Message frequency may vary. Reply STOP to unsubscribe from texts. I can unsubscribe from emails at any time.";
 
 const DUPLICATE_SOCIAL_MESSAGE =
-  "This social handle is already connected to another Beta Tester Reward entry. Please use the same email you signed up with or enter a different handle.";
+  "This social handle is already connected to another giveaway bonus entry. Please use the same email you signed up with or enter a different handle.";
 
 function isTurnstileEnabled() {
   return String(process.env.NEXT_PUBLIC_TURNSTILE_ENABLED ?? "true").toLowerCase() !== "false";
@@ -21,8 +21,8 @@ export default function LaunchWaitlistForm() {
   const wantsGiveaway = true;
   const [socialHandle, setSocialHandle] = useState("");
   const [socialPlatform, setSocialPlatform] = useState("");
-  const [followedSocial, setFollowedSocial] = useState(false);
-  const [taggedTwoFriends, setTaggedTwoFriends] = useState(false);
+  const [followedInstagram, setFollowedInstagram] = useState(false);
+  const [followedTiktok, setFollowedTiktok] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
   const betaInterest = true;
   const [age18Confirmed, setAge18Confirmed] = useState(false);
@@ -37,7 +37,7 @@ export default function LaunchWaitlistForm() {
 
   const enabledTurnstile = useMemo(() => isTurnstileEnabled(), []);
   const siteKeyMissing = enabledTurnstile && !process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  const requiredFieldsMissing = !fullName.trim() || !email.trim() || !marketingConsent || (wantsGiveaway && (!age18Confirmed || !giveawayRulesAgreed || !followedSocial || !taggedTwoFriends || !socialHandle.trim() || !["instagram", "tiktok"].includes(socialPlatform)));
+  const requiredFieldsMissing = !fullName.trim() || !email.trim() || !marketingConsent || (wantsGiveaway && (!age18Confirmed || !giveawayRulesAgreed));
   const submitDisabled = loading || requiredFieldsMissing || (enabledTurnstile && !turnstileToken);
 
   const resetTurnstile = useCallback(() => {
@@ -75,15 +75,11 @@ export default function LaunchWaitlistForm() {
     if (trimmedName.length > 120) return "Please enter your name.";
     if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) return "Please enter a valid email address.";
     if (!marketingConsent) return "Please agree to receive Beta Tester Program updates to continue.";
-    if (wantsGiveaway && !socialHandle.trim()) return "Please enter your Instagram or TikTok handle for social verification.";
-    if (wantsGiveaway && !["instagram", "tiktok"].includes(socialPlatform)) return "Please choose Instagram or TikTok.";
-    if (wantsGiveaway && !followedSocial) return "Please confirm you followed @TheOutHaven. Admins verify this before reward qualification.";
-    if (wantsGiveaway && !taggedTwoFriends) return "Please confirm you tagged 2 friends. Admins verify this before reward qualification.";
-    if (wantsGiveaway && !age18Confirmed) return "Please confirm you are 18+ for the Beta Tester Reward.";
-    if (wantsGiveaway && !giveawayRulesAgreed) return "Please agree to the $100 Beta Tester Reward rules.";
+    if (wantsGiveaway && !age18Confirmed) return "Please confirm you are 18 or older.";
+    if (wantsGiveaway && !giveawayRulesAgreed) return "Please agree to the $500 gift card giveaway rules.";
     if (enabledTurnstile && !turnstileToken) return "Complete the verification to continue.";
     return "";
-  }, [age18Confirmed, email, enabledTurnstile, followedSocial, fullName, giveawayRulesAgreed, marketingConsent, socialHandle, socialPlatform, taggedTwoFriends, turnstileToken, wantsGiveaway]);
+  }, [age18Confirmed, email, enabledTurnstile, fullName, giveawayRulesAgreed, marketingConsent, turnstileToken, wantsGiveaway]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,6 +92,7 @@ export default function LaunchWaitlistForm() {
     }
     setLoading(true);
     try {
+      const bonusPlatform = followedInstagram && followedTiktok ? "both" : followedInstagram ? "instagram" : followedTiktok ? "tiktok" : socialPlatform;
       const response = await fetch("/api/launch/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,9 +103,11 @@ export default function LaunchWaitlistForm() {
           usuallyGoOutArea,
           wantsGiveaway,
           socialHandle: wantsGiveaway ? socialHandle : null,
-          socialPlatform: wantsGiveaway ? socialPlatform : null,
-          followedSocial: wantsGiveaway ? followedSocial : false,
-          taggedTwoFriends: wantsGiveaway ? taggedTwoFriends : false,
+          followedSocial: wantsGiveaway ? followedInstagram || followedTiktok : false,
+          followedInstagram: wantsGiveaway ? followedInstagram : false,
+          followedTiktok: wantsGiveaway ? followedTiktok : false,
+          socialPlatform: wantsGiveaway ? bonusPlatform : null,
+          taggedTwoFriends: false,
           marketingConsent,
           betaInterest,
           age18Confirmed: wantsGiveaway ? age18Confirmed : false,
@@ -159,21 +158,25 @@ export default function LaunchWaitlistForm() {
 
       <div className="rounded-3xl border border-rose-300/20 bg-gradient-to-br from-rose-500/15 via-red-950/20 to-black/20 p-5">
         <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">TheOutHaven Beta Tester Program</p>
-        <h3 className="mt-2 text-xl font-black text-white">Complete weekly beta tester tasks for a chance to qualify for the $100 Beta Tester Reward.</h3>
-        <p className="mt-2 text-sm leading-6 text-white/65">Your application includes the reward entry. Admins still verify your social follow and tagged friends before anyone is marked Prize Qualified. No purchase necessary.</p>
+        <h3 className="mt-2 text-xl font-black text-white">Complete the required weekly beta steps to become prize-ready for the $500 gift card giveaway. No purchase necessary.</h3>
+        <p className="mt-2 text-sm leading-6 text-white/65">Apply for early access, help test TheOutHaven, and enter the $500 gift card giveaway if eligible.</p>
       </div>
 
       {wantsGiveaway ? (
         <div className="space-y-4 rounded-3xl border border-white/10 bg-black/20 p-4">
+          <div>
+            <p className="text-sm font-black text-white">Optional Bonus Entries</p>
+            <p className="mt-1 text-xs leading-5 text-white/50">Following @theouthaven on Instagram or TikTok is optional. Each verified follow gives you one extra giveaway entry. Following is not required to qualify.</p>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-2 text-sm font-bold text-white/85">
               Instagram or TikTok handle
-              <input value={socialHandle} onChange={(event) => setSocialHandle(event.target.value)} required={wantsGiveaway} className="w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-white outline-none ring-rose-400/40 transition placeholder:text-white/35 focus:border-rose-300 focus:ring-4" placeholder="@yourhandle" />
-              <span className="block text-xs font-medium leading-5 text-white/50">Required for Beta Tester Reward social verification.</span>
+              <input value={socialHandle} onChange={(event) => setSocialHandle(event.target.value)} required={false} className="w-full rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-white outline-none ring-rose-400/40 transition placeholder:text-white/35 focus:border-rose-300 focus:ring-4" placeholder="@yourhandle" />
+              <span className="block text-xs font-medium leading-5 text-white/50">Optional. Add this only if you want us to verify bonus follow entries.</span>
             </label>
             <label className="space-y-2 text-sm font-bold text-white/85">
-              Social verification platform
-              <select value={socialPlatform} onChange={(event) => setSocialPlatform(event.target.value)} required={wantsGiveaway} className="w-full rounded-2xl border border-white/10 bg-[#180807] px-4 py-3 text-white outline-none ring-rose-400/40 transition focus:border-rose-300 focus:ring-4">
+              Bonus follow platform
+              <select value={socialPlatform} onChange={(event) => setSocialPlatform(event.target.value)} required={false} className="w-full rounded-2xl border border-white/10 bg-[#180807] px-4 py-3 text-white outline-none ring-rose-400/40 transition focus:border-rose-300 focus:ring-4">
                 <option value="">Choose platform</option>
                 <option value="instagram">Instagram</option>
                 <option value="tiktok">TikTok</option>
@@ -181,11 +184,11 @@ export default function LaunchWaitlistForm() {
             </label>
           </div>
           <div className="grid gap-3 text-sm text-white/75">
-            <label className="flex items-start gap-3"><input type="checkbox" checked={followedSocial} onChange={(event) => setFollowedSocial(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I followed @TheOutHaven on Instagram or TikTok (admin verified later)</label>
-            <label className="flex items-start gap-3"><input type="checkbox" checked={taggedTwoFriends} onChange={(event) => setTaggedTwoFriends(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I tagged 2 friends in the Beta Tester Program reward post comments (admin verified later)</label>
-            <label className="flex items-start gap-3"><input type="checkbox" checked={age18Confirmed} onChange={(event) => setAge18Confirmed(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I confirm I am 18 or older</label>
-            <label className="flex items-start gap-3"><input type="checkbox" checked={giveawayRulesAgreed} onChange={(event) => setGiveawayRulesAgreed(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I agree to the $100 Beta Tester Reward rules, including completing required weekly beta tasks</label>
-            <p className="text-xs leading-5 text-white/45">These checkboxes are self-reported only. TheOutHaven manually verifies social follow and tagged friends before marking anyone Prize Qualified.</p>
+            <label className="flex items-start gap-3"><input type="checkbox" checked={followedInstagram} onChange={(event) => setFollowedInstagram(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I followed @theouthaven on Instagram for a bonus entry</label>
+            <label className="flex items-start gap-3"><input type="checkbox" checked={followedTiktok} onChange={(event) => setFollowedTiktok(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I followed @theouthaven on TikTok for a bonus entry</label>
+            <label className="flex items-start gap-3"><input type="checkbox" checked={age18Confirmed} onChange={(event) => setAge18Confirmed(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I confirm I am 18 or older.</label>
+            <label className="flex items-start gap-3"><input type="checkbox" checked={giveawayRulesAgreed} onChange={(event) => setGiveawayRulesAgreed(event.target.checked)} className="mt-1 h-4 w-4 accent-rose-500" />I agree to the $500 gift card giveaway rules, including completing required weekly beta steps if approved.</label>
+            <p className="text-xs leading-5 text-white/45">Following @theouthaven on Instagram or TikTok is optional. Each verified follow gives you one extra giveaway entry. Following is not required to qualify.</p>
           </div>
         </div>
       ) : null}

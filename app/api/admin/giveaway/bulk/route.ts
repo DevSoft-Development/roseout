@@ -34,9 +34,9 @@ function missingPrizeRequirements(
   if (!eligibility?.weeklyTasksComplete) missing.push("weekly beta tasks");
   if (!entry.age_18_confirmed) missing.push("18+ confirmation");
   if (!(entry.giveaway_rules_agreed || entry.prize_rules_confirmed))
-    missing.push("reward rules agreement");
+    missing.push("giveaway rules agreement");
   if (entry.duplicate_flag) missing.push("duplicate review");
-  if (!entry.wants_giveaway) missing.push("reward opt-in");
+  if (!entry.wants_giveaway) missing.push("giveaway opt-in");
   if (entry.giveaway_status === "disqualified")
     missing.push("not disqualified");
   return missing;

@@ -35,6 +35,8 @@ type RequestBody = {
   usuallyGoOutArea?: unknown;
   wantsGiveaway?: unknown;
   followedSocial?: unknown;
+  followedInstagram?: unknown;
+  followedTiktok?: unknown;
   taggedTwoFriends?: unknown;
   marketingConsent?: unknown;
   turnstileToken?: unknown;
@@ -164,13 +166,20 @@ export async function POST(request: Request) {
   const socialHandle = wantsGiveaway
     ? normalizeSocialHandle(body.socialHandle)
     : "";
+  const followedInstagram = wantsGiveaway ? Boolean(body.followedInstagram) : false;
+  const followedTiktok = wantsGiveaway ? Boolean(body.followedTiktok) : false;
+  const followedSocial = wantsGiveaway ? Boolean(body.followedSocial) || followedInstagram || followedTiktok : false;
+  const requestedPlatform = normalizePlatform(body.socialPlatform);
   const socialPlatform = wantsGiveaway
-    ? normalizePlatform(body.socialPlatform)
+    ? followedInstagram && followedTiktok
+      ? "both"
+      : followedInstagram
+        ? "instagram"
+        : followedTiktok
+          ? "tiktok"
+          : requestedPlatform
     : "";
-  const followedSocial = wantsGiveaway ? Boolean(body.followedSocial) : false;
-  const taggedTwoFriends = wantsGiveaway
-    ? Boolean(body.taggedTwoFriends)
-    : false;
+  const taggedTwoFriends = false;
   const marketingConsent = Boolean(body.marketingConsent);
   const referrer = cleanText(body.referrer);
   const giveawayPostUrl = cleanText(body.giveawayPostUrl);
@@ -419,8 +428,7 @@ export async function POST(request: Request) {
       email &&
       age18Confirmed &&
       giveawayRulesAgreed &&
-      turnstileVerified &&
-      (!socialHandle || !socialHandle.includes(" ")),
+      turnstileVerified,
     );
     const approvedAt = now.toISOString();
     const betaRecord = {
