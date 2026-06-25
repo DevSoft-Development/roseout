@@ -8,12 +8,19 @@ export const dynamic = "force-dynamic";
 type RunRow = { job_key: string | null; status: string | null; created_at: string | null; completed_at?: string | null; finished_at?: string | null; error_message?: string | null };
 
 function attentionReason(job: any, runStats: { count: number; latest?: RunRow }, sourceInfo: ReturnType<typeof knownCronSourceByKey.get>) {
+  if (job.is_active === false) return "paused";
+  if ((job.source || sourceInfo?.source) === "edge_function" && sourceInfo?.schedule_detected === false) return "schedule_missing";
   if (!runStats.count) return "registered_no_runs";
-  if (job.last_status === "never_run" || !job.last_started_at) return "has_history_but_summary_missing";
-  if (job.source === "edge_function" && sourceInfo?.schedule_detected === false) return "edge_function_not_scheduled";
-  if (job.source === "edge_function" && sourceInfo?.logger_expected === false) return "edge_function_logger_not_confirmed";
-  if (!sourceInfo) return "unknown";
+  if (String(runStats.latest?.status || job.last_status).toLowerCase().includes("failed")) return "latest_run_failed";
   return "ok";
+}
+function categoryFor(job: any) {
+  const key = String(job.job_key || "");
+  if (key.startsWith("reservation-")) return "reservation";
+  if (key === "admin-cron-digest-email") return "monitoring";
+  if (String(job.source || "").includes("edge")) return "edge_function";
+  if (key.includes("import")) return "import";
+  return "operations";
 }
 
 export async function GET() {
@@ -57,6 +64,7 @@ export async function GET() {
       latest_run_at: runStats.latest?.completed_at || runStats.latest?.finished_at || runStats.latest?.created_at || null,
       latest_run_status: runStats.latest?.status || null,
       needs_attention_reason,
+      category: categoryFor(job),
     };
   }).sort((a: any, b: any) => {
     const statusDelta = (statusRank[a.last_status] ?? 5) - (statusRank[b.last_status] ?? 5);
@@ -74,7 +82,9 @@ export async function GET() {
     failed: jobs.filter((j: any) => j.last_status === "failed").length,
     running: jobs.filter((j: any) => j.last_status === "running").length,
     never_run: jobs.filter((j: any) => j.last_status === "never_run").length,
-    needs_attention: jobs.filter((j: any) => j.needs_attention_reason !== "ok").length,
+    active_count: jobs.filter((j: any) => j.is_active !== false).length,
+    paused_count: jobs.filter((j: any) => j.is_active === false).length,
+    needs_attention: jobs.filter((j: any) => j.needs_attention_reason !== "ok" && j.needs_attention_reason !== "paused").length,
     email_alerts_enabled: jobs.filter((j: any) => j.send_success_email || j.send_failure_email).length,
   };
   return NextResponse.json({ success: true, jobs, counts });

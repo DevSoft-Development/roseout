@@ -1,32 +1,14 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts"
-
-console.log("Hello from Functions!")
-
-Deno.serve(async (req) => {
-  const { name } = await req.json()
-  const data = {
-    message: `Hello ${name}!`,
-  }
-
-  return new Response(
-    JSON.stringify(data),
-    { headers: { "Content-Type": "application/json" } },
-  )
-})
-
-/* To invoke locally:
-
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/reservation-daily-digest' \
-    --header 'Authorization: Bearer <SUPABASE_ANON_KEY>' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
-
-*/
+import { handleOptions } from "../_shared/cors.ts";
+import { ok, serverError } from "../_shared/response.ts";
+import { requireAdminOrCron } from "../_shared/auth.ts";
+import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
+import { sendEmail } from "../_shared/email.ts";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
+import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { escapeHtml, formatDate, formatTime, recipientFrom, returnIfDisabled } from "../_shared/reservationCron.ts";
+const JOB = "reservation-daily-digest";
+function nyDate(offset = 0) { const f = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }); const d = new Date(Date.now() + offset * 86400000); return f.format(d); }
+function count(rows: any[], pred: (r:any)=>boolean) { return rows.filter(pred).length; }
+function html(d: any) { const card = (l:string,v:any)=>`<div style="display:inline-block;width:29%;min-width:150px;border:1px solid #f3d5a5;border-radius:16px;padding:14px;margin:0 8px 10px 0"><div style="font-size:12px;color:#8a6a2d;text-transform:uppercase;font-weight:800">${l}</div><div style="font-size:28px;font-weight:900;color:#18181b">${v}</div></div>`; const rows = d.upcoming.map((r:any)=>`<tr><td>${escapeHtml(formatDate(r.reservation_date))}</td><td>${escapeHtml(formatTime(r.reservation_time))}</td><td>${escapeHtml(r.customer_name||"—")}</td><td>${escapeHtml(r.location_name||r.restaurant_name||r.activity_name||"—")}</td><td>${escapeHtml(r.party_size||"—")}</td><td>${escapeHtml(r.status||"—")}</td></tr>`).join(""); return `<!doctype html><body style="margin:0;background:#f6f1ea;padding:24px;font-family:Arial,sans-serif;color:#18181b"><div style="max-width:920px;margin:auto;background:white;border-radius:22px;overflow:hidden;border:1px solid #ead7b7"><div style="background:#181014;color:white;padding:28px"><div style="color:#f0c36a;font-weight:900;text-transform:uppercase;letter-spacing:.09em">TheOutHaven Operations</div><h1>Reservation daily digest</h1><p>${escapeHtml(d.today)} / ${escapeHtml(d.tomorrow)} · Generated ${escapeHtml(new Date().toISOString())}</p></div><div style="padding:24px">${card("Today",d.todayTotal)}${card("Tomorrow",d.tomorrowTotal)}${card("Pending",d.pending)}${card("Confirmed",d.confirmed)}${card("Seated",d.seated)}${card("New 24h",d.newLast24h)}${card("Cancelled",d.cancelled)}${card("No-show",d.no_show)}${card("Issues",d.issues.length)}<h2>Upcoming next 10</h2><table width="100%" style="border-collapse:collapse"><thead><tr style="background:#fff7ed"><th align="left">Date</th><th align="left">Time</th><th align="left">Guest</th><th align="left">Location</th><th align="left">Party</th><th align="left">Status</th></tr></thead><tbody>${rows || `<tr><td colspan="6">No upcoming reservations.</td></tr>`}</tbody></table><h2>Issues</h2>${d.issues.length ? d.issues.map((i:string)=>`<p style="background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:10px">${escapeHtml(i)}</p>`).join("") : "<p>No obvious reservation data issues.</p>"}</div></div></body>`; }
+function text(d:any){return [`TheOutHaven reservation daily digest`, `Today: ${d.todayTotal}`, `Tomorrow: ${d.tomorrowTotal}`, `Pending: ${d.pending}`, `Confirmed: ${d.confirmed}`, `Seated: ${d.seated}`, `Completed: ${d.completed}`, `Cancelled: ${d.cancelled}`, `No-show: ${d.no_show}`, `New last 24h: ${d.newLast24h}`, `Issues: ${d.issues.length}`, ...d.issues.map((i:string)=>`- ${i}`)].join("\n");}
+Deno.serve(async (req) => { const opt = handleOptions(req); if (opt) return opt; const timer = startTimer(); const startedAt = new Date().toISOString(); const supabase = createSupabaseAdminClient(); try { const auth = await requireAdminOrCron(req, supabase); const disabled = await returnIfDisabled(supabase, JOB, startedAt, timer); if (disabled) return disabled; const body = await req.json().catch(() => ({})); const today = nyDate(0), tomorrow = nyDate(1), yesterday = nyDate(-1), since = new Date(Date.now() - 86400000).toISOString(); const { data: windowRows, error } = await supabase.from("location_reservations").select("*").gte("reservation_date", yesterday).lte("reservation_date", tomorrow).limit(2000); if (error) throw error; const rows = windowRows || []; const upcoming = rows.filter((r:any)=>[today,tomorrow].includes(String(r.reservation_date)) && !["cancelled","declined","completed","no_show"].includes(String(r.status))).sort((a:any,b:any)=>String(a.reservation_date+a.reservation_time).localeCompare(String(b.reservation_date+b.reservation_time))).slice(0,10); const { count: failedReminderCount } = await supabase.from("reservation_reminders").select("id", { count: "exact", head: true }).eq("status", "failed"); const issues:string[] = []; const missingContact = rows.filter((r:any)=>!r.customer_email || !r.customer_phone).length; const missingLocation = rows.filter((r:any)=>!r.location_id).length; if (missingContact) issues.push(`${missingContact} reservations are missing customer email or phone.`); if (missingLocation) issues.push(`${missingLocation} reservations are missing location_id.`); if (failedReminderCount) issues.push(`${failedReminderCount} reservation reminders are failed.`); const digest = { today, tomorrow, todayTotal: count(rows, r=>String(r.reservation_date)===today), tomorrowTotal: count(rows, r=>String(r.reservation_date)===tomorrow), pending: count(rows, r=>r.status==="pending"), confirmed: count(rows, r=>r.status==="confirmed"), seated: count(rows, r=>["seated","arrived","checked_in"].includes(String(r.status))), completed: count(rows, r=>r.status==="completed"), cancelled: count(rows, r=>r.status==="cancelled"), no_show: count(rows, r=>r.status==="no_show"), newLast24h: count(rows, r=>r.created_at && new Date(r.created_at) >= new Date(since)), upcoming, issues }; const to = recipientFrom(["ADMIN_RESERVATION_DIGEST_EMAIL", "ADMIN_EMAIL", "SUPERADMIN_EMAIL", "ADMIN_ALERT_EMAIL"]); let email:any = { sent:false, skipped:true, reason:"sendEmail=false" }; if (body.sendEmail !== false) email = to ? await sendEmail({ to, subject: "TheOutHaven reservation daily digest", html: html(digest), text: text(digest) }) : { sent:false, skipped:true, reason:"missing_recipient" }; const skipped = email.skipped ? 1 : 0; await logCronJobRun(supabase, { job_name: JOB, job_key: JOB, function_name: JOB, route_path: `supabase/functions/${JOB}`, description: "Production reservation daily digest Edge Function.", schedule_hint: "pg_cron: 30 6 * * *", source: "edge_function", status: email.skipped && !to && body.sendEmail !== false ? "skipped" : "success", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), checked_count: rows.length, success_count: email.sent ? 1 : 0, skipped_count: skipped, failed_count: email.error ? 1 : 0, metadata: { digest, email, authSource: auth.source } }); await logEdgeFunctionRun(supabase, { function_name: JOB, status: "success", source: auth.source, duration_ms: timer(), output_summary: digest, metadata: { email } }); return ok({ success: true, email, digest }); } catch (error) { const message = safeError(error); await logCronJobRun(supabase, { job_name: JOB, job_key: JOB, function_name: JOB, route_path: `supabase/functions/${JOB}`, source: "edge_function", status: "failed", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), failed_count: 1, error_message: message }); return serverError(`${JOB} failed`, message); } });

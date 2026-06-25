@@ -1,32 +1,11 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts"
-
-console.log("Hello from Functions!")
-
-Deno.serve(async (req) => {
-  const { name } = await req.json()
-  const data = {
-    message: `Hello ${name}!`,
-  }
-
-  return new Response(
-    JSON.stringify(data),
-    { headers: { "Content-Type": "application/json" } },
-  )
-})
-
-/* To invoke locally:
-
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/reservation-reminder-cron' \
-    --header 'Authorization: Bearer <SUPABASE_ANON_KEY>' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
-
-*/
+import { handleOptions } from "../_shared/cors.ts";
+import { ok, serverError } from "../_shared/response.ts";
+import { requireAdminOrCron } from "../_shared/auth.ts";
+import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
+import { sendEmail } from "../_shared/email.ts";
+import { logCronJobRun } from "../_shared/cronLogger.ts";
+import { logEdgeFunctionRun, safeError, startTimer } from "../_shared/logger.ts";
+import { escapeHtml, formatDate, formatTime, inactiveStatuses, returnIfDisabled, successRate } from "../_shared/reservationCron.ts";
+const JOB = "reservation-reminder-cron";
+function reminderHtml(reservation: any, locationName: string) { const name = reservation.customer_name || reservation.guest_name || "there"; const manage = reservation.customer_token ? `${Deno.env.get("SITE_URL") || Deno.env.get("NEXT_PUBLIC_SITE_URL") || "https://theouthaven.com"}/reserve/confirmation/${reservation.customer_token}` : null; return `<div style="font-family:Arial,sans-serif;background:#fff;color:#18181b;padding:24px;line-height:1.6"><div style="color:#be123c;font-weight:900;letter-spacing:.08em;text-transform:uppercase">TheOutHaven Reserve</div><h1 style="margin:8px 0 12px">Your reservation is coming up</h1><p>Hi ${escapeHtml(name)}, this is a friendly reminder for your reservation at <b>${escapeHtml(locationName)}</b>.</p><div style="border:1px solid #f3d5a5;border-radius:16px;padding:16px;background:#fffaf2"><p><b>Date:</b> ${escapeHtml(formatDate(reservation.reservation_date))}</p><p><b>Time:</b> ${escapeHtml(formatTime(reservation.reservation_time))}</p><p><b>Party size:</b> ${escapeHtml(reservation.party_size || "—")}</p>${reservation.confirmation_code ? `<p><b>Confirmation:</b> ${escapeHtml(reservation.confirmation_code)}</p>` : ""}</div>${manage ? `<p><a href="${escapeHtml(manage)}" style="display:inline-block;background:#be123c;color:white;border-radius:999px;padding:12px 18px;text-decoration:none;font-weight:800">Manage reservation</a></p>` : `<p>If you need to cancel or modify, please contact TheOutHaven support or the location directly.</p>`}</div>`; }
+Deno.serve(async (req) => { const opt = handleOptions(req); if (opt) return opt; const timer = startTimer(); const startedAt = new Date().toISOString(); const supabase = createSupabaseAdminClient(); try { const auth = await requireAdminOrCron(req, supabase); const disabled = await returnIfDisabled(supabase, JOB, startedAt, timer); if (disabled) return disabled; const body = await req.json().catch(() => ({})); const limit = Math.min(Math.max(Number(body.limit ?? 100), 1), 250); const now = new Date().toISOString(); const { data: reminders, error } = await supabase.from("reservation_reminders").select("*").eq("status", "scheduled").lte("scheduled_for", now).order("scheduled_for", { ascending: true }).limit(limit); if (error) throw error; const rows = reminders || []; const results: any[] = []; let sent = 0, skipped = 0, failed = 0; for (const reminder of rows) { try { const { data: reservation, error: reservationError } = await supabase.from("location_reservations").select("*").eq("id", reminder.reservation_id).maybeSingle(); if (reservationError || !reservation) throw new Error(reservationError?.message || "reservation_not_found"); const status = String(reservation.status || "").toLowerCase(); if (inactiveStatuses.has(status)) { await supabase.from("reservation_reminders").update({ status: "cancelled", error_message: null }).eq("id", reminder.id); skipped++; results.push({ id: reminder.id, reservation_id: reminder.reservation_id, status: "skipped", reason: `reservation_${status}` }); continue; } let locationName = reservation.location_name || reservation.restaurant_name || reservation.activity_name || reservation.business_name || "TheOutHaven location"; if (reservation.location_id) { const { data: loc } = await supabase.from("locations").select("name,restaurant_name,activity_name,business_name").eq("id", reservation.location_id).maybeSingle(); locationName = loc?.name || loc?.restaurant_name || loc?.activity_name || loc?.business_name || locationName; } const email = reservation.customer_email || reservation.guest_email || reservation.email; const metadata: any = { sms: { sent: false, skipped: true, reason: "sms_helper_missing" } }; if (!email) throw new Error("missing_customer_email"); const isTomorrow = reminder.reminder_type === "24h" || String(reminder.reminder_type || "").includes("day"); const emailResult = await sendEmail({ to: email, subject: isTomorrow ? "Reminder: your TheOutHaven reservation is tomorrow" : "Reminder: your TheOutHaven reservation is coming up", html: reminderHtml(reservation, locationName), text: `Reminder: ${locationName} on ${formatDate(reservation.reservation_date)} at ${formatTime(reservation.reservation_time)} for ${reservation.party_size || "your party"}.` }); metadata.email = emailResult; if (!emailResult.sent) throw new Error(String(emailResult.error || emailResult.reason || "email_send_failed")); await supabase.from("reservation_reminders").update({ status: "sent", sent_at: new Date().toISOString(), error_message: null }).eq("id", reminder.id); sent++; results.push({ id: reminder.id, reservation_id: reminder.reservation_id, status: "sent", metadata }); } catch (err) { const msg = safeError(err).slice(0, 240); await supabase.from("reservation_reminders").update({ status: "failed", error_message: msg }).eq("id", reminder.id); failed++; results.push({ id: reminder.id, reservation_id: reminder.reservation_id, status: "failed", error: msg }); } } const status = failed ? (sent || skipped ? "warning" : "failed") : "success"; await logCronJobRun(supabase, { job_name: JOB, job_key: JOB, function_name: JOB, route_path: `supabase/functions/${JOB}`, description: "Production reservation reminder processor.", schedule_hint: "pg_cron: */15 * * * *", source: "edge_function", status, started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), checked_count: rows.length, success_count: sent, skipped_count: skipped, failed_count: failed, success_rate: successRate(sent, failed, skipped), metadata: { authSource: auth.source } }); await logEdgeFunctionRun(supabase, { function_name: JOB, status: status === "failed" ? "error" : "success", source: auth.source, duration_ms: timer(), output_summary: { checked: rows.length, sent, skipped, failed } }); return ok({ success: true, checked: rows.length, sent, skipped, failed, results }); } catch (error) { const message = safeError(error); await logCronJobRun(supabase, { job_name: JOB, job_key: JOB, function_name: JOB, route_path: `supabase/functions/${JOB}`, source: "edge_function", status: "failed", started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: timer(), failed_count: 1, error_message: message }); return serverError(`${JOB} failed`, message); } });

@@ -36,3 +36,12 @@ verify_jwt = true
 
 [functions.admin-giveaway-review-reminder]
 verify_jwt = false
+
+[functions.reservation-daily-digest]
+verify_jwt = false
+
+[functions.reservation-status-cleanup]
+verify_jwt = false
+
+[functions.reservation-reminder-cron]
+verify_jwt = false

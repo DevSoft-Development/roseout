@@ -142,7 +142,7 @@ export async function logCronJobRun(
   try {
     const { data: existingJob } = await supabase
       .from("cron_jobs")
-      .select("route_path,description,schedule_hint,source")
+      .select("route_path,description,schedule_hint,source,is_active")
       .eq("job_key", jobKey)
       .maybeSingle();
 
@@ -153,7 +153,7 @@ export async function logCronJobRun(
       description: payload.description ?? existingJob?.description ?? null,
       schedule_hint: payload.schedule_hint ?? existingJob?.schedule_hint ?? null,
       source: existingJob?.source ?? jobSource,
-      is_active: true,
+      is_active: existingJob?.is_active ?? true,
       last_status: lastStatus,
       last_started_at: payload.started_at ?? null,
       last_completed_at: isCompleted ? finishedAt : null,
