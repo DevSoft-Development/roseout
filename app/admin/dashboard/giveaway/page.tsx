@@ -3,6 +3,7 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getBetaGiveawayEligibilityForEmail } from "@/lib/beta-giveaway-eligibility";
 import { getBetaAccountReadinessForEntries } from "@/lib/beta/accountReadiness";
+import { getBetaApplications, getBetaBugReportsForAdmin, getBetaFeedbackForAdmin, getBetaGiveawayOverview, getWeeklyBetaSessionsForAdmin } from "@/lib/giveaway/betaProgram";
 import GiveawayAdminClient from "./GiveawayAdminClient";
 import {
   AdminActionButton,
@@ -14,7 +15,7 @@ export const metadata = { title: "Giveaway" };
 
 export default async function AdminGiveawayPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.giveaway);
-  const [{ data: entries }, { data: duplicateEvents }, { data: weeklyTasks }] =
+  const [{ data: entries }, { data: duplicateEvents }, applications, feedback, bugs, weeklySessions, overview] =
     await Promise.all([
       supabaseAdmin
         .from("launch_waitlist_signups")
@@ -26,12 +27,11 @@ export default async function AdminGiveawayPage() {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50),
-      supabaseAdmin
-        .from("beta_tasks")
-        .select("*")
-        .in("status", ["active", "draft"])
-        .order("created_at", { ascending: false })
-        .limit(50),
+      getBetaApplications(),
+      getBetaFeedbackForAdmin(),
+      getBetaBugReportsForAdmin(),
+      getWeeklyBetaSessionsForAdmin(),
+      getBetaGiveawayOverview(),
     ]);
   const baseEntries = entries || [];
   const readinessList = await getBetaAccountReadinessForEntries(baseEntries);
@@ -88,7 +88,11 @@ export default async function AdminGiveawayPage() {
         initialEntries={list}
         initialStats={stats}
         duplicateEvents={duplicateEvents || []}
-        initialWeeklyTasks={weeklyTasks || []}
+        initialApplications={applications || []}
+        initialFeedback={feedback || []}
+        initialBugReports={bugs || []}
+        initialWeeklySessions={weeklySessions || []}
+        initialOverview={overview}
       />
     </AdminPageShell>
   );
