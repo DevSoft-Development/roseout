@@ -96,7 +96,7 @@ const filters = [
   ["missing_weekly", "Missing weekly tasks"],
   ["verified", "Prize qualified"],
   ["disqualified", "Disqualified"],
-  ["winner", "Reward winner"],
+  ["winner", "Giveaway winner"],
 ] as const;
 const weekFilters = [
   ["all", "All weeks"],
@@ -283,11 +283,11 @@ function missingRequirements(entry: Entry) {
   if (!el?.weeklyTasksComplete) missing.push("weekly beta tasks");
   if (!entry.age_18_confirmed) missing.push("18+ confirmation");
   if (!(entry.giveaway_rules_agreed || entry.prize_rules_confirmed))
-    missing.push("reward rules agreement");
+    missing.push("giveaway rules agreement");
   if (entry.duplicate_flag) missing.push("duplicate review");
   if (entry.giveaway_status === "disqualified")
     missing.push("not disqualified");
-  if (!entry.wants_giveaway) missing.push("reward opt-in");
+  if (!entry.wants_giveaway) missing.push("giveaway opt-in");
   return missing;
 }
 function requirementsMet(entry: Entry) {
@@ -323,11 +323,11 @@ function checklist(entry: Entry) {
     ["Optional bonus follows are not required", true],
     ["18+ confirmed", Boolean(entry.age_18_confirmed)],
     [
-      "Reward rules agreed",
+      "Giveaway rules agreed",
       Boolean(entry.giveaway_rules_agreed || entry.prize_rules_confirmed),
     ],
     ["No duplicate flag", !entry.duplicate_flag],
-    ["Reward opt-in", Boolean(entry.wants_giveaway)],
+    ["Giveaway opt-in", Boolean(entry.wants_giveaway)],
   ] as const;
 }
 
@@ -514,13 +514,13 @@ export default function GiveawayAdminClient({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "theouthaven-beta-tester-reward.csv";
+    a.download = "theouthaven-giveaway-review.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
   function smartAction(entry: Entry): [string, Record<string, unknown>] {
     if (!activeBeta(entry))
-      return ["Repair Account", { action: "repair_beta_access" }];
+      return ["Approve as Beta Tester", { action: "approve_beta" }];
     if (!ready(entry))
       return ["Resend Setup Email", { action: "resend_beta_invite" }];
     if (!entry.beta_giveaway_eligibility?.weeklyTasksComplete)
@@ -556,12 +556,13 @@ export default function GiveawayAdminClient({
   }
   function MoreActions({ entry }: { entry: Entry }) {
     const actions = [
+      ["Approve as beta tester", { action: "approve_beta" }],
       ["Repair Beta Access", { action: "repair_beta_access" }],
       ["Resend Setup Email", { action: "resend_beta_invite" }],
       ["Verify bonus follow", { action: "verify_social" }],
       ["Mark Prize Qualified", { giveaway_status: "verified" }],
       ["Disqualify", { giveaway_status: "disqualified" }],
-      ["Mark Reward Winner", { giveaway_status: "winner" }],
+      ["Mark Giveaway Winner", { giveaway_status: "winner" }],
       ["Mark Alternate", { giveaway_status: "alternate" }],
       ["Reset Outcome", { giveaway_status: "pending_verification" }],
     ] as const;
@@ -986,7 +987,14 @@ export default function GiveawayAdminClient({
               </tr>
             </thead>
             <tbody>
-              {visibleEntries.map((entry) => {
+              {visibleEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center">
+                    <p className="text-lg font-black text-white">No giveaway entries yet.</p>
+                    <p className="mt-2 text-sm text-white/55">Approved beta testers and launch giveaway applicants will appear here once they apply or are added.</p>
+                  </td>
+                </tr>
+              ) : visibleEntries.map((entry) => {
                 const s = getStatuses(entry);
                 const [, updates] = smartAction(entry);
                 return (
@@ -1217,7 +1225,7 @@ export default function GiveawayAdminClient({
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <Field
                 label="Social info"
-                value={`${formatText(detailEntry.social_handle)} / ${formatText(detailEntry.social_platform)} · Follow ${yesNo(detailEntry.followed_social)} · Historical tags ${yesNo(detailEntry.tagged_two_friends)} (historical only — tags are no longer required)`}
+                value={`${formatText(detailEntry.social_handle)} / ${formatText(detailEntry.social_platform)} · Follow ${yesNo(detailEntry.followed_social)} · Optional bonus intent ${yesNo(detailEntry.followed_social)}`}
               />
               <Field
                 label="Account Status"
