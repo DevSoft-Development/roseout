@@ -1169,3 +1169,35 @@ describe("activity-activity paired outing intent", () => {
     });
   }
 });
+
+describe("public create pairing intent contract", () => {
+  it("marks dinner with hookah as same-location first with fallback pairing allowed", () => {
+    const intent = deterministicIntentFromQuery("dinner with hookah");
+
+    expect(intent.pairingIntent).toBe("same_location");
+    expect(intent.pairRequested).toBe(true);
+    expect(intent.sameVenuePreferred).toBe(true);
+    expect(intent.fallbackPairAllowed).toBe(true);
+    expect(intent.wantsPairing).toBe(false);
+  });
+
+  it("marks close-by hookah after dinner as a nearby pair", () => {
+    const intent = deterministicIntentFromQuery("dinner and hookah spot close by");
+
+    expect(intent.pairingIntent).toBe("nearby_pair");
+    expect(intent.pairRequested).toBe(true);
+    expect(intent.sameVenuePreferred).toBe(false);
+    expect(intent.wantsPairing).toBe(true);
+    expect(intent.pairingPreference?.distanceMode).toBe("nearby");
+  });
+
+  it("keeps Italian dinner with live music same-location first", () => {
+    const intent = deterministicIntentFromQuery("Italian dinner with live music");
+
+    expect(intent.pairingIntent).toBe("same_location");
+    expect(intent.restaurantIntent.cuisineTerms).toContain("italian");
+    expect(intent.restaurantIntent.featureTerms).toContain("live music");
+    expect(intent.sameVenuePreferred).toBe(true);
+    expect(intent.fallbackPairAllowed).toBe(true);
+  });
+});

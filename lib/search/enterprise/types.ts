@@ -86,6 +86,10 @@ export type SearchIntent = {
   needsRestaurant: boolean;
   needsActivity: boolean;
   wantsPairing: boolean;
+  pairingIntent?: "same_location" | "nearby_pair" | "auto";
+  pairRequested?: boolean;
+  sameVenuePreferred?: boolean;
+  fallbackPairAllowed?: boolean;
   sameLocationRequired?: boolean;
   normalizedIntent?: "restaurant_only" | "activity_only" | "same_location_combo" | "paired_outing";
   pairingPreference?: PairingPreference;
