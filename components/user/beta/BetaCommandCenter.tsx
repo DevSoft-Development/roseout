@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useMemo, useRef, useState } from "react";
+import { forwardRef, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 type Assignment = {
@@ -16,56 +16,16 @@ type PairItem = Record<string, any>;
 type Mode = "single_location" | "paired_outing";
 
 const card =
-  "rounded-[1.75rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025))] p-5 shadow-2xl shadow-black/25 ring-1 ring-white/[0.03]";
+  "rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/20 sm:p-6";
 const input =
   "rounded-2xl border border-white/10 bg-black/45 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35 shadow-inner shadow-black/30 transition focus:border-rose-200/55 focus:bg-black/55 focus:ring-2 focus:ring-rose-500/15";
 const primary =
   "rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-800 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/35 transition hover:scale-[1.01] hover:shadow-rose-900/45 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100";
 const secondary =
   "rounded-full border border-white/10 bg-white/[0.055] px-4 py-2 text-xs font-black text-white shadow-sm shadow-black/20 transition hover:border-rose-200/40 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50";
+const pill =
+  "inline-flex items-center rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-bold text-white/70";
 
-const WEEKS = [
-  {
-    theme: "Test the Search Match",
-    steps: [
-      "Write your outing",
-      "Review the results",
-      "Select the best match",
-      "Answer feedback questions",
-      "Complete weekly check-in",
-    ],
-  },
-  {
-    theme: "Improve My Outing Results",
-    steps: [
-      "Write your outing",
-      "Review first results",
-      "Refine your search",
-      "Compare updated results",
-      "Submit feedback",
-    ],
-  },
-  {
-    theme: "Build My Outing Plan",
-    steps: [
-      "Start with an outing you would actually plan",
-      "Save your favorite results",
-      "Choose your top pick",
-      "Check planning details",
-      "Submit feedback",
-    ],
-  },
-  {
-    theme: "Ready to Go",
-    steps: [
-      "Search for an outing you would actually book or visit",
-      "Choose the result you would act on",
-      "Check booking or visit details",
-      "Complete trust and confidence check",
-      "Submit final feedback",
-    ],
-  },
-];
 const pairWords = [
   " and ",
   "after",
@@ -235,6 +195,7 @@ function inferPairLabelsFromQuery(query: string) {
     "game night",
     "date night",
     "restaurant",
+    "steak",
     "dinner",
     "brunch",
     "lunch",
@@ -245,6 +206,7 @@ function inferPairLabelsFromQuery(query: string) {
     "coffee",
     "dessert",
     "rooftop",
+    "hookah",
     "activity",
     "museum",
     "bowling",
@@ -262,6 +224,7 @@ function inferPairLabelsFromQuery(query: string) {
   ];
   const foodTerms = [
     "restaurant",
+    "steak",
     "dinner",
     "brunch",
     "lunch",
@@ -275,6 +238,7 @@ function inferPairLabelsFromQuery(query: string) {
   ];
   const activityTerms = [
     "activity",
+    "hookah",
     "museum",
     "bowling",
     "arcade",
@@ -333,10 +297,10 @@ function buildMatchReason({
   if (isPair) {
     const first = (primaryLabel || "one stop").toLowerCase();
     const second = (secondaryLabel || "another stop").toLowerCase();
-    return `We picked this because your search mentioned “${cleanedQuery}.” This pairing brings together ${first} and ${second} so the outing stays close to what you asked for.`;
+    return `We picked this because you searched for “${cleanedQuery}.” This pairing brings together ${first} and ${second} so the outing stays close to what you asked for.`;
   }
 
-  return `We picked this because your search mentioned “${cleanedQuery}.” This spot lines up with the kind of outing, location, and vibe you described.`;
+  return `We picked this because you searched for “${cleanedQuery}.” This spot lines up with the kind of outing, location, and vibe you described.`;
 }
 
 function getChooseButtonLabel(
@@ -350,15 +314,9 @@ function getChooseButtonLabel(
   return "Choose This Outing";
 }
 
-function readableList(values: string[]) {
-  return values.length ? values.join(", ") : "Nothing else selected";
-}
-
 export default function BetaCommandCenter({
   assignments,
   weekStart,
-  giveawayStatus,
-  feedbackCount,
   testMode = false,
 }: {
   assignments: Assignment[];
@@ -369,7 +327,6 @@ export default function BetaCommandCenter({
   testMode?: boolean;
 }) {
   const weekNumber = currentProgramWeek(weekStart);
-  const week = WEEKS[weekNumber - 1];
   const [step, setStep] = useState(1);
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
@@ -393,23 +350,10 @@ export default function BetaCommandCenter({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const restaurantSectionRef = useRef<HTMLElement | null>(null);
-  const activitySectionRef = useRef<HTMLElement | null>(null);
-  const feedbackSectionRef = useRef<HTMLElement | null>(null);
+  const restaurantSectionRef = useRef<HTMLDivElement | null>(null);
+  const activitySectionRef = useRef<HTMLDivElement | null>(null);
+  const feedbackSectionRef = useRef<HTMLDivElement | null>(null);
   const refineSectionRef = useRef<HTMLElement | null>(null);
-  const progress = useMemo(
-    () =>
-      week.steps.map((label, i) => ({
-        label,
-        status:
-          i + 1 < step
-            ? "Completed"
-            : i + 1 === step
-              ? "In progress"
-              : "Not started",
-      })),
-    [step, week.steps],
-  );
   const displayQuery = submittedQuery || query;
   const pairRequested = pairWords.some((w) => query.toLowerCase().includes(w));
   const activeAssignment = assignments[0];
@@ -419,42 +363,13 @@ export default function BetaCommandCenter({
     100,
     Math.max(0, (completedSteps / 5) * 100),
   );
-  const weekEnd = (() => {
-    const d = new Date(`${weekStart}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + 6);
-    return d;
-  })();
-  const weekLabel = (() => {
-    const start = new Date(`${weekStart}T00:00:00Z`);
-    const fmt = new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
-    return `Week of ${fmt.format(start)} - ${fmt.format(weekEnd)}`;
-  })();
-
-  function scrollToSection(ref: RefObject<HTMLElement | null>) {
+  function scrollToSection(ref: RefObject<HTMLDivElement | null>) {
     window.setTimeout(() => {
       ref.current?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
     }, 180);
-  }
-
-  function scrollToNextBetaStep(nextStep: number) {
-    window.setTimeout(() => {
-      const target =
-        weekNumber === 2 && nextStep <= 3
-          ? refineSectionRef.current
-          : feedbackSectionRef.current;
-
-      target?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 120);
   }
 
   async function persist(action: string, payload: any) {
@@ -529,7 +444,7 @@ export default function BetaCommandCenter({
       setNotice(
         updated
           ? "Updated results are ready to compare."
-          : "Real TheOutHaven search results are ready.",
+          : "Your matches are ready to review.",
       );
     } catch (e: any) {
       setError(e.message || "We could not run that search. Please try again.");
@@ -583,10 +498,6 @@ export default function BetaCommandCenter({
         was_saved: false,
         ...flags,
       });
-      const nextStep = Math.max(
-        step,
-        weekNumber === 3 || weekNumber === 4 ? 3 : 4,
-      );
       setSelected(type === "none" ? { none: true } : item);
       setStep((current) =>
         Math.max(current, weekNumber === 3 || weekNumber === 4 ? 3 : 4),
@@ -598,7 +509,6 @@ export default function BetaCommandCenter({
             ? "Your beta pairing choice was recorded."
             : "Your beta choice was recorded.",
       );
-      scrollToNextBetaStep(nextStep);
       return savedSelection;
     } catch (e: any) {
       setError(e.message || "We could not save that choice.");
@@ -606,6 +516,7 @@ export default function BetaCommandCenter({
       setBusy(false);
     }
   }
+
   async function saveItem(
     item: any,
     type: "single_location" | "paired_outing",
@@ -644,6 +555,7 @@ export default function BetaCommandCenter({
       setBusy(false);
     }
   }
+  void saveItem;
   async function submitFeedback() {
     setBusy(true);
     setError(null);
@@ -666,91 +578,35 @@ export default function BetaCommandCenter({
   }
 
   return (
-    <div className="grid gap-5 pb-4 lg:gap-6">
-      <section className="relative overflow-hidden rounded-[2.25rem] border border-white/10 bg-[radial-gradient(circle_at_18%_0%,rgba(225,29,72,.34),transparent_32%),radial-gradient(circle_at_86%_12%,rgba(127,29,29,.24),transparent_30%),linear-gradient(135deg,#1b0b0d,#070304_62%,#12070a)] p-5 shadow-2xl shadow-black/40 ring-1 ring-white/[0.04] md:p-7 lg:p-8">
-        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-rose-200/50 to-transparent" />
-        <div className="relative grid gap-7 xl:grid-cols-[1fr_360px] xl:items-end">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-rose-300/20 bg-rose-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[.24em] text-rose-100">
-                TheOutHaven Beta
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] font-black uppercase tracking-[.22em] text-white/60">
-                Week {weekNumber}
-              </span>
-              {testMode && (
-                <span className="rounded-full border border-sky-300/20 bg-sky-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[.2em] text-sky-100">
-                  Test mode
-                </span>
-              )}
-            </div>
-            <h1 className="mt-5 max-w-4xl text-4xl font-black tracking-[-.04em] md:text-5xl xl:text-6xl">
-              Your weekly beta command center
-            </h1>
-            <p className="mt-4 max-w-3xl text-sm leading-6 text-white/68 md:text-base">
-              Complete five focused steps to test real TheOutHaven search
-              results, choose what fits, and send product feedback without
-              leaving the dashboard flow.
-            </p>
-            {testMode && (
-              <p className="mt-4 max-w-3xl rounded-2xl border border-sky-300/20 bg-sky-500/10 p-3 text-sm font-bold text-sky-100">
-                This is a test run. It uses the real flow but will not count
-                toward beta progress, giveaway eligibility, prize entries, or
-                real analytics.
-              </p>
-            )}
+    <div className="mx-auto w-full max-w-[1280px] space-y-6 px-4 pb-16 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/30 sm:p-8">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,#e1062a33,transparent_60%)]" />
+        <div className="relative max-w-2xl">
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
+            WEEK {weekNumber} BETA{activeTestMode ? " / TEST MODE" : ""}
+          </p>
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">
+            Help us improve your matches this week
+          </h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-white/70">
+            Search for an outing, review your matches, pick the one that fits best, and share quick feedback.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {activeTestMode ? <span className={pill}>Test Mode</span> : null}
+            <span className={pill}>5 quick steps</span>
+            <span className={pill}>3-5 min</span>
           </div>
-          <div className="rounded-[1.75rem] border border-white/10 bg-black/35 p-4 shadow-xl shadow-black/30 backdrop-blur">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[.24em] text-white/40">
-                  Weekly progress
-                </p>
-                <p className="mt-1 text-2xl font-black">
-                  {completedSteps}/5 complete
-                </p>
-              </div>
-              <div className="rounded-2xl border border-rose-300/20 bg-rose-500/10 px-3 py-2 text-right">
-                <p className="text-[10px] font-black uppercase tracking-[.2em] text-rose-100">
-                  Active
-                </p>
-                <p className="text-sm font-black text-white">
-                  Step {Math.min(step, 5)}
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-rose-400 via-red-500 to-rose-700 shadow-[0_0_24px_rgba(225,29,72,.65)]"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <p className="mt-3 text-xs font-semibold text-white/55">
-              {weekLabel} · {week.theme}
-            </p>
-          </div>
-        </div>
-        <div className="relative mt-6 grid gap-3 md:grid-cols-3">
-          <Pill label="Theme" value={week.theme} />
-          <Pill
-            label="Giveaway"
-            value={
-              giveawayStatus === "verified"
-                ? "Qualified for review"
-                : "In progress"
-            }
-          />
-          <Pill label="Feedback" value={`${feedbackCount} submitted`} />
         </div>
       </section>
 
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatusCard title="This week's goal" text="Try a real search and choose the best match." />
+        <StatusCard title="Progress" text={`${completedSteps} of 5 steps completed`} progressPercent={progressPercent} />
+        <StatusCard title="Giveaway" text="Stay eligible by finishing this week's tasks." />
+      </div>
+
       <div className="xl:hidden">
-        <JourneyMapCard
-          completedSteps={completedSteps}
-          progress={progress}
-          step={step}
-          week={week}
-        />
+        <JourneyMapCard step={step} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
@@ -763,73 +619,44 @@ export default function BetaCommandCenter({
         </p>
       )}
 
-      <section className={`${card} overflow-hidden p-0`}>
-        <div className="grid gap-0 lg:grid-cols-[.9fr_1.1fr]">
-          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,.2),transparent_38%),rgba(0,0,0,.28)] p-5 lg:border-b-0 lg:border-r lg:p-6">
-            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-              Step 1 · Search brief
-            </p>
-            <h2 className="mt-3 text-2xl font-black tracking-[-.02em] md:text-3xl">
-              Write the outing like you would ask a concierge.
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-white/62">
-              Include the occasion, neighborhood, vibe, budget, and whether you
-              want a single place or a paired outing such as dinner and an
-              activity.
-            </p>
-            <div className="mt-5 grid gap-2 text-xs font-bold text-white/50">
-              <span>• Real search pipeline</span>
-              <span>• Saves the prompt for beta feedback</span>
-              <span>• Supports paired outing requests</span>
-            </div>
+      <section className={card}>
+        <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">STEP 1</p>
+        <h2 className="mt-3 text-2xl font-black text-white">Tell us what kind of outing you want</h2>
+        <p className="mt-2 text-sm text-white/65">Write it the way you’d normally describe it.</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            runSearch(false);
+          }}
+          className="mt-5 space-y-4"
+        >
+          <textarea
+            className={`${input} min-h-[112px] w-full resize-y leading-6`}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Example: I want a steak dinner and hookah spot in Queens"
+          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-semibold text-white/50">Tip: Add location, vibe, budget, or occasion for better matches.</p>
+            <button type="submit" disabled={busy || !query.trim()} className={primary}>
+              {busy ? "Searching…" : "Find My Matches"}
+            </button>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              runSearch(false);
-            }}
-            className="grid gap-4 p-5 lg:p-6"
-          >
-            <label className="grid gap-2">
-              <span className="text-xs font-black uppercase tracking-[.2em] text-white/45">
-                Your outing request
-              </span>
-              <textarea
-                className={`${input} min-h-32 resize-y leading-6`}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Example: I’m looking for dinner and something fun to do after in Brooklyn with a grown, romantic vibe."
-              />
-            </label>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs font-semibold text-white/40">
-                Tip: add a borough/city and vibe for sharper results.
-              </p>
-              <button
-                type="submit"
-                disabled={busy || !query.trim()}
-                className={primary}
-              >
-                {busy ? "Searching…" : "Find My Outing"}
-              </button>
-            </div>
-          </form>
-        </div>
+        </form>
       </section>
 
       {step >= 2 && (
         <section className={card}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-                Step 2 · Results
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
+                STEP 2
               </p>
-              <h2 className="mt-2 text-2xl font-black">
-                Review the matches we found
+              <h2 className="mt-3 text-2xl font-black text-white">
+                Review your matches
               </h2>
-              <p className="mt-2 text-sm text-white/60">
-                Pick the result that best matches your test search and answer
-                the beta feedback prompts.
+              <p className="mt-2 text-sm text-white/65">
+                Look through the results and choose the one that feels closest to what you had in mind.
               </p>
             </div>
             <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-black text-white/55">
@@ -841,8 +668,8 @@ export default function BetaCommandCenter({
           <div className="mt-5 grid gap-6">
             {pairs.length > 0 && (
               <BetaResultSection
-                title="TheOutHaven Recommends"
-                subtitle="Restaurant and activity combinations matched to your search."
+                title="Paired outings"
+                subtitle="Two-stop ideas matched to your search."
               >
                 {pairs.map((p, i) => (
                   <PairCard
@@ -946,7 +773,10 @@ export default function BetaCommandCenter({
           <button
             type="button"
             disabled={busy}
-            onClick={() => choose({ none: true }, "none", {})}
+            onClick={async () => {
+              await choose({ none: true }, "none", {});
+              scrollToSection(feedbackSectionRef);
+            }}
             className={`mt-4 ${secondary}`}
           >
             None of these fit my search
@@ -1010,9 +840,9 @@ export default function BetaCommandCenter({
           <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
             Final step · Feedback
           </p>
-          <h2 className="mt-2 text-2xl font-black">
-            How well did this match your outing idea?
-          </h2>
+          <h2 className="mt-2 text-2xl font-black">Tell us how we did</h2>
+          <p className="mt-2 text-sm text-white/55">A few quick answers help us improve your matches.</p>
+          <p className="mt-4 text-sm font-black text-white">How well did this match your outing idea?</p>
           <FeedbackFields
             weekNumber={weekNumber}
             mode={mode}
@@ -1057,94 +887,110 @@ export default function BetaCommandCenter({
         </main>
         <aside className="hidden xl:block">
           <div className="sticky top-24">
-            <JourneyMapCard
-              completedSteps={completedSteps}
-              progress={progress}
-              step={step}
-              week={week}
-            />
+            <JourneyMapCard step={step} />
           </div>
         </aside>
       </div>
     </div>
   );
 }
-function JourneyMapCard({
-  completedSteps,
-  progress,
-  step,
-  week,
-}: {
-  completedSteps: number;
-  progress: { label: string; status: string }[];
-  step: number;
-  week: { theme: string; steps: string[] };
-}) {
+function JourneyMapCard({ step }: { step: number }) {
+  const steps = [
+    "Write your outing",
+    "Review results",
+    "Choose the best match",
+    "Answer feedback questions",
+    "Complete weekly check-in",
+  ];
+
   return (
-    <section className={card}>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-            Journey map
-          </p>
-          <h2 className="mt-2 text-2xl font-black">
-            Five-step progress tracker
-          </h2>
-        </div>
-        <p className="text-sm font-bold text-white/50">
-          {completedSteps === 5
-            ? "Complete"
-            : `Next: ${week.steps[Math.min(step - 1, 4)]}`}
-        </p>
-      </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-5 xl:grid-cols-1">
-        {progress.map((p, i) => {
-          const isActive = i + 1 === step;
-          const isDone = i + 1 < step;
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/25">
+      <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
+        Journey Map
+      </p>
+      <h2 className="mt-3 text-xl font-black text-white">Your progress</h2>
+      <p className="mt-1 text-sm text-white/55">
+        You’re on step {Math.min(step, 5)} of 5
+      </p>
+      <div className="mt-5 space-y-2">
+        {steps.map((label, index) => {
+          const currentStep = index + 1;
+          const completed = currentStep < step;
+          const active = currentStep === step;
           return (
             <div
-              key={p.label}
-              className={`relative overflow-hidden rounded-2xl border p-3 transition ${isActive ? "border-rose-300/45 bg-rose-500/15 shadow-lg shadow-rose-950/25" : isDone ? "border-emerald-300/20 bg-emerald-500/10" : "border-white/10 bg-black/25"}`}
+              key={label}
+              className={[
+                "flex items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-sm",
+                completed
+                  ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+                  : active
+                    ? "border-rose-400/40 bg-rose-500/10 text-white"
+                    : "border-white/10 bg-black/20 text-white/55",
+              ].join(" ")}
             >
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-3">
                 <span
-                  className={`grid h-8 w-8 place-items-center rounded-full text-xs font-black ${isDone ? "bg-emerald-400 text-black" : isActive ? "bg-rose-500 text-white" : "bg-white/10 text-white/45"}`}
+                  className={[
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black",
+                    completed
+                      ? "bg-emerald-400 text-black"
+                      : active
+                        ? "bg-rose-500 text-white"
+                        : "bg-white/10 text-white/50",
+                  ].join(" ")}
                 >
-                  {isDone ? "✓" : i + 1}
+                  {completed ? "✓" : currentStep}
                 </span>
-                <span className="text-[10px] font-black uppercase tracking-[.18em] text-white/35">
-                  {p.status}
-                </span>
+                <span className="truncate font-bold">{label}</span>
               </div>
-              <p className="mt-3 text-sm font-black leading-5 text-white/85">
-                {p.label}
-              </p>
+              <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
+                {completed ? "Done" : active ? "Now" : "Next"}
+              </span>
             </div>
           );
         })}
       </div>
-    </section>
-  );
-}
-function Pill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[.2em] text-rose-100">
-        {label}
-      </p>
-      <p className="mt-1 font-black text-white">{value}</p>
     </div>
   );
 }
-const BetaResultSection = forwardRef<HTMLElement, any>(
+
+function StatusCard({
+  title,
+  text,
+  progressPercent,
+}: {
+  title: string;
+  text: string;
+  progressPercent?: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/15">
+      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-300">
+        {title}
+      </p>
+      <p className="mt-2 text-sm font-bold leading-5 text-white/75">{text}</p>
+      {typeof progressPercent === "number" ? (
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-rose-400 to-red-700"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const BetaResultSection = forwardRef<HTMLDivElement, any>(
   ({ title, subtitle, children }, ref) => (
-    <section ref={ref}>
+    <div ref={ref}>
       <div className="mb-3">
         <h3 className="text-xl font-black text-white">{title}</h3>
         <p className="mt-1 text-sm text-white/55">{subtitle}</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>
-    </section>
+      <div className="grid gap-4 lg:grid-cols-2">{children}</div>
+    </div>
   ),
 );
 BetaResultSection.displayName = "BetaResultSection";
@@ -1217,7 +1063,7 @@ function ResultCard({
     <article
       className={`group flex h-full min-h-[460px] flex-col overflow-hidden rounded-[1.35rem] border bg-zinc-950/80 shadow-xl shadow-black/30 transition hover:border-[#e1062a]/55 hover:bg-[#141414] ${selected ? "border-rose-300/60 ring-2 ring-rose-500/25" : saved ? "border-amber-200/35" : "border-white/10"}`}
     >
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-neutral-950">
+      <div className="relative aspect-[16/9] w-full overflow-hidden bg-neutral-950">
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
           <img
             src="/toh_logo.png"
@@ -1275,11 +1121,9 @@ function ResultCard({
             ))}
           </div>
         )}
-        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.045] p-3">
-          <p className="text-[9px] font-black uppercase tracking-[.2em] text-white/35">
-            Why this match works
-          </p>
-          <p className="mt-1.5 line-clamp-3 text-xs font-semibold leading-5 text-white/62">
+        <div className="mt-4">
+          <p className="text-xs font-black text-rose-200">Why this match works</p>
+          <p className="mt-1.5 text-sm font-semibold leading-6 text-white/62">
             {buildMatchReason({ query: query || "" })}
           </p>
         </div>
@@ -1314,7 +1158,7 @@ function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
           return (
             <div
               key={`${label}-${index}`}
-              className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-neutral-950"
+              className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl bg-neutral-950"
             >
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <img
@@ -1360,11 +1204,9 @@ function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
             {distance}
           </p>
         )}
-        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.045] p-3">
-          <p className="text-[9px] font-black uppercase tracking-[.2em] text-white/35">
-            Why this pairing works
-          </p>
-          <p className="mt-1.5 line-clamp-3 text-xs font-semibold leading-5 text-white/62">
+        <div className="mt-4">
+          <p className="text-xs font-black text-rose-200">Why this pairing works</p>
+          <p className="mt-1.5 text-sm font-semibold leading-6 text-white/62">
             {buildMatchReason({
               query: query || "",
               isPair: true,
