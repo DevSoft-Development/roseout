@@ -29,7 +29,7 @@ export default async function HelpArticlePage({ params }: Props) {
     .limit(4);
 
   return (
-    <main className="rose-page min-h-screen bg-[#050505] px-4 pb-16 pt-[120px] text-white sm:px-6 sm:pt-[132px] lg:px-8 lg:pt-[144px]">
+    <main className="toh-page min-h-screen bg-[#050505] px-4 pb-16 pt-[120px] text-white sm:px-6 sm:pt-[132px] lg:px-8 lg:pt-[144px]">
       <article className="mx-auto max-w-4xl space-y-6">
         <Link href="/help" className="font-black text-rose-100 transition hover:text-red-400">← Help Center</Link>
         <section className="rounded-[2rem] border border-[#e1062a]/30 bg-gradient-to-br from-[#26030a] via-[#0d0d0d] to-[#050505] p-8 shadow-[0_18px_50px_rgba(225,6,42,0.18)]">

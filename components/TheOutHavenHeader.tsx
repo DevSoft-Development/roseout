@@ -11,7 +11,8 @@ const navItems = [
   { href: "/explore", label: "Explore" },
   { href: "/create", label: "Create Outing" },
   { href: "/user/dashboard/saved", label: "Saved Outings" },
-  { href: "/help", label: "Help" },
+  { href: "/reservations", label: "Reservations" },
+  { href: "/support", label: "Support" },
   { href: "/business", label: "For Businesses" },
 ];
 
@@ -309,6 +310,7 @@ export default function TheOutHavenHeader() {
                       ["/user/dashboard", "Dashboard"],
                       ["/user/dashboard/beta/weekly", "Beta Weekly Tasks"],
                       ["/user/dashboard/saved", "Saved Outings"],
+                      ["/reservations", "Reservations"],
                       ["/user/dashboard/account", "Account Settings"],
                       ["/help", "Get Help"],
                     ].map(([href, label]) => (
@@ -395,6 +397,7 @@ export default function TheOutHavenHeader() {
                 {[
                   ["/user/dashboard/beta/weekly", "Beta Weekly Tasks"],
                   ["/user/dashboard/saved", "Saved Outings"],
+                  ["/reservations", "Reservations"],
                   ["/user/dashboard/account", "Account Settings"],
                   ["/help", "Get Help"],
                 ].map(([href, label]) => (

@@ -1376,7 +1376,7 @@ export default function CreatePage() {
 
   return (
     <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-black pb-40 text-white sm:pb-28">
-      <section className="rose-mobile-compact-hero relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:pt-32">
+      <section className="toh-mobile-compact-hero relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-16 sm:px-6 sm:pb-10 sm:pt-24 lg:pt-28">
         <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5 overflow-hidden lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div className="flex min-w-0 max-w-full flex-col justify-center">
             <div className="mb-3 inline-flex w-fit max-w-full rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
@@ -1385,7 +1385,7 @@ export default function CreatePage() {
                 : "AI Outing Planner"}
             </div>
 
-            <h1 className="max-w-full break-words text-3xl font-black leading-[0.96] tracking-[-0.055em] text-white sm:text-6xl lg:text-7xl">
+            <h1 className="max-w-full break-words text-2xl font-black leading-[0.98] tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
               Your next outing, planned smarter.
             </h1>
 
@@ -1451,9 +1451,9 @@ export default function CreatePage() {
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  className="rose-touch-target w-full rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
+                  className="toh-touch-target w-full rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
                 >
-                  {loading ? "Finding Matches..." : "Build My Outing"}
+                  {loading ? "Finding matches..." : "Find my outing"}
                 </button>
 
                 <button
@@ -1472,7 +1472,7 @@ export default function CreatePage() {
                   <button
                     type="button"
                     onClick={() => { setInput(""); inputRef.current?.focus(); }}
-                    className="rose-touch-target w-full rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white/55 transition hover:text-white sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
+                    className="toh-touch-target w-full rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white/55 transition hover:text-white sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
                   >
                     Clear Search
                   </button>
@@ -2556,7 +2556,7 @@ function ResultSection({
         </div>
       </div>
 
-      <div className="rose-mobile-card-grid w-full min-w-0 items-stretch">
+      <div className="toh-mobile-card-grid w-full min-w-0 items-stretch">
         {children}
       </div>
     </section>

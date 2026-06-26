@@ -20,7 +20,7 @@ export default async function Page() {
             <h2 className="text-2xl font-black capitalize">{category}</h2>
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {keys.map((key) => {
-                const rendered = getEmailTemplate(key, { firstName: "Avery", locationName: "Rose Room", reservationDate: "Tonight", reservationTime: "7:30 PM", partySize: 2, confirmationCode: "TOH-2026", ctaUrl: "https://theouthaven.com" });
+                const rendered = getEmailTemplate(key, { firstName: "Avery", locationName: "Harbor Room", reservationDate: "Tonight", reservationTime: "7:30 PM", partySize: 2, confirmationCode: "TOH-2026", ctaUrl: "https://theouthaven.com" });
                 const sender = resolveEmailSender(rendered.department);
                 return (
                   <article key={key} className="rounded-2xl border border-white/10 bg-[#1c1614] p-5">

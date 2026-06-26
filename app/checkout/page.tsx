@@ -187,7 +187,7 @@ export default function CheckoutInfoPage() {
                 icon={Building2}
                 label="Restaurant / Business Name"
                 name="businessName"
-                placeholder="Example: Rose Bistro"
+                placeholder="Example: Haven Bistro"
                 required
               />
 
