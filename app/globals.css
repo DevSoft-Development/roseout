@@ -199,3 +199,19 @@ div {
 .admin-page-shell table {
   max-width: 100%;
 }
+
+/* Phase 4.5 mobile polish safety utilities */
+:root { --toh-safe-bottom: env(safe-area-inset-bottom, 0px); }
+html { -webkit-text-size-adjust: 100%; }
+.rose-mobile-page { padding-bottom: calc(1.5rem + var(--toh-safe-bottom)); }
+.rose-mobile-sticky { padding-bottom: var(--toh-safe-bottom); }
+.rose-touch-target { min-height: 44px; min-width: 44px; }
+.rose-mobile-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+@media (min-width: 768px) { .rose-mobile-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .rose-mobile-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .rose-mobile-compact-hero { padding-top: 5.5rem; padding-bottom: 1rem; }
+  .rose-mobile-hide-overflow, .rose-mobile-hide-overflow * { min-width: 0; }
+  .rose-mobile-scroll-chips { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .25rem; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .rose-mobile-scroll-chips > * { flex: 0 0 auto; scroll-snap-align: start; }
+}

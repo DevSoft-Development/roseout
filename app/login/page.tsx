@@ -84,6 +84,8 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const [signin, setSignin] = useState({ email: "", password: "" });
   const [signup, setSignup] = useState<SignupState>(initialSignupState);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [showSigninPassword, setShowSigninPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
 
   const pass = useMemo(() => passwordChecks(signup.password), [signup.password]);
   const strong = Object.values(pass).every(Boolean);
@@ -182,9 +184,9 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   };
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-10 pt-28 text-white">
+    <main className="min-h-screen bg-[#090706] px-3 pb-10 pt-24 text-white sm:px-4 sm:pt-28">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-2">
-        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#17100d,#0f0a08)] p-8 shadow-2xl shadow-black/40">
+        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.2),transparent_32%),linear-gradient(180deg,#17100d,#0f0a08)] p-5 shadow-2xl shadow-black/40 sm:rounded-[2rem] sm:p-8">
           <p className="inline-flex rounded-full border border-[#e1062a]/45 bg-[#e1062a]/15 px-4 py-2 text-xs font-semibold tracking-[0.2em] text-red-100 shadow-[0_0_24px_rgba(225,6,42,0.25)]">THEOUTHAVEN</p>
           <h1 className="mt-6 text-4xl font-semibold leading-tight">Plan better OUTings.<br />Discover better places.</h1>
           <p className="mt-4 max-w-xl text-white/75">Create your free account to save favorites, unlock smarter outing recommendations, and discover restaurants, activities, and experiences matched to your vibe.</p>
@@ -322,14 +324,17 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     </Link>
                   </div>
                 </div>
-                <input
-                  required
-                  type="password"
-                  placeholder="Enter your password"
-                  value={signin.password}
-                  onChange={(e) => setSignin((s) => ({ ...s, password: e.target.value }))}
-                  className={inputClass}
-                />
+                <div className="relative">
+                  <input
+                    required
+                    type={showSigninPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={signin.password}
+                    onChange={(e) => setSignin((s) => ({ ...s, password: e.target.value }))}
+                    className={`${inputClass} pr-20`}
+                  />
+                  <button type="button" onClick={() => setShowSigninPassword((v) => !v)} className="absolute right-2 top-1/2 min-h-11 -translate-y-1/2 rounded-full px-3 text-xs font-black text-rose-100">{showSigninPassword ? "Hide" : "Show"}</button>
+                </div>
               </div>
 
               <button type="submit" disabled={loading} className={`w-full ${primaryButtonClass}`}>{loading ? "Signing In..." : "Sign In"}</button>
@@ -407,11 +412,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Password</label>
-                          <input required type="password" placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={inputClass} />
+                          <div className="relative"><input required type={showSignupPassword ? "text" : "password"} placeholder="Password" value={signup.password} onChange={(e) => setSignup((s) => ({ ...s, password: e.target.value }))} className={`${inputClass} pr-20`} /><button type="button" onClick={() => setShowSignupPassword((v) => !v)} className="absolute right-2 top-1/2 min-h-11 -translate-y-1/2 rounded-full px-3 text-xs font-black text-rose-100">{showSignupPassword ? "Hide" : "Show"}</button></div>
                         </div>
                         <div>
                           <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Confirm Password</label>
-                          <input required type="password" placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
+                          <input required type={showSignupPassword ? "text" : "password"} placeholder="Confirm password" value={signup.confirm_password} onChange={(e) => setSignup((s) => ({ ...s, confirm_password: e.target.value }))} className={inputClass} />
                         </div>
                       </div>
                       <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">

@@ -10,6 +10,8 @@ import { createClient } from "@/lib/supabase-browser";
 const navItems = [
   { href: "/explore", label: "Explore" },
   { href: "/create", label: "Create Outing" },
+  { href: "/user/dashboard/saved", label: "Saved Outings" },
+  { href: "/help", label: "Help" },
   { href: "/business", label: "For Businesses" },
 ];
 
@@ -236,12 +238,12 @@ export default function TheOutHavenHeader() {
             />
           </span>
 
-          <span className="truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
+          <span className="truncate text-xl font-black tracking-tight text-white sm:text-3xl">
             TheOutHaven
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-6 md:flex">
+        <nav className="hidden items-center gap-4 lg:flex">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -264,7 +266,7 @@ export default function TheOutHavenHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden items-center gap-3 lg:flex">
           {!signedIn ? (
             <>
               <Link
@@ -336,14 +338,14 @@ export default function TheOutHavenHeader() {
           onClick={toggleMobileMenu}
           aria-label={menuOpen ? "Close mobile menu" : "Open mobile menu"}
           aria-expanded={menuOpen}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-white transition hover:bg-white hover:text-black md:hidden"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-white transition hover:bg-white hover:text-black lg:hidden"
         >
           <span className="text-xl font-black">{menuOpen ? "×" : "☰"}</span>
         </button>
       </div>
 
       {menuOpen && (
-        <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden">
+        <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl lg:hidden">
           <div className="mx-auto max-w-7xl space-y-2">
             {navItems.map((item) => (
               <Link
