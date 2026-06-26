@@ -330,7 +330,9 @@ export function createSearchPairs(
     }
   debug.validPairCountBeforeRender = pairs.length;
   const sortedPairs = sortPairs(pairs, pref);
-  return diversifyPairs(sortedPairs, 3);
+  const maxPerRestaurant = restaurants.length <= 1 ? 3 : 1;
+  const maxPerActivity = activities.length <= 1 ? 3 : 1;
+  return diversifyPairs(sortedPairs, 3, maxPerRestaurant, maxPerActivity);
 }
 export { getPairDistanceMiles };
 

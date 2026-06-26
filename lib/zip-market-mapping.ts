@@ -16,6 +16,10 @@ const ZIP_PREFIX_DEFAULTS: Array<{ prefix: string; mapping: ZipMarketMapping }> 
   { prefix: "114", mapping: { city: "Queens", state: "NY", marketArea: "Queens" } },
   { prefix: "115", mapping: { city: "Long Island", state: "NY", marketArea: "Long Island" } },
   { prefix: "116", mapping: { city: "Queens", state: "NY", marketArea: "Queens" } },
+  { prefix: "105", mapping: { city: "Westchester", state: "NY", marketArea: "Westchester" } },
+  { prefix: "106", mapping: { city: "White Plains", state: "NY", marketArea: "Westchester" } },
+  { prefix: "107", mapping: { city: "Yonkers", state: "NY", marketArea: "Westchester" } },
+  { prefix: "108", mapping: { city: "New Rochelle", state: "NY", marketArea: "Westchester" } },
   { prefix: "070", mapping: { city: "Newark", state: "NJ", marketArea: "New Jersey" } },
   { prefix: "071", mapping: { city: "Newark", state: "NJ", marketArea: "New Jersey" } },
   { prefix: "072", mapping: { city: "Elizabeth", state: "NJ", marketArea: "New Jersey" } },
@@ -32,6 +36,12 @@ const ZIP_EXACT: Record<string, ZipMarketMapping> = {
   "10001": { city: "New York", state: "NY", marketArea: "Manhattan" },
   "11201": { city: "Brooklyn", state: "NY", marketArea: "Brooklyn" },
   "11101": { city: "Queens", state: "NY", marketArea: "Queens" },
+  "10580": { city: "Rye", state: "NY", marketArea: "Westchester" },
+  "10583": { city: "Scarsdale", state: "NY", marketArea: "Westchester" },
+  "10591": { city: "Tarrytown", state: "NY", marketArea: "Westchester" },
+  "10601": { city: "White Plains", state: "NY", marketArea: "Westchester" },
+  "10701": { city: "Yonkers", state: "NY", marketArea: "Westchester" },
+  "10801": { city: "New Rochelle", state: "NY", marketArea: "Westchester" },
 };
 
 export function getZipMarketMapping(zipCode: string): ZipMarketMapping | null {

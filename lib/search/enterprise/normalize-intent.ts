@@ -383,7 +383,7 @@ type PublicSearchMode = "restaurant_only" | "activity_only" | "same_location_com
 
 function hasExplicitTwoStopLanguage(query: string): boolean {
   const q = normalizeIntentTerm(query);
-  return /\b(after|afterwards|afterward|before|then|followed by|next|second stop|separate spots|close to each other|around the corner|walking distance|walkable|nearby spot|nearby lounge)\b/.test(q)
+  return /\b(after|afterwards|afterward|before|then|followed by|next|second stop|separate spots|close to each other|around the corner|walking distance|walkable|nearby spot|nearby lounge|apart)\b/.test(q)
     || /\b(close by|near each other|within\s+\d+\s+(?:minutes?|mins?|miles?|mi)|near\s+(?:a|the)?\s*(?:hookah|lounge|bar|rooftop|theatre|theater|live music))\b/.test(q)
     || /\b(?:dinner|restaurant|food|brunch|lunch|breakfast)\b[^.?!]{0,60}\b(?:hookah|rooftop drinks?|live music|theatre|theater|lounge|bar)\b[^.?!]{0,35}\b(?:nearby|close by|walking distance|within\s+\d+)/.test(q)
     || /\b(?:hookah|rooftop drinks?|live music|theatre|theater|lounge|bar)\b[^.?!]{0,35}\b(?:after|before)\b[^.?!]{0,60}\b(?:dinner|restaurant|food|brunch|lunch|breakfast)\b/.test(q);
@@ -391,7 +391,7 @@ function hasExplicitTwoStopLanguage(query: string): boolean {
 
 function hasSameLocationComboLanguage(query: string): boolean {
   const q = normalizeIntentTerm(query);
-  return /\b(with|at|inside|serving|serves|offers|offering|has|have|featuring|features|plus)\b/.test(q)
+  return /\b(at|inside|serving|serves|offers|offering|has|have|featuring|features)\b/.test(q)
     || /\bhookah\s+(?:restaurant|lounge with food)\b/.test(q)
     || /\b(?:restaurant|dinner|food)\s+(?:with|and|\+)\s+(?:hookah|live music|rooftop|lounge|drinks)\b/.test(q)
     || /\b(?:dinner|food)\s+(?:and|\+)\s+(?:hookah|live music|rooftop drinks?|lounge)\b/.test(q);
@@ -411,20 +411,22 @@ function classifyPublicSearchMode(query: string, intent: SearchIntent): PublicSe
 
 function applyPublicSearchMode(intent: SearchIntent): SearchIntent {
   const mode = classifyPublicSearchMode(intent.rawQuery, intent);
-  const pairingPreference = detectPairingPreference(intent.rawQuery, mode === "paired_outing");
-  const base = {
+  const pairRequested = mode === "paired_outing" || mode === "same_location_combo";
+  const normalizedPairingIntent =
+    mode === "same_location_combo"
+      ? "same_location"
+      : mode === "paired_outing"
+        ? "nearby_pair"
+        : "auto";
+  return {
     ...intent,
     normalizedIntent: mode,
-    sameLocationRequired: mode === "same_location_combo",
-    wantsPairing: mode === "paired_outing",
-    needsRestaurant: mode === "restaurant_only" || mode === "same_location_combo" || mode === "paired_outing",
-    needsActivity: mode === "activity_only" || mode === "same_location_combo" || mode === "paired_outing",
-    pairingPreference: mode === "paired_outing" ? { ...pairingPreference, requiresPairing: true } : resetPairingPreference(),
+    pairingIntent: normalizedPairingIntent,
+    pairRequested,
+    sameVenuePreferred: mode === "same_location_combo" || intent.sameVenuePreferred === true,
+    fallbackPairAllowed: pairRequested,
+    sameLocationRequired: mode === "same_location_combo" || intent.sameLocationRequired,
   } as SearchIntent;
-  if (mode === "paired_outing") return { ...base, searchType: "paired_outing", primaryDomain: "mixed" };
-  if (mode === "same_location_combo") return { ...base, searchType: "same_location_combo", primaryDomain: "mixed" };
-  if (mode === "activity_only") return { ...base, searchType: "activity", primaryDomain: "activity" };
-  return { ...base, searchType: "restaurant", primaryDomain: "restaurant" };
 }
 
 function isActivityVenueOnlyQuery(query: string) {
@@ -1046,7 +1048,13 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     hasGenericActivitySignal(query) ||
     /\b(and|with|then|after|before|plus)\b[^.?!]{0,80}\b(activity|activities|things to do|something fun|bowling|karaoke|hookah|museum|arcade|drinks|cocktails|bar|lounge)\b/i.test(query);
   const singleVenueWithIntent = createSingleVenueWithSearchIntent(query);
-  if (singleVenueWithIntent && !hasTrueSequenceConnector(query) && !hasTrueProximityPairingConnector(query)) return applyPublicSearchMode(singleVenueWithIntent);
+  if (
+    singleVenueWithIntent &&
+    !hasGenericActivitySignal(query) &&
+    !/\bsomething\s+(?:unique|fun|to do)\b/i.test(query) &&
+    !hasTrueSequenceConnector(query) &&
+    !hasTrueProximityPairingConnector(query)
+  ) return applyPublicSearchMode(singleVenueWithIntent);
 
   const food = detectFoodTerms(query);
   const cuisine = detectCuisineTerms(query);
@@ -1073,7 +1081,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
     meals.length > 0 ||
     restaurantFood.length > 0 ||
     restaurantLaneFeatureOnly ||
-    /restaurant|dinner|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse/i.test(
+    /restaurant|dinner|brunch|lunch|breakfast|cuisine|eat|dining|steakhouse|food/i.test(
       query,
     );
   const activityContext =
@@ -1097,7 +1105,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
   const deterministicRestaurantFeatureTerms = restaurantContext && !rooftopActivity
     ? rooftopRestaurantFeatureTermsFromQuery(query, restaurantLaneFeatureOnly)
     : [];
-  return {
+  return applyPublicSearchMode({
     rawQuery: query,
     searchType: mixed
       ? "mixed_outing"
@@ -1148,7 +1156,7 @@ export function deterministicIntentFromQuery(query: string): SearchIntent {
       /best/i.test(query) ? "best" : "",
     ]),
     strictness: "high",
-  };
+  });
 }
 export function normalizeIntent(
   query: string,
@@ -1417,7 +1425,7 @@ export function normalizeIntent(
   const sameVenuePreferred = Boolean(singleVenueWithIntent);
   const sequenceDetected = hasTrueSequenceConnector(query);
   const proximityDetected = hasTrueProximityPairingConnector(query);
-  if (singleVenueWithIntent && sameVenuePreferred && !sequenceDetected && !proximityDetected) {
+  if (singleVenueWithIntent && sameVenuePreferred && !hasGenericActivitySignal(query) && !/\bsomething\s+(?:unique|fun|to do)\b/i.test(query) && !sequenceDetected && !proximityDetected) {
     const singleVenue = detectSingleVenueWithIntent(query);
     const guarded = {
       ...finalIntent,
@@ -1562,7 +1570,7 @@ export function restaurantSearchTerms(intent: SearchIntent) {
         "roof deck",
       ]
     : [];
-  const mealTermsToStrip = new Set<string>();
+  const mealTermsToStrip = new Set(["dinner", "birthday dinner", "brunch", "lunch", "breakfast"]);
   return finalCleanTermList(stripBlockedTerms(
     stripBlockedTerms(
       uniq([
