@@ -18,6 +18,8 @@ import {
   getReadinessTone,
 } from "@/components/admin/AdminDesignSystem";
 import { requireAdminRole } from "@/lib/admin-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getTeamProfileForUser, hasBroadWorkspaceLocationAccess, listPermittedWorkspaceLocations } from "@/lib/team-tools";
 import {
   getBusinessCRMSummary,
   getPartnerPlanDisplay,
@@ -222,7 +224,10 @@ export default async function CRMPage({
     market?: string;
   }>;
 }) {
-  await requireAdminRole(["superadmin", "admin", "editor", "viewer"]);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const profile = await getTeamProfileForUser(admin.user_id);
+  const broadLocationAccess = hasBroadWorkspaceLocationAccess(admin.role) || hasBroadWorkspaceLocationAccess(profile);
+  const permittedLocationIds = broadLocationAccess ? null : (await listPermittedWorkspaceLocations(profile, "id", 1000)).map((row: any) => String(row.id));
   const params = await searchParams;
   const q = String(params.q || "").trim();
   const filter =
@@ -236,7 +241,7 @@ export default async function CRMPage({
   const parsedPageSize = Number(params.pageSize || 25);
   const pageSize = [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 25;
   const [pageData, summary] = await Promise.all([
-    listBusinessCRMPage({ page, pageSize, query: q, filter, market }),
+    listBusinessCRMPage({ page, pageSize, query: q, filter, market, permittedLocationIds }),
     getBusinessCRMSummary(),
   ]);
   const businesses = pageData.rows;

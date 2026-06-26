@@ -1365,14 +1365,17 @@ export async function listBusinessCRMPage({
   query,
   filter,
   market,
+  permittedLocationIds,
 }: {
   page?: number;
   pageSize?: number;
   query?: string;
   filter?: string;
   market?: string;
+  permittedLocationIds?: string[] | null;
 }) {
   const safePageSize = getSafePageSize(pageSize);
+  const permittedSet = Array.isArray(permittedLocationIds) ? new Set(permittedLocationIds.map(String)) : null;
   const safePage = getSafePage(page);
   const from = (safePage - 1) * safePageSize;
   const normalizedFilter = normalizeStatus(
@@ -1384,8 +1387,8 @@ export async function listBusinessCRMPage({
 
     return {
       rows: [] as BusinessCRMRow[],
-      pendingClaims: claims.slice(from, from + safePageSize),
-      total: claims.length,
+      pendingClaims: permittedSet ? [] : claims.slice(from, from + safePageSize),
+      total: permittedSet ? 0 : claims.length,
       page: safePage,
       pageSize: safePageSize,
       totalPages: Math.max(1, Math.ceil(claims.length / safePageSize)),
@@ -1400,10 +1403,12 @@ export async function listBusinessCRMPage({
     market,
   });
 
+  const scopedRows = permittedSet ? pageData.rows.filter((row: any) => permittedSet.has(String(row.id))) : pageData.rows;
+
   return {
-    rows: pageData.rows,
+    rows: scopedRows,
     pendingClaims: [] as PendingCRMClaim[],
-    total: pageData.total,
+    total: permittedSet ? scopedRows.length : pageData.total,
     page: pageData.page,
     pageSize: pageData.pageSize,
     totalPages: pageData.totalPages,

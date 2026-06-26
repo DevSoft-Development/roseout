@@ -5,6 +5,7 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { AnalyticsRange, buildAnalyticsSummary, buildDailySeries, buildFunnel, buildInsights, buildRecentActivity, getEventLocationId, getOutingLocationId, getRangeStart, type AnalyticsEventRow, type OutingRow } from "@/lib/analytics/new-business-analytics";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
   const { searchParams } = new URL(request.url);
@@ -15,13 +16,12 @@ export async function GET(request: NextRequest) {
   if (admin) await requireAdminRole(ADMIN_PAGE_ACCESS.analytics);
   else {
     const supabase = await createClient(); const { data:{user} } = await supabase.auth.getUser(); if (!user) return NextResponse.json({ success:false,error:"Unauthorized" },{status:401});
-    const { data: loc } = await supabaseAdmin.from("locations").select("id,owner_user_id,owner_email,claimed_by_email,plan,is_pro").eq("id", locationId).maybeSingle();
-    const email = String(user.email||"").toLowerCase();
-    if (!loc || !(loc.owner_user_id===user.id || String(loc.owner_email||"").toLowerCase()===email || String(loc.claimed_by_email||"").toLowerCase()===email)) return NextResponse.json({ success:false,error:"Forbidden" },{status:403});
+    const ownerAccess = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
+    if (!ownerAccess) return NextResponse.json({ success:false,error:"Forbidden" },{status:403});
   }
   const from = getRangeStart(range);
-  let eq = supabaseAdmin.from("analytics_events").select("id,event_name,event_type,location_id,metadata,created_at,user_id");
-  let oq = supabaseAdmin.from("outings").select("id,created_at,location_id,restaurant_id,activity_id,status");
+  let eq = supabaseAdmin.from("analytics_events").select("id,event_name,event_type,location_id,metadata,created_at").eq("location_id", locationId);
+  let oq = supabaseAdmin.from("outings").select("id,created_at,location_id,restaurant_id,activity_id,status").or(`location_id.eq.${locationId},restaurant_id.eq.${locationId},activity_id.eq.${locationId}`);
   let lq = supabaseAdmin.from("locations").select("id,plan,is_pro").eq("id", locationId).maybeSingle();
   if (from) { eq = eq.gte("created_at", from); oq = oq.gte("created_at", from); }
   const [{data:events=[]},{data:outings=[]},{data:location}] = await Promise.all([eq,oq,lq]);
