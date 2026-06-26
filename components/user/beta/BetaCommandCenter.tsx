@@ -589,7 +589,8 @@ export default function BetaCommandCenter({
             Help us improve your matches this week
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-white/70">
-            Search for an outing, review your matches, pick the one that fits best, and share quick feedback.
+            Search for an outing, review your matches, pick the one that fits
+            best, and share quick feedback.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             {activeTestMode ? <span className={pill}>Test Mode</span> : null}
@@ -600,152 +601,151 @@ export default function BetaCommandCenter({
       </section>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatusCard title="This week's goal" text="Try a real search and choose the best match." />
-        <StatusCard title="Progress" text={`${completedSteps} of 5 steps completed`} progressPercent={progressPercent} />
-        <StatusCard title="Giveaway" text="Stay eligible by finishing this week's tasks." />
+        <StatusCard
+          title="This week's goal"
+          text="Try a real search and choose the best match."
+        />
+        <StatusCard
+          title="Progress"
+          text={`${completedSteps} of 5 steps completed`}
+          progressPercent={progressPercent}
+        />
+        <StatusCard
+          title="Giveaway"
+          text="Stay eligible by finishing this week's tasks."
+        />
       </div>
 
-      <div className="xl:hidden">
-        <JourneyMapCard step={step} />
-      </div>
+      <JourneyMapCard step={step} />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-        <main className="min-w-0 space-y-5 lg:space-y-6">
-          {(notice || error) && (
-        <p
-          className={`rounded-2xl border p-4 text-sm font-bold shadow-lg shadow-black/20 ${error ? "border-red-300/20 bg-red-500/10 text-red-100" : "border-emerald-300/20 bg-emerald-500/10 text-emerald-100"}`}
-        >
-          {error || notice}
-        </p>
-      )}
+      <main className="min-w-0 space-y-5 lg:space-y-6">
+        {(notice || error) && (
+          <p
+            className={`rounded-2xl border p-4 text-sm font-bold shadow-lg shadow-black/20 ${error ? "border-red-300/20 bg-red-500/10 text-red-100" : "border-emerald-300/20 bg-emerald-500/10 text-emerald-100"}`}
+          >
+            {error || notice}
+          </p>
+        )}
 
-      <section className={card}>
-        <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">STEP 1</p>
-        <h2 className="mt-3 text-2xl font-black text-white">Tell us what kind of outing you want</h2>
-        <p className="mt-2 text-sm text-white/65">Write it the way you’d normally describe it.</p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            runSearch(false);
-          }}
-          className="mt-5 space-y-4"
-        >
-          <textarea
-            className={`${input} min-h-[112px] w-full resize-y leading-6`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Example: I want a steak dinner and hookah spot in Queens"
-          />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs font-semibold text-white/50">Tip: Add location, vibe, budget, or occasion for better matches.</p>
-            <button type="submit" disabled={busy || !query.trim()} className={primary}>
-              {busy ? "Searching…" : "Find My Matches"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {step >= 2 && (
         <section className={card}>
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
-                STEP 2
+          <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
+            STEP 1
+          </p>
+          <h2 className="mt-3 text-2xl font-black text-white">
+            Tell us what kind of outing you want
+          </h2>
+          <p className="mt-2 text-sm text-white/65">
+            Write it the way you’d normally describe it.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              runSearch(false);
+            }}
+            className="mt-5 space-y-4"
+          >
+            <textarea
+              className={`${input} min-h-[112px] w-full resize-y leading-6`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Example: I want a steak dinner and hookah spot in Queens"
+            />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-semibold text-white/50">
+                Tip: Add location, vibe, budget, or occasion for better matches.
               </p>
-              <h2 className="mt-3 text-2xl font-black text-white">
-                Review your matches
-              </h2>
-              <p className="mt-2 text-sm text-white/65">
-                Look through the results and choose the one that feels closest to what you had in mind.
-              </p>
+              <button
+                type="submit"
+                disabled={busy || !query.trim()}
+                className={primary}
+              >
+                {busy ? "Searching…" : "Find My Matches"}
+              </button>
             </div>
-            <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-black text-white/55">
-              {mode === "paired_outing"
-                ? "Paired mode"
-                : "Single-location mode"}
-            </span>
-          </div>
-          <div className="mt-5 grid gap-6">
-            {pairs.length > 0 && (
-              <BetaResultSection
-                title="Paired outings"
-                subtitle="Two-stop ideas matched to your search."
-              >
-                {pairs.map((p, i) => (
-                  <PairCard
-                    key={keyFor(p, i)}
-                    pair={p}
-                    disabled={busy}
-                    selected={isSelectedResult(p)}
-                    saved={isSavedResult(p)}
-                    query={displayQuery}
-                    onSelect={async () => {
-                      await choose(p, "paired_outing", { was_selected: true });
-                      scrollToSection(feedbackSectionRef);
-                    }}
-                  />
-                ))}
-              </BetaResultSection>
-            )}
-            {restaurants.length > 0 && (
-              <BetaResultSection
-                ref={restaurantSectionRef}
-                title="Restaurant Picks"
-                subtitle="Food spots matched to cuisine, vibe, and location."
-              >
-                {restaurants.map((r, i) => (
-                  <ResultCard
-                    key={keyFor(r, i)}
-                    result={r}
-                    type="restaurant"
-                    disabled={busy}
-                    selected={isSelectedResult(r)}
-                    saved={isSavedResult(r)}
-                    query={displayQuery}
-                    onSelect={async () => {
-                      await choose(r, "single_location", { was_selected: true });
-                      scrollToSection(activitySectionRef);
-                    }}
-                  />
-                ))}
-              </BetaResultSection>
-            )}
-            {activities.length > 0 && (
-              <BetaResultSection
-                ref={activitySectionRef}
-                title="Experience Picks"
-                subtitle="Activities matched to your outing plan."
-              >
-                {activities.map((r, i) => (
-                  <ResultCard
-                    key={keyFor(r, i)}
-                    result={r}
-                    type="activity"
-                    disabled={busy}
-                    selected={isSelectedResult(r)}
-                    saved={isSavedResult(r)}
-                    query={displayQuery}
-                    onSelect={async () => {
-                      await choose(r, "single_location", { was_selected: true });
-                      scrollToSection(feedbackSectionRef);
-                    }}
-                  />
-                ))}
-              </BetaResultSection>
-            )}
-            {pairs.length === 0 &&
-              restaurants.length === 0 &&
-              activities.length === 0 &&
-              fallbackResults.length > 0 && (
+          </form>
+        </section>
+
+        {step >= 2 && (
+          <section className={card}>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
+                  STEP 2
+                </p>
+                <h2 className="mt-3 text-2xl font-black text-white">
+                  Review your matches
+                </h2>
+                <p className="mt-2 text-sm text-white/65">
+                  Look through the results and choose the one that feels closest
+                  to what you had in mind.
+                </p>
+              </div>
+              <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-black text-white/55">
+                {mode === "paired_outing"
+                  ? "Paired mode"
+                  : "Single-location mode"}
+              </span>
+            </div>
+            <div className="mt-5 grid gap-6">
+              {pairs.length > 0 && (
                 <BetaResultSection
-                  title="More Matches"
-                  subtitle="Additional places matched to your search."
+                  title="Paired outings"
+                  subtitle="Two-stop ideas matched to your search."
                 >
-                  {fallbackResults.map((r, i) => (
+                  {pairs.map((p, i) => (
+                    <PairCard
+                      key={keyFor(p, i)}
+                      pair={p}
+                      disabled={busy}
+                      selected={isSelectedResult(p)}
+                      saved={isSavedResult(p)}
+                      query={displayQuery}
+                      onSelect={async () => {
+                        await choose(p, "paired_outing", {
+                          was_selected: true,
+                        });
+                        scrollToSection(feedbackSectionRef);
+                      }}
+                    />
+                  ))}
+                </BetaResultSection>
+              )}
+              {restaurants.length > 0 && (
+                <BetaResultSection
+                  ref={restaurantSectionRef}
+                  title="Restaurant Picks"
+                  subtitle="Food spots matched to cuisine, vibe, and location."
+                >
+                  {restaurants.map((r, i) => (
                     <ResultCard
                       key={keyFor(r, i)}
                       result={r}
-                      type="unknown"
+                      type="restaurant"
+                      disabled={busy}
+                      selected={isSelectedResult(r)}
+                      saved={isSavedResult(r)}
+                      query={displayQuery}
+                      onSelect={async () => {
+                        await choose(r, "single_location", {
+                          was_selected: true,
+                        });
+                        scrollToSection(activitySectionRef);
+                      }}
+                    />
+                  ))}
+                </BetaResultSection>
+              )}
+              {activities.length > 0 && (
+                <BetaResultSection
+                  ref={activitySectionRef}
+                  title="Experience Picks"
+                  subtitle="Activities matched to your outing plan."
+                >
+                  {activities.map((r, i) => (
+                    <ResultCard
+                      key={keyFor(r, i)}
+                      result={r}
+                      type="activity"
                       disabled={busy}
                       selected={isSelectedResult(r)}
                       saved={isSavedResult(r)}
@@ -760,137 +760,162 @@ export default function BetaCommandCenter({
                   ))}
                 </BetaResultSection>
               )}
-            {pairs.length === 0 &&
-              restaurants.length === 0 &&
-              activities.length === 0 &&
-              fallbackResults.length === 0 && (
-                <div className="rounded-3xl border border-white/10 bg-black/25 p-5 text-sm font-bold text-white/65">
-                  No strong matches came back for this search. Try adding a
-                  borough, city, or vibe.
-                </div>
-              )}
-          </div>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              await choose({ none: true }, "none", {});
-              scrollToSection(feedbackSectionRef);
-            }}
-            className={`mt-4 ${secondary}`}
-          >
-            None of these fit my search
-          </button>
-        </section>
-      )}
-      {weekNumber === 2 && step >= 2 && (
-        <section ref={refineSectionRef} className={card}>
-          <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-            Step 3 · Refine
+              {pairs.length === 0 &&
+                restaurants.length === 0 &&
+                activities.length === 0 &&
+                fallbackResults.length > 0 && (
+                  <BetaResultSection
+                    title="More Matches"
+                    subtitle="Additional places matched to your search."
+                  >
+                    {fallbackResults.map((r, i) => (
+                      <ResultCard
+                        key={keyFor(r, i)}
+                        result={r}
+                        type="unknown"
+                        disabled={busy}
+                        selected={isSelectedResult(r)}
+                        saved={isSavedResult(r)}
+                        query={displayQuery}
+                        onSelect={async () => {
+                          await choose(r, "single_location", {
+                            was_selected: true,
+                          });
+                          scrollToSection(feedbackSectionRef);
+                        }}
+                      />
+                    ))}
+                  </BetaResultSection>
+                )}
+              {pairs.length === 0 &&
+                restaurants.length === 0 &&
+                activities.length === 0 &&
+                fallbackResults.length === 0 && (
+                  <div className="rounded-3xl border border-white/10 bg-black/25 p-5 text-sm font-bold text-white/65">
+                    No strong matches came back for this search. Try adding a
+                    borough, city, or vibe.
+                  </div>
+                )}
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                await choose({ none: true }, "none", {});
+                scrollToSection(feedbackSectionRef);
+              }}
+              className={`mt-4 ${secondary}`}
+            >
+              None of these fit my search
+            </button>
+          </section>
+        )}
+        {weekNumber === 2 && step >= 2 && (
+          <section ref={refineSectionRef} className={card}>
+            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
+              Step 3 · Refine
+            </p>
+            <h2 className="mt-2 text-2xl font-black">Refine your search</h2>
+            <p className="mt-2 text-sm text-white/55">
+              Choose quick filters or add notes, then compare the updated result
+              set.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                "Change the location",
+                "Make it closer",
+                "Make it more affordable",
+                "Make it more upscale",
+                "Make it more romantic",
+                "Make it more fun",
+                "Show better paired outings",
+                "Show places closer together",
+                "Other",
+              ].map((x) => (
+                <button
+                  type="button"
+                  key={x}
+                  onClick={() =>
+                    setRefine((r) =>
+                      r.includes(x) ? r.filter((v) => v !== x) : [...r, x],
+                    )
+                  }
+                  className={`rounded-full border px-3 py-2 text-xs font-black transition ${refine.includes(x) ? "border-rose-200 bg-rose-500/25 shadow-lg shadow-rose-950/20" : "border-white/10 bg-black/25 hover:border-white/25"}`}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+            <input
+              className={`mt-3 w-full ${input}`}
+              value={refineText}
+              onChange={(e) => setRefineText(e.target.value)}
+              placeholder="Example: Make it more upscale and keep both places within 15 minutes of each other."
+            />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => runSearch(true)}
+              className={`mt-3 ${primary}`}
+            >
+              Update My Results
+            </button>
+          </section>
+        )}
+        {step >= (weekNumber === 3 || weekNumber === 4 ? 3 : 4) && (
+          <section ref={feedbackSectionRef} className={card}>
+            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
+              Final step · Feedback
+            </p>
+            <h2 className="mt-2 text-2xl font-black">Tell us how we did</h2>
+            <p className="mt-2 text-sm text-white/55">
+              A few quick answers help us improve your matches.
+            </p>
+            <p className="mt-4 text-sm font-black text-white">
+              How well did this match your outing idea?
+            </p>
+            <FeedbackFields
+              weekNumber={weekNumber}
+              mode={mode}
+              feedback={feedback}
+              setFeedback={setFeedback}
+            />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={submitFeedback}
+              className={`mt-4 ${primary}`}
+            >
+              {weekNumber === 4
+                ? "Submit final feedback"
+                : "Finish weekly check-in"}
+            </button>
+          </section>
+        )}
+        <section
+          className={`${card} bg-[linear-gradient(145deg,rgba(225,29,72,.08),rgba(255,255,255,.025))]`}
+        >
+          <h2 className="text-2xl font-black">Beta Help / Tips</h2>
+          <p className="mt-3 text-sm leading-6 text-white/65">
+            Use real searches you would actually use for dates, birthdays,
+            brunch, family outings, friend outings, or celebrations. If you ask
+            for dinner and something after, TheOutHaven should use the same
+            public search pipeline and show paired outings when available.
           </p>
-          <h2 className="mt-2 text-2xl font-black">Refine your search</h2>
-          <p className="mt-2 text-sm text-white/55">
-            Choose quick filters or add notes, then compare the updated result
-            set.
+          <p className="mt-2 text-xs text-white/45">
+            Saved this session:{" "}
+            {saved.length
+              ? `${saved.length} result${saved.length === 1 ? "" : "s"}`
+              : "none yet"}{" "}
+            · Selected:{" "}
+            {selected?.none
+              ? "None matched"
+              : selected
+                ? "Choice recorded"
+                : "not selected yet"}
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              "Change the location",
-              "Make it closer",
-              "Make it more affordable",
-              "Make it more upscale",
-              "Make it more romantic",
-              "Make it more fun",
-              "Show better paired outings",
-              "Show places closer together",
-              "Other",
-            ].map((x) => (
-              <button
-                type="button"
-                key={x}
-                onClick={() =>
-                  setRefine((r) =>
-                    r.includes(x) ? r.filter((v) => v !== x) : [...r, x],
-                  )
-                }
-                className={`rounded-full border px-3 py-2 text-xs font-black transition ${refine.includes(x) ? "border-rose-200 bg-rose-500/25 shadow-lg shadow-rose-950/20" : "border-white/10 bg-black/25 hover:border-white/25"}`}
-              >
-                {x}
-              </button>
-            ))}
-          </div>
-          <input
-            className={`mt-3 w-full ${input}`}
-            value={refineText}
-            onChange={(e) => setRefineText(e.target.value)}
-            placeholder="Example: Make it more upscale and keep both places within 15 minutes of each other."
-          />
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => runSearch(true)}
-            className={`mt-3 ${primary}`}
-          >
-            Update My Results
-          </button>
         </section>
-      )}
-      {step >= (weekNumber === 3 || weekNumber === 4 ? 3 : 4) && (
-        <section ref={feedbackSectionRef} className={card}>
-          <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-            Final step · Feedback
-          </p>
-          <h2 className="mt-2 text-2xl font-black">Tell us how we did</h2>
-          <p className="mt-2 text-sm text-white/55">A few quick answers help us improve your matches.</p>
-          <p className="mt-4 text-sm font-black text-white">How well did this match your outing idea?</p>
-          <FeedbackFields
-            weekNumber={weekNumber}
-            mode={mode}
-            feedback={feedback}
-            setFeedback={setFeedback}
-          />
-          <button
-            type="button"
-            disabled={busy}
-            onClick={submitFeedback}
-            className={`mt-4 ${primary}`}
-          >
-            {weekNumber === 4
-              ? "Submit final feedback"
-              : "Finish weekly check-in"}
-          </button>
-        </section>
-      )}
-          <section
-            className={`${card} bg-[linear-gradient(145deg,rgba(225,29,72,.08),rgba(255,255,255,.025))]`}
-          >
-        <h2 className="text-2xl font-black">Beta Help / Tips</h2>
-        <p className="mt-3 text-sm leading-6 text-white/65">
-          Use real searches you would actually use for dates, birthdays, brunch,
-          family outings, friend outings, or celebrations. If you ask for dinner
-          and something after, TheOutHaven should use the same public search
-          pipeline and show paired outings when available.
-        </p>
-        <p className="mt-2 text-xs text-white/45">
-          Saved this session:{" "}
-          {saved.length
-            ? `${saved.length} result${saved.length === 1 ? "" : "s"}`
-            : "none yet"}{" "}
-          · Selected:{" "}
-          {selected?.none
-            ? "None matched"
-            : selected
-              ? "Choice recorded"
-              : "not selected yet"}
-        </p>
-      </section>
-        </main>
-        <aside className="hidden xl:block">
-          <div className="sticky top-24">
-            <JourneyMapCard step={step} />
-          </div>
-        </aside>
-      </div>
+      </main>
     </div>
   );
 }
@@ -898,60 +923,92 @@ function JourneyMapCard({ step }: { step: number }) {
   const steps = [
     "Write your outing",
     "Review results",
-    "Choose the best match",
-    "Answer feedback questions",
-    "Complete weekly check-in",
+    "Choose match",
+    "Feedback",
+    "Check-in",
   ];
 
+  const safeStep = Math.min(5, Math.max(1, step || 1));
+
   return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/25">
-      <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
-        Journey Map
-      </p>
-      <h2 className="mt-3 text-xl font-black text-white">Your progress</h2>
-      <p className="mt-1 text-sm text-white/55">
-        You’re on step {Math.min(step, 5)} of 5
-      </p>
-      <div className="mt-5 space-y-2">
-        {steps.map((label, index) => {
-          const currentStep = index + 1;
-          const completed = currentStep < step;
-          const active = currentStep === step;
-          return (
-            <div
-              key={label}
-              className={[
-                "flex items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-sm",
-                completed
-                  ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
-                  : active
-                    ? "border-rose-400/40 bg-rose-500/10 text-white"
-                    : "border-white/10 bg-black/20 text-white/55",
-              ].join(" ")}
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span
+    <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-4 shadow-2xl shadow-black/20 sm:p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
+            Journey Map
+          </p>
+          <h2 className="mt-2 text-xl font-black text-white">Your progress</h2>
+        </div>
+
+        <p className="text-sm font-bold text-white/55">Step {safeStep} of 5</p>
+      </div>
+
+      <div className="mt-5 overflow-x-auto pb-1">
+        <div className="flex min-w-[760px] items-center gap-3">
+          {steps.map((label, index) => {
+            const currentStep = index + 1;
+            const completed = currentStep < safeStep;
+            const active = currentStep === safeStep;
+
+            return (
+              <div key={label} className="flex flex-1 items-center gap-3">
+                <div
                   className={[
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black",
+                    "flex min-h-[78px] flex-1 items-center gap-3 rounded-2xl border px-4 py-3",
                     completed
-                      ? "bg-emerald-400 text-black"
+                      ? "border-emerald-300/20 bg-emerald-400/10"
                       : active
-                        ? "bg-rose-500 text-white"
-                        : "bg-white/10 text-white/50",
+                        ? "border-rose-400/45 bg-rose-500/10 shadow-lg shadow-rose-950/20"
+                        : "border-white/10 bg-black/20",
                   ].join(" ")}
                 >
-                  {completed ? "✓" : currentStep}
-                </span>
-                <span className="truncate font-bold">{label}</span>
+                  <span
+                    className={[
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black",
+                      completed
+                        ? "bg-emerald-400 text-black"
+                        : active
+                          ? "bg-rose-500 text-white"
+                          : "bg-white/10 text-white/45",
+                    ].join(" ")}
+                  >
+                    {completed ? "✓" : currentStep}
+                  </span>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-white">
+                      {label}
+                    </p>
+                    <p
+                      className={[
+                        "mt-1 text-[10px] font-black uppercase tracking-[0.16em]",
+                        completed
+                          ? "text-emerald-200"
+                          : active
+                            ? "text-rose-200"
+                            : "text-white/35",
+                      ].join(" ")}
+                    >
+                      {completed
+                        ? "Completed"
+                        : active
+                          ? "In progress"
+                          : "Not started"}
+                    </p>
+                  </div>
+                </div>
+
+                {currentStep < steps.length ? (
+                  <span className="hidden shrink-0 text-white/25 lg:block">
+                    →
+                  </span>
+                ) : null}
               </div>
-              <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
-                {completed ? "Done" : active ? "Now" : "Next"}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1122,7 +1179,9 @@ function ResultCard({
           </div>
         )}
         <div className="mt-4">
-          <p className="text-xs font-black text-rose-200">Why this match works</p>
+          <p className="text-xs font-black text-rose-200">
+            Why this match works
+          </p>
           <p className="mt-1.5 text-sm font-semibold leading-6 text-white/62">
             {buildMatchReason({ query: query || "" })}
           </p>
@@ -1134,7 +1193,10 @@ function ResultCard({
             onClick={onSelect}
             className={secondary}
           >
-            {getChooseButtonLabel(type === "restaurant" || type === "activity" ? type : "single", selected)}
+            {getChooseButtonLabel(
+              type === "restaurant" || type === "activity" ? type : "single",
+              selected,
+            )}
           </button>
         </div>
       </div>
@@ -1143,7 +1205,9 @@ function ResultCard({
 }
 function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
   const parts = pairParts(pair);
-  const [primaryDisplayLabel, secondaryDisplayLabel] = inferPairLabelsFromQuery(query || "");
+  const [primaryDisplayLabel, secondaryDisplayLabel] = inferPairLabelsFromQuery(
+    query || "",
+  );
   const distance =
     pair.distance_text ||
     pair.travel_fit ||
@@ -1154,7 +1218,8 @@ function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
     >
       <div className="grid grid-cols-2 gap-2">
         {parts.slice(0, 2).map((part, index) => {
-          const label = index === 0 ? primaryDisplayLabel : secondaryDisplayLabel;
+          const label =
+            index === 0 ? primaryDisplayLabel : secondaryDisplayLabel;
           return (
             <div
               key={`${label}-${index}`}
@@ -1205,7 +1270,9 @@ function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
           </p>
         )}
         <div className="mt-4">
-          <p className="text-xs font-black text-rose-200">Why this pairing works</p>
+          <p className="text-xs font-black text-rose-200">
+            Why this pairing works
+          </p>
           <p className="mt-1.5 text-sm font-semibold leading-6 text-white/62">
             {buildMatchReason({
               query: query || "",
