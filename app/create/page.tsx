@@ -17,7 +17,6 @@ import { getLocationImage } from "@/lib/locationImage";
 import { normalizePublicCardImage } from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
-import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
 import { MobileStickyActionBar } from "@/components/ui/mobile";
 import {
   emptyOutingTimeValue,
@@ -238,17 +237,26 @@ const CREATE_RESULTS_ANALYTICS_METADATA: LocationAnalyticsMetadata = {
 };
 
 const typingSearches = [
-  "Steak restaurant with bowling in Queens",
-  "Romantic Italian restaurant in Brooklyn",
-  "Birthday brunch with rooftop vibes",
-  "Affordable date night near me",
-  "Sushi with karaoke after the restaurant",
-  "Luxury seafood restaurant in Manhattan",
-  "Hookah lounge with food nearby",
-  "Fun date night with arcade games",
+  "Steak dinner and rooftop drinks in Manhattan",
+  "Italian dinner with live music",
+  "Birthday dinner and bowling in Queens",
+  "Girls night with cocktails in Brooklyn",
+  "Brunch and an activity nearby",
+  "Dinner and hookah same location",
+  "Seafood dinner with jazz after",
+  "Walking distance dinner and activity",
 ];
 
-const formatTypingPrompt = (prompt: string) => `${prompt}....`;
+const suggestionChips = [
+  { label: "Date night", icon: "♡", prompt: "date night dinner and activity in Manhattan" },
+  { label: "Birthday dinner", icon: "▣", prompt: "birthday dinner and fun activity in Queens" },
+  { label: "Girls night", icon: "✦", prompt: "girls night dinner with cocktails in Brooklyn" },
+  { label: "Brunch + activity", icon: "☼", prompt: "brunch and activity nearby" },
+  { label: "Dinner + live music", icon: "♪", prompt: "Italian dinner with live music" },
+  { label: "Walking distance", icon: "♙", prompt: "dinner and activity within walking distance" },
+];
+
+const formatTypingPrompt = (prompt: string) => prompt;
 const INITIAL_TYPING_PROMPT = formatTypingPrompt(typingSearches[0]);
 
 function cleanSearchErrorMessage(message: string) {
@@ -384,7 +392,7 @@ export default function CreatePage() {
     setOutingTimeState(value);
   }
 
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const addOnInputRef = useRef<HTMLTextAreaElement | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const addOnSearchRef = useRef<HTMLDivElement | null>(null);
@@ -819,7 +827,7 @@ export default function CreatePage() {
     });
   }
 
-  function handleInputChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
+  function handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
     setInput(event.target.value);
   }
 
@@ -966,13 +974,6 @@ export default function CreatePage() {
         body: JSON.stringify({
           ...searchPayloadLocation,
           messages: [...messages, userMessage],
-          plannedFor: outingTime.plannedFor,
-          timezone: outingTime.timezone,
-          outingDateContext: outingTime.outingDateContext,
-          outingTimeConfidence: outingTime.outingTimeConfidence,
-          remindersEnabled: outingTime.remindersEnabled,
-          nextMorningFollowupEnabled: outingTime.nextMorningFollowupEnabled,
-          nextMorningFollowupDate: outingTime.nextMorningFollowupDate,
         }),
       });
 
@@ -1233,6 +1234,13 @@ export default function CreatePage() {
     window.setTimeout(() => submitSearch(prompt), 0);
   }
 
+  function runSuggestionPrompt(prompt: string) {
+    if (loading) return;
+    setError("");
+    setInput(prompt);
+    window.setTimeout(() => submitSearch(prompt), 0);
+  }
+
   function trackBusinessEvent(
     locationId: string,
     eventType:
@@ -1353,156 +1361,128 @@ export default function CreatePage() {
     if (source) params.set("source", source);
     const sourceTable = currentParams.get("sourceTable");
     if (sourceTable) params.set("sourceTable", sourceTable);
-    if (outingTime.plannedFor) params.set("plannedFor", outingTime.plannedFor);
-    if (outingTime.timezone) params.set("timezone", outingTime.timezone);
-    if (outingTime.outingDateContext)
-      params.set("outingDateContext", outingTime.outingDateContext);
-    if (outingTime.outingTimeConfidence)
-      params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
-    if (outingTime.nextMorningFollowupDate)
-      params.set("nextMorningFollowupDate", outingTime.nextMorningFollowupDate);
-    if (outingTime.nextMorningFollowupEnabled)
-      params.set("nextMorningFollowupEnabled", "true");
-    if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
-    if (outingTime.outingDateTimeText)
-      params.set("outingDateTimeText", outingTime.outingDateTimeText);
-    if (outingTime.outingDateLabel)
-      params.set("outingDateLabel", outingTime.outingDateLabel);
-    if (outingTime.outingTimeLabel)
-      params.set("outingTimeLabel", outingTime.outingTimeLabel);
+    const hasMeaningfulOutingTime = Boolean(
+      outingTime.plannedFor ||
+        outingTime.outingDateContext ||
+        outingTime.outingDateTimeText ||
+        outingTime.outingDateLabel ||
+        outingTime.outingTimeLabel ||
+        outingTime.parsedDateText ||
+        outingTime.parsedTimeText ||
+        outingTime.parsedDateTimeISO ||
+        outingTime.nextMorningFollowupDate ||
+        outingTime.nextMorningFollowupEnabled ||
+        outingTime.remindersEnabled,
+    );
+
+    if (hasMeaningfulOutingTime) {
+      if (outingTime.plannedFor)
+        params.set("plannedFor", outingTime.plannedFor);
+      if (outingTime.timezone) params.set("timezone", outingTime.timezone);
+      if (outingTime.outingDateContext)
+        params.set("outingDateContext", outingTime.outingDateContext);
+      if (outingTime.outingTimeConfidence)
+        params.set("outingTimeConfidence", outingTime.outingTimeConfidence);
+      if (outingTime.nextMorningFollowupDate)
+        params.set(
+          "nextMorningFollowupDate",
+          outingTime.nextMorningFollowupDate,
+        );
+      if (outingTime.nextMorningFollowupEnabled)
+        params.set("nextMorningFollowupEnabled", "true");
+      if (outingTime.remindersEnabled) params.set("remindersEnabled", "true");
+      if (outingTime.outingDateTimeText)
+        params.set("outingDateTimeText", outingTime.outingDateTimeText);
+      if (outingTime.outingDateLabel)
+        params.set("outingDateLabel", outingTime.outingDateLabel);
+      if (outingTime.outingTimeLabel)
+        params.set("outingTimeLabel", outingTime.outingTimeLabel);
+    }
 
     router.push(`/plan?${params.toString()}`);
   }
 
   return (
-    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-black pb-40 text-white sm:pb-28">
-      <section className="toh-mobile-compact-hero relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-16 sm:px-6 sm:pb-10 sm:pt-24 lg:pt-28">
-        <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5 overflow-hidden lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
-          <div className="flex min-w-0 max-w-full flex-col justify-center">
-            <div className="mb-3 inline-flex w-fit max-w-full rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
-              {exactCampaignLoading
-                ? "Loading Campaign Pick"
-                : "AI Outing Planner"}
-            </div>
-
-            <h1 className="max-w-full break-words text-2xl font-black leading-[0.98] tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
-              Your next outing, planned smarter.
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:mt-4 sm:text-base">
-              Type exactly what you want. TheOutHaven matches food, activities,
-              location, vibe, and budget into a tighter outing plan.
-            </p>
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#050505] pb-40 text-white sm:pb-28">
+      <section className="relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.18),transparent_34%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-8 pt-20 sm:px-6 sm:pb-12 sm:pt-28">
+        <div className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-white/65">
+            <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-5 w-5 rounded-full object-contain" />
+            {exactCampaignLoading ? "Loading campaign pick" : "TheOutHaven AI outing planner"}
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.15rem] border border-white/10 bg-[#111]/90 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl transition focus-within:border-[#e1062a]/45 focus-within:shadow-[0_0_0_1px_rgba(225,6,42,0.28),0_0_34px_rgba(225,6,42,0.18)] sm:rounded-[1.35rem] sm:p-5"
-          >
-            <div className="min-w-0">
-              <div className="mb-2.5 flex min-w-0 items-center justify-between gap-2">
-                <p className="min-w-0 truncate text-[9px] font-black uppercase tracking-[0.2em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
-                  Create your plan
-                </p>
+          <h1 className="max-w-4xl text-4xl font-black leading-[0.95] tracking-[-0.055em] text-white sm:text-6xl lg:text-7xl">
+            Plan your next outing in <span className="text-[#e1062a]">one search.</span>
+          </h1>
 
-                {locationSaved ? (
-                  <span className="shrink-0 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-emerald-100 sm:px-3 sm:text-[10px]">
-                    Location On
-                  </span>
-                ) : null}
-              </div>
+          <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-white/60 sm:text-lg">
+            Type natural phrases like dinner, drinks, date night, birthdays, brunch, or an activity after dinner. We’ll handle the rest.
+          </p>
 
-              <div className="relative">
+          <form onSubmit={handleSubmit} className="mt-8 w-full max-w-4xl">
+            <div className="flex w-full flex-col gap-3 rounded-[2rem] border border-white/10 bg-white/[0.055] p-2 shadow-2xl shadow-black/50 backdrop-blur-xl transition focus-within:border-[#e1062a]/50 focus-within:shadow-[0_0_0_1px_rgba(225,6,42,0.28),0_0_40px_rgba(225,6,42,0.16)] sm:flex-row sm:items-center sm:rounded-full">
+              <div className="relative min-w-0 flex-1">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[#e1062a]" aria-hidden="true">⌕</span>
                 {!input && (
-                  <div className="pointer-events-none absolute left-3 top-3.5 z-10 max-w-[calc(100%-1.5rem)] truncate text-sm font-semibold leading-6 text-white sm:left-4 sm:top-4 sm:text-base sm:leading-7">
-                    <span>{typedPlaceholder}</span>
+                  <div className="pointer-events-none absolute left-12 right-3 top-1/2 -translate-y-1/2 truncate text-left text-sm font-semibold text-white/42 sm:text-base">
+                    {typedPlaceholder}<span className="text-[#e1062a]">|</span>
                   </div>
                 )}
-
-                <textarea
+                <input
                   ref={inputRef}
+                  type="text"
                   value={input}
                   onChange={handleInputChange}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
+                    if (event.key === "Enter") {
                       event.preventDefault();
                       handleSubmit();
                     }
                   }}
-                  rows={2}
+                  enterKeyHint="search"
+                  inputMode="search"
+                  aria-label="Search for an outing"
                   placeholder=""
-                  className="h-[88px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-base font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:leading-7"
+                  className="h-14 w-full rounded-full border border-white/10 bg-black/60 pl-12 pr-4 text-left text-base font-semibold text-white outline-none transition focus:border-[#e1062a]/60 sm:h-16 sm:border-0 sm:bg-transparent sm:text-lg"
                 />
               </div>
+
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="h-14 shrink-0 rounded-full bg-[#e1062a] px-6 text-sm font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:h-16 sm:px-8"
+              >
+                {loading ? "Finding your outing…" : "Find my outing"}
+              </button>
             </div>
 
-            <div className="mt-2">
-              <OutingTimeSelector
-                value={outingTime}
-                onChange={(value) => setOutingTime(value)}
-                query={input}
-                variant="compact"
-                showReminderOptions={false}
-              />
-            </div>
-
-            <div className="mt-3 flex w-full min-w-0 justify-center sm:mt-4">
-              <div className="flex w-full min-w-0 flex-col justify-center gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-                <button
-                  type="submit"
-                  disabled={loading || !input.trim()}
-                  className="toh-touch-target w-full rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
-                >
-                  {loading ? "Finding matches..." : "Find my outing"}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm font-bold text-white/50">
+              <button type="button" onClick={requestUserLocation} className="rounded-full px-3 py-1.5 text-white/55 underline-offset-4 transition hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60">
+                {locationSaved ? "Location on" : "Use my location"}
+              </button>
+              {messages.length > 0 && (
+                <button type="button" onClick={resetSearch} className="rounded-full px-3 py-1.5 text-white/45 underline-offset-4 transition hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60">
+                  New search
                 </button>
-
-                <button
-                  type="button"
-                  onClick={requestUserLocation}
-                  className={`w-full rounded-full border px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] transition sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em] ${
-                    locationSaved
-                      ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                      : "border-white/10 bg-white/[0.04] text-white/65 hover:border-white/25 hover:text-white"
-                  }`}
-                >
-                  {locationSaved ? "Location On" : "Use My Location"}
-                </button>
-
-                {input.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => { setInput(""); inputRef.current?.focus(); }}
-                    className="toh-touch-target w-full rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white/55 transition hover:text-white sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
-                  >
-                    Clear Search
-                  </button>
-                )}
-
-                {messages.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={resetSearch}
-                    className="w-full rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white/55 transition hover:text-white sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
-                  >
-                    New Search
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           </form>
+
+          <div className="mt-5 flex w-full max-w-4xl gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible">
+            {suggestionChips.map((chip) => (
+              <button key={chip.label} type="button" onClick={() => runSuggestionPrompt(chip.prompt)} disabled={loading} className="shrink-0 rounded-full border border-white/10 bg-white/[0.045] px-4 py-2 text-sm font-black text-white/75 transition hover:border-[#e1062a]/50 hover:bg-[#e1062a]/15 hover:text-white disabled:opacity-45">
+                <span className="mr-2 text-[#e1062a]">{chip.icon}</span>{chip.label}
+              </button>
+            ))}
+          </div>
+
+          <HowItWorksMini />
         </div>
       </section>
 
-      <section
-        ref={resultsRef}
-        className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 py-5 sm:px-6 sm:py-8"
-      >
+      <section ref={resultsRef} className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8">
         {error && (
-          <HelpfulSearchState
-            title="We could not finish that search."
-            message={error}
-            onSuggestion={runHelpfulSuggestion}
-          />
+          <HelpfulSearchState title="We could not finish that search." message={error} onSuggestion={runHelpfulSuggestion} />
         )}
 
         {!messages.length && !loading && <StartPanel />}
@@ -2460,77 +2440,166 @@ function TimelineStep({
   );
 }
 
-function StartPanel() {
-  const items = [
+function HowItWorksMini() {
+  const steps = [
     {
-      icon: "💬",
-      step: "01",
-      title: "Describe the whole outing",
-      body: "Type the food, activity, neighborhood, budget, or vibe in one sentence.",
-      example: "Example: romantic restaurant and karaoke in Queens",
+      title: "Search",
+      body: "Tell us what you’re in the mood for.",
     },
     {
-      icon: "✨",
-      step: "02",
-      title: "Let TheOutHaven sort the fit",
-      body: "We separate restaurants, activities, location, and vibe so the results feel intentional.",
-      example: "Try: affordable birthday brunch with games",
+      title: "Pick a vibe",
+      body: "We pair great spots that go perfectly together.",
     },
     {
-      icon: "🗺️",
-      step: "03",
-      title: "Pick your plan faster",
-      body: "Choose a restaurant, add an experience, then review the full outing flow.",
-      example: "Tip: add a borough, city, or nearby request",
+      title: "Book or save",
+      body: "Book instantly or save for later.",
     },
   ];
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.18),transparent_34%),linear-gradient(135deg,#101010_0%,#060606_100%)] p-4 shadow-2xl shadow-black/45 sm:p-5">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mt-7 grid w-full max-w-4xl grid-cols-1 gap-2 sm:grid-cols-3">
+      {steps.map((step) => (
+        <div
+          key={step.title}
+          className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left"
+        >
+          <h2 className="text-sm font-black text-white">{step.title}</h2>
+          <p className="mt-1 text-sm font-semibold leading-5 text-white/48">
+            {step.body}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StartPanel() {
+  const previewPills = [
+    "Dinner + Activity",
+    "Same location",
+    "Nearby",
+    "Walking distance",
+  ];
+  const examples = [
+    {
+      restaurant: "Keens Steakhouse",
+      restaurantMeta: "Steakhouse · Midtown",
+      activity: "230 Fifth Rooftop",
+      activityMeta: "Rooftop Bar · Flatiron",
+      distance: "8 min walk",
+      tag: "Great for date night",
+    },
+    {
+      restaurant: "Via Carota",
+      restaurantMeta: "Italian · West Village",
+      activity: "Comedy Cellar",
+      activityMeta: "Comedy Club · Greenwich Village",
+      distance: "6 min walk",
+      tag: "Great for date night",
+    },
+    {
+      restaurant: "Sushi Nakazawa",
+      restaurantMeta: "Sushi · Tribeca",
+      activity: "Blue Note Jazz Club",
+      activityMeta: "Jazz Club · Greenwich Village",
+      distance: "7 min walk",
+      tag: "Great for special occasions",
+    },
+  ];
+
+  return (
+    <div className="w-full max-w-full overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.14),transparent_34%),linear-gradient(135deg,#101010_0%,#060606_100%)] p-4 shadow-2xl shadow-black/45 sm:p-5">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">
-            How it works
+            See what TheOutHaven can build
           </p>
           <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white sm:text-3xl">
-            Plan your outing in one search.
+            Example outings
           </h2>
+          <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/50">
+            Preview examples only — live results will appear here after you search.
+          </p>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-end sm:overflow-visible">
+          {previewPills.map((pill) => (
+            <span
+              key={pill}
+              className="shrink-0 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-black text-white/58"
+            >
+              {pill}
+            </span>
+          ))}
         </div>
       </div>
 
-      <div className="grid w-full min-w-0 gap-3 sm:gap-4 md:grid-cols-3">
-        {items.map((item) => (
-          <div
-            key={item.step}
-            className="group min-w-0 rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/20 transition hover:border-[#e1062a]/35 hover:bg-white/[0.065] sm:p-5"
-          >
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/45 text-xl shadow-inner shadow-white/5">
-                {item.icon}
-              </div>
-
-              <span className="rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-100/75">
-                {item.step}
-              </span>
-            </div>
-
-            <h3 className="break-words text-lg font-black tracking-[-0.03em] text-white">
-              {item.title}
-            </h3>
-
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/55">
-              {item.body}
-            </p>
-
-            <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
-              <p className="text-xs font-bold leading-5 text-white/62">
-                {item.example}
-              </p>
-            </div>
-          </div>
+      <div className="grid w-full min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {examples.map((example) => (
+          <ExampleOutingCard key={`${example.restaurant}-${example.activity}`} {...example} />
         ))}
       </div>
     </div>
+  );
+}
+
+function ExampleOutingCard({
+  restaurant,
+  restaurantMeta,
+  activity,
+  activityMeta,
+  distance,
+  tag,
+}: {
+  restaurant: string;
+  restaurantMeta: string;
+  activity: string;
+  activityMeta: string;
+  distance: string;
+  tag: string;
+}) {
+  return (
+    <article className="min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/25">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <span className="rounded-full border border-[#e1062a]/30 bg-[#e1062a]/12 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-100">
+          Preview
+        </span>
+        <span className="text-xs font-black text-white/45">{distance}</span>
+      </div>
+      <div className="flex gap-3">
+        <div className="mt-1 flex flex-col items-center">
+          <div className="h-2.5 w-2.5 rounded-full bg-[#e1062a]" />
+          <div className="h-12 w-px bg-white/12" />
+          <div className="h-2.5 w-2.5 rounded-full bg-white" />
+        </div>
+        <div className="min-w-0 flex-1 space-y-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#e1062a]">
+              Restaurant
+            </p>
+            <h3 className="mt-1 line-clamp-1 text-base font-black text-white">
+              {restaurant}
+            </h3>
+            <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/45">
+              {restaurantMeta}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+              Activity
+            </p>
+            <h3 className="mt-1 line-clamp-1 text-base font-black text-white">
+              {activity}
+            </h3>
+            <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/45">
+              {activityMeta}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-white/70">
+        {tag}
+      </div>
+    </article>
   );
 }
 
