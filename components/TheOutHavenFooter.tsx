@@ -78,8 +78,8 @@ export default function TheOutHavenFooter() {
         <FooterColumn
           title="Support"
           links={[
-            { label: "Get Help", href: "/help" },
-            { label: "Knowledge Base", href: "/knowledge-base" },
+            { label: "Get Help", href: "/support" },
+            { label: "Knowledge Base", href: "/help" },
             { label: "FAQ", href: "/faq" },
           ]}
         />
