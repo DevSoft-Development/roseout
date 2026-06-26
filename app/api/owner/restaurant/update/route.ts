@@ -1,49 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireOwnerOrAdminAccessToLocation, sanitizeOwnerLocationResponse } from "@/lib/auth/locationOwnerAccess";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const OWNER_EDITABLE_FIELDS = new Set([
+  "name",
+  "location_name",
+  "restaurant_name",
+  "description",
+  "phone",
+  "website",
+  "instagram",
+  "hours",
+  "operating_hours",
+  "cuisine_type",
+  "category",
+]);
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { user_id, restaurant_id, is_admin, ...updates } = body;
+  let body: Record<string, any>;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "Request could not be completed." }, { status: 400 }); }
 
-  if (!user_id || !restaurant_id) {
-    return NextResponse.json(
-      { error: "Missing user or restaurant." },
-      { status: 400 }
-    );
-  }
+  const restaurantId = String(body.restaurant_id || body.location_id || "").trim();
+  if (!restaurantId) return NextResponse.json({ error: "Location not found." }, { status: 400 });
 
-  if (!is_admin) {
-    const { data: ownerRecord, error: ownerError } = await supabaseAdmin
-      .from("restaurant_owners")
-      .select("restaurant_id")
-      .eq("user_id", user_id)
-      .eq("restaurant_id", restaurant_id)
-      .maybeSingle();
+  const authorized = await requireOwnerOrAdminAccessToLocation(user.id, restaurantId);
+  if (!authorized) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (ownerError || !ownerRecord) {
-      return NextResponse.json(
-        { error: "You do not have permission to update this restaurant." },
-        { status: 403 }
-      );
-    }
-  }
+  const updates = Object.fromEntries(
+    Object.entries(body).filter(([key]) => OWNER_EDITABLE_FIELDS.has(key)),
+  );
+  if (!Object.keys(updates).length) return NextResponse.json({ error: "Request could not be completed." }, { status: 400 });
+  updates.updated_at = new Date().toISOString();
 
-  const { data: restaurant, error } = await supabaseAdmin
-    .from("restaurants")
+  const { data, error } = await supabaseAdmin
+    .from("locations")
     .update(updates)
-    .eq("id", restaurant_id)
-    .select("*")
+    .eq("id", String(authorized.location.id))
+    .select("id,source_id,source_location_id,source_table,name,location_name,restaurant_name,description,phone,website,instagram,hours,operating_hours,cuisine_type,category,updated_at")
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("OWNER_RESTAURANT_UPDATE_FAILED", error);
+    return NextResponse.json({ error: "Request could not be completed." }, { status: 500 });
   }
 
-  return NextResponse.json({ restaurant });
+  return NextResponse.json({ restaurant: sanitizeOwnerLocationResponse(data) });
 }

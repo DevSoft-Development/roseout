@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
+import { createClient } from "@/lib/supabase-server";
+import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 
 const allowedStatuses = [
   "pending",
@@ -48,7 +50,8 @@ export async function POST(request: NextRequest) {
       body.__adminUser = auth.adminUser;
     }
 
-    const locationId = adminLocationId || cleanString(body.location_id);
+    const requestedLocationId = cleanString(body.location_id);
+    let locationId = adminLocationId || requestedLocationId;
     const locationType = normalizeType(
       cleanString(body.location_type) || "restaurant"
     );
@@ -62,10 +65,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: "Missing location ID." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing location ID." }, { status: 400 });
+    }
+
+    if (!adminLocationId) {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const ownerAccess = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
+      if (!ownerAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      locationId = String(ownerAccess.location.id);
     }
 
     if (!status) {
@@ -107,7 +116,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("RESERVATION_UPDATE_FAILED", error);
+      return NextResponse.json({ error: "Request could not be completed." }, { status: 500 });
     }
 
     if (adminLocationId) {
@@ -129,9 +139,7 @@ export async function POST(request: NextRequest) {
       reservation: data,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || "Something went wrong." },
-      { status: 500 }
-    );
+    console.error("RESERVATION_UPDATE_UNHANDLED", error);
+    return NextResponse.json({ error: "Request could not be completed." }, { status: 500 });
   }
 }

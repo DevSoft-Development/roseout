@@ -1,7 +1,7 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { formatMinutes, getActiveSession, getAllowedWorkTypesForUser } from "@/lib/team-tools";
+import { formatMinutes, getActiveSession, getAllowedWorkTypesForUser, hasBroadWorkspaceLocationAccess, listPermittedWorkspaceLocations } from "@/lib/team-tools";
 
 export function workspaceActions(profile: any, base = "/admin/dashboard/crm") {
   return [
@@ -29,6 +29,11 @@ async function ownCount(table: string, userId: string, filters: Record<string, s
 }
 
 export async function loadWorkspaceDashboardData(userId: string, profile: any) {
+  const broadLocationAccess = hasBroadWorkspaceLocationAccess(profile);
+  const permittedRows = broadLocationAccess ? null : await listPermittedWorkspaceLocations(profile, "id", 1000);
+  const permittedIds = permittedRows?.map((row: any) => String(row.id)).filter(Boolean) || [];
+  const locationCount = (query: any) => broadLocationAccess ? query : permittedIds.length ? query.in("id", permittedIds) : query.eq("id", "__no_permitted_locations__");
+
   const [allowedWorkTypes, activeSession, recent, tasks, followUps, notifications, pendingHours, approvedHours, visits, social, support, claimCodes, activePartners, claimToSend, claimSent, claimsStarted, paymentPending, reservationSetup, embedToSend, embedFollowUp, discoveryNeeded, atRisk] = await Promise.all([
     getAllowedWorkTypesForUser(userId, profile),
     getActiveSession(userId),
@@ -42,16 +47,16 @@ export async function loadWorkspaceDashboardData(userId: string, profile: any) {
     ownCount("ambassador_social_outreach", userId),
     ownCount("team_work_activities", userId, { activity_type: "support_ticket" }),
     supabaseAdmin.from("claim_code_audit_logs").select("id", { count: "exact", head: true }).eq("actor_user_id", userId),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).in("partner_sales_status", ["active_partner", "reservation_ready"]),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("claim_outreach_status", "not_sent"),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("claim_outreach_status", "sent"),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("claim_outreach_status", "started"),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("partner_sales_status", "payment_pending"),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).in("reservation_portal_status", ["not_enabled", "needs_setup"]),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).in("reservation_embed_status", ["not_sent", "generated"]),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("reservation_embed_status", "sent"),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).neq("discovery_profile_status", "ready"),
-    supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("partner_sales_status", "at_risk"),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).in("partner_sales_status", ["active_partner", "reservation_ready"])),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("claim_outreach_status", "not_sent")),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("claim_outreach_status", "sent")),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("claim_outreach_status", "started")),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("partner_sales_status", "payment_pending")),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).in("reservation_portal_status", ["not_enabled", "needs_setup"])),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).in("reservation_embed_status", ["not_sent", "generated"])),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("reservation_embed_status", "sent")),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).neq("discovery_profile_status", "ready")),
+    locationCount(supabaseAdmin.from("locations").select("id", { count: "exact", head: true }).eq("partner_sales_status", "at_risk")),
   ]);
 
   const sumMinutes = (rows: any[] | null) => (rows || []).reduce((total, row) => total + Number(row.total_minutes || 0), 0);

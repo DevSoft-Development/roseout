@@ -97,3 +97,34 @@ export async function getLocationOwnerAccess(userId: string): Promise<OwnerAcces
     ownedSourceLocationIds: Array.from(ownedSourceLocationIds),
   };
 }
+
+export type OwnerLocationAccessResult = {
+  userId: string;
+  access: OwnerAccess;
+  location: Record<string, any>;
+};
+
+export function sanitizeOwnerLocationResponse(row: Record<string, any> | null | undefined) {
+  if (!row) return null;
+  const allowed = [
+    "id","source_id","source_location_id","source_table","name","location_name","restaurant_name","activity_name","address","city","state","zip","phone","website","instagram","category","cuisine_type","activity_type","description","hours","operating_hours","reservation_url","subscription_plan","subscription_status","plan","is_pro","updated_at",
+  ];
+  return Object.fromEntries(allowed.filter((key) => key in row).map((key) => [key, row[key]]));
+}
+
+export async function requireOwnerAccessToLocation(userId: string, locationId: string): Promise<OwnerLocationAccessResult | null> {
+  const cleanLocationId = String(locationId || "").trim();
+  if (!userId || !cleanLocationId) return null;
+  const access = await getLocationOwnerAccess(userId);
+  const { data: location } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .or(`id.eq.${cleanLocationId},source_id.eq.${cleanLocationId},source_location_id.eq.${cleanLocationId}`)
+    .maybeSingle();
+  if (!location || !hasOwnerAccessToLocation(access, location)) return null;
+  return { userId, access, location: location as Record<string, any> };
+}
+
+export async function requireOwnerOrAdminAccessToLocation(userId: string, locationId: string): Promise<OwnerLocationAccessResult | null> {
+  return requireOwnerAccessToLocation(userId, locationId);
+}

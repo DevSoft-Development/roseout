@@ -17,6 +17,7 @@ import PublishabilityRepairButton from "./PublishabilityRepairButton";
 import RepairPublishabilityButton from "./RepairPublishabilityButton";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
+import { getTeamProfileForUser, hasBroadWorkspaceLocationAccess, isWorkspaceLocationPermitted } from "@/lib/team-tools";
 import { AdminActionButton, AdminDetailPanel, AdminKpiCard, AdminKpiGrid, AdminPageShell, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
 export const dynamic = "force-dynamic";
@@ -545,6 +546,9 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
   const activeTab = normalizeCrmDetailTab(query.tab);
   const business = await getBusinessCRM(id);
   if (!business) notFound();
+  const profile = await getTeamProfileForUser(admin.user_id);
+  const hasLocationAccess = hasBroadWorkspaceLocationAccess(admin.role) || hasBroadWorkspaceLocationAccess(profile) || await isWorkspaceLocationPermitted(profile, business.id);
+  if (!hasLocationAccess) redirect("/admin/unauthorized");
   const related = await getLocationCrmRelatedData(business.id);
   const flags = getUpgradeFlags(business);
   const canEdit = canAdmin(admin.role, "crmEdit");

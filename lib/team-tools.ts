@@ -346,6 +346,11 @@ export async function isWorkspaceLocationPermitted(profile: any, locationId: str
   const cleanLocationId = String(locationId || "").trim();
   if (!cleanLocationId) return false;
 
+  if (hasBroadWorkspaceLocationAccess(profile)) {
+    const { data } = await supabaseAdmin.from("locations").select("id").eq("id", cleanLocationId).maybeSingle();
+    return Boolean(data?.id);
+  }
+
   const directIds = Array.isArray(profile?.assigned_location_ids)
     ? profile.assigned_location_ids.map((id: unknown) => String(id)).filter(Boolean)
     : [];
@@ -363,20 +368,19 @@ export async function isWorkspaceLocationPermitted(profile: any, locationId: str
     if (!error && assignments?.length) {
       return assignments.some((assignment: any) => String(assignment.location_id) === cleanLocationId);
     }
-  } catch {
-    // Some deployments do not have explicit assignment tables yet. Fall through to checking the location exists.
+  } catch (error) {
+    console.error("WORKSPACE_ASSIGNMENT_LOOKUP_FAILED", error);
   }
 
-  const { data } = await supabaseAdmin
-    .from("locations")
-    .select("id")
-    .eq("id", cleanLocationId)
-    .maybeSingle();
-
-  return Boolean(data?.id);
+  return false;
 }
 
 export async function listPermittedWorkspaceLocations(profile: any, columns = "id,name,location_name,address,city,state,latitude,longitude", limit = 200) {
+  if (hasBroadWorkspaceLocationAccess(profile)) {
+    const { data } = await supabaseAdmin.from("locations").select(columns).order("name").limit(limit);
+    return data || [];
+  }
+
   const directIds = Array.isArray(profile?.assigned_location_ids) ? profile.assigned_location_ids.filter(Boolean) : [];
   if (directIds.length) {
     const { data, error } = await supabaseAdmin.from("locations").select(columns).in("id", directIds).order("name").limit(limit);
@@ -395,12 +399,11 @@ export async function listPermittedWorkspaceLocations(profile: any, columns = "i
       const { data } = await supabaseAdmin.from("locations").select(columns).in("id", ids).order("name").limit(limit);
       return data || [];
     }
-  } catch {
-    // Some deployments do not have explicit assignment tables yet. Fall through to a capped list.
+  } catch (error) {
+    console.error("WORKSPACE_ASSIGNMENT_LIST_FAILED", error);
   }
 
-  const { data } = await supabaseAdmin.from("locations").select(columns).order("name").limit(limit);
-  return data || [];
+  return [];
 }
 
 
@@ -488,6 +491,11 @@ function applyWorkspaceLocationMemoryFilters(rows: any[], filters: Record<string
 
 export function canSearchAllWorkspaceLocations(userRole?: string | null) {
   return ["superadmin", "admin", "manager"].includes(String(userRole || "").toLowerCase());
+}
+
+export function hasBroadWorkspaceLocationAccess(profileOrRole?: any) {
+  const role = typeof profileOrRole === "string" ? profileOrRole : profileOrRole?.team_type || profileOrRole?.role;
+  return canSearchAllWorkspaceLocations(role);
 }
 
 export async function getWorkspaceLocationSearchScope(userId: string, role?: string | null, profile?: any) {

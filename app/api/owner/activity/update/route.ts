@@ -1,73 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireOwnerOrAdminAccessToLocation, sanitizeOwnerLocationResponse } from "@/lib/auth/locationOwnerAccess";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-
-const ACTIVITY_UPDATE_COLUMNS =
-  "id, name, activity_name, primary_category, activity_type, primary_tag, tags, google_types, address, city, state, zip_code, status, is_searchable, data_status, missing_fields, is_hidden, last_quality_check_at, is_claimed, claimed, claim_status, claimed_at, claimed_by_email, owner_user_id, rating, view_count, click_count, theouthaven_score, roseout_score, quality_score, trend_score, conversion_score, review_score, popularity_score, ranking_badge, main_image, image_url, images, updated_at";
-
-const ACTIVITY_UPDATE_BLOCKLIST = new Set([
-  "cuisine",
+const OWNER_EDITABLE_FIELDS = new Set([
+  "name",
+  "location_name",
+  "restaurant_name",
+  "description",
+  "phone",
+  "website",
+  "instagram",
+  "hours",
+  "operating_hours",
   "cuisine_type",
-  "food_type",
-  "hours_of_operation",
-  "days_of_operation",
-  "kitchen_closing_time",
-  "google_maps_link",
+  "category",
 ]);
 
-function sanitizeActivityUpdates(updates: Record<string, unknown>) {
-  return Object.fromEntries(
-    Object.entries(updates).filter(([key]) => !ACTIVITY_UPDATE_BLOCKLIST.has(key))
-  );
-}
-
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { user_id, activity_id, location_id, is_admin, ...updates } = body;
+  let body: Record<string, any>;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "Request could not be completed." }, { status: 400 }); }
 
-  const targetActivityId = activity_id || location_id;
+  const activityId = String(body.activity_id || body.location_id || "").trim();
+  if (!activityId) return NextResponse.json({ error: "Location not found." }, { status: 400 });
 
-  if (!user_id || !targetActivityId) {
-    return NextResponse.json(
-      { error: "Missing user or activity." },
-      { status: 400 }
-    );
-  }
+  const authorized = await requireOwnerOrAdminAccessToLocation(user.id, activityId);
+  if (!authorized) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  // Regular owners must be linked to this activity.
-  // Admin/superadmin can update any activity.
-  if (!is_admin) {
-    const { data: ownerRecord, error: ownerError } = await supabaseAdmin
-      .from("activity_owners")
-      .select("activity_id")
-      .eq("user_id", user_id)
-      .eq("activity_id", targetActivityId)
-      .maybeSingle();
+  const updates = Object.fromEntries(
+    Object.entries(body).filter(([key]) => OWNER_EDITABLE_FIELDS.has(key)),
+  );
+  if (!Object.keys(updates).length) return NextResponse.json({ error: "Request could not be completed." }, { status: 400 });
+  updates.updated_at = new Date().toISOString();
 
-    if (ownerError || !ownerRecord) {
-      return NextResponse.json(
-        { error: "You do not have permission to update this activity." },
-        { status: 403 }
-      );
-    }
-  }
-
-  const { data: activity, error } = await supabaseAdmin
-    .from("activities")
-    .update(sanitizeActivityUpdates(updates))
-    .eq("id", targetActivityId)
-    .select(ACTIVITY_UPDATE_COLUMNS)
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .update(updates)
+    .eq("id", String(authorized.location.id))
+    .select("id,source_id,source_location_id,source_table,name,location_name,restaurant_name,description,phone,website,instagram,hours,operating_hours,cuisine_type,category,updated_at")
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("OWNER_RESTAURANT_UPDATE_FAILED", error);
+    return NextResponse.json({ error: "Request could not be completed." }, { status: 500 });
   }
 
-  return NextResponse.json({ activity });
+  return NextResponse.json({ activity: sanitizeOwnerLocationResponse(data) });
 }
