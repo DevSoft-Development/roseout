@@ -20,6 +20,7 @@ export default function BetaLoginForm() {
   const [turnstileMessage, setTurnstileMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const resetTurnstile = useCallback((message = "Please complete the verification again.") => {
     setTurnstileToken("");
@@ -112,7 +113,7 @@ export default function BetaLoginForm() {
       </label>
       <label className="block text-sm font-bold text-white/85">
         Password
-        <input className={`${inputClass} mt-2`} type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" required />
+        <div className="relative mt-2"><input className={`${inputClass} pr-20`} type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" required /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-2 top-1/2 min-h-11 -translate-y-1/2 rounded-full px-3 text-xs font-black text-rose-100">{showPassword ? "Hide" : "Show"}</button></div>
       </label>
       <div className="space-y-2">
         <TurnstileWidget

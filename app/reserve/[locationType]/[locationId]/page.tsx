@@ -73,7 +73,7 @@ export default async function ReserveLocationPage({
   );
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white sm:px-6 lg:px-8">
+    <main className="min-h-screen overflow-x-hidden bg-[#090706] px-3 pb-12 pt-4 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1200px]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -88,16 +88,16 @@ export default async function ReserveLocationPage({
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#120d0b] shadow-2xl">
-          <div className="relative min-h-[360px] overflow-hidden bg-black">
+        <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#120d0b] shadow-2xl sm:rounded-[2rem]">
+          <div className="relative min-h-[260px] overflow-hidden bg-black sm:min-h-[360px]">
             {getLocationImage(location) ? (
               <img
                 src={getLocationImage(location) || undefined}
                 alt={locationName}
-                className="h-[360px] w-full object-cover opacity-80"
+                className="h-[260px] w-full object-cover opacity-80 sm:h-[360px]"
               />
             ) : (
-              <div className="flex h-[360px] items-center justify-center bg-gradient-to-br from-rose-950 via-black to-[#090706]">
+              <div className="flex h-[260px] items-center justify-center bg-gradient-to-br from-rose-950 via-black to-[#090706] sm:h-[360px]">
                 <Image
                   src="/toh_logo.png"
                   alt="TheOutHaven"
@@ -110,14 +110,14 @@ export default async function ReserveLocationPage({
 
             <div className="absolute inset-0 bg-gradient-to-t from-[#090706] via-black/35 to-transparent" />
 
-            <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-8">
+            <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-8">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <p className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-rose-300">
                     {isActivity ? "Experience Booking" : "Reservation Booking"}
                   </p>
 
-                  <h1 className="max-w-4xl text-4xl font-black tracking-tight sm:text-5xl">
+                  <h1 className="max-w-4xl text-3xl font-black tracking-tight sm:text-5xl">
                     {locationName}
                   </h1>
 
@@ -126,30 +126,30 @@ export default async function ReserveLocationPage({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur">
+                <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-3 backdrop-blur sm:px-4">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
                       Rating
                     </p>
-                    <p className="mt-1 text-xl font-black">
+                    <p className="mt-1 text-base font-black sm:text-xl">
                       ★ {location.rating || 0}
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur">
+                  <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-3 backdrop-blur sm:px-4">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
                       Duration
                     </p>
-                    <p className="mt-1 text-xl font-black">
+                    <p className="mt-1 text-base font-black sm:text-xl">
                       {location.default_duration_minutes || 90} min
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur">
+                  <div className="rounded-2xl border border-white/10 bg-white/10 px-3 py-3 backdrop-blur sm:px-4">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
                       Score
                     </p>
-                    <p className="mt-1 text-xl font-black">
+                    <p className="mt-1 text-base font-black sm:text-xl">
                       {getLocationScore(location)}
                     </p>
                   </div>

@@ -18,6 +18,7 @@ import { normalizePublicCardImage } from "@/lib/publicCardImage";
 import { getCuisine, getPrimaryCategory } from "@/lib/locationFields";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import OutingTimeSelector from "@/components/outings/OutingTimeSelector";
+import { MobileStickyActionBar } from "@/components/ui/mobile";
 import {
   emptyOutingTimeValue,
   getBrowserTimezone,
@@ -1374,8 +1375,8 @@ export default function CreatePage() {
   }
 
   return (
-    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-black pb-36 text-white sm:pb-28">
-      <section className="relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:pt-32">
+    <main className="min-h-screen w-full max-w-full overflow-x-hidden bg-black pb-40 text-white sm:pb-28">
+      <section className="rose-mobile-compact-hero relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,#050505_0%,#0b0b0b_100%)] px-3 pb-6 pt-24 sm:px-6 sm:pb-10 sm:pt-28 lg:pt-32">
         <div className="mx-auto grid w-full max-w-7xl min-w-0 gap-5 overflow-hidden lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div className="flex min-w-0 max-w-full flex-col justify-center">
             <div className="mb-3 inline-flex w-fit max-w-full rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-red-100 sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
@@ -1384,11 +1385,11 @@ export default function CreatePage() {
                 : "AI Outing Planner"}
             </div>
 
-            <h1 className="max-w-full break-words text-[2.45rem] font-black leading-[0.92] tracking-[-0.055em] text-white xs:text-4xl sm:text-6xl lg:text-7xl">
+            <h1 className="max-w-full break-words text-3xl font-black leading-[0.96] tracking-[-0.055em] text-white sm:text-6xl lg:text-7xl">
               Your next outing, planned smarter.
             </h1>
 
-            <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:mt-4 sm:text-base">
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/55 sm:mt-4 sm:text-base">
               Type exactly what you want. TheOutHaven matches food, activities,
               location, vibe, and budget into a tighter outing plan.
             </p>
@@ -1430,7 +1431,7 @@ export default function CreatePage() {
                   }}
                   rows={2}
                   placeholder=""
-                  className="h-[96px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-sm font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:text-base sm:leading-7"
+                  className="h-[88px] w-full min-w-0 max-w-full resize-none overflow-y-auto rounded-2xl border border-white/10 bg-black px-3 py-3.5 text-base font-semibold leading-6 text-white outline-none transition focus:border-[#e1062a]/70 sm:h-[112px] sm:px-4 sm:py-4 sm:leading-7"
                 />
               </div>
             </div>
@@ -1450,7 +1451,7 @@ export default function CreatePage() {
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  className="w-full rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
+                  className="rose-touch-target w-full rounded-full bg-[#e1062a] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-950/40 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
                 >
                   {loading ? "Finding Matches..." : "Build My Outing"}
                 </button>
@@ -1466,6 +1467,16 @@ export default function CreatePage() {
                 >
                   {locationSaved ? "Location On" : "Use My Location"}
                 </button>
+
+                {input.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => { setInput(""); inputRef.current?.focus(); }}
+                    className="rose-touch-target w-full rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white/55 transition hover:text-white sm:w-auto sm:px-6 sm:text-xs sm:tracking-[0.12em]"
+                  >
+                    Clear Search
+                  </button>
+                )}
 
                 {messages.length > 0 && (
                   <button
@@ -1891,8 +1902,7 @@ export default function CreatePage() {
       </section>
 
       {hasSelection && (
-        <div className="fixed bottom-0 left-0 z-50 w-full border-t border-white/10 bg-black/90 shadow-[0_-18px_45px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-          <div className="mx-auto flex max-w-7xl flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
+        <MobileStickyActionBar>
             <div className="min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.2em]">
                 Your Outing Picks
@@ -1914,8 +1924,7 @@ export default function CreatePage() {
             >
               Review Your Outing →
             </button>
-          </div>
-        </div>
+        </MobileStickyActionBar>
       )}
 
       {showPlanSummary && (
@@ -2547,7 +2556,7 @@ function ResultSection({
         </div>
       </div>
 
-      <div className="grid items-stretch w-full min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="rose-mobile-card-grid w-full min-w-0 items-stretch">
         {children}
       </div>
     </section>
