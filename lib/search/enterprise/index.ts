@@ -495,7 +495,19 @@ function rejectionSummary(
 function uniqueById(items: EnterpriseLocation[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
-    const key = String(item.id ?? item.name ?? Math.random());
+    const name = String(item.name ?? item.restaurant_name ?? item.activity_name ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    const address = String(item.address ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    const key = item.id != null && String(item.id).trim()
+      ? `id:${String(item.id).trim()}`
+      : name || address
+        ? `name_address:${name}|${address}`
+        : `unknown:${Math.random()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -2579,7 +2591,7 @@ export async function runEnterpriseSearch(
     const isActivityActivityPairSearch =
       effectiveIntent.searchType === "activity_pair";
     const renderModeBeforeSameVenueGuard = effectiveIntent.wantsPairing
-      ? "mixed_pairs"
+      ? "pair_cards"
       : null;
     const render_mode = requiredPairingSuppressedFallback
       ? "empty"
@@ -2591,12 +2603,12 @@ export async function runEnterpriseSearch(
             : "empty"
         : effectiveIntent.wantsPairing
           ? pairs.length
-            ? "mixed_pairs"
+            ? "pair_cards"
             : restaurants.length || activities.length
               ? "partial_mixed"
               : "empty"
           : restaurants.length
-            ? "restaurant_cards"
+            ? ((effectiveIntent as any).sameLocationRequired ? "combo_location_cards" : "restaurant_cards")
             : activities.length
               ? "activity_cards"
               : "empty";
@@ -2608,7 +2620,7 @@ export async function runEnterpriseSearch(
       ? "fallback_pairs"
       : render_mode === "restaurant_cards"
         ? "restaurant_cards"
-        : render_mode === "mixed_pairs"
+        : render_mode === "pair_cards"
           ? "pairs"
           : render_mode;
     (debug as any).fallbackPairsUsedAsPrimary = fallbackPairsUsedAsPrimary;
@@ -3019,6 +3031,11 @@ export async function runEnterpriseSearch(
       requireWalkablePair:
         effectiveIntent.pairingPreference?.requireWalkablePair ?? false,
       distanceMode: effectiveIntent.pairingPreference?.distanceMode ?? "any",
+      searchMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
+      sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
+      comboCandidateCount: (debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0,
+      dedupedResultCount: matched_locations.length,
+      fallbackMode: render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary ? render_mode : null,
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
       primaryResultType,
       fallbackPairsUsedAsPrimary,
@@ -3097,6 +3114,11 @@ export async function runEnterpriseSearch(
       matched_locations,
       matchedLocations: matched_locations,
       render_mode,
+      searchMode: (effectiveIntent as any).normalizedIntent ?? effectiveIntent.searchType,
+      sameLocationRequired: (effectiveIntent as any).sameLocationRequired ?? false,
+      comboCandidateCount: (debug as any).sameVenueStrongMatchCount ?? (debug as any).singleVenueWithStrongDualMatchCount ?? 0,
+      dedupedResultCount: matched_locations.length,
+      fallbackMode: render_mode === "partial_mixed" || fallbackPairsUsedAsPrimary ? render_mode : null,
       renderMode: fallbackPairsUsedAsPrimary ? "fallback_pairs" : render_mode,
       card_counts,
       cardCounts: card_counts,

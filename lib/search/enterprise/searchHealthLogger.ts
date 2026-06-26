@@ -615,6 +615,24 @@ export function buildSearchHealthDebug(result: any, debug: any) {
   return normalizeJsonValue({
     rawQuery:
       debug?.rawQuery ?? normalizedIntent?.rawQuery ?? result?.rawQuery ?? null,
+    cleanedQuery: debug?.cleanedQuery ?? debug?.cleaned_query ?? null,
+    searchMode: result?.searchMode ?? debug?.searchMode ?? normalizedIntent?.normalizedIntent ?? normalizedIntent?.searchType ?? null,
+    sameLocationRequired: toBoolean(result?.sameLocationRequired ?? debug?.sameLocationRequired ?? normalizedIntent?.sameLocationRequired),
+    wantsPairing: toBoolean(normalizedIntent?.wantsPairing ?? result?.wantsPairing ?? debug?.wantsPairing),
+    needsRestaurant: toBoolean(normalizedIntent?.needsRestaurant ?? result?.needsRestaurant ?? debug?.needsRestaurant),
+    needsActivity: toBoolean(normalizedIntent?.needsActivity ?? result?.needsActivity ?? debug?.needsActivity),
+    pairCount: counts.pairs,
+    comboCandidateCount: toInteger(result?.comboCandidateCount ?? debug?.comboCandidateCount ?? debug?.sameVenueStrongMatchCount ?? debug?.singleVenueWithStrongDualMatchCount),
+    dedupedResultCount: toInteger(result?.dedupedResultCount ?? debug?.dedupedResultCount ?? result?.matched_locations?.length ?? result?.matchedLocations?.length),
+    fallbackMode: result?.fallbackMode ?? debug?.fallbackMode ?? null,
+    renderMode: result?.renderMode ?? result?.render_mode ?? debug?.renderMode ?? null,
+    selectedSearchLane: debug?.selectedSearchLane ?? debug?.selected_search_lane ?? null,
+    primaryIntent: debug?.primaryIntent ?? debug?.primary_intent ?? null,
+    secondaryIntents: safeStringArray(debug?.secondaryIntents ?? debug?.secondary_intents),
+    requestedMarket: normalizedIntent?.geo?.requestedMarket ?? debug?.requestedMarket ?? null,
+    parsedBorough: normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
+    mlAppliedInPublicPath: toBoolean(debug?.mlAppliedInPublicPath),
+    publicSearchUsesMl: toBoolean(debug?.publicSearchUsesMl),
     route: getRouteDebug(debug),
     searchType:
       normalizedIntent?.searchType ??
