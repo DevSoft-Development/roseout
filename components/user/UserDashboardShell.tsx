@@ -23,43 +23,19 @@ export default function UserDashboardShell({
     : nav;
   return (
     <main className="min-h-screen bg-[#080407] text-white">
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 pb-16 pt-28 sm:px-6">
-        <aside className="sticky top-24 hidden h-fit w-64 shrink-0 rounded-[2rem] border border-white/10 bg-white/[0.045] p-4 lg:block">
-          <Link
-            href="/user/dashboard"
-            className="block rounded-2xl bg-gradient-to-br from-rose-500/20 to-white/[0.03] p-4"
-          >
-            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-200">
-              TheOutHaven
-            </p>
-            <p className="mt-1 text-lg font-black">Account Portal</p>
-          </Link>
-          <nav className="mt-4 grid gap-2">
-            {items.map(([href, label]) => (
-              <Link
-                key={href}
-                href={href}
-                className="rounded-full px-4 py-3 text-sm font-bold text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-        </aside>
-        <section className="min-w-0 flex-1">
-          <nav className="mb-5 flex gap-2 overflow-x-auto rounded-full border border-white/10 bg-black/30 p-2 lg:hidden">
-            {items.map(([href, label]) => (
-              <Link
-                key={href}
-                href={href}
-                className="shrink-0 rounded-full bg-white/[0.06] px-4 py-2 text-xs font-black text-white/75"
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-          {children}
-        </section>
+      <div className="mx-auto w-full max-w-7xl px-4 pb-16 pt-28 sm:px-6 lg:px-8">
+        <nav className="mb-6 flex gap-2 overflow-x-auto rounded-full border border-white/10 bg-black/30 p-2">
+          {items.map(([href, label]) => (
+            <Link
+              key={href}
+              href={href}
+              className="shrink-0 rounded-full bg-white/[0.06] px-4 py-2 text-xs font-black text-white/75 transition hover:bg-white/10 hover:text-white"
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <section className="min-w-0">{children}</section>
       </div>
     </main>
   );
