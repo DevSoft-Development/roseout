@@ -2624,7 +2624,7 @@ function ComboResultCard({
         : null;
 
     return (
-      <div className="relative h-44 overflow-hidden rounded-2xl bg-white/[0.05]">
+      <div className="relative h-28 overflow-hidden rounded-2xl bg-white/[0.05] sm:h-32">
         {resolvedImageUrl ? (
           <>
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
@@ -2670,7 +2670,7 @@ function ComboResultCard({
         if ((event.target as HTMLElement).closest("a,button")) return;
         onCardClick?.();
       }}
-      className={`group relative flex h-full min-h-[500px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.5rem] border bg-zinc-950/80 p-3 shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:rounded-[1.1rem] ${
+      className={`group relative flex h-full min-h-[360px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.25rem] border bg-zinc-950/80 p-2.5 shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:rounded-[1.1rem] ${
         selected
           ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
           : "border-white/10"
@@ -2679,12 +2679,12 @@ function ComboResultCard({
         animation: `cardReveal 360ms ease-out ${index * 70}ms both`,
       }}
     >
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2">
         {renderImagePanel(isActivityActivityPair ? "First Pick" : "Restaurant", restaurantImageUrl, restaurantName)}
         {renderImagePanel(isActivityActivityPair ? "Next Pick" : "Activity", activityImageUrl, activityName)}
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col p-1 pt-4">
+      <div className="flex min-w-0 flex-1 flex-col p-1 pt-3">
         <div className="space-y-2 min-w-0">
           <p className="line-clamp-1 min-w-0 text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
             Recommended combo
@@ -2705,7 +2705,11 @@ function ComboResultCard({
             ) : null}
           </div>
 
-          <div className="space-y-1 text-xs font-semibold leading-5 text-white/42">
+          <details className="text-xs font-semibold leading-5 text-white/45">
+            <summary className="cursor-pointer list-none text-[11px] font-black text-white/55 hover:text-white">
+              Details
+            </summary>
+            <div className="mt-1 space-y-1">
             {restaurant ? (
               <p className="line-clamp-1 break-words">
                 {isActivityActivityPair ? "First Pick" : "Restaurant"}: {formatAddress(restaurant)}
@@ -2716,10 +2720,11 @@ function ComboResultCard({
                 {isActivityActivityPair ? "Next Pick" : "Activity"}: {formatAddress(activity)}
               </p>
             ) : null}
-          </div>
+            </div>
+          </details>
         </div>
 
-        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
+        <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md">
           <p className="text-[8px] font-black uppercase tracking-[0.18em] text-white/32 sm:text-[9px] sm:tracking-[0.22em]">
             Why TheOutHaven picked this
           </p>
@@ -2728,7 +2733,7 @@ function ComboResultCard({
           </p>
         </div>
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-3">
           <div className="grid grid-cols-1 gap-2 border-t border-white/10 pt-3">
             <button
               type="button"
@@ -2836,7 +2841,7 @@ function ResultCard({
         if ((event.target as HTMLElement).closest("a,button")) return;
         onCardClick?.();
       }}
-      className={`group relative flex h-full min-h-[360px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950/80 shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[445px] sm:rounded-[1.1rem] ${
+      className={`group relative flex h-full min-h-[330px] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-[1.25rem] border border-white/10 bg-zinc-950/80 shadow-xl shadow-black/30 transition duration-300 hover:border-[#e1062a]/55 hover:bg-[#141414] hover:shadow-[0_0_36px_rgba(225,6,42,0.16)] sm:min-h-[370px] sm:rounded-[1.1rem] ${
         selected
           ? "border-[#e1062a] ring-2 ring-[#e1062a]/35"
           : "border-white/10"
@@ -2845,7 +2850,7 @@ function ResultCard({
         animation: `cardReveal 360ms ease-out ${index * 70}ms both`,
       }}
     >
-      <div className="relative h-[260px] w-full overflow-hidden bg-neutral-950">
+      <div className="relative h-[150px] w-full overflow-hidden bg-neutral-950 sm:h-[170px]">
         {displayImageUrl ? (
           <>
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
@@ -2905,7 +2910,7 @@ function ResultCard({
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col p-4">
+      <div className="flex min-w-0 flex-1 flex-col p-3">
         <div className="space-y-2 min-w-0">
           <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
             <p className="line-clamp-1 min-w-0 text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.22em]">
@@ -2921,7 +2926,11 @@ function ResultCard({
             {address || "Location details available on the listing."}
           </p>
           {chips.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <details className="mt-2">
+              <summary className="cursor-pointer list-none text-[11px] font-black text-white/55 hover:text-white">
+                More details
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-2">
               {chips.map((chip) => (
                 <span
                   key={chip}
@@ -2930,7 +2939,8 @@ function ResultCard({
                   {chip}
                 </span>
               ))}
-            </div>
+              </div>
+            </details>
           )}
 
           {cleanedDistanceLabel ? (
@@ -2952,7 +2962,7 @@ function ResultCard({
           ) : null}
         </div>
 
-        <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md sm:p-3">
+        <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.045] p-2.5 backdrop-blur-md">
           <p className="text-[8px] font-black uppercase tracking-[0.18em] text-white/32 sm:text-[9px] sm:tracking-[0.22em]">
             Why TheOutHaven picked this
           </p>
