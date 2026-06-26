@@ -3,6 +3,8 @@ export type SearchType =
   | "restaurant"
   | "activity"
   | "mixed_outing"
+  | "same_location_combo"
+  | "paired_outing"
   | "activity_pair"
   | "any";
 export type GeoStrictness =
@@ -84,6 +86,8 @@ export type SearchIntent = {
   needsRestaurant: boolean;
   needsActivity: boolean;
   wantsPairing: boolean;
+  sameLocationRequired?: boolean;
+  normalizedIntent?: "restaurant_only" | "activity_only" | "same_location_combo" | "paired_outing";
   pairingPreference?: PairingPreference;
   restaurantIntent: RestaurantIntent;
   activityIntent: ActivityIntent;
@@ -322,12 +326,19 @@ export type EnterpriseSearchResult = {
     | "restaurant_cards"
     | "activity_cards"
     | "mixed_pairs"
+    | "pair_cards"
+    | "combo_location_cards"
     | "activity_activity_pairs"
     | "empty"
     | "partial_mixed"
     | "cards"
     | "text";
   renderMode?: string;
+  searchMode?: string;
+  sameLocationRequired?: boolean;
+  comboCandidateCount?: number;
+  dedupedResultCount?: number;
+  fallbackMode?: string | null;
   reply: string;
   card_counts: {
     restaurants: number;
