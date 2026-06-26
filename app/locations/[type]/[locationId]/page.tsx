@@ -12,7 +12,11 @@ import LocationImagePlaceholder from "@/components/public-location/LocationImage
 import SafeLocationImage from "@/components/public-location/SafeLocationImage";
 import LocationHours from "@/components/public-location/LocationHours";
 import { getLocationName } from "@/lib/locationName";
-import { getLocationImage } from "@/lib/locationImage";
+import {
+  dedupePhotoUrls,
+  getPhotoList,
+  getPrimaryPhoto,
+} from "@/lib/publicLocationPhotos";
 import { getLocationScore } from "@/lib/locationScore";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
@@ -199,119 +203,6 @@ function getDisplayAddress(location: LocationDetailRecord | null) {
 
 function getReviewCount(location: LocationDetailRecord | null, reviews: ReviewRecord[]) {
   return Number(location?.review_count || reviews.length || 0);
-}
-
-function extractPhotoValues(value: unknown): unknown[] {
-  if (!value) return [];
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => extractPhotoValues(item));
-  }
-
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return [
-      record.url,
-      record.photo_url,
-      record.image_url,
-      record.src,
-      record.cached_photo_url,
-      record.google_photo_url,
-    ].flatMap((item) => extractPhotoValues(item));
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-
-    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
-      try {
-        return extractPhotoValues(JSON.parse(trimmed));
-      } catch {
-        // Not JSON; continue with the raw string below.
-      }
-    }
-
-    return [trimmed];
-  }
-
-  return [];
-}
-
-function normalizePhotoUrl(value: unknown) {
-  const raw = String(value || "").trim().replace(/^["']|["']$/g, "");
-
-  if (!raw) return "";
-  if (/^(null|undefined|n\/a|na|none|false)$/i.test(raw)) return "";
-  if (raw.startsWith("//")) return `https:${raw}`;
-  if (/^http:\/\//i.test(raw)) return raw.replace(/^http:\/\//i, "https://");
-
-  return raw;
-}
-
-function isLikelyValidImageUrl(value: unknown) {
-  const url = normalizePhotoUrl(value);
-  if (!url) return false;
-  if (/\s/.test(url)) return false;
-  if (/^(data|blob|javascript):/i.test(url)) return false;
-  if (url.startsWith("/")) return !url.startsWith("//") && url.length > 1;
-
-  if (!/^https:\/\//i.test(url)) return false;
-
-  try {
-    const parsed = new URL(url);
-    return Boolean(parsed.hostname) && parsed.hostname.includes(".");
-  } catch {
-    return false;
-  }
-}
-
-function dedupePhotoUrls(values: unknown[]) {
-  const seen = new Set<string>();
-
-  return values
-    .map(normalizePhotoUrl)
-    .filter(isLikelyValidImageUrl)
-    .filter((url) => {
-      const key = url.replace(/^https?:\/\//i, "").replace(/\/+$/, "").toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function getPhotoList(location: LocationDetailRecord | null) {
-  if (!location) return [];
-
-  return dedupePhotoUrls([
-    getLocationImage(location),
-    location.main_image,
-    location.image_url,
-    location.cover_image,
-    location.hero_image,
-    location.hero_image_url,
-    location.thumbnail_url,
-    location.photo_url,
-    location.primary_photo_url,
-    location.place_photo_url,
-    location.cached_photo_url,
-    location.google_photo_url,
-    location.google_image_url,
-    location.yelp_image_url,
-    ...extractPhotoValues(location.images),
-    ...extractPhotoValues(location.photos),
-    ...extractPhotoValues(location.photo_urls),
-    ...extractPhotoValues(location.gallery_images),
-    ...extractPhotoValues(location.image_urls),
-    ...extractPhotoValues(location.main_images),
-    ...extractPhotoValues(location.google_photos),
-    ...extractPhotoValues(location.google_photo_urls),
-    ...extractPhotoValues(location.cached_photo_urls),
-  ]).slice(0, 5);
-}
-
-function getPrimaryPhoto(location: LocationDetailRecord | null) {
-  return getPhotoList(location)[0] || "";
 }
 
 function buildWebsiteHref(location: LocationDetailRecord | null) {
@@ -933,7 +824,9 @@ function LocationActionButtons({
 }
 
 function LocationPhotoGallery({ images, primaryPhoto, name }: { images: string[]; primaryPhoto: string; name: string }) {
-  const safePhotos = dedupePhotoUrls([primaryPhoto, ...images]).slice(0, 5);
+  const safePhotos = primaryPhoto && images[0] !== primaryPhoto
+    ? dedupePhotoUrls([primaryPhoto, ...images]).slice(0, 5)
+    : images.slice(0, 5);
   const mainPhoto = safePhotos[0] || "";
   const thumbs = safePhotos.slice(1, 3);
 
