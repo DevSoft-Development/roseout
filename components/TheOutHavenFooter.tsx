@@ -7,7 +7,7 @@ export default function TheOutHavenFooter() {
       {/* BACKGROUND */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.16),transparent_28%),linear-gradient(180deg,#050505,#000)]" />
 
-      <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr]">
+      <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
         {/* BRAND */}
         <div>
           <Link href="/" className="group inline-flex items-center gap-3">
@@ -46,12 +46,6 @@ export default function TheOutHavenFooter() {
               For Businesses
             </Link>
 
-            <Link
-              href="/help"
-              className="rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 px-6 py-3 text-sm font-black text-rose-100 transition hover:border-[#e1062a]/50 hover:bg-[#e1062a] hover:text-white"
-            >
-              Get Help
-            </Link>
           </div>
         </div>
 
@@ -75,6 +69,18 @@ export default function TheOutHavenFooter() {
             { label: "For Businesses", href: "/business" },
             { label: "Claim Listing", href: "/business/claim" },
             { label: "Apply", href: "/location/apply" },
+          ]}
+        />
+
+
+
+        {/* SUPPORT */}
+        <FooterColumn
+          title="Support"
+          links={[
+            { label: "Get Help", href: "/help" },
+            { label: "Knowledge Base", href: "/knowledge-base" },
+            { label: "FAQ", href: "/faq" },
           ]}
         />
 

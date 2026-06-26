@@ -28,7 +28,6 @@ function getDisplayName(user: User | null, profileName: string | null) {
     profileName ||
     getMetadataString(user, "full_name") ||
     getMetadataString(user, "name") ||
-    user?.email ||
     "Account"
   );
 }
@@ -155,6 +154,18 @@ export default function TheOutHavenHeader() {
     };
   }, [accountDropdownOpen]);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountDropdownOpen(false);
+    }
+
+    if (accountDropdownOpen) document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountDropdownOpen]);
+
   function isActive(href: string) {
     return (
       safePathname === href || (href !== "/" && safePathname.startsWith(href))
@@ -275,6 +286,7 @@ export default function TheOutHavenHeader() {
                 type="button"
                 onClick={() => setAccountDropdownOpen((open) => !open)}
                 className="flex max-w-[250px] items-center gap-3 rounded-full border border-white/15 bg-white/[0.06] py-2 pl-2 pr-4 text-sm font-black text-white transition hover:border-[#e1062a]/60 hover:bg-white/[0.1]"
+                aria-haspopup="menu"
                 aria-expanded={accountDropdownOpen}
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e1062a] text-xs font-black text-white">
@@ -284,34 +296,35 @@ export default function TheOutHavenHeader() {
                 <span className="text-white/50">⌄</span>
               </button>
               {accountDropdownOpen && (
-                <div className="absolute right-0 mt-3 w-56 overflow-hidden rounded-3xl border border-white/10 bg-black/95 p-2 shadow-2xl shadow-black/60 backdrop-blur-xl">
-                  <Link
-                    href="/user/dashboard"
-                    className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white hover:text-black"
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    href="/user/dashboard/account"
-                    className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white hover:text-black"
-                  >
-                    Account
-                  </Link>
-                  {isAdmin && (
-                    <Link
-                      href="/admin/dashboard"
-                      className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white hover:text-black"
-                    >
-                      Admin Dashboard
-                    </Link>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleSignOut}
-                    className="mt-1 block w-full rounded-2xl bg-[#e1062a] px-4 py-3 text-left text-sm font-black text-white transition hover:bg-red-500"
-                  >
-                    Sign Out
-                  </button>
+                <div className="absolute right-0 z-50 mt-3 w-72 overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/60 backdrop-blur-xl">
+                  <div className="border-b border-white/10 px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Signed in as</p>
+                    <p className="mt-1 truncate text-sm font-black text-white">{displayName}</p>
+                    {user?.email ? <p className="truncate text-xs font-bold text-white/50">{user.email}</p> : null}
+                  </div>
+                  <div className="py-2">
+                    {[
+                      ["/user/dashboard", "Dashboard"],
+                      ["/user/dashboard/beta/weekly", "Beta Weekly Tasks"],
+                      ["/user/dashboard/saved", "Saved Outings"],
+                      ["/user/dashboard/account", "Account Settings"],
+                      ["/help", "Get Help"],
+                    ].map(([href, label]) => (
+                      <Link key={href} href={href} className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white/10 hover:text-white">
+                        {label}
+                      </Link>
+                    ))}
+                    {isAdmin && (
+                      <Link href="/admin/dashboard" className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white/10 hover:text-white">
+                        Admin Dashboard
+                      </Link>
+                    )}
+                  </div>
+                  <div className="border-t border-white/10 p-2">
+                    <button type="button" onClick={handleSignOut} className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-black text-rose-200 transition hover:bg-[#e1062a]/15 hover:text-rose-100">
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -377,12 +390,16 @@ export default function TheOutHavenHeader() {
                 >
                   Dashboard
                 </Link>
-                <Link
-                  href="/user/dashboard/account"
-                  className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
-                >
-                  Account
-                </Link>
+                {[
+                  ["/user/dashboard/beta/weekly", "Beta Weekly Tasks"],
+                  ["/user/dashboard/saved", "Saved Outings"],
+                  ["/user/dashboard/account", "Account Settings"],
+                  ["/help", "Get Help"],
+                ].map(([href, label]) => (
+                  <Link key={href} href={href} className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">
+                    {label}
+                  </Link>
+                ))}
                 {isAdmin && (
                   <Link
                     href="/admin/dashboard"
