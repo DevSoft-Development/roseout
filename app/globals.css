@@ -4,12 +4,12 @@
   --background: #050505;
   --foreground: #ffffff;
 
-  --rose-red: #e1062a;
-  --rose-black: #050505;
-  --rose-panel: #0d0d0d;
-  --rose-card: #1a1a1a;
-  --rose-border: rgba(255, 255, 255, 0.1);
-  --rose-text-muted: rgba(255, 255, 255, 0.55);
+  --toh-red: #e1062a;
+  --toh-black: #050505;
+  --toh-panel: #0d0d0d;
+  --toh-card: #1a1a1a;
+  --toh-border: rgba(255, 255, 255, 0.1);
+  --toh-text-muted: rgba(255, 255, 255, 0.55);
 }
 
 @theme inline {
@@ -25,7 +25,7 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  background: var(--rose-black);
+  background: var(--toh-black);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -69,7 +69,7 @@ div {
 }
 
 /* ✅ TheOutHaven global page shell */
-.rose-page {
+.toh-page {
   min-height: 100vh;
   width: 100%;
   max-width: 100vw;
@@ -89,9 +89,9 @@ div {
   color: white;
 }
 
-.rose-card {
+.toh-card {
   max-width: 100%;
-  border: 1px solid var(--rose-border);
+  border: 1px solid var(--toh-border);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.06),
@@ -101,29 +101,29 @@ div {
   backdrop-filter: blur(18px);
 }
 
-.rose-glass {
+.toh-glass {
   max-width: 100%;
-  border: 1px solid var(--rose-border);
+  border: 1px solid var(--toh-border);
   background: rgba(13, 13, 13, 0.82);
   backdrop-filter: blur(20px);
 }
 
-.rose-btn {
+.toh-btn {
   max-width: 100%;
   border-radius: 9999px;
-  background: var(--rose-red);
+  background: var(--toh-red);
   color: white;
   font-weight: 900;
   box-shadow: 0 18px 50px rgba(225, 6, 42, 0.28);
   transition: all 0.2s ease;
 }
 
-.rose-btn:hover {
+.toh-btn:hover {
   background: #ff173d;
   transform: translateY(-1px);
 }
 
-.rose-btn-outline {
+.toh-btn-outline {
   max-width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 9999px;
@@ -132,21 +132,21 @@ div {
   transition: all 0.2s ease;
 }
 
-.rose-btn-outline:hover {
+.toh-btn-outline:hover {
   background: white;
   color: black;
 }
 
-.rose-red-text {
-  color: var(--rose-red);
+.toh-red-text {
+  color: var(--toh-red);
 }
 
-.rose-muted {
-  color: var(--rose-text-muted);
+.toh-muted {
+  color: var(--toh-text-muted);
 }
 
 /* ✅ Helpful reusable mobile-safe containers */
-.rose-container {
+.toh-container {
   width: 100%;
   max-width: 1280px;
   margin-inline: auto;
@@ -154,13 +154,13 @@ div {
 }
 
 @media (min-width: 640px) {
-  .rose-container {
+  .toh-container {
     padding-inline: 1.5rem;
   }
 }
 
 @media (min-width: 1024px) {
-  .rose-container {
+  .toh-container {
     padding-inline: 2rem;
   }
 }
@@ -203,15 +203,15 @@ div {
 /* Phase 4.5 mobile polish safety utilities */
 :root { --toh-safe-bottom: env(safe-area-inset-bottom, 0px); }
 html { -webkit-text-size-adjust: 100%; }
-.rose-mobile-page { padding-bottom: calc(1.5rem + var(--toh-safe-bottom)); }
-.rose-mobile-sticky { padding-bottom: var(--toh-safe-bottom); }
-.rose-touch-target { min-height: 44px; min-width: 44px; }
-.rose-mobile-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
-@media (min-width: 768px) { .rose-mobile-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 1280px) { .rose-mobile-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.toh-mobile-page { padding-bottom: calc(1.5rem + var(--toh-safe-bottom)); }
+.toh-mobile-sticky { padding-bottom: var(--toh-safe-bottom); }
+.toh-touch-target { min-height: 44px; min-width: 44px; }
+.toh-mobile-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+@media (min-width: 768px) { .toh-mobile-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .toh-mobile-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640px) {
-  .rose-mobile-compact-hero { padding-top: 5.5rem; padding-bottom: 1rem; }
-  .rose-mobile-hide-overflow, .rose-mobile-hide-overflow * { min-width: 0; }
-  .rose-mobile-scroll-chips { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .25rem; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
-  .rose-mobile-scroll-chips > * { flex: 0 0 auto; scroll-snap-align: start; }
+  .toh-mobile-compact-hero { padding-top: 5.5rem; padding-bottom: 1rem; }
+  .toh-mobile-hide-overflow, .toh-mobile-hide-overflow * { min-width: 0; }
+  .toh-mobile-scroll-chips { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .25rem; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .toh-mobile-scroll-chips > * { flex: 0 0 auto; scroll-snap-align: start; }
 }

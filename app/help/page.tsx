@@ -28,7 +28,7 @@ export default async function HelpPage({ searchParams }: Props) {
   const hasContent = categories.length > 0 || articles.length > 0;
 
   return (
-    <main className="rose-page min-h-screen bg-[#050505] px-4 pb-16 pt-[120px] text-white sm:px-6 sm:pt-[132px] lg:px-8 lg:pt-[144px]">
+    <main className="toh-page min-h-screen bg-[#050505] px-4 pb-16 pt-[120px] text-white sm:px-6 sm:pt-[132px] lg:px-8 lg:pt-[144px]">
       <div className="mx-auto max-w-7xl space-y-10">
         <section className="relative overflow-hidden rounded-[2rem] border border-[#e1062a]/30 bg-gradient-to-br from-[#26030a] via-[#0d0d0d] to-[#050505] p-8 text-center shadow-[0_18px_50px_rgba(225,6,42,0.22)] md:p-12">
           <div className="absolute left-1/2 top-0 h-48 w-48 -translate-x-1/2 rounded-full bg-[#e1062a]/20 blur-3xl" />
