@@ -1,3 +1,19 @@
+export type EmailSenderKey =
+  | "customer_account"
+  | "vip"
+  | "offers"
+  | "picks"
+  | "events"
+  | "business_owner"
+  | "reservations"
+  | "support"
+  | "billing"
+  | "security"
+  | "admin";
+
+export type EmailVariant = "transactional" | "customer" | "business" | "admin" | "reservation" | "support" | "billing" | "security" | "marketing" | "digest";
+export type EmailPriority = "low" | "normal" | "high" | "urgent";
+
 export type EmailDepartment =
   | "account"
   | "security"
@@ -13,12 +29,15 @@ export type EmailDepartment =
   | "marketing"
   | "system";
 
-export type RecipientType = "user" | "admin" | "superadmin" | "location_owner" | "support" | "system" | "marketing";
+export type RecipientType = "user" | "admin" | "superadmin" | "location_owner" | "support" | "system" | "marketing" | "customer" | "business";
 
 export type EmailCta = { label: string; url: string };
 export type EmailMetric = { label: string; value: string | number | null | undefined; detail?: string | null };
 export type EmailInfoItem = { label: string; value: string | number | null | undefined };
-export type EmailAlertItem = { title: string; detail?: string; severity?: "info" | "warning" | "critical" | "success"; url?: string };
+export type EmailActionItem = { label: string; detail?: string; url?: string };
+export type EmailLocationBranding = { locationName?: string; logoUrl?: string; accentColor?: string; heroImageUrl?: string };
+export type EmailTone = "default" | "info" | "warning" | "critical" | "success" | "premium";
+export type EmailAlertItem = { title: string; detail?: string; severity?: EmailTone; url?: string };
 
 export type EmailTable = { columns: string[]; rows: Array<Array<string | number | null | undefined>> };
 export type EmailTimelineItem = { title: string; detail?: string; timestamp?: string | null };
@@ -32,10 +51,21 @@ export type EmailSection =
   | { type: "divider" }
   | { type: "callout"; title?: string; text: string; tone?: "info" | "warning" | "critical" | "success" }
   | { type: "timeline"; title?: string; items: EmailTimelineItem[] }
-  | { type: "signature"; text?: string };
+  | { type: "signature"; text?: string }
+  | { type: "badgeRow"; badges: Array<{ label: string; tone?: EmailTone }> }
+  | { type: "highlightCard"; title: string; text?: string; items?: EmailInfoItem[]; tone?: EmailTone }
+  | { type: "keyValueGrid"; title?: string; items: EmailInfoItem[] }
+  | { type: "actionList"; title?: string; actions: EmailActionItem[] }
+  | { type: "locationCard"; title?: string; name: string; address?: string; logoUrl?: string; imageUrl?: string; cta?: EmailCta }
+  | { type: "customerCard"; name?: string; email?: string; phone?: string; notes?: string }
+  | { type: "digestSummary"; title?: string; metrics?: EmailMetric[]; alerts?: EmailAlertItem[]; recentActivity?: string[]; recommendedActions?: EmailActionItem[] };
 
 export type RenderBrandedEmailInput = {
-  department: EmailDepartment;
+  department?: EmailDepartment;
+  templateKey?: string;
+  senderKey?: EmailSenderKey;
+  variant?: EmailVariant;
+  priority?: EmailPriority;
   subject: string;
   preview: string;
   heading: string;
@@ -47,6 +77,10 @@ export type RenderBrandedEmailInput = {
   footerNote?: string;
   recipientType?: RecipientType;
   marketing?: boolean;
+  primaryCta?: EmailCta;
+  sourceType?: string;
+  sourceId?: string;
+  locationBranding?: EmailLocationBranding;
 };
 
 export type RenderedEmail = {
@@ -55,6 +89,8 @@ export type RenderedEmail = {
   html: string;
   text: string;
   department: EmailDepartment;
+  senderKey?: EmailSenderKey;
+  variant?: EmailVariant;
   recipientType?: RecipientType;
 };
 

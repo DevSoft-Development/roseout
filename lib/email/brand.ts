@@ -13,7 +13,8 @@ export const THEOUTHAVEN_BRAND = {
     return `${siteUrl()}${this.logoPath}`;
   },
   emails: {
-    default: "concierge@theouthaven.com",
+    default: "hello@theouthaven.com",
+    business: "business@theouthaven.com",
     support: "support@theouthaven.com",
     reservations: "reserve@theouthaven.com",
     admin: "admin@theouthaven.com",
@@ -48,6 +49,23 @@ export const DEPARTMENT_LABELS: Record<EmailDepartment, string> = {
   system: "System Alerts",
 };
 
+
+export const EMAIL_SENDER_MAP = {
+  customer_account: { fromName: "TheOutHaven.com", fromEmail: "hello@theouthaven.com", replyTo: "support@theouthaven.com" },
+  vip: { fromName: "TheOutHaven VIP", fromEmail: "hello@theouthaven.com", replyTo: "support@theouthaven.com" },
+  offers: { fromName: "TheOutHaven Offers", fromEmail: "hello@theouthaven.com", replyTo: "support@theouthaven.com" },
+  picks: { fromName: "TheOutHaven Picks", fromEmail: "hello@theouthaven.com", replyTo: "support@theouthaven.com" },
+  events: { fromName: "TheOutHaven Events", fromEmail: "hello@theouthaven.com", replyTo: "support@theouthaven.com" },
+  business_owner: { fromName: "TheOutHaven Business", fromEmail: "business@theouthaven.com", replyTo: "business@theouthaven.com" },
+  reservations: { fromName: "TheOutHaven Reservations", fromEmail: "reserve@theouthaven.com", replyTo: "reserve@theouthaven.com" },
+  support: { fromName: "TheOutHaven Support", fromEmail: "support@theouthaven.com", replyTo: "support@theouthaven.com" },
+  billing: { fromName: "TheOutHaven Billing", fromEmail: "support@theouthaven.com", replyTo: "support@theouthaven.com" },
+  security: { fromName: "TheOutHaven Security", fromEmail: "support@theouthaven.com", replyTo: "support@theouthaven.com" },
+  admin: { fromName: "TheOutHaven Admin", fromEmail: "admin@theouthaven.com", replyTo: "admin@theouthaven.com" },
+} as const;
+
+export type ResolvableEmailSenderKey = keyof typeof EMAIL_SENDER_MAP;
+
 const defaultEmail = () => process.env.THEOUTHAVEN_FROM_EMAIL || THEOUTHAVEN_BRAND.emails.default;
 const supportEmail = () => process.env.THEOUTHAVEN_SUPPORT_EMAIL || THEOUTHAVEN_BRAND.emails.support;
 const reservationEmail = () => process.env.THEOUTHAVEN_RESERVATIONS_EMAIL || THEOUTHAVEN_BRAND.emails.reservations;
@@ -71,44 +89,20 @@ export function normalizeEmailDepartment(department?: EmailDepartment | string |
   return aliases[normalized] || "account";
 }
 
-export function resolveEmailSender(department?: EmailDepartment | string | null): EmailSenderResolution {
-  const resolved = normalizeEmailDepartment(department);
-  let fromName = "TheOutHaven Concierge";
-  let fromEmail = defaultEmail();
-  let replyTo = defaultReplyTo();
-
-  if (resolved === "support") {
-    fromName = "TheOutHaven Support";
-    fromEmail = supportEmail();
-    replyTo = supportReplyTo();
-  } else if (resolved === "reservations") {
-    fromName = "TheOutHaven Reservations";
-    fromEmail = reservationEmail();
-    replyTo = reservationReplyTo();
-  } else if (resolved === "admin" || resolved === "superadmin") {
-    fromName = "TheOutHaven Admin";
-    fromEmail = adminEmail();
-    replyTo = adminReplyTo();
-  } else if (resolved === "system") {
-    fromName = "TheOutHaven System Alerts";
-    fromEmail = adminEmail();
-    replyTo = adminReplyTo();
-  } else if (resolved === "security") {
-    fromName = "TheOutHaven Security";
-    fromEmail = adminEmail();
-    replyTo = adminReplyTo();
-  } else if (resolved === "claims") {
-    fromName = "TheOutHaven Claims";
-    fromEmail = defaultEmail();
-    replyTo = defaultReplyTo();
-  }
-
-  return {
-    fromName,
-    fromEmail,
-    from: `${fromName} <${fromEmail}>`,
-    replyTo,
-    label: DEPARTMENT_LABELS[resolved],
-    signature: `${fromName}\n${THEOUTHAVEN_BRAND.domainLabel}`,
-  };
+export function resolveEmailSender(senderKeyOrDepartment?: EmailDepartment | ResolvableEmailSenderKey | string | null): EmailSenderResolution {
+  const raw = String(senderKeyOrDepartment || "customer_account").trim();
+  const direct = EMAIL_SENDER_MAP[raw as ResolvableEmailSenderKey];
+  const resolvedDepartment = normalizeEmailDepartment(raw);
+  const mapped = direct || (resolvedDepartment === "reservations" ? EMAIL_SENDER_MAP.reservations
+    : resolvedDepartment === "support" ? EMAIL_SENDER_MAP.support
+    : resolvedDepartment === "billing" ? EMAIL_SENDER_MAP.billing
+    : resolvedDepartment === "security" ? EMAIL_SENDER_MAP.security
+    : resolvedDepartment === "admin" || resolvedDepartment === "superadmin" || resolvedDepartment === "system" ? EMAIL_SENDER_MAP.admin
+    : resolvedDepartment === "locations" || resolvedDepartment === "claims" || resolvedDepartment === "upsell" ? EMAIL_SENDER_MAP.business_owner
+    : resolvedDepartment === "marketing" ? EMAIL_SENDER_MAP.picks
+    : EMAIL_SENDER_MAP.customer_account);
+  const fromName = mapped.fromName;
+  const fromEmail = mapped.fromEmail;
+  const replyTo = mapped.replyTo;
+  return { fromName, fromEmail, from: `${fromName} <${fromEmail}>`, replyTo, label: DEPARTMENT_LABELS[resolvedDepartment], signature: `${fromName}\n${THEOUTHAVEN_BRAND.domainLabel}` };
 }
