@@ -1,0 +1,5 @@
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireTurnstile } from "@/lib/security/turnstile";
+import { trackGrowthProEvent } from "@/lib/growth-pro/analytics";
+export async function POST(request: Request){const body=await request.json().catch(()=>({})); const check=await requireTurnstile({request,token:body.turnstileToken,action:body.action||"private_feedback"}); if(!check.success)return NextResponse.json({error:check.error},{status:check.status}); const locationId=String(body.locationId||""); if(!locationId)return NextResponse.json({error:"Please choose a location before submitting."},{status:400}); await supabaseAdmin.from("location_private_feedback").insert({location_id:locationId,customer_name:body.name,customer_email:body.email,rating:body.rating,feedback_text:body.notes,feedback_type:body.feedbackType||"private",source:"public_growth_pro"}); await trackGrowthProEvent(locationId,"private_feedback_submitted",{}); return NextResponse.json({message:"Thanks — your feedback was sent privately to the business."});}
