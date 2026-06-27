@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { TurnstileVerifyResult } from "@/types/beta";
 
@@ -60,4 +61,27 @@ export async function verifyTurnstileToken(input: VerifyInput): Promise<Turnstil
     await logTurnstile({ source: input.source, remoteIp: input.remoteIp, success: false, errorCodes: ["verification_request_failed"], metadata: input.metadata });
     return { success: false, errorCodes: ["verification_request_failed"] };
   }
+}
+
+export const TURNSTILE_FRIENDLY_MESSAGES = {
+  missing: "Please complete the quick verification before submitting.",
+  failed: "We could not verify this request. Please refresh the page and try again.",
+  config: "We could not submit this form right now. Please try again in a moment.",
+} as const;
+
+export function getClientIpHash(request: Request) {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = forwarded || request.headers.get("cf-connecting-ip") || request.headers.get("x-real-ip") || "unknown";
+  return createHash("sha256").update(`${ip}:${process.env.IP_HASH_SALT || "theouthaven"}`).digest("hex");
+}
+
+export async function requireTurnstile({ request, token, action }: { request: Request; token?: string | null; action?: string }) {
+  if (!token?.trim()) return { success: false, error: TURNSTILE_FRIENDLY_MESSAGES.missing, status: 400 } as const;
+  const remoteIp = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const result = await verifyTurnstileToken({ token, remoteIp, expectedAction: action, source: action || "growth_pro_public_form" });
+  if (!result.success) {
+    const configError = result.errorCodes?.includes("missing_secret") || result.errorCodes?.includes("verification_request_failed");
+    return { success: false, error: configError ? TURNSTILE_FRIENDLY_MESSAGES.config : TURNSTILE_FRIENDLY_MESSAGES.failed, status: 400 } as const;
+  }
+  return { success: true, ipHash: getClientIpHash(request) } as const;
 }

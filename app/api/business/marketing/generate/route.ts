@@ -1,0 +1,2 @@
+import { NextResponse } from "next/server";
+export async function POST(request: Request){const body=await request.json().catch(()=>({})); const goal=String(body.goal||"weekend visits"); return NextResponse.json({draft:{headline:`Bring more guests in for ${goal}`,body:`Invite nearby customers to discover your TheOutHaven profile, menu, offers, VIP signup, reservations, and event packages.`,note:"Deterministic MVP draft; AI provider integration can replace this generator later."}});}

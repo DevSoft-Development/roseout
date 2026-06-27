@@ -39,6 +39,16 @@ const tabs = [
   "qr-codes",
   "support",
   "seo",
+  "branding",
+  "offerings",
+  "menu-packages",
+  "offers",
+  "vip-list",
+  "messaging",
+  "notifications",
+  "event-leads",
+  "reviews-feedback",
+  "marketing-studio",
 ] as const;
 
 const CRM_DETAIL_TAB_GROUPS = [
@@ -50,7 +60,9 @@ const CRM_DETAIL_TAB_GROUPS = [
       { id: "overview", label: "Overview" },
       { id: "profile", label: "Profile" },
       { id: "owner", label: "Owner" },
-      { id: "plan", label: "Plan" },
+      { id: "plan", label: "Plan / Billing" },
+      { id: "branding", label: "Branding" },
+      { id: "offerings", label: "Offerings" },
     ],
   },
   {
@@ -61,6 +73,10 @@ const CRM_DETAIL_TAB_GROUPS = [
       { id: "partner-launch", label: "Partner Launch" },
       { id: "claims", label: "Claims" },
       { id: "qr-codes", label: "QR Codes" },
+      { id: "menu-packages", label: "Menu / Packages" },
+      { id: "offers", label: "Offers" },
+      { id: "vip-list", label: "VIP List" },
+      { id: "event-leads", label: "Event Leads" },
       { id: "support", label: "Support" },
     ],
   },
@@ -89,6 +105,10 @@ const CRM_DETAIL_TAB_GROUPS = [
     tabs: [
       { id: "analytics", label: "Analytics" },
       { id: "communication", label: "Communication" },
+      { id: "messaging", label: "Messaging" },
+      { id: "notifications", label: "Notifications" },
+      { id: "reviews-feedback", label: "Reviews / Feedback" },
+      { id: "marketing-studio", label: "Marketing Studio" },
       { id: "logs", label: "Logs" },
       { id: "settings", label: "Settings" },
     ],
@@ -110,6 +130,10 @@ function normalizeCrmDetailTab(tab: string | null | undefined): Tab {
     launch: "partner-launch",
     qr: "qr-codes",
     qrcodes: "qr-codes",
+    menu: "menu-packages",
+    vip: "vip-list",
+    leads: "event-leads",
+    reviews: "reviews-feedback",
     qr_codes: "qr-codes",
     photo: "photos",
     reservation: "reservations",
@@ -160,6 +184,11 @@ function CrmDetailNavigation({ locationId, activeTab }: { locationId: string; ac
       })}
     </div> : null}
   </AdminSectionCard>;
+}
+
+function GrowthProAdminPanel({ business, tab }: { business: BusinessCRMRow; tab: string }) {
+  const checklist = ["owner connected", "claim verified", "Growth Pro active", "logo uploaded", "brand color selected", "offerings selected", "menu/packages added", "QR codes generated", "notification recipients added", "reservation mode selected", "event lead form active", "offer created", "VIP signup active", "messaging configured", "review/feedback QR active", "Suggested Monthly Ideas generated", "analytics tracking active"];
+  return <AdminSectionCard className="p-5"><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Growth Pro</p><h2 className="mt-2 text-2xl font-black">{tab.replace(/-/g, " ")}</h2><p className="mt-2 text-sm leading-6 text-white/60">Admin CRM controls for the $99/month TheOutHaven Growth Pro business growth hub. This panel avoids raw JSON, Google review flows, and unapproved custom message blasts.</p><div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{checklist.map((item) => <div key={item} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-sm font-black text-white">{item}</p><p className="mt-1 text-xs text-white/45">Review and configure for {business.name || "this location"}.</p></div>)}</div></AdminSectionCard>;
 }
 
 function fmt(n: number) {
@@ -656,6 +685,7 @@ export default async function CRMDetailPage({ params, searchParams }: { params: 
       {activeTab === "seo" ? <EmptyPanel title="SEO and searchability" text={`SEO score ${seoScore}%. Searchable: ${business.is_searchable ? "yes" : "no"}. Use Listing Enhancement, profile, and settings to improve location-level search visibility.`} /> : null}
       {activeTab === "listing" ? <ListingEnhancementEditor table={enhancementTable} id={business.id} record={business} canEdit={canEdit} /> : null}
       {activeTab === "settings" ? <LocationSettingsPanel business={business} canEdit={canEdit} isSuperadmin={admin.role === "superadmin"} /> : null}
+      {["branding","offerings","menu-packages","offers","vip-list","messaging","notifications","event-leads","reviews-feedback","marketing-studio"].includes(activeTab) ? <GrowthProAdminPanel business={business} tab={activeTab} /> : null}
   </AdminPageShell>;
 }
 
