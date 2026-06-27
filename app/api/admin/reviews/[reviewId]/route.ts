@@ -3,7 +3,7 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { refreshLocationReviewScore } from "@/lib/reviews/refresh-location-review-score";
-import { recalculateBusinessQuality, recalculateReviewIntelligence } from "@/lib/ml/advanced/recalculate";
+import { recalculateReviewIntelligenceForLocation } from "@/app/api/admin/ml/recalculate-review-intelligence/route";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ reviewId: string }> }) {
   const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reviewsModerate);
@@ -36,10 +36,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   await refreshLocationReviewScore(review.location_id);
   if (action === "approve" || action === "approve_with_verification") {
     try {
-      await recalculateReviewIntelligence({ locationId: review.location_id, limit: 1 });
-      await recalculateBusinessQuality({ locationId: review.location_id, limit: 1 });
-    } catch (mlError) {
-      console.warn("Review approval advanced ML refresh failed", mlError);
+      await recalculateReviewIntelligenceForLocation(review.location_id);
+    } catch (error) {
+      console.warn("Review intelligence refresh failed", error);
     }
   }
   return NextResponse.json({ ok: true, review: updated });

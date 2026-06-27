@@ -65,6 +65,9 @@ async function loadMlDashboard() {
     searchReady,
     analyticsReady,
     outingsReady,
+    reviewRun,
+    reviewRows,
+    topReviewRows,
   ] = await Promise.all([
     safe(
       async () =>
@@ -208,6 +211,9 @@ async function loadMlDashboard() {
         ).data || [],
       [] as any[],
     ),
+    safe(async () => (await supabaseAdmin.from("review_ml_score_runs").select("*").order("started_at", { ascending: false }).limit(1).maybeSingle()).data, null),
+    safe(async () => await supabaseAdmin.from("location_review_ml_features").select("overall_review_quality_score,quiet_score,date_night_score,group_score,girls_night_score,family_score,wait_issue_count,service_issue_count,loud_mention_count", { count: "exact" }).limit(1000), { data: [], count: 0 } as any),
+    safe(async () => (await supabaseAdmin.from("location_review_ml_features").select("*, locations(name,restaurant_name,activity_name)").order("overall_review_quality_score", { ascending: false }).limit(25)).data || [], [] as any[]),
   ]);
   const p1Avg = (p1Rows.data || []).length
     ? (p1Rows.data || []).reduce(
@@ -271,6 +277,14 @@ async function loadMlDashboard() {
     avgIntent,
     avgPairScore,
     readiness,
+    reviewRun,
+    reviewTotal: reviewRows.count || 0,
+    reviewAvgQuality: (reviewRows.data || []).length ? (reviewRows.data || []).reduce((sum: number, r: any) => sum + Number(r.overall_review_quality_score || 0), 0) / (reviewRows.data || []).length : 0,
+    reviewStrongQuiet: (reviewRows.data || []).filter((r: any) => Number(r.quiet_score || 0) > 50 || Number(r.date_night_score || 0) > 50).length,
+    reviewStrongGroup: (reviewRows.data || []).filter((r: any) => Number(r.group_score || 0) > 50 || Number(r.girls_night_score || 0) > 50).length,
+    reviewFamily: (reviewRows.data || []).filter((r: any) => Number(r.family_score || 0) > 50).length,
+    reviewIssues: (reviewRows.data || []).filter((r: any) => Number(r.wait_issue_count || 0) >= 3 || Number(r.service_issue_count || 0) >= 3 || Number(r.loud_mention_count || 0) >= 3).length,
+    topReviewRows,
   };
 }
 export default async function MlRankingPage() {
@@ -329,6 +343,25 @@ export default async function MlRankingPage() {
           <MlRecalculationActions />
         </div>
       </AdminSectionCard>
+      <AdminSectionCard className="p-5">
+        <h2 className="text-xl font-black">Review Intelligence ML</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <p>Locations with intelligence: <b>{data.reviewTotal}</b></p>
+          <p>Average review quality: <b>{n(data.reviewAvgQuality)}</b></p>
+          <p>Quiet/date-night fit: <b>{data.reviewStrongQuiet}</b></p>
+          <p>Group outing fit: <b>{data.reviewStrongGroup}</b></p>
+          <p>Family-friendly fit: <b>{data.reviewFamily}</b></p>
+          <p>Repeated issue patterns: <b>{data.reviewIssues}</b></p>
+          <p>Last run: <b>{formatAdminDate(data.reviewRun?.started_at)}</b></p>
+          <p>Reviews scanned: <b>{data.reviewRun?.reviews_scanned ?? "—"}</b></p>
+        </div>
+      </AdminSectionCard>
+      {data.topReviewRows.length ? (
+        <AdminDataTableShell>
+          <h2 className="p-3 text-lg font-black">Review Intelligence locations</h2>
+          <table className="min-w-full text-left text-xs"><thead className="text-white/45"><tr>{["Location","Approved","Verified","Quality","Confidence","Best for","Watchouts","Last reviewed","Actions"].map((h)=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{data.topReviewRows.map((r:any)=><tr className="border-t border-white/10" key={r.location_id}><td className="p-2 font-bold">{r.locations?.name || r.locations?.restaurant_name || r.locations?.activity_name || r.location_id}</td><td className="p-2">{r.approved_review_count}</td><td className="p-2">{r.verified_review_count}</td><td className="p-2">{n(r.overall_review_quality_score)}</td><td className="p-2">{n(r.review_confidence_score)}</td><td className="p-2">{(r.best_for_terms || []).slice(0,3).join(", ") || r.review_summary || "Approved review signals"}</td><td className="p-2">{(r.avoid_if_terms || []).slice(0,3).join(", ") || (r.loud_mention_count === 1 ? "One-off issue only: not affecting ranking yet" : "—")}</td><td className="p-2">{formatAdminDate(r.last_review_at)}</td><td className="p-2"><span className="rounded-full border border-white/10 px-2 py-1 text-white/60">Rank-ready</span></td></tr>)}</tbody></table>
+        </AdminDataTableShell>
+      ) : null}
       <AdminSectionCard className="p-5">
         <h2 className="text-xl font-black">Data readiness</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">

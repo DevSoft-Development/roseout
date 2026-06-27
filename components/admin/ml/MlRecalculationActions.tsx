@@ -138,11 +138,21 @@ async function postJson(url: string) {
 export function MlRecalculationActions() {
   const router = useRouter();
   const [phase1Loading, setPhase1Loading] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [phase2Loading, setPhase2Loading] = useState(false);
   const [phase1Result, setPhase1Result] = useState<Result>(null);
+  const [reviewResult, setReviewResult] = useState<Result>(null);
   const [phase2Result, setPhase2Result] = useState<Result>(null);
   const [phase1Error, setPhase1Error] = useState("");
+  const [reviewError, setReviewError] = useState("");
   const [phase2Error, setPhase2Error] = useState("");
+
+  async function runReviewMl() {
+    setReviewLoading(true); setReviewError(""); setReviewResult(null);
+    try { const data = await postJson("/api/admin/ml/recalculate-review-intelligence"); setReviewResult(data); router.refresh(); }
+    catch (e: any) { setReviewError(e?.message || "Request failed"); }
+    finally { setReviewLoading(false); }
+  }
 
   async function run(which: 1 | 2) {
     const setLoading = which === 1 ? setPhase1Loading : setPhase2Loading;
@@ -171,6 +181,14 @@ export function MlRecalculationActions() {
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
+          onClick={runReviewMl}
+          disabled={reviewLoading}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-black text-white shadow-lg shadow-sky-950/30 hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {reviewLoading ? "Running Review Intelligence..." : "Recalculate Review Intelligence"}
+        </button>
+        <button
+          type="button"
           onClick={() => run(1)}
           disabled={phase1Loading}
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -193,6 +211,11 @@ export function MlRecalculationActions() {
           Refresh dashboard data
         </button>
       </div>
+      <ResultPanel
+        title="Review Intelligence result"
+        result={reviewResult}
+        error={reviewError}
+      />
       <ResultPanel
         title="Phase 1 result"
         result={phase1Result}
