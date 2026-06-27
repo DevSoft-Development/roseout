@@ -20,6 +20,8 @@ import {
   hasActivityOnlyLanguage,
   hasBroadOutingOccasionLanguage,
   hasRestaurantOnlyLanguage,
+  hasExplicitTwoStopLanguage,
+  hasSameLocationFoodFeatureIntent,
 } from "./taxonomy";
 import {
   SEARCH_INTENT_CACHE_VERSION,
@@ -1064,6 +1066,14 @@ function createEnterpriseIntentFastPathResult(
     };
   }
 
+  if (hasSameLocationFoodFeatureIntent(query)) {
+    return {
+      intent: deterministicIntentFromQuery(rawQuery),
+      reason: "same_location_food_feature_combo",
+      confidence: 0.96,
+    };
+  }
+
   const singleVenueWith = detectSingleVenueWithIntent(query);
   if (singleVenueWith.matched) {
     return {
@@ -1758,6 +1768,7 @@ export async function parseEnterpriseIntent(
     "matched activity-only venue fast path",
     "matched restaurant-only fast path",
     "with_connector_single_venue",
+    "same_location_food_feature_combo",
   ]);
 
   if (

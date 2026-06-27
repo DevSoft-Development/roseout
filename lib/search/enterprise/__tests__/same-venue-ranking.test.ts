@@ -153,3 +153,22 @@ describe("same-venue RPC term preservation", () => {
     expect(debug.sameVenueBalancedTermsPreserved).toBe(true);
   });
 });
+
+describe("food + hookah same-location ranking regressions", () => {
+  it("ranks Mira above a generic Mediterranean lounge for Mediterranean dinner and hookah", () => {
+    expect(
+      rankedNames("Mediterranean dinner and hookah", [
+        record({
+          name: "Generic Mediterranean Lounge",
+          cuisine: "Mediterranean",
+          search_document: "mediterranean dinner lounge restaurant",
+        }),
+        record({
+          name: "Mira Mediterranean & Hookah Lounge",
+          cuisine: "Mediterranean",
+          search_document: "mediterranean dinner hookah shisha lounge restaurant",
+        }),
+      ])[0],
+    ).toBe("Mira Mediterranean & Hookah Lounge");
+  });
+});
