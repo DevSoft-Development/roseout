@@ -14,6 +14,7 @@ import {
   formatAdminDate,
 } from "@/components/admin/AdminDesignSystem";
 import { MlRecalculationActions } from "@/components/admin/ml/MlRecalculationActions";
+import { SearchLearningActions } from "@/components/admin/ml/SearchLearningActions";
 
 export const metadata = { title: "Machine Learning – Admin" };
 export const dynamic = "force-dynamic";
@@ -42,6 +43,9 @@ async function loadMlDashboard() {
     searchReady,
     analyticsReady,
     outingsReady,
+    phase3Suggestions,
+    phase3Mappings,
+    phase3Runs,
   ] = await Promise.all([
     safe(
       async () =>
@@ -185,6 +189,21 @@ async function loadMlDashboard() {
         ).data || [],
       [] as any[],
     ),
+    safe(
+      async () =>
+        (await supabaseAdmin.from("search_phrase_learning_suggestions").select("*").order("confidence_score", { ascending: false }).limit(25)).data || [],
+      [] as any[],
+    ),
+    safe(
+      async () =>
+        (await supabaseAdmin.from("search_phrase_learning_mappings").select("*").order("priority", { ascending: true }).limit(25)).data || [],
+      [] as any[],
+    ),
+    safe(
+      async () =>
+        (await supabaseAdmin.from("search_phrase_learning_runs").select("*").order("started_at", { ascending: false }).limit(10)).data || [],
+      [] as any[],
+    ),
   ]);
   const p1Avg = (p1Rows.data || []).length
     ? (p1Rows.data || []).reduce(
@@ -248,6 +267,9 @@ async function loadMlDashboard() {
     avgIntent,
     avgPairScore,
     readiness,
+    phase3Suggestions,
+    phase3Mappings,
+    phase3Runs,
   };
 }
 export default async function MlRankingPage() {
@@ -373,6 +395,36 @@ export default async function MlRankingPage() {
           Open Search Health
         </Link>
       </AdminSectionCard>
+
+      <AdminSectionCard className="p-5">
+        <h2 className="text-xl font-black">Search Learning Phase 3</h2>
+        <p className="mt-2 text-sm text-white/60">
+          Learns vague search language from outcomes, creates pending suggestions, and only changes production parsing after admin approval.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"><p className="text-xs text-white/50">Pending suggestions</p><p className="text-2xl font-black">{data.phase3Suggestions.filter((s:any)=>s.status === "pending").length}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"><p className="text-xs text-white/50">Approved mappings</p><p className="text-2xl font-black">{data.phase3Mappings.filter((m:any)=>m.is_active).length}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"><p className="text-xs text-white/50">Rejected suggestions</p><p className="text-2xl font-black">{data.phase3Suggestions.filter((s:any)=>s.status === "rejected").length}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"><p className="text-xs text-white/50">Last run</p><p className="text-sm font-black">{formatAdminDate(data.phase3Runs[0]?.started_at)}</p></div>
+        </div>
+        <div className="mt-5"><SearchLearningActions /></div>
+      </AdminSectionCard>
+      <AdminDataTableShell>
+        <h2 className="p-3 text-lg font-black">Pending Search Learning suggestions</h2>
+        <table className="min-w-full text-left text-xs">
+          <thead className="text-white/45"><tr>{["Phrase","What users seem to mean","Signals","Counts","Confidence","Status"].map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead>
+          <tbody>{data.phase3Suggestions.filter((s:any)=>s.status === "pending").map((s:any)=><tr className="border-t border-white/10" key={s.id}><td className="p-2 font-bold">{s.display_phrase}<div className="mt-1 text-white/45">{(s.example_queries||[]).slice(0,2).join(" · ")}</div></td><td className="p-2">People often chose {(s.suggested_activity_types||[]).slice(0,4).join(", ") || "related results"}. Approving helps future searches understand this phrase faster.</td><td className="p-2">{[...(s.suggested_vibes||[]), ...(s.suggested_occasions||[])].slice(0,5).join(", ") || "—"}</td><td className="p-2">{s.query_count} queries · {s.click_count} clicks · {s.save_count} saves · {s.completion_count} completed</td><td className="p-2 font-black">{n(s.confidence_score)}</td><td className="p-2">{s.status}</td></tr>)}</tbody>
+        </table>
+        {!data.phase3Suggestions.filter((s:any)=>s.status === "pending").length ? <p className="p-5 text-sm text-white/60">No pending phrase suggestions yet. Run Search Learning after vague public searches have been logged.</p> : null}
+      </AdminDataTableShell>
+      <AdminDataTableShell>
+        <h2 className="p-3 text-lg font-black">Approved Search Learning mappings</h2>
+        <table className="min-w-full text-left text-xs"><thead className="text-white/45"><tr>{["Phrase","Active","Priority","Learned meaning","Confidence","Updated"].map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{data.phase3Mappings.map((m:any)=><tr className="border-t border-white/10" key={m.id}><td className="p-2 font-bold">{m.display_phrase}</td><td className="p-2">{m.is_active ? "Active" : "Inactive"}</td><td className="p-2">{m.priority}</td><td className="p-2">{[...(m.activity_types||[]), ...(m.cuisines||[]), ...(m.vibes||[])].slice(0,8).join(", ") || "Structured intent enrichment"}</td><td className="p-2 font-black">{n(m.confidence_score)}</td><td className="p-2">{formatAdminDate(m.updated_at)}</td></tr>)}</tbody></table>
+      </AdminDataTableShell>
+      <AdminDataTableShell>
+        <h2 className="p-3 text-lg font-black">Search Learning runs</h2>
+        <table className="min-w-full text-left text-xs"><thead className="text-white/45"><tr>{["Run date","Status","Queries scanned","Phrases grouped","Created","Updated","Warnings"].map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{data.phase3Runs.map((r:any)=><tr className="border-t border-white/10" key={r.id}><td className="p-2">{formatAdminDate(r.started_at)}</td><td className="p-2">{r.status}</td><td className="p-2">{r.queries_scanned}</td><td className="p-2">{r.phrases_grouped}</td><td className="p-2">{r.suggestions_created}</td><td className="p-2">{r.suggestions_updated}</td><td className="p-2">{(r.errors||[]).length ? (r.errors||[]).join("; ") : "None"}</td></tr>)}</tbody></table>
+      </AdminDataTableShell>
       {data.p1Top.length ? (
         <AdminDataTableShell>
           <h2 className="p-3 text-lg font-black">Top ML-scored locations</h2>
