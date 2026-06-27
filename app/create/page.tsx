@@ -12,6 +12,7 @@ import {
 } from "@/lib/location-analytics";
 import { useTrackLocationView } from "@/hooks/useTrackLocationView";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
+import { formatFullAddress } from "@/lib/address-utils";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationImage } from "@/lib/locationImage";
 import { normalizePublicCardImage } from "@/lib/publicCardImage";
@@ -3181,10 +3182,15 @@ function formatAddress(item: {
   city?: string | null;
   state?: string | null;
   zip_code?: string | null;
+  zip?: string | null;
 }) {
-  return [item.address, item.city, item.state, item.zip_code]
-    .filter(Boolean)
-    .join(", ");
+  return formatFullAddress({
+    address: item.address,
+    city: item.city,
+    state: item.state,
+    zip_code: item.zip_code || item.zip,
+    fallback: "Address not listed",
+  });
 }
 
 function getFirstKeywordIndex(input: string, keywords: string[]) {

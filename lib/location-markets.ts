@@ -108,9 +108,21 @@ export function getMarketRadiusMiles(market: MarketKey, options?: { citySpecific
 export function getAllowedPairingMarkets(primaryMarket: MarketKey, queryIntent?: { outerAreaAllowed?: boolean; nearQueens?: boolean; broadOuterArea?: boolean }): MarketKey[] { if (primaryMarket === "OUTER_NYC" || queryIntent?.broadOuterArea) return ["LONG_ISLAND", "NORTHERN_NJ", "WESTCHESTER", "CONNECTICUT", "NYC_CORE"]; if (normalizeMarketKey(primaryMarket) === "NYC_CORE" && (queryIntent?.outerAreaAllowed || queryIntent?.nearQueens)) return ["NYC_CORE", "LONG_ISLAND"]; return [normalizeMarketKey(primaryMarket)]; }
 export function areMarketsPairable(a: MarketKey, b: MarketKey) { const am = normalizeMarketKey(a); const bm = normalizeMarketKey(b); if (am === bm) return true; return am === "UNKNOWN" || bm === "UNKNOWN"; }
 
-export function inferMarketFromCityStateCounty(data: { city?: string | null; state?: string | null; borough?: string | null; county?: string | null; region?: string | null; address?: string | null; market?: string | null }): CanonicalMarketKey {
-  const existing = normalizeMarketInput(data.market || ""); if (existing && normalizeMarketKey(existing) !== "UNKNOWN") return normalizeMarketKey(existing);
+export function inferMarketFromCityStateCounty(data: { city?: string | null; state?: string | null; borough?: string | null; county?: string | null; region?: string | null; address?: string | null; market?: string | null; zip?: string | null; zip_code?: string | null }): CanonicalMarketKey {
   const borough = normalizeText(data.borough); const county = normalizeText(data.county); const state = normalizeText(data.state); const hay = normalizeText([data.city, data.state, data.borough, data.county, data.region, data.address].filter(Boolean).join(" "));
+  const licText = hay;
+  if (
+    state === "ny" &&
+    (
+      hasPhrase(licText, "long island city") ||
+      hasPhrase(licText, "lic") ||
+      data.zip === "11101" ||
+      data.zip_code === "11101"
+    )
+  ) {
+    return "NYC_CORE";
+  }
+  const existing = normalizeMarketInput(data.market || ""); if (existing && normalizeMarketKey(existing) !== "UNKNOWN") return normalizeMarketKey(existing);
   if (["manhattan", "brooklyn", "queens", "bronx", "staten island"].includes(borough)) return "NYC_CORE";
   if (state === "ny" && ["nassau", "suffolk"].includes(county)) return "LONG_ISLAND";
   if (state === "ny" && county === "westchester") return "WESTCHESTER";
