@@ -13,6 +13,7 @@ import {
 } from "./taxonomy";
 import { isWellnessActivity } from "../lowLevel";
 import { calculateMlBoost } from "@/lib/ml/locationRanking";
+import { calculateAdvancedMlRankingAdjustments } from "@/lib/ml/advanced/loadAdvancedMlFeatures";
 import {
   hasRelaxedActivityIntent,
   hasSportsWatchIntent,
@@ -1961,7 +1962,9 @@ function relevance(
     chainPenalty(r, intent) +
     wellnessIntentAdjustment(r, intent, domain) +
     Number(r.search_boost ?? 0) +
-    ((r.ml_boost = calculateMlBoost(r.ml_score)), r.ml_boost ?? 0)
+    ((r.ml_boost = calculateMlBoost(r.ml_score)), r.ml_boost ?? 0) +
+    ((r.advanced_ml = calculateAdvancedMlRankingAdjustments({ ...(r as any).advanced_ml_features, ...r }, intent)),
+    (r as any).advanced_ml.advancedMlBoost ?? 0)
   );
 }
 export function rankRestaurantResults(
