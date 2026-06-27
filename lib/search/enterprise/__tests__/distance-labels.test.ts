@@ -88,4 +88,26 @@ describe("enterprise walking distance rules", () => {
     expect(isWalkablePair(restaurant, nearbyActivity, preference).isWalkable).toBe(true);
     expect(isWalkablePair(restaurant, farActivity, preference).isWalkable).toBe(false);
   });
+
+  it("rejects nearby pairs over 1.5 miles", () => {
+    const preference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "nearby",
+      maxPairDistanceMiles: 1.5,
+      maxPairWalkingMinutes: 30,
+      requireWalkablePair: true,
+    };
+    const restaurant = loc({ id: "r1", latitude: 40, longitude: -73 });
+    const milesToLatitude = (miles: number) => miles / 69;
+
+    for (const miles of [0.15, 0.8, 1.4]) {
+      const activity = loc({ id: `a-${miles}`, latitude: 40 + milesToLatitude(miles), longitude: -73 });
+      expect(isWalkablePair(restaurant, activity, preference).isWalkable).toBe(true);
+    }
+    for (const miles of [2.5, 10.01]) {
+      const activity = loc({ id: `a-${miles}`, latitude: 40 + milesToLatitude(miles), longitude: -73 });
+      expect(isWalkablePair(restaurant, activity, preference).isWalkable).toBe(false);
+    }
+  });
+
 });

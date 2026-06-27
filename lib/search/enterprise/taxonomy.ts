@@ -205,7 +205,10 @@ export const COMPACT_GENERIC_ACTIVITY_RPC_TERMS = [
 
 export const GENERIC_ACTIVITY_FALLBACK_TERMS = [
   "activity",
+  "activities",
+  "fun activity",
   "things to do",
+  "something fun",
   "entertainment",
   "experience",
   "lounge",
@@ -220,6 +223,7 @@ export const GENERIC_ACTIVITY_FALLBACK_TERMS = [
   "rooftop",
   "comedy",
   "karaoke",
+  "paint and sip",
 ];
 
 export function hasGenericActivitySignal(query: string) {
@@ -314,7 +318,9 @@ export function hasTrueSequenceConnector(q: string): boolean {
 
 export function hasTrueProximityPairingConnector(q: string): boolean {
   const text = String(q || "").toLowerCase();
-  return /\b(near a|near the|nearby a|close to|walking distance to|within walking distance of|around the corner from|next to)\b/.test(text);
+  return /\b(near a|near the|nearby a|nearby|close by|close together|near each other|close to|walking distance|walkable|short walk|quick walk|within walking distance|around the corner|same block|walking distance to|within walking distance of|around the corner from|next to)\b/.test(text)
+    || /\bwithin\s+\d+(?:\.\d+)?\s*(?:minutes?|mins?|miles?|mi)\b/.test(text)
+    || /\b\d+(?:\.\d+)?\s*(?:minute|min)\s+walk\b/.test(text);
 }
 
 export function hasSingleVenueWithConnector(q: string): boolean {

@@ -3,10 +3,7 @@ import {
   normalizePublicCardImage,
   hasPublicCardImage,
 } from "@/lib/publicCardImage";
-import {
-  isEdgeCreateSearchEnabled,
-  runCreateSearchWithEdgeFallback,
-} from "@/lib/search/createSearch";
+import { isEdgeCreateSearchEnabled } from "@/lib/search/createSearch";
 import { runEnterpriseSearch } from "@/lib/search/enterprise";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import {
@@ -288,6 +285,7 @@ export async function POST(request: Request) {
     const {
       cleanedQuery: cleanInput,
       nearMeIntent,
+      pairProximityIntent,
       typedLocationIntent,
       useCurrentLocation,
       userLatitude,
@@ -342,6 +340,7 @@ export async function POST(request: Request) {
       hasServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
       nodeEnv: process.env.NODE_ENV,
       nearMeIntent,
+      pairProximityIntent,
       useCurrentLocation:
         body?.useCurrentLocation === true ||
         body?.use_current_location === true,
@@ -410,6 +409,7 @@ export async function POST(request: Request) {
         : null;
     const nearMeDebug = {
       nearMeIntent,
+      pairProximityIntent,
       typedLocationIntent,
       useCurrentLocation,
       userLatitudePresent,
@@ -452,6 +452,11 @@ export async function POST(request: Request) {
       runEnterpriseSearch(cleanInput, {
         body: searchBody,
         userLocation: currentLocationUserLocation,
+        userLatitude,
+        userLongitude,
+        useCurrentLocation,
+        nearMeIntent,
+        pairProximityIntent,
         useLLM: true,
         source: betaTesterId ? "beta_tester_search" : "public_create_search",
         route: "/api/generate",
@@ -467,31 +472,26 @@ export async function POST(request: Request) {
 
     const marketDetection = detectRequestedMarket(cleanInput);
     const forceLegacyForLongIsland = false;
-    const forceLegacyForUserLocation = Boolean(currentLocationUserLocation);
-    const searchBackendUsed = forceLegacyForUserLocation
-      ? "legacy_for_current_location"
-      : isEdgeCreateSearchEnabled()
-        ? "edge"
-        : "enterprise";
-    const result: any =
-      forceLegacyForLongIsland || forceLegacyForUserLocation
-        ? await legacySearch()
-        : await runCreateSearchWithEdgeFallback(
-            {
-              ...searchBody,
-              prompt: cleanInput,
-              limit: body?.limit ?? 12,
-              debug: betaDebug || Boolean(body?.debug),
-            },
-            {
-              accessToken:
-                request.headers
-                  .get("Authorization")
-                  ?.replace(/^Bearer\s+/i, "") ?? null,
-              fallbackDisabled: body?.disableLegacyFallback === true,
-              legacySearch,
-            },
-          );
+    const forceLegacyForUserLocation = false;
+    const hasUsableUserLocation = userLatitudePresent && userLongitudePresent;
+    let searchBackendUsed = "enterprise";
+    let legacyFallbackUsed = false;
+    let legacyFallbackReason: string | null = null;
+    let currentLocationBackendDecision =
+      hasUsableUserLocation && useCurrentLocation
+        ? "enterprise_with_user_location"
+        : "enterprise_without_user_location";
+
+    let result: any;
+    try {
+      result = await legacySearch();
+    } catch (error) {
+      searchBackendUsed = "legacy_fallback_after_enterprise_error";
+      legacyFallbackUsed = true;
+      legacyFallbackReason = "enterprise_error";
+      currentLocationBackendDecision = "legacy_fallback_after_enterprise_error";
+      throw error;
+    }
 
     const rawRestaurants = Array.isArray(result.restaurants)
       ? result.restaurants
@@ -817,6 +817,10 @@ export async function POST(request: Request) {
         source: "public_create_search",
         forceLegacyForLongIsland,
         forceLegacyForUserLocation,
+        currentLocationBackendDecision,
+        legacyFallbackUsed,
+        legacyFallbackReason,
+        pairProximityIntent,
         searchHealthMode: body?.searchHealthMode ?? "public",
         usesPublicSearchPath: true,
         forceLegacyForMlDebug: false,
@@ -824,9 +828,7 @@ export async function POST(request: Request) {
         publicSearchUsesMl: true,
         edgeSearchUsed: searchBackendUsed === "edge",
         edgeSearchUsesMl: false,
-        enterpriseSearchUsed:
-          searchBackendUsed !== "edge" ||
-          Boolean((result.debug as any)?.search_system),
+        enterpriseSearchUsed: searchBackendUsed === "enterprise",
         mlAppliedInPublicPath: Boolean(
           (result.debug as any)?.mlSearchDebug?.mlEnabled,
         ),
@@ -855,8 +857,12 @@ export async function POST(request: Request) {
       rawQueryBeforeNearMeStrip,
       rawQueryAfterNearMeStrip: cleanInput,
       nearMeIntent,
+      pairProximityIntent,
       typedLocationIntent,
       useCurrentLocation,
+      currentLocationBackendDecision,
+      legacyFallbackUsed,
+      legacyFallbackReason,
       userLatitudePresent,
       userLongitudePresent,
       searchBackendUsed,
@@ -867,9 +873,7 @@ export async function POST(request: Request) {
       publicSearchUsesMl: true,
       edgeSearchUsed: searchBackendUsed === "edge",
       edgeSearchUsesMl: searchBackendUsed !== "edge" ? false : false,
-      enterpriseSearchUsed:
-        searchBackendUsed !== "edge" ||
-        Boolean((result.debug as any)?.search_system),
+      enterpriseSearchUsed: searchBackendUsed === "enterprise",
       mlAppliedInPublicPath: Boolean(
         (result.debug as any)?.mlSearchDebug?.mlEnabled,
       ),
@@ -892,9 +896,7 @@ export async function POST(request: Request) {
       publicSearchUsesMl: true,
       edgeSearchUsed: searchBackendUsed === "edge",
       edgeSearchUsesMl: false,
-      enterpriseSearchUsed:
-        searchBackendUsed !== "edge" ||
-        Boolean((result.debug as any)?.search_system),
+      enterpriseSearchUsed: searchBackendUsed === "enterprise",
       mlAppliedInPublicPath: Boolean(
         (result.debug as any)?.mlSearchDebug?.mlEnabled,
       ),

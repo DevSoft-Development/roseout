@@ -81,6 +81,38 @@ describe("enterprise search intent", () => {
     });
   }
 
+
+  for (const query of ["brunch and activity nearby", "dinner and activity nearby"]) {
+    it(`forces nearby generic mixed outing into paired outing intent for ${query}`, () => {
+      const intent = deterministicIntentFromQuery(query);
+      expect(intent.searchType).toBe("mixed_outing");
+      expect(intent.normalizedIntent).toBe("paired_outing");
+      expect(intent.primaryDomain).toBe("mixed");
+      expect(intent.wantsPairing).toBe(true);
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(true);
+      expect(intent.pairRequested).toBe(true);
+      expect(intent.pairingIntent).toBe("nearby_pair");
+      expect(intent.sameVenuePreferred).toBe(false);
+      expect(intent.sameLocationRequired).toBe(false);
+      expect(intent.fallbackPairAllowed).toBe(false);
+      expect(intent.pairingPreference?.distanceMode).toBe("nearby");
+      expect(intent.pairingPreference?.requiresPairing).toBe(true);
+      expect(intent.pairingPreference?.requireWalkablePair).toBe(true);
+      expect(intent.pairingPreference?.maxPairDistanceMiles).toBe(1.5);
+      expect(intent.pairingPreference?.maxPairWalkingMinutes).toBe(30);
+    });
+  }
+
+  it("keeps specific restaurant and activity terms for Mexican dinner and bowling nearby", () => {
+    const intent = deterministicIntentFromQuery("Mexican dinner and bowling nearby");
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.wantsPairing).toBe(true);
+    expect(restaurantSearchTerms(intent)).toContain("mexican");
+    expect(activitySearchTerms(intent)).toContain("bowling");
+    expect(intent.pairingPreference?.distanceMode).toBe("nearby");
+  });
+
   it("fast-paths generic required activity searches without missing activity signal", async () => {
     const parsed = await parseEnterpriseIntent(
       "restaurant with activity walking distance",

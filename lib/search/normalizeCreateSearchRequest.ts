@@ -1,5 +1,5 @@
 import { detectRequestedMarket } from "@/lib/location-markets";
-import { hasNearMeIntent, hasTypedLocationIntent, stripNearMeIntent } from "@/lib/search/near-me";
+import { hasNearMeIntent, hasPairProximityIntent, hasTypedLocationIntent, stripNearMeIntent } from "@/lib/search/near-me";
 
 export type NormalizeCreateSearchRequestInput = {
   rawQuery: string;
@@ -13,6 +13,7 @@ export type NormalizedCreateSearchRequest = {
   rawQuery: string;
   cleanedQuery: string;
   nearMeIntent: boolean;
+  pairProximityIntent: boolean;
   typedLocationIntent: boolean;
   useCurrentLocation: boolean;
   userLatitude: number | null;
@@ -64,6 +65,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
       : rawQuery;
   const nearMeIntent = body.nearMeIntent === true || hasNearMeIntent(rawQueryBeforeNearMeStrip) || hasNearMeIntent(rawQuery);
   const typedLocationIntent = body.typedLocationIntent === true || hasTypedLocationIntent(rawQueryBeforeNearMeStrip) || hasTypedLocationIntent(rawQuery);
+  const pairProximityIntent = body.pairProximityIntent === true || hasPairProximityIntent(rawQueryBeforeNearMeStrip) || hasPairProximityIntent(rawQuery);
   const rawQueryAfterNearMeStrip = nearMeIntent
     ? stripNearMeIntent(rawQuery || rawQueryBeforeNearMeStrip) || stripNearMeIntent(rawQueryBeforeNearMeStrip) || rawQueryBeforeNearMeStrip
     : rawQuery;
@@ -71,7 +73,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
   const userLatitude = finiteNumberFrom(body.latitude, body.lat, body.userLatitude, body.user_latitude, body.userLocation?.latitude, body.user_location?.latitude, body.userLocation?.lat, body.user_location?.lat);
   const userLongitude = finiteNumberFrom(body.longitude, body.lng, body.lon, body.userLongitude, body.user_longitude, body.userLocation?.longitude, body.user_location?.longitude, body.userLocation?.lng, body.user_location?.lng);
   const selectedSearchLane = selectedSearchLaneFromRequestBody(body);
-  const useCurrentLocation = nearMeIntent && !typedLocationIntent && (body.useCurrentLocation === true || body.use_current_location === true || (userLatitude != null && userLongitude != null));
+  const useCurrentLocation = Boolean((body.useCurrentLocation === true || body.use_current_location === true) || (nearMeIntent && !typedLocationIntent && userLatitude != null && userLongitude != null));
   const userLocationSoftBoostOnly = Boolean(typedLocationIntent && nearMeIntent && userLatitude != null && userLongitude != null);
   const currentLocationUserLocation = useCurrentLocation && userLatitude != null && userLongitude != null
     ? { latitude: userLatitude, longitude: userLongitude, radiusMiles: Number.isFinite(Number(body.radiusMiles ?? body.radius_miles)) ? Number(body.radiusMiles ?? body.radius_miles) : 12, label: "Current location" }
@@ -86,6 +88,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     rawQueryBeforeNearMeStrip,
     rawQueryAfterNearMeStrip,
     nearMeIntent,
+    pairProximityIntent,
     typedLocationIntent,
     useCurrentLocation,
     userLatitudePresent: userLatitude != null,
@@ -102,7 +105,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     wantsPairing,
     needsRestaurant: wantsPairing || selectedSearchLane !== "activity",
     needsActivity: wantsPairing || selectedSearchLane !== "restaurant",
-    searchBackendUsed: useCurrentLocation ? "legacy_for_current_location" : "edge",
+    searchBackendUsed: "enterprise",
   };
   const searchBody: Record<string, any> = {
     ...body,
@@ -113,6 +116,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     rawQueryBeforeNearMeStrip,
     rawQueryAfterNearMeStrip,
     nearMeIntent,
+    pairProximityIntent,
     typedLocationIntent,
     useCurrentLocation,
     selectedSearchLane,
@@ -125,5 +129,5 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     ...(selectedSearchLane === "auto" ? { searchType: "auto" } : { searchType: selectedSearchLane }),
     debugParity,
   };
-  return { rawQuery, cleanedQuery, nearMeIntent, typedLocationIntent, useCurrentLocation, userLatitude, userLongitude, rawQueryBeforeNearMeStrip, rawQueryAfterNearMeStrip, selectedSearchLane, searchBody, debugParity };
+  return { rawQuery, cleanedQuery, nearMeIntent, pairProximityIntent, typedLocationIntent, useCurrentLocation, userLatitude, userLongitude, rawQueryBeforeNearMeStrip, rawQueryAfterNearMeStrip, selectedSearchLane, searchBody, debugParity };
 }

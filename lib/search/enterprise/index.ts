@@ -1229,6 +1229,12 @@ type EnterpriseSearchOptions = {
   useFastPath?: boolean;
   selectedMarketId?: string | null;
   userLocation?: UserSearchLocation | null;
+  userLatitude?: number | null;
+  userLongitude?: number | null;
+  useCurrentLocation?: boolean;
+  nearMeIntent?: boolean;
+  pairProximityIntent?: boolean;
+  defaultMarketId?: string | null;
   createdByUserId?: string | null;
   searchHealthDebug?: boolean;
   betaFeedbackSubmitted?: boolean;
@@ -2993,6 +2999,12 @@ export async function runEnterpriseSearch(
       pairCandidatesEvaluated: pairingDebug.pairCandidatesEvaluated,
       validPairCountBeforeRender: pairingDebug.validPairCountBeforeRender,
       pair_count: pairs.length,
+      pairDistanceMode: effectiveIntent.pairingPreference?.distanceMode ?? "any",
+      maxAllowedPairDistanceMiles: effectiveIntent.pairingPreference?.maxPairDistanceMiles ?? null,
+      maxAllowedPairWalkingMinutes: effectiveIntent.pairingPreference?.maxPairWalkingMinutes ?? null,
+      pairDistanceGuardApplied: Boolean(effectiveIntent.pairingPreference?.requiresPairing),
+      pairCandidatesRejectedByDistance: pairingDebug.pairsRejectedForDistance,
+      invalidPairsSuppressed: pairingDebug.pairsRejectedForDistance + pairingDebug.pairsRejectedForMissingCoordinates + pairingDebug.invalidWalkingRoutesHiddenFromDisplay,
       pairsRejectedForDistance: pairingDebug.pairsRejectedForDistance,
       pairsRejectedForWalkingMinutes:
         pairingDebug.pairsRejectedForWalkingMinutes,
