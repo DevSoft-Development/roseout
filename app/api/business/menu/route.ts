@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
-export async function GET(){return NextResponse.json({pages:[]});}
-export async function POST(){return NextResponse.json({message:"Menu draft saved."});}
-export async function PATCH(){return NextResponse.json({message:"Menu draft updated."});}
+import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+async function auth(locationId:string){ const supabase=await createClient(); const {data:{user}}=await supabase.auth.getUser(); if(!user) return null; return requireOwnerOrAdminAccessToLocation(user.id, locationId); }
+export async function GET(req:Request){ const locationId=new URL(req.url).searchParams.get("locationId")||""; if(!locationId) return NextResponse.json({message:"Choose a location.",pages:[]},{status:400}); if(!await auth(locationId)) return NextResponse.json({message:"You do not have access to this location."},{status:403}); const [pages,sections,items]=await Promise.all([supabaseAdmin.from("location_commerce_pages").select("*").eq("location_id",locationId),supabaseAdmin.from("location_commerce_sections").select("*").eq("location_id",locationId),supabaseAdmin.from("location_commerce_items").select("*").eq("location_id",locationId)]); return NextResponse.json({message:"Menu loaded.",pages:pages.data||[],sections:sections.data||[],items:items.data||[]});}
+export async function POST(req:Request){ const b=await req.json().catch(()=>({})); const locationId=String(b.locationId||""); if(!locationId) return NextResponse.json({message:"Choose a location."},{status:400}); if(!await auth(locationId)) return NextResponse.json({message:"You do not have access to this location."},{status:403}); const {error}=await supabaseAdmin.from("location_commerce_pages").insert({location_id:locationId,page_type:b.pageType||"menu",title:b.title||"Menu",description:b.description||null,external_url:b.externalUrl||null,pdf_url:b.pdfUrl||null,is_active:b.active!==false}); if(error) return NextResponse.json({message:"Menu page could not be saved."},{status:400}); return NextResponse.json({message:"Menu page saved."});}
+export async function PATCH(req:Request){ return POST(req); }
