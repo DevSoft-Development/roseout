@@ -727,6 +727,16 @@ function softCategoryFilter(records: any[], terms: string[]) {
   return exact.length > 0 ? exact : records;
 }
 
+
+async function attachReviewMlFeatures(records: any[]) {
+  const ids = records.map((r) => r?.id).filter(Boolean);
+  if (!ids.length) return records;
+  const { data, error } = await supabaseAdmin.from("location_review_ml_features").select("*").in("location_id", ids);
+  if (error) return records;
+  const map = new Map((data || []).map((r: any) => [r.location_id, r]));
+  return records.map((record) => ({ ...record, review_ml_features: map.get(record.id) || null }));
+}
+
 export async function queryLocations(searchText: string, limit = 120) {
   const term = searchText.trim();
 
@@ -781,7 +791,7 @@ export async function queryLocations(searchText: string, limit = 120) {
     };
   }
 
-  return { records: data ?? [], error: null };
+  return { records: await attachReviewMlFeatures(data ?? []), error: null };
 }
 
 export async function queryBroadLocations(limit = 500) {
@@ -821,7 +831,7 @@ export async function queryBroadLocations(limit = 500) {
     };
   }
 
-  return { records: data ?? [], error: null };
+  return { records: await attachReviewMlFeatures(data ?? []), error: null };
 }
 
 async function searchDomain(

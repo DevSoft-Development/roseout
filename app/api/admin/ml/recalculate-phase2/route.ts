@@ -12,6 +12,7 @@ import {
   INTENT_SCORE_VERSION,
   PAIR_SCORE_VERSION,
 } from "@/lib/ml/intentScoring";
+import { calculateIntentReviewFit, calculatePairReviewFit } from "@/lib/ml/reviewIntelligence";
 import {
   CALL_EVENTS,
   CLICK_EVENTS,
@@ -186,6 +187,7 @@ function basePair(
     negative_signals_30d: 0,
   };
 }
+let reviewFeatureMap = new Map<string, any>();
 function finalizeLoc(row: any) {
   row.market_key = row.market || "";
   row.location_type_key = row.location_type || "";
@@ -196,11 +198,13 @@ function finalizeLoc(row: any) {
     row.website_clicks_30d;
   const ctr = calculateCtr(row.clicks_30d, row.impressions_30d);
   const cr = calculateConversionRate(conversions, row.impressions_30d);
-  const intent_score = calculateLocationIntentScore({
+  const reviewFeatures = reviewFeatureMap.get(row.location_id);
+  const review_fit = calculateIntentReviewFit({ allIntents: [row.intent_bucket], primaryIntent: row.intent_bucket }, reviewFeatures);
+  const intent_score = Math.max(0, Math.min(100, calculateLocationIntentScore({
     ...row,
     ctr_30d: ctr,
     conversion_rate_30d: cr,
-  });
+  }) + review_fit));
   return {
     ...row,
     ctr_30d: ctr,
@@ -215,7 +219,7 @@ function finalizeLoc(row: any) {
     intent_score,
     score_version: INTENT_SCORE_VERSION,
     updated_at: new Date().toISOString(),
-    metadata: { source: "phase2_recalculate", pii: false },
+    metadata: { source: "phase2_recalculate", pii: false, reviewMlApplied: Boolean(reviewFeatures), reviewMlIntentFit: review_fit, reviewMlConfidence: reviewFeatures?.review_confidence_score ?? 0, reviewMlSummary: reviewFeatures?.review_summary ?? null },
   };
 }
 function finalizePair(row: any) {
@@ -230,11 +234,14 @@ function finalizePair(row: any) {
     row.website_clicks_30d;
   const ctr = calculateCtr(row.clicks_30d, row.impressions_30d);
   const cr = calculateConversionRate(conversions, row.impressions_30d);
-  const pair_score = calculatePairScore({
+  const restaurantReviewFeatures = reviewFeatureMap.get(row.restaurant_location_id);
+  const activityReviewFeatures = reviewFeatureMap.get(row.activity_location_id);
+  const pair_review_fit = calculatePairReviewFit(restaurantReviewFeatures, activityReviewFeatures, { allIntents: [row.intent_bucket], primaryIntent: row.intent_bucket });
+  const pair_score = Math.max(0, Math.min(100, calculatePairScore({
     ...row,
     ctr_30d: ctr,
     conversion_rate_30d: cr,
-  });
+  }) + pair_review_fit));
   return {
     ...row,
     ctr_30d: ctr,
@@ -253,7 +260,7 @@ function finalizePair(row: any) {
     pair_score,
     score_version: PAIR_SCORE_VERSION,
     updated_at: new Date().toISOString(),
-    metadata: { source: "phase2_recalculate", pii: false },
+    metadata: { source: "phase2_recalculate", pii: false, reviewMlApplied: Boolean(restaurantReviewFeatures || activityReviewFeatures), pairReviewFit: pair_review_fit },
   };
 }
 function loc(
@@ -523,6 +530,8 @@ export async function POST(req: NextRequest) {
         );
       }
   }
+  const reviewIds = Array.from(new Set([...locAgg.values()].map((r:any)=>r.location_id).concat([...pairAgg.values()].flatMap((p:any)=>[p.restaurant_location_id,p.activity_location_id]))));
+  if (reviewIds.length) { const { data } = await supabaseAdmin.from("location_review_ml_features").select("*").in("location_id", reviewIds); reviewFeatureMap = new Map((data || []).map((r:any)=>[r.location_id,r])); }
   const locRows = [...locAgg.values()].map(finalizeLoc);
   const pairRows = [...pairAgg.values()].map(finalizePair);
   const sanitizedPairRows = pairRows.map(sanitizePairFeatureRow);
