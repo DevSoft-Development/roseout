@@ -27,6 +27,29 @@ async function safe<T>(fn: () => Promise<T>, fallback: T) {
 function n(v: any) {
   return Number(v || 0).toFixed(1);
 }
+async function loadAdvancedMlDashboard() {
+  const tables = [
+    "location_review_ml_features",
+    "search_result_ml_features",
+    "location_pair_ml_features",
+    "market_ml_features",
+    "time_of_day_ml_features",
+    "booking_likelihood_ml_features",
+    "business_quality_ml_features",
+    "duplicate_ml_candidates",
+    "photo_quality_ml_features",
+    "owner_lead_ml_features",
+  ];
+  const counts = await Promise.all(
+    tables.map(async (table) => ({
+      table,
+      count: await safe(async () => (await supabaseAdmin.from(table).select("id", { count: "exact", head: true })).count || 0, 0),
+    })),
+  );
+  const lastRuns = await safe(async () => (await supabaseAdmin.from("advanced_ml_score_runs").select("*").order("started_at", { ascending: false }).limit(12)).data || [], [] as any[]);
+  return { counts, lastRuns };
+}
+
 async function loadMlDashboard() {
   const [
     p1Run,
@@ -253,6 +276,7 @@ async function loadMlDashboard() {
 export default async function MlRankingPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.searchHealth);
   const data = await loadMlDashboard();
+  const advanced = await loadAdvancedMlDashboard();
   return (
     <AdminPageShell>
       <AdminPageHeader
@@ -483,6 +507,34 @@ export default async function MlRankingPage() {
           Phase 2.
         </AdminSectionCard>
       )}
+
+      <AdminSectionCard className="p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black">Advanced ML Roadmap</h2>
+            <p className="text-sm text-white/60">Explainable review intelligence, result quality, pair compatibility, market/time behavior, booking likelihood, business trust, duplicate detection, photo quality, and owner lead scoring.</p>
+          </div>
+          <AdminActionButton href="/api/admin/ml/recalculate-advanced-all">Run all advanced ML</AdminActionButton>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {advanced.counts.map((item) => (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4" key={item.table}>
+              <div className="text-xs uppercase tracking-[0.2em] text-white/45">{item.table.replaceAll("_", " ")}</div>
+              <div className="mt-2 text-2xl font-black">{item.count}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {advanced.lastRuns.map((run) => (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4" key={run.id}>
+              <div className="font-bold">{String(run.run_type).replaceAll("_", " ")}</div>
+              <div className="text-sm text-white/60">{run.status} · {run.records_updated || 0} records updated · {formatAdminDate(run.completed_at || run.started_at)}</div>
+            </div>
+          ))}
+          {!advanced.lastRuns.length ? <p className="text-sm text-white/60">No advanced ML runs yet. Use the protected recalculation routes or nightly cron.</p> : null}
+        </div>
+      </AdminSectionCard>
+
       <AdminDataTableShell>
         <h2 className="p-3 text-lg font-black">Top 25 pair scores</h2>
         <table className="min-w-full text-left text-xs">
