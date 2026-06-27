@@ -1,2 +1,3 @@
-import { GrowthProShell, ModuleCards } from "@/components/growth-pro/GrowthProShell";
-export default function BusinessDashboardPage(){return <GrowthProShell title="Business growth dashboard"><ModuleCards items={["Plan status","Setup checklist progress","Profile completeness","QR scans","Menu views","Offer claims","VIP signups","SMS credits remaining","Event leads","Reservation requests","Reviews and private feedback","Suggested Monthly Ideas"]}/></GrowthProShell>}
+import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
+export const dynamic = "force-dynamic";
+export default function BusinessDashboardPage(){ return <BusinessGrowthProPage module="overview" />; }

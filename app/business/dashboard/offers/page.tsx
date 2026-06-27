@@ -1,2 +1,3 @@
-import { GrowthProShell, ModuleCards } from "@/components/growth-pro/GrowthProShell";
-export default function Page(){return <GrowthProShell title="Offers"><ModuleCards items={["Growth Pro controls","Preview","Publish status","Analytics","Admin visibility","Safe TODOs for provider-specific integrations"]}/></GrowthProShell>}
+import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
+export const dynamic = "force-dynamic";
+export default function Page(){ return <BusinessGrowthProPage module="offers" />; }

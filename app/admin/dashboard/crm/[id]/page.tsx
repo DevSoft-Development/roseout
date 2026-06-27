@@ -14,6 +14,7 @@ import { createClaimQr } from "@/lib/claimQrServer";
 import { getCanonicalAppUrl } from "@/lib/site-url";
 import { evaluateLocationPublishability } from "@/lib/location-publishability";
 import PublishabilityRepairButton from "./PublishabilityRepairButton";
+import { getGrowthProChecklist, getGrowthProLocationContext } from "@/lib/growth-pro/data";
 import RepairPublishabilityButton from "./RepairPublishabilityButton";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
@@ -186,10 +187,35 @@ function CrmDetailNavigation({ locationId, activeTab }: { locationId: string; ac
   </AdminSectionCard>;
 }
 
-function GrowthProAdminPanel({ business, tab }: { business: BusinessCRMRow; tab: string }) {
-  const checklist = ["owner connected", "claim verified", "Growth Pro active", "logo uploaded", "brand color selected", "offerings selected", "menu/packages added", "QR codes generated", "notification recipients added", "reservation mode selected", "event lead form active", "offer created", "VIP signup active", "messaging configured", "review/feedback QR active", "Suggested Monthly Ideas generated", "analytics tracking active"];
-  return <AdminSectionCard className="p-5"><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Growth Pro</p><h2 className="mt-2 text-2xl font-black">{tab.replace(/-/g, " ")}</h2><p className="mt-2 text-sm leading-6 text-white/60">Admin CRM controls for the $99/month TheOutHaven Growth Pro business growth hub. This panel avoids raw JSON, Google review flows, and unapproved custom message blasts.</p><div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{checklist.map((item) => <div key={item} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-sm font-black text-white">{item}</p><p className="mt-1 text-xs text-white/45">Review and configure for {business.name || "this location"}.</p></div>)}</div></AdminSectionCard>;
+async function GrowthProAdminPanel({ business, tab }: { business: BusinessCRMRow; tab: string }) {
+  const [checklist, context] = await Promise.all([getGrowthProChecklist(String(business.id)), getGrowthProLocationContext(String(business.id))]);
+  const active = checklist.find((item) => item.href.includes(`tab=${tab}`));
+  const tabTitle = tab.replace(/-/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  const panelRows = [
+    ["Plan status", context.planStatus],
+    ["QR codes", context.qrCodes.length],
+    ["Menu pages", context.commercePages.length],
+    ["Menu items", context.commerceItems.length],
+    ["Offers", context.offers.length],
+    ["Offer claims", context.offerClaimsCount],
+    ["VIP signups", context.vipCount],
+    ["Event leads", context.leads.length],
+    ["Notification recipients", context.notificationRecipients.length],
+    ["Marketing ideas", context.marketingSuggestions.length],
+    ["Marketing generations", context.marketingGenerations.length],
+    ["QR scans", context.analyticsSummary.qrScans],
+  ];
+  return <AdminSectionCard className="p-5">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Growth Pro</p><h2 className="mt-2 text-2xl font-black">{tabTitle}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Actionable Growth Pro CRM controls for {business.name || "this location"}. Open the linked cards to review setup, activity, and customer-capture modules.</p></div>
+      <Link href={`/business/dashboard/${tab === "menu-packages" ? "menu" : tab === "vip-list" ? "vip" : tab === "event-leads" ? "leads" : tab === "reviews-feedback" ? "reviews" : tab}`} className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white/75 hover:border-rose-300/40">Open business page</Link>
+    </div>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{panelRows.slice(0,8).map(([label,value]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-black/25 p-4"><p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">{label}</p><p className="mt-2 text-2xl font-black text-white">{String(value ?? "—")}</p></div>)}</div>
+    {active ? <div className="mt-5 rounded-2xl border border-rose-300/20 bg-rose-500/10 p-4"><p className="font-black text-rose-100">Focused next step: {active.label}</p><p className="mt-1 text-sm text-white/65">{active.description}</p><Link href={active.href} className="mt-3 inline-flex rounded-full bg-rose-600 px-4 py-2 text-xs font-black text-white">{active.actionLabel}</Link></div> : null}
+    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{checklist.map((item) => <Link key={item.key} href={item.href} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition hover:border-rose-300/40 hover:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-rose-300/40"><div className="flex items-start justify-between gap-3"><p className="text-sm font-black text-white">{item.label}</p><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${item.status === "complete" ? "bg-emerald-500/15 text-emerald-100" : "bg-amber-500/15 text-amber-100"}`}>{item.status.replace(/_/g," ")}</span></div><p className="mt-2 text-xs leading-5 text-white/55">{item.description}</p>{typeof item.count === "number" ? <p className="mt-3 text-xs font-black text-white/75">Count: {item.count}</p> : null}</Link>)}</div>
+  </AdminSectionCard>;
 }
+
 
 function fmt(n: number) {
   return Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(n || 0);
