@@ -36,6 +36,10 @@ import {
   setCachedSearchIntent,
 } from "./searchIntentCache";
 import { withTimeout } from "./timeout";
+import {
+  applyApprovedSearchPhraseMapping,
+  getApprovedSearchPhraseMapping,
+} from "@/lib/ml/searchPhraseLearning";
 
 const FAST_PATH_CONNECTORS = [
   "and",
@@ -1757,7 +1761,8 @@ export async function parseEnterpriseIntent(
     | "fast_path_timeout_fallback"
     | "llm_fallback_model"
     | "preintent_fallback"
-    | "deterministic_fallback";
+    | "deterministic_fallback"
+    | "search_learning";
   fastPathMatched: boolean;
   fastPathReason: string | null;
   usedLlm: boolean;
@@ -1786,11 +1791,47 @@ export async function parseEnterpriseIntent(
     ? createEnterpriseIntentFastPathResult(query)
     : { intent: null, reason: "fast_path_disabled", confidence: 0 };
   const preIntent = fastPathResult.intent ?? null;
-  const hasPreIntent = isUsablePreIntent(preIntent);
 
   debug.preIntentMatched = Boolean(preIntent);
   debug.preIntentSource = preIntent ? "fast_path" : null;
   debug.preIntentReason = fastPathResult.reason ?? null;
+
+  const approvedSearchLearningMapping = await getApprovedSearchPhraseMapping(query);
+  const learningPreIntent = approvedSearchLearningMapping
+    ? applyApprovedSearchPhraseMapping(
+        query,
+        preIntent ?? baseline,
+        approvedSearchLearningMapping,
+      )
+    : null;
+  const hasPreIntent = isUsablePreIntent(learningPreIntent ?? preIntent);
+
+  if (learningPreIntent?.searchLearningApplied) {
+    debug.searchLearningApplied = true;
+    debug.searchLearningPhraseKey = learningPreIntent.searchLearningPhraseKey;
+    debug.searchLearningMappingId = learningPreIntent.searchLearningMappingId;
+    debug.searchLearningConfidence = learningPreIntent.searchLearningConfidence;
+    const normalizedLearningIntent = normalizeIntent(query, learningPreIntent, {
+      explicitSearchLane: selectedSearchLane,
+    });
+    if ((learningPreIntent.searchLearningConfidence ?? 0) >= 0.55) {
+      debug.intentParserSource = "search_learning";
+      debug.llmEnhancementUsed = false;
+      debug.llmFallbackUsed = false;
+      debug.fallbackIntentUsed = false;
+      debug.intent_parse_ms = Date.now() - startedAt;
+      return {
+        intent: applyExplicitSearchLane(normalizedLearningIntent, selectedSearchLane),
+        llmIntentRaw: null,
+        llmError: undefined,
+        intentParserSource: "search_learning",
+        fastPathMatched: Boolean(preIntent),
+        fastPathReason: fastPathResult.reason,
+        usedLlm: false,
+        debug,
+      };
+    }
+  }
 
   const highConfidenceFastPathReasons = new Set([
     "matched sports-watch activity fast path",
@@ -1841,7 +1882,7 @@ export async function parseEnterpriseIntent(
   }
 
   if (options?.useLLM === false) {
-    const intent = normalizeIntent(query, preIntent ?? baseline, { explicitSearchLane: selectedSearchLane });
+    const intent = normalizeIntent(query, learningPreIntent ?? preIntent ?? baseline, { explicitSearchLane: selectedSearchLane });
     debug.intentParserSource = preIntent ? "fast_path" : "deterministic";
     debug.llmEnhancementUsed = false;
     debug.llmFallbackUsed = false;
@@ -1984,7 +2025,7 @@ export async function parseEnterpriseIntent(
       const fallbackIntent = await withTimeout(
         enhanceIntentWithLLM({
           rawQuery: query,
-          preIntent,
+          preIntent: learningPreIntent ?? preIntent,
           model: SEARCH_INTENT_FALLBACK_MODEL,
         }),
         SEARCH_INTENT_FALLBACK_TIMEOUT_MS,
@@ -1993,7 +2034,7 @@ export async function parseEnterpriseIntent(
       llmIntentRaw = fallbackIntent;
       const merged = mergeLlmIntentWithPreIntent({
         rawQuery: query,
-        preIntent,
+        preIntent: learningPreIntent ?? preIntent,
         llmIntent: fallbackIntent,
       });
       const normalized = normalizeIntent(query, merged, { explicitSearchLane: selectedSearchLane });
@@ -2030,7 +2071,7 @@ export async function parseEnterpriseIntent(
     }
   }
 
-  const deterministicIntent = normalizeIntent(query, preIntent ?? baseline, { explicitSearchLane: selectedSearchLane });
+  const deterministicIntent = normalizeIntent(query, learningPreIntent ?? preIntent ?? baseline, { explicitSearchLane: selectedSearchLane });
   debug.intentParserSource = preIntent
     ? "preintent_fallback"
     : "deterministic_fallback";
