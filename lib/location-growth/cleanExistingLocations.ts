@@ -1,3 +1,4 @@
+import { inferNycAddressArea } from "@/lib/nyc-address-inference";
 import { detectChainBrand } from "@/lib/location-growth/chainDetection";
 import {
   hasLocationPhoto,
@@ -23,10 +24,29 @@ export function cleanLocationRow(row: any) {
     nullIfEmpty(row.cuisine_type) ||
     nullIfEmpty(row.activity_type) ||
     nullIfEmpty(row.primary_tag);
+  const inferredArea = inferNycAddressArea({
+    address,
+    formatted_address: row.formatted_address,
+    city: row.city,
+    state: row.state,
+    zip: row.zip,
+    zip_code: row.zip_code,
+    postal_code: row.postal_code,
+    borough: row.borough,
+    neighborhood: row.neighborhood,
+  });
+  const nextMarket =
+    inferredArea.market === "NYC_CORE"
+      ? "NYC_CORE"
+      : row.market || null;
+
   return {
     ...row,
     name,
     address,
+    borough: row.borough || inferredArea.borough,
+    neighborhood: row.neighborhood || inferredArea.neighborhood,
+    market: nextMarket,
     phone: normalizePhone(row.phone) || nullIfEmpty(row.phone),
     primary_category: primaryCategory,
   };
@@ -69,6 +89,9 @@ export function buildLocationCleanupUpdates(row: any) {
   return {
     name: cleaned.name,
     address: cleaned.address,
+    borough: cleaned.borough,
+    neighborhood: cleaned.neighborhood,
+    market: cleaned.market,
     phone: cleaned.phone,
     primary_category: cleaned.primary_category,
     normalized_name: cleanText(cleaned.name).toLowerCase() || null,

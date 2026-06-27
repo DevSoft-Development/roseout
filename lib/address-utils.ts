@@ -21,27 +21,39 @@ export function stripCityStateZipFromAddress(
 
   if (!street) return "";
 
-  const suffixes = [
-    [cleanCity, cleanState, cleanZip],
-    [cleanCity, cleanState],
-    [cleanState, cleanZip],
-    [cleanCity, cleanZip],
-    [cleanZip],
-    [cleanState],
-    [cleanCity],
-  ]
-    .map((parts) => parts.filter(Boolean))
-    .filter((parts) => parts.length > 0);
+  const compactZip = cleanZip.replace(/\D/g, "");
 
-  for (const parts of suffixes) {
-    const pattern = parts
-      .map((part) => escapeRegExp(part))
-      .join("\\s*,?\\s*");
+  const suffixPatterns = [
+    cleanCity && cleanState && compactZip
+      ? `${escapeRegExp(cleanCity)}\\s*,\\s*${escapeRegExp(cleanState)}\\s*,?\\s*${escapeRegExp(compactZip)}`
+      : "",
+    cleanCity && cleanState
+      ? `${escapeRegExp(cleanCity)}\\s*,\\s*${escapeRegExp(cleanState)}`
+      : "",
+    cleanState && compactZip
+      ? `${escapeRegExp(cleanState)}\\s*,?\\s*${escapeRegExp(compactZip)}`
+      : "",
+    compactZip ? escapeRegExp(compactZip) : "",
+  ].filter(Boolean);
 
-    street = street.replace(
-      new RegExp(`\\s*,?\\s*${pattern}\\s*$`, "i"),
-      "",
-    );
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const pattern of suffixPatterns) {
+      const next = street.replace(
+        new RegExp(`\\s*,?\\s*${pattern}\\s*$`, "i"),
+        "",
+      );
+
+      if (next !== street) {
+        street = next;
+        changed = true;
+      }
+    }
+
+    street = street.replace(/\s*,\s*$/, "").trim();
   }
 
   return street.replace(/\s*,\s*$/, "").trim();
@@ -65,6 +77,7 @@ export function formatFullAddress({
   const cleanCity = cleanAddressPart(city);
   const cleanState = cleanAddressPart(state);
   const cleanZip = cleanAddressPart(zip_code || zip);
+
   const street = stripCityStateZipFromAddress(
     address,
     cleanCity,
@@ -72,9 +85,8 @@ export function formatFullAddress({
     cleanZip,
   );
 
-  const cityStateZip = [cleanCity, cleanState, cleanZip]
-    .filter(Boolean)
-    .join(", ");
+  const cityState = [cleanCity, cleanState].filter(Boolean).join(", ");
+  const cityStateZip = [cityState, cleanZip].filter(Boolean).join(" ");
 
   return [street, cityStateZip].filter(Boolean).join(", ") || fallback;
 }
