@@ -1,5 +1,2 @@
 import { redirect } from "next/navigation";
-
-export default function RedirectPage() {
-  redirect("/admin/dashboard/crm/operations?view=demo");
-}
+export default function RedirectPage() { redirect("/admin/dashboard/settings/demo-center?mode=crm"); }
