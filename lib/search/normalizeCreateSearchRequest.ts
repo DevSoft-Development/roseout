@@ -1,5 +1,5 @@
 import { detectRequestedMarket } from "@/lib/location-markets";
-import { hasNearMeIntent, hasTypedLocationIntent, stripNearMeIntent } from "@/lib/search/near-me";
+import { hasNearMeIntent, hasPairProximityIntent, hasTypedLocationIntent, stripNearMeIntent } from "@/lib/search/near-me";
 
 export type NormalizeCreateSearchRequestInput = {
   rawQuery: string;
@@ -64,6 +64,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
       : rawQuery;
   const nearMeIntent = body.nearMeIntent === true || hasNearMeIntent(rawQueryBeforeNearMeStrip) || hasNearMeIntent(rawQuery);
   const typedLocationIntent = body.typedLocationIntent === true || hasTypedLocationIntent(rawQueryBeforeNearMeStrip) || hasTypedLocationIntent(rawQuery);
+  const pairProximityIntent = hasPairProximityIntent(rawQueryBeforeNearMeStrip) || hasPairProximityIntent(rawQuery);
   const rawQueryAfterNearMeStrip = nearMeIntent
     ? stripNearMeIntent(rawQuery || rawQueryBeforeNearMeStrip) || stripNearMeIntent(rawQueryBeforeNearMeStrip) || rawQueryBeforeNearMeStrip
     : rawQuery;
@@ -77,7 +78,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     ? { latitude: userLatitude, longitude: userLongitude, radiusMiles: Number.isFinite(Number(body.radiusMiles ?? body.radius_miles)) ? Number(body.radiusMiles ?? body.radius_miles) : 12, label: "Current location" }
     : null;
   const market = detectRequestedMarket(cleanedQuery || rawQueryBeforeNearMeStrip);
-  const inferredSearchType = /date night|date|dinner.*(activity|drinks|bowling|show)|restaurant.*activity/i.test(cleanedQuery) || (selectedSearchLane as string) === "mixed" ? "mixed_outing" : selectedSearchLane;
+  const inferredSearchType = /date night|date|(?:dinner|brunch|lunch|breakfast|restaurant|food).*(activity|activities|things to do|something fun|drinks|bowling|show)|restaurant.*activity/i.test(cleanedQuery) || (selectedSearchLane as string) === "mixed" ? "mixed_outing" : selectedSearchLane;
   const wantsPairing = inferredSearchType === "mixed_outing" || inferredSearchType === "mixed";
   const debugParity = {
     source: input.source,
@@ -86,6 +87,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     rawQueryBeforeNearMeStrip,
     rawQueryAfterNearMeStrip,
     nearMeIntent,
+    pairProximityIntent,
     typedLocationIntent,
     useCurrentLocation,
     userLatitudePresent: userLatitude != null,
@@ -102,7 +104,9 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     wantsPairing,
     needsRestaurant: wantsPairing || selectedSearchLane !== "activity",
     needsActivity: wantsPairing || selectedSearchLane !== "restaurant",
-    searchBackendUsed: useCurrentLocation ? "legacy_for_current_location" : "edge",
+    distanceMode: pairProximityIntent ? "nearby" : null,
+    searchBackendUsed: "edge",
+    currentLocationBackendDecision: useCurrentLocation ? "edge_with_user_location_context" : "edge_no_current_location",
   };
   const searchBody: Record<string, any> = {
     ...body,
@@ -113,6 +117,7 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     rawQueryBeforeNearMeStrip,
     rawQueryAfterNearMeStrip,
     nearMeIntent,
+    pairProximityIntent,
     typedLocationIntent,
     useCurrentLocation,
     selectedSearchLane,

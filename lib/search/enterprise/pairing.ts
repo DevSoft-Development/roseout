@@ -32,6 +32,12 @@ export type PairingDebug = {
   extremeWalkingRoutesRejected: number;
   invalidWalkingRoutesHiddenFromDisplay: number;
   suppressedLowQualityPairCount: number;
+  pairDistanceMode?: PairDistanceMode;
+  maxAllowedPairDistanceMiles?: number | null;
+  maxAllowedPairWalkingMinutes?: number | null;
+  pairCandidatesRejectedByDistance: number;
+  pairDistanceGuardApplied: boolean;
+  invalidPairsSuppressed: number;
   pairQualityScorePreview?: unknown[];
   weakOutingFitRestaurantCount?: number;
   suppressedWeakOutingFitPairCount?: number;
@@ -57,6 +63,9 @@ export function createPairingDebug(): PairingDebug {
     extremeWalkingRoutesRejected: 0,
     invalidWalkingRoutesHiddenFromDisplay: 0,
     suppressedLowQualityPairCount: 0,
+    pairCandidatesRejectedByDistance: 0,
+    pairDistanceGuardApplied: false,
+    invalidPairsSuppressed: 0,
     rejectedPairs: [],
   };
 }
@@ -258,6 +267,10 @@ export function createSearchPairs(
 ) {
   const pairs: EnterprisePair[] = [];
   const pref = pairPreference(intent);
+  debug.pairDistanceMode = pref.distanceMode;
+  debug.maxAllowedPairDistanceMiles = pref.maxPairDistanceMiles;
+  debug.maxAllowedPairWalkingMinutes = pref.maxPairWalkingMinutes;
+  debug.pairDistanceGuardApplied = pref.requireWalkablePair || pref.distanceMode === "nearby" || pref.distanceMode === "walking";
   for (const restaurant of restaurants.slice(0, 12))
     for (const activity of activities.slice(0, 12)) {
       debug.pairCandidatesEvaluated += 1;
@@ -276,6 +289,7 @@ export function createSearchPairs(
       );
       if (missingCoordinates && pref.requireWalkablePair) {
         debug.pairsRejectedForMissingCoordinates += 1;
+        debug.invalidPairsSuppressed += 1;
         debug.rejectedPairs.push({
           restaurantId: restaurant.id,
           activityId: activity.id,
@@ -286,6 +300,8 @@ export function createSearchPairs(
       }
       if (!walkability.isWalkable && pref.requireWalkablePair) {
         debug.pairsRejectedForDistance += 1;
+        debug.pairCandidatesRejectedByDistance += 1;
+        debug.invalidPairsSuppressed += 1;
         const reason =
           pref.maxPairWalkingMinutes != null
             ? "walking_route_exceeds_requested_minutes"

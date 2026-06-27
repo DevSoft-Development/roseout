@@ -467,14 +467,15 @@ export async function POST(request: Request) {
 
     const marketDetection = detectRequestedMarket(cleanInput);
     const forceLegacyForLongIsland = false;
-    const forceLegacyForUserLocation = Boolean(currentLocationUserLocation);
-    const searchBackendUsed = forceLegacyForUserLocation
-      ? "legacy_for_current_location"
-      : isEdgeCreateSearchEnabled()
-        ? "edge"
-        : "enterprise";
+    const forceLegacyForUserLocation = false;
+    const currentLocationBackendDecision = currentLocationUserLocation
+      ? "edge_with_user_location_context"
+      : "no_current_location";
+    const searchBackendUsed = isEdgeCreateSearchEnabled()
+      ? "edge"
+      : "enterprise";
     const result: any =
-      forceLegacyForLongIsland || forceLegacyForUserLocation
+      forceLegacyForLongIsland
         ? await legacySearch()
         : await runCreateSearchWithEdgeFallback(
             {
@@ -817,6 +818,7 @@ export async function POST(request: Request) {
         source: "public_create_search",
         forceLegacyForLongIsland,
         forceLegacyForUserLocation,
+        currentLocationBackendDecision,
         searchHealthMode: body?.searchHealthMode ?? "public",
         usesPublicSearchPath: true,
         forceLegacyForMlDebug: false,
@@ -860,6 +862,7 @@ export async function POST(request: Request) {
       userLatitudePresent,
       userLongitudePresent,
       searchBackendUsed,
+      currentLocationBackendDecision,
       searchHealthMode: body?.searchHealthMode ?? "public",
       usesPublicSearchPath: true,
       forceLegacyForMlDebug: false,

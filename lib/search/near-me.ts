@@ -1,8 +1,15 @@
 export const NEAR_ME_PATTERN =
-  /\b(near me|nearby|around me|close to me|by me|near my location|around my location)\b/i;
+  /\b(?:near me|around me|close to me|by me|near my location|around my location|close to my location|nearby me)\b/i;
+
+export const PAIR_PROXIMITY_PATTERN =
+  /\b(?:nearby|close by|close together|near each other|walking distance|walkable|within walking distance|short walk|quick walk|around the corner|same block)\b/i;
 
 export function hasNearMeIntent(query: string) {
   return NEAR_ME_PATTERN.test(query || "");
+}
+
+export function hasPairProximityIntent(query: string) {
+  return PAIR_PROXIMITY_PATTERN.test(query || "");
 }
 
 export function stripNearMeIntent(query: string) {
