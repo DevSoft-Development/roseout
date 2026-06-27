@@ -469,11 +469,9 @@ export async function POST(request: Request) {
     const forceLegacyForLongIsland = false;
     const forceLegacyForUserLocation = false;
     const currentLocationBackendDecision = currentLocationUserLocation
-      ? "edge_with_user_location_context"
-      : "no_current_location";
-    const searchBackendUsed = isEdgeCreateSearchEnabled()
-      ? "edge"
-      : "enterprise";
+      ? "enterprise_with_user_location"
+      : "enterprise_without_user_location";
+    const searchBackendUsed = "enterprise";
     const result: any =
       forceLegacyForLongIsland
         ? await legacySearch()
@@ -824,11 +822,11 @@ export async function POST(request: Request) {
         forceLegacyForMlDebug: false,
         debugPayloadLevel: betaDebug || body?.debug ? "debug" : "compact",
         publicSearchUsesMl: true,
-        edgeSearchUsed: searchBackendUsed === "edge",
+        edgeSearchUsed: false,
         edgeSearchUsesMl: false,
-        enterpriseSearchUsed:
-          searchBackendUsed !== "edge" ||
-          Boolean((result.debug as any)?.search_system),
+        enterpriseSearchUsed: true,
+        legacyFallbackUsed: false,
+        legacyFallbackReason: null,
         mlAppliedInPublicPath: Boolean(
           (result.debug as any)?.mlSearchDebug?.mlEnabled,
         ),
@@ -868,11 +866,11 @@ export async function POST(request: Request) {
       forceLegacyForMlDebug: false,
       debugPayloadLevel: betaDebug || body?.debug ? "debug" : "compact",
       publicSearchUsesMl: true,
-      edgeSearchUsed: searchBackendUsed === "edge",
-      edgeSearchUsesMl: searchBackendUsed !== "edge" ? false : false,
-      enterpriseSearchUsed:
-        searchBackendUsed !== "edge" ||
-        Boolean((result.debug as any)?.search_system),
+      edgeSearchUsed: false,
+      edgeSearchUsesMl: false,
+      enterpriseSearchUsed: true,
+      legacyFallbackUsed: false,
+      legacyFallbackReason: null,
       mlAppliedInPublicPath: Boolean(
         (result.debug as any)?.mlSearchDebug?.mlEnabled,
       ),
@@ -893,11 +891,11 @@ export async function POST(request: Request) {
       forceLegacyForMlDebug: false,
       debugPayloadLevel: betaDebug || body?.debug ? "debug" : "compact",
       publicSearchUsesMl: true,
-      edgeSearchUsed: searchBackendUsed === "edge",
+      edgeSearchUsed: false,
       edgeSearchUsesMl: false,
-      enterpriseSearchUsed:
-        searchBackendUsed !== "edge" ||
-        Boolean((result.debug as any)?.search_system),
+      enterpriseSearchUsed: true,
+      legacyFallbackUsed: false,
+      legacyFallbackReason: null,
       mlAppliedInPublicPath: Boolean(
         (result.debug as any)?.mlSearchDebug?.mlEnabled,
       ),
