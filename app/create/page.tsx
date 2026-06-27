@@ -249,12 +249,30 @@ const typingSearches = [
 ];
 
 const suggestionChips = [
-  { label: "Date night", icon: "♡", prompt: "date night dinner and activity in Manhattan" },
-  { label: "Birthday dinner", icon: "▣", prompt: "birthday dinner and fun activity in Queens" },
-  { label: "Girls night", icon: "✦", prompt: "girls night dinner with cocktails in Brooklyn" },
-  { label: "Brunch + activity", icon: "☼", prompt: "brunch and activity nearby" },
-  { label: "Dinner + live music", icon: "♪", prompt: "Italian dinner with live music" },
-  { label: "Walking distance", icon: "♙", prompt: "dinner and activity within walking distance" },
+  {
+    label: "Date night",
+    prompt: "date night dinner and activity in Manhattan",
+  },
+  {
+    label: "Birthday plan",
+    prompt: "birthday dinner and fun activity in Queens",
+  },
+  {
+    label: "Girls night",
+    prompt: "girls night dinner with cocktails in Brooklyn",
+  },
+  {
+    label: "Brunch nearby",
+    prompt: "brunch and activity nearby",
+  },
+  {
+    label: "Dinner + music",
+    prompt: "Italian dinner with live music",
+  },
+  {
+    label: "Walkable outing",
+    prompt: "dinner and activity within walking distance",
+  },
 ];
 
 const formatTypingPrompt = (prompt: string) => prompt;
@@ -1364,16 +1382,16 @@ export default function CreatePage() {
     if (sourceTable) params.set("sourceTable", sourceTable);
     const hasMeaningfulOutingTime = Boolean(
       outingTime.plannedFor ||
-        outingTime.outingDateContext ||
-        outingTime.outingDateTimeText ||
-        outingTime.outingDateLabel ||
-        outingTime.outingTimeLabel ||
-        outingTime.parsedDateText ||
-        outingTime.parsedTimeText ||
-        outingTime.parsedDateTimeISO ||
-        outingTime.nextMorningFollowupDate ||
-        outingTime.nextMorningFollowupEnabled ||
-        outingTime.remindersEnabled,
+      outingTime.outingDateContext ||
+      outingTime.outingDateTimeText ||
+      outingTime.outingDateLabel ||
+      outingTime.outingTimeLabel ||
+      outingTime.parsedDateText ||
+      outingTime.parsedTimeText ||
+      outingTime.parsedDateTimeISO ||
+      outingTime.nextMorningFollowupDate ||
+      outingTime.nextMorningFollowupEnabled ||
+      outingTime.remindersEnabled,
     );
 
     if (hasMeaningfulOutingTime) {
@@ -1408,25 +1426,40 @@ export default function CreatePage() {
       <section className="relative w-full max-w-full overflow-x-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.18),transparent_34%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-8 pt-20 sm:px-6 sm:pb-12 sm:pt-28">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-white/65">
-            <img src="/toh_logo.png" alt="" aria-hidden="true" className="h-5 w-5 rounded-full object-contain" />
-            {exactCampaignLoading ? "Loading campaign pick" : "TheOutHaven AI outing planner"}
+            <img
+              src="/toh_logo.png"
+              alt=""
+              aria-hidden="true"
+              className="h-5 w-5 rounded-full object-contain"
+            />
+            {exactCampaignLoading
+              ? "Loading campaign pick"
+              : "TheOutHaven AI outing planner"}
           </div>
 
           <h1 className="max-w-4xl text-4xl font-black leading-[0.95] tracking-[-0.055em] text-white sm:text-6xl lg:text-7xl">
-            Plan your next outing in <span className="text-[#e1062a]">one search.</span>
+            Plan your next outing in{" "}
+            <span className="text-[#e1062a]">one search.</span>
           </h1>
 
           <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-white/60 sm:text-lg">
-            Type natural phrases like dinner, drinks, date night, birthdays, brunch, or an activity after dinner. We’ll handle the rest.
+            Type natural phrases like dinner, drinks, date night, birthdays,
+            brunch, or an activity after dinner. We’ll handle the rest.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 w-full max-w-4xl">
             <div className="flex w-full flex-col gap-3 rounded-[2rem] border border-white/10 bg-white/[0.055] p-2 shadow-2xl shadow-black/50 backdrop-blur-xl transition focus-within:border-[#e1062a]/50 focus-within:shadow-[0_0_0_1px_rgba(225,6,42,0.28),0_0_40px_rgba(225,6,42,0.16)] sm:flex-row sm:items-center sm:rounded-full">
               <div className="relative min-w-0 flex-1">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[#e1062a]" aria-hidden="true">⌕</span>
+                <span
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[#e1062a]"
+                  aria-hidden="true"
+                >
+                  ⌕
+                </span>
                 {!input && (
                   <div className="pointer-events-none absolute left-12 right-3 top-1/2 -translate-y-1/2 truncate text-left text-sm font-semibold text-white/42 sm:text-base">
-                    {typedPlaceholder}<span className="text-[#e1062a]">|</span>
+                    {typedPlaceholder}
+                    <span className="text-[#e1062a]">|</span>
                   </div>
                 )}
                 <input
@@ -1457,33 +1490,82 @@ export default function CreatePage() {
               </button>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm font-bold text-white/50">
-              <button type="button" onClick={requestUserLocation} className="rounded-full px-3 py-1.5 text-white/55 underline-offset-4 transition hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60">
-                {locationSaved ? "Location on" : "Use my location"}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={requestUserLocation}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.1em] transition focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60 ${
+                  locationSaved
+                    ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+                    : "border-white/10 bg-black/30 text-white/58 hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    locationSaved ? "bg-emerald-300" : "bg-white/25"
+                  }`}
+                  aria-hidden="true"
+                />
+                {locationSaved ? "Nearby results on" : "Use my location"}
               </button>
+
               {messages.length > 0 && (
-                <button type="button" onClick={resetSearch} className="rounded-full px-3 py-1.5 text-white/45 underline-offset-4 transition hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60">
+                <button
+                  type="button"
+                  onClick={resetSearch}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-white/58 transition hover:border-[#e1062a]/45 hover:text-white focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60"
+                >
                   New search
+                  <span className="text-[#e1062a]" aria-hidden="true">
+                    ↻
+                  </span>
                 </button>
               )}
             </div>
           </form>
 
-          <div className="mt-5 flex w-full max-w-4xl gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible">
-            {suggestionChips.map((chip) => (
-              <button key={chip.label} type="button" onClick={() => runSuggestionPrompt(chip.prompt)} disabled={loading} className="shrink-0 rounded-full border border-white/10 bg-white/[0.045] px-4 py-2 text-sm font-black text-white/75 transition hover:border-[#e1062a]/50 hover:bg-[#e1062a]/15 hover:text-white disabled:opacity-45">
-                <span className="mr-2 text-[#e1062a]">{chip.icon}</span>{chip.label}
-              </button>
-            ))}
+          <div className="mt-5 w-full max-w-4xl">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <p className="text-left text-[10px] font-black uppercase tracking-[0.22em] text-white/35">
+                Popular searches
+              </p>
+              <p className="hidden text-xs font-semibold text-white/35 sm:block">
+                Start with one tap, then customize.
+              </p>
+            </div>
+
+            <div className="mt-2 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-center sm:overflow-visible">
+              {suggestionChips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={() => runSuggestionPrompt(chip.prompt)}
+                  disabled={loading}
+                  className="group shrink-0 rounded-full border border-white/10 bg-black/35 px-4 py-2.5 text-sm font-black text-white/72 shadow-sm shadow-black/20 transition hover:border-[#e1062a]/45 hover:bg-[#e1062a]/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <span>{chip.label}</span>
+                  <span className="ml-2 text-white/25 transition group-hover:text-[#e1062a]">
+                    →
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <HowItWorksMini />
         </div>
       </section>
 
-      <section ref={resultsRef} className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8">
+      <section
+        ref={resultsRef}
+        className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8"
+      >
         {error && (
-          <HelpfulSearchState title="We could not finish that search." message={error} onSuggestion={runHelpfulSuggestion} />
+          <HelpfulSearchState
+            title="We could not finish that search."
+            message={error}
+            onSuggestion={runHelpfulSuggestion}
+          />
         )}
 
         {!messages.length && !loading && <StartPanel />}
@@ -1589,7 +1671,8 @@ export default function CreatePage() {
                               pair_distance_miles?: number | null;
                               pair_type?: string | null;
                             };
-                            const isActivityActivityPair = pairRecord.pair_type === "activity_activity";
+                            const isActivityActivityPair =
+                              pairRecord.pair_type === "activity_activity";
                             const restaurant = pairRecord.restaurant;
                             const activity = pairRecord.activity;
                             const restaurantImage = restaurant
@@ -1621,9 +1704,9 @@ export default function CreatePage() {
 
                             const isSelectedCombo = Boolean(
                               restaurant &&
-                                activity &&
-                                selectedRestaurant?.id === restaurant.id &&
-                                selectedActivity?.id === activity.id,
+                              activity &&
+                              selectedRestaurant?.id === restaurant.id &&
+                              selectedActivity?.id === activity.id,
                             );
 
                             return (
@@ -1669,7 +1752,11 @@ export default function CreatePage() {
                                   if (activity?.id)
                                     trackActivityClick(String(activity.id));
                                 }}
-                                pairType={isActivityActivityPair ? "activity_activity" : "restaurant_activity"}
+                                pairType={
+                                  isActivityActivityPair
+                                    ? "activity_activity"
+                                    : "restaurant_activity"
+                                }
                                 analyticsMetadata={
                                   CREATE_RESULTS_ANALYTICS_METADATA
                                 }
@@ -1715,8 +1802,12 @@ export default function CreatePage() {
                                 eyebrow={getCuisine(restaurant) || "Restaurant"}
                                 address={formatAddress(restaurant)}
                                 rating={restaurant.rating}
-                                healthDepartmentGrade={restaurant.health_department_grade}
-                                healthDepartmentScore={restaurant.health_department_score}
+                                healthDepartmentGrade={
+                                  restaurant.health_department_grade
+                                }
+                                healthDepartmentScore={
+                                  restaurant.health_department_score
+                                }
                                 reviewKeywords={restaurant.review_keywords}
                                 reviewSnippet={restaurant.review_snippet}
                                 primaryTag={restaurant.primary_tag}
@@ -1884,27 +1975,27 @@ export default function CreatePage() {
 
       {hasSelection && (
         <MobileStickyActionBar>
-            <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.2em]">
-                Your Outing Picks
-              </p>
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#e1062a] sm:text-[10px] sm:tracking-[0.2em]">
+              Your Outing Picks
+            </p>
 
-              <p className="max-w-full truncate text-sm font-bold text-white sm:max-w-[52vw]">
-                {selectedPlanText || "Selected outing"}
-              </p>
+            <p className="max-w-full truncate text-sm font-bold text-white sm:max-w-[52vw]">
+              {selectedPlanText || "Selected outing"}
+            </p>
 
-              <p className="hidden text-xs font-semibold text-white/40 sm:block">
-                Review your selected places before making your plan official.
-              </p>
-            </div>
+            <p className="hidden text-xs font-semibold text-white/40 sm:block">
+              Review your selected places before making your plan official.
+            </p>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setShowPlanSummary(true)}
-              className="w-full shrink-0 rounded-full bg-[#e1062a] px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-900/40 transition hover:bg-[#ff1744] sm:w-auto sm:px-5 sm:text-xs sm:tracking-[0.12em]"
-            >
-              Review Your Outing →
-            </button>
+          <button
+            type="button"
+            onClick={() => setShowPlanSummary(true)}
+            className="w-full shrink-0 rounded-full bg-[#e1062a] px-4 py-3 text-[11px] font-black uppercase tracking-[0.1em] text-white shadow-lg shadow-red-900/40 transition hover:bg-[#ff1744] sm:w-auto sm:px-5 sm:text-xs sm:tracking-[0.12em]"
+          >
+            Review Your Outing →
+          </button>
         </MobileStickyActionBar>
       )}
 
@@ -2442,34 +2533,28 @@ function TimelineStep({
 }
 
 function HowItWorksMini() {
-  const steps = [
-    {
-      title: "Search",
-      body: "Tell us what you’re in the mood for.",
-    },
-    {
-      title: "Pick a vibe",
-      body: "We pair great spots that go perfectly together.",
-    },
-    {
-      title: "Book or save",
-      body: "Book instantly or save for later.",
-    },
+  const highlights = [
+    "Restaurants + activities",
+    "Same-place or nearby plans",
+    "Save, share, or book",
   ];
 
   return (
-    <div className="mt-7 grid w-full max-w-4xl grid-cols-1 gap-2 sm:grid-cols-3">
-      {steps.map((step) => (
-        <div
-          key={step.title}
-          className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left"
-        >
-          <h2 className="text-sm font-black text-white">{step.title}</h2>
-          <p className="mt-1 text-sm font-semibold leading-5 text-white/48">
-            {step.body}
-          </p>
-        </div>
-      ))}
+    <div className="mt-7 w-full max-w-4xl rounded-full border border-white/10 bg-black/30 px-4 py-3 shadow-xl shadow-black/25 backdrop-blur">
+      <div className="flex flex-col gap-2 text-center sm:flex-row sm:items-center sm:justify-center sm:gap-5">
+        {highlights.map((item, index) => (
+          <div
+            key={item}
+            className="flex items-center justify-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-white/55"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#e1062a]" />
+            <span>{item}</span>
+            {index < highlights.length - 1 ? (
+              <span className="hidden h-4 w-px bg-white/10 sm:block" />
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2519,7 +2604,8 @@ function StartPanel() {
             Example outings
           </h2>
           <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/50">
-            Preview examples only — live results will appear here after you search.
+            Preview examples only — live results will appear here after you
+            search.
           </p>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:justify-end sm:overflow-visible">
@@ -2536,7 +2622,10 @@ function StartPanel() {
 
       <div className="grid w-full min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {examples.map((example) => (
-          <ExampleOutingCard key={`${example.restaurant}-${example.activity}`} {...example} />
+          <ExampleOutingCard
+            key={`${example.restaurant}-${example.activity}`}
+            {...example}
+          />
         ))}
       </div>
     </div>
@@ -2678,9 +2767,18 @@ function ComboResultCard({
   const isActivityActivityPair = pairType === "activity_activity";
   const restaurantName = restaurant
     ? getLocationName(restaurant)
-    : isActivityActivityPair ? "First Pick" : "Restaurant";
-  const activityName = activity ? getLocationName(activity) : isActivityActivityPair ? "Next Pick" : "Activity";
-  const title = [restaurant ? restaurantName : null, activity ? activityName : null]
+    : isActivityActivityPair
+      ? "First Pick"
+      : "Restaurant";
+  const activityName = activity
+    ? getLocationName(activity)
+    : isActivityActivityPair
+      ? "Next Pick"
+      : "Activity";
+  const title = [
+    restaurant ? restaurantName : null,
+    activity ? activityName : null,
+  ]
     .filter(Boolean)
     .join(" + ");
   const whyPicked =
@@ -2759,8 +2857,16 @@ function ComboResultCard({
       }}
     >
       <div className="grid grid-cols-2 gap-2">
-        {renderImagePanel(isActivityActivityPair ? "First Pick" : "Restaurant", restaurantImageUrl, restaurantName)}
-        {renderImagePanel(isActivityActivityPair ? "Next Pick" : "Activity", activityImageUrl, activityName)}
+        {renderImagePanel(
+          isActivityActivityPair ? "First Pick" : "Restaurant",
+          restaurantImageUrl,
+          restaurantName,
+        )}
+        {renderImagePanel(
+          isActivityActivityPair ? "Next Pick" : "Activity",
+          activityImageUrl,
+          activityName,
+        )}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col p-1 pt-3">
@@ -2775,7 +2881,9 @@ function ComboResultCard({
 
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75">
-              {isActivityActivityPair ? "Two activity stops" : "Food + experience"}
+              {isActivityActivityPair
+                ? "Two activity stops"
+                : "Food + experience"}
             </span>
             {distance !== null && distance !== undefined ? (
               <span className="rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-2.5 py-1 text-[11px] font-black text-red-50">
@@ -2789,16 +2897,18 @@ function ComboResultCard({
               Details
             </summary>
             <div className="mt-1 space-y-1">
-            {restaurant ? (
-              <p className="line-clamp-1 break-words">
-                {isActivityActivityPair ? "First Pick" : "Restaurant"}: {formatAddress(restaurant)}
-              </p>
-            ) : null}
-            {activity ? (
-              <p className="line-clamp-1 break-words">
-                {isActivityActivityPair ? "Next Pick" : "Activity"}: {formatAddress(activity)}
-              </p>
-            ) : null}
+              {restaurant ? (
+                <p className="line-clamp-1 break-words">
+                  {isActivityActivityPair ? "First Pick" : "Restaurant"}:{" "}
+                  {formatAddress(restaurant)}
+                </p>
+              ) : null}
+              {activity ? (
+                <p className="line-clamp-1 break-words">
+                  {isActivityActivityPair ? "Next Pick" : "Activity"}:{" "}
+                  {formatAddress(activity)}
+                </p>
+              ) : null}
             </div>
           </details>
         </div>
@@ -2891,7 +3001,10 @@ function ResultCard({
     analyticsMetadata,
   );
   const chips = getCardChips({ eyebrow, primaryTag, reviewKeywords });
-  const healthGrade = typeof healthDepartmentGrade === "string" ? healthDepartmentGrade.trim().toUpperCase() : "";
+  const healthGrade =
+    typeof healthDepartmentGrade === "string"
+      ? healthDepartmentGrade.trim().toUpperCase()
+      : "";
   const healthScore = formatHealthDepartmentScore(healthDepartmentScore);
   const resolvedImageUrl =
     typeof imageUrl === "string" && imageUrl.trim().length > 8
@@ -2983,7 +3096,8 @@ function ResultCard({
 
           {type === "restaurant" && (healthGrade || healthScore) ? (
             <span className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur sm:px-2.5 sm:py-1 sm:text-[11px]">
-              Health {healthGrade ? `Grade ${healthGrade}` : `Score ${healthScore}`}
+              Health{" "}
+              {healthGrade ? `Grade ${healthGrade}` : `Score ${healthScore}`}
             </span>
           ) : null}
         </div>
@@ -3010,14 +3124,14 @@ function ResultCard({
                 More details
               </summary>
               <div className="mt-2 flex flex-wrap gap-2">
-              {chips.map((chip) => (
-                <span
-                  key={chip}
-                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75"
-                >
-                  {chip}
-                </span>
-              ))}
+                {chips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75"
+                  >
+                    {chip}
+                  </span>
+                ))}
               </div>
             </details>
           )}
