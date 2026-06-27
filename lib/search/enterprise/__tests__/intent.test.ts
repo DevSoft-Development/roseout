@@ -366,6 +366,46 @@ describe("enterprise search intent", () => {
       ]),
     );
   });
+
+  it.each([
+    "dinner and hookah in manhattan",
+    "dinner with hookah in manhattan",
+    "hookah lounge with food",
+    "Italian dinner with live music",
+    "Seafood dinner with rooftop views",
+  ])("classifies %s as same-location food-feature combo", async (query) => {
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+
+    expect(intent.normalizedIntent).toBe("same_location_combo");
+    expect(intent.searchType).toBe("same_location_combo");
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(false);
+    expect(intent.wantsPairing).toBe(false);
+    expect(intent.sameVenuePreferred).toBe(true);
+    expect(intent.sameLocationRequired).toBe(true);
+    expect(intent.pairingPreference?.requiresPairing).toBe(false);
+    expect(parsed.debug.intentParserSource).toBe("fast_path");
+    expect(parsed.debug.fastPathReason).toBe("same_location_food_feature_combo");
+    expect(parsed.usedLlm).toBe(false);
+  });
+
+  it.each([
+    "dinner and hookah nearby",
+    "dinner then hookah",
+    "Italian dinner and live music nearby",
+  ])("classifies %s as explicit paired outing", async (query) => {
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.normalizedIntent).toBe("paired_outing");
+    expect(intent.wantsPairing).toBe(true);
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(true);
+    expect(intent.pairingIntent).toBe("nearby_pair");
+  });
+
 });
 
 describe("hybrid intent parsing", () => {
@@ -1160,14 +1200,12 @@ describe("activity-activity paired outing intent", () => {
     });
   }
 
-  for (const query of ["steak dinner and hookah", "dinner then rooftop bar"]) {
-    it(`keeps ${query} as restaurant + activity`, async () => {
-      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
-      expect(parsed.intent.searchType).toBe("mixed_outing");
-      expect(parsed.intent.needsRestaurant).toBe(true);
-      expect(parsed.intent.needsActivity).toBe(true);
-    });
-  }
+  it("keeps dinner then rooftop bar as restaurant + activity", async () => {
+    const parsed = await parseEnterpriseIntent("dinner then rooftop bar", { useLLM: true });
+    expect(parsed.intent.searchType).toBe("mixed_outing");
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(true);
+  });
 });
 
 describe("public create pairing intent contract", () => {
@@ -1175,7 +1213,7 @@ describe("public create pairing intent contract", () => {
     const intent = deterministicIntentFromQuery("dinner with hookah");
 
     expect(intent.pairingIntent).toBe("same_location");
-    expect(intent.pairRequested).toBe(true);
+    expect(intent.pairRequested).toBe(false);
     expect(intent.sameVenuePreferred).toBe(true);
     expect(intent.fallbackPairAllowed).toBe(true);
     expect(intent.wantsPairing).toBe(false);

@@ -15,6 +15,8 @@ import {
   detectSingleVenueWithIntent,
   hasTrueSequenceConnector,
   hasTrueProximityPairingConnector,
+  hasExplicitTwoStopLanguage,
+  hasSameLocationFoodFeatureIntent,
   detectFoodTerms,
   detectMealTerms,
   expandActivitySynonyms,
@@ -381,20 +383,8 @@ export function finalCleanTermList(
 
 type PublicSearchMode = "restaurant_only" | "activity_only" | "same_location_combo" | "paired_outing";
 
-function hasExplicitTwoStopLanguage(query: string): boolean {
-  const q = normalizeIntentTerm(query);
-  return /\b(after|afterwards|afterward|before|then|followed by|next|second stop|separate spots|close to each other|around the corner|walking distance|walkable|nearby spot|nearby lounge|apart)\b/.test(q)
-    || /\b(close by|near each other|within\s+\d+\s+(?:minutes?|mins?|miles?|mi)|near\s+(?:a|the)?\s*(?:hookah|lounge|bar|rooftop|theatre|theater|live music))\b/.test(q)
-    || /\b(?:dinner|restaurant|food|brunch|lunch|breakfast)\b[^.?!]{0,60}\b(?:hookah|rooftop drinks?|live music|theatre|theater|lounge|bar)\b[^.?!]{0,35}\b(?:nearby|close by|walking distance|within\s+\d+)/.test(q)
-    || /\b(?:hookah|rooftop drinks?|live music|theatre|theater|lounge|bar)\b[^.?!]{0,35}\b(?:after|before)\b[^.?!]{0,60}\b(?:dinner|restaurant|food|brunch|lunch|breakfast)\b/.test(q);
-}
-
 function hasSameLocationComboLanguage(query: string): boolean {
-  const q = normalizeIntentTerm(query);
-  return /\b(at|inside|serving|serves|offers|offering|has|have|featuring|features)\b/.test(q)
-    || /\bhookah\s+(?:restaurant|lounge with food)\b/.test(q)
-    || /\b(?:restaurant|dinner|food)\s+(?:with|and|\+)\s+(?:hookah|live music|rooftop|lounge|drinks)\b/.test(q)
-    || /\b(?:dinner|food)\s+(?:and|\+)\s+(?:hookah|live music|rooftop drinks?|lounge)\b/.test(q);
+  return hasSameLocationFoodFeatureIntent(query);
 }
 
 function classifyPublicSearchMode(query: string, intent: SearchIntent): PublicSearchMode {
@@ -403,7 +393,7 @@ function classifyPublicSearchMode(query: string, intent: SearchIntent): PublicSe
   const activityIntent = intent.needsActivity || stripDistanceTerms(detectActivityTerms(q)).length > 0 || /\b(hookah|shisha|lounge|bar|rooftop drinks?|live music|karaoke|bowling|theatre|theater)\b/.test(q);
   const twoStop = hasExplicitTwoStopLanguage(q) || hasTrueSequenceConnector(q) || hasTrueProximityPairingConnector(q);
   if (mealIntent && activityIntent && twoStop) return "paired_outing";
-  if (mealIntent && activityIntent && (hasSameLocationComboLanguage(q) || /\b(and|\+)\b/.test(q))) return "same_location_combo";
+  if (mealIntent && activityIntent && hasSameLocationComboLanguage(q)) return "same_location_combo";
   if (mealIntent && !activityIntent) return "restaurant_only";
   if (!mealIntent && activityIntent) return "activity_only";
   return mealIntent ? "restaurant_only" : activityIntent ? "activity_only" : "restaurant_only";
@@ -411,21 +401,47 @@ function classifyPublicSearchMode(query: string, intent: SearchIntent): PublicSe
 
 function applyPublicSearchMode(intent: SearchIntent): SearchIntent {
   const mode = classifyPublicSearchMode(intent.rawQuery, intent);
-  const pairRequested = mode === "paired_outing" || mode === "same_location_combo";
-  const normalizedPairingIntent =
-    mode === "same_location_combo"
-      ? "same_location"
-      : mode === "paired_outing"
-        ? "nearby_pair"
-        : "auto";
+  if (mode === "same_location_combo") {
+    return {
+      ...intent,
+      searchType: "same_location_combo",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      normalizedIntent: "same_location_combo",
+      pairingIntent: "same_location",
+      pairRequested: false,
+      sameVenuePreferred: true,
+      fallbackPairAllowed: true,
+      sameLocationRequired: true,
+      pairingPreference: resetPairingPreference(),
+    } as SearchIntent;
+  }
+  if (mode === "paired_outing") {
+    return {
+      ...intent,
+      searchType: "mixed_outing",
+      primaryDomain: "mixed",
+      needsRestaurant: true,
+      needsActivity: true,
+      wantsPairing: true,
+      normalizedIntent: "paired_outing",
+      pairingIntent: "nearby_pair",
+      pairRequested: true,
+      sameVenuePreferred: false,
+      fallbackPairAllowed: false,
+      sameLocationRequired: false,
+      pairingPreference: detectPairingPreference(intent.rawQuery, true),
+    } as SearchIntent;
+  }
   return {
     ...intent,
     normalizedIntent: mode,
-    pairingIntent: normalizedPairingIntent,
-    pairRequested,
-    sameVenuePreferred: mode === "same_location_combo" || intent.sameVenuePreferred === true,
-    fallbackPairAllowed: pairRequested,
-    sameLocationRequired: mode === "same_location_combo" || intent.sameLocationRequired,
+    pairingIntent: "auto",
+    pairRequested: false,
+    sameVenuePreferred: intent.sameVenuePreferred === true,
+    fallbackPairAllowed: false,
   } as SearchIntent;
 }
 

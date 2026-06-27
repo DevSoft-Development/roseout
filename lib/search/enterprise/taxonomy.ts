@@ -287,6 +287,25 @@ export function uniqueIntentTerms(items: string[]) {
   return uniq(items);
 }
 
+
+export function hasExplicitTwoStopLanguage(query: string): boolean {
+  const q = String(query || "").toLowerCase().replaceAll("_", " ").replaceAll("-", " ").replace(/\s+/g, " ").trim();
+  return /\b(after|afterward|afterwards|before|then|followed by|next|second stop|separate spots|nearby|close by|close to|near each other|walking distance|walkable|around the corner|apart)\b/.test(q)
+    || /\bwithin\s+\d+\s*(?:minutes?|mins?|miles?|mi)\b/.test(q)
+    || /\b\d+\s*(?:minute|min)\s+walk\b/.test(q)
+    || /\bnear\s+(?:a|the)\s+hookah\b/.test(q)
+    || /\bhookah\b[^.?!]{0,40}\bafter\b[^.?!]{0,40}\b(?:dinner|food|restaurant|dining)\b/.test(q)
+    || /\b(?:dinner|food|restaurant|dining)\b[^.?!]{0,40}\bthen\b[^.?!]{0,40}\bhookah\b/.test(q);
+}
+
+export function hasSameLocationFoodFeatureIntent(query: string): boolean {
+  const q = String(query || "").toLowerCase().replaceAll("_", " ").replaceAll("-", " ").replace(/\s+/g, " ").trim();
+  if (hasExplicitTwoStopLanguage(q)) return false;
+  const hasFood = /\b(dinner|food|eat|eats|restaurant|restaurants|dining|brunch|lunch|breakfast|cuisine|steak|steakhouse|seafood|sushi|italian|mexican|caribbean|mediterranean|pizza|coffee shop|coffee|cafe|café|bakery|burger|ramen|thai|chinese|japanese|korean|indian|halal|vegan|vegetarian|bbq|barbecue)\b/.test(q);
+  const hasFeature = /\b(hookah|shisha|live music|live jazz|jazz|rooftop views|rooftop|roof top|lounge|cocktails|drinks|karaoke|arcade games|arcade|outdoor seating|outdoor dining|patio|terrace)\b/.test(q);
+  return hasFood && hasFeature;
+}
+
 export function hasTrueSequenceConnector(q: string): boolean {
   const text = String(q || "").toLowerCase();
   return /\b(then|after|afterwards|afterward|followed by|next|second stop|first|before|later)\b/.test(text)
@@ -353,7 +372,7 @@ export function expandFeatureTerms(terms: string[]) {
       case "happy hour":
         return ["happy hour", "drinks", "bar"];
       case "hookah":
-        return ["hookah", "lounge"];
+        return ["hookah", "hookah lounge", "shisha", "lounge"];
       case "live music":
         return ["live music", "music"];
       case "games":
@@ -380,7 +399,8 @@ export function extractSingleVenueWithTerms(q: string) {
 
 export function detectSingleVenueWithIntent(q: string): SingleVenueWithIntent {
   const text = String(q || "").toLowerCase();
-  if (!hasSingleVenueWithConnector(text) || hasTrueSequenceConnector(text)) {
+  const sameLocationFoodFeature = hasSameLocationFoodFeatureIntent(text);
+  if ((!hasSingleVenueWithConnector(text) && !sameLocationFoodFeature) || hasExplicitTwoStopLanguage(text) || hasTrueSequenceConnector(text)) {
     return { matched: false, venueTerms: [], foodTerms: [], featureTerms: [], activityLikeFeatureTerms: [], geoText: null };
   }
   const terms = extractSingleVenueWithTerms(text);

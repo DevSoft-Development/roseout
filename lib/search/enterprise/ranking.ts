@@ -846,10 +846,12 @@ export function sameVenueSearchTerms(intent: SearchIntent) {
     };
   }
 
+  const mealTerms = intent.restaurantIntent?.mealTerms ?? [];
   const primaryCandidates = uniqLowerTerms([
     ...(intent.restaurantIntent?.cuisineTerms ?? []),
     ...(intent.restaurantIntent?.foodTerms ?? []),
-    ...(intent.restaurantIntent?.mealTerms ?? []),
+    ...mealTerms,
+    ...(mealTerms.some((term) => ["dinner", "lunch", "brunch", "breakfast"].includes(String(term).toLowerCase())) ? ["food", "restaurant"] : []),
     ...(intent.restaurantIntent?.categoryTerms ?? []),
     ...singleVenue.foodTerms,
     ...singleVenue.venueTerms,
@@ -861,7 +863,7 @@ export function sameVenueSearchTerms(intent: SearchIntent) {
   const connectorSplit = String(intent.rawQuery ?? "")
     .toLowerCase()
     .split(
-      /\b(?:with|has|have|serving|serves|offering|offers|featuring|features|including|includes)\b/,
+      /\b(?:with|and|plus|has|have|serving|serves|offering|offers|featuring|features|including|includes)\b/,
     );
   const afterWith = connectorSplit.slice(1).join(" ");
   const secondaryCandidates = uniqLowerTerms([
