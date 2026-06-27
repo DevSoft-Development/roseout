@@ -436,6 +436,25 @@ function detectFastPathActivityIntentTerms(query: string) {
   );
 }
 
+function expandGenericActivityTerms(terms: string[]) {
+  const generic = terms.some((term) => /^(activity|activities|things to do|something fun)$/.test(term));
+  if (!generic) return terms;
+  return uniqueTerms([
+    ...terms,
+    "fun activity",
+    "things to do",
+    "bowling",
+    "arcade",
+    "mini golf",
+    "museum",
+    "comedy",
+    "karaoke",
+    "billiards",
+    "gallery",
+    "paint and sip",
+  ]);
+}
+
 function emptyGeoIntent() {
   return {
     raw: null,
@@ -561,6 +580,33 @@ function fastPathDistanceMode(query: string): "walking" | "nearby" | "any" {
   return "any";
 }
 
+function fastPathPairingPreference(distanceMode: "walking" | "nearby" | "any") {
+  if (distanceMode === "nearby") {
+    return {
+      requiresPairing: true,
+      distanceMode,
+      maxPairDistanceMiles: 1.5,
+      maxPairWalkingMinutes: 30,
+      requireWalkablePair: true,
+    };
+  }
+  if (distanceMode === "walking") {
+    return {
+      requiresPairing: true,
+      distanceMode,
+      maxPairDistanceMiles: 3,
+      maxPairWalkingMinutes: 60,
+      requireWalkablePair: true,
+    };
+  }
+  return {
+    requiresPairing: true,
+    distanceMode,
+    maxPairDistanceMiles: null,
+    maxPairWalkingMinutes: null,
+    requireWalkablePair: false,
+  };
+}
 
 function broadOutingHasActivityFollowup(query: string) {
   const q = String(query || "").toLowerCase();
@@ -622,7 +668,7 @@ function createBroadOccasionMixedFastPathIntent(rawQuery: string) {
     },
     activityIntent: {
       ...createEmptyActivityIntent(),
-      activityTerms: uniqueTerms(["activity", "things to do", ...detectedActivityTerms]),
+      activityTerms: expandGenericActivityTerms(uniqueTerms(["activity", "things to do", ...detectedActivityTerms])),
       vibeTerms: broadOccasionActivityVibeTerms(detectedOccasion),
       featureTerms: [],
       categoryTerms: [],
@@ -686,13 +732,7 @@ function createDateNightMixedFastPathIntent(rawQuery: string) {
         "date night",
       ]),
     },
-    pairingPreference: {
-      requiresPairing: true,
-      distanceMode,
-      maxPairDistanceMiles: null,
-      maxPairWalkingMinutes: null,
-      requireWalkablePair: distanceMode !== "any",
-    },
+    pairingPreference: fastPathPairingPreference(distanceMode),
     geo: emptyGeoIntent(),
     vibe: ["romantic", "date night"],
     occasion: "date night",
@@ -718,15 +758,9 @@ function createExplicitMixedFastPathIntent(rawQuery: string) {
     restaurantIntent,
     activityIntent: {
       ...activityIntent,
-      activityTerms: uniqueTerms([...(activityIntent.activityTerms ?? []), ...detectedActivityTerms]),
+      activityTerms: expandGenericActivityTerms(uniqueTerms([...(activityIntent.activityTerms ?? []), ...detectedActivityTerms])),
     },
-    pairingPreference: {
-      requiresPairing: true,
-      distanceMode: fastPathDistanceMode(q),
-      maxPairDistanceMiles: null,
-      maxPairWalkingMinutes: null,
-      requireWalkablePair: fastPathDistanceMode(q) !== "any",
-    },
+    pairingPreference: fastPathPairingPreference(fastPathDistanceMode(q)),
     geo: emptyGeoIntent(),
     vibe: [],
     strictness: "high",

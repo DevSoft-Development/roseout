@@ -7,7 +7,7 @@ import {
   restaurantSearchTerms,
 } from "../normalize-intent";
 import { resolveSearchMarket } from "../markets";
-import { hasNearMeIntent, stripNearMeIntent } from "../../near-me";
+import { hasNearMeIntent, hasPairProximityIntent, stripNearMeIntent } from "../../near-me";
 import {
   getEnterpriseIntentFastPathReason,
   parseEnterpriseIntent,
@@ -29,6 +29,20 @@ describe("enterprise search intent", () => {
     expect(cleanedSeafood).toBe("seafood");
     expect(restaurantSearchTerms(seafoodIntent)).not.toContain("near me");
     expect(seafoodIntent.searchType).toBe("restaurant");
+  });
+
+
+  it("separates current-location near-me from pair-proximity nearby", () => {
+    expect(hasNearMeIntent("brunch and activity nearby")).toBe(false);
+    expect(hasPairProximityIntent("brunch and activity nearby")).toBe(true);
+    expect(stripNearMeIntent("brunch and activity nearby")).toBe("brunch and activity nearby");
+
+    expect(hasNearMeIntent("brunch and activity near me")).toBe(true);
+    expect(stripNearMeIntent("brunch and activity near me")).toBe("brunch and activity");
+
+    expect(hasNearMeIntent("dinner and bowling close by")).toBe(false);
+    expect(hasPairProximityIntent("dinner and bowling close by")).toBe(true);
+    expect(hasNearMeIntent("restaurants around me")).toBe(true);
   });
 
   it("keeps date-night near-me queries as pair intent after location words are stripped", () => {
@@ -53,6 +67,31 @@ describe("enterprise search intent", () => {
       expect(intent.needsActivity).toBe(true);
       expect(intent.wantsPairing).toBe(true);
       expect(activitySearchTerms(intent).length).toBeGreaterThan(0);
+    });
+  }
+
+
+  for (const query of ["brunch and activity nearby", "dinner and activity nearby", "Mexican dinner and bowling nearby"]) {
+    it(`marks ${query} as a strict nearby paired outing`, async () => {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      const intent = parsed.intent;
+
+      expect(intent.searchType).toBe("mixed_outing");
+      expect(intent.normalizedIntent).toBe("paired_outing");
+      expect(intent.primaryDomain).toBe("mixed");
+      expect(intent.wantsPairing).toBe(true);
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(true);
+      expect(intent.pairingIntent).toBe("nearby_pair");
+      expect(intent.pairRequested).toBe(true);
+      expect(intent.sameVenuePreferred).toBe(false);
+      expect(intent.sameLocationRequired).toBe(false);
+      expect(intent.fallbackPairAllowed).toBe(false);
+      expect(intent.pairingPreference?.requiresPairing).toBe(true);
+      expect(intent.pairingPreference?.distanceMode).toBe("nearby");
+      expect(intent.pairingPreference?.maxPairDistanceMiles).toBe(1.5);
+      expect(intent.pairingPreference?.maxPairWalkingMinutes).toBe(30);
+      expect(intent.pairingPreference?.requireWalkablePair).toBe(true);
     });
   }
 
