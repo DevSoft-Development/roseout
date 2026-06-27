@@ -22,6 +22,7 @@ export type NormalizedCreateSearchRequest = {
   selectedSearchLane: SelectedSearchLane;
   searchBody: Record<string, any>;
   debugParity: Record<string, any>;
+  pairProximityIntent: boolean;
 };
 
 function normalizeSelectedSearchLane(value: unknown): SelectedSearchLane | null {
@@ -105,8 +106,11 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     needsRestaurant: wantsPairing || selectedSearchLane !== "activity",
     needsActivity: wantsPairing || selectedSearchLane !== "restaurant",
     distanceMode: pairProximityIntent ? "nearby" : null,
-    searchBackendUsed: "edge",
-    currentLocationBackendDecision: useCurrentLocation ? "edge_with_user_location_context" : "edge_no_current_location",
+    searchBackendUsed: "enterprise",
+    currentLocationBackendDecision: useCurrentLocation ? "enterprise_with_user_location" : "enterprise_without_user_location",
+    enterpriseSearchUsed: true,
+    legacyFallbackUsed: false,
+    legacyFallbackReason: null,
   };
   const searchBody: Record<string, any> = {
     ...body,
@@ -130,5 +134,5 @@ export function normalizeCreateSearchRequest(input: NormalizeCreateSearchRequest
     ...(selectedSearchLane === "auto" ? { searchType: "auto" } : { searchType: selectedSearchLane }),
     debugParity,
   };
-  return { rawQuery, cleanedQuery, nearMeIntent, typedLocationIntent, useCurrentLocation, userLatitude, userLongitude, rawQueryBeforeNearMeStrip, rawQueryAfterNearMeStrip, selectedSearchLane, searchBody, debugParity };
+  return { rawQuery, cleanedQuery, nearMeIntent, typedLocationIntent, useCurrentLocation, userLatitude, userLongitude, rawQueryBeforeNearMeStrip, rawQueryAfterNearMeStrip, selectedSearchLane, searchBody, debugParity, pairProximityIntent };
 }

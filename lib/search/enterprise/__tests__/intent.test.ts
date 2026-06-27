@@ -43,6 +43,40 @@ describe("enterprise search intent", () => {
     expect(hasNearMeIntent("dinner and bowling close by")).toBe(false);
     expect(hasPairProximityIntent("dinner and bowling close by")).toBe(true);
     expect(hasNearMeIntent("restaurants around me")).toBe(true);
+    expect(hasPairProximityIntent("restaurants around me")).toBe(false);
+
+    for (const query of [
+      "near me",
+      "around me",
+      "close to me",
+      "by me",
+      "nearby me",
+      "near my location",
+      "around my location",
+      "close to my location",
+      "use my location",
+      "current location",
+      "near where I am",
+      "around where I am",
+    ]) {
+      expect(hasNearMeIntent(query)).toBe(true);
+    }
+
+    for (const query of [
+      "nearby",
+      "close by",
+      "near each other",
+      "close together",
+      "walking distance",
+      "walkable",
+      "brunch and activity nearby",
+      "dinner and bowling nearby",
+      "restaurants nearby",
+      "activity nearby",
+    ]) {
+      expect(hasNearMeIntent(query)).toBe(false);
+      expect(hasPairProximityIntent(query)).toBe(true);
+    }
   });
 
   it("keeps date-night near-me queries as pair intent after location words are stripped", () => {
