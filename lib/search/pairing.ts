@@ -1,6 +1,7 @@
 import { isExactRequestedNeighborhoodMatch, isSameRequestedBoroughMatch } from "./geo-matching";
 import type { CanonicalSearchIntent } from "./types";
 import { areMarketsPairable, inferMarketFromCityStateCounty, type MarketKey } from "../location-markets";
+import { calculatePairReviewFit } from "../ml/reviewIntelligence";
 
 function textField(record: any, field: string) {
   return String(record?.[field] ?? "").toLowerCase().trim();
@@ -27,6 +28,7 @@ function pairScore(restaurant: any, activity: any, intent: CanonicalSearchIntent
     if (isSameRequestedBoroughMatch(restaurant, intent.geoIntent)) score += 40;
     if (isSameRequestedBoroughMatch(activity, intent.geoIntent)) score += 40;
   }
+  score += calculatePairReviewFit(restaurant.review_ml_features || restaurant.location_review_ml_features, activity.review_ml_features || activity.location_review_ml_features, intent);
   return score;
 }
 

@@ -5,6 +5,7 @@ import {
 import { scoreGeoMatch } from "./geo-matching";
 import type { CanonicalSearchIntent } from "./types";
 import { evaluateSoftHours } from "./hours";
+import { calculateIntentReviewFit } from "../ml/reviewIntelligence";
 
 function scoreRecord(record: any, terms: string[]) {
   const text = [
@@ -371,8 +372,8 @@ export function rankRestaurants(records: any[], intent: CanonicalSearchIntent) {
     bs += bRooftop;
     as -= chainRankPenalty(a, intent);
     bs -= chainRankPenalty(b, intent);
-    as += reviewKeywordScore(a, intent);
-    bs += reviewKeywordScore(b, intent);
+    as += reviewKeywordScore(a, intent) + calculateIntentReviewFit(intent, a.review_ml_features || a.reviewMlFeatures || a.location_review_ml_features);
+    bs += reviewKeywordScore(b, intent) + calculateIntentReviewFit(intent, b.review_ml_features || b.reviewMlFeatures || b.location_review_ml_features);
     as += sameVenueScore(a, intent);
     bs += sameVenueScore(b, intent);
     const aHours = evaluateSoftHours(a, intent);
@@ -406,11 +407,13 @@ export function rankActivities(records: any[], intent: CanonicalSearchIntent) {
       scoreRecord(a, activityTerms) +
       scoreGeoMatch(a, intent.geoIntent) * geoWeight +
       reviewKeywordScore(a, intent) +
+      calculateIntentReviewFit(intent, a.review_ml_features || a.reviewMlFeatures || a.location_review_ml_features) +
       aHours.boost;
     const bScore =
       scoreRecord(b, activityTerms) +
       scoreGeoMatch(b, intent.geoIntent) * geoWeight +
       reviewKeywordScore(b, intent) +
+      calculateIntentReviewFit(intent, b.review_ml_features || b.reviewMlFeatures || b.location_review_ml_features) +
       bHours.boost;
     return bScore - aScore;
   });
