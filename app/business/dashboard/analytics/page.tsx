@@ -5,12 +5,17 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
 import { isBusinessPro } from "@/lib/analytics/business-analytics";
 import BusinessAnalyticsDashboard from "@/components/analytics/BusinessAnalyticsDashboard";
+import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
 
 export const dynamic = "force-dynamic";
 
 const LOCATION_SAFE_ORDER_COLUMN = "id";
 
-export default async function BusinessAnalyticsPage() {
+export default async function BusinessAnalyticsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = searchParams ? await searchParams : {};
+  if (params.demo === "1" || params.fromDemoCenter === "1" || params.adminLocationId) {
+    return <BusinessGrowthProPage module="analytics" searchParams={params} />;
+  }
   const cookieStore = await cookies();
   const impersonatedLocationId = cookieStore.get("theouthaven_impersonate_location_id")?.value;
   const impersonatedUserId = cookieStore.get("theouthaven_impersonate_user_id")?.value;

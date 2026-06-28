@@ -1,3 +1,3 @@
 import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
 export const dynamic = "force-dynamic";
-export default function Page(){ return <BusinessGrowthProPage module="vip" />; }
+export default function Page({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }){ return <BusinessGrowthProPage module="vip" searchParams={searchParams} />; }

@@ -308,7 +308,9 @@ export default function LocationDetailPage() {
         }
       }
 
-      if (error || !data || !isPublicSearchVisible(data)) {
+      const demoPreview = searchParams.get("demo") === "1" && searchParams.get("fromDemoCenter") === "1" && (searchParams.get("adminLocationId") === String(data?.id || locationId) || searchParams.get("locationId") === String(data?.id || locationId));
+      const demoTagged = (data as any)?.demo_key === "real_location_mirror_demo" || (data as any)?.metadata?.demo_key === "real_location_mirror_demo";
+      if (error || !data || (!isPublicSearchVisible(data) && !(demoPreview && demoTagged))) {
         console.error(
           "Location fetch error:",
           error?.message ||
@@ -334,7 +336,7 @@ export default function LocationDetailPage() {
     }
 
     if (locationId) loadLocation();
-  }, [locationId, supabase, type]);
+  }, [locationId, searchParams, supabase, type]);
 
   useEffect(() => {
     function onScroll() {
