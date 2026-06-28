@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
+import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ location?: string }>;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 function formatDate(value?: string | null) {
   if (!value) return "Not scheduled";
@@ -18,12 +19,16 @@ function planLabel(plan?: string | null) {
 }
 
 export default async function BusinessBillingPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  if (params.demo === "1" || params.fromDemoCenter === "1" || params.adminLocationId) {
+    return <BusinessGrowthProPage module="billing" searchParams={params} />;
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
 
-  const params = await searchParams;
   const { data: locations } = await supabaseAdmin
     .from("locations")
     .select("id, name, restaurant_name, activity_name, city, state, subscription_plan, subscription_status, current_period_end, trial_ends_at, stripe_customer_id, stripe_subscription_id, owner_user_id, owner_email, claimed_by_email")

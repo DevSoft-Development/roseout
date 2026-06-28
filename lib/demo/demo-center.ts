@@ -641,7 +641,7 @@ export async function seedMirrorDemoData(locationId: string) {
       destination_path:
         getMirrorDemoLinks(locationId).find((l) =>
           l.label.toLowerCase().includes(t.replace("_", " ")),
-        )?.href || `/locations/hybrid/${locationId}?demo=1`,
+        )?.href || `/locations/restaurant/${locationId}?adminLocationId=${locationId}&locationId=${locationId}&type=restaurant&demo=1&fromDemoCenter=1`,
       label: `Demo ${t.replace("_", " ")} QR`,
       metadata: demoMetadata,
     })),
@@ -940,7 +940,8 @@ export async function resetMirrorDemoData(
   };
 }
 export function getMirrorDemoLinks(locationId: string): DemoLink[] {
-  const pub = `/locations/hybrid/${locationId}`;
+  const context = `adminLocationId=${locationId}&locationId=${locationId}&type=restaurant&demo=1&fromDemoCenter=1`;
+  const pub = `/locations/restaurant/${locationId}`;
   return [
     "Public Profile",
     "Public Menu",
@@ -956,20 +957,20 @@ export function getMirrorDemoLinks(locationId: string): DemoLink[] {
       label,
       href:
         label === "Public Profile"
-          ? `${pub}?demo=1`
+          ? `${pub}?${context}`
           : label.includes("Reservation")
-            ? `/reserve/location/${locationId}?demo=1`
-            : `${pub}/${label.split(" ")[1].toLowerCase().replace("check-in", "check-in")}?demo=1`,
+            ? `/reserve/location/${locationId}?${context}`
+            : `${pub}/${label.split(" ")[1].toLowerCase().replace("check-in", "check-in")}?${context}`,
     }))
     .concat([
       { label: "Admin CRM", href: `/admin/dashboard/crm/${locationId}` },
       {
         label: "Business Dashboard",
-        href: `/business/dashboard?locationId=${locationId}`,
+        href: `/business/dashboard?${context}`,
       },
       {
         label: "Sales Demo",
-        href: `/admin/dashboard/settings/demo-center?mode=sales&locationId=${locationId}`,
+        href: `/admin/dashboard/settings/demo-center?mode=sales&${context}`,
       },
       { label: "Team Training", href: "/admin/dashboard/team/demo" },
     ]);
