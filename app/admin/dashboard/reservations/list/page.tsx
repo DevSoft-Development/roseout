@@ -3,7 +3,7 @@ import AdminPageTabs from "@/components/admin/AdminPageTabs";
 import { adminReservationTabs } from "@/components/admin/reservationTabs";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import ReservationListPage from "../../../../reserve/dashboard/reservations/page";
+import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
 
 export const metadata: Metadata = {
   title: "Reservation List | TheOutHaven Admin",
@@ -25,7 +25,7 @@ export default async function AdminReservationListPage() {
             <AdminPageTabs tabs={adminReservationTabs} />
           </div>
         </section>
-        <ReservationListPage />
+        <ReserveCommandCenterPage />
       </div>
     </main>
   );

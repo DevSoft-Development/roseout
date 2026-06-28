@@ -3,20 +3,14 @@ import AdminPageTabs from "@/components/admin/AdminPageTabs";
 import { adminReservationTabs } from "@/components/admin/reservationTabs";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import ReserveDashboardPage from "../../../reserve/dashboard/page";
+import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
 
 export const metadata: Metadata = {
   title: "Reservations",
   description: "Admin reservation operations dashboard.",
 };
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
-export default async function AdminReservationsPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function AdminReservationsPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
 
   return (
@@ -37,7 +31,7 @@ export default async function AdminReservationsPage({
             <AdminPageTabs tabs={adminReservationTabs} />
           </div>
         </section>
-        <ReserveDashboardPage searchParams={searchParams} />
+        <ReserveCommandCenterPage />
       </div>
     </main>
   );
