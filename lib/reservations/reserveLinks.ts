@@ -1,4 +1,32 @@
-export function reserveQuery(params: Record<string,string|undefined>) { const q = new URLSearchParams(); Object.entries(params).forEach(([k,v])=>{ if(v) q.set(k,v); }); const s=q.toString(); return s ? `?${s}` : ''; }
-export function getEmbedLink(locationId?: string) { return locationId ? `/embed/reservations/${locationId}` : ''; }
-export function getQrLink(locationId?: string) { return locationId ? `/business/dashboard/qr-codes?locationId=${encodeURIComponent(locationId)}&mode=reservations` : ''; }
-export function getBookingLink(locationId?: string, type='restaurant') { return locationId ? `/reserve/${type}/${locationId}` : ''; }
+export function reserveQuery(params: Record<string, string | undefined>) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const value = query.toString();
+  return value ? `?${value}` : "";
+}
+
+export function getReserveDashboardUrl(tab = "today", section?: string) {
+  return `/reserve/dashboard${reserveQuery({ tab, section })}`;
+}
+
+export function getReserveEmbedUrl(locationId?: string) {
+  return locationId ? `/embed/reservations/${encodeURIComponent(locationId)}` : "";
+}
+
+export function getReserveQrUrl(locationId?: string) {
+  return locationId ? `/business/dashboard/qr-codes?locationId=${encodeURIComponent(locationId)}&mode=reservations` : "";
+}
+
+export function getReserveBookingUrl(locationId?: string, type = "restaurant") {
+  return locationId ? `/reserve/${encodeURIComponent(type)}/${encodeURIComponent(locationId)}` : "";
+}
+
+export function getReservePublicProfileUrl(locationId?: string) {
+  return locationId ? `/reserve/location/${encodeURIComponent(locationId)}` : "";
+}
+
+export const getEmbedLink = getReserveEmbedUrl;
+export const getQrLink = getReserveQrUrl;
+export const getBookingLink = getReserveBookingUrl;

@@ -33,7 +33,7 @@ export default function AdminActingAsLocationBanner({
     router.push(`${pathname}${query ? `?${query}` : ""}`);
   };
 
-  const copyLocationId = async () => navigator.clipboard?.writeText(locationId);
+  const copyLocationId = async () => { await navigator.clipboard?.writeText(locationId); };
 
   return (
     <section className="sticky top-0 z-40 border-b border-amber-300/30 bg-amber-950/95 px-4 py-3 text-amber-50 shadow-xl backdrop-blur">
@@ -50,7 +50,7 @@ export default function AdminActingAsLocationBanner({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <AdminLocationQuickActions locationId={locationId} compact />
+          <AdminLocationQuickActions locationId={locationId} locationType={locationType} compact />
           <Link href={`/admin/dashboard/crm/${locationId}`} className="rounded-full bg-amber-200 px-3 py-1.5 text-xs font-black text-amber-950">
             Open Location Profile
           </Link>
