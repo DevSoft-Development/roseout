@@ -27,6 +27,7 @@ export default function AdminActingAsLocationBanner({
   if (!locationId) return null;
 
   const stopActing = () => {
+    window.sessionStorage.removeItem("reserveAdminLocationId");
     const params = new URLSearchParams(searchParams.toString());
     params.delete("adminLocationId");
     const query = params.toString();

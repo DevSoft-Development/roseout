@@ -7,8 +7,8 @@ export function reserveQuery(params: Record<string, string | undefined>) {
   return value ? `?${value}` : "";
 }
 
-export function getReserveDashboardUrl(tab = "today", section?: string) {
-  return `/reserve/dashboard${reserveQuery({ tab, section })}`;
+export function getReserveDashboardUrl(tab = "today", section?: string, context: Record<string, string | undefined> = {}) {
+  return `/reserve/dashboard${reserveQuery({ ...context, tab, section })}`;
 }
 
 export function getReserveEmbedUrl(locationId?: string) {
