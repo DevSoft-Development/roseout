@@ -1,0 +1,2 @@
+"use client";
+export default function ReserveQuickActionButton({children,disabled,title,onClick}:{children:React.ReactNode;disabled?:boolean;title?:string;onClick?:()=>void}){return <button type="button" disabled={disabled} title={title} onClick={onClick} className="rounded-full border border-[var(--reserve-border)] px-4 py-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-45 enabled:hover:bg-[var(--reserve-surface-soft)]">{children}</button>}
