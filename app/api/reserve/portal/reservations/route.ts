@@ -137,10 +137,40 @@ export async function POST(request: NextRequest) {
     const status = normalizeStatus(cleanString(body.status));
 
     if (!reservationId) {
-      return NextResponse.json(
-        { error: "Missing reservation ID." },
-        { status: 400 }
-      );
+      const customerName = cleanString(body.customer_name || body.guest_name || body.name);
+      const reservationDate = cleanString(body.reservation_date);
+      const reservationTime = cleanString(body.reservation_time).slice(0, 5);
+      const partySize = Math.max(Number(body.party_size || 2), 1);
+      if (!locationId || !customerName || !reservationDate || !reservationTime) {
+        return NextResponse.json({ error: "Missing required reservation details." }, { status: 400 });
+      }
+      const createStatus = status || "confirmed";
+      const payload: Record<string, unknown> = {
+        location_id: locationId,
+        location_type: locationType,
+        customer_name: customerName,
+        customer_email: cleanString(body.customer_email) || null,
+        customer_phone: cleanString(body.customer_phone) || null,
+        party_size: partySize,
+        reservation_date: reservationDate,
+        reservation_time: reservationTime,
+        status: createStatus,
+        source: cleanString(body.source) || "owner_dashboard",
+        special_request: cleanString(body.special_request || body.notes) || null,
+        special_requests: cleanString(body.special_request || body.notes) || null,
+        duration_minutes: Number(body.duration_minutes || 90),
+        updated_at: new Date().toISOString(),
+      };
+      if (createStatus === "checked_in" || createStatus === "arrived") {
+        payload.checked_in_at = new Date().toISOString();
+        payload.arrived_at = new Date().toISOString();
+      }
+      const { data, error } = await supabaseAdmin.from("location_reservations").insert(payload).select("*").single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (adminLocationId) {
+        await logAdminLocationAction({ adminUser, locationId, actionType: "admin_reservation_create", targetType: "reservation", targetId: data.id, afterData: data, metadata: { locationType }, request });
+      }
+      return NextResponse.json({ success: true, reservation: data });
     }
 
     if (!locationId) {
