@@ -143,12 +143,12 @@ function ReserveCommandCenterContent() {
     const timer = window.setInterval(() => {
       const tag = document.activeElement?.tagName?.toLowerCase();
       const typing = tag === "input" || tag === "textarea" || tag === "select";
-      if (modal || submitting || updatingId || typing) return;
+      if (modal || submitting || updatingId || assigningReservationId || typing) return;
       void loadAll({ silent: true });
     }, 5000);
     return () => window.clearInterval(timer);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [locationId, locationType, adminLocationId, selectedDate, modal, submitting, updatingId]);
+  }, [locationId, locationType, adminLocationId, selectedDate, modal, submitting, updatingId, assigningReservationId]);
 
   const dayReservations = reservations.filter((r)=>r.reservation_date === selectedDate);
   const filtered = dayReservations.filter((r)=> (statusFilter === "all" || r.status === statusFilter) && `${r.customer_name||""} ${r.customer_phone||""} ${r.customer_email||""} ${r.special_request||""}`.toLowerCase().includes(search.toLowerCase()));
