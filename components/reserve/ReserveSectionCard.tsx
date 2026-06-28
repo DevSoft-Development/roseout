@@ -1,0 +1,2 @@
+import type { ReactNode } from "react";
+export default function ReserveSectionCard({ title, eyebrow, children, action }: { title: string; eyebrow?: string; children: ReactNode; action?: ReactNode }) { return <section className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-5 shadow-2xl"><div className="mb-4 flex flex-wrap items-start justify-between gap-3"> <div>{eyebrow ? <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">{eyebrow}</p> : null}<h2 className="mt-1 text-2xl font-black">{title}</h2></div>{action}</div>{children}</section>; }

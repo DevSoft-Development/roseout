@@ -18,6 +18,12 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import AdminActingAsLocationBanner from "@/components/admin/AdminActingAsLocationBanner";
 import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
 import { supabase } from "@/lib/supabase";
+import ReserveShell from "@/components/reserve/ReserveShell";
+import ReservePageHeader from "@/components/reserve/ReservePageHeader";
+import ReserveMetricCard from "@/components/reserve/ReserveMetricCard";
+import ReserveTabs from "@/components/reserve/ReserveTabs";
+import ReserveEmptyState from "@/components/reserve/ReserveEmptyState";
+import ReservationTimelineTable from "@/components/reserve/ReservationTimelineTable";
 
 type ReservationStatus =
   | "pending"
@@ -359,264 +365,62 @@ function ReservePortalReservationsContent() {
         />
       )}
 
-      <main className="min-h-screen bg-black pt-24 text-white">
-        <section className="relative overflow-hidden px-5 py-10 sm:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(225,6,42,0.35),transparent_30%),#000]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/85 to-black" />
+      <ReserveShell>
+        <ReservePageHeader
+          eyebrow="Host dashboard"
+          title="Daily Reservation Flow"
+          subtitle="Run today’s bookings, guest arrivals, seating, and exceptions without technical reports or raw data."
+          actions={
+            <>
+              <Link href={fromDemoCenter ? "/admin/dashboard/settings/demo-center" : `/reserve/dashboard${locationId ? `?${new URLSearchParams({ ...(adminLocationId ? { adminLocationId } : {}), locationId, type: locationType, ...(demoMode ? { demo: "1" } : {}), ...(fromDemoCenter ? { fromDemoCenter: "1" } : {}) }).toString()}` : ""}`} className="rounded-full border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white/75">Back</Link>
+              <button onClick={loadReservations} className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-500"><RefreshCw size={16} /> Refresh</button>
+            </>
+          }
+        />
 
-          <div className="relative z-10 mx-auto max-w-7xl">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <Link
-                href={fromDemoCenter ? "/admin/dashboard/settings/demo-center" : `/reserve/dashboard${locationId ? `?${new URLSearchParams({ ...(adminLocationId ? { adminLocationId } : {}), locationId, type: locationType, ...(demoMode ? { demo: "1" } : {}), ...(fromDemoCenter ? { fromDemoCenter: "1" } : {}) }).toString()}` : ""}`}
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
-              >
-                <ArrowLeft size={16} />
-                {fromDemoCenter ? "Back to Demo Center" : "Back"}
-              </Link>
+        {adminLocationId && (
+          <AdminActingAsLocationBanner
+            locationId={adminLocationId}
+            locationName={adminSummary?.location?.name}
+            locationType={adminSummary?.location?.location_type}
+            plan={adminSummary?.location?.plan}
+            reservationAccess={adminSummary?.reservationAccess?.plan}
+          />
+        )}
 
-              {adminLocationId && (
-                <div className="min-w-[18rem] flex-1 md:max-w-lg">
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Admin Location</p>
-                  <AdminLocationSearch compact />
-                </div>
-              )}
+        {adminLocationId && <AdminLocationSearch compact />}
 
-              <button
-                onClick={loadReservations}
-                className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-red-500"
-              >
-                <RefreshCw size={16} />
-                Refresh
-              </button>
+        {error && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm font-bold text-red-100">{error}</div>}
+
+        <section className="grid gap-4 md:grid-cols-4 xl:grid-cols-7">
+          <ReserveMetricCard label="Needs action" value={stats.pending} />
+          <ReserveMetricCard label="Ready" value={stats.confirmed} />
+          <ReserveMetricCard label="Guest arrived" value={stats.arrived} />
+          <ReserveMetricCard label="Finished" value={stats.completed} />
+          <ReserveMetricCard label="Cancelled" value={stats.cancelled} />
+          <ReserveMetricCard label="No-shows" value={stats.noShow} />
+          <ReserveMetricCard label="Arrival rate" value={`${stats.arrivalRate}%`} />
+        </section>
+
+        <section className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-5 shadow-2xl">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">Working list</p>
+              <h2 className="mt-1 text-2xl font-black">Reservations first</h2>
+              <p className="mt-2 text-sm text-white/55">Filter by status, then use row actions for supported status changes. Message, resource assignment, and moving times stay disabled unless a safe backend endpoint exists.</p>
             </div>
-
-            <div className="mt-8">
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-red-400">
-Host View
-              </p>
-
-              <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">
-Host View
-              </h1>
-
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">
-                Manage today’s reservations, check-ins, seating, and live availability.
-              </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <input className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white placeholder:text-white/35" placeholder="Search guest / phone" disabled />
+              <input className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white" type="date" disabled />
+              <select className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm text-white" disabled><option>All resources</option></select>
             </div>
-
-            <section className="mt-8 grid gap-4 md:grid-cols-4">
-              {[
-                { label: "Review new reservations", done: stats.total > 0 },
-                { label: "Confirm or decline requests", done: stats.pending === 0 && stats.total > 0 },
-                { label: "Mark guests as arrived", done: stats.arrived + stats.completed > 0 },
-                { label: "Complete or mark no-show", done: stats.completed + stats.noShow > 0 },
-              ].map((step, index) => (
-                <div key={step.label} className={`rounded-2xl border p-4 ${step.done ? "border-red-400 bg-red-600/25" : "border-white/10 bg-white/10"}`}>
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-black ${step.done ? "bg-red-600 text-white" : "bg-white/15 text-white/55"}`}>{index + 1}</span>
-                    <p className="text-sm font-black">{step.label}</p>
-                  </div>
-                </div>
-              ))}
-            </section>
-
-            <p className="mt-4 max-w-3xl text-sm text-white/55">
-              Use this simple flow during service: handle new requests first, welcome confirmed guests when they arrive, then close each visit when service is finished.
-            </p>
-
-            {error && (
-              <div className="mt-6 rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm font-bold text-red-100">
-                {error}
-              </div>
-            )}
-
-            <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-              <div className="rounded-[2rem] bg-white p-6 text-black">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-                      Reservation Overview
-                    </p>
-                    <h2 className="mt-2 text-4xl font-extrabold">
-                      {stats.total} total reservations
-                    </h2>
-                    <p className="mt-2 text-sm font-medium text-neutral-500">
-                      {locationId ? "Live activity for this location." : "Live activity across all Reserve bookings."}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-black px-5 py-4 text-white">
-                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-                      Arrival Rate
-                    </p>
-                    <p className="mt-1 text-3xl font-extrabold">
-                      {stats.arrivalRate}%
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-7 grid gap-4 md:grid-cols-4">
-                  <MiniMetric label="Pending" value={stats.pending} />
-                  <MiniMetric label="Confirmed" value={stats.confirmed} />
-                  <MiniMetric label="Arrived" value={stats.arrived} />
-                  <MiniMetric label="Completed" value={stats.completed} />
-                </div>
-              </div>
-
-              <div className="rounded-[2rem] bg-gradient-to-br from-red-700 via-red-600 to-black p-6 text-white">
-                <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/60">
-                  Today’s Focus
-                </p>
-
-                <h2 className="mt-2 text-5xl font-extrabold">
-                  {stats.pending}
-                </h2>
-
-                <p className="mt-2 text-sm font-semibold text-white/65">
-                  Pending reservations need attention.
-                </p>
-
-                <div className="mt-7 grid grid-cols-2 gap-3">
-                  <DarkMetric label="No-Shows" value={String(stats.noShow)} />
-                  <DarkMetric label="No-Show Rate" value={`${stats.noShowRate}%`} />
-                </div>
-              </div>
-            </section>
-
-            <section className="mt-6 grid gap-6 lg:grid-cols-3">
-              <div className="rounded-[2rem] bg-white p-6 text-black lg:col-span-2">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-                      Reservation Status
-                    </p>
-                    <h2 className="mt-2 text-2xl font-extrabold">
-                      Booking status breakdown
-                    </h2>
-                  </div>
-
-                  <TrendingUp className="text-red-600" size={28} />
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  <PipelineRow
-                    label="Pending"
-                    value={stats.pending}
-                    total={stats.total}
-                  />
-                  <PipelineRow
-                    label="Confirmed"
-                    value={stats.confirmed}
-                    total={stats.total}
-                  />
-                  <PipelineRow
-                    label="Arrived"
-                    value={stats.arrived}
-                    total={stats.total}
-                  />
-                  <PipelineRow
-                    label="Completed"
-                    value={stats.completed}
-                    total={stats.total}
-                  />
-                  <PipelineRow
-                    label="Cancelled"
-                    value={stats.cancelled}
-                    total={stats.total}
-                  />
-                  <PipelineRow
-                    label="No Shows"
-                    value={stats.noShow}
-                    total={stats.total}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-[2rem] bg-white p-6 text-black">
-                <p className="text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-                  Quick Filters
-                </p>
-
-                <h2 className="mt-3 text-2xl font-extrabold">
-                  View reservations
-                </h2>
-
-                <div className="mt-5 grid gap-3">
-                  <FilterButton
-                    label="All"
-                    count={stats.total}
-                    active={activeStatus === "all"}
-                    onClick={() => setActiveStatus("all")}
-                  />
-
-                  {statuses.map((status) => (
-                    <FilterButton
-                      key={status}
-                      label={statusLabel(status)}
-                      count={
-                        reservations.filter((item) => item.status === status)
-                          .length
-                      }
-                      active={activeStatus === status}
-                      onClick={() => setActiveStatus(status)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <section className="mt-8 overflow-hidden rounded-[2rem] bg-white text-black">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 p-5">
-                <div>
-                  <h2 className="text-xl font-bold">
-                    {activeStatus === "all"
-                      ? "All Reservations"
-                      : `${statusLabel(activeStatus)} Reservations`}
-                  </h2>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    {filteredReservations.length} reservation
-                    {filteredReservations.length === 1 ? "" : "s"} shown
-                  </p>
-                </div>
-              </div>
-
-              {loading ? (
-                <div className="flex min-h-[300px] items-center justify-center">
-                  <div className="text-center">
-                    <Loader2 className="mx-auto animate-spin text-red-600" />
-                    <p className="mt-4 text-sm font-bold text-neutral-500">
-                      Loading reservations...
-                    </p>
-                  </div>
-                </div>
-              ) : filteredReservations.length === 0 ? (
-                <div className="flex min-h-[300px] items-center justify-center text-center">
-                  <div>
-                    <CalendarDays className="mx-auto text-neutral-300" size={44} />
-                    <h2 className="mt-4 text-2xl font-black">
-                      You’re all caught up.
-                    </h2>
-                    <p className="mt-2 text-sm text-neutral-500">
-                      No reservations yet. Once customers book from your TheOutHaven listing, they’ll appear here.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="divide-y divide-neutral-200">
-                  {filteredReservations.map((reservation) => (
-                    <ReservationRow
-                      key={reservation.id}
-                      reservation={reservation}
-                      updating={updatingId === reservation.id}
-                      onUpdate={updateStatus}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
+          </div>
+          <div className="mt-5"><ReserveTabs active={activeStatus} onChange={(value) => setActiveStatus(value as ReservationStatus | "all")} tabs={[{ label: "All", value: "all", count: stats.total }, ...statuses.map((status) => ({ label: statusLabel(status), value: status, count: reservations.filter((item) => item.status === status).length }))]} /></div>
+          <div className="mt-5">
+            {loading ? <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-10 text-center text-sm font-bold text-white/55"><Loader2 className="mx-auto mb-3 animate-spin text-red-500" />Loading reservations...</div> : filteredReservations.length === 0 ? <ReserveEmptyState title="You’re all caught up." message="No reservations match this view. New bookings and changes will appear here automatically." /> : <ReservationTimelineTable reservations={filteredReservations} updatingId={updatingId} onPrimaryAction={(reservation, status) => updateStatus(reservation as Reservation, status as ReservationStatus)} onCancel={(reservation) => updateStatus(reservation as Reservation, "cancelled")} onNoShow={(reservation) => updateStatus(reservation as Reservation, "no_show")} />}
           </div>
         </section>
-      </main>
+      </ReserveShell>
     </>
   );
 }
