@@ -6,7 +6,7 @@ export const MIRROR_DEMO_KEY = "real_location_mirror_demo";
 export const MIRROR_DEMO_MODE = "real_location_mirror";
 export const DEMO_LOCATION_NAME = "TheOutHaven Demo Lounge";
 export const SAFE_DEMO_EMAILS = new Set(["demo-owner@theouthaven.com", "demo-events@theouthaven.com", "demo-reservations@theouthaven.com", "demo-customer@theouthaven.com", "demo-vip@theouthaven.com"]);
-export type DemoStatus = "Ready" | "Partial" | "Missing" | "Needs setup" | "Not installed" | "Needs data" | "Hidden" | "Exposed";
+export type DemoStatus = "Ready" | "Partial" | "Missing" | "Needs setup" | "Not installed" | "Needs data" | "Hidden" | "Exposed" | "Not tested" | "Missing template";
 export type DemoLink = { label: string; href: string; description?: string };
 export type InsertSafeResult = { ok: boolean; table: string; insertedCount: number; skipped: boolean; reason?: string; data?: any[] };
 export const demoMetadata = { demo: true, demo_key: MIRROR_DEMO_KEY, demo_mode: MIRROR_DEMO_MODE };
@@ -16,6 +16,32 @@ function errorMessage(error: any) { return String(error?.message || error?.detai
 function missingColumnName(error: any) { const msg = errorMessage(error); return msg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+(?:of relation\s+"?[a-zA-Z0-9_]+"?\s+)?does not exist/i)?.[1] || msg.match(/Could not find the '([^']+)' column/i)?.[1] || null; }
 function missingTable(error: any) { const msg = errorMessage(error); return /relation .* does not exist|table .* does not exist|Could not find the table/i.test(msg); }
 function duplicateKey(error: any) { return /duplicate key|already exists|unique constraint/i.test(errorMessage(error)); }
+function nullConstraintColumn(error: any) { return errorMessage(error).match(/null value in column "?([a-zA-Z0-9_]+)"? of relation "?locations"? violates not-null constraint/i)?.[1] || null; }
+function schemaCacheIssue(error: any) { return /schema cache|Could not find the '[^']+' column|PGRST204/i.test(errorMessage(error)) || error?.code === "PGRST204"; }
+function invalidValue(error: any) { return /invalid input value for enum|violates check constraint/i.test(errorMessage(error)); }
+export function getSafeDemoLocationErrorDetail(error: any) {
+  const msg = errorMessage(error);
+  const nullColumn = nullConstraintColumn(error);
+  const missingColumn = missingColumnName(error);
+  if (missingTable(error)) return "missing table";
+  if (nullColumn) return `Missing required field: locations.${nullColumn}`;
+  if (missingColumn) return schemaCacheIssue(error) ? "Database schema cache needs refresh" : `Missing required value for: locations.${missingColumn}`;
+  if (invalidValue(error)) {
+    const field = msg.match(/column "?([a-zA-Z0-9_]+)"?/i)?.[1];
+    return field ? `Invalid value for: locations.${field}` : "invalid enum/status value";
+  }
+  if (duplicateKey(error)) return "duplicate key";
+  if (schemaCacheIssue(error)) return "schema cache issue";
+  return "Unknown Supabase insert error";
+}
+function demoLocationCreateFailed(error: any) {
+  console.error("Demo location create failed", {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint
+  });
+}
 
 export async function tableExists(table: string) { try { const { error } = await supabaseAdmin.from(table).select("id", { head: true, count: "exact" }).limit(1); return !error || !missingTable(error); } catch { return false; } }
 async function countRows(table: string, locationId?: string) { try { if (!(await tableExists(table))) return null; let q = supabaseAdmin.from(table).select("id", { head: true, count: "exact" }); if (locationId) q = q.eq("location_id", locationId); const { count, error } = await q; return error ? null : count || 0; } catch { return null; } }
@@ -68,23 +94,85 @@ export function isSafeDemoEmail(email?: string | null, adminEmail?: string | nul
 export function assertDemoRecord(record: any) { if (!record) throw new DemoCenterError("Demo record was not found."); const meta = record.metadata || {}; if (record.is_demo === true && record.demo_key === MIRROR_DEMO_KEY) return true; if (meta.demo === true && meta.demo_key === MIRROR_DEMO_KEY) return true; throw new DemoCenterError("This action can only change records tagged for the mirror demo."); }
 export async function getMirrorDemoLocation() { try { const { data, error } = await supabaseAdmin.from("locations").select("*").eq("demo_key", MIRROR_DEMO_KEY).maybeSingle(); if (!error) return data || null; if (missingColumnName(error)) return null; return null; } catch { return null; } }
 
-export async function createOrRefreshMirrorDemoLocation() {
+async function buildDemoLocationPayload(extra: Record<string, any> = {}) {
+  const payload: any = {
+    name: DEMO_LOCATION_NAME,
+    address: "123 Demo Ave",
+    city: "New York",
+    state: "NY",
+    is_demo: true,
+    demo_key: MIRROR_DEMO_KEY,
+    demo_mode: MIRROR_DEMO_MODE,
+    is_searchable: false,
+    metadata: demoMetadata,
+    ...extra
+  };
+  const safeIfPresent: Record<string, any> = {
+    location_name: DEMO_LOCATION_NAME,
+    location_type: "restaurant",
+    type: "restaurant",
+    category: "Restaurant + Lounge + Activity",
+    primary_category: "Restaurant + Lounge + Activity",
+    status: "active",
+    slug: "theouthaven-demo-lounge",
+    latitude: 40.7505,
+    longitude: -73.9934,
+    lng: -73.9934,
+    zip_code: "10001",
+    postal_code: "10001",
+    source: "demo",
+    import_source: "demo",
+    source_table: "locations",
+    borough: "Manhattan",
+    country: "US",
+    active: true,
+    is_hidden: true,
+    quality_status: "needs_review",
+    duplicate_status: "unique",
+    data_status: "clean",
+    public_visibility_tier: "hidden"
+  };
+  for (const [column, value] of Object.entries(safeIfPresent)) if (!(column in payload) && await hasColumn("locations", column)) payload[column] = value;
+  return payload;
+}
+
+async function insertDemoLocationWithRequiredFallback(initialPayload: Record<string, any>) {
+  const fallbackValues: Record<string, any> = { status: "active", source: "demo", location_type: "restaurant", type: "restaurant", category: "Restaurant + Lounge + Activity", primary_category: "Restaurant + Lounge + Activity", zip_code: "10001", postal_code: "10001", latitude: 40.7505, longitude: -73.9934, lng: -73.9934, borough: "Manhattan", country: "US", is_searchable: false, is_hidden: true, active: true, slug: "theouthaven-demo-lounge" };
+  const payload = { ...initialPayload };
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { data, error } = await supabaseAdmin.from("locations").insert(payload as any).select("*").single();
+    if (!error) return data;
+    demoLocationCreateFailed(error);
+    const column = nullConstraintColumn(error);
+    if (column && !(column in payload) && column in fallbackValues && await hasColumn("locations", column)) { payload[column] = fallbackValues[column]; continue; }
+    const detail = getSafeDemoLocationErrorDetail(error);
+    throw new DemoCenterError(detail);
+  }
+  throw new DemoCenterError("Unknown Supabase insert error");
+}
+
+export async function createOrRefreshMirrorDemoLocation(options: { seedModules?: boolean } = {}) {
   if (!(await hasColumn("locations", "demo_key"))) throw new DemoCenterError("The demo metadata migration is missing. Apply 20260627120000_unified_demo_center.sql, then refresh the Demo Center.");
   const existing = await getMirrorDemoLocation();
-  const minimal: any = { name: DEMO_LOCATION_NAME, address: "123 Demo Ave", city: "New York", state: "NY", demo_key: MIRROR_DEMO_KEY };
+  const minimal = await buildDemoLocationPayload();
   let location = existing;
-  if (!location?.id) {
-    const insert = await insertSafe("locations", minimal);
-    if (!insert.ok || !insert.data?.[0]) throw new DemoCenterError(insert.reason || "Could not create the mirror demo location.");
-    location = insert.data[0];
+  if (location?.id) {
+    const { data, error } = await supabaseAdmin.from("locations").update(minimal as any).eq("id", location.id).select("*").single();
+    if (error) { demoLocationCreateFailed(error); throw new DemoCenterError(getSafeDemoLocationErrorDetail(error)); }
+    location = data || location;
+  } else {
+    location = await insertDemoLocationWithRequiredFallback(minimal);
   }
-  const optional: any = { restaurant_name: DEMO_LOCATION_NAME, activity_name: DEMO_LOCATION_NAME, location_type: "hybrid", primary_category: "Restaurant + Lounge + Activity", zip_code: "10001", phone: "212-555-0199", website: "https://theouthaven.com", market: "NYC", status: "active", active: true, is_searchable: false, is_hidden: true, is_demo: true, demo_mode: MIRROR_DEMO_MODE, demo_reset_at: new Date().toISOString(), demo_visible_publicly: false, growth_pro_override: true, reservation_enabled: true, reservation_mode: "internal_booking", reservation_source: "theouthaven", external_reservation_url: "https://theouthaven.com/demo-reservation", reservation_phone: "212-555-0199", reservation_owner_email: "demo-reservations@theouthaven.com", description: "TheOutHaven Demo Lounge is a sample Growth Pro location used to test menus, reservations, QR codes, offers, VIP signups, event leads, notifications, reviews, feedback, messaging, analytics, and staff training flows.", metadata: demoMetadata, updated_at: new Date().toISOString() };
-  await safeUpdateExistingColumns("locations", "id", location.id, { ...minimal, ...optional });
+  const optional: any = { zip_code: "10001", phone: "212-555-0199", website: "https://theouthaven.com", description: "TheOutHaven Demo Lounge is a sample Growth Pro location used to test menus, reservations, QR codes, offers, VIP signups, event leads, notifications, reviews, feedback, messaging, analytics, and staff training flows.", market: "NYC", location_type: "restaurant", primary_category: "Restaurant + Lounge + Activity", restaurant_name: DEMO_LOCATION_NAME, activity_name: DEMO_LOCATION_NAME, active: true, is_hidden: true, demo_visible_publicly: false, growth_pro_override: true, reservation_enabled: true, reservation_mode: "internal_booking", reservation_source: "theouthaven", external_reservation_url: "https://theouthaven.com/demo-reservation", reservation_phone: "212-555-0199", reservation_owner_email: "demo-reservations@theouthaven.com", updated_at: new Date().toISOString() };
+  const optionalResult = await safeUpdateExistingColumns("locations", "id", location.id, optional);
   const refreshed = await getMirrorDemoLocation();
   location = refreshed || location;
-  await seedMirrorDemoData(location.id);
+  if (options.seedModules !== false) {
+    try { await seedMirrorDemoData(location.id); }
+    catch (error) { console.error("Demo Center optional module seed failed", error); }
+  }
   revalidatePath("/admin/dashboard/settings/demo-center");
-  return location;
+  return { ...location, demoWarnings: optionalResult.errors };
 }
 
 const pages = ["Food Menu", "Drinks & Hookah", "Birthday Packages", "Private Events", "Activity Pricing"];
@@ -113,6 +201,6 @@ export async function seedDemoReservations(locationId: string) { const rows = ["
 export async function resetMirrorDemoData(locationId?: string, stampLocation = true) { const loc = locationId ? { id: locationId } : await getMirrorDemoLocation(); if (!loc?.id) return { reset: false, warnings: ["Demo location is missing."] }; const results = []; for (const table of ["location_branding_settings", "location_offerings", "location_commerce_items", "location_commerce_sections", "location_commerce_pages", "location_qr_scan_events", "location_qr_codes", "location_offer_claims", "location_offers", "location_vip_signups", "location_notification_deliveries", "location_notification_events", "location_notification_recipients", "location_notification_preferences", "location_leads", "location_private_feedback", "outing_visit_verifications", "location_marketing_suggestions", "location_marketing_generations", "location_marketing_generation_usage", "location_sms_credit_ledger", "location_messaging_campaigns", "location_messaging_custom_requests", "reservations", "location_reservations", "reservation_waitlist", "location_analytics_events"]) results.push(await deleteDemoRows(table, loc.id)); if (stampLocation) await safeUpdateExistingColumns("locations", "id", loc.id, { demo_reset_at: new Date().toISOString(), is_searchable: false, demo_visible_publicly: false }); return { reset: true, warnings: results.filter((r) => r.skipped).map((r) => `${r.table}: ${r.reason}`) }; }
 export function getMirrorDemoLinks(locationId: string): DemoLink[] { const pub = `/locations/hybrid/${locationId}`; return ["Public Profile", "Public Menu", "Public Offers", "Public VIP", "Public Events", "Public Feedback", "Public Check-in", "Public Review", "Public Reservation"].map((label) => ({ label, href: label === "Public Profile" ? `${pub}?demo=1` : label.includes("Reservation") ? `/reserve/location/${locationId}?demo=1` : `${pub}/${label.split(" ")[1].toLowerCase().replace("check-in", "check-in")}?demo=1` })).concat([{ label: "Admin CRM", href: `/admin/dashboard/crm/${locationId}` }, { label: "Business Dashboard", href: `/business/dashboard?locationId=${locationId}` }, { label: "Sales Demo", href: `/admin/dashboard/settings/demo-center?mode=sales&locationId=${locationId}` }, { label: "Team Training", href: "/admin/dashboard/team/demo" }]); }
 export async function getTeamTrainingDemoOverview() { const [masters, sessions] = await Promise.all([countRows("crm_demo_locations"), countRows("crm_demo_sessions")]); return { status: masters === null ? "Not installed" : "Ready", masterCount: masters || 0, sessionCount: sessions || 0, href: "/admin/dashboard/team/demo" }; }
-export async function getDemoCenterOverview() { const location = await getMirrorDemoLocation(); const id = location?.id; const tables = ["location_qr_codes", "location_offers", "location_vip_signups", "location_leads", "reservations", "reservation_waitlist", "location_notification_events", "location_marketing_suggestions", "location_analytics_events", "location_branding_settings"]; const counts: any = {}; for (const t of tables) counts[t] = id ? await countRows(t, id) : null; const links = id ? getMirrorDemoLinks(id) : []; const teamTraining = await getTeamTrainingDemoOverview(); const statusOf = (table: string): DemoStatus => counts[table] === null ? "Not installed" : counts[table] > 0 ? "Ready" : "Needs data"; const migrationReady = await hasColumn("locations", "demo_key"); const health = { demoMetadataMigration: migrationReady ? "Ready" : "Missing", demoLocation: id ? "Ready" : "Missing", growthProSeed: ["location_offers", "location_vip_signups", "location_leads", "location_marketing_suggestions", "location_branding_settings"].some((t) => counts[t] === null) ? "Partial" : statusOf("location_offers"), reservationSeed: statusOf("reservations"), qrSeed: statusOf("location_qr_codes"), emailTest: statusOf("location_notification_events"), notificationSeed: statusOf("location_notification_events"), publicSearchExposure: location?.is_searchable ? "Exposed" : "Hidden", analytics: statusOf("location_analytics_events"), salesDemo: id ? "Ready" : "Needs setup" }; return { location, links, counts, teamTraining, lastReset: location?.demo_reset_at || null, publicSearchExposed: Boolean(location?.is_searchable), warnings: [!migrationReady && "Demo metadata migration is missing. Apply 20260627120000_unified_demo_center.sql.", !location && "Create the canonical mirror demo location to unlock links and seeded data.", location?.is_searchable && "Demo location is currently searchable; disable before public launch.", Object.values(health).includes("Partial") && "Demo refreshed with some modules skipped."].filter(Boolean) as string[], health }; }
+export async function getDemoCenterOverview() { const location = await getMirrorDemoLocation(); const id = location?.id; const tables = ["location_qr_codes", "location_offers", "location_vip_signups", "location_leads", "reservations", "reservation_waitlist", "location_notification_events", "location_marketing_suggestions", "location_analytics_events", "location_branding_settings"]; const counts: any = {}; for (const t of tables) counts[t] = id ? await countRows(t, id) : null; const links = id ? getMirrorDemoLinks(id) : []; const teamTraining = await getTeamTrainingDemoOverview(); const migrationReady = await hasColumn("locations", "demo_key"); const moduleStatus = (table: string): DemoStatus => counts[table] === null ? "Not installed" : counts[table] > 0 ? "Ready" : "Partial"; const growthTables = ["location_offers", "location_vip_signups", "location_leads", "location_marketing_suggestions", "location_branding_settings"]; const growthReady = growthTables.every((t) => (counts[t] || 0) > 0); const growthInstalled = growthTables.every((t) => counts[t] !== null); const emailTemplates = await countRows("email_templates"); const health = { demoMetadataMigration: migrationReady ? "Ready" : "Missing", demoLocation: id ? "Ready" : "Missing", growthProSeed: growthReady ? "Ready" : growthInstalled ? "Partial" : "Partial", reservationSeed: moduleStatus("reservations"), qrSeed: moduleStatus("location_qr_codes"), emailTest: emailTemplates === null ? "Not tested" : emailTemplates > 0 ? "Not tested" : "Missing template", notificationSeed: moduleStatus("location_notification_events"), publicSearchExposure: location?.is_searchable ? "Exposed" : "Hidden", analytics: moduleStatus("location_analytics_events"), salesDemo: id && links.some((l) => l.label === "Admin CRM") && links.some((l) => l.label === "Public Profile") ? "Ready" : "Needs setup" }; return { location, links, counts, teamTraining, lastReset: location?.demo_reset_at || null, publicSearchExposed: Boolean(location?.is_searchable), warnings: [!migrationReady && "Demo metadata migration is missing. Apply 20260627120000_unified_demo_center.sql.", !location && "Create the canonical mirror demo location to unlock links and seeded data.", location?.is_searchable && "Demo location is currently searchable; disable before public launch.", Object.values(health).includes("Partial") && "Demo refreshed with some modules skipped."].filter(Boolean) as string[], health }; }
 export async function getSalesDemoView(locationId: string) { return { sections: ["Discovery profile", "Growth Pro value", "Branding", "Menu/packages", "QR kit", "VIP capture", "Offers", "Event leads", "Reservations", "Notifications", "Feedback/reviews", "Marketing Studio", "Analytics/ROI"].map((title) => ({ title, talkingPoints: [`Show how ${title.toLowerCase()} uses the same live product surfaces as a real Growth Pro location.`, "Keep demo emails and customer data safely tagged."], href: getMirrorDemoLinks(locationId).find((l) => l.label.includes("Public") || l.label.includes("Business"))?.href || "/admin/dashboard/settings/demo-center" })) }; }
 export async function runDemoEmailTest(adminEmail?: string | null) { const to = "demo-owner@theouthaven.com"; if (!isSafeDemoEmail(to, adminEmail)) return { ok: false, message: "Demo email could not be sent because the recipient is not safe." }; try { return await sendTemplatedEmail({ to, templateKey: "reservation_daily_summary", input: { locationName: DEMO_LOCATION_NAME } as any, sourceType: "demo_center", sourceId: MIRROR_DEMO_KEY }); } catch (error) { const msg = errorMessage(error); if (/template|reservation_daily_summary|not found|missing|registered/i.test(msg)) return { ok: false, message: "Demo email could not be sent because no reservation demo email template is registered yet." }; return { ok: false, message: "Demo email could not be sent. Check Vercel logs for the full server error." }; } }
