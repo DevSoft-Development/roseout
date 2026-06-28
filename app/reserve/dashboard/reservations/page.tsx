@@ -150,6 +150,8 @@ function ReservePortalReservationsContent() {
   const adminLocationId = searchParams.get("adminLocationId") || "";
   const locationId = adminLocationId || searchParams.get("locationId") || "";
   const locationType = normalizeType(searchParams.get("type"));
+  const fromDemoCenter = searchParams.get("fromDemoCenter") === "1";
+  const demoMode = searchParams.get("demo") === "1" || fromDemoCenter;
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [activeStatus, setActiveStatus] = useState<ReservationStatus | "all">(
@@ -365,11 +367,11 @@ function ReservePortalReservationsContent() {
           <div className="relative z-10 mx-auto max-w-7xl">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <Link
-                href="/reserve/dashboard"
+                href={fromDemoCenter ? "/admin/dashboard/settings/demo-center" : `/reserve/dashboard${locationId ? `?${new URLSearchParams({ ...(adminLocationId ? { adminLocationId } : {}), locationId, type: locationType, ...(demoMode ? { demo: "1" } : {}), ...(fromDemoCenter ? { fromDemoCenter: "1" } : {}) }).toString()}` : ""}`}
                 className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-black"
               >
                 <ArrowLeft size={16} />
-                Back
+                {fromDemoCenter ? "Back to Demo Center" : "Back"}
               </Link>
 
               {adminLocationId && (

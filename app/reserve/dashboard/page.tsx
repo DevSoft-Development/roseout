@@ -125,13 +125,31 @@ export default async function ReserveDashboardPage({
 }: ReserveDashboardPageProps = {}) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.reservations);
   const params = searchParams ? await searchParams : {};
-  const selectedLocationId = firstParam(params.locationId);
+  const adminLocationId = firstParam(params.adminLocationId);
+  const selectedLocationId = adminLocationId || firstParam(params.locationId);
+  const fromDemoCenter = firstParam(params.fromDemoCenter) === "1";
+  const demoMode = firstParam(params.demo) === "1" || fromDemoCenter;
   const rawSelectedType = firstParam(params.type);
   const selectedType =
     rawSelectedType === "activity" || rawSelectedType === "restaurant"
       ? rawSelectedType
       : undefined;
   const scoped = Boolean(selectedLocationId);
+  const contextParams = new URLSearchParams();
+  if (selectedLocationId) {
+    contextParams.set("locationId", selectedLocationId);
+    contextParams.set("type", selectedType || "restaurant");
+  }
+  if (adminLocationId) contextParams.set("adminLocationId", adminLocationId);
+  if (demoMode) contextParams.set("demo", "1");
+  if (fromDemoCenter) contextParams.set("fromDemoCenter", "1");
+  const contextQuery = contextParams.toString();
+  const withContext = (path: string, extra?: Record<string, string>) => {
+    const next = new URLSearchParams(contextParams);
+    Object.entries(extra || {}).forEach(([key, value]) => next.set(key, value));
+    const query = next.toString();
+    return `${path}${query ? `?${query}` : ""}`;
+  };
   const scopeQuery = <T extends ReturnType<typeof supabase.from>>(query: any) => {
     let next = query;
     if (selectedLocationId) next = next.eq("location_id", selectedLocationId);
@@ -339,24 +357,24 @@ export default async function ReserveDashboardPage({
               <ReserveLiveRefresh />
 
               <Link
-                href="/admin/dashboard/reservations/list"
+                href={withContext("/reserve/dashboard/reservations")}
                 className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:scale-[1.02]"
               >
                 View Reservations
               </Link>
 
               <Link
-                href="/reserve/dashboard/waitlist"
+                href={withContext("/reserve/dashboard/waitlist")}
                 className="rounded-full border border-purple-300/20 bg-purple-500/15 px-5 py-3 text-sm font-black text-purple-100 transition hover:bg-purple-500/25"
               >
                 Manage Waitlist
               </Link>
 
               <Link
-                href="/admin/dashboard/support"
+                href={fromDemoCenter ? "/admin/dashboard/settings/demo-center" : "/admin/dashboard/support"}
                 className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/70 transition hover:bg-white/10 hover:text-white"
               >
-                Support Tickets
+                {fromDemoCenter ? "Back to Demo Center" : "Support Tickets"}
               </Link>
             </div>
           </div>
@@ -367,7 +385,7 @@ export default async function ReserveDashboardPage({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-200">
-                  Location filter active
+                  {fromDemoCenter ? "Demo location active" : "Location filter active"}
                 </p>
                 <h2 className="mt-1 text-xl font-black">
                   Viewing reservations for {selectedLocationName}
@@ -377,10 +395,10 @@ export default async function ReserveDashboardPage({
                 </p>
               </div>
               <Link
-                href="/admin/dashboard/reservations"
+                href={fromDemoCenter ? "/admin/dashboard/settings/demo-center" : "/admin/dashboard/reservations"}
                 className="rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-sm font-black text-white/75"
               >
-                Clear location filter
+                {fromDemoCenter ? "Back to Demo Center" : "Clear location filter"}
               </Link>
             </div>
           </section>
@@ -479,7 +497,7 @@ export default async function ReserveDashboardPage({
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Link
-                href="/admin/dashboard/reservations/list?status=pending"
+                href={withContext("/reserve/dashboard/reservations", { status: "pending" })}
                 className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">
@@ -490,7 +508,7 @@ export default async function ReserveDashboardPage({
                 </p>
               </Link>
               <Link
-                href="/admin/dashboard/reservations/list?status=confirmed"
+                href={withContext("/reserve/dashboard/reservations", { status: "confirmed" })}
                 className="rounded-[1.25rem] border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.1]"
               >
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">
@@ -514,7 +532,7 @@ export default async function ReserveDashboardPage({
                 </h2>
               </div>
               <Link
-                href="/admin/dashboard/reservations/list?filter=today"
+                href={withContext("/reserve/dashboard/reservations", { filter: "today" })}
                 className="rounded-full bg-[#1b1210] px-4 py-2 text-xs font-black text-white transition hover:bg-rose-600"
               >
                 Open today
@@ -642,7 +660,7 @@ export default async function ReserveDashboardPage({
                   {items.slice(0, 4).map((item) => (
                     <Link
                       key={item.id}
-                      href="/admin/dashboard/reservations/list"
+                      href={withContext("/reserve/dashboard/reservations")}
                       className="block rounded-2xl bg-white/[0.06] p-3 transition hover:bg-white/[0.1]"
                     >
                       <div className="flex items-center justify-between gap-3">

@@ -213,6 +213,7 @@ export default function LocationLayoutClient({ backHref, adminMode = false, crea
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const scopedInitialLocation = Boolean(initialLocationId);
   const selectedLocation = useMemo(
     () => locations.find((location) => location.id === locationId) || null,
     [locations, locationId],
@@ -280,12 +281,35 @@ export default function LocationLayoutClient({ backHref, adminMode = false, crea
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to load the location layout.");
       setItems(data.items || []);
-      setLocations(data.locations || []);
       const loadedLocations = (data.locations || []) as LocationOption[];
-      if (initialLocationId && !loadedLocations.some((location) => location.id === initialLocationId)) {
-        setMessage("This CRM location is selected, but it was not found in the reservation location search list. Layout items will still load if the ID is valid.");
+      const matchedInitialLocation = initialLocationId
+        ? loadedLocations.find((location) => location.id === initialLocationId)
+        : null;
+      const normalizedLocations =
+        initialLocationId && !matchedInitialLocation
+          ? [
+              {
+                id: initialLocationId,
+                type: initialLocationType || locationType || "restaurant",
+                name: adminMode ? "TheOutHaven Demo Location" : "Selected location",
+              },
+              ...loadedLocations,
+            ]
+          : loadedLocations;
+      setLocations(normalizedLocations);
+      if (initialLocationId) {
+        if (locationId !== initialLocationId) setLocationId(initialLocationId);
+        if (matchedInitialLocation?.type && matchedInitialLocation.type !== locationType) {
+          setLocationType(matchedInitialLocation.type);
+        } else if (!matchedInitialLocation && initialLocationType && initialLocationType !== locationType) {
+          setLocationType(initialLocationType);
+        }
+        if (!matchedInitialLocation) {
+          setMessage("Acting as demo location. This location was added to the selector so the demo context stays active.");
+        }
+        return;
       }
-      if (!initialLocationId && !locationId && loadedLocations.length > 0) {
+      if (!locationId && loadedLocations.length > 0) {
         const first = data.locations[0];
         setLocationId(first.id);
         setLocationType(first.type || "restaurant");
@@ -445,6 +469,15 @@ export default function LocationLayoutClient({ backHref, adminMode = false, crea
   }
 
   const completedSteps = [visibleItems.length > 0, visibleItems.some((item) => itemCapacity(item) > 0), visibleItems.some((item) => itemDuration(item) > 0), visibleItems.some((item) => statusFromItem(item) === "available")].filter(Boolean).length;
+  const createParams = new URLSearchParams();
+  if (locationId) createParams.set("locationId", locationId);
+  if (locationType) createParams.set("type", locationType);
+  if (adminMode && initialLocationId) {
+    createParams.set("adminLocationId", initialLocationId);
+    createParams.set("demo", "1");
+    if (backHref.includes("demo-center")) createParams.set("fromDemoCenter", "1");
+  }
+  const createHref = `/reserve/dashboard/location-layout/create${createParams.toString() ? `?${createParams.toString()}` : ""}`;
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -454,7 +487,7 @@ export default function LocationLayoutClient({ backHref, adminMode = false, crea
             <ArrowLeft className="h-4 w-4" /> Back
           </Link>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/reserve/dashboard/location-layout/create" className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-black sm:w-auto">
+            <Link href={createHref} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-black sm:w-auto">
               <Plus className="h-4 w-4" /> Create Layout Area
             </Link>
             <button onClick={() => setEditVisualLayout((value) => !value)} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white sm:w-auto">
@@ -489,20 +522,22 @@ export default function LocationLayoutClient({ backHref, adminMode = false, crea
 
         {adminMode ? (
           <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
-            <h2 className="text-xl font-black">Find a location</h2>
-            <p className="mt-2 text-sm text-white/60">Search by location name, city/state, owner email, or location ID.</p>
+            <h2 className="text-xl font-black">{scopedInitialLocation ? "Acting as demo location" : "Find a location"}</h2>
+            <p className="mt-2 text-sm text-white/60">{scopedInitialLocation ? "Demo Center opened this tool with a fixed location context. The builder will not auto-select another location." : "Search by location name, city/state, owner email, or location ID."}</p>
             <div className="mt-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-black px-4 py-3">
               <Search className="h-4 w-4 text-white/40" />
               <input value={locationSearch} onChange={(event) => setLocationSearch(event.target.value)} placeholder="Search for a location to manage its reservation layout." className="w-full bg-transparent text-sm font-bold text-white outline-none placeholder:text-white/35" />
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {locationSearch.trim() === "" ? (
+              {scopedInitialLocation ? (
+                <p className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">Acting as demo location: {selectedLocation?.name || initialLocationId}</p>
+              ) : locationSearch.trim() === "" ? (
                 <p className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm font-bold text-white/55">Search for a location to manage its reservation layout.</p>
               ) : filteredLocations.length === 0 ? (
                 <p className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm font-bold text-white/55">No matching locations found.</p>
               ) : (
                 filteredLocations.slice(0, 9).map((location) => (
-                  <button key={location.id} onClick={() => { setLocationId(location.id); setLocationType(location.type); }} className={`rounded-2xl border p-4 text-left transition ${location.id === locationId ? "border-red-500 bg-red-600/20" : "border-white/10 bg-black/30 hover:border-white/30"}`}>
+                  <button key={location.id} onClick={() => { if (scopedInitialLocation) return; setLocationId(location.id); setLocationType(location.type); }} className={`rounded-2xl border p-4 text-left transition ${location.id === locationId ? "border-red-500 bg-red-600/20" : "border-white/10 bg-black/30 hover:border-white/30"}`}>
                     <p className="font-black">{location.name}</p>
                     <p className="mt-1 text-sm text-white/55">{[location.city, location.state].filter(Boolean).join(", ") || "Address details not listed"}</p>
                     {location.owner_email ? <p className="mt-1 text-xs font-bold text-white/40">Owner: {location.owner_email}</p> : null}
