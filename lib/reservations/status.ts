@@ -2,6 +2,7 @@ export const RESERVATION_STATUSES = [
   "pending",
   "confirmed",
   "checked_in",
+  "seated",
   "completed",
   "cancelled",
   "no_show",

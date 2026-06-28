@@ -4,6 +4,7 @@ import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { createClient } from "@/lib/supabase-server";
 import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { canTransitionReservationStatus } from "@/lib/reservations/ui";
 
 const allowedStatuses = [
   "pending",
@@ -84,9 +85,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const beforeResult = adminLocationId
-      ? await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle()
-      : null;
+    const beforeResult = await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle();
+
+    if (!beforeResult.data) {
+      return NextResponse.json({ error: "We could not find that reservation for this location." }, { status: 404 });
+    }
+
+    if (!canTransitionReservationStatus(beforeResult.data.status, status)) {
+      return NextResponse.json(
+        { error: "That reservation can’t move to the requested status from its current state." },
+        { status: 400 }
+      );
+    }
 
     const updatePayload: Record<string, string> = {
       status,
@@ -127,7 +137,7 @@ export async function POST(request: NextRequest) {
         actionType: status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`,
         targetType: "reservation",
         targetId: reservationId,
-        beforeData: beforeResult?.data || null,
+        beforeData: beforeResult.data || null,
         afterData: data,
         metadata: { locationType },
         request,

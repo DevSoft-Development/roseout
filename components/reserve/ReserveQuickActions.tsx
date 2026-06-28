@@ -1,0 +1,3 @@
+import Link from "next/link";
+const actions=["Confirm pending","Message guest","Assign table/resource","Move time","Mark no-show","Block tonight","Open waitlist"];
+export default function ReserveQuickActions({ waitlistHref = "/reserve/dashboard/waitlist" }: { waitlistHref?: string }) { return <div className="grid gap-2">{actions.map(a => a==="Open waitlist" ? <Link key={a} href={waitlistHref} className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white/75 hover:bg-white/10">{a}</Link> : <button key={a} disabled className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left text-sm font-black text-white/35" title="Available from a reservation row when supported">{a}</button>)}</div>; }

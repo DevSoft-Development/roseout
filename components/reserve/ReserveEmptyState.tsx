@@ -1,0 +1,1 @@
+export default function ReserveEmptyState({ title, message }: { title: string; message: string }) { return <div className="rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.04] p-8 text-center"><h3 className="text-xl font-black">{title}</h3><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/55">{message}</p></div>; }

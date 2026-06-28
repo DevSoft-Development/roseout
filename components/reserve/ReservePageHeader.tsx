@@ -1,0 +1,4 @@
+import type { ReactNode } from "react";
+export default function ReservePageHeader({ eyebrow="TheOutHaven Reserve", title, subtitle, actions }: { eyebrow?: string; title: string; subtitle?: string; actions?: ReactNode }) {
+ return <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.24),transparent_35%),linear-gradient(135deg,#160b0b,#090706_60%,#140f0a)] p-5 shadow-2xl sm:p-6"><div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="mb-2 text-xs font-black uppercase tracking-[0.3em] text-rose-300">{eyebrow}</p><h1 className="text-3xl font-black tracking-tight sm:text-4xl">{title}</h1>{subtitle ? <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">{subtitle}</p> : null}</div>{actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}</div></section>;
+}
