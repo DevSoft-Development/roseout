@@ -6,6 +6,28 @@ function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const locationId = cleanString(searchParams.get("adminLocationId")) || cleanString(searchParams.get("locationId"));
+    const reservationDate = cleanString(searchParams.get("date")) || new Date().toISOString().split("T")[0];
+    if (!locationId) return NextResponse.json({ success: false, waitlist: [], error: "Missing location ID." }, { status: 400 });
+    const { data, error } = await supabaseAdmin
+      .from("reservation_waitlist")
+      .select("*")
+      .eq("location_id", locationId)
+      .eq("reservation_date", reservationDate)
+      .in("status", ["waiting", "waitlisted"])
+      .order("created_at", { ascending: true })
+      .limit(100);
+    if (error) return NextResponse.json({ success: false, waitlist: [], error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, waitlist: data || [] });
+  } catch (error) {
+    return NextResponse.json({ success: false, waitlist: [], error: error instanceof Error ? error.message : "Something went wrong." }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
