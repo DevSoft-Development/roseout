@@ -794,6 +794,7 @@ export async function seedMirrorDemoData(locationId: string) {
     metadata: demoMetadata,
   });
   await seedDemoReservations(locationId);
+  await seedDemoLayout(locationId);
   await insertSafe(
     "location_analytics_events",
     [
@@ -820,6 +821,41 @@ export async function seedMirrorDemoData(locationId: string) {
       metadata: demoMetadata,
     })),
   );
+}
+
+export async function seedDemoLayout(locationId: string) {
+  const layoutItems = [
+    { item_name: "Table 1", item_type: "table", capacity: 4, layout_x: 32, layout_y: 48 },
+    { item_name: "Table 2", item_type: "table", capacity: 4, layout_x: 232, layout_y: 48 },
+    { item_name: "VIP Booth", item_type: "booth", capacity: 6, layout_x: 432, layout_y: 48 },
+    { item_name: "Bar Seats", item_type: "bar_seat", capacity: 8, layout_x: 32, layout_y: 208 },
+    { item_name: "Private Room", item_type: "private_room", capacity: 12, layout_x: 232, layout_y: 208 },
+    { item_name: "Patio Table", item_type: "patio_seat", capacity: 4, layout_x: 432, layout_y: 208 },
+  ].map((item, index) => ({
+    location_id: locationId,
+    location_type: "restaurant",
+    source_table: "restaurant",
+    capacity_min: 1,
+    capacity_max: item.capacity,
+    duration_minutes: 90,
+    default_duration_minutes: 90,
+    reservation_duration_minutes: 90,
+    is_active: true,
+    status: "available",
+    layout_width: 172,
+    layout_height: 118,
+    rotation: 0,
+    sort_order: index + 1,
+    notes: "Demo Center seeded layout area.",
+    metadata: demoMetadata,
+    demo_key: MIRROR_DEMO_KEY,
+    is_demo: true,
+    ...item,
+  }));
+
+  const layout = await insertSafe("layout_items", layoutItems);
+  const bookable = await insertSafe("location_bookable_items", layoutItems);
+  return { layout, bookable };
 }
 export async function seedDemoReservations(locationId: string) {
   const rows = [
@@ -885,6 +921,8 @@ export async function resetMirrorDemoData(
     "reservations",
     "location_reservations",
     "reservation_waitlist",
+    "layout_items",
+    "location_bookable_items",
     "location_analytics_events",
   ])
     results.push(await deleteDemoRows(table, loc.id));
