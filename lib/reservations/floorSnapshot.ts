@@ -15,3 +15,16 @@ export function getFloorSnapshotStatus(resource: FloorResource, reservations: Fl
   if (matches.some((r) => r.status === 'confirmed' || r.status === 'pending')) return 'Reserved';
   return 'Open';
 }
+
+
+export function dedupeFloorResources<T extends FloorResource>(resources: T[]) {
+  const seen = new Set<string>();
+  const output: T[] = [];
+  for (const resource of resources) {
+    const key = String(resource.id || `${resourceName(resource).toLowerCase()}-${resourceCapacity(resource)}-${resource.item_type || ""}`);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(resource);
+  }
+  return output;
+}

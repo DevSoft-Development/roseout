@@ -21,7 +21,8 @@ export const ACTIVE_RESERVATION_STATUSES = [
 ] as const;
 
 export function normalizeReservationStatus(status?: string | null): ReservationStatus {
-  if (status === "arrived" || status === "seated" || status === "occupied") return "checked_in";
+  if (status === "arrived") return "checked_in";
+  if (status === "occupied") return "seated";
   if (status === "declined") return "cancelled";
   if (RESERVATION_STATUSES.includes(status as (typeof RESERVATION_STATUSES)[number])) {
     return status as ReservationStatus;
