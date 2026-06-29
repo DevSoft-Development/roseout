@@ -103,10 +103,10 @@ function ReserveCommandCenterContent() {
     setUpdatingId(reservation.id); setMessage(null);
     try {
       const response = await fetch("/api/reserve/portal/assign-resource", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ reservation_id: reservation.id, location_id: reservation.location_id, location_type: reservation.location_type, ...resourceAssignmentPayload(resource), adminLocationId: adminLocationId || undefined }) });
-      const data = await response.json(); if(!response.ok) throw new Error(data.error || "No available table, booth, room, or resource fits this reservation.");
+      const data = await response.json(); if(!response.ok || !data.success) throw new Error(data.error || "We could not assign this table. Please try another table.");
       setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r));
       setSelectedId(reservation.id); setAssigningReservationId(""); setMessage({ tone:"success", text:"Table assigned. You can now seat the guest." }); await loadAll({ silent:true });
-    } catch(error){ const raw = error instanceof Error ? error.message : ""; const text = raw.includes("already unavailable") ? "That table is already unavailable for this reservation time." : raw.includes("fit this party") ? "This table does not fit this party size." : raw.includes("not set up yet") ? "Reservation table assignment is not set up yet. Run the latest reservation migration." : raw.includes("could not find") ? "We could not find that table. Refresh the floor and try again." : friendlyError(error, "We could not assign this table. Please try another table."); setMessage({ tone:"error", text }); }
+    } catch(error){ const raw = error instanceof Error ? error.message : ""; const text = raw || friendlyError(error, "We could not assign this table. Please try another table."); setMessage({ tone:"error", text }); }
     finally { setUpdatingId(""); }
   }
 
