@@ -247,3 +247,35 @@ html { -webkit-text-size-adjust: 100%; }
 .reserve-command-center input, .reserve-command-center textarea, .reserve-command-center select { background: var(--reserve-card-strong); color: var(--reserve-text); border-color: var(--reserve-border); }
 .reserve-command-center input::placeholder, .reserve-command-center textarea::placeholder { color: var(--reserve-muted); }
 .reserve-command-center * { min-width: 0; }
+
+.reserve-command-center .reserve-timeline-row {
+  container-type: inline-size;
+}
+
+.reserve-command-center .reserve-timeline-grid {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.reserve-command-center .reserve-timeline-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.reserve-command-center .reserve-status-badge {
+  overflow-wrap: normal;
+}
+
+@container (max-width: 440px) {
+  .reserve-command-center .reserve-timeline-grid {
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .reserve-command-center .reserve-timeline-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    padding-left: 76px;
+  }
+}
