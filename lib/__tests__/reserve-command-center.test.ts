@@ -45,6 +45,15 @@ describe("Reserve Command Center helpers", () => {
       resource_type: "booth",
       resource_capacity: undefined,
     });
+
+    expect(resourceAssignmentPayload({ layout_item_id: "layout-id", item_name: "Table 7", item_type: "table", capacity: 4 })).toEqual({
+      resource_id: "layout-id",
+      resource_source: "layout_items",
+      resource_table: "layout_items",
+      resource_label: "Table 7",
+      resource_type: "table",
+      resource_capacity: 4,
+    });
   });
 
   it("uses canonical resource ids and marks seated reservations unavailable", () => {
