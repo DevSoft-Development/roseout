@@ -50,11 +50,11 @@ describe("Reserve Command Center helpers", () => {
   it("uses canonical resource ids and marks seated reservations unavailable", () => {
     const resource = { layout_item_id: "layout-table-1", label: "Table 1", capacity: 2 };
     expect(resourceId(resource)).toBe("layout-table-1");
-    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "seated", assigned_resource_id: "layout-table-1" }])).toMatchObject({
+    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "seated", bookable_item_id: "layout-table-1" }])).toMatchObject({
       status: "Seated",
       available: false,
     });
-    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "completed", assigned_resource_id: "layout-table-1" }])).toMatchObject({
+    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "completed", bookable_item_id: "layout-table-1" }])).toMatchObject({
       status: "Open",
       available: true,
     });

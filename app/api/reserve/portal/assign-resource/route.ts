@@ -73,7 +73,7 @@ async function findResource(resourceId: string, locationId: string, source: stri
       .eq("id", resourceId)
       .eq("location_id", locationId)
       .maybeSingle();
-    if (layout.error && !isMissingTable(layout.error)) throw new Error(layout.error.message);
+    if (layout.error && !isMissingTable(layout.error)) throw new Error("We could not assign this table. Please try another table.");
     if (layout.data) return normalizeResource(layout.data, LAYOUT_TABLE);
   }
 
@@ -84,7 +84,7 @@ async function findResource(resourceId: string, locationId: string, source: stri
       .eq("id", resourceId)
       .eq("location_id", locationId)
       .maybeSingle();
-    if (bookable.error && !isMissingTable(bookable.error)) throw new Error(bookable.error.message);
+    if (bookable.error && !isMissingTable(bookable.error)) throw new Error("We could not assign this table. Please try another table.");
     if (bookable.data) return normalizeResource(bookable.data, BOOKABLE_TABLE);
   }
 
@@ -98,18 +98,18 @@ async function validateAssignment(reservation: any, resource: AssignableResource
 
   const active = await supabaseAdmin
     .from("location_reservations")
-    .select("id,status,reservation_time,duration_minutes,turn_time_minutes,assigned_resource_id,bookable_item_id,assigned_resource_label,bookable_item_name,reservable_item_name")
+    .select("id,status,reservation_date,reservation_time,duration_minutes,turn_time_minutes,bookable_item_id,bookable_item_name,bookable_item_type")
     .eq("location_id", locationId)
     .eq("reservation_date", reservation.reservation_date)
     .neq("id", reservationId)
     .in("status", ACTIVE_STATUSES);
-  if (active.error) throw new Error(active.error.message);
+  if (active.error) throw new Error("We could not assign this table. Please try another table.");
 
   const resourceId = resource.id;
   const requestedLabel = normalizeLabel(resource.label);
   const conflict = (active.data || []).some((entry: any) => {
-    const sameResource = Boolean(resourceId) && (entry.assigned_resource_id === resourceId || entry.bookable_item_id === resourceId);
-    const sameLabel = Boolean(requestedLabel) && [entry.assigned_resource_label, entry.bookable_item_name, entry.reservable_item_name].map(normalizeLabel).some((label) => label === requestedLabel);
+    const sameResource = Boolean(resourceId) && entry.bookable_item_id === resourceId;
+    const sameLabel = Boolean(requestedLabel) && [entry.bookable_item_name].map(normalizeLabel).some((label) => label === requestedLabel);
     if (!sameResource && !sameLabel) return false;
     return overlaps(
       reservation.reservation_time,
@@ -134,77 +134,54 @@ export async function POST(request: NextRequest) {
   const resourceType = clean(body.resource_type) || null;
   const parsedCapacity = Number(body.resource_capacity);
   const resourceCapacity = Number.isFinite(parsedCapacity) ? parsedCapacity : null;
-  const autoAssign = body.auto_assign === true;
-  const preferredResourceType = clean(body.preferred_resource_type) || null;
 
   if (!reservationId) return NextResponse.json({ success: false, error: "Select a reservation before assigning a table." }, { status: 400 });
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location ID." }, { status: 400 });
-  if (!resourceId && !resourceLabel && !autoAssign) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
+  if (!resourceId && !resourceLabel) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
 
   const before = await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle();
-  if (before.error) return NextResponse.json({ success: false, error: before.error.message }, { status: 500 });
+  if (before.error) return NextResponse.json({ success: false, error: "We could not assign this table. Please try another table." }, { status: 500 });
   if (!before.data) return NextResponse.json({ success: false, error: "Select a reservation before assigning a table." }, { status: 404 });
 
-  let updated: any = null;
-  const rpc = await supabaseAdmin.rpc("reserve_assign_resource", {
-    p_reservation_id: reservationId,
-    p_resource_id: resourceId,
-    p_auto_assign: autoAssign,
-    p_preferred_resource_type: preferredResourceType,
-  });
+  try {
+    const foundResource = resourceId ? await findResource(resourceId, locationId, resourceSource) : null;
+    if (!foundResource && !resourceLabel) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
+    const resource = foundResource || manualLabelResource(resourceId, resourceLabel as string, resourceType, resourceCapacity);
 
-  if (!rpc.error) {
-    updated = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
-  } else if (resourceId || resourceLabel) {
-    try {
-      const foundResource = resourceId ? await findResource(resourceId, locationId, resourceSource) : null;
-      if (!foundResource && !resourceLabel) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
-      const resource = foundResource || manualLabelResource(resourceId, resourceLabel as string, resourceType, resourceCapacity);
+    const validationError = await validateAssignment(before.data, resource, reservationId, locationId);
+    if (validationError) return NextResponse.json({ success: false, error: validationError }, { status: 409 });
 
-      const validationError = await validateAssignment(before.data, resource, reservationId, locationId);
-      if (validationError) return NextResponse.json({ success: false, error: validationError }, { status: 409 });
+    const updatePayload: Record<string, any> = {
+      bookable_item_id: resource.id || null,
+      bookable_item_name: resource.label,
+      bookable_item_type: resource.type || null,
+      updated_at: new Date().toISOString(),
+    };
 
-      const updatePayload: Record<string, any> = {
-        assigned_resource_label: resource.label,
-        assigned_resource_type: resource.type || "table",
-        assignment_mode: "manual",
-        updated_at: new Date().toISOString(),
-      };
-      if (resource.id) updatePayload.assigned_resource_id = resource.id;
-      if (resource.source === BOOKABLE_TABLE) {
-        updatePayload.bookable_item_id = resource.id;
-        updatePayload.bookable_item_name = resource.label;
-        updatePayload.bookable_item_type = resource.type;
-      }
+    const update = await supabaseAdmin
+      .from("location_reservations")
+      .update(updatePayload)
+      .eq("id", reservationId)
+      .eq("location_id", locationId)
+      .select("*")
+      .single();
+    if (update.error) return NextResponse.json({ success: false, error: "We could not assign this table. Please try another table." }, { status: 500 });
 
-      const update = await supabaseAdmin
-        .from("location_reservations")
-        .update(updatePayload)
-        .eq("id", reservationId)
-        .eq("location_id", locationId)
-        .select("*")
-        .single();
-      if (update.error) return NextResponse.json({ success: false, error: update.error.message }, { status: 500 });
-      updated = update.data;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "We could not assign this table. Please try another table.";
-      return NextResponse.json({ success: false, error: message }, { status: 500 });
-    }
-  } else {
-    return NextResponse.json({ success: false, error: "No available table, booth, room, or resource fits this reservation." }, { status: 400 });
+    await logAdminLocationAction({
+      adminUser: auth.adminUser,
+      locationId,
+      actionType: "admin_reservation_assign_resource",
+      targetType: "reservation",
+      targetId: reservationId,
+      beforeData: before.data,
+      afterData: update.data,
+      metadata: { resourceId, resourceSource, resourceLabel, resourceType, resourceCapacity },
+      request,
+    });
+
+    return NextResponse.json({ success: true, reservation: update.data, resource: update.data?.bookable_item_id || resourceId });
+  } catch (error) {
+    console.error("RESERVE_ASSIGN_RESOURCE_FAILED", error);
+    return NextResponse.json({ success: false, error: "We could not assign this table. Please try another table." }, { status: 500 });
   }
-
-  await logAdminLocationAction({
-    adminUser: auth.adminUser,
-    locationId,
-    actionType: autoAssign ? "admin_reservation_auto_assign_resource" : "admin_reservation_assign_resource",
-    targetType: "reservation",
-    targetId: reservationId,
-    beforeData: before.data,
-    afterData: updated,
-    metadata: { resourceId, resourceSource, resourceLabel, resourceType, resourceCapacity, autoAssign, preferredResourceType },
-    request,
-  });
-
-  return NextResponse.json({ success: true, reservation: updated, resource: updated?.assigned_resource_id || updated?.bookable_item_id || resourceId });
 }

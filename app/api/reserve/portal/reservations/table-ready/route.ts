@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     const before = await supabaseAdmin
       .from("location_reservations")
-      .select("*")
+      .select("id,location_id,location_type,status,customer_phone,location_name,restaurant_name,bookable_item_id,bookable_item_name,bookable_item_type")
       .eq("id", reservationId)
       .eq("location_id", locationId)
       .maybeSingle();
@@ -33,14 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     const reservation = before.data as any;
-    const hasAssignedResource = Boolean(
-      reservation.assigned_resource_id ||
-      reservation.assigned_layout_item_id ||
-      reservation.assigned_resource_label ||
-      reservation.reservable_item_name ||
-      reservation.bookable_item_id ||
-      reservation.bookable_item_name,
-    );
+    const hasAssignedResource = Boolean(reservation.bookable_item_id || reservation.bookable_item_name);
 
     if (!["checked_in", "arrived"].includes(String(reservation.status || ""))) {
       return NextResponse.json({ success: false, error: "Check in this guest before sending a table ready text." }, { status: 400 });
