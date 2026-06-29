@@ -106,7 +106,7 @@ function ReserveCommandCenterContent() {
       const data = await response.json(); if(!response.ok) throw new Error(data.error || "No available table, booth, room, or resource fits this reservation.");
       setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r));
       setSelectedId(reservation.id); setAssigningReservationId(""); setMessage({ tone:"success", text:"Table assigned. You can now seat the guest." }); await loadAll({ silent:true });
-    } catch(error){ const raw = error instanceof Error ? error.message : ""; const text = raw.includes("already unavailable") ? "That table is already unavailable for this reservation time." : raw.includes("fit this party") ? "This table does not fit this party size." : raw.includes("could not find") ? "We could not find that table. Try refreshing the floor and choosing it again." : friendlyError(error, "No available table, booth, room, or resource fits this reservation."); setMessage({ tone:"error", text }); }
+    } catch(error){ const raw = error instanceof Error ? error.message : ""; const text = raw.includes("already unavailable") ? "That table is already unavailable for this reservation time." : raw.includes("fit this party") ? "This table does not fit this party size." : raw.includes("not set up yet") ? "Reservation table assignment is not set up yet. Run the latest reservation migration." : raw.includes("could not find") ? "We could not find that table. Refresh the floor and try again." : friendlyError(error, "We could not assign this table. Please try another table."); setMessage({ tone:"error", text }); }
     finally { setUpdatingId(""); }
   }
 
