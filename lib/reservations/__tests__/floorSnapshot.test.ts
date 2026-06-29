@@ -14,6 +14,14 @@ describe("reservation resource assignment helpers", () => {
     expect(getAssignedReservationResourceLabel({ id: "r1", assigned_resource_label: "Table 1" })).toBe("Unassigned");
   });
 
+  it("sends a visible card label for resource_label", () => {
+    expect(resourceAssignmentPayload({ id: "fallback-id", label: "Table 7", item_type: "table" })).toMatchObject({
+      resource_id: "fallback-id",
+      resource_label: "Table 7",
+      resource_type: "table",
+    });
+  });
+
   it("uses item_name before any in-memory label for layout resources", () => {
     const resource = { id: "table-2", item_name: "Table 2", label: "Legacy label", item_type: "table", capacity: 4 };
     expect(resourceName(resource)).toBe("Table 2");
@@ -46,7 +54,8 @@ describe("reservation status transitions", () => {
 
 describe("floor snapshot reservation matching", () => {
   it("matches reservations by bookable item id", () => {
-    const state = getFloorSnapshotState({ id: "table-1", label: "Table 1" }, [{ id: "r1", status: "seated", bookable_item_id: "table-1" }]);
+    const uuid = "123e4567-e89b-12d3-a456-426614174000";
+    const state = getFloorSnapshotState({ id: uuid, label: "Table 1" }, [{ id: "r1", status: "seated", bookable_item_id: uuid }]);
     expect(state.status).toBe("Seated");
     expect(state.available).toBe(false);
   });
@@ -54,6 +63,12 @@ describe("floor snapshot reservation matching", () => {
   it("matches reservations by normalized bookable item name fallback", () => {
     const state = getFloorSnapshotState({ id: "table-1", item_name: "Table 1" }, [{ id: "r1", status: "seated", bookable_item_name: " table   1 " }]);
     expect(state.status).toBe("Seated");
+    expect(state.available).toBe(false);
+  });
+
+  it("matches label-only assignments to resource item_name when bookable_item_id is null", () => {
+    const state = getFloorSnapshotState({ id: "synthetic-1", item_name: "Table 1" }, [{ id: "r1", status: "checked_in", bookable_item_id: null, bookable_item_name: "Table 1" }]);
+    expect(state.status).toBe("Arrived");
     expect(state.available).toBe(false);
   });
 

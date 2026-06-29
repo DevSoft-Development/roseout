@@ -105,7 +105,10 @@ function ReserveCommandCenterContent() {
       const response = await fetch("/api/reserve/portal/assign-resource", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ reservation_id: reservation.id, location_id: reservation.location_id, location_type: reservation.location_type, ...resourceAssignmentPayload(resource), adminLocationId: adminLocationId || undefined }) });
       const data = await response.json(); if(!response.ok || !data.success) throw new Error(data.error || "We could not assign this table. Please try another table.");
       setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r));
-      setSelectedId(reservation.id); setAssigningReservationId(""); setMessage({ tone:"success", text:"Table assigned. You can now seat the guest." }); await loadAll({ silent:true });
+      setSelectedId(reservation.id); setAssigningReservationId(""); setMessage({ tone:"success", text:"Table assigned. You can now seat the guest." });
+      try { await loadAll({ silent:true }); } catch {
+        // Keep assignment success visible; do not reopen assign mode when refresh fails.
+      }
     } catch(error){ const raw = error instanceof Error ? error.message : ""; const text = raw || friendlyError(error, "We could not assign this table. Please try another table."); setMessage({ tone:"error", text }); }
     finally { setUpdatingId(""); }
   }
