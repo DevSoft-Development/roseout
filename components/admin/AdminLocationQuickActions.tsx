@@ -3,14 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Copy, ExternalLink } from "lucide-react";
-import { getReserveBookingUrl, getReserveDashboardUrl, getReserveEmbedUrl, getReservePublicProfileUrl } from "@/lib/reservations/reserveLinks";
+import { appendReserveActingContext, getReserveBookingUrl, getReserveDashboardUrl, getReserveEmbedUrl, getReservePublicProfileUrl } from "@/lib/reservations/reserveLinks";
 
 type Props = { locationId: string; className?: string; compact?: boolean; locationType?: string | null };
 
 export default function AdminLocationQuickActions({ locationId, className = "", compact = false, locationType = "restaurant" }: Props) {
   const [copied, setCopied] = useState(false);
   if (!locationId) return null;
-  const scoped = (href: string) => `${href}${href.includes("?") ? "&" : "?"}adminLocationId=${encodeURIComponent(locationId)}`;
+  const scoped = (href: string) => appendReserveActingContext(href, { adminLocationId: locationId, type: locationType || "restaurant" });
   const itemClass = compact ? "rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-[11px] font-black text-white/75 hover:bg-white hover:text-black" : "rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-black text-white/80 hover:bg-white hover:text-black";
   const actions = [
     { label: "Host View", href: scoped(getReserveDashboardUrl("today")) },

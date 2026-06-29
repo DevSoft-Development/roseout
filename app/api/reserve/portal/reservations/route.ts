@@ -101,18 +101,39 @@ export async function GET(request: NextRequest) {
 
 
 
+    let reservations = data || [];
+    const ids = reservations.map((reservation: any) => reservation.id).filter(Boolean);
+    if (ids.length) {
+      const sms = await supabaseAdmin
+        .from("sms_logs")
+        .select("reservation_id,sent_at,created_at,status")
+        .in("reservation_id", ids)
+        .eq("message_type", "item_ready")
+        .order("created_at", { ascending: false });
+      if (!sms.error) {
+        const byReservation = new Map<string, any>();
+        for (const log of sms.data || []) {
+          if (log.reservation_id && !byReservation.has(log.reservation_id)) byReservation.set(log.reservation_id, log);
+        }
+        reservations = reservations.map((reservation: any) => {
+          const log = byReservation.get(reservation.id);
+          return log ? { ...reservation, table_ready_sms_sent: true, table_ready_sms_sent_at: log.sent_at || log.created_at, table_ready_sms_status: log.status } : reservation;
+        });
+      }
+    }
+
     if (adminLocationId) {
       await logAdminLocationAction({
         adminUser,
         locationId,
         actionType: "admin_location_reservations_view",
         targetType: "location_reservations",
-        metadata: { filter, status, count: (data || []).length },
+        metadata: { filter, status, count: reservations.length },
         request,
       });
     }
 
-    return NextResponse.json({ reservations: data || [] });
+    return NextResponse.json({ reservations });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }

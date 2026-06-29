@@ -10,7 +10,7 @@ export const RESERVATION_STATUS_LABELS: Record<string, string> = {
   completed: "Finished",
   cancelled: "Cancelled",
   declined: "Cancelled",
-  no_show: "Missed",
+  no_show: "No-show",
   waitlisted: "Waitlisted",
 };
 
@@ -47,8 +47,8 @@ export function getReservationPrimaryNextAction(status?: string | null): Reserva
 export const ALLOWED_RESERVATION_STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled", "declined"],
   confirmed: ["checked_in", "cancelled", "no_show"],
-  checked_in: ["seated", "cancelled", "no_show", "completed"],
-  arrived: ["seated", "cancelled", "no_show", "completed"],
+  checked_in: ["seated", "cancelled", "no_show"],
+  arrived: ["seated", "cancelled", "no_show"],
   seated: ["completed", "no_show"],
   waitlisted: ["pending", "confirmed", "cancelled"],
   completed: [],
