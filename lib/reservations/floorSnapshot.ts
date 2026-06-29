@@ -1,16 +1,58 @@
-export type FloorReservation = { id:string; status?:string|null; assigned_resource_id?:string|null; assigned_layout_item_id?:string|null; assigned_resource_label?:string|null; reservable_item_name?:string|null; customer_name?:string|null; party_size?:number|null; reservation_time?:string|null };
-export type FloorResource = { id?:string|null; layout_item_id?:string|null; label?:string|null; item_name?:string|null; item_type?:string|null; capacity?:number|null; capacity_min?:number|null; capacity_max?:number|null; status?:string|null; is_active?:boolean|null };
+export type FloorReservation = {
+  id: string;
+  status?: string | null;
+  assigned_resource_id?: string | null;
+  assigned_layout_item_id?: string | null;
+  assigned_resource_label?: string | null;
+  reservable_item_name?: string | null;
+  bookable_item_id?: string | null;
+  bookable_item_name?: string | null;
+  customer_name?: string | null;
+  party_size?: number | null;
+  reservation_time?: string | null;
+};
+export type FloorResource = {
+  id?: string | null;
+  layout_item_id?: string | null;
+  bookable_item_id?: string | null;
+  resource_id?: string | null;
+  source?: string | null;
+  resource_source?: string | null;
+  resource_table?: string | null;
+  label?: string | null;
+  item_name?: string | null;
+  name?: string | null;
+  item_type?: string | null;
+  type?: string | null;
+  capacity?: number | null;
+  capacity_min?: number | null;
+  capacity_max?: number | null;
+  location_id?: string | null;
+  status?: string | null;
+  is_active?: boolean | null;
+};
 export type FloorSnapshotState = { status:'Open'|'Reserved'|'Arrived'|'Table ready sent'|'Seated'|'Blocked'|'Closed'; available:boolean; reservation?:FloorReservation };
-export function resourceId(r: FloorResource){ return r.id || r.layout_item_id || ''; }
-export function resourceName(r: FloorResource){ return r.label || r.item_name || 'Resource'; }
+export function resourceId(r: FloorResource){ return r.id || r.layout_item_id || r.bookable_item_id || r.resource_id || ''; }
+export function resourceSource(r: FloorResource){ return r.resource_source || r.resource_table || r.source || (r.layout_item_id ? 'layout_items' : r.bookable_item_id ? 'location_bookable_items' : ''); }
+export function resourceName(r: FloorResource){ return r.label || r.item_name || r.name || 'Resource'; }
+export function resourceType(r: FloorResource){ return r.item_type || r.type || null; }
 export function resourceCapacity(r: FloorResource){ return Number(r.capacity || r.capacity_max || r.capacity_min || 0); }
-export function reservationResourceId(reservation: FloorReservation){ return reservation.assigned_resource_id || reservation.assigned_layout_item_id || ''; }
+export function resourceAssignmentPayload(r: FloorResource){
+  return {
+    resource_id: resourceId(r),
+    resource_source: resourceSource(r) || undefined,
+    resource_table: resourceSource(r) || undefined,
+    resource_label: resourceName(r),
+    resource_type: resourceType(r),
+  };
+}
+export function reservationResourceId(reservation: FloorReservation){ return reservation.assigned_resource_id || reservation.assigned_layout_item_id || reservation.bookable_item_id || ''; }
 export function activeFloorReservations(reservations: FloorReservation[]){ return reservations.filter((r)=>!['completed','cancelled','declined','no_show'].includes(String(r.status||''))); }
 export function getFloorResourceReservation(resource: FloorResource, reservations: FloorReservation[]){
   const currentResourceId = resourceId(resource);
   const matches = activeFloorReservations(reservations).filter((reservation) => {
     const assignedId = reservationResourceId(reservation);
-    return assignedId ? assignedId === currentResourceId : reservation.assigned_resource_label === resourceName(resource) || reservation.reservable_item_name === resourceName(resource);
+    return assignedId && currentResourceId ? assignedId === currentResourceId : reservation.assigned_resource_label === resourceName(resource) || reservation.reservable_item_name === resourceName(resource) || reservation.bookable_item_name === resourceName(resource);
   });
   return matches.find((r)=>r.status === 'seated') || matches.find((r)=>r.status === 'checked_in' || r.status === 'arrived') || matches.find((r)=>r.status === 'confirmed' || r.status === 'pending') || matches[0];
 }
@@ -26,4 +68,4 @@ export function getFloorSnapshotState(resource: FloorResource, reservations: Flo
   return { status:'Reserved', available:false, reservation };
 }
 export function getFloorSnapshotStatus(resource: FloorResource, reservations: FloorReservation[]){ return getFloorSnapshotState(resource,reservations).status; }
-export function dedupeFloorResources<T extends FloorResource>(resources: T[]) { const seen = new Set<string>(); const output: T[] = []; for (const resource of resources) { const name = resourceName(resource).trim().toLowerCase(); const semanticKey = name !== 'resource' ? `${name}-${resourceCapacity(resource)}-${resource.item_type || ''}` : ''; const key = semanticKey || String(resourceId(resource)); if (seen.has(key)) continue; seen.add(key); output.push(resource); } return output; }
+export function dedupeFloorResources<T extends FloorResource>(resources: T[]) { const seen = new Set<string>(); const output: T[] = []; for (const resource of resources) { const name = resourceName(resource).trim().toLowerCase(); const semanticKey = name !== 'resource' ? `${name}-${resourceCapacity(resource)}-${resource.item_type || resource.type || ''}` : ''; const key = semanticKey || String(resourceId(resource)); if (seen.has(key)) continue; seen.add(key); output.push(resource); } return output; }

@@ -7,6 +7,38 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeResource(resource: any, source: "layout_items" | "location_bookable_items" = "layout_items") {
+  const id = resource.id || resource.layout_item_id || resource.bookable_item_id || resource.resource_id || null;
+  return {
+    ...resource,
+    id,
+    layout_item_id: source === "layout_items" ? id : resource.layout_item_id || null,
+    bookable_item_id: source === "location_bookable_items" ? id : resource.bookable_item_id || null,
+    resource_id: id,
+    resource_source: resource.resource_source || resource.resource_table || resource.source || source,
+    resource_table: resource.resource_table || resource.resource_source || resource.source || source,
+    source: resource.source || resource.resource_source || resource.resource_table || source,
+    label: resource.label || resource.item_name || resource.name || null,
+    item_name: resource.item_name || resource.label || resource.name || null,
+    item_type: resource.item_type || resource.type || null,
+    capacity: resource.capacity ?? resource.capacity_max ?? resource.capacity_min ?? null,
+  };
+}
+
+function isMissingTable(error: any) {
+  return error?.code === "42P01" || String(error?.message || "").includes("does not exist");
+}
+
+function byResourceKey(resources: any[]) {
+  const seen = new Set<string>();
+  return resources.filter((resource) => {
+    const key = `${String(resource.label || resource.item_name || resource.id).toLowerCase()}-${resource.capacity ?? resource.capacity_max ?? resource.capacity_min ?? ""}-${resource.item_type || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function payloadFromBody(body: Record<string, any>) {
   const payload: Record<string, any> = {};
   for (const [key, value] of Object.entries({
@@ -43,12 +75,23 @@ export async function GET(request: NextRequest) {
   let resources: any[] = [];
   const rpc = await supabaseAdmin.rpc("reserve_live_layout_status", { p_location_id: locationId, p_reservation_date: date });
   if (!rpc.error) {
-    resources = rpc.data || [];
+    resources = (rpc.data || []).map((resource: any) => normalizeResource(resource, "layout_items"));
   } else {
     const fallback = await supabaseAdmin.from("layout_items").select("*").eq("location_id", locationId).neq("is_active", false).order("sort_order", { ascending: true });
     if (fallback.error) return NextResponse.json({ success: false, error: fallback.error.message }, { status: 500 });
-    resources = fallback.data || [];
+    resources = (fallback.data || []).map((resource: any) => normalizeResource(resource, "layout_items"));
   }
+
+  const legacy = await supabaseAdmin
+    .from("location_bookable_items")
+    .select("*")
+    .eq("location_id", locationId)
+    .neq("is_active", false)
+    .order("layout_zone", { ascending: true })
+    .order("layout_y", { ascending: true })
+    .order("layout_x", { ascending: true });
+  if (legacy.error && !isMissingTable(legacy.error)) return NextResponse.json({ success: false, error: legacy.error.message }, { status: 500 });
+  if (!legacy.error) resources = byResourceKey([...resources, ...(legacy.data || []).map((resource: any) => normalizeResource(resource, "location_bookable_items"))]);
 
   await logAdminLocationAction({ adminUser: auth.adminUser, locationId, actionType: "admin_location_resources_view", targetType: "layout_items", metadata: { date, count: resources.length }, request });
   return NextResponse.json({ success: true, resources });

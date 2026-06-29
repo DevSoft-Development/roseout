@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canTransitionReservationStatus, getReservationStatusLabel } from "@/lib/reservations/ui";
 import { getReserveBookingUrl, getReserveDashboardUrl, getReserveEmbedUrl } from "@/lib/reservations/reserveLinks";
-import { dedupeFloorResources, getFloorSnapshotState, resourceId } from "@/lib/reservations/floorSnapshot";
+import { dedupeFloorResources, getFloorSnapshotState, resourceAssignmentPayload, resourceId, resourceSource } from "@/lib/reservations/floorSnapshot";
 
 describe("Reserve Command Center helpers", () => {
   it("allows Guest arrived reservations to be seated", () => {
@@ -23,6 +23,27 @@ describe("Reserve Command Center helpers", () => {
       { id: "table-2", label: "Table 2", item_type: "table", capacity: 4 },
     ]);
     expect(resources).toHaveLength(2);
+  });
+
+  it("supports all floor snapshot resource id and source shapes", () => {
+    expect(resourceId({ id: "plain-id" })).toBe("plain-id");
+    expect(resourceId({ layout_item_id: "layout-id" })).toBe("layout-id");
+    expect(resourceId({ bookable_item_id: "bookable-id" })).toBe("bookable-id");
+    expect(resourceId({ resource_id: "resource-id" })).toBe("resource-id");
+
+    expect(resourceSource({ layout_item_id: "layout-id" })).toBe("layout_items");
+    expect(resourceSource({ bookable_item_id: "bookable-id" })).toBe("location_bookable_items");
+    expect(resourceSource({ id: "bookable-id", resource_source: "location_bookable_items" })).toBe("location_bookable_items");
+  });
+
+  it("builds assignment payloads with id, source, label, and type", () => {
+    expect(resourceAssignmentPayload({ bookable_item_id: "bookable-id", item_name: "Patio Booth", item_type: "booth" })).toEqual({
+      resource_id: "bookable-id",
+      resource_source: "location_bookable_items",
+      resource_table: "location_bookable_items",
+      resource_label: "Patio Booth",
+      resource_type: "booth",
+    });
   });
 
   it("uses canonical resource ids and marks seated reservations unavailable", () => {
