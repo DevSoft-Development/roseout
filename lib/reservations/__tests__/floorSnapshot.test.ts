@@ -14,6 +14,13 @@ describe("reservation resource assignment helpers", () => {
     expect(getAssignedReservationResourceLabel({ id: "r2", bookable_item_name: "Booth 2" })).toBe("Booth 2");
   });
 
+  it("uses newer table and resource label fields as assignments", () => {
+    expect(hasAssignedReservationResource({ id: "r1", assigned_table_name: "Table 7" } as any)).toBe(true);
+    expect(hasAssignedReservationResource({ id: "r2", resource_label: "Patio" } as any)).toBe(true);
+    expect(getAssignedReservationResourceLabel({ id: "r1", assigned_table_name: "Table 7" } as any)).toBe("Table 7");
+    expect(getAssignedReservationResourceLabel({ id: "r2", resource_label: "Patio" } as any)).toBe("Patio");
+  });
+
   it("returns false and Unassigned when no known assignment fields exist", () => {
     expect(hasAssignedReservationResource({ id: "r1" })).toBe(false);
     expect(getAssignedReservationResourceLabel({ id: "r1" })).toBe("Unassigned");

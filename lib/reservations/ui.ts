@@ -95,6 +95,7 @@ export function getReservationPrimaryNextAction(status?: string | null): Reserva
     case "confirmed":
       return { label: "Check in", targetStatus: "checked_in" };
     case "checked_in":
+    case "arrived":
       return { label: "Seat guest", targetStatus: "seated" };
     case "seated":
       return { label: "Complete", targetStatus: "completed" };
