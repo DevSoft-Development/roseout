@@ -515,7 +515,7 @@ export async function PATCH(request: NextRequest) {
         locationId: waitlist.location_id,
         to: waitlist.customer_phone,
         messageType: "waitlist_ready",
-        body: "Your table/room/lane is ready. Please return within 10 minutes.",
+        body: "TheOutHaven Reserve: A table is ready for you. Please check in with the host within 10 minutes.",
       });
       return NextResponse.json({ success: true, waitlist });
     }

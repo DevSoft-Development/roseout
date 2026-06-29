@@ -21,7 +21,8 @@ const setupLinks = [
   ["QR code", "qr"],
 ] as const;
 
-export default function ReserveSidebar({ locationName, locationId, locationType, activeTab, activeSection, userLabel }: { locationName?: string; locationId?: string; locationType?: string; activeTab: string; activeSection?: string; onTabChange: (tab: string) => void; userLabel?: string }) {
+export default function ReserveSidebar({ locationName, locationId, locationType, activeTab, activeSection, userLabel, actingContext }: { locationName?: string; locationId?: string; locationType?: string; activeTab: string; activeSection?: string; onTabChange: (tab: string) => void; userLabel?: string; actingContext?: { adminLocationId?: string; type?: string } }) {
+  const ctx = { adminLocationId: actingContext?.adminLocationId, type: actingContext?.type || locationType };
   return (
     <aside className="reserve-card flex h-dvh min-h-0 flex-col overflow-hidden border-l-0 border-y-0 p-4 lg:sticky lg:top-0">
       <div className="shrink-0 rounded-3xl bg-gradient-to-br from-red-700 to-black p-4 text-white">
@@ -36,23 +37,23 @@ export default function ReserveSidebar({ locationName, locationId, locationType,
         </div>
         <p className="mt-5 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Main</p>
         <nav className="mt-2 space-y-2">
-          <Link className={`block rounded-2xl px-4 py-3 font-bold ${activeTab === "today" ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("today")}>Dashboard</Link>
-          <Link className={`block rounded-2xl px-4 py-3 font-bold ${activeTab === "settings" && !activeSection ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("settings")}>Settings</Link>
+          <Link className={`block rounded-2xl px-4 py-3 font-bold ${activeTab === "today" ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("today", undefined, ctx)}>Dashboard</Link>
+          <Link className={`block rounded-2xl px-4 py-3 font-bold ${activeTab === "settings" && !activeSection ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("settings", undefined, ctx)}>Settings</Link>
         </nav>
         <p className="mt-6 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Reservation</p>
         <div className="mt-2 space-y-1">
           {reservationTabs.map(([value, label]) => (
-            <Link key={value} href={getReserveDashboardUrl(value)} className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-black ${activeTab === value ? "reserve-primary" : "reserve-soft"}`}>{label}</Link>
+            <Link key={value} href={getReserveDashboardUrl(value, undefined, ctx)} className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-black ${activeTab === value ? "reserve-primary" : "reserve-soft"}`}>{label}</Link>
           ))}
         </div>
         <p className="mt-6 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Setup</p>
         <div className="mt-2 space-y-1 text-sm font-bold">
           {setupLinks.map(([label, section]) => (
-            <Link key={label} className={`block rounded-2xl px-4 py-3 ${activeTab === "settings" && activeSection === section ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("settings", section)}>{label}</Link>
+            <Link key={label} className={`block rounded-2xl px-4 py-3 ${activeTab === "settings" && activeSection === section ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("settings", section, ctx)}>{label}</Link>
           ))}
         </div>
         <p className="mt-6 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Support</p>
-        <Link className="mt-2 block reserve-soft rounded-2xl px-4 py-3 text-sm font-black" href="/support">Help & Support</Link>
+        <Link className="mt-2 block reserve-soft rounded-2xl px-4 py-3 text-sm font-black" href="/help">Help & Support</Link>
       </div>
       <div className="reserve-soft mt-4 shrink-0 rounded-2xl p-4 text-sm font-bold">{userLabel || "Signed-in owner"}</div>
     </aside>

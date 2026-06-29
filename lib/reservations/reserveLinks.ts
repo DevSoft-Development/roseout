@@ -7,6 +7,15 @@ export function reserveQuery(params: Record<string, string | undefined>) {
   return value ? `?${value}` : "";
 }
 
+export function appendReserveActingContext(url: string, context: Record<string, string | undefined> = {}) {
+  const [path, queryString = ""] = url.split("?");
+  const query = new URLSearchParams(queryString);
+  if (context.adminLocationId) query.set("adminLocationId", context.adminLocationId);
+  if (context.type) query.set("type", context.type);
+  const value = query.toString();
+  return `${path}${value ? `?${value}` : ""}`;
+}
+
 export function getReserveDashboardUrl(tab = "today", section?: string, context: Record<string, string | undefined> = {}) {
   return `/reserve/dashboard${reserveQuery({ ...context, tab, section })}`;
 }
