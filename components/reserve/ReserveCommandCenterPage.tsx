@@ -82,10 +82,15 @@ function ReserveCommandCenterContent() {
   }
 
   async function updateStatus(reservation:Reservation, status:string){
-    if(status === "seated" && !hasAssignedReservationResource(reservation)){ setSelectedId(reservation.id); setAssigningReservationId(reservation.id); setMessage({ tone:"warning", text:"Choose a table before seating this guest." }); return; }
+    if(status === "seated" && !hasAssignedReservationResource(reservation)){
+      setSelectedId(reservation.id);
+      setAssigningReservationId(reservation.id);
+      setMessage({ tone:"warning", text: resources.length ? "Choose a table before seating this guest." : "Set up tables or assign a table before seating this guest." });
+      return;
+    }
     if(["cancelled","no_show","declined"].includes(status) && !window.confirm(`Mark this reservation as ${getReservationStatusLabel(status)}?`)) return;
     setUpdatingId(reservation.id); setMessage(null);
-    try { const response = await fetch("/api/reserve/portal/reservations/update", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ reservation_id: reservation.id, location_id: reservation.location_id, location_type: reservation.location_type, status, adminLocationId: adminLocationId || undefined }) }); const data = await response.json(); if(!response.ok) throw new Error(data.error || "We could not update this reservation. Please try again."); setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r)); setSelectedId(reservation.id); setMessage({ tone:"success", text: status === "confirmed" ? "Reservation confirmed." : status === "checked_in" ? "Guest checked in." : status === "seated" ? "Guest seated." : status === "completed" ? "Reservation completed." : `Reservation marked ${getReservationStatusLabel(status)}.` }); await loadAll(); }
+    try { const response = await fetch("/api/reserve/portal/reservations/update", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ reservation_id: reservation.id, location_id: reservation.location_id, location_type: reservation.location_type, status, adminLocationId: adminLocationId || undefined }) }); const data = await response.json(); if(!response.ok) throw new Error(data.error || "We could not update this reservation. Please try again."); setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r)); setSelectedId(reservation.id); setMessage({ tone:"success", text: status === "confirmed" ? "Reservation confirmed." : status === "checked_in" ? "Guest checked in." : status === "seated" ? "Guest seated." : status === "completed" ? "Reservation completed." : `Reservation marked ${getReservationStatusLabel(status)}.` }); await loadAll({ silent:true }); }
     catch(error){ const fallback = status === "seated" ? "We could not seat this guest. Please try again." : `This reservation cannot move from ${getReservationStatusLabel(reservation.status)} to ${getReservationStatusLabel(status)}.`; const text = status === "seated" ? (error instanceof Error && error.message.includes("requested status") ? "This guest needs to be checked in before seating." : fallback) : friendlyError(error, fallback); setMessage({ tone:"error", text }); }
     finally { setUpdatingId(""); }
   }
@@ -93,7 +98,7 @@ function ReserveCommandCenterContent() {
   async function assignResource(reservation:Reservation, resource:any){
     const state = getFloorSnapshotState(resource, dayReservations);
     if(!reservation?.id){ setMessage({ tone:"error", text:"Select a reservation before assigning a table." }); return; }
-    if(!resourceId(resource)){ setMessage({ tone:"error", text:"Choose a valid table or space." }); return; }
+    if(!resourceId(resource) && !resourceName(resource)){ setMessage({ tone:"error", text:"Choose a valid table or space." }); return; }
     if(!state.available){ setMessage({ tone:"error", text:"That table is already unavailable for this reservation time." }); return; }
     setUpdatingId(reservation.id); setMessage(null);
     try {
@@ -101,7 +106,7 @@ function ReserveCommandCenterContent() {
       const data = await response.json(); if(!response.ok) throw new Error(data.error || "No available table, booth, room, or resource fits this reservation.");
       setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r));
       setSelectedId(reservation.id); setAssigningReservationId(""); setMessage({ tone:"success", text:"Table assigned. You can now seat the guest." }); await loadAll({ silent:true });
-    } catch(error){ setMessage({ tone:"error", text:friendlyError(error, "No available table, booth, room, or resource fits this reservation.") }); }
+    } catch(error){ const raw = error instanceof Error ? error.message : ""; const text = raw.includes("already unavailable") ? "That table is already unavailable for this reservation time." : raw.includes("fit this party") ? "This table does not fit this party size." : raw.includes("could not find") ? "We could not find that table. Try refreshing the floor and choosing it again." : friendlyError(error, "No available table, booth, room, or resource fits this reservation."); setMessage({ tone:"error", text }); }
     finally { setUpdatingId(""); }
   }
 

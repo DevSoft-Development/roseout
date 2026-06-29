@@ -36,13 +36,14 @@ describe("Reserve Command Center helpers", () => {
     expect(resourceSource({ id: "bookable-id", resource_source: "location_bookable_items" })).toBe("location_bookable_items");
   });
 
-  it("builds assignment payloads with id, source, label, and type", () => {
+  it("builds assignment payloads with id, source, label, type, and capacity", () => {
     expect(resourceAssignmentPayload({ bookable_item_id: "bookable-id", item_name: "Patio Booth", item_type: "booth" })).toEqual({
       resource_id: "bookable-id",
       resource_source: "location_bookable_items",
       resource_table: "location_bookable_items",
       resource_label: "Patio Booth",
       resource_type: "booth",
+      resource_capacity: undefined,
     });
   });
 

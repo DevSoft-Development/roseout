@@ -28,7 +28,19 @@ function overlaps(startA: unknown, durationA: unknown, startB: unknown, duration
   return aStart < bEnd && bStart < aEnd;
 }
 
-function normalizeResource(resource: any, source: typeof LAYOUT_TABLE | typeof BOOKABLE_TABLE) {
+type AssignableResource = {
+  id: string | null;
+  source: typeof LAYOUT_TABLE | typeof BOOKABLE_TABLE | "manual_label";
+  label: string | null;
+  type: string | null;
+  capacity: number | null;
+};
+
+function normalizeLabel(value: unknown) {
+  return clean(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeResource(resource: any, source: typeof LAYOUT_TABLE | typeof BOOKABLE_TABLE): AssignableResource {
   const label = resource.label || resource.item_name || resource.name || null;
   const capacity = resource.capacity ?? resource.capacity_max ?? resource.capacity_min ?? null;
   return {
@@ -37,6 +49,16 @@ function normalizeResource(resource: any, source: typeof LAYOUT_TABLE | typeof B
     label,
     type: resource.item_type || resource.type || null,
     capacity: capacity === null || capacity === undefined ? null : Number(capacity),
+  };
+}
+
+function manualLabelResource(resourceId: string | null, label: string, type: string | null, capacity: number | null): AssignableResource {
+  return {
+    id: resourceId,
+    source: "manual_label",
+    label,
+    type: type || "table",
+    capacity,
   };
 }
 
@@ -69,14 +91,14 @@ async function findResource(resourceId: string, locationId: string, source: stri
   return null;
 }
 
-async function validateAssignment(reservation: any, resource: ReturnType<typeof normalizeResource>, reservationId: string, locationId: string) {
+async function validateAssignment(reservation: any, resource: AssignableResource, reservationId: string, locationId: string) {
   if (resource.capacity !== null && Number.isFinite(resource.capacity) && resource.capacity > 0 && Number(reservation.party_size || 1) > resource.capacity) {
     return "This table does not fit this party size.";
   }
 
   const active = await supabaseAdmin
     .from("location_reservations")
-    .select("id,status,reservation_time,duration_minutes,turn_time_minutes,assigned_resource_id,bookable_item_id")
+    .select("id,status,reservation_time,duration_minutes,turn_time_minutes,assigned_resource_id,bookable_item_id,assigned_resource_label,bookable_item_name,reservable_item_name")
     .eq("location_id", locationId)
     .eq("reservation_date", reservation.reservation_date)
     .neq("id", reservationId)
@@ -84,9 +106,11 @@ async function validateAssignment(reservation: any, resource: ReturnType<typeof 
   if (active.error) throw new Error(active.error.message);
 
   const resourceId = resource.id;
+  const requestedLabel = normalizeLabel(resource.label);
   const conflict = (active.data || []).some((entry: any) => {
-    const sameResource = entry.assigned_resource_id === resourceId || entry.bookable_item_id === resourceId;
-    if (!sameResource) return false;
+    const sameResource = Boolean(resourceId) && (entry.assigned_resource_id === resourceId || entry.bookable_item_id === resourceId);
+    const sameLabel = Boolean(requestedLabel) && [entry.assigned_resource_label, entry.bookable_item_name, entry.reservable_item_name].map(normalizeLabel).some((label) => label === requestedLabel);
+    if (!sameResource && !sameLabel) return false;
     return overlaps(
       reservation.reservation_time,
       reservation.duration_minutes || reservation.turn_time_minutes || 90,
@@ -106,12 +130,16 @@ export async function POST(request: NextRequest) {
   const locationId = clean(body.adminLocationId || body.location_id);
   const resourceId = clean(body.resource_id) || null;
   const resourceSource = clean(body.resource_source || body.resource_table || body.source) || null;
+  const resourceLabel = clean(body.resource_label) || null;
+  const resourceType = clean(body.resource_type) || null;
+  const parsedCapacity = Number(body.resource_capacity);
+  const resourceCapacity = Number.isFinite(parsedCapacity) ? parsedCapacity : null;
   const autoAssign = body.auto_assign === true;
   const preferredResourceType = clean(body.preferred_resource_type) || null;
 
   if (!reservationId) return NextResponse.json({ success: false, error: "Select a reservation before assigning a table." }, { status: 400 });
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location ID." }, { status: 400 });
-  if (!resourceId && !autoAssign) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
+  if (!resourceId && !resourceLabel && !autoAssign) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
 
   const before = await supabaseAdmin.from("location_reservations").select("*").eq("id", reservationId).eq("location_id", locationId).maybeSingle();
   if (before.error) return NextResponse.json({ success: false, error: before.error.message }, { status: 500 });
@@ -127,21 +155,22 @@ export async function POST(request: NextRequest) {
 
   if (!rpc.error) {
     updated = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
-  } else if (resourceId) {
+  } else if (resourceId || resourceLabel) {
     try {
-      const resource = await findResource(resourceId, locationId, resourceSource);
-      if (!resource) return NextResponse.json({ success: false, error: "We could not find that table. Refresh the page and try again." }, { status: 404 });
+      const foundResource = resourceId ? await findResource(resourceId, locationId, resourceSource) : null;
+      if (!foundResource && !resourceLabel) return NextResponse.json({ success: false, error: "Choose a valid table or space." }, { status: 400 });
+      const resource = foundResource || manualLabelResource(resourceId, resourceLabel as string, resourceType, resourceCapacity);
 
       const validationError = await validateAssignment(before.data, resource, reservationId, locationId);
       if (validationError) return NextResponse.json({ success: false, error: validationError }, { status: 409 });
 
       const updatePayload: Record<string, any> = {
-        assigned_resource_id: resource.id,
         assigned_resource_label: resource.label,
-        assigned_resource_type: resource.type,
+        assigned_resource_type: resource.type || "table",
         assignment_mode: "manual",
         updated_at: new Date().toISOString(),
       };
+      if (resource.id) updatePayload.assigned_resource_id = resource.id;
       if (resource.source === BOOKABLE_TABLE) {
         updatePayload.bookable_item_id = resource.id;
         updatePayload.bookable_item_name = resource.label;
@@ -173,7 +202,7 @@ export async function POST(request: NextRequest) {
     targetId: reservationId,
     beforeData: before.data,
     afterData: updated,
-    metadata: { resourceId, resourceSource, autoAssign, preferredResourceType },
+    metadata: { resourceId, resourceSource, resourceLabel, resourceType, resourceCapacity, autoAssign, preferredResourceType },
     request,
   });
 
