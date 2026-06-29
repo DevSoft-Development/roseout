@@ -39,8 +39,8 @@ function hasValue(value: unknown) { return value !== undefined && value !== null
 function normalizedLabel(value: unknown) { return cleanString(value).toLowerCase().replace(/\s+/g, ' '); }
 
 export function resourceId(r: FloorResource){ return r.id || r.layout_item_id || r.bookable_item_id || r.resource_id || ''; }
-export function resourceSource(r: FloorResource){ return r.resource_source || r.resource_table || r.source || (r.layout_item_id ? 'layout_items' : r.bookable_item_id ? 'location_bookable_items' : ''); }
-export function resourceName(r: FloorResource){ return r.label || r.item_name || r.name || 'Resource'; }
+export function resourceSource(r: FloorResource){ return r.resource_source || r.resource_table || r.source || (r.layout_item_id || r.id ? 'layout_items' : r.bookable_item_id ? 'location_bookable_items' : ''); }
+export function resourceName(r: FloorResource){ return cleanString(r.item_name) || cleanString(r.name) || cleanString(r.label) || 'Resource'; }
 export function resourceType(r: FloorResource){ return r.item_type || r.type || null; }
 export function resourceCapacity(r: FloorResource){ return Number(r.capacity || r.capacity_max || r.capacity_min || 0); }
 export function resourceAssignmentPayload(r: FloorResource){
@@ -59,23 +59,22 @@ export function hasAssignedReservationResource(reservation?: Partial<FloorReserv
   if (!reservation) return false;
   return Boolean(
     hasValue(reservation.bookable_item_id) ||
-    hasValue(reservation.bookable_item_name) ||
-    hasValue(reservation.assigned_resource_label)
+    hasValue(reservation.bookable_item_name)
   );
 }
 export function getAssignedReservationResourceLabel(reservation?: Partial<FloorReservation> | null){
   if (!reservation) return 'Unassigned';
-  return cleanString(reservation.bookable_item_name) || cleanString(reservation.assigned_resource_label) || 'Unassigned';
+  return cleanString(reservation.bookable_item_name) || 'Unassigned';
 }
 export function activeFloorReservations(reservations: FloorReservation[]){ return reservations.filter((r)=>!['completed','cancelled','declined','no_show'].includes(String(r.status||''))); }
-function resourceLabels(resource: FloorResource) { return [resource.label, resource.item_name, resource.name].map(normalizedLabel).filter(Boolean); }
-function reservationLabels(reservation: FloorReservation) { return [reservation.bookable_item_name, reservation.assigned_resource_label].map(normalizedLabel).filter(Boolean); }
+function resourceLabels(resource: FloorResource) { return [resource.item_name, resource.label].map(normalizedLabel).filter(Boolean); }
+function reservationLabels(reservation: FloorReservation) { return [reservation.bookable_item_name].map(normalizedLabel).filter(Boolean); }
 export function getFloorResourceReservation(resource: FloorResource, reservations: FloorReservation[]){
-  const currentResourceIds = [resource.id, resource.layout_item_id, resource.bookable_item_id, resource.resource_id].map(cleanString).filter(Boolean);
   const currentLabels = resourceLabels(resource);
   const matches = activeFloorReservations(reservations).filter((reservation) => {
-    const assignedIds = [reservation.bookable_item_id].map(cleanString).filter(Boolean);
-    if (assignedIds.length && currentResourceIds.length && assignedIds.some((id) => currentResourceIds.includes(id))) return true;
+    const reservationBookableId = cleanString(reservation.bookable_item_id);
+    if (reservationBookableId && cleanString(resource.id) && reservationBookableId === cleanString(resource.id)) return true;
+    if (reservationBookableId && cleanString(resource.bookable_item_id) && reservationBookableId === cleanString(resource.bookable_item_id)) return true;
     const assignedLabels = reservationLabels(reservation);
     return assignedLabels.length > 0 && currentLabels.length > 0 && assignedLabels.some((label) => currentLabels.includes(label));
   });

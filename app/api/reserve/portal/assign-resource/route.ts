@@ -35,14 +35,16 @@ function missingColumnName(error: any) {
 }
 
 function logDbFailure(operation: string, context: Record<string, any>, error: any) {
-  console.error("RESERVE_ASSIGN_RESOURCE_DB_FAILURE", {
+  console.error("RESERVE_ASSIGN_RESOURCE_DB_ERROR", {
     operation,
     reservationId: context.reservationId,
+    locationId: context.locationId,
     resourceId: context.resourceId,
     resourceLabel: context.resourceLabel,
     resourceSource: context.resourceSource,
     code: error?.code,
     message: error?.message,
+    details: error?.details,
   });
 }
 
@@ -137,13 +139,14 @@ async function validateAssignment(reservation: any, resource: AssignableResource
 
   const active = await supabaseAdmin
     .from("location_reservations")
-    .select("*")
+    .select("id,status,reservation_date,reservation_time,duration_minutes,turn_time_minutes,bookable_item_id,bookable_item_name,bookable_item_type")
     .eq("location_id", locationId)
     .eq("reservation_date", reservation.reservation_date)
     .neq("id", reservationId)
     .in("status", ACTIVE_STATUSES);
   if (active.error) {
     logDbFailure("validate_assignment_conflicts", context, active.error);
+    if (isMissingColumn(active.error)) throw new Error(MISSING_ASSIGNMENT_MESSAGE);
     throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
   }
 
@@ -227,7 +230,7 @@ export async function POST(request: NextRequest) {
   const resourceType = clean(body.resource_type) || null;
   const parsedCapacity = Number(body.resource_capacity);
   const resourceCapacity = Number.isFinite(parsedCapacity) ? parsedCapacity : null;
-  const context = { reservationId, resourceId, resourceLabel, resourceSource };
+  const context = { reservationId, locationId, resourceId, resourceLabel, resourceSource };
 
   if (!reservationId) return NextResponse.json({ success: false, error: "Select a reservation before assigning a table." }, { status: 400 });
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location ID." }, { status: 400 });

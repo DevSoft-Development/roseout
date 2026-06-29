@@ -18,7 +18,7 @@ function normalizeResource(resource: any, source: "layout_items" | "location_boo
     resource_source: resource.resource_source || resource.resource_table || resource.source || source,
     resource_table: resource.resource_table || resource.resource_source || resource.source || source,
     source: resource.source || resource.resource_source || resource.resource_table || source,
-    label: resource.label || resource.item_name || resource.name || null,
+    label: resource.item_name || resource.name || resource.label || null,
     item_name: resource.item_name || resource.label || resource.name || null,
     item_type: resource.item_type || resource.type || null,
     capacity: resource.capacity ?? resource.capacity_max ?? resource.capacity_min ?? null,
@@ -32,7 +32,7 @@ function isMissingTable(error: any) {
 function byResourceKey(resources: any[]) {
   const seen = new Set<string>();
   return resources.filter((resource) => {
-    const key = `${String(resource.label || resource.item_name || resource.id).toLowerCase()}-${resource.capacity ?? resource.capacity_max ?? resource.capacity_min ?? ""}-${resource.item_type || ""}`;
+    const key = `${String(resource.item_name || resource.name || resource.label || resource.id).toLowerCase()}-${resource.capacity ?? resource.capacity_max ?? resource.capacity_min ?? ""}-${resource.item_type || ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -42,20 +42,19 @@ function byResourceKey(resources: any[]) {
 function payloadFromBody(body: Record<string, any>) {
   const payload: Record<string, any> = {};
   for (const [key, value] of Object.entries({
-    label: body.label || body.item_name,
     item_name: body.item_name || body.label,
     item_type: body.item_type || body.type,
     status: body.status,
     capacity: body.capacity,
-    capacity_min: body.capacity_min,
-    capacity_max: body.capacity_max,
-    floor_section: body.floor_section || body.section,
+    is_active: body.is_active,
+    source_table: body.source_table,
+    source_id: body.source_id,
     x_position: body.x_position,
     y_position: body.y_position,
     width: body.width,
     height: body.height,
+    rotation: body.rotation,
     sort_order: body.sort_order,
-    is_active: body.is_active,
   })) {
     if (value !== undefined) payload[key] = value;
   }
@@ -107,14 +106,11 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabaseAdmin.from("layout_items").insert({
     location_id: locationId,
     source_table: clean(body.source_table) || "locations",
+    source_id: clean(body.source_id) || null,
     item_type: clean(body.item_type || body.type) || "table",
-    label: clean(body.label || body.item_name) || "New resource",
     item_name: clean(body.item_name || body.label) || "New resource",
-    capacity: Math.max(1, Number(body.capacity || 2)),
-    capacity_min: Math.max(1, Number(body.capacity_min || 1)),
-    capacity_max: body.capacity_max ? Number(body.capacity_max) : null,
+    capacity: Math.max(1, Number(body.capacity || body.capacity_max || body.capacity_min || 2)),
     status: clean(body.status) || "available",
-    floor_section: clean(body.floor_section || body.section) || null,
     is_active: true,
   }).select("*").single();
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
