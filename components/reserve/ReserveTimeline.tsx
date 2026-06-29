@@ -1,7 +1,7 @@
 "use client";
 
 import { MoreHorizontal } from "lucide-react";
-import { formatReservationTime, getReservationPrimaryNextAction, getReservationStatusLabel } from "@/lib/reservations/ui";
+import { formatReservationTime, getReservationGuestName, getReservationPrimaryNextAction, getReservationStatusLabel } from "@/lib/reservations/ui";
 import ReserveQuickActionButton from "./ReserveQuickActionButton";
 import ReserveStatusBadge from "./ReserveStatusBadge";
 
@@ -53,6 +53,7 @@ export default function ReserveTimeline({
       {reservations.map((r) => {
         const action = getReservationPrimaryNextAction(r.status);
         const selected = selectedId === r.id;
+        const guestName = getReservationGuestName(r);
 
         return (
           <button
@@ -69,7 +70,7 @@ export default function ReserveTimeline({
               </div>
 
               <div className="reserve-timeline-content min-w-0">
-                <h3 className="truncate text-sm font-black leading-tight md:text-[15px]">{r.customer_name || "Guest"}</h3>
+                <h3 className="min-w-0 truncate text-sm font-black leading-tight md:text-[15px]" title={guestName}>{guestName}</h3>
                 <div className="mt-1 flex min-w-0 flex-col items-start gap-1.5">
                   <ReserveStatusBadge status={r.status} label={r.table_ready_sms_sent ? "Table ready sent" : getReservationStatusLabel(r.status)} />
                   <p className="max-w-full truncate text-xs reserve-muted">Party {r.party_size || "—"} · {assigned(r)}</p>
@@ -77,7 +78,7 @@ export default function ReserveTimeline({
               </div>
 
               <div
-                className="reserve-timeline-actions flex min-w-0 flex-wrap items-center gap-1.5"
+                className="reserve-timeline-actions flex shrink-0 flex-wrap items-center gap-1.5"
                 onClick={(e) => e.stopPropagation()}
               >
                 {canTextReady(r) && onTableReady && (

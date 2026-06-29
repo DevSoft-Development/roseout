@@ -858,6 +858,7 @@ export async function seedDemoLayout(locationId: string) {
   return { layout, bookable };
 }
 export async function seedDemoReservations(locationId: string) {
+  const demoGuestNames = ["Michael Johnson", "Jordan Mitchell", "Avery Williams", "Taylor Morgan", "Casey Brooks", "Riley Carter"];
   const rows = [
     "pending",
     "confirmed",
@@ -867,7 +868,7 @@ export async function seedDemoReservations(locationId: string) {
     "no_show",
   ].map((status, i) => ({
     location_id: locationId,
-    customer_name: `Demo Reservation ${i + 1}`,
+    customer_name: demoGuestNames[i] || "TheOutHaven Guest",
     customer_email: "demo-customer@theouthaven.com",
     customer_phone: "212-555-0199",
     party_size: i + 2,
