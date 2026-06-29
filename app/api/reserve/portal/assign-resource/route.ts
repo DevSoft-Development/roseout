@@ -33,6 +33,24 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value.trim(),
+    )
+  );
+}
+
+export function isInvalidUuidInput(error: any) {
+  return (
+    error?.code === "22P02" ||
+    String(error?.message || "")
+      .toLowerCase()
+      .includes("invalid input syntax for type uuid")
+  );
+}
+
 function numberOrNull(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -286,11 +304,11 @@ async function validateAssignment(
     throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
   }
 
-  const resourceId = resource.id;
+  const safeResourceId = isUuid(resource.id) ? resource.id : null;
   const requestedLabel = normalizeLabel(resource.label);
   const conflict = (active.data || []).some((entry: any) => {
     const sameResource =
-      Boolean(resourceId) && entry.bookable_item_id === resourceId;
+      Boolean(safeResourceId) && entry.bookable_item_id === safeResourceId;
     const sameLabel =
       Boolean(requestedLabel) &&
       [entry.bookable_item_name]
@@ -309,6 +327,16 @@ async function validateAssignment(
     : null;
 }
 
+export function buildAssignmentPayload(resource: AssignableResource, includeUpdatedAt: boolean) {
+  const payload: Record<string, any> = {
+    bookable_item_id: isUuid(resource.id) ? resource.id : null,
+    bookable_item_name: clean(resource.label) || "Selected table",
+    bookable_item_type: resource.type || null,
+  };
+  if (includeUpdatedAt) payload.updated_at = new Date().toISOString();
+  return payload;
+}
+
 async function updateReservationAssignment(
   reservationId: string,
   locationId: string,
@@ -316,12 +344,7 @@ async function updateReservationAssignment(
   context: Record<string, any>,
   includeUpdatedAt: boolean,
 ) {
-  const payload: Record<string, any> = {
-    bookable_item_id: resource.id || null,
-    bookable_item_name: resource.label,
-    bookable_item_type: resource.type || null,
-  };
-  if (includeUpdatedAt) payload.updated_at = new Date().toISOString();
+  const payload = buildAssignmentPayload(resource, includeUpdatedAt);
 
   const runUpdate = async (
     nextPayload: Record<string, any>,
@@ -334,17 +357,42 @@ async function updateReservationAssignment(
       .eq("location_id", locationId)
       .select("*")
       .single();
-    if (update.error)
+    if (update.error) {
+      console.error("RESERVE_ASSIGN_RESOURCE_UPDATE_FAILED", {
+        reservationId,
+        locationId,
+        rawResourceId: resource.id,
+        safeBookableItemId: isUuid(resource.id) ? resource.id : null,
+        resourceLabel: resource.label,
+        resourceType: resource.type,
+        payload: nextPayload,
+        code: update.error?.code,
+        message: update.error?.message,
+        details: update.error?.details,
+      });
       logDbFailure(
         operation,
         { ...context, payloadColumns: Object.keys(nextPayload) },
         update.error,
       );
+    }
     return update;
   };
 
   const update = await runUpdate(payload, "update_reservation_assignment");
   if (!update.error) return update.data;
+
+  if (isInvalidUuidInput(update.error) && payload.bookable_item_id !== null) {
+    const retryPayload = { ...payload, bookable_item_id: null };
+    const retry = await runUpdate(
+      retryPayload,
+      "update_reservation_assignment_without_invalid_uuid",
+    );
+    if (!retry.error) return retry.data;
+    if (isMissingColumn(retry.error))
+      throw new Error(MISSING_ASSIGNMENT_MESSAGE);
+    throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
+  }
 
   if (
     includeUpdatedAt &&
@@ -376,7 +424,8 @@ export async function POST(request: NextRequest) {
   const resourceId = clean(body.resource_id) || null;
   const resourceSource =
     clean(body.resource_source || body.resource_table || body.source) || null;
-  const resourceLabel = clean(body.resource_label) || null;
+  const resourceLabel =
+    clean(body.resource_label) || clean(body.resource_name) || null;
   const resourceType = clean(body.resource_type) || null;
   const parsedCapacity = Number(body.resource_capacity);
   const resourceCapacity = Number.isFinite(parsedCapacity)
@@ -451,22 +500,28 @@ export async function POST(request: NextRequest) {
     );
 
   try {
-    const foundResource = resourceId
+    const foundResource = resourceId && isUuid(resourceId)
       ? await findResource(resourceId, locationId, resourceSource, context)
       : null;
-    if (!foundResource && !resourceLabel)
+    const fallbackLabel = resourceLabel || "Selected table";
+    if (!foundResource && !resourceLabel && !resourceId)
       return NextResponse.json(
         { success: false, error: RESOURCE_NOT_FOUND_MESSAGE },
         { status: 404 },
       );
-    const resource =
-      foundResource ||
-      manualLabelResource(
-        resourceId,
-        resourceLabel as string,
-        resourceType,
-        resourceCapacity,
-      );
+    const resource = foundResource
+      ? {
+          ...foundResource,
+          label: foundResource.label || fallbackLabel,
+          type: foundResource.type || resourceType,
+          capacity: foundResource.capacity ?? resourceCapacity,
+        }
+      : manualLabelResource(
+          resourceId,
+          fallbackLabel,
+          resourceType,
+          resourceCapacity,
+        );
 
     const validationError = await validateAssignment(
       before.data,
