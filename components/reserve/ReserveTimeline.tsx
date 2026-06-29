@@ -2,11 +2,12 @@
 
 import { MoreHorizontal } from "lucide-react";
 import { formatReservationTime, getReservationGuestName, getReservationPrimaryNextAction, getReservationStatusLabel } from "@/lib/reservations/ui";
+import { getAssignedReservationResourceLabel, hasAssignedReservationResource } from "@/lib/reservations/floorSnapshot";
 import ReserveQuickActionButton from "./ReserveQuickActionButton";
 import ReserveStatusBadge from "./ReserveStatusBadge";
 
 function assigned(r: any) {
-  return r.assigned_resource_label || r.reservable_item_name || r.bookable_item_name || "Unassigned";
+  return getAssignedReservationResourceLabel(r);
 }
 function duration(r: any) {
   return r.duration_minutes || r.default_duration_minutes || 90;
@@ -14,7 +15,7 @@ function duration(r: any) {
 function canTextReady(r: any) {
   return (
     (r.status === "checked_in" || r.status === "arrived") &&
-    (r.assigned_resource_id || r.assigned_layout_item_id || r.assigned_resource_label || r.reservable_item_name || r.bookable_item_id) &&
+    hasAssignedReservationResource(r) &&
     r.customer_phone &&
     !r.table_ready_sms_sent
   );

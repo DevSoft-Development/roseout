@@ -18,7 +18,7 @@ import ReserveEmptyState from "@/components/reserve/ReserveEmptyState";
 import { getReservationGuestName, getReservationStatusLabel } from "@/lib/reservations/ui";
 import { formatShortDate } from "@/lib/reservations/reservationFormatting";
 import { getReserveBookingUrl, getReserveDashboardUrl, getReserveEmbedUrl, getReserveQrUrl } from "@/lib/reservations/reserveLinks";
-import { getFloorSnapshotState, resourceAssignmentPayload, resourceCapacity, resourceId, resourceName } from "@/lib/reservations/floorSnapshot";
+import { getFloorSnapshotState, hasAssignedReservationResource, resourceAssignmentPayload, resourceCapacity, resourceId, resourceName } from "@/lib/reservations/floorSnapshot";
 
 type ReservationStatus = "pending"|"confirmed"|"checked_in"|"arrived"|"seated"|"waitlisted"|"declined"|"cancelled"|"completed"|"no_show";
 type Reservation = Record<string, any> & { id:string; status:ReservationStatus; reservation_date:string; reservation_time:string; customer_name?:string; party_size?:number; location_id:string; location_type:string };
@@ -28,7 +28,6 @@ function todayKey(date = new Date()) { return date.toISOString().split("T")[0]; 
 function normalizeType(value: string | null) { const type = String(value || "restaurant").toLowerCase(); return type === "activities" ? "activity" : type; }
 function addDays(dateKeyValue:string, amount:number){ const d=new Date(`${dateKeyValue}T12:00:00`); d.setDate(d.getDate()+amount); return todayKey(d); }
 function friendlyError(value: unknown, fallback="We could not load this reservation view.") { return value instanceof Error ? value.message : fallback; }
-function hasAssignedResource(r:any){ return Boolean(r?.assigned_resource_id || r?.assigned_layout_item_id || r?.assigned_resource_label || r?.reservable_item_name || r?.bookable_item_id || r?.bookable_item_name); }
 
 export default function ReserveCommandCenterPage(){ return <Suspense fallback={<main className="reserve-command-center min-h-screen p-10">Loading Reserve Command Center…</main>}><ReserveCommandCenterContent /></Suspense>; }
 
@@ -83,11 +82,11 @@ function ReserveCommandCenterContent() {
   }
 
   async function updateStatus(reservation:Reservation, status:string){
-    if(status === "seated" && !(reservation.assigned_resource_id || reservation.assigned_layout_item_id || reservation.assigned_resource_label || reservation.reservable_item_name)){ setSelectedId(reservation.id); setAssigningReservationId(reservation.id); setMessage({ tone:"warning", text:"Choose a table before seating this guest." }); return; }
+    if(status === "seated" && !hasAssignedReservationResource(reservation)){ setSelectedId(reservation.id); setAssigningReservationId(reservation.id); setMessage({ tone:"warning", text:"Choose a table before seating this guest." }); return; }
     if(["cancelled","no_show","declined"].includes(status) && !window.confirm(`Mark this reservation as ${getReservationStatusLabel(status)}?`)) return;
     setUpdatingId(reservation.id); setMessage(null);
     try { const response = await fetch("/api/reserve/portal/reservations/update", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ reservation_id: reservation.id, location_id: reservation.location_id, location_type: reservation.location_type, status, adminLocationId: adminLocationId || undefined }) }); const data = await response.json(); if(!response.ok) throw new Error(data.error || "We could not update this reservation. Please try again."); setReservations((prev)=>prev.map((r)=>r.id===reservation.id?data.reservation:r)); setSelectedId(reservation.id); setMessage({ tone:"success", text: status === "confirmed" ? "Reservation confirmed." : status === "checked_in" ? "Guest checked in." : status === "seated" ? "Guest seated." : status === "completed" ? "Reservation completed." : `Reservation marked ${getReservationStatusLabel(status)}.` }); await loadAll(); }
-    catch(error){ setMessage({ tone:"error", text:friendlyError(error, `This reservation cannot move from ${getReservationStatusLabel(reservation.status)} to ${getReservationStatusLabel(status)}.`) }); }
+    catch(error){ const fallback = status === "seated" ? "We could not seat this guest. Please try again." : `This reservation cannot move from ${getReservationStatusLabel(reservation.status)} to ${getReservationStatusLabel(status)}.`; const text = status === "seated" ? (error instanceof Error && error.message.includes("requested status") ? "This guest needs to be checked in before seating." : fallback) : friendlyError(error, fallback); setMessage({ tone:"error", text }); }
     finally { setUpdatingId(""); }
   }
 
@@ -107,7 +106,7 @@ function ReserveCommandCenterContent() {
   }
 
   async function sendTableReady(reservation:Reservation){
-    if(!hasAssignedResource(reservation)){ setSelectedId(reservation.id); setAssigningReservationId(reservation.id); setMessage({ tone:"warning", text:"Choose a table before sending a table ready text." }); return; }
+    if(!hasAssignedReservationResource(reservation)){ setSelectedId(reservation.id); setAssigningReservationId(reservation.id); setMessage({ tone:"warning", text:"Choose a table before sending a table ready text." }); return; }
     if(!reservation.customer_phone){ setMessage({ tone:"warning", text:"Add a phone number before sending a table ready text." }); return; }
     setUpdatingId(reservation.id); setMessage(null);
     try {
