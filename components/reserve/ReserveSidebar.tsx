@@ -1,61 +1,16 @@
 "use client";
-
 import Link from "next/link";
+import { CalendarDays, CircleHelp, Clock3, LayoutDashboard, MessageSquareText, Settings, ShieldCheck, Table2, Users, WalletCards, ClipboardList, Map } from "lucide-react";
 import { getReserveDashboardUrl } from "@/lib/reservations/reserveLinks";
-
-const reservationTabs = [
-  ["today", "Today"],
-  ["calendar", "Calendar"],
-  ["floor", "Floor"],
-  ["guests", "Guests"],
-  ["waitlist", "Waitlist"],
-] as const;
-
-const setupLinks = [
-  ["Layout & Tables", "layout"],
-  ["Hours & Capacity", "hours"],
-  ["Reminders", "reminders"],
-  ["Deposit & Policies", "deposits"],
-  ["Booking page", "booking"],
-  ["Embed", "embed"],
-  ["QR code", "qr"],
-] as const;
-
+const sections=[{title:"MAIN",items:[["Dashboard","today",undefined,LayoutDashboard],["Settings","settings",undefined,Settings]]},{title:"RESERVATIONS",items:[["Today","today",undefined,Clock3],["Calendar","calendar",undefined,CalendarDays],["Floor","floor",undefined,Table2],["Guests","guests",undefined,Users],["Waitlist","waitlist",undefined,ClipboardList]]},{title:"SETUP",items:[["Layout & Tables","settings","layout",Map],["Hours & Capacity","settings","hours",Clock3],["Reminders","settings","reminders",MessageSquareText],["Deposit & Policies","settings","deposits",WalletCards]]},{title:"SUPPORT",items:[["Help & Support","/help",undefined,CircleHelp]]}] as const;
 export default function ReserveSidebar({ locationName, locationId, locationType, activeTab, activeSection, userLabel, actingContext }: { locationName?: string; locationId?: string; locationType?: string; activeTab: string; activeSection?: string; onTabChange: (tab: string) => void; userLabel?: string; actingContext?: { adminLocationId?: string; type?: string } }) {
   const ctx = { adminLocationId: actingContext?.adminLocationId, type: actingContext?.type || locationType };
-  return (
-    <aside className="reserve-card flex h-dvh min-h-0 flex-col overflow-hidden border-l-0 border-y-0 p-4 lg:sticky lg:top-0">
-      <div className="shrink-0 rounded-3xl bg-gradient-to-br from-red-700 to-black p-4 text-white">
-        <p className="text-xs font-black uppercase tracking-[.22em]">TheOutHaven</p>
-        <h2 className="mt-1 text-2xl font-black">Reserve</h2>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="reserve-soft mt-4 rounded-2xl p-4">
-          <p className="text-xs font-black uppercase reserve-muted">Active location</p>
-          <p className="mt-1 font-black">{locationName || "Select a location"}</p>
-          <p className="text-xs reserve-muted">{locationType || "restaurant"} {locationId ? `· ${locationId.slice(0, 8)}` : ""}</p>
-        </div>
-        <p className="mt-5 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Main</p>
-        <nav className="mt-2 space-y-2">
-          <Link className={`block rounded-2xl px-4 py-3 font-bold ${activeTab === "today" ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("today", undefined, ctx)}>Dashboard</Link>
-          <Link className={`block rounded-2xl px-4 py-3 font-bold ${activeTab === "settings" && !activeSection ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("settings", undefined, ctx)}>Settings</Link>
-        </nav>
-        <p className="mt-6 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Reservation</p>
-        <div className="mt-2 space-y-1">
-          {reservationTabs.map(([value, label]) => (
-            <Link key={value} href={getReserveDashboardUrl(value, undefined, ctx)} className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-black ${activeTab === value ? "reserve-primary" : "reserve-soft"}`}>{label}</Link>
-          ))}
-        </div>
-        <p className="mt-6 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Setup</p>
-        <div className="mt-2 space-y-1 text-sm font-bold">
-          {setupLinks.map(([label, section]) => (
-            <Link key={label} className={`block rounded-2xl px-4 py-3 ${activeTab === "settings" && activeSection === section ? "reserve-primary" : "reserve-soft"}`} href={getReserveDashboardUrl("settings", section, ctx)}>{label}</Link>
-          ))}
-        </div>
-        <p className="mt-6 px-2 text-xs font-black uppercase tracking-[.2em] reserve-muted">Support</p>
-        <Link className="mt-2 block reserve-soft rounded-2xl px-4 py-3 text-sm font-black" href="/help">Help & Support</Link>
-      </div>
-      <div className="reserve-soft mt-4 shrink-0 rounded-2xl p-4 text-sm font-bold">{userLabel || "Signed-in owner"}</div>
-    </aside>
-  );
+  return <aside className="flex h-dvh min-h-0 flex-col overflow-hidden border-r border-[var(--reserve-border)] bg-[var(--reserve-sidebar)] p-3">
+    <div className="shrink-0 px-2 py-3"><p className="text-xs font-black uppercase tracking-[.24em] text-[var(--reserve-primary)]">TheOutHaven</p><h2 className="mt-0.5 text-xl font-black">Reserve</h2></div>
+    <div className="reserve-soft mb-3 shrink-0 rounded-2xl p-3"><p className="text-[10px] font-black uppercase tracking-[.18em] reserve-muted">Active location</p><p className="mt-1 truncate text-sm font-black">{locationName || "Select a location"}</p><p className="truncate text-xs reserve-muted">{locationType || "restaurant"}{locationId ? ` · ${locationId.slice(0, 8)}` : ""}</p></div>
+    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      {sections.map((section)=><div key={section.title} className="mb-4"><p className="mb-1 px-2 text-[10px] font-black uppercase tracking-[.2em] reserve-muted">{section.title}</p><nav className="space-y-1">{section.items.map(([label,tab,sectionKey,Icon])=>{const href=String(tab).startsWith('/')?String(tab):getReserveDashboardUrl(String(tab), sectionKey as string|undefined, ctx); const active=String(tab).startsWith('/')?false:activeTab===tab && (!sectionKey || activeSection===sectionKey); return <Link key={label} href={href} className={`flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-bold transition ${active?"bg-[var(--reserve-primary-soft)] text-white ring-1 ring-[var(--reserve-primary)]/35":"text-[var(--reserve-muted-strong)] hover:bg-white/[0.04] hover:text-white"}`}><Icon size={15}/><span className="truncate">{label}</span></Link>})}</nav></div>)}
+    </div>
+    <div className="reserve-soft mt-2 flex shrink-0 items-center gap-2 rounded-2xl p-3 text-sm font-bold"><ShieldCheck size={16}/><span className="truncate">{userLabel || "Signed-in owner"}</span></div>
+  </aside>;
 }
