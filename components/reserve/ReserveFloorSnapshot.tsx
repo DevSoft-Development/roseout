@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatReservationTime } from "@/lib/reservations/ui";
+import { formatReservationTime, getReservationGuestName } from "@/lib/reservations/ui";
 import { dedupeFloorResources, getFloorSnapshotState, resourceCapacity, resourceName } from "@/lib/reservations/floorSnapshot";
 
 const statusStyles: Record<string, string> = {
@@ -36,7 +36,7 @@ export default function ReserveFloorSnapshot({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black">Floor Snapshot</h2>
-          {assigningReservation && <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">Choose an open table for {assigningReservation.customer_name || "this guest"}.</p>}
+          {assigningReservation && <p className="mt-1 text-xs font-bold text-[var(--reserve-primary)]">Choose an open table for {getReservationGuestName(assigningReservation)}.</p>}
         </div>
         <Link href={settingsHref} className="reserve-soft rounded-full px-3 py-2 text-xs font-black">Open Full Floor View</Link>
       </div>
@@ -57,7 +57,7 @@ export default function ReserveFloorSnapshot({
                 <p className="text-[11px] reserve-muted">Cap {resourceCapacity(r) || "—"}</p>
                 <span className="mt-2 inline-flex whitespace-nowrap rounded-full border border-current/20 px-2 py-0.5 text-[10px] font-black leading-none">{state.status}</span>
                 {state.reservation ? (
-                  <p className="mt-2 truncate text-xs font-bold text-white">{state.reservation.customer_name || "Guest"} · {state.reservation.party_size || "—"}p</p>
+                  <p className="mt-2 truncate text-xs font-bold text-white">{getReservationGuestName(state.reservation)} · {state.reservation.party_size || "—"}p</p>
                 ) : assigningReservation && state.available ? (
                   <p className="mt-2 text-xs font-bold text-emerald-300">Click to assign</p>
                 ) : null}
