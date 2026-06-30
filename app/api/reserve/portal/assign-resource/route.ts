@@ -18,7 +18,7 @@ const REQUIRED_ASSIGNMENT_COLUMNS = [
   "bookable_item_name",
   "bookable_item_type",
 ] as const;
-const OPTIONAL_ASSIGNMENT_COLUMNS = ["updated_at"] as const;
+const OPTIONAL_ASSIGNMENT_COLUMNS = ["updated_at", "seated_at", "checked_in_at", "arrived_at"] as const;
 const ASSIGNMENT_COLUMNS = [
   ...REQUIRED_ASSIGNMENT_COLUMNS,
   ...OPTIONAL_ASSIGNMENT_COLUMNS,
@@ -75,7 +75,9 @@ function isMissingColumn(error: any) {
 
 function missingColumnName(error: any) {
   const message = String(error?.message || "");
-  return ASSIGNMENT_COLUMNS.find((column) => message.includes(column)) || null;
+  return ASSIGNMENT_COLUMNS.find((column) => message.includes(column)) ||
+    ["status", "seated_at", "checked_in_at", "arrived_at", "updated_at"].find((column) => message.includes(column)) ||
+    null;
 }
 
 function logDbFailure(
@@ -349,13 +351,18 @@ export function reservationConflictsWithResource(
   );
 }
 
-export function buildAssignmentPayload(resource: AssignableResource, includeUpdatedAt: boolean) {
+export function buildAssignmentPayload(
+  resource: AssignableResource,
+  includeUpdatedAt: boolean,
+  seatingPayload: Record<string, any> = {},
+) {
   const payload: Record<string, any> = {
     bookable_item_id: shouldPersistBookableItemId(resource) ? resource.id : null,
     bookable_item_name: clean(resource.label) || "Selected space",
     bookable_item_type: resource.type || "space",
+    ...seatingPayload,
   };
-  if (includeUpdatedAt) payload.updated_at = new Date().toISOString();
+  if (includeUpdatedAt && !payload.updated_at) payload.updated_at = new Date().toISOString();
   return payload;
 }
 
@@ -365,8 +372,9 @@ async function updateReservationAssignment(
   resource: AssignableResource,
   context: Record<string, any>,
   includeUpdatedAt: boolean,
+  seatingPayload: Record<string, any> = {},
 ) {
-  const payload = buildAssignmentPayload(resource, includeUpdatedAt);
+  const payload = buildAssignmentPayload(resource, includeUpdatedAt, seatingPayload);
   let lastUpdateFailure: any = null;
 
   const makeUpdateError = () => {
@@ -432,19 +440,17 @@ async function updateReservationAssignment(
     throw makeUpdateError();
   }
 
-  if (
-    includeUpdatedAt &&
-    isMissingColumn(update.error) &&
-    missingColumnName(update.error) === "updated_at"
-  ) {
-    const { updated_at: _updatedAt, ...withoutUpdatedAt } = payload;
+  const retryPayload = { ...payload };
+  let missing = isMissingColumn(update.error) ? missingColumnName(update.error) : null;
+  const optionalTimestampColumns = new Set(["updated_at", "seated_at", "checked_in_at", "arrived_at"]);
+  while (missing && optionalTimestampColumns.has(missing) && missing in retryPayload) {
+    delete retryPayload[missing];
     const retry = await runUpdate(
-      withoutUpdatedAt,
-      "update_reservation_assignment_without_updated_at",
+      retryPayload,
+      `update_reservation_assignment_without_${missing}`,
     );
     if (!retry.error) return retry.data;
-    if (isMissingColumn(retry.error))
-      throw new Error(MISSING_ASSIGNMENT_MESSAGE);
+    missing = isMissingColumn(retry.error) ? missingColumnName(retry.error) : null;
   }
 
   if (isMissingColumn(update.error))
@@ -471,6 +477,7 @@ export async function POST(request: NextRequest) {
   const resourceCapacity = Number.isFinite(parsedCapacity)
     ? parsedCapacity
     : null;
+  const seatAfterAssign = body.seat_after_assign === true;
   const context: Record<string, any> = {
     reservationId,
     locationId,
@@ -590,6 +597,17 @@ export async function POST(request: NextRequest) {
       );
 
     const debugId = crypto.randomUUID();
+    const currentStatus = clean(before.data.status).toLowerCase();
+    const canSeatAfterAssign = seatAfterAssign && ["confirmed", "checked_in", "arrived"].includes(currentStatus);
+    const now = new Date().toISOString();
+    const seatingPayload: Record<string, any> = canSeatAfterAssign
+      ? { status: "seated", seated_at: now, updated_at: now }
+      : {};
+    if (canSeatAfterAssign && currentStatus === "confirmed") {
+      seatingPayload.checked_in_at = now;
+      seatingPayload.arrived_at = now;
+    }
+
     const updatedReservation = await updateReservationAssignment(
       reservationId,
       authoritativeLocationId,
@@ -601,6 +619,7 @@ export async function POST(request: NextRequest) {
         resourceSource: resource.source,
       },
       schemaState.hasUpdatedAt,
+      seatingPayload,
     );
 
     await logAdminLocationAction({
@@ -617,6 +636,7 @@ export async function POST(request: NextRequest) {
         resourceLabel: resource.label,
         resourceType: resource.type,
         resourceCapacity: resource.capacity,
+        seatAfterAssign,
       },
       request,
     });

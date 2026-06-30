@@ -21,6 +21,7 @@ import {
   formatOperatingHoursForDisplay,
   getOperatingHours,
 } from "@/lib/locationHours";
+import { getReserveVocabulary } from "@/lib/reservations/reserveVocabulary";
 
 type Slot = {
   time: string;
@@ -92,6 +93,7 @@ export default function ReserveLocationPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -107,13 +109,14 @@ export default function ReserveLocationPage() {
   );
 
   const autoConfirm = currentItem?.auto_confirm !== false;
+  const vocab = getReserveVocabulary(locationType, currentItem?.item_type);
   const operatingHoursDisplay = formatOperatingHoursForDisplay(
     getOperatingHours(location)
   );
 
   async function loadData(quiet = false) {
     try {
-      quiet ? setChecking(true) : setLoading(true);
+      if (quiet) setChecking(true); else setLoading(true);
       setError("");
 
       const query = new URLSearchParams({
@@ -197,6 +200,8 @@ export default function ReserveLocationPage() {
           customer_name: name,
           customer_email: email,
           customer_phone: phone,
+          special_request: notes,
+          notes,
           reschedule_token: rescheduleToken || null,
         }),
       });
@@ -239,8 +244,8 @@ export default function ReserveLocationPage() {
               Back to TheOutHaven
             </Link>
 
-            <div className="mt-7 grid gap-8 lg:grid-cols-[1.05fr_520px]">
-              <aside className="relative min-h-[660px] overflow-hidden rounded-[2.5rem] border border-white/10 bg-zinc-950 shadow-2xl">
+            <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,520px)] lg:items-start">
+              <aside className="relative min-h-[360px] overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950 shadow-2xl lg:min-h-[520px]">
                 {getLocationImage(location) ? (
                   <div
                     className="absolute inset-0 opacity-45"
@@ -256,7 +261,7 @@ export default function ReserveLocationPage() {
 
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/20" />
 
-                <div className="relative z-10 flex min-h-[660px] flex-col justify-between p-6 sm:p-8">
+                <div className="relative z-10 flex min-h-[360px] flex-col justify-between p-5 sm:p-7 lg:min-h-[520px]">
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white">
                       TheOutHaven Reserve
@@ -274,7 +279,7 @@ export default function ReserveLocationPage() {
                       {location?.category || locationType}
                     </p>
 
-                    <h1 className="mt-4 max-w-3xl text-5xl font-black tracking-tight sm:text-6xl">
+                    <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-5xl">
                       {location?.name || "Reserve your spot"}
                     </h1>
 
@@ -292,7 +297,7 @@ export default function ReserveLocationPage() {
                       </p>
                     )}
 
-                    <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                    <div className="mt-6 grid gap-3 sm:grid-cols-3">
                       <MiniStat
                         label="Live Slots"
                         value={String(totalSlots)}
@@ -313,9 +318,9 @@ export default function ReserveLocationPage() {
                 </div>
               </aside>
 
-              <section className="rounded-[2.5rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl backdrop-blur-xl sm:p-6">
+              <section className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 shadow-2xl backdrop-blur-xl sm:p-6 lg:sticky lg:top-24">
                 {loading ? (
-                  <div className="flex min-h-[660px] items-center justify-center">
+                  <div className="flex min-h-[420px] items-center justify-center">
                     <div className="text-center">
                       <Loader2 className="mx-auto animate-spin text-red-400" size={34} />
                       <p className="mt-4 text-sm font-bold text-white/60">
@@ -365,7 +370,7 @@ export default function ReserveLocationPage() {
                         />
                       </Field>
 
-                      <Field label="Guests" icon={<Users size={16} />}>
+                      <Field label={vocab.partySizeLabel} icon={<Users size={16} />}>
                         <input
                           type="number"
                           required
@@ -378,7 +383,7 @@ export default function ReserveLocationPage() {
                       </Field>
                     </div>
 
-                    <Field label="Reservation Type" icon={<Sparkles size={16} />}>
+                    <Field label={`${vocab.resource} / space`} icon={<Sparkles size={16} />}>
                       <select
                         required
                         value={selectedItem}
@@ -394,7 +399,7 @@ export default function ReserveLocationPage() {
                         ) : (
                           items.map((item) => (
                             <option key={item.id} value={item.id}>
-                              {item.item_name} · {prettyType(item.item_type)} · {item.capacity_min}-{item.capacity_max} guests
+                              {item.item_name} · {prettyType(item.item_type)} · {item.capacity_min}-{item.capacity_max} {vocab.customerPlural.toLowerCase()}
                             </option>
                           ))
                         )}
@@ -448,7 +453,7 @@ export default function ReserveLocationPage() {
                         </div>
                       ) : (
                         <div className="mt-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm font-bold text-yellow-100">
-                          No available times for this selection.
+                          No available times for this selection. Join the waitlist or try another date, time, or group size.
                         </div>
                       )}
                     </div>
@@ -464,7 +469,7 @@ export default function ReserveLocationPage() {
                               {currentItem.item_name}
                             </p>
                             <p className="mt-1 text-sm font-bold text-white/55">
-                              {prettyType(currentItem.item_type)} · Fits {currentItem.capacity_min}-{currentItem.capacity_max} guests
+                              {prettyType(currentItem.item_type)} · Fits {currentItem.capacity_min}-{currentItem.capacity_max} {vocab.customerPlural.toLowerCase()}
                             </p>
                           </div>
 
@@ -510,6 +515,15 @@ export default function ReserveLocationPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="input"
+                      />
+                    </Field>
+
+                    <Field label="Notes">
+                      <textarea
+                        placeholder="Dietary needs, access notes, or celebration details"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        className="input min-h-[88px]"
                       />
                     </Field>
 

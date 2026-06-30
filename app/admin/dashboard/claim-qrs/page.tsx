@@ -20,6 +20,9 @@ type SearchParams = {
   page?: string;
   pageSize?: string;
   repair?: string;
+  locationId?: string;
+  type?: string;
+  mode?: string;
 };
 
 type ClaimQrLocation = {
@@ -85,6 +88,7 @@ export default async function AdminClaimQrPrintPage({
   const params = await searchParams;
   const q = params.q?.trim() || "";
   const filter = params.filter || "all";
+  const selectedLocationId = params.locationId?.trim() || "";
   const page = Math.max(1, Number(params.page || 1));
   const loadAll = params.pageSize === "all";
   if (params.repair === "1") {
@@ -108,22 +112,27 @@ export default async function AdminClaimQrPrintPage({
       "id, name, restaurant_name, activity_name, location_type, source_table, address, city, state, zip_code, claim_url, claim_code, qr_code_data_url, claim_qr_url, is_claimed, phone, google_place_id",
       { count: "exact" },
     )
-    .order("name", { ascending: true })
-    .range(from, to);
+    .order("name", { ascending: true });
 
-  if (q) {
+  if (selectedLocationId) {
+    query = query.eq("id", selectedLocationId).range(0, 0);
+  } else {
+    query = query.range(from, to);
+  }
+
+  if (!selectedLocationId && q) {
     query = query.or(
       `name.ilike.%${q}%,restaurant_name.ilike.%${q}%,activity_name.ilike.%${q}%,address.ilike.%${q}%,city.ilike.%${q}%,state.ilike.%${q}%,zip_code.ilike.%${q}%,phone.ilike.%${q}%,google_place_id.ilike.%${q}%,claim_code.ilike.%${q}%`,
     );
   }
 
-  if (filter === "missing_qr") {
+  if (!selectedLocationId && filter === "missing_qr") {
     query = query.or("qr_code_data_url.is.null,claim_qr_url.is.null");
-  } else if (filter === "missing_claim_code") {
+  } else if (!selectedLocationId && filter === "missing_claim_code") {
     query = query.is("claim_code", null);
-  } else if (filter === "claimed") {
+  } else if (!selectedLocationId && filter === "claimed") {
     query = query.eq("is_claimed", true);
-  } else if (filter === "unclaimed") {
+  } else if (!selectedLocationId && filter === "unclaimed") {
     query = query.or("is_claimed.eq.false,is_claimed.is.null");
   }
 
@@ -164,6 +173,8 @@ export default async function AdminClaimQrPrintPage({
     qr_code_data_url: row.qr_code_data_url || row.claim_qr_url,
   }));
 
+  const selectedLocationName = selectedLocationId ? locations[0]?.name || "selected location" : "";
+
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white print:bg-white print:px-0 print:py-0">
       <style>{`
@@ -180,18 +191,18 @@ export default async function AdminClaimQrPrintPage({
           </p>
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-4xl font-black tracking-tight">Claim QR Codes</h1>
+              <h1 className="text-4xl font-black tracking-tight">{selectedLocationId ? `QR Code for ${selectedLocationName}` : "Claim QR Codes"}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Print labels, audit missing claim codes, and repair any old roseout QR codes so every scan opens TheOutHaven.
+                {selectedLocationId ? "Print or download the reservation QR code for this selected location." : "Print labels, audit missing claim codes, and repair any old roseout QR codes so every scan opens TheOutHaven."}
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-right">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">Total matching</p>
-              <p className="mt-1 text-3xl font-black">{formatNumber(total)}</p>
+              <p className="mt-1 text-3xl font-black">{formatNumber(selectedLocationId ? locations.length : total)}</p>
             </div>
           </div>
 
-          <form className="mt-5 grid gap-3 lg:grid-cols-[1fr_190px_160px_120px]">
+          {!selectedLocationId && <form className="mt-5 grid gap-3 lg:grid-cols-[1fr_190px_160px_120px]">
             <input
               name="q"
               defaultValue={q}
@@ -225,23 +236,23 @@ export default async function AdminClaimQrPrintPage({
             <button className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-5 py-3 text-sm font-black text-white shadow-lg" type="submit">
               Filter
             </button>
-          </form>
+          </form>}
 
-          <div className="mt-4"><RepairClaimQrButton /></div>
-          <div className="mt-3"><Link href="/admin/dashboard/claim-qrs?repair=1" className="rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.15em] text-rose-100">Run full repair pass</Link></div>
+          {!selectedLocationId && <div className="mt-4"><RepairClaimQrButton /></div>}
+          {!selectedLocationId && <div className="mt-3"><Link href="/admin/dashboard/claim-qrs?repair=1" className="rounded-full border border-rose-300/30 bg-rose-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.15em] text-rose-100">Run full repair pass</Link></div>}
 
           <div className="mt-5 flex flex-wrap gap-3">
             <Link
-              href="/admin/dashboard"
+              href={selectedLocationId ? `/reserve/dashboard?tab=today&adminLocationId=${encodeURIComponent(selectedLocationId)}&type=${encodeURIComponent(params.type || "location")}` : "/admin/dashboard"}
               className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
             >
-              Back to dashboard
+              {selectedLocationId ? "Back to Reserve dashboard" : "Back to dashboard"}
             </Link>
             <Link
-              href="/admin/dashboard/claim-tools"
+              href={selectedLocationId ? "/admin/dashboard/claim-qrs" : "/admin/dashboard/claim-tools"}
               className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white"
             >
-              Claim Tools
+              {selectedLocationId ? "View all QR codes" : "Claim Tools"}
             </Link>
           </div>
         </section>
@@ -252,9 +263,11 @@ export default async function AdminClaimQrPrintPage({
           </div>
         )}
 
+        {selectedLocationId && <div className="no-print mt-5 flex flex-wrap gap-3"><button onClick={() => window.print()} className="rounded-full bg-white px-5 py-3 text-sm font-black text-black">Print this QR</button><a href={locations[0]?.qr_code_data_url || "#"} download className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80">Download QR</a></div>}
+
         <ClaimQrPrintClient locations={locations} />
 
-        <div className="no-print mt-5 flex flex-wrap items-center justify-between gap-4">
+        {!selectedLocationId && <div className="no-print mt-5 flex flex-wrap items-center justify-between gap-4">
           <Link
             href={buildClaimQrUrl({ q, filter, page: Math.max(1, safePage - 1), pageSize: loadAll ? "all" : pageSize })}
             className={`rounded-full px-5 py-3 text-sm font-black transition ${
@@ -278,7 +291,7 @@ export default async function AdminClaimQrPrintPage({
           >
             Next
           </Link>
-        </div>
+        </div>}
       </div>
     </main>
   );
