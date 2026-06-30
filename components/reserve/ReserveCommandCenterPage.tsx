@@ -130,7 +130,7 @@ function ReserveCommandCenterContent() {
       : "today",
   );
   const [activeSection, setActiveSection] = useState(
-    searchParams.get("section") || "",
+    searchParams.get("section") || "layout",
   );
   const [selectedDate, setSelectedDate] = useState(
     searchParams.get("date") || todayKey(),
@@ -628,7 +628,7 @@ function ReserveCommandCenterContent() {
   useEffect(() => {
     const nextTab = searchParams.get("tab") || "today";
     if (validTabs.has(nextTab)) setActiveTab(nextTab);
-    setActiveSection(searchParams.get("section") || "");
+    setActiveSection(searchParams.get("section") || "layout");
     const nextDate = searchParams.get("date");
     if (nextDate) setSelectedDate(nextDate);
     const nextStatus = searchParams.get("status");
@@ -1344,27 +1344,33 @@ function ReserveCommandCenterContent() {
           <p className="mt-1 text-sm reserve-muted">
             Use these setup sections for the selected Reserve location.
           </p>
-          <div className="mt-5 grid gap-4 lg:grid-cols-[260px_1fr]">
-            <div className="space-y-2">
-              {[
-                ["layout", `Layout & ${vocab.resourcePlural}`],
-                ["hours", "Hours & Capacity"],
-                ["reminders", "Reminders"],
-                ["deposits", "Deposit & Policies"],
-                ["booking", "Booking page"],
-                ["embed", "Embed"],
-                ["qr", "QR code"],
-              ].map(([section, label]) => (
-                <Link
-                  key={section}
-                  href={dashboardHref("settings", section)}
-                  className={`block rounded-2xl px-4 py-3 text-sm font-black ${activeSection === section ? "reserve-primary" : "reserve-soft"}`}
-                >
-                  {label}
-                </Link>
-              ))}
-            </div>
-            <div className="reserve-soft rounded-[1.5rem] p-5">
+          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+            {[
+              ["layout", "Layout & Spaces"],
+              ["hours", "Hours"],
+              ["reminders", "Reminders"],
+              ["deposits", "Policies"],
+              ["booking", "Booking Page"],
+              ["embed", "Embed"],
+              ["qr", "QR Code"],
+            ].map(([section, label]) => (
+              <Link
+                key={section}
+                href={dashboardHref("settings", section)}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-black ${activeSection === section ? "reserve-primary" : "reserve-soft"}`}
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-5">
+            <div
+              className={
+                activeSection === "layout"
+                  ? ""
+                  : "reserve-soft rounded-[1.5rem] p-5"
+              }
+            >
               {activeSection === "layout" ? (
                 <ReserveLayoutManager
                   embedded

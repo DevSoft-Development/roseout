@@ -12,6 +12,8 @@ import {
   Search,
   Trash2,
   Users,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
 
@@ -145,6 +147,26 @@ function statusLabel(status: LayoutStatus) {
   if (status === "unavailable") return "Temporarily unavailable";
   if (status === "hidden") return "Hidden from booking";
   return "Available";
+}
+
+function friendlyStatusLabel(item: LayoutItem) {
+  const hasCapacity = itemCapacity(item) > 0;
+  const hasPosition = item.layout_x !== null && item.layout_y !== null;
+  const status = statusFromItem(item);
+  if (!hasCapacity || !hasPosition) return "Needs setup";
+  if (status === "hidden") return "Hidden";
+  if (status === "unavailable") return "Unavailable";
+  return "Ready";
+}
+
+function compactStatusClass(label: string) {
+  if (label === "Ready")
+    return "border-emerald-400/40 bg-emerald-500/10 text-emerald-100";
+  if (label === "Hidden")
+    return "border-white/15 bg-white/[0.06] text-white/60";
+  if (label === "Needs setup")
+    return "border-amber-300/40 bg-amber-500/10 text-amber-100";
+  return "border-orange-300/40 bg-orange-500/10 text-orange-100";
 }
 
 function statusClass(status: LayoutStatus) {
@@ -512,6 +534,40 @@ export default function ReserveLayoutManager({
     }
   }
 
+  async function setAreaVisibility(item: LayoutItem, hidden: boolean) {
+    await saveArea({
+      ...defaultForm(item, nextSpot),
+      status: hidden ? "hidden" : "available",
+    });
+  }
+
+  async function autoArrangeAreas() {
+    if (!visibleItems.length) return;
+    try {
+      setSaving("auto-arrange");
+      setError("");
+      await Promise.all(
+        visibleItems.map((item, index) => {
+          const gap = 24;
+          const cols = Math.max(
+            1,
+            Math.floor((CANVAS_WIDTH - gap) / (CARD_WIDTH + gap)),
+          );
+          const left = gap + (index % cols) * (CARD_WIDTH + gap);
+          const top = gap + Math.floor(index / cols) * (CARD_HEIGHT + gap);
+          return moveArea(item.id, left, top);
+        }),
+      );
+      setMessage("Visual layout auto-arranged.");
+      await loadLayout(false);
+      onChanged?.();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Unable to auto-arrange this layout."));
+    } finally {
+      setSaving("");
+    }
+  }
+
   function beginDrag(
     event: React.PointerEvent<HTMLButtonElement>,
     item: LayoutItem,
@@ -587,18 +643,464 @@ export default function ReserveLayoutManager({
   }
   const createHref = `/reserve/dashboard/location-layout/create${createParams.toString() ? `?${createParams.toString()}` : ""}`;
 
+  const setupNeeds = visibleItems.filter(
+    (item) => friendlyStatusLabel(item) !== "Ready",
+  ).length;
   const stats = {
     total: visibleItems.length,
-    active: visibleItems.filter(
-      (item) =>
-        item.is_active !== false && statusFromItem(item) === "available",
-    ).length,
+    active: visibleItems.filter((item) => friendlyStatusLabel(item) === "Ready")
+      .length,
     hidden: visibleItems.filter(
       (item) =>
         item.is_active === false || statusFromItem(item) !== "available",
     ).length,
     capacity: visibleItems.reduce((sum, item) => sum + itemCapacity(item), 0),
+    needsSetup: setupNeeds,
   };
+
+  if (embedded) {
+    return (
+      <div className="space-y-5">
+        <section className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-2xl font-black">Layout & Spaces</h3>
+              {scopedInitialLocation ? (
+                <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-100">
+                  {selectedLocation?.name
+                    ? `Editing ${selectedLocation.name}`
+                    : "Demo location"}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-2 max-w-3xl text-sm reserve-muted">
+              Manage the floor plan guests book from, hosts assign from, and
+              staff operate from.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                setSelectedItemId("");
+                setForm(defaultForm(null, nextSpot));
+              }}
+              className="reserve-primary inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black"
+            >
+              <Plus className="h-4 w-4" /> Add space
+            </button>
+            <button
+              onClick={autoArrangeAreas}
+              disabled={!visibleItems.length || saving === "auto-arrange"}
+              className="reserve-soft inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" /> Auto-arrange
+            </button>
+            <button
+              onClick={() => loadLayout()}
+              className="reserve-soft inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black"
+            >
+              <RefreshCw className="h-4 w-4" /> Refresh
+            </button>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            ["Bookable spaces", stats.total],
+            ["Total capacity", stats.capacity],
+            ["Ready today", stats.active],
+            ["Needs setup", stats.needsSetup],
+          ].map(([label, value]) => (
+            <div key={label} className="reserve-soft rounded-2xl p-3">
+              <p className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                {label}
+              </p>
+              <p className="mt-1 text-2xl font-black">{value}</p>
+            </div>
+          ))}
+        </section>
+
+        {error ? (
+          <div className="rounded-2xl border border-red-400/40 bg-red-950/60 p-4 text-sm font-bold text-red-100">
+            {error}
+          </div>
+        ) : null}
+        {message ? (
+          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-950/40 p-4 text-sm font-bold text-emerald-100">
+            {message}
+          </div>
+        ) : null}
+
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.9fr)_minmax(340px,1fr)]">
+          <div className="reserve-soft overflow-hidden rounded-[1.5rem] border border-white/10">
+            <div className="flex flex-col gap-3 border-b border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h4 className="text-xl font-black">Visual floor plan</h4>
+                <p className="mt-1 text-sm reserve-muted">
+                  Drag spaces to match the real room. Changes save to Reserve.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditVisualLayout((value) => !value)}
+                className="rounded-full border border-white/10 bg-black/30 px-4 py-2 text-xs font-black text-white/80"
+              >
+                {editVisualLayout ? "Dragging on" : "Dragging off"}
+              </button>
+            </div>
+            {loading ? (
+              <div className="flex min-h-80 items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-red-400" />
+              </div>
+            ) : visibleItems.length === 0 ? (
+              <div className="flex min-h-80 items-center justify-center p-8 text-center">
+                <div>
+                  <p className="text-xl font-black">No spaces yet.</p>
+                  <p className="mt-2 text-sm reserve-muted">
+                    Add the first bookable table, booth, room, lane, or space.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto p-3">
+                <div
+                  ref={canvasRef}
+                  style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+                  className="relative rounded-[1.25rem] border border-white/10 bg-[#080706] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] [background-size:24px_24px]"
+                >
+                  {visibleItems.map((item) => {
+                    const label = friendlyStatusLabel(item);
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setSelectedItemId(item.id)}
+                        onPointerDown={(event) => beginDrag(event, item)}
+                        onPointerMove={continueDrag}
+                        onPointerUp={endDrag}
+                        onPointerCancel={endDrag}
+                        style={{
+                          left: Number(item.layout_x || 0),
+                          top: Number(item.layout_y || 0),
+                          width: CARD_WIDTH,
+                          minHeight: CARD_HEIGHT,
+                          touchAction: editVisualLayout ? "none" : "auto",
+                        }}
+                        className={`absolute rounded-2xl border bg-[#14100f] p-3 text-left shadow-xl transition ${selectedItemId === item.id ? "border-red-400 ring-4 ring-red-500/20" : "border-white/10"}`}
+                      >
+                        <p className="truncate text-base font-black">
+                          {item.item_name || "Layout Area"}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-white/55">
+                          {prettyLabel(item.item_type)} · {itemCapacity(item)}{" "}
+                          {locationType === "activity" ? "people" : "guests"}
+                        </p>
+                        <p className="text-xs font-bold text-white/45">
+                          {formatDuration(itemDuration(item))}
+                        </p>
+                        <span
+                          className={`mt-2 inline-flex rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${compactStatusClass(label)}`}
+                        >
+                          {label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <aside className="reserve-soft rounded-[1.5rem] border border-white/10 p-4">
+            {selectedItem ? (
+              <h4 className="text-xl font-black">Space details</h4>
+            ) : (
+              <h4 className="text-xl font-black">Select a space</h4>
+            )}
+            {!selectedItem ? (
+              <p className="mt-2 text-sm reserve-muted">
+                Choose a space on the floor plan or from the list below to edit
+                booking details.
+              </p>
+            ) : null}
+            <div className="mt-4 space-y-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                  Name
+                </span>
+                <input
+                  value={form.item_name}
+                  onChange={(e) =>
+                    setForm((c) => ({ ...c, item_name: e.target.value }))
+                  }
+                  placeholder="Table 1"
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                  Type
+                </span>
+                <select
+                  value={form.item_type}
+                  onChange={(e) =>
+                    setForm((c) => ({ ...c, item_type: e.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
+                >
+                  {orderedTypeGroups.map((group) => (
+                    <optgroup key={group.heading} label={group.heading}>
+                      {group.options.map((type) => (
+                        <option key={type} value={typeToValue(type)}>
+                          {type}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                    Capacity
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.capacity}
+                    onChange={(e) =>
+                      setForm((c) => ({
+                        ...c,
+                        capacity: Number(e.target.value),
+                      }))
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                    Status
+                  </span>
+                  <select
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm((c) => ({
+                        ...c,
+                        status: e.target.value as LayoutStatus,
+                      }))
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
+                  >
+                    <option value="available">Ready</option>
+                    <option value="unavailable">Unavailable</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+              </div>
+              <label className="block space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                  Duration
+                </span>
+                <select
+                  value={form.duration}
+                  onChange={(e) =>
+                    setForm((c) => ({ ...c, duration: Number(e.target.value) }))
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm font-bold text-white outline-none"
+                >
+                  {DURATION_OPTIONS.map((m) => (
+                    <option key={m} value={m}>
+                      {formatDuration(m)}
+                    </option>
+                  ))}
+                  <option value={0}>Custom</option>
+                </select>
+              </label>
+              {form.duration === 0 ? (
+                <input
+                  type="number"
+                  min="1"
+                  value={form.customDuration}
+                  onChange={(e) =>
+                    setForm((c) => ({
+                      ...c,
+                      customDuration: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
+                />
+              ) : null}
+              <label className="block space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.16em] reserve-muted">
+                  Notes
+                </span>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) =>
+                    setForm((c) => ({ ...c, notes: e.target.value }))
+                  }
+                  placeholder="Near window, VIP only, accessible..."
+                  className="min-h-20 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-bold text-white outline-none"
+                />
+              </label>
+              <button
+                onClick={() => saveArea()}
+                disabled={saving === "area"}
+                className="reserve-primary inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black disabled:opacity-50"
+              >
+                {saving === "area" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}{" "}
+                Save changes
+              </button>
+              {form.id ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    onClick={() =>
+                      selectedItem &&
+                      setAreaVisibility(selectedItem, form.status !== "hidden")
+                    }
+                    className="reserve-soft rounded-2xl px-4 py-3 text-sm font-black"
+                  >
+                    {form.status === "hidden" ? "Restore" : "Hide"}
+                  </button>
+                  <button
+                    onClick={() => selectedItem && deleteArea(selectedItem)}
+                    disabled={Boolean(
+                      selectedItem && saving === selectedItem.id,
+                    )}
+                    className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </aside>
+        </section>
+
+        <section className="reserve-soft rounded-[1.5rem] border border-white/10 p-4">
+          <h4 className="text-xl font-black">All bookable spaces</h4>
+          <div className="mt-4 hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="text-xs uppercase tracking-[0.16em] reserve-muted">
+                <tr>
+                  <th className="py-2">Space</th>
+                  <th>Type</th>
+                  <th>Capacity</th>
+                  <th>Status</th>
+                  <th>Booking</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {visibleItems.map((item) => {
+                  const label = friendlyStatusLabel(item);
+                  return (
+                    <tr key={item.id}>
+                      <td className="py-3 font-black">
+                        {item.item_name || "Layout Area"}
+                      </td>
+                      <td>{prettyLabel(item.item_type)}</td>
+                      <td>{itemCapacity(item)}</td>
+                      <td>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs font-black ${compactStatusClass(label)}`}
+                        >
+                          {label}
+                        </span>
+                      </td>
+                      <td>{formatDuration(itemDuration(item))}</td>
+                      <td className="space-x-2">
+                        <button
+                          onClick={() => setSelectedItemId(item.id)}
+                          className="font-black text-red-200"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() =>
+                            setAreaVisibility(
+                              item,
+                              statusFromItem(item) !== "hidden",
+                            )
+                          }
+                          className="font-black text-white/70"
+                        >
+                          {statusFromItem(item) === "hidden"
+                            ? "Restore"
+                            : "Hide"}
+                        </button>
+                        <button
+                          onClick={() => deleteArea(item)}
+                          className="font-black text-red-300"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 grid gap-3 md:hidden">
+            {visibleItems.map((item) => {
+              const label = friendlyStatusLabel(item);
+              return (
+                <article
+                  key={item.id}
+                  className="rounded-2xl border border-white/10 bg-black/20 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">
+                        {item.item_name || "Layout Area"}
+                      </p>
+                      <p className="text-sm reserve-muted">
+                        {prettyLabel(item.item_type)} · {itemCapacity(item)}{" "}
+                        capacity · {formatDuration(itemDuration(item))}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full border px-2 py-1 text-xs font-black ${compactStatusClass(label)}`}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-3 text-sm font-black">
+                    <button
+                      onClick={() => setSelectedItemId(item.id)}
+                      className="text-red-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() =>
+                        setAreaVisibility(
+                          item,
+                          statusFromItem(item) !== "hidden",
+                        )
+                      }
+                      className="text-white/70"
+                    >
+                      {statusFromItem(item) === "hidden" ? "Restore" : "Hide"}
+                    </button>
+                    <button
+                      onClick={() => deleteArea(item)}
+                      className="text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const content = (
     <div
