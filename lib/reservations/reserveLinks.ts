@@ -32,19 +32,19 @@ export function getReserveQrUrl(locationId?: string) {
   return locationId ? `/business/dashboard/qr-codes?locationId=${encodeURIComponent(locationId)}&mode=reservations` : "";
 }
 
-export function getReserveAdminQrUrl(locationId?: string, type = "restaurant") {
+export function getReserveAdminQrUrl(locationId?: string, type?: string) {
   return locationId
-    ? `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}&type=${encodeURIComponent(type)}&mode=reservations`
+    ? `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}&type=${encodeURIComponent(type || "location")}&mode=reservations`
     : "";
 }
 
-export function getReserveBookingUrl(locationId?: string, type = "restaurant") {
-  return locationId ? `/reserve/${encodeURIComponent(type)}/${encodeURIComponent(locationId)}` : "";
+export function getReserveBookingUrl(locationId?: string, type?: string) {
+  return locationId ? `/reserve/${encodeURIComponent(type || "location")}/${encodeURIComponent(locationId)}` : "";
 }
 
-export function getReserveLocationBookingUrl(locationId?: string, type = "restaurant") {
+export function getReserveLocationBookingUrl(locationId?: string, type?: string) {
   return locationId
-    ? `/reserve/location/${encodeURIComponent(locationId)}${reserveQuery({ type })}`
+    ? `/reserve/location/${encodeURIComponent(locationId)}${reserveQuery({ type: type || undefined })}`
     : "";
 }
 
@@ -59,7 +59,7 @@ type ReserveActionLinkInput = {
   isDemo?: boolean;
 };
 
-export function getReserveActionLinks({ locationId, locationType = "restaurant", adminLocationId, isDemo }: ReserveActionLinkInput) {
+export function getReserveActionLinks({ locationId, locationType, adminLocationId, isDemo }: ReserveActionLinkInput) {
   const preview = Boolean(adminLocationId || isDemo);
   return {
     bookingHref: getReserveLocationBookingUrl(locationId, locationType),

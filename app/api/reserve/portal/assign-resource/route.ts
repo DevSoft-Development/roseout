@@ -24,11 +24,11 @@ const ASSIGNMENT_COLUMNS = [
   ...OPTIONAL_ASSIGNMENT_COLUMNS,
 ];
 const MISSING_ASSIGNMENT_MESSAGE =
-  "Reservation table assignment is not set up yet. Run the latest reservation migration.";
+  "Reservation resource assignment is not set up yet. Run the latest reservation migration.";
 const RESOURCE_NOT_FOUND_MESSAGE =
-  "We could not find that table. Refresh the floor and try again.";
+  "We could not find that space. Refresh the snapshot and try again.";
 const UNKNOWN_ASSIGNMENT_MESSAGE =
-  "We could not assign this table. Please try another table.";
+  "We could not assign this space. Please try another space.";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -226,7 +226,7 @@ function manualLabelResource(
     id: resourceId,
     source: "manual_label",
     label,
-    type: type || "table",
+    type: type || "space",
     capacity,
   };
 }
@@ -286,7 +286,7 @@ async function validateAssignment(
     resource.capacity > 0 &&
     Number(reservation.party_size || 1) > resource.capacity
   ) {
-    return "This table does not fit this party size.";
+    return "This space does not fit this group size.";
   }
 
   const active = await supabaseAdmin
@@ -309,7 +309,7 @@ async function validateAssignment(
     reservationConflictsWithResource(reservation, entry, resource),
   );
   return conflict
-    ? "That table is already unavailable for this reservation time."
+    ? "That space is already unavailable for this reservation time."
     : null;
 }
 
@@ -352,8 +352,8 @@ export function reservationConflictsWithResource(
 export function buildAssignmentPayload(resource: AssignableResource, includeUpdatedAt: boolean) {
   const payload: Record<string, any> = {
     bookable_item_id: shouldPersistBookableItemId(resource) ? resource.id : null,
-    bookable_item_name: clean(resource.label) || "Selected table",
-    bookable_item_type: resource.type || "table",
+    bookable_item_name: clean(resource.label) || "Selected space",
+    bookable_item_type: resource.type || "space",
   };
   if (includeUpdatedAt) payload.updated_at = new Date().toISOString();
   return payload;
@@ -485,7 +485,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Select a reservation before assigning a table.",
+        error: "Select a reservation before assigning a space.",
       },
       { status: 400 },
     );
@@ -496,7 +496,7 @@ export async function POST(request: NextRequest) {
     );
   if (!resourceId && !resourceLabel)
     return NextResponse.json(
-      { success: false, error: "Choose a valid table or space." },
+      { success: false, error: "Choose a valid space." },
       { status: 400 },
     );
 
@@ -535,7 +535,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Select a valid reservation before assigning a table.",
+        error: "Select a valid reservation before assigning a space.",
       },
       { status: 404 },
     );
@@ -544,7 +544,7 @@ export async function POST(request: NextRequest) {
   const authoritativeLocationType = clean(before.data.location_type);
   if (!authoritativeLocationId)
     return NextResponse.json(
-      { success: false, error: "Select a valid reservation before assigning a table." },
+      { success: false, error: "Select a valid reservation before assigning a space." },
       { status: 404 },
     );
   locationId = authoritativeLocationId;
@@ -556,7 +556,7 @@ export async function POST(request: NextRequest) {
     const foundResource = resourceId && isUuid(resourceId)
       ? await findResource(resourceId, authoritativeLocationId, resourceSource, context)
       : null;
-    const fallbackLabel = resourceLabel || "Selected table";
+    const fallbackLabel = resourceLabel || "Selected space";
     if (!foundResource && !resourceLabel && !resourceId)
       return NextResponse.json(
         { success: false, error: RESOURCE_NOT_FOUND_MESSAGE },

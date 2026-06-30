@@ -36,15 +36,15 @@ export async function POST(request: NextRequest) {
     const hasAssignedResource = Boolean(reservation.bookable_item_id || reservation.bookable_item_name);
 
     if (!["checked_in", "arrived"].includes(String(reservation.status || ""))) {
-      return NextResponse.json({ success: false, error: "Check in this guest before sending a table ready text." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Check in this guest before sending a space ready text." }, { status: 400 });
     }
 
     if (!hasAssignedResource) {
-      return NextResponse.json({ success: false, error: "Choose a table before sending a table ready text." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Choose a space before sending a space ready text." }, { status: 400 });
     }
 
     if (!clean(reservation.customer_phone)) {
-      return NextResponse.json({ success: false, error: "Add a phone number before sending a table ready text." }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Add a phone number before sending a space ready text." }, { status: 400 });
     }
 
     const existing = await supabaseAdmin
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       reservationId,
       to: reservation.customer_phone,
       messageType: "item_ready",
-      body: `TheOutHaven Reserve: Your table is ready at ${locationName}. Please see the host stand.`,
+      body: `TheOutHaven Reserve: Your space is ready at ${locationName}. Please check in with the team.`,
     });
 
     await logAdminLocationAction({
@@ -93,6 +93,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, sms: sms.data || result, reservation });
   } catch (error) {
     console.error("RESERVE_TABLE_READY_SMS_FAILED", error);
-    return NextResponse.json({ success: false, error: "We could not send the table ready text." }, { status: 500 });
+    return NextResponse.json({ success: false, error: "We could not send the space ready text." }, { status: 500 });
   }
 }
