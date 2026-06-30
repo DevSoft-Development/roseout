@@ -101,14 +101,22 @@ type LocationItem = LocationScoreFields &
     hours?: unknown;
   };
 
+type DemoContext = {
+  demoMode: boolean;
+  locationId: string;
+  type: LocationType;
+};
+
 type Links = ReturnType<typeof getLinks>;
 
 export default function LocationsDashboardClient({
   locations,
   impersonationLabel,
+  demoContext,
 }: {
   locations: LocationItem[];
   impersonationLabel?: string;
+  demoContext?: DemoContext;
 }) {
   const [selectedId, setSelectedId] = useState(locations[0]?.id || "");
   const [query, setQuery] = useState("");
@@ -149,6 +157,7 @@ export default function LocationsDashboardClient({
   return (
     <main
       data-page-version={LOCATIONS_DASHBOARD_VERSION}
+      data-demo-mode={demoContext?.demoMode ? "true" : undefined}
       className="min-h-screen bg-[#07090d] text-white"
     >
       <div className="flex min-h-screen">
@@ -158,6 +167,7 @@ export default function LocationsDashboardClient({
           query={query}
           onQuery={setQuery}
           onSelect={setSelectedId}
+          demoContext={demoContext}
         />
         <section className="min-w-0 flex-1 lg:pl-[320px]">
           <TopBar
@@ -166,6 +176,7 @@ export default function LocationsDashboardClient({
             onQuery={setQuery}
             impersonationLabel={impersonationLabel}
             onStopImpersonation={stopImpersonation}
+            demoContext={demoContext}
           />
           <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
             <MobileLocationSwitcher
@@ -173,10 +184,13 @@ export default function LocationsDashboardClient({
               selected={selected}
               onSelect={setSelectedId}
             />
+            {demoContext?.demoMode && (
+              <DemoBanner selected={selected} demoContext={demoContext} />
+            )}
             {selected ? (
-              <DashboardContent location={selected} />
+              <DashboardContent location={selected} demoContext={demoContext} />
             ) : (
-              <EmptyState />
+              <EmptyState demoMode={demoContext?.demoMode} />
             )}
           </div>
         </section>
@@ -185,8 +199,56 @@ export default function LocationsDashboardClient({
   );
 }
 
-function DashboardContent({ location }: { location: LocationItem }) {
-  const links = getLinks(location);
+function DemoBanner({
+  selected,
+  demoContext,
+}: {
+  selected: LocationItem | null;
+  demoContext: DemoContext;
+}) {
+  const links = selected ? getLinks(selected, demoContext) : null;
+
+  return (
+    <section className="mb-4 rounded-3xl border border-rose-300/20 bg-rose-500/10 p-4 shadow-xl shadow-black/10">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-100">
+            Demo Mode
+          </p>
+          <p className="mt-1 text-sm font-bold text-white/72">
+            You are viewing the demo location as a location owner. Billing and
+            production actions are disabled.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/dashboard/settings/demo-center"
+            className="rounded-2xl bg-white px-4 py-2 text-xs font-black text-black"
+          >
+            Return to Demo Center
+          </Link>
+          {links?.publicPage ? (
+            <Link
+              href={links.publicPage}
+              className="rounded-2xl border border-white/10 px-4 py-2 text-xs font-black text-white/80 hover:bg-white/10"
+            >
+              Open Public Profile
+            </Link>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DashboardContent({
+  location,
+  demoContext,
+}: {
+  location: LocationItem;
+  demoContext?: DemoContext;
+}) {
+  const links = getLinks(location, demoContext);
   const reservationClicks =
     location.reservation_click_count ||
     location.external_reservation_click_count ||
@@ -254,14 +316,16 @@ function Sidebar({
   query,
   onQuery,
   onSelect,
+  demoContext,
 }: {
   locations: LocationItem[];
   selected: LocationItem | null;
   query: string;
   onQuery: (value: string) => void;
   onSelect: (id: string) => void;
+  demoContext?: DemoContext;
 }) {
-  const links = selected ? getLinks(selected) : null;
+  const links = selected ? getLinks(selected, demoContext) : null;
   const nav = links
     ? ([
         ["Dashboard", links.dashboard, LayoutDashboard],
@@ -359,14 +423,16 @@ function TopBar({
   onQuery,
   impersonationLabel,
   onStopImpersonation,
+  demoContext,
 }: {
   selected: LocationItem | null;
   query: string;
   onQuery: (value: string) => void;
   impersonationLabel?: string;
   onStopImpersonation: () => void;
+  demoContext?: DemoContext;
 }) {
-  const links = selected ? getLinks(selected) : null;
+  const links = selected ? getLinks(selected, demoContext) : null;
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-[#07090d]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
@@ -415,7 +481,7 @@ function TopBar({
               </Link>
             </>
           )}
-          {impersonationLabel && (
+          {impersonationLabel && !demoContext?.demoMode && (
             <button
               onClick={onStopImpersonation}
               className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black"
@@ -721,29 +787,43 @@ function ReservationToolsCard({
   );
 }
 
-function EmptyState() {
+function EmptyState({ demoMode }: { demoMode?: boolean }) {
   return (
     <div className="grid min-h-[560px] place-items-center rounded-[32px] border border-white/10 bg-[#10141b] p-8 text-center">
       <div>
         <Store className="mx-auto mb-4 text-white/25" size={52} />
-        <h2 className="text-3xl font-black">No connected locations yet</h2>
+        <h2 className="text-3xl font-black">
+          {demoMode ? "Demo location unavailable" : "No connected locations yet"}
+        </h2>
         <p className="mx-auto mt-2 max-w-md text-white/50">
-          Claim or connect a location to manage profile tools, reservations, QR
-          codes, guests, and analytics.
+          {demoMode
+            ? "The demo owner dashboard could not load the demo location. Return to Demo Center and refresh demo data."
+            : "Claim or connect a location to manage profile tools, reservations, QR codes, guests, and analytics."}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Link
-            href="/business/claim"
-            className="rounded-2xl bg-[#e1062a] px-5 py-3 font-black"
-          >
-            Claim a location
-          </Link>
-          <Link
-            href="/help"
-            className="rounded-2xl border border-white/10 px-5 py-3 font-black"
-          >
-            Get help
-          </Link>
+          {demoMode ? (
+            <Link
+              href="/admin/dashboard/settings/demo-center"
+              className="rounded-2xl bg-[#e1062a] px-5 py-3 font-black"
+            >
+              Return to Demo Center
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/business/claim"
+                className="rounded-2xl bg-[#e1062a] px-5 py-3 font-black"
+              >
+                Claim a location
+              </Link>
+              <Link
+                href="/help"
+                className="rounded-2xl border border-white/10 px-5 py-3 font-black"
+              >
+                Get help
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -941,9 +1021,21 @@ function PlanCard({ location }: { location: LocationItem | null }) {
     </div>
   );
 }
-function getLinks(location: LocationItem) {
+function withDemoParams(href: string, demoContext?: DemoContext) {
+  if (!demoContext?.demoMode) return href;
+  const params = new URLSearchParams({
+    adminLocationId: demoContext.locationId,
+    locationId: demoContext.locationId,
+    type: demoContext.type,
+    demo: "1",
+    fromDemoCenter: "1",
+  });
+  return `${href}${href.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+
+function getLinks(location: LocationItem, demoContext?: DemoContext) {
   const type = locationTypePathSegment[location.location_type];
-  return {
+  const links = {
     dashboard: "/locations/dashboard",
     publicPage: `/locations/${type}/${location.id}`,
     edit: `/locations/${type}/${location.id}/edit`,
@@ -959,7 +1051,15 @@ function getLinks(location: LocationItem) {
     messages: "/business/dashboard/messaging",
     reservations: "/reserve/dashboard/reservations",
     reserveDashboard: "/reserve/dashboard",
+    billing: "/business/dashboard/billing",
   };
+
+  return Object.fromEntries(
+    Object.entries(links).map(([key, href]) => [
+      key,
+      withDemoParams(href, demoContext),
+    ]),
+  ) as typeof links;
 }
 function cityState(location: LocationItem) {
   return [location.city, location.state].filter(Boolean).join(", ");

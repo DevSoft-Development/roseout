@@ -8,6 +8,7 @@ import type { LocationClaimFields } from "@/lib/locationClaim";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
 
 export const dynamic = "force-dynamic";
 
@@ -122,7 +123,43 @@ function toDashboardLocation(locationData: Record<string, any>): LocationItem {
   } as LocationItem;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<DemoSearchParams>;
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const parsedDemoParams = parseDemoOwnerParams(resolvedSearchParams);
+  const isDemoRequest =
+    parsedDemoParams.demo ||
+    Boolean(parsedDemoParams.locationId) ||
+    Boolean(resolvedSearchParams?.locationId);
+
+  if (isDemoRequest) {
+    const demoOwner = await requireDemoOwnerLocation(resolvedSearchParams);
+    const demoLocation = demoOwner.location
+      ? toDashboardLocation(demoOwner.location as Record<string, any>)
+      : null;
+
+    return (
+      <LocationsDashboardClient
+        locations={demoLocation ? [demoLocation] : []}
+        impersonationLabel={
+          demoLocation
+            ? `Demo mode — viewing as ${demoLocation.display_name}`
+            : "Demo mode"
+        }
+        demoContext={{
+          demoMode: true,
+          locationId: demoOwner.locationId || parsedDemoParams.locationId || "",
+          type:
+            demoLocation?.location_type ||
+            (demoOwner.type === "activity" ? "activity" : "restaurant"),
+        }}
+      />
+    );
+  }
+
   const cookieStore = await cookies();
 
   const impersonatedLocationId = cookieStore.get(
