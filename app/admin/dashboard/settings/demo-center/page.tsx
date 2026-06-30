@@ -41,7 +41,7 @@ const requestedModules = [
 ];
 
 const safeRoutes: Record<string, string> = {
-  Overview: "/business/dashboard",
+  Overview: "/locations/dashboard",
   Profile: "/business/dashboard/profile",
   Branding: "/business/dashboard/branding",
   Photos: "/business/dashboard/branding",
@@ -408,7 +408,7 @@ export default async function DemoCenterPage() {
                 label="Refresh Demo Data"
                 variant="primary"
               />
-              <A href="/locations/dashboard">Open Location Dashboard</A>
+              <A href={demoHref("/locations/dashboard")}>Open Location Dashboard</A>
               {publicProfile ? (
                 <A href={publicProfile}>Open Public Profile</A>
               ) : null}
@@ -465,7 +465,7 @@ export default async function DemoCenterPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <A href="/locations/dashboard">Open owner dashboard</A>
+              <A href={demoHref("/locations/dashboard")}>Open owner dashboard</A>
               {publicProfile ? (
                 <A href={publicProfile}>Open public profile</A>
               ) : null}
