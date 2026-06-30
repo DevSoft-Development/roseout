@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { canTransitionReservationStatus } from "../ui";
 import { getAssignedReservationResourceLabel, getFloorSnapshotState, hasAssignedReservationResource, resourceAssignmentPayload, resourceName } from "../floorSnapshot";
+import { getReserveVocabulary } from "../reserveVocabulary";
+import { getReserveActionLinks } from "../reserveLinks";
 
 describe("reservation resource assignment helpers", () => {
   it("treats bookable item ids and names as assignments", () => {
     expect(hasAssignedReservationResource({ id: "r1", bookable_item_id: "b1" })).toBe(true);
     expect(hasAssignedReservationResource({ id: "r2", bookable_item_name: "Booth 2" })).toBe(true);
     expect(getAssignedReservationResourceLabel({ id: "r2", bookable_item_name: "Booth 2" })).toBe("Booth 2");
-  });
-
-  it("does not treat legacy assigned resource labels as current assignments", () => {
-    expect(hasAssignedReservationResource({ id: "r1", assigned_resource_label: "Table 1" })).toBe(false);
-    expect(getAssignedReservationResourceLabel({ id: "r1", assigned_resource_label: "Table 1" })).toBe("Unassigned");
   });
 
   it("sends a visible card label for resource_label", () => {
@@ -76,5 +73,59 @@ describe("floor snapshot reservation matching", () => {
     const state = getFloorSnapshotState({ id: "table-1", item_name: "Table 1" }, [{ id: "r1", status: "completed", bookable_item_id: "table-1", bookable_item_name: "Table 1" }]);
     expect(state.status).toBe("Open");
     expect(state.available).toBe(true);
+  });
+});
+
+
+describe("floor snapshot status priority", () => {
+  it("keeps seated ahead of arrived for the same label-only resource", () => {
+    const state = getFloorSnapshotState({ id: "demo", item_name: "Demo Table" }, [
+      { id: "older", status: "arrived", bookable_item_id: null, bookable_item_name: "demo table", reservation_time: "18:00" },
+      { id: "newer", status: "seated", bookable_item_id: null, bookable_item_name: "demo table", reservation_time: "18:05" },
+    ]);
+    expect(state.status).toBe("Seated");
+    expect(state.reservation?.id).toBe("newer");
+  });
+
+  it("shows ready sent only after seated loses priority", () => {
+    const state = getFloorSnapshotState({ item_name: "Lane 1" }, [
+      { id: "ready", status: "checked_in", bookable_item_name: "Lane 1", table_ready_sms_sent: true } as any,
+    ]);
+    expect(state.status).toBe("Ready sent");
+  });
+});
+
+describe("reserve vocabulary", () => {
+  it("returns restaurant labels", () => {
+    expect(getReserveVocabulary("restaurant")).toMatchObject({ assignResource: "Assign table", seatAction: "Seat guest", seatedStatus: "Seated" });
+  });
+
+  it("returns bowling labels", () => {
+    expect(getReserveVocabulary("bowling")).toMatchObject({ assignResource: "Assign lane", seatAction: "Start lane", seatedStatus: "In lane" });
+  });
+
+  it("returns karaoke labels", () => {
+    expect(getReserveVocabulary("karaoke")).toMatchObject({ assignResource: "Assign room", seatAction: "Start room", seatedStatus: "In room" });
+  });
+
+  it("returns generic labels by default", () => {
+    expect(getReserveVocabulary()).toMatchObject({ assignResource: "Assign space", seatAction: "Mark in place", seatedStatus: "In place" });
+  });
+
+  it("uses item type when the location type is generic", () => {
+    expect(getReserveVocabulary("location", "lane")).toMatchObject({ assignResource: "Assign lane", seatedStatus: "In lane" });
+  });
+});
+
+describe("reserve action links", () => {
+  it("does not force restaurant type for activity locations", () => {
+    const links = getReserveActionLinks({ locationId: "loc_123", locationType: "activity" });
+    expect(links.bookingHref).toBe("/reserve/location/loc_123?type=activity");
+    expect(links.embedHref).toBe("/embed/reservations/loc_123?type=activity");
+  });
+
+  it("omits type when it is unknown", () => {
+    const links = getReserveActionLinks({ locationId: "loc_123" });
+    expect(links.bookingHref).toBe("/reserve/location/loc_123");
   });
 });

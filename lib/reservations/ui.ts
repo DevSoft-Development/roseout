@@ -1,4 +1,5 @@
 import { normalizeReservationStatus, type ReservationStatus } from "./status";
+import type { ReserveVocabulary } from "./reserveVocabulary";
 
 type ReservationNameSource = Record<string, unknown> & {
   customer?: Record<string, unknown> | null;
@@ -75,8 +76,10 @@ export const RESERVATION_STATUS_LABELS: Record<string, string> = {
   waitlisted: "Waitlisted",
 };
 
-export function getReservationStatusLabel(status?: string | null) {
+export function getReservationStatusLabel(status?: string | null, vocab?: ReserveVocabulary) {
   const normalized = normalizeReservationStatus(status);
+  if (String(normalized) === "seated" && vocab) return vocab.seatedStatus;
+  if ((String(normalized) === "checked_in" || String(normalized) === "arrived") && vocab) return vocab.arrivalStatus;
   return RESERVATION_STATUS_LABELS[String(normalized)] || "Needs action";
 }
 
@@ -87,7 +90,7 @@ export type ReservationNextAction = {
   disabledReason?: string;
 };
 
-export function getReservationPrimaryNextAction(status?: string | null): ReservationNextAction {
+export function getReservationPrimaryNextAction(status?: string | null, vocab?: ReserveVocabulary): ReservationNextAction {
   const normalized = normalizeReservationStatus(status);
   switch (normalized) {
     case "pending":
@@ -96,9 +99,9 @@ export function getReservationPrimaryNextAction(status?: string | null): Reserva
       return { label: "Check in", targetStatus: "checked_in" };
     case "checked_in":
     case "arrived":
-      return { label: "Seat guest", targetStatus: "seated" };
+      return { label: vocab?.seatAction || "Seat guest", targetStatus: "seated" };
     case "seated":
-      return { label: "Complete", targetStatus: "completed" };
+      return { label: vocab?.completedAction || "Complete", targetStatus: "completed" };
     case "waitlisted":
       return { label: "Offer slot", targetStatus: "confirmed", disabledReason: "Offer workflow depends on availability for this location." };
     default:

@@ -1,7 +1,6 @@
 export type FloorReservation = {
   id: string;
   status?: string | null;
-  assigned_resource_label?: string | null;
   resource_id?: string | null;
   resource_label?: string | null;
   reservable_item_name?: string | null;
@@ -11,6 +10,7 @@ export type FloorReservation = {
   customer_name?: string | null;
   party_size?: number | null;
   reservation_time?: string | null;
+  updated_at?: string | null;
 };
 export type FloorResource = {
   id?: string | null;
@@ -32,7 +32,7 @@ export type FloorResource = {
   status?: string | null;
   is_active?: boolean | null;
 };
-export type FloorSnapshotState = { status:'Open'|'Reserved'|'Arrived'|'Table ready sent'|'Seated'|'Blocked'|'Closed'; available:boolean; reservation?:FloorReservation };
+export type FloorSnapshotState = { status:'Open'|'Reserved'|'Arrived'|'Ready sent'|'Seated'|'Blocked'|'Closed'; available:boolean; reservation?:FloorReservation };
 
 function cleanString(value: unknown) { return typeof value === 'string' ? value.trim() : ''; }
 function hasValue(value: unknown) { return value !== undefined && value !== null && String(value).trim() !== ''; }
@@ -70,6 +70,18 @@ export function getAssignedReservationResourceLabel(reservation?: Partial<FloorR
 export function activeFloorReservations(reservations: FloorReservation[]){ return reservations.filter((r)=>!['completed','cancelled','declined','no_show'].includes(String(r.status||''))); }
 function resourceLabels(resource: FloorResource) { return [resource.item_name, resource.label, resource.name].map(normalizedLabel).filter(Boolean); }
 function reservationLabels(reservation: FloorReservation) { return [reservation.bookable_item_name].map(normalizedLabel).filter(Boolean); }
+const reservationStatusPriority: Record<string, number> = { seated: 1, checked_in: 2, arrived: 3, confirmed: 4, pending: 5 };
+function statusPriority(reservation: FloorReservation) { return reservationStatusPriority[String(reservation.status || '').toLowerCase()] || 99; }
+function dateDistance(reservation: FloorReservation, now = Date.now()) {
+  const date = cleanString((reservation as any).reservation_date);
+  const time = cleanString(reservation.reservation_time);
+  const timestamp = Date.parse(`${date || new Date(now).toISOString().split('T')[0]}T${time || '00:00'}`);
+  return Number.isFinite(timestamp) ? Math.abs(timestamp - now) : Number.MAX_SAFE_INTEGER;
+}
+function updatedTimestamp(reservation: FloorReservation) {
+  const timestamp = Date.parse(cleanString(reservation.updated_at));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
 export function getFloorResourceReservation(resource: FloorResource, reservations: FloorReservation[]){
   const currentLabels = resourceLabels(resource);
   const matches = activeFloorReservations(reservations).filter((reservation) => {
@@ -79,7 +91,7 @@ export function getFloorResourceReservation(resource: FloorResource, reservation
     const assignedLabels = reservationLabels(reservation);
     return assignedLabels.length > 0 && currentLabels.length > 0 && assignedLabels.some((label) => currentLabels.includes(label));
   });
-  return matches.find((r)=>r.status === 'seated') || matches.find((r)=>r.status === 'checked_in' || r.status === 'arrived') || matches.find((r)=>r.status === 'confirmed' || r.status === 'pending') || matches[0];
+  return matches.sort((a, b) => statusPriority(a) - statusPriority(b) || dateDistance(a) - dateDistance(b) || updatedTimestamp(b) - updatedTimestamp(a))[0];
 }
 export function getFloorSnapshotState(resource: FloorResource, reservations: FloorReservation[]): FloorSnapshotState{
   const base = String(resource.status || '').toLowerCase();
@@ -88,7 +100,7 @@ export function getFloorSnapshotState(resource: FloorResource, reservations: Flo
   const reservation = getFloorResourceReservation(resource,reservations);
   if (!reservation) return { status:'Open', available:true };
   if (reservation.status === 'seated') return { status:'Seated', available:false, reservation };
-  if ((reservation.status === 'checked_in' || reservation.status === 'arrived') && (reservation as any).table_ready_sms_sent) return { status:'Table ready sent', available:false, reservation };
+  if ((reservation.status === 'checked_in' || reservation.status === 'arrived') && (reservation as any).table_ready_sms_sent) return { status:'Ready sent', available:false, reservation };
   if (reservation.status === 'checked_in' || reservation.status === 'arrived') return { status:'Arrived', available:false, reservation };
   return { status:'Reserved', available:false, reservation };
 }

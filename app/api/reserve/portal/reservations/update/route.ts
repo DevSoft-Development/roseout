@@ -25,13 +25,11 @@ function cleanString(value: unknown) {
 
 function normalizeType(value: string) {
   const type = value.toLowerCase().trim();
-
   if (["activity", "activities"].includes(type)) return "activity";
   if (["bar", "bars"].includes(type)) return "bar";
   if (["lounge", "lounges"].includes(type)) return "lounge";
   if (["venue", "venues"].includes(type)) return "venue";
-
-  return "restaurant";
+  return type;
 }
 
 function normalizeStatus(value: string) {
@@ -53,9 +51,7 @@ export async function POST(request: NextRequest) {
 
     const requestedLocationId = cleanString(body.location_id);
     let locationId = adminLocationId || requestedLocationId;
-    const locationType = normalizeType(
-      cleanString(body.location_type) || "restaurant"
-    );
+    const requestedLocationType = normalizeType(cleanString(body.location_type));
     const status = normalizeStatus(cleanString(body.status));
 
     if (!reservationId) {
@@ -121,7 +117,6 @@ export async function POST(request: NextRequest) {
       .update(updatePayload)
       .eq("id", reservationId)
       .eq("location_id", locationId)
-      .eq("location_type", locationType)
       .select("*")
       .single();
 
@@ -139,7 +134,7 @@ export async function POST(request: NextRequest) {
         targetId: reservationId,
         beforeData: beforeResult.data || null,
         afterData: data,
-        metadata: { locationType },
+        metadata: { locationType: requestedLocationType || beforeResult.data.location_type },
         request,
       });
     }
