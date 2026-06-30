@@ -652,11 +652,12 @@ export async function POST(request: NextRequest) {
     }
 
     const reservationStart = new Date(`${reservationDate}T${reservationTime.slice(0, 5)}:00`);
+    const reminderSettings = ((location as any)?.reservation_settings as any)?.reminders || {};
     const reminderRows = [
-      { reminder_type: "reminder_24h", scheduled_for: new Date(reservationStart.getTime() - 24 * 60 * 60 * 1000).toISOString() },
-      { reminder_type: "reminder_2h", scheduled_for: new Date(reservationStart.getTime() - 2 * 60 * 60 * 1000).toISOString() },
+      { enabled: reminderSettings.guest24h !== false, reminder_type: "reminder_24h", scheduled_for: new Date(reservationStart.getTime() - 24 * 60 * 60 * 1000).toISOString() },
+      { enabled: reminderSettings.guest2h !== false, reminder_type: "reminder_2h", scheduled_for: new Date(reservationStart.getTime() - 2 * 60 * 60 * 1000).toISOString() },
     ]
-      .filter((item) => new Date(item.scheduled_for).getTime() > Date.now())
+      .filter((item) => item.enabled && new Date(item.scheduled_for).getTime() > Date.now())
       .map((item) => ({
         reservation_id: reservation.id,
         location_id: locationId,
@@ -666,7 +667,7 @@ export async function POST(request: NextRequest) {
       }));
 
     if (reminderRows.length) {
-      await supabaseAdmin.from("reservation_reminders").insert(reminderRows);
+      await supabaseAdmin.from("reservation_reminders").upsert(reminderRows, { onConflict: "reservation_id,reminder_type", ignoreDuplicates: true });
     }
 
     await supabaseAdmin

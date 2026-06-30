@@ -23,6 +23,7 @@ import ReserveLayoutManager from "@/components/reserve/ReserveLayoutManager";
 import ReserveGuestDetails from "@/components/reserve/ReserveGuestDetails";
 import ReserveWaitlistPanel from "@/components/reserve/ReserveWaitlistPanel";
 import ReserveHumanMessage from "@/components/reserve/ReserveHumanMessage";
+import { ReserveHoursSettings, ReserveQrSettings, ReserveRemindersSettings, ReserveTeamSettings } from "@/components/reserve/ReserveSettingsE2E";
 import ReserveEmptyState from "@/components/reserve/ReserveEmptyState";
 import {
   getReservationGuestName,
@@ -1347,12 +1348,13 @@ function ReserveCommandCenterContent() {
           <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
             {[
               ["layout", "Layout & Spaces"],
-              ["hours", "Hours"],
+              ["hours", "Hours & Capacity"],
               ["reminders", "Reminders"],
               ["deposits", "Policies"],
               ["booking", "Booking Page"],
               ["embed", "Embed"],
-              ["qr", "QR Code"],
+              ["qr", "QR Codes"],
+              ["team", "Team"],
             ].map(([section, label]) => (
               <Link
                 key={section}
@@ -1387,31 +1389,11 @@ function ReserveCommandCenterContent() {
                   onChanged={() => loadAll({ silent: true })}
                 />
               ) : activeSection === "hours" ? (
-                <div>
-                  <h3 className="text-xl font-black">Hours & Capacity</h3>
-                  <p className="mt-3 font-bold">
-                    Reservation hours are not configured here yet. Use the
-                    location hours settings.
-                  </p>
-                  <Link
-                    href={
-                      locationId
-                        ? `/admin/dashboard/crm/${encodeURIComponent(locationId)}`
-                        : "/admin/dashboard/crm"
-                    }
-                    className="mt-4 inline-block reserve-primary rounded-full px-4 py-2 text-sm font-black"
-                  >
-                    Open location hours settings
-                  </Link>
-                </div>
+                <ReserveHoursSettings locationId={locationId} />
               ) : activeSection === "reminders" ? (
-                <div>
-                  <h3 className="text-xl font-black">Reminders</h3>
-                  <p className="mt-3 font-bold">
-                    Reservation reminders are handled by the existing reminder
-                    system.
-                  </p>
-                </div>
+                <ReserveRemindersSettings locationId={locationId} />
+              ) : activeSection === "team" ? (
+                <ReserveTeamSettings locationId={locationId} />
               ) : activeSection === "deposits" ? (
                 <div>
                   <h3 className="text-xl font-black">Deposit & Policies</h3>
@@ -1482,21 +1464,7 @@ function ReserveCommandCenterContent() {
                   )}
                 </div>
               ) : activeSection === "qr" ? (
-                <div>
-                  <h3 className="text-xl font-black">QR code</h3>
-                  {actionLinks.qrHref ? (
-                    <Link
-                      href={actionLinks.qrHref}
-                      className="mt-4 inline-block reserve-primary rounded-full px-4 py-2 text-sm font-black"
-                    >
-                      Open QR tools
-                    </Link>
-                  ) : (
-                    <p className="mt-3 font-bold">
-                      QR tools are not configured for this location yet.
-                    </p>
-                  )}
-                </div>
+                <ReserveQrSettings locationId={locationId} />
               ) : (
                 <div>
                   <h3 className="text-xl font-black">Settings</h3>
