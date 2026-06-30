@@ -35,7 +35,6 @@ import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
   getDataStatus,
-  getPublicVisibilityWarning,
   isPubliclyVisible,
   type LocationVisibilityFields,
 } from "@/lib/locationVisibility";
@@ -107,16 +106,66 @@ type DemoContext = {
   type: LocationType;
 };
 
+type DashboardSummary = {
+  locationId: string;
+  reservationsToday: number;
+  upcomingReservations: number;
+  guestsSeated: number;
+  openSpaces: number | null;
+  totalReservations30d: number;
+  guestsServed30d: number;
+  walkIns30d: number;
+  noShows30d: number;
+  revenueEstimate30d: number;
+  newVipSignups30d: number;
+  profileViews30d: number;
+  guestClicks30d: number;
+  calls30d: number;
+  searchesThisMonth: number;
+  searchesLastMonth: number;
+  searchTrendPercent: number | null;
+  profileViewsThisMonth: number;
+  profileViewsLastMonth: number;
+  profileViewsTrendPercent: number | null;
+  clickTrendPercent: number | null;
+};
+
 type Links = ReturnType<typeof getLinks>;
+
+const defaultTileOrder = [
+  "location",
+  "health",
+  "quickTools",
+  "snapshot",
+  "searchPerformance",
+  "businessOverview",
+  "hoursCapacity",
+  "teamAccess",
+  "reservationTools",
+];
+
+const tileLabels: Record<string, string> = {
+  location: "Location overview",
+  health: "Location health",
+  quickTools: "Quick tools",
+  snapshot: "Today’s snapshot",
+  searchPerformance: "Search performance",
+  businessOverview: "Business overview",
+  hoursCapacity: "Hours & capacity",
+  teamAccess: "Team access",
+  reservationTools: "Reservation tools",
+};
 
 export default function LocationsDashboardClient({
   locations,
   impersonationLabel,
   demoContext,
+  summaries,
 }: {
   locations: LocationItem[];
   impersonationLabel?: string;
   demoContext?: DemoContext;
+  summaries?: Record<string, DashboardSummary>;
 }) {
   const [selectedId, setSelectedId] = useState(locations[0]?.id || "");
   const [query, setQuery] = useState("");
@@ -128,6 +177,8 @@ export default function LocationsDashboardClient({
       null,
     [locations, selectedId],
   );
+
+  const summary = selected ? summaries?.[selected.id] : undefined;
 
   const filteredLocations = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -158,9 +209,9 @@ export default function LocationsDashboardClient({
     <main
       data-page-version={LOCATIONS_DASHBOARD_VERSION}
       data-demo-mode={demoContext?.demoMode ? "true" : undefined}
-      className="min-h-screen bg-[#07090d] text-white"
+      className="min-h-screen overflow-hidden bg-[#07090d] text-white [&+footer]:hidden"
     >
-      <div className="flex min-h-screen">
+      <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
         <Sidebar
           locations={filteredLocations}
           selected={selected}
@@ -169,7 +220,7 @@ export default function LocationsDashboardClient({
           onSelect={setSelectedId}
           demoContext={demoContext}
         />
-        <section className="min-w-0 flex-1 lg:pl-[320px]">
+        <section className="min-w-0 overflow-y-auto">
           <TopBar
             selected={selected}
             query={query}
@@ -188,7 +239,11 @@ export default function LocationsDashboardClient({
               <DemoBanner selected={selected} demoContext={demoContext} />
             )}
             {selected ? (
-              <DashboardContent location={selected} demoContext={demoContext} />
+              <DashboardContent
+                location={selected}
+                demoContext={demoContext}
+                summary={summary}
+              />
             ) : (
               <EmptyState demoMode={demoContext?.demoMode} />
             )}
@@ -244,68 +299,165 @@ function DemoBanner({
 function DashboardContent({
   location,
   demoContext,
+  summary,
 }: {
   location: LocationItem;
   demoContext?: DemoContext;
+  summary?: DashboardSummary;
 }) {
   const links = getLinks(location, demoContext);
-  const reservationClicks =
-    location.reservation_click_count ||
-    location.external_reservation_click_count ||
-    0;
   const score = clampScore(getLocationScore(location));
+  const [tileOrder, setTileOrder] = useState(() => {
+    if (typeof window === "undefined") return defaultTileOrder;
+    const saved = window.localStorage.getItem(
+      "theouthaven:locations-dashboard:tile-order",
+    );
+    if (!saved) return defaultTileOrder;
+    try {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return defaultTileOrder;
+      const valid = parsed.filter((id) => defaultTileOrder.includes(id));
+      return [
+        ...valid,
+        ...defaultTileOrder.filter((id) => !valid.includes(id)),
+      ];
+    } catch {
+      return defaultTileOrder;
+    }
+  });
+  const [customizing, setCustomizing] = useState(false);
+
+  function moveTile(id: string, direction: -1 | 1) {
+    setTileOrder((current) => {
+      const next = [...current];
+      const index = next.indexOf(id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      window.localStorage.setItem(
+        "theouthaven:locations-dashboard:tile-order",
+        JSON.stringify(next),
+      );
+      return next;
+    });
+  }
+
+  const tileMap: Record<string, ReactNode> = {
+    location: <LocationOverviewCard location={location} links={links} />,
+    health: (
+      <LocationHealthCard location={location} score={score} links={links} />
+    ),
+    quickTools: <QuickToolsCard links={links} />,
+    snapshot: <TodaySnapshotCard summary={summary} />,
+    searchPerformance: (
+      <SearchPerformanceCard location={location} summary={summary} />
+    ),
+    businessOverview: (
+      <BusinessOverviewCard location={location} summary={summary} />
+    ),
+    hoursCapacity: <HoursCapacityCard location={location} links={links} />,
+    teamAccess: <TeamAccessCard location={location} links={links} />,
+    reservationTools: (
+      <ReservationToolsCard location={location} links={links} />
+    ),
+  };
+
   return (
     <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <StatCard
           icon={<CalendarClock size={18} />}
           label="Today’s Reservations"
-          value="0"
-          note="No activity yet"
+          value={summary?.reservationsToday ?? 0}
+          note={
+            demoContext?.demoMode
+              ? "Demo"
+              : summary
+                ? "Live reservations"
+                : "Setup needed"
+          }
         />
         <StatCard
           icon={<Users size={18} />}
           label="Guests Seated"
-          value="0"
-          note="No seating data"
+          value={summary?.guestsSeated ?? 0}
+          note={summary ? "From today’s reservations" : "No seating data"}
         />
         <StatCard
           icon={<Grid3X3 size={18} />}
           label="Open Tables / Spaces"
-          value="0"
-          note="Layout not configured"
+          value={summary?.openSpaces ?? 0}
+          note={
+            summary?.openSpaces == null
+              ? "Layout not configured"
+              : "Available now"
+          }
         />
         <StatCard
           icon={<CalendarClock size={18} />}
           label="Upcoming Reservations"
-          value={reservationClicks}
-          note="Tracked interest"
+          value={summary?.upcomingReservations ?? 0}
+          note="Future bookings"
         />
         <StatCard
           icon={<ShieldCheck size={18} />}
           label="Location Status"
-          value={isPubliclyVisible(location) ? "Public" : "Review"}
-          note={getDataStatus(location)}
+          value={publicProfileStatus(location).label}
+          note={publicProfileStatus(location).detail}
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.45fr_0.8fr]">
-        <LocationOverviewCard location={location} links={links} />
-        <LocationHealthCard location={location} score={score} links={links} />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setCustomizing((value) => !value)}
+          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white/70 hover:bg-white/[0.08]"
+        >
+          {customizing ? "Done customizing" : "Customize layout"}
+        </button>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr_0.9fr]">
-        <QuickToolsCard links={links} />
-        <TodaySnapshotCard />
-        <HoursCapacityCard location={location} links={links} />
+      <div className="grid gap-5 xl:grid-cols-2">
+        {tileOrder.map((id, index) => (
+          <div
+            key={id}
+            className={
+              id === "reservationTools" ||
+              id === "businessOverview" ||
+              id === "searchPerformance"
+                ? "xl:col-span-2"
+                : undefined
+            }
+          >
+            {customizing && (
+              <div className="mb-2 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                <span className="text-xs font-black uppercase tracking-wider text-white/45">
+                  {tileLabels[id]}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => moveTile(id, -1)}
+                    disabled={index === 0}
+                    className="rounded-xl border border-white/10 px-3 py-1 text-xs font-bold text-white/60 disabled:opacity-30"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveTile(id, 1)}
+                    disabled={index === tileOrder.length - 1}
+                    className="rounded-xl border border-white/10 px-3 py-1 text-xs font-bold text-white/60 disabled:opacity-30"
+                  >
+                    Move down
+                  </button>
+                </div>
+              </div>
+            )}
+            {tileMap[id]}
+          </div>
+        ))}
       </div>
-
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <BusinessOverviewCard location={location} />
-        <TeamAccessCard location={location} links={links} />
-      </div>
-
-      <ReservationToolsCard location={location} links={links} />
     </div>
   );
 }
@@ -342,7 +494,7 @@ function Sidebar({
       ] as const)
     : [];
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[320px] border-r border-white/10 bg-[#090b10] p-4 lg:block">
+    <aside className="hidden min-h-screen overflow-hidden border-r border-white/10 bg-[#090b10] p-4 lg:flex lg:flex-col">
       <div className="mb-5 flex items-center gap-3 px-2">
         <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#e1062a]">
           <Sparkles size={20} />
@@ -352,7 +504,7 @@ function Sidebar({
           <p className="text-xs font-bold text-white/40">Owner Console</p>
         </div>
       </div>
-      <div className="rounded-3xl border border-white/10 bg-[#121721] p-3">
+      <div className="rounded-3xl border border-white/10 bg-[#121721] p-2.5">
         {selected ? (
           <LocationMini location={selected} />
         ) : (
@@ -386,7 +538,7 @@ function Sidebar({
           </div>
         )}
       </div>
-      <nav className="mt-5 space-y-1">
+      <nav className="mt-4 flex-1 space-y-1 overflow-y-auto pr-1">
         {nav.map(([label, href, Icon]) => (
           <Link
             key={label}
@@ -398,7 +550,7 @@ function Sidebar({
           </Link>
         ))}
       </nav>
-      <div className="absolute bottom-4 left-4 right-4 space-y-3">
+      <div className="mt-auto space-y-3 pt-4">
         <PlanCard location={selected} demoContext={demoContext} />
         <Link
           href={withDemoParams("/help", demoContext)}
@@ -511,8 +663,8 @@ function LocationOverviewCard({
   const category = categoryLine(location);
   return (
     <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#10141b]">
-      <div className="grid md:grid-cols-[230px_1fr]">
-        <div className="h-56 bg-white/5 md:h-full">
+      <div className="grid md:grid-cols-[180px_1fr]">
+        <div className="h-48 bg-white/5 md:h-full md:max-h-[260px]">
           {getLocationImage(location) ? (
             <img
               src={getLocationImage(location) || undefined}
@@ -552,12 +704,7 @@ function LocationOverviewCard({
             <Info label="Phone" value={location.phone || "Not configured"} />
             <Info
               label="Public profile"
-              value={
-                isPubliclyVisible(location)
-                  ? "Live"
-                  : getPublicVisibilityWarning(location).join(", ") ||
-                    "Not configured"
-              }
+              value={`${publicProfileStatus(location).label} — ${publicProfileStatus(location).detail}`}
             />
             <Info label="Claim status" value={getClaimStatusText(location)} />
             <Info label="Plan" value={planName(location)} />
@@ -666,33 +813,61 @@ function QuickToolsCard({ links }: { links: Links }) {
     </Card>
   );
 }
-function TodaySnapshotCard() {
+function TodaySnapshotCard({ summary }: { summary?: DashboardSummary }) {
   return (
     <Card title="Today’s Snapshot">
-      <Metric label="Reservations" value="0" />
-      <Metric label="Walk-ins" value="0" />
-      <Metric label="No Shows" value="0" />
+      <Metric label="Reservations" value={summary?.reservationsToday ?? 0} />
+      <Metric label="Walk-ins" value={summary?.walkIns30d ?? 0} />
+      <Metric label="No Shows" value={summary?.noShows30d ?? 0} />
       <Metric
         label="Revenue estimate"
-        value="$0"
+        value={currency(summary?.revenueEstimate30d ?? 0)}
         note="Connect Reserve for live revenue"
       />
     </Card>
   );
 }
-function BusinessOverviewCard({ location }: { location: LocationItem }) {
+function BusinessOverviewCard({
+  location,
+  summary,
+}: {
+  location: LocationItem;
+  summary?: DashboardSummary;
+}) {
+  const reservationClicks =
+    (location.reservation_click_count || 0) +
+    (location.external_reservation_click_count || 0);
   return (
     <Card title="Business Overview" eyebrow="Last 30 days">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Total Reservations" value="0" />
-        <Metric label="Guests Served" value="0" />
-        <Metric label="Walk-ins" value="0" />
-        <Metric label="Revenue Estimate" value="$0" />
+        <Metric
+          label="Total Reservations"
+          value={summary?.totalReservations30d ?? 0}
+        />
+        <Metric label="Guests Served" value={summary?.guestsServed30d ?? 0} />
+        <Metric label="Walk-ins" value={summary?.walkIns30d ?? 0} />
+        <Metric
+          label="Revenue Estimate"
+          value={currency(summary?.revenueEstimate30d ?? 0)}
+        />
         <Metric label="Review Rating" value="Not configured" />
-        <Metric label="New VIP Signups" value="0" />
-        <Metric label="Profile views" value={location.view_count || 0} />
-        <Metric label="Guest clicks" value={location.click_count || 0} />
-        <Metric label="Calls" value={location.call_count || 0} />
+        <Metric
+          label="New VIP Signups"
+          value={summary?.newVipSignups30d ?? 0}
+        />
+        <Metric
+          label="Profile views"
+          value={summary?.profileViews30d ?? location.view_count ?? 0}
+        />
+        <Metric
+          label="Guest clicks"
+          value={summary?.guestClicks30d ?? location.click_count ?? 0}
+        />
+        <Metric
+          label="Calls"
+          value={summary?.calls30d ?? location.call_count ?? 0}
+        />
+        <Metric label="Reservation clicks" value={reservationClicks} />
       </div>
     </Card>
   );
@@ -788,13 +963,75 @@ function ReservationToolsCard({
   );
 }
 
+function SearchPerformanceCard({
+  location,
+  summary,
+}: {
+  location: LocationItem;
+  summary?: DashboardSummary;
+}) {
+  const reservationClicks =
+    (location.reservation_click_count || 0) +
+    (location.external_reservation_click_count || 0);
+  const hasSearch = Boolean(
+    summary &&
+    (summary.searchesThisMonth ||
+      summary.searchesLastMonth ||
+      summary.searchTrendPercent != null),
+  );
+  return (
+    <Card title="Search Performance" eyebrow="This month">
+      {!hasSearch && (
+        <p className="mb-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm font-semibold text-white/45">
+          Search data not connected yet. We’re showing profile and click
+          activity until search-level analytics are connected.
+        </p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Metric
+          label="Search appearances"
+          value={summary?.searchesThisMonth ?? "Not connected yet"}
+          note={trendText(summary?.searchTrendPercent)}
+        />
+        <Metric
+          label="Profile views"
+          value={
+            summary?.profileViewsThisMonth ??
+            summary?.profileViews30d ??
+            location.view_count ??
+            0
+          }
+          note={trendText(summary?.profileViewsTrendPercent)}
+        />
+        <Metric
+          label="Guest clicks"
+          value={summary?.guestClicks30d ?? location.click_count ?? 0}
+          note={trendText(summary?.clickTrendPercent)}
+        />
+        <Metric
+          label="Calls"
+          value={summary?.calls30d ?? location.call_count ?? 0}
+          note="No prior month data"
+        />
+        <Metric
+          label="Reservation clicks"
+          value={reservationClicks}
+          note="No prior month data"
+        />
+      </div>
+    </Card>
+  );
+}
+
 function EmptyState({ demoMode }: { demoMode?: boolean }) {
   return (
     <div className="grid min-h-[560px] place-items-center rounded-[32px] border border-white/10 bg-[#10141b] p-8 text-center">
       <div>
         <Store className="mx-auto mb-4 text-white/25" size={52} />
         <h2 className="text-3xl font-black">
-          {demoMode ? "Demo location unavailable" : "No connected locations yet"}
+          {demoMode
+            ? "Demo location unavailable"
+            : "No connected locations yet"}
         </h2>
         <p className="mx-auto mt-2 max-w-md text-white/50">
           {demoMode
@@ -905,7 +1142,13 @@ function StatCard({
         <span className="rounded-2xl bg-[#e1062a]/15 p-2 text-[#e1062a]">
           {icon}
         </span>
-        <span className="text-xs font-bold text-white/30">Live</span>
+        <span className="text-xs font-bold text-white/30">
+          {note === "Demo"
+            ? "Demo"
+            : note === "Setup needed"
+              ? "Setup needed"
+              : "Live"}
+        </span>
       </div>
       <p className="text-xs font-black uppercase tracking-[0.16em] text-white/35">
         {label}
@@ -1016,20 +1259,23 @@ function PlanCard({
       <p className="mt-2 text-sm font-black">
         {location ? planName(location) : "Free Discovery"}
       </p>
-      <p className="mt-1 text-xs font-semibold text-white/35">
-        Status available from billing settings.
-      </p>
-      <Link
-        href={withDemoParams("/business#plans", demoContext)}
-        aria-disabled={demoContext?.demoMode ? "true" : undefined}
-        className={`mt-3 block rounded-2xl px-3 py-2 text-center text-xs font-black ${
-          demoContext?.demoMode
-            ? "border border-white/10 bg-white/10 text-white/45"
-            : "bg-white text-black"
-        }`}
-      >
-        {demoContext?.demoMode ? "Demo only" : "Manage Plan"}
-      </Link>
+      {demoContext?.demoMode ? (
+        <p className="mt-1 text-xs font-semibold text-white/35">
+          Billing disabled in demo.
+        </p>
+      ) : (
+        <>
+          <p className="mt-1 text-xs font-semibold text-white/35">
+            Status available from billing settings.
+          </p>
+          <Link
+            href="/business#plans"
+            className="mt-3 block rounded-2xl bg-white px-3 py-2 text-center text-xs font-black text-black"
+          >
+            Manage Plan
+          </Link>
+        </>
+      )}
     </div>
   );
 }
@@ -1076,6 +1322,56 @@ function getLinks(location: LocationItem, demoContext?: DemoContext) {
     ]),
   ) as typeof links;
 }
+function publicProfileStatus(location: LocationItem) {
+  if (isPubliclyVisible(location)) {
+    return {
+      label: "Live",
+      tone: "good",
+      detail: "Guests can find this location on TheOutHaven.",
+    };
+  }
+  const isHidden = Boolean((location as any).is_hidden);
+  const searchable = Boolean((location as any).is_searchable);
+  const tier = String(
+    (location as any).public_visibility_tier || "",
+  ).toLowerCase();
+  if (isHidden || tier === "hidden") {
+    return {
+      label: "Hidden",
+      tone: "warning",
+      detail: "This profile is hidden from public search.",
+    };
+  }
+  if (!searchable) {
+    return {
+      label: "Not searchable yet",
+      tone: "warning",
+      detail:
+        "Complete the missing profile items to make this location searchable.",
+    };
+  }
+  return {
+    label: "Needs review",
+    tone: "warning",
+    detail: "This profile needs a quick review before it goes live.",
+  };
+}
+
+function trendText(value: number | null | undefined) {
+  if (value == null) return "No prior month data";
+  if (value === 0) return "Even with last month";
+  const direction = value > 0 ? "↑" : "↓";
+  return `${direction} ${Math.abs(value)}% vs last month`;
+}
+
+function currency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
 function cityState(location: LocationItem) {
   return [location.city, location.state].filter(Boolean).join(", ");
 }

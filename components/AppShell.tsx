@@ -24,13 +24,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isLaunchRoute =
     pathname === "/" || pathname?.startsWith("/launch/verify");
   const isStandaloneAuthRoute = pathname === "/beta/login";
+  const isOwnerDashboard = pathname === "/locations/dashboard";
   const showGlobalChrome =
-    mounted && !isAdmin && !isLaunchRoute && !isStandaloneAuthRoute;
+    mounted &&
+    !isAdmin &&
+    !isLaunchRoute &&
+    !isStandaloneAuthRoute &&
+    !isOwnerDashboard;
 
   return (
     <>
       {showGlobalChrome && <TheOutHavenHeader />}
-      {mounted && !isAdmin && !isLaunchRoute && !isStandaloneAuthRoute && <IdleLogout />}
+      {mounted &&
+        !isAdmin &&
+        !isLaunchRoute &&
+        !isStandaloneAuthRoute &&
+        !isOwnerDashboard && <IdleLogout />}
       {children}
       {showGlobalChrome && <TheOutHavenFooter />}
     </>
