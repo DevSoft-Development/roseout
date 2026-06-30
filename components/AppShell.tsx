@@ -10,6 +10,12 @@ const subscribe = () => () => undefined;
 const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
 
+function isLocationEditorPath(pathname: string | null) {
+  return /^\/locations\/(restaurants|restaurant|activities|activity)\/[^/]+\/edit\/?$/.test(
+    pathname || "",
+  );
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const mounted = useSyncExternalStore(
@@ -25,21 +31,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname === "/" || pathname?.startsWith("/launch/verify");
   const isStandaloneAuthRoute = pathname === "/beta/login";
   const isOwnerDashboard = pathname === "/locations/dashboard";
-  const showGlobalChrome =
-    mounted &&
-    !isAdmin &&
-    !isLaunchRoute &&
-    !isStandaloneAuthRoute &&
-    !isOwnerDashboard;
+  const isLocationEditor = isLocationEditorPath(pathname);
+  const hidesGlobalChrome =
+    isAdmin ||
+    isLaunchRoute ||
+    isStandaloneAuthRoute ||
+    isOwnerDashboard ||
+    isLocationEditor;
+  const showGlobalChrome = mounted && !hidesGlobalChrome;
 
   return (
     <>
       {showGlobalChrome && <TheOutHavenHeader />}
-      {mounted &&
-        !isAdmin &&
-        !isLaunchRoute &&
-        !isStandaloneAuthRoute &&
-        !isOwnerDashboard && <IdleLogout />}
+      {mounted && !hidesGlobalChrome && <IdleLogout />}
       {children}
       {showGlobalChrome && <TheOutHavenFooter />}
     </>
