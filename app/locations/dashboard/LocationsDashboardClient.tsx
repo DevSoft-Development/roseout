@@ -1,19 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
-  ArrowLeft,
-  BadgeCheck,
-  Building2,
-  AlertTriangle,
-  CheckCircle2,
+  BarChart3,
+  Bell,
+  CalendarClock,
+  ChevronDown,
+  CircleHelp,
   Crown,
   ExternalLink,
-  MapPin,
+  Eye,
+  Grid3X3,
+  ImagePlus,
+  LayoutDashboard,
+  Menu,
+  MessageSquare,
+  QrCode,
   Search,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Store,
+  Users,
+  Utensils,
 } from "lucide-react";
 import { clampScore } from "@/lib/clampScore";
 import {
@@ -24,15 +35,13 @@ import { getLocationImage } from "@/lib/locationImage";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
 import {
   getDataStatus,
-  getMissingFields,
   getPublicVisibilityWarning,
   isPubliclyVisible,
   type LocationVisibilityFields,
 } from "@/lib/locationVisibility";
-import ScoreBadge from "@/components/ScoreBadge";
-import { getIsClaimed, getClaimStatusText } from "@/lib/locationClaim";
+import { getClaimStatusText } from "@/lib/locationClaim";
 
-const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-refresh-2026-05-11";
+const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-enterprise-2026-06-30";
 
 type LocationType = "restaurant" | "activity";
 
@@ -62,8 +71,6 @@ type LocationItem = LocationScoreFields &
     claimed?: boolean | null;
     claim_status?: string | null;
     claim_verification_status?: string | null;
-    claimed_at?: string | null;
-    claimed_by_email?: string | null;
     owner_user_id?: string | null;
     owner_name?: string;
     owner_email?: string;
@@ -90,7 +97,11 @@ type LocationItem = LocationScoreFields &
     primary_tag?: string | null;
     tags?: string[] | null;
     google_types?: string[] | null;
+    menu_url?: string | null;
+    hours?: unknown;
   };
+
+type Links = ReturnType<typeof getLinks>;
 
 export default function LocationsDashboardClient({
   locations,
@@ -99,667 +110,904 @@ export default function LocationsDashboardClient({
   locations: LocationItem[];
   impersonationLabel?: string;
 }) {
-  const [selected, setSelected] = useState<LocationItem | null>(
-    locations[0] || null,
-  );
+  const [selectedId, setSelectedId] = useState(locations[0]?.id || "");
   const [query, setQuery] = useState("");
+
+  const selected = useMemo(
+    () =>
+      locations.find((location) => location.id === selectedId) ||
+      locations[0] ||
+      null,
+    [locations, selectedId],
+  );
 
   const filteredLocations = useMemo(() => {
     const q = query.toLowerCase().trim();
-
     if (!q) return locations;
-
-    return locations.filter((location) => {
-      return [
+    return locations.filter((location) =>
+      [
         location.display_name,
         location.city,
         location.state,
         location.address,
-        ...getLocationTags(location),
         location.owner_email,
+        getPrimaryCategory(location),
+        ...getLocationTags(location),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
-        .includes(q);
-    });
+        .includes(q),
+    );
   }, [locations, query]);
 
-  const stats = useMemo(() => {
-    return {
-      total: locations.length,
-      claimed: locations.filter((l) => getIsClaimed(l)).length,
-      unclaimed: locations.filter((l) => !getIsClaimed(l)).length,
-      average:
-        locations.length > 0
-          ? Math.round(
-              locations.reduce(
-                (sum, item) => sum + clampScore(getLocationScore(item)),
-                0,
-              ) / locations.length,
-            )
-          : 0,
-    };
-  }, [locations]);
-
   async function stopImpersonation() {
-    await fetch("/api/admin/stop-impersonation", {
-      method: "POST",
-    });
-
+    await fetch("/api/admin/stop-impersonation", { method: "POST" });
     window.location.href = "/admin/dashboard";
   }
-
-  const selectedVisibilityWarnings = selected
-    ? getPublicVisibilityWarning(selected)
-    : [];
 
   return (
     <main
       data-page-version={LOCATIONS_DASHBOARD_VERSION}
-      className="min-h-screen bg-[#090706] text-white"
+      className="min-h-screen bg-[#07090d] text-white"
     >
-      <section className="relative overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(190,24,93,0.24),_transparent_36%),linear-gradient(135deg,#130b0a,#090706_58%,#000)]">
-        <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-rose-700/20 blur-3xl" />
-        <div className="absolute bottom-[-160px] left-[-120px] h-96 w-96 rounded-full bg-[#e1062a]/10 blur-3xl" />
-
-        <div className="relative mx-auto max-w-7xl px-5 py-8 sm:px-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/admin/dashboard"
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white/80 hover:bg-white/10"
-              >
-                <ArrowLeft size={16} />
-                Back to Admin
-              </Link>
-
-              <Link
-                href="/business/dashboard/analytics"
-                className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 px-4 py-2 text-sm font-bold text-[#e1062a] hover:bg-[#e1062a]/15"
-              >
-                Analytics
-              </Link>
-
-              <Link
-                href="/support"
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white/80 hover:bg-white/10"
-              >
-                Support Tickets
-              </Link>
-            </div>
-
-            {impersonationLabel && (
-              <button
-                onClick={stopImpersonation}
-                className="rounded-full bg-white px-4 py-2 text-sm font-black text-black hover:bg-rose-100"
-              >
-                Stop Viewing as Location
-              </button>
-            )}
-          </div>
-
-          {impersonationLabel && (
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-rose-300/30 bg-rose-500/15 px-4 py-2 text-sm font-black text-rose-100">
-              <Crown size={16} />
-              {impersonationLabel}
-            </div>
-          )}
-
-          <div className="grid gap-8 lg:grid-cols-[1fr_390px] lg:items-end">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-[#e1062a]">
-                <Sparkles size={14} />
-                TheOutHaven Partner Plan
-              </div>
-
-              <h1 className="max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
-                Locations Dashboard
-              </h1>
-
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/60">
-                Manage restaurant and activity profiles with a premium owner
-                portal experience.
-              </p>
-            </div>
-
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-4 shadow-2xl backdrop-blur">
-              <div className="grid grid-cols-2 gap-3">
-                <Stat label="Total" value={stats.total} />
-                <Stat label="Claimed" value={stats.claimed} />
-                <Stat label="Open" value={stats.unclaimed} />
-                <Stat label="Avg Score" value={stats.average} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[390px_1fr]">
-        <aside className="rounded-[2rem] border border-white/10 bg-[#12100f] p-4 shadow-2xl">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-                Directory
-              </p>
-              <h2 className="text-xl font-black">Your Locations</h2>
-            </div>
-
-            <div className="rounded-full bg-white px-3 py-1 text-xs font-black text-black">
-              {filteredLocations.length}
-            </div>
-          </div>
-
-          <div className="mb-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3">
-            <Search size={17} className="text-white/40" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search locations..."
-              className="w-full bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/35"
+      <div className="flex min-h-screen">
+        <Sidebar
+          locations={filteredLocations}
+          selected={selected}
+          query={query}
+          onQuery={setQuery}
+          onSelect={setSelectedId}
+        />
+        <section className="min-w-0 flex-1 lg:pl-[320px]">
+          <TopBar
+            selected={selected}
+            query={query}
+            onQuery={setQuery}
+            impersonationLabel={impersonationLabel}
+            onStopImpersonation={stopImpersonation}
+          />
+          <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
+            <MobileLocationSwitcher
+              locations={filteredLocations}
+              selected={selected}
+              onSelect={setSelectedId}
             />
-          </div>
-
-          <div className="max-h-[68vh] space-y-3 overflow-y-auto pr-1">
-            {filteredLocations.map((loc) => {
-              const active = selected?.id === loc.id;
-              const score = clampScore(getLocationScore(loc));
-              const visibilityWarnings = getPublicVisibilityWarning(loc);
-
-              return (
-                <button
-                  key={`${loc.location_type}-${loc.id}`}
-                  onClick={() => setSelected(loc)}
-                  className={`w-full rounded-3xl border p-3 text-left transition ${
-                    active
-                      ? "border-[#e1062a]/50 bg-[#e1062a]/10"
-                      : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
-                  }`}
-                >
-                  <div className="flex gap-3">
-                    <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white/10">
-                      {getLocationImage(loc) ? (
-                        <img
-                          src={getLocationImage(loc) || undefined}
-                          alt={loc.display_name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <Store className="text-white/30" size={24} />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-start justify-between gap-2">
-                        <h3 className="line-clamp-2 text-sm font-black leading-tight">
-                          {loc.display_name}
-                        </h3>
-
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-black">
-                          {score}
-                        </span>
-                      </div>
-
-                      <p className="line-clamp-1 text-xs font-semibold text-white/45">
-                        {loc.city || "City not listed"}
-                        {loc.state ? `, ${loc.state}` : ""}
-                      </p>
-
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        <Pill>
-                          {loc.location_type === "restaurant"
-                            ? "Restaurant"
-                            : "Activity"}
-                        </Pill>
-
-                        <Pill>{getClaimStatusText(loc)}</Pill>
-
-                        <Pill>
-                          {isPubliclyVisible(loc)
-                            ? "Public"
-                            : getDataStatus(loc)}
-                        </Pill>
-                      </div>
-
-                      {visibilityWarnings.length > 0 && (
-                        <p className="mt-2 line-clamp-1 text-[11px] font-bold text-amber-200">
-                          Not visible yet: {visibilityWarnings.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-
-            {filteredLocations.length === 0 && (
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center text-sm font-semibold text-white/45">
-                No locations found.
-              </div>
+            {selected ? (
+              <DashboardContent location={selected} />
+            ) : (
+              <EmptyState />
             )}
           </div>
-        </aside>
-
-        <section>
-          {selected ? (
-            <div className="overflow-hidden rounded-[2.25rem] border border-white/10 bg-[#f8f3ed] text-black shadow-2xl">
-              <div className="relative h-[280px] bg-black sm:h-[360px]">
-                {getLocationImage(selected) ? (
-                  <img
-                    src={getLocationImage(selected) || undefined}
-                    alt={selected.display_name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-neutral-900">
-                    <Building2 className="text-white/25" size={56} />
-                  </div>
-                )}
-
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent" />
-
-                <div className="absolute bottom-5 left-5 right-5">
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-black">
-                      {selected.location_type === "restaurant"
-                        ? "Restaurant"
-                        : "Activity"}
-                    </span>
-
-                    <span className="rounded-full bg-[#e1062a] px-3 py-1 text-xs font-black text-black">
-                      {getClaimStatusText(selected)}
-                    </span>
-                  </div>
-
-                  <h2 className="max-w-3xl text-3xl font-black tracking-tight text-white sm:text-5xl">
-                    {selected.display_name}
-                  </h2>
-                </div>
-              </div>
-
-              <div className="grid gap-6 p-5 sm:p-8 xl:grid-cols-[1fr_320px]">
-                <div>
-                  {selectedVisibilityWarnings.length > 0 && (
-                    <VisibilityWarning missing={selectedVisibilityWarnings} />
-                  )}
-
-                  <div className="mb-6 flex flex-wrap items-center gap-3">
-                    <ScoreBadge
-                      score={clampScore(getLocationScore(selected))}
-                    />
-
-                    <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">
-                      ✨ {getPrimaryCategory(selected)}
-                    </span>
-
-                    <span className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black">
-                      Data: {getDataStatus(selected)}
-                    </span>
-
-                    {getMissingFields(selected).length > 0 && (
-                      <span className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-black text-amber-900">
-                        Missing {getMissingFields(selected).length}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <InfoCard
-                      title="Address"
-                      value={
-                        selected.address ||
-                        `${selected.city || ""}${
-                          selected.state ? `, ${selected.state}` : ""
-                        }` ||
-                        "Not listed"
-                      }
-                      icon={<MapPin size={18} />}
-                    />
-
-                    <InfoCard
-                      title="Owner"
-                      value={selected.owner_name || "Not set"}
-                      subvalue={
-                        selected.owner_email
-                          ? maskEmail(selected.owner_email)
-                          : "No email listed"
-                      }
-                      icon={<BadgeCheck size={18} />}
-                    />
-                  </div>
-
-
-
-                  <OwnerPlanOverview location={selected} />
-
-                  <BusinessSetupChecklist location={selected} />
-
-                  <ReservationEmbedCard location={selected} />
-
-                  <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
-                    <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
-                      Owner Contact
-                    </p>
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      <ContactBlock label="Name" value={selected.owner_name} />
-                      <ContactBlock
-                        label="Email"
-                        value={
-                          selected.owner_email
-                            ? maskEmail(selected.owner_email)
-                            : undefined
-                        }
-                      />
-                      <ContactBlock
-                        label="Phone"
-                        value={selected.owner_phone}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-[1.75rem] bg-black p-5 text-white">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#e1062a]">
-                    Quick Actions
-                  </p>
-
-                  <div className="mt-5 space-y-3">
-                    <Link
-                      href={`/locations/${locationTypePathSegment[selected.location_type]}/${selected.id}/edit`}
-                      className="flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-black hover:bg-rose-100"
-                    >
-                      Edit Location
-                      <ExternalLink size={16} />
-                    </Link>
-
-                    <Link
-                      href={`/locations/${locationTypePathSegment[selected.location_type]}/${selected.id}`}
-                      className="flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/15"
-                    >
-                      View Public Page
-                      <ExternalLink size={16} />
-                    </Link>
-                  </div>
-
-                  <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.06] p-4">
-                    <div className="flex items-start gap-3">
-                      <CheckCircle2
-                        className="mt-0.5 text-[#e1062a]"
-                        size={18}
-                      />
-                      <div>
-                        <p className="text-sm font-black">Owner dashboard ready</p>
-                        <p className="mt-1 text-xs leading-5 text-white/50">
-                          Free Discovery keeps your claimed profile visible. Partner Plan includes reservations, reservation settings, and deeper demand tools.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex min-h-[520px] items-center justify-center rounded-[2rem] border border-white/10 bg-white/[0.04] text-center">
-              <div>
-                <Store className="mx-auto mb-4 text-white/25" size={42} />
-                <p className="text-lg font-black">Select a location</p>
-                <p className="mt-1 text-sm text-white/45">
-                  Choose a restaurant or activity from the left panel.
-                </p>
-              </div>
-            </div>
-          )}
         </section>
-      </section>
+      </div>
     </main>
   );
 }
 
-
-function ReservationEmbedCard({ location }: { location: LocationItem }) {
-  const appUrl = "https://theouthaven.com";
-  const enabled = Boolean((location as any).reservation_embed_enabled || (location as any).reservation_enabled || location.reservation_url || location.external_reservation_url);
-  const embedUrl = `${appUrl}/embed/reservations/${location.id}`;
-  const iframe = `<iframe\n  src="${embedUrl}"\n  width="100%"\n  height="720"\n  style="border:0;border-radius:16px;overflow:hidden;"\n  loading="lazy"\n  title="TheOutHaven Reservations"\n></iframe>`;
-  return <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
-    <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">Reservations Embed</p>
-    {enabled ? <div className="mt-4 space-y-3"><p className="text-sm font-semibold text-black/65">Copy this code and paste it into your website where you want your TheOutHaven reservation widget to appear.</p><textarea readOnly value={iframe} rows={7} className="w-full rounded-2xl border border-black/10 bg-neutral-50 p-3 font-mono text-xs text-black" /><div className="flex flex-wrap gap-2"><a href={embedUrl} target="_blank" className="rounded-full bg-black px-4 py-2 text-sm font-black text-white">Preview</a><span className="rounded-full border border-black/10 px-4 py-2 text-sm font-bold text-black/60">Copy from code box</span></div><p className="break-all text-xs text-black/50">Reservation page URL: {embedUrl}</p><p className="text-sm text-black/60">Need help? Contact reserve@theouthaven.com.</p></div> : <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm font-semibold text-rose-900">Reservation embeds are available for Reserve-enabled locations. Contact reserve@theouthaven.com to upgrade or activate Reserve.</div>}
-  </div>;
-}
-
-function formatPlanName(location: LocationItem) {
-  const raw = String(location.subscription_plan || location.plan || "free_discovery").toLowerCase();
-
-  if (Boolean(location.is_pro) || raw.includes("pro")) return "TheOutHaven Partner Plan — $99/month";
-  return "Free Discovery";
-}
-
-function OwnerPlanOverview({ location }: { location: LocationItem }) {
-  const isPro = formatPlanName(location) === "TheOutHaven Partner Plan — $99/month";
-  const reservationLink = location.reservation_link || location.reservation_url || location.external_reservation_url;
-  const reservationSettings = location.reservation_settings || {};
-  const analytics = [
-    ["Profile views", location.view_count || 0],
-    ["Guest clicks", location.click_count || 0],
-    ["Phone actions", location.call_count || 0],
-    ["Reservation clicks", location.reservation_click_count || location.external_reservation_click_count || 0],
-  ] as const;
-
+function DashboardContent({ location }: { location: LocationItem }) {
+  const links = getLinks(location);
+  const reservationClicks =
+    location.reservation_click_count ||
+    location.external_reservation_click_count ||
+    0;
+  const score = clampScore(getLocationScore(location));
   return (
-    <div className="mt-6 grid gap-4 xl:grid-cols-[1fr_0.95fr]">
-      <section className="rounded-[1.75rem] border border-black/10 bg-white p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
-              Plan status
-            </p>
-            <h3 className="mt-2 text-2xl font-black">{formatPlanName(location)}</h3>
-            <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
-              {isPro
-                ? "Partner Plan includes reservations for reservations, waitlists, guest tools, and deeper analytics."
-                : "Free Discovery keeps your claimed profile visible with basic contact, tracking, and discovery tools."}
-            </p>
-          </div>
-          <Link
-            href="/business#plans"
-            className={`rounded-full px-4 py-2 text-center text-xs font-black ${
-              isPro ? "border border-black/10 bg-white text-black" : "bg-[#e1062a] text-white"
-            }`}
-          >
-            {isPro ? "Manage Pro" : "Activate Partner Plan"}
-          </Link>
-        </div>
+    <div className="space-y-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <StatCard
+          icon={<CalendarClock size={18} />}
+          label="Today’s Reservations"
+          value="0"
+          note="No activity yet"
+        />
+        <StatCard
+          icon={<Users size={18} />}
+          label="Guests Seated"
+          value="0"
+          note="No seating data"
+        />
+        <StatCard
+          icon={<Grid3X3 size={18} />}
+          label="Open Tables / Spaces"
+          value="0"
+          note="Layout not configured"
+        />
+        <StatCard
+          icon={<CalendarClock size={18} />}
+          label="Upcoming Reservations"
+          value={reservationClicks}
+          note="Tracked interest"
+        />
+        <StatCard
+          icon={<ShieldCheck size={18} />}
+          label="Location Status"
+          value={isPubliclyVisible(location) ? "Public" : "Review"}
+          note={getDataStatus(location)}
+        />
+      </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <ContactBlock label="Claim status" value={getClaimStatusText(location)} />
-          <ContactBlock label="Verification" value={String(location.claim_verification_status || "code_verified").replace(/_/g, " ")} />
-          <ContactBlock label="Phone tracking" value={location.phone ? "Phone actions enabled" : "Add a phone number"} />
-          <ContactBlock label="External reservations" value={reservationLink ? "Tracking link connected" : "No reservation link set"} />
-        </div>
-      </section>
+      <div className="grid gap-5 xl:grid-cols-[1.45fr_0.8fr]">
+        <LocationOverviewCard location={location} links={links} />
+        <LocationHealthCard location={location} score={score} links={links} />
+      </div>
 
-      <section className="rounded-[1.75rem] border border-black/10 bg-white p-5">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
-          Reserve + analytics
-        </p>
-        {isPro ? (
-          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-900">
-            Reserve is included. Reservation settings: {Object.keys(reservationSettings).length ? "configured" : "ready to configure"}.
-          </div>
+      <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr_0.9fr]">
+        <QuickToolsCard links={links} />
+        <TodaySnapshotCard />
+        <HoursCapacityCard location={location} links={links} />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <BusinessOverviewCard location={location} />
+        <TeamAccessCard location={location} links={links} />
+      </div>
+
+      <ReservationToolsCard location={location} links={links} />
+    </div>
+  );
+}
+
+function Sidebar({
+  locations,
+  selected,
+  query,
+  onQuery,
+  onSelect,
+}: {
+  locations: LocationItem[];
+  selected: LocationItem | null;
+  query: string;
+  onQuery: (value: string) => void;
+  onSelect: (id: string) => void;
+}) {
+  const links = selected ? getLinks(selected) : null;
+  const nav = links
+    ? ([
+        ["Dashboard", links.dashboard, LayoutDashboard],
+        ["Reservations", links.reservations, CalendarClock],
+        ["Layout & Spaces", links.layout, Grid3X3],
+        ["QR Booking Tools", links.qr, QrCode],
+        ["Guests & VIP", links.vip, Users],
+        ["Menus & Photos", links.menu, Utensils],
+        ["Hours & Capacity", links.hours, SlidersHorizontal],
+        ["Analytics", links.analytics, BarChart3],
+        ["Team Access", links.team, ShieldCheck],
+        ["Settings", links.settings, Settings],
+      ] as const)
+    : [];
+  return (
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[320px] border-r border-white/10 bg-[#090b10] p-4 lg:block">
+      <div className="mb-5 flex items-center gap-3 px-2">
+        <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#e1062a]">
+          <Sparkles size={20} />
+        </div>
+        <div>
+          <p className="text-lg font-black">TheOutHaven</p>
+          <p className="text-xs font-bold text-white/40">Owner Console</p>
+        </div>
+      </div>
+      <div className="rounded-3xl border border-white/10 bg-[#121721] p-3">
+        {selected ? (
+          <LocationMini location={selected} />
         ) : (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-950">
-            Reservation settings unlock with Pro. Free Discovery still tracks basic profile, phone, and external reservation interest.
+          <p className="p-3 text-sm font-bold text-white/45">
+            No location selected
+          </p>
+        )}
+        <div className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-2">
+          <Search size={15} className="text-white/35" />
+          <input
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            placeholder="Search anything..."
+            className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/35"
+          />
+        </div>
+        {locations.length > 1 && (
+          <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
+            {locations.map((location) => (
+              <button
+                key={location.id}
+                onClick={() => onSelect(location.id)}
+                className={`w-full rounded-2xl px-3 py-2 text-left text-xs font-black ${selected?.id === location.id ? "bg-[#e1062a]/20 text-white" : "bg-white/[0.04] text-white/60 hover:text-white"}`}
+              >
+                {location.display_name}
+                <span className="block font-semibold text-white/35">
+                  {cityState(location)}
+                </span>
+              </button>
+            ))}
           </div>
         )}
+      </div>
+      <nav className="mt-5 space-y-1">
+        {nav.map(([label, href, Icon]) => (
+          <Link
+            key={label}
+            href={href}
+            className="flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-bold text-white/58 hover:bg-white/[0.06] hover:text-white"
+          >
+            <Icon size={17} />
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <div className="absolute bottom-4 left-4 right-4 space-y-3">
+        <PlanCard location={selected} />
+        <Link
+          href="/help"
+          className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black hover:bg-white/[0.08]"
+        >
+          <span className="flex items-center gap-2">
+            <CircleHelp size={16} />
+            Get Help
+          </span>
+          <ExternalLink size={14} />
+        </Link>
+        <button className="w-full rounded-2xl border border-white/10 py-2 text-xs font-bold text-white/35">
+          Collapse sidebar
+        </button>
+      </div>
+    </aside>
+  );
+}
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          {analytics.map(([label, value]) => (
-            <div key={label} className="rounded-2xl bg-black/[0.04] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/35">{label}</p>
-              <p className="mt-2 text-2xl font-black">{Number(value || 0).toLocaleString()}</p>
+function TopBar({
+  selected,
+  query,
+  onQuery,
+  impersonationLabel,
+  onStopImpersonation,
+}: {
+  selected: LocationItem | null;
+  query: string;
+  onQuery: (value: string) => void;
+  impersonationLabel?: string;
+  onStopImpersonation: () => void;
+}) {
+  const links = selected ? getLinks(selected) : null;
+  return (
+    <header className="sticky top-0 z-20 border-b border-white/10 bg-[#07090d]/90 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight">
+            Locations Dashboard
+          </h1>
+          <p className="text-sm font-medium text-white/45">
+            Overview of your location performance and tools
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="hidden min-w-[280px] items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 md:flex">
+            <Search size={16} className="text-white/35" />
+            <input
+              value={query}
+              onChange={(e) => onQuery(e.target.value)}
+              placeholder="Search anything..."
+              className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/35"
+            />
+          </div>
+          <button className="rounded-2xl border border-white/10 bg-white/[0.04] p-2.5 text-white/60">
+            <Bell size={18} />
+          </button>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+            <p className="text-xs font-black">
+              {selected?.owner_name || "Owner"}
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-white/35">
+              {selected?.owner_user_id ? "Owner" : "Location Admin"}
+            </p>
+          </div>
+          {links && (
+            <>
+              <Link
+                href={links.publicPage}
+                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-black hover:bg-white/[0.08]"
+              >
+                View Public Page
+              </Link>
+              <Link
+                href={links.edit}
+                className="rounded-2xl bg-[#e1062a] px-4 py-2 text-sm font-black text-white hover:bg-[#ff2142]"
+              >
+                Edit Location
+              </Link>
+            </>
+          )}
+          {impersonationLabel && (
+            <button
+              onClick={onStopImpersonation}
+              className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black"
+            >
+              Stop Viewing as Location
+            </button>
+          )}
+        </div>
+        {impersonationLabel && (
+          <p className="text-xs font-black text-rose-200 lg:hidden">
+            {impersonationLabel}
+          </p>
+        )}
+      </div>
+    </header>
+  );
+}
+
+function LocationOverviewCard({
+  location,
+  links,
+}: {
+  location: LocationItem;
+  links: Links;
+}) {
+  const category = categoryLine(location);
+  return (
+    <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#10141b]">
+      <div className="grid md:grid-cols-[230px_1fr]">
+        <div className="h-56 bg-white/5 md:h-full">
+          {getLocationImage(location) ? (
+            <img
+              src={getLocationImage(location) || undefined}
+              alt={location.display_name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="grid h-full place-items-center">
+              <Store className="text-white/25" size={42} />
+            </div>
+          )}
+        </div>
+        <div className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="mb-2 flex gap-2">
+                <Badge>{location.location_type}</Badge>
+                {isPro(location) && <Badge red>Pro</Badge>}
+              </div>
+              <h2 className="text-3xl font-black">{location.display_name}</h2>
+              <p className="mt-2 font-semibold text-white/45">{category}</p>
+            </div>
+            <Link
+              href={links.publicPage}
+              className="rounded-2xl border border-white/10 px-3 py-2 text-xs font-black text-white/65 hover:text-white"
+            >
+              <Eye size={15} className="inline" /> Public
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Info
+              label="Address"
+              value={
+                location.address || cityState(location) || "Not configured"
+              }
+            />
+            <Info label="Phone" value={location.phone || "Not configured"} />
+            <Info
+              label="Public profile"
+              value={
+                isPubliclyVisible(location)
+                  ? "Live"
+                  : getPublicVisibilityWarning(location).join(", ") ||
+                    "Not configured"
+              }
+            />
+            <Info label="Claim status" value={getClaimStatusText(location)} />
+            <Info label="Plan" value={planName(location)} />
+            <Info label="Data status" value={getDataStatus(location)} />
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link
+              href={links.edit}
+              className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black"
+            >
+              Edit Location
+            </Link>
+            <Link
+              href={links.publicPage}
+              className="rounded-2xl border border-white/10 px-4 py-2 text-sm font-black"
+            >
+              View Public Page
+            </Link>
+            <Link
+              href={links.settings}
+              className="rounded-2xl border border-white/10 px-4 py-2 text-sm font-black text-white/65"
+            >
+              More Actions
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LocationHealthCard({
+  location,
+  score,
+  links,
+}: {
+  location: LocationItem;
+  score: number;
+  links: Links;
+}) {
+  const checks = [
+    ["Bookings", hasReservations(location)],
+    ["QR Codes", true],
+    ["Hours", hasHours(location)],
+    ["Photos", Boolean(getLocationImage(location) || location.images?.length)],
+    ["Menu", Boolean(location.menu_url || location.website)],
+  ] as const;
+  return (
+    <Card
+      title="Location Health"
+      action={
+        <Link href={links.edit} className="text-xs font-black text-[#e1062a]">
+          Fix Missing Items
+        </Link>
+      }
+    >
+      <div className="flex items-center gap-5">
+        <div className="grid h-32 w-32 shrink-0 place-items-center rounded-full border-8 border-[#e1062a] bg-black/30">
+          <div className="text-center">
+            <p className="text-3xl font-black">{score}</p>
+            <p className="text-xs text-white/40">ready</p>
+          </div>
+        </div>
+        <div className="w-full space-y-3">
+          {checks.map(([label, done]) => (
+            <div
+              key={label}
+              className="flex items-center justify-between rounded-2xl bg-white/[0.04] px-3 py-2"
+            >
+              <span className="text-sm font-bold text-white/70">{label}</span>
+              <span className={done ? "text-emerald-300" : "text-amber-300"}>
+                {done ? "Ready" : "Missing"}
+              </span>
             </div>
           ))}
         </div>
-      </section>
-    </div>
+      </div>
+    </Card>
   );
 }
 
-function BusinessSetupChecklist({ location }: { location: LocationItem }) {
-  const hasReservationLink = Boolean(
-    location.reservation_link ||
-      location.reservation_url ||
-      location.external_reservation_url,
-  );
-  const hasPhotos = Boolean(
-    location.main_image || location.image_url || location.images?.length,
-  );
-  const profileComplete = getMissingFields(location).length === 0;
-  const isClaimed = getIsClaimed(location);
-  const claimStatus = String(location.claim_status || "").toLowerCase();
-  const pending = claimStatus === "pending" || (!isClaimed && Boolean(location.claim_status));
-  const isPro = Boolean(location.is_pro) || String(location.plan || "").toLowerCase().includes("pro");
-
-  const items = [
-    ["Claim code verified", Boolean(location.claim_status), "/business/claim"],
-    ["Claim request submitted", Boolean(location.claim_status), "/business/claim"],
-    ["Verify business ownership", isClaimed, "/business/claim"],
-    ["Complete profile details", profileComplete, `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
-    ["Add phone/reservation links", Boolean(location.phone || hasReservationLink), `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
-    ["Add photos", hasPhotos, `/locations/${locationTypePathSegment[location.location_type]}/${location.id}/edit`],
-    ["Review guest actions", Boolean(location.website || location.phone || hasReservationLink), `/locations/${locationTypePathSegment[location.location_type]}/${location.id}`],
-    ["View analytics", isPro, "/business/dashboard/analytics"],
-    ["Activate Partner Plan", isPro, "/business#plans"],
+function QuickToolsCard({ links }: { links: Links }) {
+  const tools = [
+    ["QR Booking Tools", links.qr, QrCode],
+    ["Layout Builder", links.layout, Grid3X3],
+    ["Manage Menus", links.menu, Utensils],
+    ["Add Photos", links.photos, ImagePlus],
+    ["VIP Signups", links.vip, Crown],
+    ["Send Message", links.messages, MessageSquare],
   ] as const;
-
   return (
-    <div className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
-            Business setup checklist
-          </p>
-          <h3 className="mt-2 text-2xl font-black">Keep your listing moving</h3>
-        </div>
-        <Link href="/business#plans" className="rounded-full bg-black px-4 py-2 text-xs font-black text-white">
-          Activate Partner Plan
-        </Link>
-      </div>
-      {pending && (
-        <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-950">
-          <p>Your claim request is under review.</p>
-          <p className="mt-1 text-xs font-semibold text-amber-900/70">
-            You can prepare your profile details now. Some changes may not go live until your claim is approved.
-          </p>
-        </div>
-      )}
-      <div className="mt-5 grid gap-3">
-        {items.map(([label, done, href]) => (
-          <div key={label} className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-neutral-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${done ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
-                {done ? "✓" : "!"}
-              </span>
-              <div>
-                <p className="text-sm font-black">{label}</p>
-                <p className="text-xs font-semibold text-black/45">{done ? "Completed" : "Action needed"}</p>
-              </div>
-            </div>
-            {!done && (
-              <Link href={href} className="rounded-full border border-black/10 bg-white px-4 py-2 text-center text-xs font-black text-black hover:bg-black hover:text-white">
-                {label === "View analytics" ? "View analytics" : label === "Activate Partner Plan" ? "Activate Partner Plan" : label.includes("reservation") ? "Add reservation portal" : "Complete profile"}
-              </Link>
-            )}
-          </div>
+    <Card title="Quick Tools">
+      {" "}
+      <div className="grid grid-cols-2 gap-2">
+        {tools.map(([label, href, Icon]) => (
+          <Link
+            key={label}
+            href={href}
+            className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 hover:bg-white/[0.07]"
+          >
+            <Icon size={18} className="mb-3 text-[#e1062a]" />
+            <p className="text-sm font-black">{label}</p>
+          </Link>
         ))}
       </div>
-    </div>
+    </Card>
+  );
+}
+function TodaySnapshotCard() {
+  return (
+    <Card title="Today’s Snapshot">
+      <Metric label="Reservations" value="0" />
+      <Metric label="Walk-ins" value="0" />
+      <Metric label="No Shows" value="0" />
+      <Metric
+        label="Revenue estimate"
+        value="$0"
+        note="Connect Reserve for live revenue"
+      />
+    </Card>
+  );
+}
+function BusinessOverviewCard({ location }: { location: LocationItem }) {
+  return (
+    <Card title="Business Overview" eyebrow="Last 30 days">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Metric label="Total Reservations" value="0" />
+        <Metric label="Guests Served" value="0" />
+        <Metric label="Walk-ins" value="0" />
+        <Metric label="Revenue Estimate" value="$0" />
+        <Metric label="Review Rating" value="Not configured" />
+        <Metric label="New VIP Signups" value="0" />
+        <Metric label="Profile views" value={location.view_count || 0} />
+        <Metric label="Guest clicks" value={location.click_count || 0} />
+        <Metric label="Calls" value={location.call_count || 0} />
+      </div>
+    </Card>
+  );
+}
+function HoursCapacityCard({
+  location,
+  links,
+}: {
+  location: LocationItem;
+  links: Links;
+}) {
+  return (
+    <Card
+      title="Hours & Capacity"
+      action={
+        <Link href={links.hours} className="text-xs font-black text-[#e1062a]">
+          Edit Hours
+        </Link>
+      }
+    >
+      <Metric label="Today’s hours" value={hoursText(location)} />
+      <Metric
+        label="Open / Closed"
+        value={hasHours(location) ? "Configured" : "Hours not configured"}
+      />
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Metric label="Total Capacity" value="0" />
+        <Metric label="In Use" value="0" />
+        <Metric label="Available" value="0" />
+        <Metric label="Waitlist" value="0" />
+      </div>
+    </Card>
+  );
+}
+function TeamAccessCard({
+  location,
+  links,
+}: {
+  location: LocationItem;
+  links: Links;
+}) {
+  return (
+    <Card
+      title="Team Access"
+      action={
+        <Link href={links.team} className="text-xs font-black text-[#e1062a]">
+          Manage Team
+        </Link>
+      }
+    >
+      <Metric
+        label="Location Admin"
+        value={
+          location.owner_email
+            ? maskEmail(location.owner_email)
+            : "Not configured"
+        }
+      />
+      <Metric label="Reservation Manager" value="Not configured" />
+      <Metric label="View Only User" value="Not configured" />
+      <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm font-semibold text-white/45">
+        Team permissions are ready to configure. No saved permissions are shown
+        until a team member is added.
+      </p>
+    </Card>
+  );
+}
+function ReservationToolsCard({
+  location,
+  links,
+}: {
+  location: LocationItem;
+  links: Links;
+}) {
+  return (
+    <Card
+      title="Reservations"
+      eyebrow="Reservation center tools stay connected without taking over your owner dashboard"
+    >
+      <div className="grid gap-3 md:grid-cols-4">
+        <ToolLink href={links.reservations} label="View Reservations" />
+        <ToolLink
+          href={links.reserveDashboard}
+          label="Open Reservation Center"
+        />
+        <ToolLink href={links.layout} label="Open Layout Builder" />
+        <ToolLink href={links.qr} label="QR Booking Tools" />
+      </div>
+      <p className="mt-4 break-all text-xs font-semibold text-white/35">
+        Embed URL: https://theouthaven.com/embed/reservations/{location.id}
+      </p>
+    </Card>
   );
 }
 
-function VisibilityWarning({ missing }: { missing: string[] }) {
+function EmptyState() {
   return (
-    <div className="mb-6 rounded-[1.75rem] border border-amber-300 bg-amber-50 p-5 text-amber-950">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={20} />
-        <div>
-          <p className="text-sm font-black">
-            This location is not visible in public search yet. Missing:{" "}
-            {missing.join(", ")}.
-          </p>
-          <p className="mt-1 text-xs font-semibold text-amber-900/70">
-            Public search requires is_searchable, clean data_status, no hidden
-            flag, and an open lifecycle status.
-          </p>
+    <div className="grid min-h-[560px] place-items-center rounded-[32px] border border-white/10 bg-[#10141b] p-8 text-center">
+      <div>
+        <Store className="mx-auto mb-4 text-white/25" size={52} />
+        <h2 className="text-3xl font-black">No locations yet</h2>
+        <p className="mx-auto mt-2 max-w-md text-white/50">
+          Claim or add a location to unlock your TheOutHaven owner dashboard.
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <Link
+            href="/business/claim"
+            className="rounded-2xl bg-[#e1062a] px-5 py-3 font-black"
+          >
+            Claim Location
+          </Link>
+          <Link
+            href="/locations/apply"
+            className="rounded-2xl border border-white/10 px-5 py-3 font-black"
+          >
+            Add Location
+          </Link>
         </div>
       </div>
     </div>
   );
 }
-
-function Stat({ label, value }: { label: string; value: number }) {
+function MobileLocationSwitcher({
+  locations,
+  selected,
+  onSelect,
+}: {
+  locations: LocationItem[];
+  selected: LocationItem | null;
+  onSelect: (id: string) => void;
+}) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-black/25 p-4">
-      <p className="text-xs font-black uppercase tracking-[0.18em] text-white/40">
-        {label}
-      </p>
-      <p className="mt-2 text-3xl font-black">{value}</p>
+    <div className="mb-4 rounded-3xl border border-white/10 bg-[#10141b] p-3 lg:hidden">
+      <div className="mb-2 flex items-center gap-2 text-sm font-black">
+        <Menu size={16} />
+        Location
+      </div>
+      <select
+        value={selected?.id || ""}
+        onChange={(e) => onSelect(e.target.value)}
+        className="w-full rounded-2xl border border-white/10 bg-black/40 p-3 text-sm font-bold"
+      >
+        {locations.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.display_name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
-function Pill({ children }: { children: React.ReactNode }) {
+function Card({
+  title,
+  eyebrow,
+  action,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white/60">
+    <section className="rounded-[28px] border border-white/10 bg-[#10141b] p-5 shadow-2xl shadow-black/20">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          {eyebrow && (
+            <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-white/35">
+              {eyebrow}
+            </p>
+          )}
+          <h3 className="text-lg font-black">{title}</h3>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+function StatCard({
+  icon,
+  label,
+  value,
+  note,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  note: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-[#10141b] p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <span className="rounded-2xl bg-[#e1062a]/15 p-2 text-[#e1062a]">
+          {icon}
+        </span>
+        <span className="text-xs font-bold text-white/30">Live</span>
+      </div>
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-white/35">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+      <p className="mt-1 text-xs font-semibold text-white/35">{note}</p>
+    </div>
+  );
+}
+function Metric({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: ReactNode;
+  note?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/35">
+        {label}
+      </p>
+      <p className="mt-1 text-base font-black">{value}</p>
+      {note && (
+        <p className="mt-1 text-xs font-semibold text-white/35">{note}</p>
+      )}
+    </div>
+  );
+}
+function ToolLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black hover:border-[#e1062a]/50 hover:bg-[#e1062a]/10"
+    >
+      {label}
+      <ExternalLink size={14} className="mt-3 text-white/35" />
+    </Link>
+  );
+}
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+      <p className="text-[11px] font-black uppercase tracking-wider text-white/35">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-bold text-white/75">{value}</p>
+    </div>
+  );
+}
+function Badge({ children, red }: { children: ReactNode; red?: boolean }) {
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-black uppercase ${red ? "bg-[#e1062a] text-white" : "bg-white/10 text-white/70"}`}
+    >
       {children}
     </span>
   );
 }
-
-function InfoCard({
-  title,
-  value,
-  subvalue,
-  icon,
-}: {
-  title: string;
-  value: string;
-  subvalue?: string;
-  icon: React.ReactNode;
-}) {
+function LocationMini({ location }: { location: LocationItem }) {
   return (
-    <div className="rounded-[1.75rem] border border-black/10 bg-white p-5">
-      <div className="mb-4 inline-flex rounded-full bg-black p-2 text-white">
-        {icon}
+    <div className="flex gap-3">
+      <div className="h-16 w-16 overflow-hidden rounded-2xl bg-white/10">
+        {getLocationImage(location) ? (
+          <img
+            src={getLocationImage(location) || undefined}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="grid h-full place-items-center">
+            <Store size={20} />
+          </div>
+        )}
       </div>
-      <p className="text-xs font-black uppercase tracking-[0.18em] text-black/40">
-        {title}
-      </p>
-      <p className="mt-2 text-sm font-black">{value}</p>
-      {subvalue && (
-        <p className="mt-1 text-xs font-semibold text-black/45">{subvalue}</p>
-      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-black">{location.display_name}</p>
+        <p className="text-xs font-semibold text-white/40">
+          {cityState(location) || "Location details"}
+        </p>
+        <p className="mt-2 inline-flex items-center gap-1 text-xs font-black text-white/45">
+          Switch location <ChevronDown size={13} />
+        </p>
+      </div>
     </div>
   );
 }
-
-function ContactBlock({ label, value }: { label: string; value?: string }) {
+function PlanCard({ location }: { location: LocationItem | null }) {
   return (
-    <div className="rounded-2xl bg-black/[0.04] p-4">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-black/35">
-        {label}
+    <div className="rounded-3xl border border-white/10 bg-[#121721] p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-black uppercase tracking-wider text-white/35">
+          Plan
+        </p>
+        {location && isPro(location) && (
+          <span className="rounded-full bg-[#e1062a] px-2 py-0.5 text-[10px] font-black">
+            PRO
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-sm font-black">
+        {location ? planName(location) : "Free Discovery"}
       </p>
-      <p className="mt-2 text-sm font-black">{value || "Not set"}</p>
+      <p className="mt-1 text-xs font-semibold text-white/35">
+        Status available from billing settings.
+      </p>
+      <Link
+        href="/business#plans"
+        className="mt-3 block rounded-2xl bg-white px-3 py-2 text-center text-xs font-black text-black"
+      >
+        Manage Plan
+      </Link>
     </div>
   );
 }
-
+function getLinks(location: LocationItem) {
+  const type = locationTypePathSegment[location.location_type];
+  return {
+    dashboard: "/locations/dashboard",
+    publicPage: `/locations/${type}/${location.id}`,
+    edit: `/locations/${type}/${location.id}/edit`,
+    qr: "/business/dashboard/qr-codes",
+    layout: "/reserve/dashboard/location-layout",
+    menu: `/locations/${type}/${location.id}/menu`,
+    photos: `/locations/${type}/${location.id}/edit`,
+    vip: `/locations/${type}/${location.id}/vip`,
+    analytics: "/business/dashboard/analytics",
+    hours: "/reserve/dashboard/location-layout",
+    team: "/business/dashboard/settings",
+    settings: "/business/dashboard/settings",
+    messages: "/business/dashboard/messaging",
+    reservations: "/reserve/dashboard/reservations",
+    reserveDashboard: "/reserve/dashboard",
+  };
+}
+function cityState(location: LocationItem) {
+  return [location.city, location.state].filter(Boolean).join(", ");
+}
+function isPro(location: LocationItem) {
+  const raw = String(
+    location.subscription_plan || location.plan || "",
+  ).toLowerCase();
+  return (
+    Boolean(location.is_pro) || raw.includes("pro") || raw.includes("partner")
+  );
+}
+function planName(location: LocationItem) {
+  return isPro(location) ? "Partner Plan" : "Free Discovery";
+}
+function categoryLine(location: LocationItem) {
+  const tags = [
+    getPrimaryCategory(location),
+    ...getLocationTags(location).slice(0, 2),
+  ].filter(Boolean);
+  return tags.length
+    ? tags.join(" · ")
+    : location.location_type === "restaurant"
+      ? "Restaurant"
+      : "Activity";
+}
+function hasReservations(location: LocationItem) {
+  return Boolean(
+    location.reservation_url ||
+    location.external_reservation_url ||
+    location.reservation_link ||
+    Object.keys(location.reservation_settings || {}).length,
+  );
+}
+function hasHours(location: LocationItem) {
+  const settings = location.reservation_settings || {};
+  return Boolean(
+    getSettingValue(settings, "hours") ||
+    getSettingValue(settings, "weekly_hours") ||
+    location.hours,
+  );
+}
+function hoursText(location: LocationItem) {
+  return hasHours(location) ? "Configured" : "Hours not configured";
+}
+function getSettingValue(settings: Record<string, unknown>, key: string) {
+  return settings[key];
+}
 function maskEmail(email: string) {
   const [name, domain] = email.split("@");
-  if (!name || !domain) return email;
-
-  return `${name[0]}***@${domain}`;
+  return name && domain ? `${name[0]}***@${domain}` : email;
 }
