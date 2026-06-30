@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canTransitionReservationStatus, getReservationStatusLabel } from "@/lib/reservations/ui";
-import { getReserveBookingUrl, getReserveDashboardUrl, getReserveEmbedUrl } from "@/lib/reservations/reserveLinks";
+import { getReserveActionLinks, getReserveBookingUrl, getReserveDashboardUrl, getReserveEmbedUrl, getReserveLocationBookingUrl } from "@/lib/reservations/reserveLinks";
 import { dedupeFloorResources, getFloorSnapshotState, resourceAssignmentPayload, resourceId, resourceSource } from "@/lib/reservations/floorSnapshot";
 
 describe("Reserve Command Center helpers", () => {
@@ -13,7 +13,13 @@ describe("Reserve Command Center helpers", () => {
   it("builds dashboard, booking, and embed links", () => {
     expect(getReserveDashboardUrl("settings", "embed")).toBe("/reserve/dashboard?tab=settings&section=embed");
     expect(getReserveBookingUrl("loc_123", "restaurant")).toBe("/reserve/restaurant/loc_123");
+    expect(getReserveLocationBookingUrl("loc_123", "restaurant")).toBe("/reserve/location/loc_123?type=restaurant");
     expect(getReserveEmbedUrl("loc_123")).toBe("/embed/reservations/loc_123");
+    expect(getReserveActionLinks({ locationId: "loc_123", locationType: "restaurant", adminLocationId: "loc_123" })).toMatchObject({
+      bookingHref: "/reserve/location/loc_123?type=restaurant",
+      embedHref: "/embed/reservations/loc_123?preview=1&type=restaurant",
+      qrHref: "/admin/dashboard/claim-qrs?locationId=loc_123&type=restaurant&mode=reservations",
+    });
   });
 
   it("deduplicates accidental duplicate floor resources by name, capacity, and type", () => {
@@ -59,11 +65,11 @@ describe("Reserve Command Center helpers", () => {
   it("uses canonical resource ids and marks seated reservations unavailable", () => {
     const resource = { layout_item_id: "layout-table-1", label: "Table 1", capacity: 2 };
     expect(resourceId(resource)).toBe("layout-table-1");
-    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "seated", bookable_item_id: "layout-table-1" }])).toMatchObject({
+    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "seated", bookable_item_name: "Table 1" }])).toMatchObject({
       status: "Seated",
       available: false,
     });
-    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "completed", bookable_item_id: "layout-table-1" }])).toMatchObject({
+    expect(getFloorSnapshotState(resource, [{ id: "res-1", status: "completed", bookable_item_name: "Table 1" }])).toMatchObject({
       status: "Open",
       available: true,
     });

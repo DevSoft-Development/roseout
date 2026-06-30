@@ -20,20 +20,52 @@ export function getReserveDashboardUrl(tab = "today", section?: string, context:
   return `/reserve/dashboard${reserveQuery({ ...context, tab, section })}`;
 }
 
-export function getReserveEmbedUrl(locationId?: string) {
-  return locationId ? `/embed/reservations/${encodeURIComponent(locationId)}` : "";
+type ReserveEmbedOptions = { preview?: boolean; type?: string };
+
+export function getReserveEmbedUrl(locationId?: string, options: ReserveEmbedOptions = {}) {
+  return locationId
+    ? `/embed/reservations/${encodeURIComponent(locationId)}${reserveQuery({ preview: options.preview ? "1" : undefined, type: options.type })}`
+    : "";
 }
 
 export function getReserveQrUrl(locationId?: string) {
   return locationId ? `/business/dashboard/qr-codes?locationId=${encodeURIComponent(locationId)}&mode=reservations` : "";
 }
 
+export function getReserveAdminQrUrl(locationId?: string, type = "restaurant") {
+  return locationId
+    ? `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}&type=${encodeURIComponent(type)}&mode=reservations`
+    : "";
+}
+
 export function getReserveBookingUrl(locationId?: string, type = "restaurant") {
   return locationId ? `/reserve/${encodeURIComponent(type)}/${encodeURIComponent(locationId)}` : "";
 }
 
+export function getReserveLocationBookingUrl(locationId?: string, type = "restaurant") {
+  return locationId
+    ? `/reserve/location/${encodeURIComponent(locationId)}${reserveQuery({ type })}`
+    : "";
+}
+
 export function getReservePublicProfileUrl(locationId?: string) {
   return locationId ? `/reserve/location/${encodeURIComponent(locationId)}` : "";
+}
+
+type ReserveActionLinkInput = {
+  locationId?: string;
+  locationType?: string;
+  adminLocationId?: string;
+  isDemo?: boolean;
+};
+
+export function getReserveActionLinks({ locationId, locationType = "restaurant", adminLocationId, isDemo }: ReserveActionLinkInput) {
+  const preview = Boolean(adminLocationId || isDemo);
+  return {
+    bookingHref: getReserveLocationBookingUrl(locationId, locationType),
+    embedHref: getReserveEmbedUrl(locationId, { preview, type: locationType }),
+    qrHref: preview ? getReserveAdminQrUrl(locationId, locationType) : getReserveQrUrl(locationId),
+  };
 }
 
 export const getEmbedLink = getReserveEmbedUrl;

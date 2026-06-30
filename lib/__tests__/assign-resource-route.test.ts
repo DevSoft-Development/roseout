@@ -30,6 +30,14 @@ describe("assign resource route helpers", () => {
     });
   });
 
+  it("defaults assignment type to table for label-only safety", () => {
+    expect(buildAssignmentPayload({ id: "demo-table", source: "manual_label", label: "Demo Table", type: null, capacity: 4 }, false)).toEqual({
+      bookable_item_id: null,
+      bookable_item_name: "Demo Table",
+      bookable_item_type: "table",
+    });
+  });
+
   it("detects invalid UUID update errors for label-only retry", () => {
     expect(isInvalidUuidInput({ code: "22P02" })).toBe(true);
     expect(isInvalidUuidInput({ message: 'invalid input syntax for type uuid: "table-1"' })).toBe(true);

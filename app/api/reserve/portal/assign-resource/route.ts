@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
@@ -331,7 +332,7 @@ export function buildAssignmentPayload(resource: AssignableResource, includeUpda
   const payload: Record<string, any> = {
     bookable_item_id: isUuid(resource.id) ? resource.id : null,
     bookable_item_name: clean(resource.label) || "Selected table",
-    bookable_item_type: resource.type || null,
+    bookable_item_type: resource.type || "table",
   };
   if (includeUpdatedAt) payload.updated_at = new Date().toISOString();
   return payload;
@@ -345,6 +346,15 @@ async function updateReservationAssignment(
   includeUpdatedAt: boolean,
 ) {
   const payload = buildAssignmentPayload(resource, includeUpdatedAt);
+  let lastUpdateFailure: any = null;
+
+  const makeUpdateError = () => {
+    const error = new Error(UNKNOWN_ASSIGNMENT_MESSAGE) as Error & { code?: string; debugId?: string; updateFailure?: any };
+    error.code = "assignment_update_failed";
+    error.debugId = context.debugId;
+    error.updateFailure = lastUpdateFailure;
+    return error;
+  };
 
   const runUpdate = async (
     nextPayload: Record<string, any>,
@@ -358,9 +368,16 @@ async function updateReservationAssignment(
       .select("*")
       .single();
     if (update.error) {
+      lastUpdateFailure = { error: update.error, operation, payload: nextPayload };
       console.error("RESERVE_ASSIGN_RESOURCE_UPDATE_FAILED", {
+        debugId: context.debugId,
+        operation,
         reservationId,
         locationId,
+        bodyLocationId: context.bodyLocationId,
+        adminLocationId: context.adminLocationId,
+        reservationLocationId: context.reservationLocationId,
+        reservationType: context.reservationType,
         rawResourceId: resource.id,
         safeBookableItemId: isUuid(resource.id) ? resource.id : null,
         resourceLabel: resource.label,
@@ -391,7 +408,7 @@ async function updateReservationAssignment(
     if (!retry.error) return retry.data;
     if (isMissingColumn(retry.error))
       throw new Error(MISSING_ASSIGNMENT_MESSAGE);
-    throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
+    throw makeUpdateError();
   }
 
   if (
@@ -411,7 +428,7 @@ async function updateReservationAssignment(
 
   if (isMissingColumn(update.error))
     throw new Error(MISSING_ASSIGNMENT_MESSAGE);
-  throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
+  throw makeUpdateError();
 }
 
 export async function POST(request: NextRequest) {
@@ -420,7 +437,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const reservationId = clean(body.reservation_id);
-  const locationId = clean(body.adminLocationId || body.location_id);
+  const bodyLocationId = clean(body.location_id);
+  const adminLocationId = clean(body.adminLocationId);
+  let locationId = clean(body.adminLocationId || body.location_id);
   const resourceId = clean(body.resource_id) || null;
   const resourceSource =
     clean(body.resource_source || body.resource_table || body.source) || null;
@@ -431,9 +450,11 @@ export async function POST(request: NextRequest) {
   const resourceCapacity = Number.isFinite(parsedCapacity)
     ? parsedCapacity
     : null;
-  const context = {
+  const context: Record<string, any> = {
     reservationId,
     locationId,
+    bodyLocationId,
+    adminLocationId,
     resourceId,
     resourceLabel,
     resourceSource,
@@ -481,7 +502,6 @@ export async function POST(request: NextRequest) {
     .from("location_reservations")
     .select("*")
     .eq("id", reservationId)
-    .eq("location_id", locationId)
     .maybeSingle();
   if (before.error) {
     logDbFailure("load_reservation_before_assignment", context, before.error);
@@ -494,14 +514,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Select a reservation before assigning a table.",
+        error: "Select a valid reservation before assigning a table.",
       },
       { status: 404 },
     );
 
+  const authoritativeLocationId = clean(before.data.location_id);
+  const authoritativeLocationType = clean(before.data.location_type);
+  if (!authoritativeLocationId)
+    return NextResponse.json(
+      { success: false, error: "Select a valid reservation before assigning a table." },
+      { status: 404 },
+    );
+  locationId = authoritativeLocationId;
+  context.locationId = authoritativeLocationId;
+  context.reservationLocationId = authoritativeLocationId;
+  context.reservationType = authoritativeLocationType;
+
   try {
     const foundResource = resourceId && isUuid(resourceId)
-      ? await findResource(resourceId, locationId, resourceSource, context)
+      ? await findResource(resourceId, authoritativeLocationId, resourceSource, context)
       : null;
     const fallbackLabel = resourceLabel || "Selected table";
     if (!foundResource && !resourceLabel && !resourceId)
@@ -527,7 +559,7 @@ export async function POST(request: NextRequest) {
       before.data,
       resource,
       reservationId,
-      locationId,
+      authoritativeLocationId,
       context,
     );
     if (validationError)
@@ -536,12 +568,14 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
 
+    const debugId = crypto.randomUUID();
     const updatedReservation = await updateReservationAssignment(
       reservationId,
-      locationId,
+      authoritativeLocationId,
       resource,
       {
         ...context,
+        debugId,
         resourceLabel: resource.label,
         resourceSource: resource.source,
       },
@@ -550,7 +584,7 @@ export async function POST(request: NextRequest) {
 
     await logAdminLocationAction({
       adminUser: auth.adminUser,
-      locationId,
+      locationId: authoritativeLocationId,
       actionType: "admin_reservation_assign_resource",
       targetType: "reservation",
       targetId: reservationId,
@@ -573,7 +607,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     const message = clean(error?.message) || UNKNOWN_ASSIGNMENT_MESSAGE;
-    console.error("RESERVE_ASSIGN_RESOURCE_FAILED", { ...context, message });
+    console.error("RESERVE_ASSIGN_RESOURCE_FAILED", { ...context, debugId: error?.debugId, code: error?.code, message });
     const status =
       message === MISSING_ASSIGNMENT_MESSAGE
         ? 500
@@ -582,6 +616,9 @@ export async function POST(request: NextRequest) {
           : message.includes("unavailable") || message.includes("fit")
             ? 409
             : 500;
-    return NextResponse.json({ success: false, error: message }, { status });
+    return NextResponse.json(
+      { success: false, code: error?.code, error: message, debugId: error?.debugId },
+      { status },
+    );
   }
 }
