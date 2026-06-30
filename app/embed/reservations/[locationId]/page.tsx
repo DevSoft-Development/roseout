@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getLocationMainImage } from "@/lib/admin-crm";
 import ReserveBookingForm from "@/components/ReserveBookingForm";
 import { getOptionalCurrentAdmin } from "@/lib/admin/admin-access";
 
@@ -20,7 +19,10 @@ export default async function ReservationEmbedPage({ params, searchParams }: { p
   }
 
   const name = location.name || location.location_name || "TheOutHaven location";
-  const image = getLocationMainImage(location);
+  if (previewAllowed) {
+    const src = `/embed/reservations/${encodeURIComponent(location.id)}?type=${encodeURIComponent(type || location.location_type || "location")}`;
+    return <main className="min-h-screen bg-[#090706] p-4 text-white sm:p-8"><section className="mx-auto mb-5 max-w-5xl rounded-[2rem] border border-rose-300/20 bg-rose-500/10 p-5"><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Admin embed preview</p><h1 className="mt-2 text-3xl font-black">{name}</h1><p className="mt-2 text-sm text-white/65">Copy this iframe into your website, or preview the live embedded booking card below.</p><code className="mt-4 block overflow-x-auto rounded-2xl bg-black/30 p-4 text-xs">{`<iframe src="${src}" title="TheOutHaven reservations"></iframe>`}</code></section><section className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-white/10 bg-[#120d0c] shadow-2xl"><div className="p-5"><ReserveBookingForm locationId={location.id} locationType={type || location.location_type || "restaurant"} locationName={name} defaultDuration={Number(location.default_duration_minutes || 90)} /></div></section></main>;
+  }
 
-  return <main className="min-h-screen bg-[#090706] p-4 text-white sm:p-6"><section className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-white/10 bg-[#120d0c] shadow-2xl"><div className="relative h-48 bg-black">{image ? <img src={image} alt={name} className="h-full w-full object-cover" /> : null}<div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" /><div className="absolute bottom-5 left-5 right-5"><p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">TheOutHaven Reservations</p><h1 className="mt-2 text-3xl font-black">{name}</h1></div></div><div className="p-5"><ReserveBookingForm locationId={location.id} locationType={type || location.location_type || "restaurant"} locationName={name} defaultDuration={Number(location.default_duration_minutes || 90)} /></div></section></main>;
+  return <main className="min-h-screen bg-transparent p-3 text-white"><section className="mx-auto max-w-2xl overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#120d0c]"><div className="p-4"><ReserveBookingForm locationId={location.id} locationType={type || location.location_type || "restaurant"} locationName={name} defaultDuration={Number(location.default_duration_minutes || 90)} /></div></section></main>;
 }

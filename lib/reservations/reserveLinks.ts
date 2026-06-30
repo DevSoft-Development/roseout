@@ -28,8 +28,8 @@ export function getReserveEmbedUrl(locationId?: string, options: ReserveEmbedOpt
     : "";
 }
 
-export function getReserveQrUrl(locationId?: string) {
-  return locationId ? `/business/dashboard/qr-codes?locationId=${encodeURIComponent(locationId)}&mode=reservations` : "";
+export function getReserveQrUrl(locationId?: string, type?: string) {
+  return locationId ? `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}&type=${encodeURIComponent(type || "location")}&mode=reservations` : "";
 }
 
 export function getReserveAdminQrUrl(locationId?: string, type?: string) {
@@ -39,7 +39,7 @@ export function getReserveAdminQrUrl(locationId?: string, type?: string) {
 }
 
 export function getReserveBookingUrl(locationId?: string, type?: string) {
-  return locationId ? `/reserve/${encodeURIComponent(type || "location")}/${encodeURIComponent(locationId)}` : "";
+  return getReserveLocationBookingUrl(locationId, type);
 }
 
 export function getReserveLocationBookingUrl(locationId?: string, type?: string) {
@@ -60,11 +60,14 @@ type ReserveActionLinkInput = {
 };
 
 export function getReserveActionLinks({ locationId, locationType, adminLocationId, isDemo }: ReserveActionLinkInput) {
-  const preview = Boolean(adminLocationId || isDemo);
+  void isDemo;
+  const embedSetupHref = locationId ? getReserveDashboardUrl("settings", "embed", { adminLocationId: adminLocationId || locationId, type: locationType }) : "";
   return {
     bookingHref: getReserveLocationBookingUrl(locationId, locationType),
-    embedHref: getReserveEmbedUrl(locationId, { preview, type: locationType }),
-    qrHref: preview ? getReserveAdminQrUrl(locationId, locationType) : getReserveQrUrl(locationId),
+    embedHref: getReserveEmbedUrl(locationId, { preview: false, type: locationType }),
+    embedPreviewHref: getReserveEmbedUrl(locationId, { preview: true, type: locationType }),
+    embedSetupHref,
+    qrHref: getReserveAdminQrUrl(locationId, locationType),
   };
 }
 

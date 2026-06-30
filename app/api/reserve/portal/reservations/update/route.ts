@@ -53,6 +53,11 @@ export async function POST(request: NextRequest) {
     let locationId = adminLocationId || requestedLocationId;
     const requestedLocationType = normalizeType(cleanString(body.location_type));
     const status = normalizeStatus(cleanString(body.status));
+    const requestedDate = cleanString(body.reservation_date);
+    const requestedTime = cleanString(body.reservation_time);
+    const requestedDuration = Number(body.duration_minutes);
+    const requestedNote = cleanString(body.special_request || body.notes || body.reason);
+    const isMoveTimeRequest = Boolean(requestedDate || requestedTime || Number.isFinite(requestedDuration) || requestedNote);
 
     if (!reservationId) {
       return NextResponse.json(
@@ -74,7 +79,7 @@ export async function POST(request: NextRequest) {
       locationId = String(ownerAccess.location.id);
     }
 
-    if (!status) {
+    if (!status && !isMoveTimeRequest) {
       return NextResponse.json(
         { error: "Invalid reservation status." },
         { status: 400 }
@@ -87,17 +92,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "We could not find that reservation for this location." }, { status: 404 });
     }
 
-    if (!canTransitionReservationStatus(beforeResult.data.status, status)) {
+    if (status && !canTransitionReservationStatus(beforeResult.data.status, status)) {
       return NextResponse.json(
         { error: "That reservation can’t move to the requested status from its current state." },
         { status: 400 }
       );
     }
+    if (isMoveTimeRequest && ["completed", "cancelled", "declined", "no_show"].includes(String(beforeResult.data.status || ""))) {
+      return NextResponse.json({ error: "Completed, cancelled, or no-show reservations cannot be moved." }, { status: 400 });
+    }
 
-    const updatePayload: Record<string, string> = {
-      status,
+    const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
+    if (status) updatePayload.status = status;
+    if (requestedDate) updatePayload.reservation_date = requestedDate;
+    if (requestedTime) updatePayload.reservation_time = requestedTime;
+    if (Number.isFinite(requestedDuration) && requestedDuration > 0) updatePayload.duration_minutes = requestedDuration;
+    if (requestedNote) updatePayload.special_request = requestedNote;
 
     const now = new Date().toISOString();
     if (status === "arrived" || status === "checked_in") {
@@ -129,12 +141,12 @@ export async function POST(request: NextRequest) {
       await logAdminLocationAction({
         adminUser: body.__adminUser,
         locationId,
-        actionType: status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`,
+        actionType: status ? (status === "cancelled" ? "admin_reservation_cancel" : `admin_reservation_${status}`) : "admin_reservation_move_time",
         targetType: "reservation",
         targetId: reservationId,
         beforeData: beforeResult.data || null,
         afterData: data,
-        metadata: { locationType: requestedLocationType || beforeResult.data.location_type },
+        metadata: { locationType: requestedLocationType || beforeResult.data.location_type, movedTime: isMoveTimeRequest },
         request,
       });
     }
