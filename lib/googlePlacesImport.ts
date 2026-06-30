@@ -207,6 +207,15 @@ const ACTIVITY_QUERIES = [
 
 type ImportType = "restaurants" | "activities" | "both";
 
+type ImportCursor = {
+  kind?: "restaurant" | "activity";
+  areaIndex?: number;
+  queryIndex?: number;
+  placeIndex?: number;
+};
+
+type ImportPausedReason = "time_budget" | "checked_budget" | "imported_budget";
+
 type GooglePlace = {
   place_id?: string;
   name?: string;
@@ -392,6 +401,11 @@ export type GooglePlacesImportOptions = {
   market?: MarketKey | string | null;
   requestedArea?: string | null;
   allowMarketCorrection?: boolean;
+  maxRuntimeMs?: number;
+  stopAfterChecked?: number;
+  stopAfterImported?: number;
+  cursor?: ImportCursor | null;
+  interactive?: boolean;
 };
 
 function getGoogleKey() {
@@ -1102,6 +1116,18 @@ export function parseAreas(areas?: string | null) {
 }
 
 
+function createEmptyImportStats() {
+  return { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, imported_by_market: {} as Record<string, number>, skipped_by_reason: {} as Record<string, number>, rejected_examples: [] as any[], duplicate_examples: [] as any[], wrong_state_examples: [] as any[], wrong_market_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[], addedLocations: [] as ReturnType<typeof formatAddedLocation>[] };
+}
+
+function shouldStopImport(startedAt: number, options: GooglePlacesImportOptions, stats: { checked: number; imported: number }): ImportPausedReason | null {
+  const maxRuntimeMs = Math.max(5_000, Number(options.maxRuntimeMs || 0));
+  if (maxRuntimeMs && Date.now() - startedAt >= maxRuntimeMs) return "time_budget";
+  if (options.stopAfterChecked && stats.checked >= options.stopAfterChecked) return "checked_budget";
+  if (options.stopAfterImported && stats.imported >= options.stopAfterImported) return "imported_budget";
+  return null;
+}
+
 export function mergeCountMaps(...maps: Array<Record<string, number>>): Record<string, number> {
   return maps.reduce<Record<string, number>>((merged, map) => {
     for (const [key, value] of Object.entries(map)) merged[key] = (merged[key] || 0) + value;
@@ -1140,46 +1166,50 @@ async function runGroup(
   areas: string[],
   limit: number,
   seenPlaceIds: Set<string>,
-  options: GooglePlacesImportOptions = {}
+  options: GooglePlacesImportOptions = {},
+  startedAt = Date.now()
 ) {
-  const stats = { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, imported_by_market: {} as Record<string, number>, skipped_by_reason: {} as Record<string, number>, rejected_examples: [] as any[], duplicate_examples: [] as any[], wrong_state_examples: [] as any[], wrong_market_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[], addedLocations: [] as ReturnType<typeof formatAddedLocation>[] };
+  const stats = createEmptyImportStats();
+  const cursor = options.cursor?.kind === kind ? options.cursor : null;
+  const startAreaIndex = Math.max(0, Math.min(Number(cursor?.areaIndex || 0), areas.length));
 
-  for (const area of areas) {
-    for (const baseQuery of queries) {
+  for (let areaIndex = startAreaIndex; areaIndex < areas.length; areaIndex++) {
+    const area = areas[areaIndex];
+    const startQueryIndex = areaIndex === startAreaIndex ? Math.max(0, Math.min(Number(cursor?.queryIndex || 0), queries.length)) : 0;
+
+    for (let queryIndex = startQueryIndex; queryIndex < queries.length; queryIndex++) {
+      const baseQuery = queries[queryIndex];
       const query = `${baseQuery} in ${area}`;
       stats.queries_used.push(query);
 
       try {
-        const places = await googleTextSearch(query);
+        const places = (await googleTextSearch(query)).slice(0, limit);
+        const startPlaceIndex = areaIndex === startAreaIndex && queryIndex === startQueryIndex ? Math.max(0, Math.min(Number(cursor?.placeIndex || 0), places.length)) : 0;
 
-        for (const place of places.slice(0, limit)) {
+        for (let placeIndex = startPlaceIndex; placeIndex < places.length; placeIndex++) {
+          const place = places[placeIndex];
+          const stopBeforePlace = shouldStopImport(startedAt, options, stats);
+          if (stopBeforePlace) return { stats: normalizeImportSkipCounts(stats), nextCursor: { kind, areaIndex, queryIndex, placeIndex }, completed: false, pausedReason: stopBeforePlace };
+
           if (!place.place_id) continue;
           stats.checked += 1;
-          if (seenPlaceIds.has(place.place_id)) { stats.skipped += 1; stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (stats.duplicate_examples.length < 10) stats.duplicate_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, matchedBy: "google_place_id", existingId: null, reason: "Skipped because this Google Place ID was already returned earlier in this import run." }); continue; }
-          seenPlaceIds.add(place.place_id);
-
-          const result =
-            kind === "restaurant"
-              ? await upsertRestaurant(place, query, options)
-              : await upsertActivity(place, query, options);
-          if (result.status === "imported") { stats.imported += 1; if (result.location) stats.addedLocations.push(result.location); const m = normalizeMarketKey(result.validation?.correctedMarket || result.validation?.inferredMarket || options.requestedMarket); stats.imported_by_market[m] = (stats.imported_by_market[m] || 0) + 1; }
-          if (result.status === "skipped") { stats.skipped += 1; stats.skipped_by_reason.low_quality = (stats.skipped_by_reason.low_quality || 0) + 1; }
-          if (result.status === "skipped_duplicate") {
-            stats.skipped += 1;
-            stats.skipped_duplicate += 1;
-            stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1;
-            if (result.duplicate && stats.duplicate_examples.length < 25) stats.duplicate_examples.push(result.duplicate);
-          }
-          if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") {
-            stats.skipped += 1;
-            if (result.status === "skipped_wrong_state") { stats.skipped_wrong_state += 1; stats.skipped_by_reason.wrong_state = (stats.skipped_by_reason.wrong_state || 0) + 1; } else { stats.skipped_wrong_market += 1; stats.skipped_by_reason.wrong_market = (stats.skipped_by_reason.wrong_market || 0) + 1; stats.market_mismatch_count = stats.skipped_wrong_market; }
-            const v = result.validation; if (v) { const im = normalizeMarketKey(v.inferredMarket); stats.inferred_market_counts[im] = (stats.inferred_market_counts[im] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; const example = { name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: normalizeMarketKey(v.requestedMarket), detectedState: v.state, detectedCity: v.city, primary_reason: result.status === "skipped_wrong_state" ? "wrong_state" : "wrong_market", reason: v.reason }; if (stats.rejected_examples.length < 10) stats.rejected_examples.push(example); if (result.status === "skipped_wrong_state" && stats.wrong_state_examples.length < 10) stats.wrong_state_examples.push(example); if (result.status === "skipped_wrong_market" && stats.wrong_market_examples.length < 10) stats.wrong_market_examples.push(example); }
-          }
-          if (result.status === "failed") {
-            stats.failed += 1;
-            if (result.error) stats.errors.push(`${query}: ${result.error}`);
+          if (seenPlaceIds.has(place.place_id)) { stats.skipped += 1; stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (stats.duplicate_examples.length < 10) stats.duplicate_examples.push({ name: place.name, address: place.formatted_address || place.vicinity, matchedBy: "google_place_id", existingId: null, reason: "Skipped because this Google Place ID was already returned earlier in this import run." }); }
+          else {
+            seenPlaceIds.add(place.place_id);
+            const result = kind === "restaurant" ? await upsertRestaurant(place, query, options) : await upsertActivity(place, query, options);
+            if (result.status === "imported") { stats.imported += 1; if (result.location) stats.addedLocations.push(result.location); const m = normalizeMarketKey(result.validation?.correctedMarket || result.validation?.inferredMarket || options.requestedMarket); stats.imported_by_market[m] = (stats.imported_by_market[m] || 0) + 1; }
+            if (result.status === "skipped") { stats.skipped += 1; stats.skipped_by_reason.low_quality = (stats.skipped_by_reason.low_quality || 0) + 1; }
+            if (result.status === "skipped_duplicate") { stats.skipped += 1; stats.skipped_duplicate += 1; stats.skipped_by_reason.duplicate = (stats.skipped_by_reason.duplicate || 0) + 1; if (result.duplicate && stats.duplicate_examples.length < 25) stats.duplicate_examples.push(result.duplicate); }
+            if (result.status === "skipped_wrong_state" || result.status === "skipped_wrong_market") {
+              stats.skipped += 1;
+              if (result.status === "skipped_wrong_state") { stats.skipped_wrong_state += 1; stats.skipped_by_reason.wrong_state = (stats.skipped_by_reason.wrong_state || 0) + 1; } else { stats.skipped_wrong_market += 1; stats.skipped_by_reason.wrong_market = (stats.skipped_by_reason.wrong_market || 0) + 1; stats.market_mismatch_count = stats.skipped_wrong_market; }
+              const v = result.validation; if (v) { const im = normalizeMarketKey(v.inferredMarket); stats.inferred_market_counts[im] = (stats.inferred_market_counts[im] || 0) + 1; if (v.state) stats.state_counts[v.state] = (stats.state_counts[v.state] || 0) + 1; const example = { name: place.name, address: place.formatted_address || place.vicinity, requestedMarket: normalizeMarketKey(v.requestedMarket), detectedState: v.state, detectedCity: v.city, primary_reason: result.status === "skipped_wrong_state" ? "wrong_state" : "wrong_market", reason: v.reason }; if (stats.rejected_examples.length < 10) stats.rejected_examples.push(example); if (result.status === "skipped_wrong_state" && stats.wrong_state_examples.length < 10) stats.wrong_state_examples.push(example); if (result.status === "skipped_wrong_market" && stats.wrong_market_examples.length < 10) stats.wrong_market_examples.push(example); }
+            }
+            if (result.status === "failed") { stats.failed += 1; if (result.error) stats.errors.push(`${query}: ${result.error}`); }
           }
 
+          const stopAfterPlace = shouldStopImport(startedAt, options, stats);
+          if (stopAfterPlace) return { stats: normalizeImportSkipCounts(stats), nextCursor: placeIndex + 1 < places.length ? { kind, areaIndex, queryIndex, placeIndex: placeIndex + 1 } : queryIndex + 1 < queries.length ? { kind, areaIndex, queryIndex: queryIndex + 1, placeIndex: 0 } : areaIndex + 1 < areas.length ? { kind, areaIndex: areaIndex + 1, queryIndex: 0, placeIndex: 0 } : null, completed: areaIndex + 1 >= areas.length && queryIndex + 1 >= queries.length && placeIndex + 1 >= places.length, pausedReason: stopAfterPlace };
           await sleep(125);
         }
       } catch (error: unknown) {
@@ -1187,12 +1217,15 @@ async function runGroup(
         stats.errors.push(`${query}: ${getErrorMessage(error)}`);
       }
 
+      const stopAfterQuery = shouldStopImport(startedAt, options, stats);
+      if (stopAfterQuery) return { stats: normalizeImportSkipCounts(stats), nextCursor: queryIndex + 1 < queries.length ? { kind, areaIndex, queryIndex: queryIndex + 1, placeIndex: 0 } : areaIndex + 1 < areas.length ? { kind, areaIndex: areaIndex + 1, queryIndex: 0, placeIndex: 0 } : null, completed: areaIndex + 1 >= areas.length && queryIndex + 1 >= queries.length, pausedReason: stopAfterQuery };
       await sleep(200);
     }
   }
 
-  return normalizeImportSkipCounts(stats);
+  return { stats: normalizeImportSkipCounts(stats), nextCursor: null, completed: true, pausedReason: null as ImportPausedReason | null };
 }
+
 
 export async function runGooglePlacesImport(options: GooglePlacesImportOptions = {}) {
   const type = options.type === "all" ? "both" : options.type || "both";
@@ -1208,16 +1241,29 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
   const restaurantQueries = filterQueries(CUISINE_QUERIES, primaryTag, maxQueries);
   const activityQueries = filterQueries(ACTIVITY_QUERIES, primaryTag, maxQueries);
   const seenPlaceIds = new Set<string>();
+  const startedAt = Date.now();
+  const emptyGroup = { stats: createEmptyImportStats(), nextCursor: null as ImportCursor | null, completed: true, pausedReason: null as ImportPausedReason | null };
 
-  const restaurant = type === "activities"
-    ? { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, imported_by_market: {} as Record<string, number>, skipped_by_reason: {} as Record<string, number>, rejected_examples: [] as any[], duplicate_examples: [] as any[], wrong_state_examples: [] as any[], wrong_market_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[], addedLocations: [] as ReturnType<typeof formatAddedLocation>[] }
-    : await runGroup("restaurant", restaurantQueries, areas, limit, seenPlaceIds, options);
+  let restaurantRun = emptyGroup;
+  let activityRun = emptyGroup;
 
-  const activity = type === "restaurants"
-    ? { checked: 0, imported: 0, skipped: 0, failed: 0, skipped_duplicate: 0, skipped_wrong_state: 0, skipped_wrong_market: 0, skipped_out_of_area: 0, market_mismatch_count: 0, imported_by_market: {} as Record<string, number>, skipped_by_reason: {} as Record<string, number>, rejected_examples: [] as any[], duplicate_examples: [] as any[], wrong_state_examples: [] as any[], wrong_market_examples: [] as any[], inferred_market_counts: {} as Record<string, number>, state_counts: {} as Record<string, number>, errors: [] as string[], queries_used: [] as string[], addedLocations: [] as ReturnType<typeof formatAddedLocation>[] }
-    : await runGroup("activity", activityQueries, areas, limit, seenPlaceIds, options);
+  if (type !== "activities" && options.cursor?.kind !== "activity") {
+    restaurantRun = await runGroup("restaurant", restaurantQueries, areas, limit, seenPlaceIds, options, startedAt);
+  }
 
-  await supabaseAdmin.from("ai_response_cache").delete().gte("created_at", "2000-01-01");
+  if (type !== "restaurants" && restaurantRun.completed) {
+    const activityOptions = options.cursor?.kind === "restaurant" ? { ...options, cursor: null } : options;
+    activityRun = await runGroup("activity", activityQueries, areas, limit, seenPlaceIds, activityOptions, startedAt);
+  }
+
+  const restaurant = restaurantRun.stats;
+  const activity = activityRun.stats;
+  const completed = restaurantRun.completed && (type === "restaurants" || activityRun.completed);
+  const pausedReason = restaurantRun.pausedReason || activityRun.pausedReason;
+  const nextCursor = restaurantRun.nextCursor || activityRun.nextCursor || (!completed && type === "both" && restaurantRun.completed ? { kind: "activity" as const, areaIndex: 0, queryIndex: 0, placeIndex: 0 } : null);
+  const partial = !completed;
+
+  if (completed) await supabaseAdmin.from("ai_response_cache").delete().gte("created_at", "2000-01-01");
 
   const imported = restaurant.imported + activity.imported;
   const skipped = restaurant.skipped + activity.skipped;
@@ -1232,7 +1278,7 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     primaryTag,
     minRating: Number(options.minRating || 3.8),
     requiredFields: [options.requirePhoto !== false && "photo", options.requirePhone !== false && "phone", options.requireWebsite !== false && "website", options.requireCuisineType !== false && "type", options.requireLocation !== false && "location", options.requireHours !== false && "hours"].filter(Boolean),
-    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas, requirePhoto: options.requirePhoto !== false, requirePhone: options.requirePhone !== false, requireWebsite: options.requireWebsite !== false, requireLocation: options.requireLocation !== false, requireCuisineType: options.requireCuisineType !== false, requireHours: options.requireHours !== false },
+    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas, requirePhoto: options.requirePhoto !== false, requirePhone: options.requirePhone !== false, requireWebsite: options.requireWebsite !== false, requireLocation: options.requireLocation !== false, requireCuisineType: options.requireCuisineType !== false, requireHours: options.requireHours !== false, interactive: options.interactive === true, maxRuntimeMs: options.maxRuntimeMs, stopAfterChecked: options.stopAfterChecked, stopAfterImported: options.stopAfterImported, cursor: options.cursor || null },
     maxQueries,
     areas,
     requested_market: requestedMarket,
@@ -1266,6 +1312,10 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     market_mismatch_count: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     errors: errors.slice(0, 30),
     addedLocations: [...restaurant.addedLocations, ...activity.addedLocations],
+    partial,
+    completed,
+    pausedReason,
+    nextCursor,
   };
 
   await supabaseAdmin.from("import_logs").insert({
@@ -1277,6 +1327,11 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
 
   return {
     success: failed === 0 || imported + skipped > 0,
+    completed,
+    partial,
+    pausedReason,
+    nextCursor,
+    message: completed ? "Google import completed." : "Google import paused safely before the server timeout. Continue the import to process the next batch.",
     imported,
     skipped,
     failed,
@@ -1308,6 +1363,6 @@ export async function runGooglePlacesImport(options: GooglePlacesImportOptions =
     market_mismatch_count: restaurant.skipped_wrong_market + activity.skipped_wrong_market,
     errors: errors.slice(0, 30),
     addedLocations: [...restaurant.addedLocations, ...activity.addedLocations],
-    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas, requirePhoto: options.requirePhoto !== false, requirePhone: options.requirePhone !== false, requireWebsite: options.requireWebsite !== false, requireLocation: options.requireLocation !== false, requireCuisineType: options.requireCuisineType !== false, requireHours: options.requireHours !== false },
+    settings: { type, limit, batch: primaryTag, primaryTag, minRating: Number(options.minRating || 3.8), maxQueries, areas, requirePhoto: options.requirePhoto !== false, requirePhone: options.requirePhone !== false, requireWebsite: options.requireWebsite !== false, requireLocation: options.requireLocation !== false, requireCuisineType: options.requireCuisineType !== false, requireHours: options.requireHours !== false, interactive: options.interactive === true, maxRuntimeMs: options.maxRuntimeMs, stopAfterChecked: options.stopAfterChecked, stopAfterImported: options.stopAfterImported, cursor: options.cursor || null },
   };
 }

@@ -57,6 +57,9 @@ function optionsFromSearchParams(request: NextRequest): GooglePlacesImportOption
     requestedMarket: searchParams.get("market") || searchParams.get("requestedMarket") || null,
     requestedArea: searchParams.get("areas") || searchParams.get("area") || null,
     allowMarketCorrection: searchParams.get("allowMarketCorrection") === "true",
+    maxRuntimeMs: 240_000,
+    stopAfterChecked: 80,
+    stopAfterImported: 25,
   };
 }
 
@@ -84,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     const result = await runGooglePlacesImport({
       type: body.type || "both",
-      limit: Number(body.limit || 10),
+      limit: Math.min(5, Math.max(1, Number(body.limit || 5))),
       batch: body.batch || "all",
       primaryTag: body.primaryTag || body.batch || "all",
       areas: body.areas || body.area || "nyc",
@@ -95,10 +98,15 @@ export async function POST(request: NextRequest) {
       requireLocation: body.requireLocation !== false,
       requireCuisineType: body.requireCuisineType !== false,
       requireHours: body.requireHours !== false,
-      maxQueries: Number(body.maxQueries || 2),
+      maxQueries: Math.min(3, Math.max(1, Number(body.maxQueries || 2))),
       requestedMarket: body.market || body.requestedMarket || null,
       requestedArea: body.areas || body.area || null,
       allowMarketCorrection: body.allowMarketCorrection === true,
+      cursor: body.cursor || null,
+      interactive: true,
+      maxRuntimeMs: 45_000,
+      stopAfterChecked: 20,
+      stopAfterImported: 8,
     });
 
     return NextResponse.json(result);
