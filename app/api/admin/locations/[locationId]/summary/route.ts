@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminLocationApiRead } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
-import { buildAdminLocationScopedUrl, getDisplayLocationName } from "@/lib/admin/admin-location-context";
+import {
+  buildAdminLocationScopedUrl,
+  getDisplayLocationName,
+} from "@/lib/admin/admin-location-context";
 import { getReserveAccessForLocation } from "@/lib/reserve-access";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getSiteUrl } from "@/lib/site-url";
@@ -22,25 +25,53 @@ function todayKey() {
 }
 
 async function safeCount(table: string, apply: (query: any) => any) {
-  const result = await apply(supabaseAdmin.from(table).select("id", { count: "exact", head: true }));
+  const result = await apply(
+    supabaseAdmin.from(table).select("id", { count: "exact", head: true }),
+  );
   return result.error ? 0 : result.count || 0;
 }
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ locationId: string }> }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ locationId: string }> },
+) {
   const auth = await requireAdminLocationApiRead();
   if (auth.error) return auth.error;
 
   const { locationId } = await params;
-  const { data: location, error } = await supabaseAdmin.from("locations").select("*").eq("id", locationId).maybeSingle();
-  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  if (!location) return NextResponse.json({ success: false, error: "We could not find that location." }, { status: 404 });
+  const { data: location, error } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .eq("id", locationId)
+    .maybeSingle();
+  if (error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 },
+    );
+  if (!location)
+    return NextResponse.json(
+      { success: false, error: "We could not find that location." },
+      { status: 404 },
+    );
 
-  const [reservations, activeHoldsCount, layoutResourceCount, access] = await Promise.all([
-    supabaseAdmin.from("location_reservations").select("status,reservation_date").eq("location_id", locationId).limit(1000),
-    safeCount("reservation_holds", (query) => query.eq("location_id", locationId).gt("expires_at", new Date().toISOString())),
-    safeCount("layout_items", (query) => query.eq("location_id", locationId).neq("is_active", false)),
-    getReserveAccessForLocation(locationId),
-  ]);
+  const [reservations, activeHoldsCount, layoutResourceCount, access] =
+    await Promise.all([
+      supabaseAdmin
+        .from("location_reservations")
+        .select("status,reservation_date")
+        .eq("location_id", locationId)
+        .limit(1000),
+      safeCount("reservation_holds", (query) =>
+        query
+          .eq("location_id", locationId)
+          .gt("expires_at", new Date().toISOString()),
+      ),
+      safeCount("layout_items", (query) =>
+        query.eq("location_id", locationId).neq("is_active", false),
+      ),
+      getReserveAccessForLocation(locationId),
+    ]);
 
   const counts = { ...ZERO };
   for (const reservation of reservations.data || []) {
@@ -52,10 +83,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const base = getSiteUrl().replace(/\/$/, "");
   const publicBookingPath = `/reserve/location/${locationId}`;
   const links = {
-    hostViewUrl: buildAdminLocationScopedUrl("/reserve/dashboard/reservations", locationId),
-    layoutBuilderUrl: buildAdminLocationScopedUrl("/reserve/dashboard/location-layout", locationId),
-    bookingPageSettingsUrl: buildAdminLocationScopedUrl("/reserve/dashboard/layout", locationId),
-    embedCodeUrl: buildAdminLocationScopedUrl("/reserve/dashboard/layout", locationId),
+    hostViewUrl: buildAdminLocationScopedUrl(
+      "/reserve/dashboard/reservations",
+      locationId,
+    ),
+    layoutBuilderUrl: buildAdminLocationScopedUrl(
+      "/reserve/dashboard?tab=settings&section=layout",
+      locationId,
+    ),
+    bookingPageSettingsUrl: buildAdminLocationScopedUrl(
+      "/reserve/dashboard/layout",
+      locationId,
+    ),
+    embedCodeUrl: buildAdminLocationScopedUrl(
+      "/reserve/dashboard/layout",
+      locationId,
+    ),
     publicBookingUrl: `${base}${publicBookingPath}`,
     publicEmbedUrl: `${base}/embed/reservations/${locationId}`,
     locationProfileUrl: `/admin/dashboard/crm/${locationId}`,
@@ -65,7 +108,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     layoutResourceCount === 0 ? "no layout resources" : null,
     !location.email ? "no email" : null,
     !location.phone ? "no phone" : null,
-    !(location.image_url || location.logo_url || location.main_image) ? "no image" : null,
+    !(location.image_url || location.logo_url || location.main_image)
+      ? "no image"
+      : null,
   ].filter(Boolean);
 
   await logAdminLocationAction({

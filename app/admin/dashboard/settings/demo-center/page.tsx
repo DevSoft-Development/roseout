@@ -10,28 +10,205 @@ import DemoActionButton from "./DemoActionButton";
 export const dynamic = "force-dynamic";
 
 type DemoRow = Record<string, any>;
-type ModuleState = "Ready" | "Needs setup" | "Demo only" | "Not installed" | "Warning";
+type ModuleState =
+  | "Ready"
+  | "Needs setup"
+  | "Demo only"
+  | "Not installed"
+  | "Warning";
 
 const requestedModules = [
-  "Overview", "Profile", "Branding", "Photos", "Menu / Packages", "Reservations", "Reservation Layout", "QR Codes", "Leads", "Offers", "VIP List", "Messaging", "Notifications", "Reviews / Feedback", "Marketing Studio", "Analytics", "Billing", "Team", "Support", "Settings",
+  "Overview",
+  "Profile",
+  "Branding",
+  "Photos",
+  "Menu / Packages",
+  "Reservations",
+  "Reservation Layout",
+  "QR Codes",
+  "Leads",
+  "Offers",
+  "VIP List",
+  "Messaging",
+  "Notifications",
+  "Reviews / Feedback",
+  "Marketing Studio",
+  "Analytics",
+  "Billing",
+  "Team",
+  "Support",
+  "Settings",
 ];
 
 const safeRoutes: Record<string, string> = {
-  Overview: "/business/dashboard", Profile: "/business/dashboard/profile", Branding: "/business/dashboard/branding", Photos: "/business/dashboard/branding", "Menu / Packages": "/business/dashboard/menu", Reservations: "/reserve/dashboard/reservations", "Reservation Layout": "/reserve/dashboard/location-layout", "QR Codes": "/business/dashboard/qr-codes", Leads: "/business/dashboard/leads", Offers: "/business/dashboard/offers", "VIP List": "/business/dashboard/vip", Messaging: "/business/dashboard/messaging", Notifications: "/business/dashboard/notifications", "Reviews / Feedback": "/business/dashboard/reviews", "Marketing Studio": "/business/dashboard/marketing-studio", Analytics: "/business/dashboard/analytics", Billing: "/business/dashboard/billing", Settings: "/business/dashboard/settings"
+  Overview: "/business/dashboard",
+  Profile: "/business/dashboard/profile",
+  Branding: "/business/dashboard/branding",
+  Photos: "/business/dashboard/branding",
+  "Menu / Packages": "/business/dashboard/menu",
+  Reservations: "/reserve/dashboard/reservations",
+  "Reservation Layout": "/reserve/dashboard?tab=settings&section=layout",
+  "QR Codes": "/business/dashboard/qr-codes",
+  Leads: "/business/dashboard/leads",
+  Offers: "/business/dashboard/offers",
+  "VIP List": "/business/dashboard/vip",
+  Messaging: "/business/dashboard/messaging",
+  Notifications: "/business/dashboard/notifications",
+  "Reviews / Feedback": "/business/dashboard/reviews",
+  "Marketing Studio": "/business/dashboard/marketing-studio",
+  Analytics: "/business/dashboard/analytics",
+  Billing: "/business/dashboard/billing",
+  Settings: "/business/dashboard/settings",
 };
 
-function anchor(label: string) { return label.toLowerCase().replaceAll(" / ", "-").replaceAll(" ", "-"); }
-function human(value: any, fallback = "No data yet") { return value === null || value === undefined || value === "" ? fallback : String(value); }
-function countLabel(value: number | null | undefined) { return value === null || value === undefined ? "Not installed" : value > 0 ? value.toLocaleString() : "No data yet"; }
-function statusFor(count?: number | null): ModuleState { return count === null || count === undefined ? "Not installed" : count > 0 ? "Ready" : "Needs setup"; }
-function statusClass(status: string) { if (status === "Ready") return "border-emerald-300/20 bg-emerald-500/10 text-emerald-100"; if (status === "Warning") return "border-amber-300/30 bg-amber-500/10 text-amber-100"; if (status === "Not installed") return "border-white/10 bg-white/[0.04] text-white/45"; return "border-rose-300/20 bg-rose-500/10 text-rose-100"; }
-function Card({ id, title, eyebrow, children }: { id?: string; title: string; eyebrow?: string; children: React.ReactNode }) { return <section id={id} className="scroll-mt-28 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] p-5 shadow-2xl shadow-black/25 sm:p-6"><p className="text-[11px] font-black uppercase tracking-[0.22em] text-rose-200/80">{eyebrow || "Owner module"}</p><h2 className="mt-2 text-2xl font-black tracking-[-0.03em] text-white">{title}</h2><div className="mt-5 text-sm leading-6 text-white/68">{children}</div></section>; }
-function Badge({ children, status = "Ready" }: { children: React.ReactNode; status?: string }) { return <span className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide ${statusClass(status)}`}>{children}</span>; }
-function A({ href, children }: { href?: string; children: React.ReactNode }) { if (!href) return <span className="inline-flex rounded-full border border-dashed border-white/10 px-4 py-2 text-xs font-black text-white/40">Refresh demo data to unlock this tool.</span>; return <Link href={href} className="inline-flex rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:border-rose-300/50 hover:bg-white/5">{children}</Link>; }
-function demoType(loc: any) { const value = String(loc?.location_type || loc?.type || loc?.primary_category || loc?.category || "restaurant").toLowerCase(); return value === "activity" || value === "activities" ? "activity" : "restaurant"; }
-function withDemoContext(path: string, locationId?: string, type = "restaurant") { if (!locationId) return undefined; const params = new URLSearchParams({ adminLocationId: locationId, locationId, type, demo: "1", fromDemoCenter: "1" }); return `${path}?${params.toString()}`; }
-function Submit({ action, label, hidden, variant = "outline" }: { action: any; label: string; hidden?: Record<string, string>; variant?: "primary" | "outline" | "danger" | "compact" | "ghost" }) { return <DemoActionButton action={action} label={label} hidden={hidden} variant={variant} />; }
-async function fetchRows(table: string, locationId?: string, limit = 8) { try { if (!locationId || !(await tableExists(table))) return null; const { data, error } = await supabaseAdmin.from(table).select("*").eq("location_id", locationId).limit(limit); return error ? null : data || []; } catch { return null; } }
+function anchor(label: string) {
+  return label.toLowerCase().replaceAll(" / ", "-").replaceAll(" ", "-");
+}
+function human(value: any, fallback = "No data yet") {
+  return value === null || value === undefined || value === ""
+    ? fallback
+    : String(value);
+}
+function countLabel(value: number | null | undefined) {
+  return value === null || value === undefined
+    ? "Not installed"
+    : value > 0
+      ? value.toLocaleString()
+      : "No data yet";
+}
+function statusFor(count?: number | null): ModuleState {
+  return count === null || count === undefined
+    ? "Not installed"
+    : count > 0
+      ? "Ready"
+      : "Needs setup";
+}
+function statusClass(status: string) {
+  if (status === "Ready")
+    return "border-emerald-300/20 bg-emerald-500/10 text-emerald-100";
+  if (status === "Warning")
+    return "border-amber-300/30 bg-amber-500/10 text-amber-100";
+  if (status === "Not installed")
+    return "border-white/10 bg-white/[0.04] text-white/45";
+  return "border-rose-300/20 bg-rose-500/10 text-rose-100";
+}
+function Card({
+  id,
+  title,
+  eyebrow,
+  children,
+}: {
+  id?: string;
+  title: string;
+  eyebrow?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      className="scroll-mt-28 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] p-5 shadow-2xl shadow-black/25 sm:p-6"
+    >
+      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-rose-200/80">
+        {eyebrow || "Owner module"}
+      </p>
+      <h2 className="mt-2 text-2xl font-black tracking-[-0.03em] text-white">
+        {title}
+      </h2>
+      <div className="mt-5 text-sm leading-6 text-white/68">{children}</div>
+    </section>
+  );
+}
+function Badge({
+  children,
+  status = "Ready",
+}: {
+  children: React.ReactNode;
+  status?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wide ${statusClass(status)}`}
+    >
+      {children}
+    </span>
+  );
+}
+function A({ href, children }: { href?: string; children: React.ReactNode }) {
+  if (!href)
+    return (
+      <span className="inline-flex rounded-full border border-dashed border-white/10 px-4 py-2 text-xs font-black text-white/40">
+        Refresh demo data to unlock this tool.
+      </span>
+    );
+  return (
+    <Link
+      href={href}
+      className="inline-flex rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white hover:border-rose-300/50 hover:bg-white/5"
+    >
+      {children}
+    </Link>
+  );
+}
+function demoType(loc: any) {
+  const value = String(
+    loc?.location_type ||
+      loc?.type ||
+      loc?.primary_category ||
+      loc?.category ||
+      "restaurant",
+  ).toLowerCase();
+  return value === "activity" || value === "activities"
+    ? "activity"
+    : "restaurant";
+}
+function withDemoContext(
+  path: string,
+  locationId?: string,
+  type = "restaurant",
+) {
+  if (!locationId) return undefined;
+  const params = new URLSearchParams({
+    adminLocationId: locationId,
+    locationId,
+    type,
+    demo: "1",
+    fromDemoCenter: "1",
+  });
+  return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+function Submit({
+  action,
+  label,
+  hidden,
+  variant = "outline",
+}: {
+  action: any;
+  label: string;
+  hidden?: Record<string, string>;
+  variant?: "primary" | "outline" | "danger" | "compact" | "ghost";
+}) {
+  return (
+    <DemoActionButton
+      action={action}
+      label={label}
+      hidden={hidden}
+      variant={variant}
+    />
+  );
+}
+async function fetchRows(table: string, locationId?: string, limit = 8) {
+  try {
+    if (!locationId || !(await tableExists(table))) return null;
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .select("*")
+      .eq("location_id", locationId)
+      .limit(limit);
+    return error ? null : data || [];
+  } catch {
+    return null;
+  }
+}
 
 export default async function DemoCenterPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
@@ -40,48 +217,787 @@ export default async function DemoCenterPage() {
   const locationId = loc?.id as string | undefined;
   const locationName = getLocationName(loc, "Demo business");
   const locationType = demoType(loc);
-  const demoHref = (path: string) => withDemoContext(path, locationId, locationType);
-  const publicProfile = locationId ? demoHref("/admin/dashboard/settings/demo-center/public-profile") : overview.links.find((l) => l.label === "Public Profile")?.href;
+  const demoHref = (path: string) =>
+    withDemoContext(path, locationId, locationType);
+  const publicProfile = locationId
+    ? demoHref("/admin/dashboard/settings/demo-center/public-profile")
+    : overview.links.find((l) => l.label === "Public Profile")?.href;
   const crmHref = overview.links.find((l) => l.label === "Admin CRM")?.href;
-  const [reservations, qrScans, qrCodes, leads, offers, vip, notifications, feedback, marketing, analytics, branding, pages, items] = await Promise.all([
-    fetchRows("reservations", locationId, 20), fetchRows("location_qr_scan_events", locationId), fetchRows("location_qr_codes", locationId), fetchRows("location_leads", locationId), fetchRows("location_offers", locationId), fetchRows("location_vip_signups", locationId), fetchRows("location_notification_events", locationId), fetchRows("location_private_feedback", locationId), fetchRows("location_marketing_generations", locationId), fetchRows("location_analytics_events", locationId, 50), fetchRows("location_branding_settings", locationId), fetchRows("location_commerce_pages", locationId), fetchRows("location_commerce_items", locationId),
+  const [
+    reservations,
+    qrScans,
+    qrCodes,
+    leads,
+    offers,
+    vip,
+    notifications,
+    feedback,
+    marketing,
+    analytics,
+    branding,
+    pages,
+    items,
+  ] = await Promise.all([
+    fetchRows("reservations", locationId, 20),
+    fetchRows("location_qr_scan_events", locationId),
+    fetchRows("location_qr_codes", locationId),
+    fetchRows("location_leads", locationId),
+    fetchRows("location_offers", locationId),
+    fetchRows("location_vip_signups", locationId),
+    fetchRows("location_notification_events", locationId),
+    fetchRows("location_private_feedback", locationId),
+    fetchRows("location_marketing_generations", locationId),
+    fetchRows("location_analytics_events", locationId, 50),
+    fetchRows("location_branding_settings", locationId),
+    fetchRows("location_commerce_pages", locationId),
+    fetchRows("location_commerce_items", locationId),
   ]);
   const publicWarning = overview.publicSearchExposed;
-  const nav = requestedModules.map((label) => ({ label, href: safeRoutes[label] ? demoHref(safeRoutes[label]) || `#${anchor(label)}` : `#${anchor(label)}` }));
+  const nav = requestedModules.map((label) => ({
+    label,
+    href: safeRoutes[label]
+      ? demoHref(safeRoutes[label]) || `#${anchor(label)}`
+      : `#${anchor(label)}`,
+  }));
   const stats = [
-    ["Plan", "Growth Pro / Demo"], ["Profile readiness", loc ? "Ready" : "Needs setup"], ["Reservations", countLabel(reservations?.length)], ["Reservation layout", "Needs setup"], ["QR scans", countLabel(qrScans?.length)], ["Leads", countLabel(leads?.length)], ["Offer claims", countLabel(overview.counts.location_offer_claims)], ["VIP signups", countLabel(vip?.length)], ["Messages", "Not installed"], ["Notifications", countLabel(notifications?.length)], ["Reviews / Feedback", countLabel(feedback?.length)], ["Analytics events", countLabel(analytics?.length)], ["Billing status", "Demo"],
+    ["Plan", "Growth Pro / Demo"],
+    ["Profile readiness", loc ? "Ready" : "Needs setup"],
+    ["Reservations", countLabel(reservations?.length)],
+    ["Reservation layout", "Needs setup"],
+    ["QR scans", countLabel(qrScans?.length)],
+    ["Leads", countLabel(leads?.length)],
+    ["Offer claims", countLabel(overview.counts.location_offer_claims)],
+    ["VIP signups", countLabel(vip?.length)],
+    ["Messages", "Not installed"],
+    ["Notifications", countLabel(notifications?.length)],
+    ["Reviews / Feedback", countLabel(feedback?.length)],
+    ["Analytics events", countLabel(analytics?.length)],
+    ["Billing status", "Demo"],
   ];
-  const profileItems = [["Location name", locationName], ["Category/type", loc?.primary_category || loc?.category || loc?.location_type || loc?.type], ["Address", [loc?.address, loc?.city, loc?.state].filter(Boolean).join(", ")], ["Phone", loc?.phone], ["Website", loc?.website], ["Market", loc?.market || loc?.city]];
+  const profileItems = [
+    ["Location name", locationName],
+    [
+      "Category/type",
+      loc?.primary_category || loc?.category || loc?.location_type || loc?.type,
+    ],
+    [
+      "Address",
+      [loc?.address, loc?.city, loc?.state].filter(Boolean).join(", "),
+    ],
+    ["Phone", loc?.phone],
+    ["Website", loc?.website],
+    ["Market", loc?.market || loc?.city],
+  ];
   const overviewItems = [
-    ["Business profile", loc ? "Ready" : "Needs setup", "Core location identity is available for the demo owner experience."], ["Public profile", publicProfile ? (publicWarning ? "Warning" : "Ready") : "Needs setup", publicWarning ? "Demo location is exposed in public search. Disable this before launch." : "Direct demo preview can be opened safely."], ["Photos/media", statusFor(branding?.length), "Logo and hero media are seeded when the branding table is installed."], ["Reservation setup", statusFor(reservations?.length), "Demo requests use demo_key and safe customer contact data."], ["Reservation layout", "Needs setup", "No demo layout yet. Refresh demo data or open the layout builder to create tables, rooms, lanes, or seats."], ["QR codes", statusFor(qrCodes?.length), "QR tools point to demo-safe routes and analytics."], ["Messaging", "Not installed", "Messaging appears when the owner messaging module is installed."], ["Notifications", statusFor(notifications?.length), "Demo notifications use safe recipients only."], ["Offers", statusFor(offers?.length), "Owner promotions are mirrored with safe demo offers."], ["VIP", statusFor(vip?.length), "VIP signups are demo-only."], ["Reviews/feedback", statusFor(feedback?.length), "Private feedback is safe demo data."], ["Analytics", statusFor(analytics?.length), "Demo events power the analytics preview."], ["Billing/plan", "Demo only", "Billing is displayed without starting real payment flows."],
+    [
+      "Business profile",
+      loc ? "Ready" : "Needs setup",
+      "Core location identity is available for the demo owner experience.",
+    ],
+    [
+      "Public profile",
+      publicProfile ? (publicWarning ? "Warning" : "Ready") : "Needs setup",
+      publicWarning
+        ? "Demo location is exposed in public search. Disable this before launch."
+        : "Direct demo preview can be opened safely.",
+    ],
+    [
+      "Photos/media",
+      statusFor(branding?.length),
+      "Logo and hero media are seeded when the branding table is installed.",
+    ],
+    [
+      "Reservation setup",
+      statusFor(reservations?.length),
+      "Demo requests use demo_key and safe customer contact data.",
+    ],
+    [
+      "Reservation layout",
+      "Needs setup",
+      "No demo layout yet. Refresh demo data or open the layout builder to create tables, rooms, lanes, or seats.",
+    ],
+    [
+      "QR codes",
+      statusFor(qrCodes?.length),
+      "QR tools point to demo-safe routes and analytics.",
+    ],
+    [
+      "Messaging",
+      "Not installed",
+      "Messaging appears when the owner messaging module is installed.",
+    ],
+    [
+      "Notifications",
+      statusFor(notifications?.length),
+      "Demo notifications use safe recipients only.",
+    ],
+    [
+      "Offers",
+      statusFor(offers?.length),
+      "Owner promotions are mirrored with safe demo offers.",
+    ],
+    ["VIP", statusFor(vip?.length), "VIP signups are demo-only."],
+    [
+      "Reviews/feedback",
+      statusFor(feedback?.length),
+      "Private feedback is safe demo data.",
+    ],
+    [
+      "Analytics",
+      statusFor(analytics?.length),
+      "Demo events power the analytics preview.",
+    ],
+    [
+      "Billing/plan",
+      "Demo only",
+      "Billing is displayed without starting real payment flows.",
+    ],
   ];
-  const qrTools = ["Public profile", "Reservation", "Offers", "VIP", "Review", "Menu"];
-  const nextAction: Record<string, [any, string] | null> = { pending: [actions.confirmDemoReservationAction, "Confirm"], confirmed: [actions.markDemoReservationCheckedInAction, "Check In"], checked_in: [actions.markDemoReservationCompletedAction, "Complete"], completed: null, cancelled: null, no_show: null };
+  const qrTools = [
+    "Public profile",
+    "Reservation",
+    "Offers",
+    "VIP",
+    "Review",
+    "Menu",
+  ];
+  const nextAction: Record<string, [any, string] | null> = {
+    pending: [actions.confirmDemoReservationAction, "Confirm"],
+    confirmed: [actions.markDemoReservationCheckedInAction, "Check In"],
+    checked_in: [actions.markDemoReservationCompletedAction, "Complete"],
+    completed: null,
+    cancelled: null,
+    no_show: null,
+  };
 
-  return <main className="min-h-screen overflow-x-hidden bg-[#080506] px-4 pb-16 pt-24 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-7xl space-y-6">
-    <section className={`rounded-[2rem] border p-4 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-white/10 bg-white/[0.045]"}`}><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Demo Mode</p><p className="mt-1 text-sm font-bold text-white/75">You are viewing TheOutHaven as the demo business/location{loc ? `: ${locationName}` : "."}</p><div className="mt-2 flex flex-wrap gap-2"><Badge status={publicWarning ? "Warning" : loc ? "Ready" : "Needs setup"}>{publicWarning ? "Public Exposure Warning" : loc ? "Demo Ready" : "Needs Demo Location"}</Badge>{loc ? <Badge status="Demo only">Demo business account</Badge> : null}</div></div><div className="flex flex-wrap gap-2"><Submit action={actions.createOrRefreshMirrorDemoAction} label="Refresh Demo Data" variant="primary" />{publicProfile ? <A href={publicProfile}>Open Public Profile</A> : null}<Submit action={actions.createDemoReservationAction} label="Create Test Reservation" variant="outline" /><Submit action={actions.runDemoEmailTestAction} label="Send Test Email" variant="outline" /><Submit action={actions.resetMirrorDemoAction} label="Reset Demo Data" variant="danger" /></div></div></section>
+  return (
+    <main className="min-h-screen overflow-x-hidden bg-[#080506] px-4 pb-16 pt-24 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section
+          className={`rounded-[2rem] border p-4 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-white/10 bg-white/[0.045]"}`}
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">
+                Demo Mode
+              </p>
+              <p className="mt-1 text-sm font-bold text-white/75">
+                You are viewing TheOutHaven as the demo business/location
+                {loc ? `: ${locationName}` : "."}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge
+                  status={
+                    publicWarning ? "Warning" : loc ? "Ready" : "Needs setup"
+                  }
+                >
+                  {publicWarning
+                    ? "Public Exposure Warning"
+                    : loc
+                      ? "Demo Ready"
+                      : "Needs Demo Location"}
+                </Badge>
+                {loc ? (
+                  <Badge status="Demo only">Demo business account</Badge>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Submit
+                action={actions.createOrRefreshMirrorDemoAction}
+                label="Refresh Demo Data"
+                variant="primary"
+              />
+              {publicProfile ? (
+                <A href={publicProfile}>Open Public Profile</A>
+              ) : null}
+              <Submit
+                action={actions.createDemoReservationAction}
+                label="Create Test Reservation"
+                variant="outline"
+              />
+              <Submit
+                action={actions.runDemoEmailTestAction}
+                label="Send Test Email"
+                variant="outline"
+              />
+              <Submit
+                action={actions.resetMirrorDemoAction}
+                label="Reset Demo Data"
+                variant="danger"
+              />
+            </div>
+          </div>
+        </section>
 
-    <header className="rounded-[2.5rem] border border-rose-200/15 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.075),rgba(255,255,255,0.025))] p-6 sm:p-8"><p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">TheOutHaven Growth Pro</p><div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h1 className="text-4xl font-black tracking-[-0.05em] sm:text-6xl">Business growth dashboard</h1><p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/62">Get discovered. Capture customers. Promote smarter. Respond faster. Track results.</p><div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-white/70"><span className="rounded-full bg-white/10 px-3 py-2">{locationName}</span><span className="rounded-full bg-white/10 px-3 py-2">{human(loc?.primary_category || loc?.category || loc?.location_type, "Category needs setup")}</span><span className="rounded-full bg-white/10 px-3 py-2">{human(loc?.market || loc?.city, "Market needs setup")}</span><span className="rounded-full bg-rose-500/15 px-3 py-2 text-rose-100">Plan: Growth Pro / Demo</span></div></div><div className="flex flex-wrap gap-2">{publicProfile ? <A href={publicProfile}>Open public profile</A> : null}{crmHref ? <A href={crmHref}>View CRM profile</A> : null}<Submit action={actions.createDemoReservationAction} label="Create test reservation" variant="ghost" /><Submit action={actions.runDemoEmailTestAction} label="Send test email" variant="ghost" /></div></div></header>
+        <header className="rounded-[2.5rem] border border-rose-200/15 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.075),rgba(255,255,255,0.025))] p-6 sm:p-8">
+          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">
+            TheOutHaven Growth Pro
+          </p>
+          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h1 className="text-4xl font-black tracking-[-0.05em] sm:text-6xl">
+                Business growth dashboard
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/62">
+                Get discovered. Capture customers. Promote smarter. Respond
+                faster. Track results.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-white/70">
+                <span className="rounded-full bg-white/10 px-3 py-2">
+                  {locationName}
+                </span>
+                <span className="rounded-full bg-white/10 px-3 py-2">
+                  {human(
+                    loc?.primary_category ||
+                      loc?.category ||
+                      loc?.location_type,
+                    "Category needs setup",
+                  )}
+                </span>
+                <span className="rounded-full bg-white/10 px-3 py-2">
+                  {human(loc?.market || loc?.city, "Market needs setup")}
+                </span>
+                <span className="rounded-full bg-rose-500/15 px-3 py-2 text-rose-100">
+                  Plan: Growth Pro / Demo
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {publicProfile ? (
+                <A href={publicProfile}>Open public profile</A>
+              ) : null}
+              {crmHref ? <A href={crmHref}>View CRM profile</A> : null}
+              <Submit
+                action={actions.createDemoReservationAction}
+                label="Create test reservation"
+                variant="ghost"
+              />
+              <Submit
+                action={actions.runDemoEmailTestAction}
+                label="Send test email"
+                variant="ghost"
+              />
+            </div>
+          </div>
+        </header>
 
-    <nav className="sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto border-y border-white/10 bg-[#080506]/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-full sm:border sm:bg-white/[0.04]">{nav.map((n) => <Link key={n.label} href={n.href} className="shrink-0 rounded-full border border-white/10 bg-black/20 px-4 py-2 text-xs font-black text-white/70 hover:border-rose-300/50 hover:text-white">{n.label}</Link>)}</nav>
+        <nav className="sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto border-y border-white/10 bg-[#080506]/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-full sm:border sm:bg-white/[0.04]">
+          {nav.map((n) => (
+            <Link
+              key={n.label}
+              href={n.href}
+              className="shrink-0 rounded-full border border-white/10 bg-black/20 px-4 py-2 text-xs font-black text-white/70 hover:border-rose-300/50 hover:text-white"
+            >
+              {n.label}
+            </Link>
+          ))}
+        </nav>
 
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">{stats.map(([label, value]) => <div key={label} className="rounded-3xl border border-white/10 bg-white/[0.04] p-4"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">{label}</p><p className="mt-2 text-lg font-black text-white">{value}</p></div>)}</section>
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+          {stats.map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-3xl border border-white/10 bg-white/[0.04] p-4"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
+                {label}
+              </p>
+              <p className="mt-2 text-lg font-black text-white">{value}</p>
+            </div>
+          ))}
+        </section>
 
-    <Card id="overview" title="Overview"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{overviewItems.map(([label, st, text]) => <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex items-center justify-between gap-3"><b className="text-white">{label}</b><Badge status={st}>{st}</Badge></div><p className="mt-2 text-xs text-white/55">{text}</p></div>)}</div></Card>
-    <Card id="profile" title="Profile"><div className="grid gap-3 sm:grid-cols-2">{profileItems.map(([k, v]) => <div key={k} className="rounded-2xl bg-white/[0.04] p-4"><p className="text-xs font-black uppercase text-white/35">{k}</p><p className="mt-1 font-black text-white">{human(v, "Needs setup")}</p></div>)}</div><div className="mt-4 flex flex-wrap gap-2">{publicProfile ? <A href={publicProfile}>Open public profile</A> : null}{crmHref ? <A href={crmHref}>View CRM profile</A> : null}</div></Card>
-    <Card id="branding" title="Branding and photos"><div className="grid gap-3 md:grid-cols-3"><div className="rounded-2xl bg-white/[0.04] p-4"><b>Logo/brand</b><p>{branding?.length ? "Ready" : branding === null ? "Not installed" : "Needs setup"}</p></div><div className="rounded-2xl bg-white/[0.04] p-4"><b>Main photo</b><p>{branding?.[0]?.hero_image_url ? "Ready" : "Needs setup"}</p></div><div className="rounded-2xl bg-white/[0.04] p-4"><b>Gallery/photo count</b><p>{countLabel(overview.counts.location_photos)}</p></div></div></Card>
-    <Card id="photos" title="Photos"><p>Photo readiness is shown through the branding/media state. {branding === null ? "The media table is not installed for this dashboard preview." : "Demo media is isolated to the demo location."}</p><div className="mt-4 flex flex-wrap gap-2"><A href={demoHref("/business/dashboard/branding")}>Open Photos / Branding</A>{crmHref ? <A href={`${crmHref}?tab=photos`}>Manage in CRM</A> : null}</div></Card>
-    <Card id="menu-packages" title="Menu / Packages"><div className="mb-4 flex flex-wrap gap-2"><A href={demoHref("/business/dashboard/menu")}>Open Menu / Packages</A>{crmHref ? <A href={`${crmHref}?tab=menu-packages`}>Configure in CRM</A> : null}</div><div className="grid gap-3 sm:grid-cols-3"><Badge status={statusFor(pages?.length)}>{statusFor(pages?.length)}</Badge><p>Pages: <b>{countLabel(pages?.length)}</b></p><p>Items/packages: <b>{countLabel(items?.length)}</b></p></div></Card>
-    <Card id="reservations" title="Reservations"><div className="mb-4 flex flex-wrap gap-2"><Submit action={actions.createDemoReservationAction} label="Create test reservation" variant="primary" /><Submit action={actions.createDemoWaitlistAction} label="Create waitlist" /><Submit action={actions.runDemoReservationDailyDigestAction} label="Run digest" /><Submit action={actions.runDemoReservationCleanupAction} label="Run cleanup" /><A href={demoHref("/reserve/dashboard/reservations")}>Open reservation dashboard</A><A href={demoHref("/reserve/dashboard")}>Open Host View</A></div><div className="grid gap-3">{reservations?.length ? reservations.map((r) => { const n = nextAction[String(r.status || "pending")] ?? null; return <article key={r.id} className="rounded-2xl border border-white/10 bg-black/25 p-4"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="font-black text-white">{human(r.customer_name, "Demo guest")} · party {human(r.party_size, "—")}</p><p className="text-xs text-white/50">{human(r.reservation_date)} at {human(r.reservation_time)} · {human(r.status, "pending")}</p></div><div className="flex flex-wrap gap-2">{n ? <Submit action={n[0]} label={n[1]} hidden={{ reservationId: r.id }} variant="compact" /> : <Badge status={r.status === "completed" ? "Ready" : "Demo only"}>{human(r.status)}</Badge>}<Submit action={actions.cancelDemoReservationAction} label="Cancel" hidden={{ reservationId: r.id }} variant="ghost" /><Submit action={actions.markDemoReservationNoShowAction} label="No Show" hidden={{ reservationId: r.id }} variant="ghost" /></div></div></article>; }) : <p className="rounded-2xl border border-dashed border-white/15 p-4">No demo reservations yet. Create a test reservation or refresh demo data.</p>}</div></Card>
-    <Card id="reservation-layout" title="Reservation Layout"><div className="grid gap-3 md:grid-cols-4"><div><b>Layout status</b><p>Needs setup</p></div><div><b>Layout type</b><p>Tables / rooms / seats</p></div><div><b>Total reservable items</b><p>No data yet</p></div><div><b>Unassigned reservations</b><p>{countLabel(reservations?.filter((r) => !r.reservable_item_name).length)}</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{["Dining Room", "Bar", "Patio", "Private Room", "Booths"].map((area) => <div key={area} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center font-black">{area}<span className="mt-2 block text-xs font-bold text-white/45">Demo layout placeholder</span></div>)}</div><p className="mt-4 text-white/55">No demo layout yet. Refresh demo data or open the layout builder to create tables, rooms, lanes, or seats.</p><div className="mt-4 flex flex-wrap gap-2"><A href={demoHref("/reserve/dashboard/location-layout")}>Open Layout Builder</A><A href={demoHref("/reserve/dashboard/reservations")}>Open Reservation Dashboard</A><Submit action={actions.createOrRefreshMirrorDemoAction} label="Refresh Demo Data" /><Submit action={actions.createDemoReservationAction} label="Create Test Reservation" /></div></Card>
-    <Card id="qr-codes" title="QR Codes"><div className="grid gap-3 md:grid-cols-3">{qrTools.map((q) => <div key={q} className="rounded-2xl bg-white/[0.04] p-4"><b>{q} QR</b><p>{qrCodes === null ? "Not installed" : qrCodes.some((x) => String(x.qr_type || x.label || "").toLowerCase().includes(q.split(" ")[0].toLowerCase())) ? "Ready" : "Needs setup"}</p><p className="text-xs text-white/45">Scans: {countLabel(qrScans?.length)}</p></div>)}</div><div className="mt-4 flex flex-wrap gap-2"><Submit action={actions.regenerateDemoQrCodesAction} label="Regenerate QR codes" /><Submit action={actions.simulateDemoQrScanAction} label="Simulate QR scan" /><A href={demoHref("/business/dashboard/qr-codes")}>Open QR dashboard</A></div></Card>
-    {[ ["leads","Leads",leads,"Lead count"], ["offers","Offers",offers,"Active offers"], ["vip-list","VIP List",vip,"VIP signups"], ["messaging","Messaging",null,"Unread count"], ["notifications","Notifications",notifications,"Notification activity"], ["reviews-feedback","Reviews / Feedback",feedback,"Reviews count"], ["marketing-studio","Marketing Studio",marketing,"Marketing assets"] ].map(([id,title,rows,label]: any) => <Card key={id} id={id} title={title}><div className="flex flex-wrap items-center gap-3"><Badge status={statusFor(rows?.length)}>{statusFor(rows?.length)}</Badge><span>{label}: <b>{countLabel(rows?.length)}</b></span></div><div className="mt-4 grid gap-2">{Array.isArray(rows) && rows.length ? rows.slice(0,3).map((r: DemoRow, i: number) => <p key={r.id || i} className="rounded-2xl bg-white/[0.04] p-3 font-bold text-white/75">{human(r.title || r.name || r.customer_name || r.event_type || r.status, `${title} activity`)}</p>) : <p className="rounded-2xl border border-dashed border-white/15 p-4">{rows === null ? "Not installed." : `No demo ${String(title).toLowerCase()} yet.`}</p>}</div></Card>)}
-    <Card id="analytics" title="Analytics"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{["profile_view", "qr_scan", "reservation_requested", "phone_click", "website_click", "offer_claim", "event_lead_submitted", "reservation_completed"].map((event) => <div key={event} className="rounded-2xl bg-white/[0.04] p-4"><p className="text-xs font-black uppercase text-white/35">{event.replaceAll("_", " ")}</p><p className="mt-1 text-2xl font-black">{analytics?.filter((a) => a.event_type === event).length ?? "No data yet"}</p></div>)}</div><div className="mt-4"><A href={demoHref("/business/dashboard/analytics")}>Open analytics dashboard</A></div></Card>
-    <Card id="billing" title="Billing / Plan"><div className="grid gap-3 md:grid-cols-3"><p className="rounded-2xl bg-white/[0.04] p-4"><b>Current plan</b><br />Growth Pro / Demo</p><p className="rounded-2xl bg-white/[0.04] p-4"><b>Subscription status</b><br />Demo</p><p className="rounded-2xl bg-white/[0.04] p-4"><b>Billing safety</b><br />No real checkout starts here.</p></div><div className="mt-4"><span className="inline-flex rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/40">Billing actions are disabled in demo mode.</span></div></Card>
-    <Card id="team" title="Team / Users"><p>Team members count: <b>Not installed</b>. Roles and invites appear here when the owner team module is installed.</p></Card>
-    <Card id="support" title="Support"><p>Support status: <b>Not installed</b>. Demo help contact: demo-owner@theouthaven.com.</p></Card>
-    <Card id="settings" title="Settings"><div className="grid gap-2 sm:grid-cols-2">{["Business settings", "Reservation settings", "Notification settings", "Public profile settings", "Visibility settings"].map((s) => <p key={s} className="rounded-2xl bg-white/[0.04] p-3 font-bold">{s}</p>)}</div><div className="mt-4"><A href={demoHref("/business/dashboard/settings")}>Open settings dashboard</A></div></Card>
-    <Card title="Recommended Demo Run" eyebrow="Owner walkthrough"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{["Refresh demo business", "Review profile", "Review branding/photos", "Review reservation settings", "Review reservation layout", "Create a test reservation", "Move reservation through confirm/check-in/complete", "Simulate QR scan", "Send demo email", "Review analytics", "Review billing/plan state", "Reset demo data when finished"].map((step, i) => <div key={step} className="rounded-2xl border border-white/10 bg-black/20 p-4"><Badge status={i < 6 ? "Ready" : i === 11 ? "Warning" : "Demo only"}>{i < 6 ? "Ready" : i === 11 ? "Optional" : "Waiting"}</Badge><p className="mt-2 font-black text-white">{i + 1}. {step}</p></div>)}</div></Card>
-    <Card title="Demo Safety" eyebrow="Admin-only cleanup"><div className="grid gap-3 md:grid-cols-3"><p className="rounded-2xl bg-white/[0.04] p-4"><b>Public search exposure</b><br />{publicWarning ? "Demo location is exposed in public search. Disable this before launch." : "Disabled by design"}</p><p className="rounded-2xl bg-white/[0.04] p-4"><b>Direct demo visibility</b><br />{loc?.demo_visible_publicly ? "Enabled" : "Hidden"}</p><p className="rounded-2xl bg-white/[0.04] p-4"><b>Last reset</b><br />{overview.lastReset ? new Date(overview.lastReset).toLocaleString() : "Not reset yet"}</p></div><div className="mt-4 flex flex-wrap gap-2"><Submit action={actions.resetMirrorDemoAction} label="Reset demo data" variant="danger" /><Submit action={actions.toggleDemoDirectVisibilityAction} label="Toggle direct demo visibility" /><Submit action={actions.toggleDemoPublicSearchVisibilityAction} label="Keep public search disabled" /></div></Card>
-  </div></main>;
+        <Card id="overview" title="Overview">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {overviewItems.map(([label, st, text]) => (
+              <div
+                key={label}
+                className="rounded-2xl border border-white/10 bg-black/20 p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <b className="text-white">{label}</b>
+                  <Badge status={st}>{st}</Badge>
+                </div>
+                <p className="mt-2 text-xs text-white/55">{text}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card id="profile" title="Profile">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {profileItems.map(([k, v]) => (
+              <div key={k} className="rounded-2xl bg-white/[0.04] p-4">
+                <p className="text-xs font-black uppercase text-white/35">
+                  {k}
+                </p>
+                <p className="mt-1 font-black text-white">
+                  {human(v, "Needs setup")}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {publicProfile ? (
+              <A href={publicProfile}>Open public profile</A>
+            ) : null}
+            {crmHref ? <A href={crmHref}>View CRM profile</A> : null}
+          </div>
+        </Card>
+        <Card id="branding" title="Branding and photos">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Logo/brand</b>
+              <p>
+                {branding?.length
+                  ? "Ready"
+                  : branding === null
+                    ? "Not installed"
+                    : "Needs setup"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Main photo</b>
+              <p>{branding?.[0]?.hero_image_url ? "Ready" : "Needs setup"}</p>
+            </div>
+            <div className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Gallery/photo count</b>
+              <p>{countLabel(overview.counts.location_photos)}</p>
+            </div>
+          </div>
+        </Card>
+        <Card id="photos" title="Photos">
+          <p>
+            Photo readiness is shown through the branding/media state.{" "}
+            {branding === null
+              ? "The media table is not installed for this dashboard preview."
+              : "Demo media is isolated to the demo location."}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <A href={demoHref("/business/dashboard/branding")}>
+              Open Photos / Branding
+            </A>
+            {crmHref ? (
+              <A href={`${crmHref}?tab=photos`}>Manage in CRM</A>
+            ) : null}
+          </div>
+        </Card>
+        <Card id="menu-packages" title="Menu / Packages">
+          <div className="mb-4 flex flex-wrap gap-2">
+            <A href={demoHref("/business/dashboard/menu")}>
+              Open Menu / Packages
+            </A>
+            {crmHref ? (
+              <A href={`${crmHref}?tab=menu-packages`}>Configure in CRM</A>
+            ) : null}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Badge status={statusFor(pages?.length)}>
+              {statusFor(pages?.length)}
+            </Badge>
+            <p>
+              Pages: <b>{countLabel(pages?.length)}</b>
+            </p>
+            <p>
+              Items/packages: <b>{countLabel(items?.length)}</b>
+            </p>
+          </div>
+        </Card>
+        <Card id="reservations" title="Reservations">
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Submit
+              action={actions.createDemoReservationAction}
+              label="Create test reservation"
+              variant="primary"
+            />
+            <Submit
+              action={actions.createDemoWaitlistAction}
+              label="Create waitlist"
+            />
+            <Submit
+              action={actions.runDemoReservationDailyDigestAction}
+              label="Run digest"
+            />
+            <Submit
+              action={actions.runDemoReservationCleanupAction}
+              label="Run cleanup"
+            />
+            <A href={demoHref("/reserve/dashboard/reservations")}>
+              Open reservation dashboard
+            </A>
+            <A href={demoHref("/reserve/dashboard")}>Open Host View</A>
+          </div>
+          <div className="grid gap-3">
+            {reservations?.length ? (
+              reservations.map((r) => {
+                const n = nextAction[String(r.status || "pending")] ?? null;
+                return (
+                  <article
+                    key={r.id}
+                    className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-black text-white">
+                          {human(r.customer_name, "Demo guest")} · party{" "}
+                          {human(r.party_size, "—")}
+                        </p>
+                        <p className="text-xs text-white/50">
+                          {human(r.reservation_date)} at{" "}
+                          {human(r.reservation_time)} ·{" "}
+                          {human(r.status, "pending")}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {n ? (
+                          <Submit
+                            action={n[0]}
+                            label={n[1]}
+                            hidden={{ reservationId: r.id }}
+                            variant="compact"
+                          />
+                        ) : (
+                          <Badge
+                            status={
+                              r.status === "completed" ? "Ready" : "Demo only"
+                            }
+                          >
+                            {human(r.status)}
+                          </Badge>
+                        )}
+                        <Submit
+                          action={actions.cancelDemoReservationAction}
+                          label="Cancel"
+                          hidden={{ reservationId: r.id }}
+                          variant="ghost"
+                        />
+                        <Submit
+                          action={actions.markDemoReservationNoShowAction}
+                          label="No Show"
+                          hidden={{ reservationId: r.id }}
+                          variant="ghost"
+                        />
+                      </div>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <p className="rounded-2xl border border-dashed border-white/15 p-4">
+                No demo reservations yet. Create a test reservation or refresh
+                demo data.
+              </p>
+            )}
+          </div>
+        </Card>
+        <Card id="reservation-layout" title="Reservation Layout">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div>
+              <b>Layout status</b>
+              <p>Needs setup</p>
+            </div>
+            <div>
+              <b>Layout type</b>
+              <p>Tables / rooms / seats</p>
+            </div>
+            <div>
+              <b>Total reservable items</b>
+              <p>No data yet</p>
+            </div>
+            <div>
+              <b>Unassigned reservations</b>
+              <p>
+                {countLabel(
+                  reservations?.filter((r) => !r.reservable_item_name).length,
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {["Dining Room", "Bar", "Patio", "Private Room", "Booths"].map(
+              (area) => (
+                <div
+                  key={area}
+                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center font-black"
+                >
+                  {area}
+                  <span className="mt-2 block text-xs font-bold text-white/45">
+                    Demo layout placeholder
+                  </span>
+                </div>
+              ),
+            )}
+          </div>
+          <p className="mt-4 text-white/55">
+            No demo layout yet. Refresh demo data or open the layout builder to
+            create tables, rooms, lanes, or seats.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <A
+              href={demoHref("/reserve/dashboard?tab=settings&section=layout")}
+            >
+              Open Layout Builder
+            </A>
+            <A href={demoHref("/reserve/dashboard/reservations")}>
+              Open Reservation Dashboard
+            </A>
+            <Submit
+              action={actions.createOrRefreshMirrorDemoAction}
+              label="Refresh Demo Data"
+            />
+            <Submit
+              action={actions.createDemoReservationAction}
+              label="Create Test Reservation"
+            />
+          </div>
+        </Card>
+        <Card id="qr-codes" title="QR Codes">
+          <div className="grid gap-3 md:grid-cols-3">
+            {qrTools.map((q) => (
+              <div key={q} className="rounded-2xl bg-white/[0.04] p-4">
+                <b>{q} QR</b>
+                <p>
+                  {qrCodes === null
+                    ? "Not installed"
+                    : qrCodes.some((x) =>
+                          String(x.qr_type || x.label || "")
+                            .toLowerCase()
+                            .includes(q.split(" ")[0].toLowerCase()),
+                        )
+                      ? "Ready"
+                      : "Needs setup"}
+                </p>
+                <p className="text-xs text-white/45">
+                  Scans: {countLabel(qrScans?.length)}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Submit
+              action={actions.regenerateDemoQrCodesAction}
+              label="Regenerate QR codes"
+            />
+            <Submit
+              action={actions.simulateDemoQrScanAction}
+              label="Simulate QR scan"
+            />
+            <A href={demoHref("/business/dashboard/qr-codes")}>
+              Open QR dashboard
+            </A>
+          </div>
+        </Card>
+        {[
+          ["leads", "Leads", leads, "Lead count"],
+          ["offers", "Offers", offers, "Active offers"],
+          ["vip-list", "VIP List", vip, "VIP signups"],
+          ["messaging", "Messaging", null, "Unread count"],
+          [
+            "notifications",
+            "Notifications",
+            notifications,
+            "Notification activity",
+          ],
+          ["reviews-feedback", "Reviews / Feedback", feedback, "Reviews count"],
+          [
+            "marketing-studio",
+            "Marketing Studio",
+            marketing,
+            "Marketing assets",
+          ],
+        ].map(([id, title, rows, label]: any) => (
+          <Card key={id} id={id} title={title}>
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge status={statusFor(rows?.length)}>
+                {statusFor(rows?.length)}
+              </Badge>
+              <span>
+                {label}: <b>{countLabel(rows?.length)}</b>
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {Array.isArray(rows) && rows.length ? (
+                rows.slice(0, 3).map((r: DemoRow, i: number) => (
+                  <p
+                    key={r.id || i}
+                    className="rounded-2xl bg-white/[0.04] p-3 font-bold text-white/75"
+                  >
+                    {human(
+                      r.title ||
+                        r.name ||
+                        r.customer_name ||
+                        r.event_type ||
+                        r.status,
+                      `${title} activity`,
+                    )}
+                  </p>
+                ))
+              ) : (
+                <p className="rounded-2xl border border-dashed border-white/15 p-4">
+                  {rows === null
+                    ? "Not installed."
+                    : `No demo ${String(title).toLowerCase()} yet.`}
+                </p>
+              )}
+            </div>
+          </Card>
+        ))}
+        <Card id="analytics" title="Analytics">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              "profile_view",
+              "qr_scan",
+              "reservation_requested",
+              "phone_click",
+              "website_click",
+              "offer_claim",
+              "event_lead_submitted",
+              "reservation_completed",
+            ].map((event) => (
+              <div key={event} className="rounded-2xl bg-white/[0.04] p-4">
+                <p className="text-xs font-black uppercase text-white/35">
+                  {event.replaceAll("_", " ")}
+                </p>
+                <p className="mt-1 text-2xl font-black">
+                  {analytics?.filter((a) => a.event_type === event).length ??
+                    "No data yet"}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4">
+            <A href={demoHref("/business/dashboard/analytics")}>
+              Open analytics dashboard
+            </A>
+          </div>
+        </Card>
+        <Card id="billing" title="Billing / Plan">
+          <div className="grid gap-3 md:grid-cols-3">
+            <p className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Current plan</b>
+              <br />
+              Growth Pro / Demo
+            </p>
+            <p className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Subscription status</b>
+              <br />
+              Demo
+            </p>
+            <p className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Billing safety</b>
+              <br />
+              No real checkout starts here.
+            </p>
+          </div>
+          <div className="mt-4">
+            <span className="inline-flex rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/40">
+              Billing actions are disabled in demo mode.
+            </span>
+          </div>
+        </Card>
+        <Card id="team" title="Team / Users">
+          <p>
+            Team members count: <b>Not installed</b>. Roles and invites appear
+            here when the owner team module is installed.
+          </p>
+        </Card>
+        <Card id="support" title="Support">
+          <p>
+            Support status: <b>Not installed</b>. Demo help contact:
+            demo-owner@theouthaven.com.
+          </p>
+        </Card>
+        <Card id="settings" title="Settings">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              "Business settings",
+              "Reservation settings",
+              "Notification settings",
+              "Public profile settings",
+              "Visibility settings",
+            ].map((s) => (
+              <p key={s} className="rounded-2xl bg-white/[0.04] p-3 font-bold">
+                {s}
+              </p>
+            ))}
+          </div>
+          <div className="mt-4">
+            <A href={demoHref("/business/dashboard/settings")}>
+              Open settings dashboard
+            </A>
+          </div>
+        </Card>
+        <Card title="Recommended Demo Run" eyebrow="Owner walkthrough">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[
+              "Refresh demo business",
+              "Review profile",
+              "Review branding/photos",
+              "Review reservation settings",
+              "Review reservation layout",
+              "Create a test reservation",
+              "Move reservation through confirm/check-in/complete",
+              "Simulate QR scan",
+              "Send demo email",
+              "Review analytics",
+              "Review billing/plan state",
+              "Reset demo data when finished",
+            ].map((step, i) => (
+              <div
+                key={step}
+                className="rounded-2xl border border-white/10 bg-black/20 p-4"
+              >
+                <Badge
+                  status={i < 6 ? "Ready" : i === 11 ? "Warning" : "Demo only"}
+                >
+                  {i < 6 ? "Ready" : i === 11 ? "Optional" : "Waiting"}
+                </Badge>
+                <p className="mt-2 font-black text-white">
+                  {i + 1}. {step}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card title="Demo Safety" eyebrow="Admin-only cleanup">
+          <div className="grid gap-3 md:grid-cols-3">
+            <p className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Public search exposure</b>
+              <br />
+              {publicWarning
+                ? "Demo location is exposed in public search. Disable this before launch."
+                : "Disabled by design"}
+            </p>
+            <p className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Direct demo visibility</b>
+              <br />
+              {loc?.demo_visible_publicly ? "Enabled" : "Hidden"}
+            </p>
+            <p className="rounded-2xl bg-white/[0.04] p-4">
+              <b>Last reset</b>
+              <br />
+              {overview.lastReset
+                ? new Date(overview.lastReset).toLocaleString()
+                : "Not reset yet"}
+            </p>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Submit
+              action={actions.resetMirrorDemoAction}
+              label="Reset demo data"
+              variant="danger"
+            />
+            <Submit
+              action={actions.toggleDemoDirectVisibilityAction}
+              label="Toggle direct demo visibility"
+            />
+            <Submit
+              action={actions.toggleDemoPublicSearchVisibilityAction}
+              label="Keep public search disabled"
+            />
+          </div>
+        </Card>
+      </div>
+    </main>
+  );
 }
