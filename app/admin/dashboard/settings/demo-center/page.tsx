@@ -408,6 +408,7 @@ export default async function DemoCenterPage() {
                 label="Refresh Demo Data"
                 variant="primary"
               />
+              <A href="/locations/dashboard">Open Location Dashboard</A>
               {publicProfile ? (
                 <A href={publicProfile}>Open Public Profile</A>
               ) : null}
@@ -464,6 +465,7 @@ export default async function DemoCenterPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <A href="/locations/dashboard">Open owner dashboard</A>
               {publicProfile ? (
                 <A href={publicProfile}>Open public profile</A>
               ) : null}

@@ -726,22 +726,23 @@ function EmptyState() {
     <div className="grid min-h-[560px] place-items-center rounded-[32px] border border-white/10 bg-[#10141b] p-8 text-center">
       <div>
         <Store className="mx-auto mb-4 text-white/25" size={52} />
-        <h2 className="text-3xl font-black">No locations yet</h2>
+        <h2 className="text-3xl font-black">No connected locations yet</h2>
         <p className="mx-auto mt-2 max-w-md text-white/50">
-          Claim or add a location to unlock your TheOutHaven owner dashboard.
+          Claim or connect a location to manage profile tools, reservations, QR
+          codes, guests, and analytics.
         </p>
-        <div className="mt-6 flex justify-center gap-3">
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
             href="/business/claim"
             className="rounded-2xl bg-[#e1062a] px-5 py-3 font-black"
           >
-            Claim Location
+            Claim a location
           </Link>
           <Link
-            href="/locations/apply"
+            href="/help"
             className="rounded-2xl border border-white/10 px-5 py-3 font-black"
           >
-            Add Location
+            Get help
           </Link>
         </div>
       </div>
@@ -948,9 +949,9 @@ function getLinks(location: LocationItem) {
     edit: `/locations/${type}/${location.id}/edit`,
     qr: "/business/dashboard/qr-codes",
     layout: "/reserve/dashboard/location-layout",
-    menu: `/locations/${type}/${location.id}/menu`,
-    photos: `/locations/${type}/${location.id}/edit`,
-    vip: `/locations/${type}/${location.id}/vip`,
+    menu: "/business/dashboard/menu",
+    photos: "/business/dashboard/profile",
+    vip: "/business/dashboard/vip",
     analytics: "/business/dashboard/analytics",
     hours: "/reserve/dashboard/location-layout",
     team: "/business/dashboard/settings",
