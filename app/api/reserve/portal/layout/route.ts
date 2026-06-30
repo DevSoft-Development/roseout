@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { requireAdminLocationApiRead, requireAdminLocationApiWrite } from "@/lib/admin/admin-access";
+import {
+  requireAdminLocationApiRead,
+  requireAdminLocationApiWrite,
+} from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { getLocationName } from "@/lib/locationName";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -27,7 +30,10 @@ function getErrorMessage(error: unknown) {
 }
 
 function isMissingTable(error: any) {
-  return error?.code === "42P01" || String(error?.message || "").includes("does not exist");
+  return (
+    error?.code === "42P01" ||
+    String(error?.message || "").includes("does not exist")
+  );
 }
 
 function normalizeStatus(value: unknown) {
@@ -38,7 +44,12 @@ function normalizeStatus(value: unknown) {
 }
 
 function isMissingColumn(error: any) {
-  return error?.code === "42703" || String(error?.message || "").toLowerCase().includes("column");
+  return (
+    error?.code === "42703" ||
+    String(error?.message || "")
+      .toLowerCase()
+      .includes("column")
+  );
 }
 
 function withoutOptionalFields<T extends Record<string, any>>(payload: T) {
@@ -50,13 +61,18 @@ function withoutOptionalFields<T extends Record<string, any>>(payload: T) {
   return copy;
 }
 
-function toLegacyItem(item: any) {
+export function toLegacyItem(item: any) {
   return {
     id: item.id,
     location_id: item.location_id,
-    location_type: item.location_type || item.source_table || "restaurant",
-    item_name: item.item_name,
-    item_type: item.item_type,
+    location_type: normalizeReservationType(
+      item.location_type ||
+        item.source_table ||
+        item.resource_table ||
+        "restaurant",
+    ),
+    item_name: item.item_name || item.name || item.label,
+    item_type: item.item_type || item.type,
     capacity_min: Number(item.capacity_min || item.capacity || 1),
     capacity_max: Number(item.capacity_max || item.capacity || 4),
     max_concurrent: Number(item.max_concurrent || 1),
@@ -69,14 +85,84 @@ function toLegacyItem(item: any) {
     layout_zone: item.layout_zone || item.item_type || "Main Area",
     rotation: Number(item.rotation || 0),
     status: item.status || "available",
-    source_table: item.source_table || item.location_type || "restaurant",
+    source_table:
+      item.source_table ||
+      item.location_type ||
+      item.resource_table ||
+      "locations",
+    resource_source:
+      item.resource_source ||
+      item.resource_table ||
+      item.source ||
+      (item.location_type ? LEGACY_TABLE : NEUTRAL_TABLE),
+    resource_table:
+      item.resource_table ||
+      item.resource_source ||
+      item.source ||
+      (item.location_type ? LEGACY_TABLE : NEUTRAL_TABLE),
     source_id: item.source_id || null,
     sort_order: Number(item.sort_order || 0),
-    duration_minutes: Number(item.duration_minutes || item.default_duration_minutes || item.reservation_duration_minutes || item.turn_time_minutes || 90),
-    default_duration_minutes: Number(item.default_duration_minutes || item.duration_minutes || item.reservation_duration_minutes || 90),
-    reservation_duration_minutes: Number(item.reservation_duration_minutes || item.duration_minutes || item.default_duration_minutes || 90),
+    duration_minutes: Number(
+      item.duration_minutes ||
+        item.default_duration_minutes ||
+        item.reservation_duration_minutes ||
+        item.turn_time_minutes ||
+        90,
+    ),
+    default_duration_minutes: Number(
+      item.default_duration_minutes ||
+        item.duration_minutes ||
+        item.reservation_duration_minutes ||
+        90,
+    ),
+    reservation_duration_minutes: Number(
+      item.reservation_duration_minutes ||
+        item.duration_minutes ||
+        item.default_duration_minutes ||
+        90,
+    ),
     notes: item.notes || item.description || item.internal_notes || null,
   };
+}
+
+export function mergeLayoutResources(
+  layoutItems: any[] = [],
+  legacyItems: any[] = [],
+) {
+  const merged = new Map<string, any>();
+  const keyFor = (item: any) => {
+    const name = String(item.item_name || item.name || item.label || "")
+      .trim()
+      .toLowerCase();
+    const type = String(item.item_type || item.type || "")
+      .trim()
+      .toLowerCase();
+    const capacity = Number(
+      item.capacity_max || item.capacity || item.capacity_min || 0,
+    );
+    return name
+      ? `${name}|${type}|${capacity}`
+      : String(item.id || `${type}|${capacity}`);
+  };
+  for (const item of legacyItems.map(toLegacyItem))
+    merged.set(keyFor(item), {
+      ...item,
+      resource_source: LEGACY_TABLE,
+      resource_table: LEGACY_TABLE,
+    });
+  for (const item of layoutItems.map(toLegacyItem))
+    merged.set(keyFor(item), {
+      ...item,
+      resource_source: NEUTRAL_TABLE,
+      resource_table: NEUTRAL_TABLE,
+    });
+  return Array.from(merged.values()).sort(
+    (a, b) =>
+      Number(a.sort_order || 0) - Number(b.sort_order || 0) ||
+      Number(a.layout_y || 0) - Number(b.layout_y || 0) ||
+      Number(a.layout_x || 0) - Number(b.layout_x || 0) ||
+      String(a.item_name || "").localeCompare(String(b.item_name || "")),
+  );
 }
 
 async function selectLayoutItems(locationId: string, locationType: string) {
@@ -87,14 +173,11 @@ async function selectLayoutItems(locationId: string, locationType: string) {
     .order("y_position", { ascending: true })
     .order("x_position", { ascending: true });
 
-  if (locationId) {
-    query = query.eq("location_id", locationId).eq("source_table", locationType);
-  }
+  if (locationId) query = query.eq("location_id", locationId);
 
   const result = await query;
-
-  if (!result.error) return { data: (result.data || []).map(toLegacyItem), source: NEUTRAL_TABLE };
-  if (!isMissingTable(result.error)) return { error: result.error, data: [], source: NEUTRAL_TABLE };
+  if (result.error && !isMissingTable(result.error))
+    return { error: result.error, data: [], source: NEUTRAL_TABLE };
 
   let legacyQuery = supabaseAdmin
     .from(LEGACY_TABLE)
@@ -104,15 +187,15 @@ async function selectLayoutItems(locationId: string, locationType: string) {
     .order("layout_x", { ascending: true })
     .order("item_name", { ascending: true });
 
-  if (locationId) {
-    legacyQuery = legacyQuery.eq("location_id", locationId).eq("location_type", locationType);
-  }
+  if (locationId) legacyQuery = legacyQuery.eq("location_id", locationId);
 
   const legacy = await legacyQuery;
+  if (legacy.error && !isMissingTable(legacy.error))
+    return { error: legacy.error, data: [], source: LEGACY_TABLE };
+
   return {
-    data: (legacy.data || []).map(toLegacyItem),
-    error: legacy.error,
-    source: LEGACY_TABLE,
+    data: mergeLayoutResources(result.data || [], legacy.data || []),
+    source: result.error ? LEGACY_TABLE : "merged",
   };
 }
 
@@ -179,7 +262,9 @@ async function updateLayoutItem(id: string, payload: any) {
 }
 
 async function createLayoutItem(body: any) {
-  const locationType = normalizeReservationType(body.location_type || body.source_table);
+  const locationType = normalizeReservationType(
+    body.location_type || body.source_table,
+  );
   const payload = {
     location_id: cleanString(body.location_id),
     source_table: locationType,
@@ -196,15 +281,38 @@ async function createLayoutItem(body: any) {
     status: normalizeStatus(body.status),
     is_active: body.is_active !== false,
     sort_order: Number(body.sort_order || 0),
-    duration_minutes: Number(body.duration_minutes || body.default_duration_minutes || body.reservation_duration_minutes || 90),
-    default_duration_minutes: Number(body.default_duration_minutes || body.duration_minutes || body.reservation_duration_minutes || 90),
-    reservation_duration_minutes: Number(body.reservation_duration_minutes || body.duration_minutes || body.default_duration_minutes || 90),
+    duration_minutes: Number(
+      body.duration_minutes ||
+        body.default_duration_minutes ||
+        body.reservation_duration_minutes ||
+        90,
+    ),
+    default_duration_minutes: Number(
+      body.default_duration_minutes ||
+        body.duration_minutes ||
+        body.reservation_duration_minutes ||
+        90,
+    ),
+    reservation_duration_minutes: Number(
+      body.reservation_duration_minutes ||
+        body.duration_minutes ||
+        body.default_duration_minutes ||
+        90,
+    ),
     notes: cleanString(body.notes) || null,
   };
 
-  let neutral = await supabaseAdmin.from(NEUTRAL_TABLE).insert(payload).select("*").single();
+  let neutral = await supabaseAdmin
+    .from(NEUTRAL_TABLE)
+    .insert(payload)
+    .select("*")
+    .single();
   if (neutral.error && isMissingColumn(neutral.error)) {
-    neutral = await supabaseAdmin.from(NEUTRAL_TABLE).insert(withoutOptionalFields(payload)).select("*").single();
+    neutral = await supabaseAdmin
+      .from(NEUTRAL_TABLE)
+      .insert(withoutOptionalFields(payload))
+      .select("*")
+      .single();
   }
   if (!neutral.error) return toLegacyItem(neutral.data);
   if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
@@ -239,14 +347,19 @@ async function deleteLayoutItem(id: string) {
   if (!neutral.error) return;
   if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
 
-  const legacy = await supabaseAdmin.from(LEGACY_TABLE).update({ is_active: false }).eq("id", id);
+  const legacy = await supabaseAdmin
+    .from(LEGACY_TABLE)
+    .update({ is_active: false })
+    .eq("id", id);
   if (legacy.error) throw new Error(legacy.error.message);
 }
 
 async function assertNoOverlap(reservationId: string, itemId: string) {
   const { data: reservation, error: reservationError } = await supabaseAdmin
     .from("location_reservations")
-    .select("id, location_id, location_type, reservation_date, reservation_time, duration_minutes, turn_time_minutes, party_size")
+    .select(
+      "id, location_id, location_type, reservation_date, reservation_time, duration_minutes, turn_time_minutes, party_size",
+    )
     .eq("id", reservationId)
     .single();
 
@@ -258,10 +371,14 @@ async function assertNoOverlap(reservationId: string, itemId: string) {
     .eq("id", itemId)
     .maybeSingle();
 
-  if (itemError && !isMissingTable(itemError)) throw new Error(itemError.message);
+  if (itemError && !isMissingTable(itemError))
+    throw new Error(itemError.message);
 
   if (item) {
-    if (item.is_active === false || ["blocked", "maintenance"].includes(item.status)) {
+    if (
+      item.is_active === false ||
+      ["blocked", "maintenance"].includes(item.status)
+    ) {
       throw new Error("This layout item is blocked or under maintenance.");
     }
     if (Number(reservation.party_size || 1) > Number(item.capacity || 1)) {
@@ -281,7 +398,9 @@ async function assertNoOverlap(reservationId: string, itemId: string) {
 
   if (activeError) throw new Error(activeError.message);
 
-  const reservationDuration = Number(reservation.duration_minutes || reservation.turn_time_minutes || 90);
+  const reservationDuration = Number(
+    reservation.duration_minutes || reservation.turn_time_minutes || 90,
+  );
   const conflicts = (active || []).some((entry: any) =>
     rangesOverlap(
       String(reservation.reservation_time || "00:00"),
@@ -309,11 +428,16 @@ export async function GET(request: NextRequest) {
       if (adminAuth.error) return adminAuth.error;
       adminUser = adminAuth.adminUser;
     }
-    const locationId = adminLocationId || cleanString(searchParams.get("locationId"));
+    const locationId =
+      adminLocationId || cleanString(searchParams.get("locationId"));
     const locationType = normalizeReservationType(searchParams.get("type"));
-    const selectedDate = cleanString(searchParams.get("date")) || dateKey(new Date());
+    const selectedDate =
+      cleanString(searchParams.get("date")) || dateKey(new Date());
     const page = Math.max(1, Number(searchParams.get("page") || 1));
-    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100)));
+    const pageSize = Math.min(
+      100,
+      Math.max(1, Number(searchParams.get("pageSize") || 100)),
+    );
     const q = cleanString(searchParams.get("q")).toLowerCase();
 
     let reservationQuery = supabaseAdmin
@@ -330,24 +454,58 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: true });
 
     if (locationId) {
-      reservationQuery = reservationQuery.eq("location_id", locationId).eq("location_type", locationType);
+      reservationQuery = reservationQuery
+        .eq("location_id", locationId)
+        .eq("location_type", locationType);
       waitlistQuery = waitlistQuery.eq("location_id", locationId);
     }
 
-    const [itemsResult, reservationsResult, locationsResult, waitlistResult] = await Promise.all([
-      selectLayoutItems(locationId, locationType),
-      reservationQuery,
-      supabaseAdmin
-        .from("locations")
-        .select("id, location_type, name, restaurant_name, activity_name, city, state, address, cuisine, source_table, rating", { count: "exact" })
-        .order("name", { ascending: true })
-        .range(Math.max(0, Number(searchParams.get("page") || 1) - 1) * Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100))), Math.max(0, Number(searchParams.get("page") || 1) - 1) * Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100))) + Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100))) - 1),
-      waitlistQuery,
-    ]);
+    const [itemsResult, reservationsResult, locationsResult, waitlistResult] =
+      await Promise.all([
+        selectLayoutItems(locationId, locationType),
+        reservationQuery,
+        supabaseAdmin
+          .from("locations")
+          .select(
+            "id, location_type, name, restaurant_name, activity_name, city, state, address, cuisine, source_table, rating",
+            { count: "exact" },
+          )
+          .order("name", { ascending: true })
+          .range(
+            Math.max(0, Number(searchParams.get("page") || 1) - 1) *
+              Math.min(
+                100,
+                Math.max(1, Number(searchParams.get("pageSize") || 100)),
+              ),
+            Math.max(0, Number(searchParams.get("page") || 1) - 1) *
+              Math.min(
+                100,
+                Math.max(1, Number(searchParams.get("pageSize") || 100)),
+              ) +
+              Math.min(
+                100,
+                Math.max(1, Number(searchParams.get("pageSize") || 100)),
+              ) -
+              1,
+          ),
+        waitlistQuery,
+      ]);
 
-    if (itemsResult.error) return NextResponse.json({ error: itemsResult.error.message }, { status: 500 });
-    if (reservationsResult.error) return NextResponse.json({ error: reservationsResult.error.message }, { status: 500 });
-    if (locationsResult.error) return NextResponse.json({ error: locationsResult.error.message }, { status: 500 });
+    if (itemsResult.error)
+      return NextResponse.json(
+        { error: itemsResult.error.message },
+        { status: 500 },
+      );
+    if (reservationsResult.error)
+      return NextResponse.json(
+        { error: reservationsResult.error.message },
+        { status: 500 },
+      );
+    if (locationsResult.error)
+      return NextResponse.json(
+        { error: locationsResult.error.message },
+        { status: 500 },
+      );
 
     if (adminLocationId) {
       await logAdminLocationAction({
@@ -365,27 +523,57 @@ export async function GET(request: NextRequest) {
       items: itemsResult.data || [],
       itemSource: itemsResult.source,
       reservations: reservationsResult.data || [],
-      waitlist: waitlistResult.error && !isMissingTable(waitlistResult.error) ? [] : waitlistResult.data || [],
-      locationsTotal: locationsResult.count || (locationsResult.data || []).length,
+      waitlist:
+        waitlistResult.error && !isMissingTable(waitlistResult.error)
+          ? []
+          : waitlistResult.data || [],
+      locationsTotal:
+        locationsResult.count || (locationsResult.data || []).length,
       locationsPage: page,
       locationsPageSize: pageSize,
-      locations: (locationsResult.data || []).filter((item:any)=>{
-        if(!q) return true;
-        const hay=[item.name,item.restaurant_name,item.activity_name,item.address,item.city,item.state,item.source_table,item.id,item.cuisine,item.category,item.primary_category,item.phone,item.google_place_id].filter(Boolean).join(" ").toLowerCase();
-        return hay.includes(q);
-      }).map((item) => {
-        const type = item.location_type === "restaurant" ? "restaurant" : "activity";
-        return {
-          id: item.id,
-          type,
-          name: getLocationName(item, type === "restaurant" ? "Restaurant" : "Activity"),
-          city: item.city || "",
-          state: item.state || "",
-        };
-      }),
+      locations: (locationsResult.data || [])
+        .filter((item: any) => {
+          if (!q) return true;
+          const hay = [
+            item.name,
+            item.restaurant_name,
+            item.activity_name,
+            item.address,
+            item.city,
+            item.state,
+            item.source_table,
+            item.id,
+            item.cuisine,
+            item.category,
+            item.primary_category,
+            item.phone,
+            item.google_place_id,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        })
+        .map((item) => {
+          const type =
+            item.location_type === "restaurant" ? "restaurant" : "activity";
+          return {
+            id: item.id,
+            type,
+            name: getLocationName(
+              item,
+              type === "restaurant" ? "Restaurant" : "Activity",
+            ),
+            city: item.city || "",
+            state: item.state || "",
+          };
+        }),
     });
   } catch (error: unknown) {
-    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: getErrorMessage(error) },
+      { status: 500 },
+    );
   }
 }
 
@@ -395,7 +583,9 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const adminLocationId = cleanString(body.adminLocationId || body.admin_location_id);
+    const adminLocationId = cleanString(
+      body.adminLocationId || body.admin_location_id,
+    );
     let adminUser: any = auth.adminUser;
     if (adminLocationId) {
       const adminAuth = await requireAdminLocationApiWrite();
@@ -409,31 +599,73 @@ export async function PATCH(request: NextRequest) {
       const source = body.source_item || body;
       const item = await createLayoutItem({
         ...source,
-        item_name: action === "duplicate_layout_item" ? `${source.item_name || "Layout item"} Copy` : source.item_name,
-        layout_x: Number(source.layout_x || source.x_position || 0) + (action === "duplicate_layout_item" ? 1 : 0),
-        layout_y: Number(source.layout_y || source.y_position || 0) + (action === "duplicate_layout_item" ? 1 : 0),
+        item_name:
+          action === "duplicate_layout_item"
+            ? `${source.item_name || "Layout item"} Copy`
+            : source.item_name,
+        layout_x:
+          Number(source.layout_x || source.x_position || 0) +
+          (action === "duplicate_layout_item" ? 1 : 0),
+        layout_y:
+          Number(source.layout_y || source.y_position || 0) +
+          (action === "duplicate_layout_item" ? 1 : 0),
       });
-      await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
+      await logStaffActivity({
+        locationId: item.location_id,
+        action,
+        details: { itemId: item.id },
+      });
       if (adminLocationId) {
-        await logAdminLocationAction({ adminUser, locationId: adminLocationId, actionType: action === "create_layout_item" ? "layout_resource_create" : "layout_resource_update", targetType: "layout_item", targetId: item.id, afterData: item, request });
+        await logAdminLocationAction({
+          adminUser,
+          locationId: adminLocationId,
+          actionType:
+            action === "create_layout_item"
+              ? "layout_resource_create"
+              : "layout_resource_update",
+          targetType: "layout_item",
+          targetId: item.id,
+          afterData: item,
+          request,
+        });
       }
       return NextResponse.json({ success: true, item });
     }
 
     if (action === "delete_layout_item") {
       const id = cleanString(body.id);
-      if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
+      if (!id)
+        return NextResponse.json(
+          { error: "Missing layout item id." },
+          { status: 400 },
+        );
       await deleteLayoutItem(id);
       await logStaffActivity({ action, details: { itemId: id } });
       if (adminLocationId) {
-        await logAdminLocationAction({ adminUser, locationId: adminLocationId, actionType: "layout_resource_delete", targetType: "layout_item", targetId: id, metadata: { softDelete: true }, request });
+        await logAdminLocationAction({
+          adminUser,
+          locationId: adminLocationId,
+          actionType: "layout_resource_delete",
+          targetType: "layout_item",
+          targetId: id,
+          metadata: { softDelete: true },
+          request,
+        });
       }
       return NextResponse.json({ success: true });
     }
 
-    if (["move_layout_item", "update_layout_item", "update_item_status"].includes(action)) {
+    if (
+      ["move_layout_item", "update_layout_item", "update_item_status"].includes(
+        action,
+      )
+    ) {
       const id = cleanString(body.id);
-      if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
+      if (!id)
+        return NextResponse.json(
+          { error: "Missing layout item id." },
+          { status: 400 },
+        );
       const item = await updateLayoutItem(id, {
         item_type: cleanString(body.item_type) || "table",
         item_name: cleanString(body.item_name) || "Layout item",
@@ -447,14 +679,44 @@ export async function PATCH(request: NextRequest) {
         status: normalizeStatus(body.status),
         is_active: body.is_active !== false,
         sort_order: Number(body.sort_order || 0),
-        duration_minutes: Number(body.duration_minutes || body.default_duration_minutes || body.reservation_duration_minutes || 90),
-        default_duration_minutes: Number(body.default_duration_minutes || body.duration_minutes || body.reservation_duration_minutes || 90),
-        reservation_duration_minutes: Number(body.reservation_duration_minutes || body.duration_minutes || body.default_duration_minutes || 90),
+        duration_minutes: Number(
+          body.duration_minutes ||
+            body.default_duration_minutes ||
+            body.reservation_duration_minutes ||
+            90,
+        ),
+        default_duration_minutes: Number(
+          body.default_duration_minutes ||
+            body.duration_minutes ||
+            body.reservation_duration_minutes ||
+            90,
+        ),
+        reservation_duration_minutes: Number(
+          body.reservation_duration_minutes ||
+            body.duration_minutes ||
+            body.default_duration_minutes ||
+            90,
+        ),
         notes: cleanString(body.notes) || null,
       });
-      await logStaffActivity({ locationId: item.location_id, action, details: { itemId: item.id } });
+      await logStaffActivity({
+        locationId: item.location_id,
+        action,
+        details: { itemId: item.id },
+      });
       if (adminLocationId) {
-        await logAdminLocationAction({ adminUser, locationId: adminLocationId, actionType: action === "update_item_status" ? "layout_resource_status_update" : "layout_resource_update", targetType: "layout_item", targetId: item.id, afterData: item, request });
+        await logAdminLocationAction({
+          adminUser,
+          locationId: adminLocationId,
+          actionType:
+            action === "update_item_status"
+              ? "layout_resource_status_update"
+              : "layout_resource_update",
+          targetType: "layout_item",
+          targetId: item.id,
+          afterData: item,
+          request,
+        });
       }
       return NextResponse.json({ success: true, item });
     }
@@ -462,29 +724,69 @@ export async function PATCH(request: NextRequest) {
     if (action === "update_reservation_status") {
       const reservationId = cleanString(body.reservation_id);
       const status = cleanString(body.status).toLowerCase();
-      const allowedStatuses = ["pending", "confirmed", "arrived", "seated", "occupied", "completed", "cancelled", "declined", "no_show"];
-      if (!reservationId) return NextResponse.json({ error: "Missing reservation id." }, { status: 400 });
-      if (!allowedStatuses.includes(status)) return NextResponse.json({ error: "Invalid reservation status." }, { status: 400 });
+      const allowedStatuses = [
+        "pending",
+        "confirmed",
+        "arrived",
+        "seated",
+        "occupied",
+        "completed",
+        "cancelled",
+        "declined",
+        "no_show",
+      ];
+      if (!reservationId)
+        return NextResponse.json(
+          { error: "Missing reservation id." },
+          { status: 400 },
+        );
+      if (!allowedStatuses.includes(status))
+        return NextResponse.json(
+          { error: "Invalid reservation status." },
+          { status: 400 },
+        );
 
-      const updatePayload: Record<string, string> = { status, updated_at: new Date().toISOString() };
-      if (status === "arrived") updatePayload.arrived_at = new Date().toISOString();
-      if (status === "seated" || status === "occupied") updatePayload.seated_at = new Date().toISOString();
-      if (status === "completed") updatePayload.completed_at = new Date().toISOString();
+      const updatePayload: Record<string, string> = {
+        status,
+        updated_at: new Date().toISOString(),
+      };
+      if (status === "arrived")
+        updatePayload.arrived_at = new Date().toISOString();
+      if (status === "seated" || status === "occupied")
+        updatePayload.seated_at = new Date().toISOString();
+      if (status === "completed")
+        updatePayload.completed_at = new Date().toISOString();
 
-      const { data, error } = await supabaseAdmin.from("location_reservations").update(updatePayload).eq("id", reservationId).select("*").single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      await logStaffActivity({ locationId: data.location_id, reservationId, action: `reservation_${status}` });
+      const { data, error } = await supabaseAdmin
+        .from("location_reservations")
+        .update(updatePayload)
+        .eq("id", reservationId)
+        .select("*")
+        .single();
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      await logStaffActivity({
+        locationId: data.location_id,
+        reservationId,
+        action: `reservation_${status}`,
+      });
       return NextResponse.json({ success: true, reservation: data });
     }
 
     if (action === "move_reservation") {
       const reservationId = cleanString(body.reservation_id);
       const itemId = cleanString(body.bookable_item_id);
-      if (!reservationId || !itemId) return NextResponse.json({ error: "Missing reservation or layout item id." }, { status: 400 });
+      if (!reservationId || !itemId)
+        return NextResponse.json(
+          { error: "Missing reservation or layout item id." },
+          { status: 400 },
+        );
       await assertNoOverlap(reservationId, itemId);
 
       const items = await selectLayoutItems("", "restaurant");
-      const item = (items.data || []).find((candidate: any) => candidate.id === itemId);
+      const item = (items.data || []).find(
+        (candidate: any) => candidate.id === itemId,
+      );
       const { data, error } = await supabaseAdmin
         .from("location_reservations")
         .update({
@@ -496,21 +798,36 @@ export async function PATCH(request: NextRequest) {
         .eq("id", reservationId)
         .select("*")
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      await logStaffActivity({ locationId: data.location_id, reservationId, action, details: { itemId } });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      await logStaffActivity({
+        locationId: data.location_id,
+        reservationId,
+        action,
+        details: { itemId },
+      });
       return NextResponse.json({ success: true, reservation: data });
     }
 
     if (action === "notify_waitlist") {
       const waitlistId = cleanString(body.waitlist_id);
-      if (!waitlistId) return NextResponse.json({ error: "Missing waitlist id." }, { status: 400 });
+      if (!waitlistId)
+        return NextResponse.json(
+          { error: "Missing waitlist id." },
+          { status: 400 },
+        );
       const { data: waitlist, error } = await supabaseAdmin
         .from("reservation_waitlist")
-        .update({ status: "notified", notified_at: new Date().toISOString(), expires_at: new Date(Date.now() + 10 * 60_000).toISOString() })
+        .update({
+          status: "notified",
+          notified_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        })
         .eq("id", waitlistId)
         .select("*")
         .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 500 });
       await sendReservationSms({
         locationId: waitlist.location_id,
         to: waitlist.customer_phone,
@@ -522,6 +839,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   } catch (error: unknown) {
-    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: getErrorMessage(error) },
+      { status: 500 },
+    );
   }
 }
