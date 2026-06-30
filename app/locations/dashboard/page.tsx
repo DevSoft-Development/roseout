@@ -7,13 +7,43 @@ import { getLocationName } from "@/lib/locationName";
 import type { LocationClaimFields } from "@/lib/locationClaim";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import type { LocationVisibilityFields } from "@/lib/locationVisibility";
-import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
-import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
+import {
+  getLocationOwnerAccess,
+  hasOwnerAccessToLocation,
+} from "@/lib/auth/locationOwnerAccess";
+import {
+  parseDemoOwnerParams,
+  requireDemoOwnerLocation,
+  type DemoSearchParams,
+} from "@/lib/demo/owner-context";
 
 export const dynamic = "force-dynamic";
 
 type LocationType = "restaurant" | "activity";
 
+type DashboardSummary = {
+  locationId: string;
+  reservationsToday: number;
+  upcomingReservations: number;
+  guestsSeated: number;
+  openSpaces: number | null;
+  totalReservations30d: number;
+  guestsServed30d: number;
+  walkIns30d: number;
+  noShows30d: number;
+  revenueEstimate30d: number;
+  newVipSignups30d: number;
+  profileViews30d: number;
+  guestClicks30d: number;
+  calls30d: number;
+  searchesThisMonth: number;
+  searchesLastMonth: number;
+  searchTrendPercent: number | null;
+  profileViewsThisMonth: number;
+  profileViewsLastMonth: number;
+  profileViewsTrendPercent: number | null;
+  clickTrendPercent: number | null;
+};
 
 const LOCATION_DASHBOARD_COLUMNS = `
   id,
@@ -118,9 +148,238 @@ function toDashboardLocation(locationData: Record<string, any>): LocationItem {
     location_type: locationType,
     display_name: getLocationName(
       locationData,
-      locationType === "restaurant" ? "Untitled restaurant" : "Untitled activity",
+      locationType === "restaurant"
+        ? "Untitled restaurant"
+        : "Untitled activity",
     ),
   } as LocationItem;
+}
+
+function emptySummary(location: LocationItem): DashboardSummary {
+  return {
+    locationId: location.id,
+    reservationsToday: 0,
+    upcomingReservations: 0,
+    guestsSeated: 0,
+    openSpaces: null,
+    totalReservations30d: 0,
+    guestsServed30d: 0,
+    walkIns30d: 0,
+    noShows30d: 0,
+    revenueEstimate30d: 0,
+    newVipSignups30d: 0,
+    profileViews30d: Number((location as any).view_count || 0),
+    guestClicks30d: Number((location as any).click_count || 0),
+    calls30d: Number((location as any).call_count || 0),
+    searchesThisMonth: 0,
+    searchesLastMonth: 0,
+    searchTrendPercent: null,
+    profileViewsThisMonth: Number((location as any).view_count || 0),
+    profileViewsLastMonth: 0,
+    profileViewsTrendPercent: null,
+    clickTrendPercent: null,
+  };
+}
+
+function trend(current: number, previous: number) {
+  if (!previous) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function inRange(date: unknown, start: string, end?: string) {
+  const value = String(date || "");
+  return value >= start && (!end || value < end);
+}
+
+function moneyValue(row: Record<string, any>) {
+  return (
+    Number(
+      row.deposit_amount ||
+        row.amount ||
+        row.total_amount ||
+        row.payment_amount ||
+        0,
+    ) || 0
+  );
+}
+
+async function safeRows(
+  supabase: ReturnType<typeof adminSupabase>,
+  table: string,
+  locationId: string,
+  from: string,
+) {
+  try {
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .eq("location_id", locationId)
+      .gte("created_at", from)
+      .limit(2000);
+    if (error) return [];
+    return (data || []) as Record<string, any>[];
+  } catch {
+    return [];
+  }
+}
+
+async function buildDashboardSummaries(
+  supabase: ReturnType<typeof adminSupabase>,
+  locations: LocationItem[],
+): Promise<Record<string, DashboardSummary>> {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(now.getDate() - 30);
+  const thirty = thirtyDaysAgo.toISOString();
+  const thisMonthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
+  const lastMonthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+  ).toISOString();
+  const result: Record<string, DashboardSummary> = {};
+
+  await Promise.all(
+    locations.map(async (location) => {
+      const summary = emptySummary(location);
+      const reservations = await safeRows(
+        supabase,
+        "location_reservations",
+        location.id,
+        lastMonthStart,
+      );
+      if (reservations.length) {
+        const active = reservations.filter(
+          (row) =>
+            !["cancelled", "declined"].includes(
+              String(row.status || "").toLowerCase(),
+            ),
+        );
+        summary.reservationsToday = active.filter(
+          (row) => String(row.reservation_date) === today,
+        ).length;
+        summary.upcomingReservations = active.filter(
+          (row) => String(row.reservation_date) >= today,
+        ).length;
+        summary.guestsSeated = active
+          .filter(
+            (row) =>
+              String(row.reservation_date) === today &&
+              ["checked_in", "seated", "in_progress", "arrived"].includes(
+                String(row.status || "").toLowerCase(),
+              ),
+          )
+          .reduce((sum, row) => sum + (Number(row.party_size) || 1), 0);
+        summary.totalReservations30d = active.filter((row) =>
+          inRange(row.created_at || row.reservation_date, thirty),
+        ).length;
+        summary.guestsServed30d = active
+          .filter(
+            (row) =>
+              inRange(row.created_at || row.reservation_date, thirty) &&
+              ["completed", "seated", "checked_in", "arrived"].includes(
+                String(row.status || "").toLowerCase(),
+              ),
+          )
+          .reduce((sum, row) => sum + (Number(row.party_size) || 1), 0);
+        summary.walkIns30d = active.filter(
+          (row) =>
+            inRange(row.created_at || row.reservation_date, thirty) &&
+            String(row.source || row.channel || "")
+              .toLowerCase()
+              .includes("walk"),
+        ).length;
+        summary.noShows30d = reservations.filter(
+          (row) =>
+            inRange(row.created_at || row.reservation_date, thirty) &&
+            String(row.status || "").toLowerCase() === "no_show",
+        ).length;
+        summary.revenueEstimate30d = active
+          .filter((row) =>
+            inRange(row.created_at || row.reservation_date, thirty),
+          )
+          .reduce((sum, row) => sum + moneyValue(row), 0);
+      }
+
+      const vip = await safeRows(
+        supabase,
+        "location_vip_signups",
+        location.id,
+        thirty,
+      );
+      summary.newVipSignups30d = vip.length;
+
+      const events = await safeRows(
+        supabase,
+        "analytics_events",
+        location.id,
+        lastMonthStart,
+      );
+      if (events.length) {
+        const name = (row: Record<string, any>) =>
+          `${row.event_name || ""} ${row.event_type || ""}`.toLowerCase();
+        const count = (
+          predicate: (row: Record<string, any>) => boolean,
+          start: string,
+          end?: string,
+        ) =>
+          events.filter(
+            (row) => inRange(row.created_at, start, end) && predicate(row),
+          ).length;
+        const profileThis = count(
+          (row) => name(row).includes("profile") || name(row).includes("view"),
+          thisMonthStart,
+        );
+        const profileLast = count(
+          (row) => name(row).includes("profile") || name(row).includes("view"),
+          lastMonthStart,
+          thisMonthStart,
+        );
+        const clickThis = count(
+          (row) => name(row).includes("click"),
+          thisMonthStart,
+        );
+        const clickLast = count(
+          (row) => name(row).includes("click"),
+          lastMonthStart,
+          thisMonthStart,
+        );
+        const searchThis = count(
+          (row) => name(row).includes("search"),
+          thisMonthStart,
+        );
+        const searchLast = count(
+          (row) => name(row).includes("search"),
+          lastMonthStart,
+          thisMonthStart,
+        );
+        summary.profileViews30d =
+          count(
+            (row) =>
+              name(row).includes("profile") || name(row).includes("view"),
+            thirty,
+          ) || summary.profileViews30d;
+        summary.guestClicks30d =
+          count((row) => name(row).includes("click"), thirty) ||
+          summary.guestClicks30d;
+        summary.calls30d =
+          count((row) => name(row).includes("call"), thirty) ||
+          summary.calls30d;
+        summary.searchesThisMonth = searchThis;
+        summary.searchesLastMonth = searchLast;
+        summary.searchTrendPercent = trend(searchThis, searchLast);
+        summary.profileViewsThisMonth =
+          profileThis || summary.profileViewsThisMonth;
+        summary.profileViewsLastMonth = profileLast;
+        summary.profileViewsTrendPercent = trend(profileThis, profileLast);
+        summary.clickTrendPercent = trend(clickThis, clickLast);
+      }
+      result[location.id] = summary;
+    }),
+  );
+
+  return result;
 }
 
 export default async function DashboardPage({
@@ -141,9 +400,16 @@ export default async function DashboardPage({
       ? toDashboardLocation(demoOwner.location as Record<string, any>)
       : null;
 
+    const demoLocations = demoLocation ? [demoLocation] : [];
+    const summaries = await buildDashboardSummaries(
+      adminSupabase(),
+      demoLocations,
+    );
+
     return (
       <LocationsDashboardClient
-        locations={demoLocation ? [demoLocation] : []}
+        locations={demoLocations}
+        summaries={summaries}
         impersonationLabel={
           demoLocation
             ? `Demo mode — viewing as ${demoLocation.display_name}`
@@ -214,7 +480,11 @@ export default async function DashboardPage({
 
     locations = (allLocations || []).map(toDashboardLocation);
   } else if (user?.id && ownerAccess) {
-    if (!ownerAccess.isAdmin && ownerAccess.ownedLocationIds.length === 0 && ownerAccess.ownedSourceLocationIds.length === 0) {
+    if (
+      !ownerAccess.isAdmin &&
+      ownerAccess.ownedLocationIds.length === 0 &&
+      ownerAccess.ownedSourceLocationIds.length === 0
+    ) {
       redirect("/create");
     }
 
@@ -240,16 +510,21 @@ export default async function DashboardPage({
     const { data: ownedLocations } = await query;
 
     locations = (ownedLocations || [])
-      .filter((location) => hasOwnerAccessToLocation(ownerAccess, location as Record<string, any>))
+      .filter((location) =>
+        hasOwnerAccessToLocation(ownerAccess, location as Record<string, any>),
+      )
       .map(toDashboardLocation);
   } else {
     redirect("/login?next=/locations/dashboard");
   }
 
+  const summaries = await buildDashboardSummaries(supabase, locations);
+
   return (
     <LocationsDashboardClient
       locations={locations}
       impersonationLabel={impersonationLabel}
+      summaries={summaries}
     />
   );
 }
