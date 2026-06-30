@@ -305,32 +305,53 @@ async function validateAssignment(
     throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
   }
 
-  const safeResourceId = isUuid(resource.id) ? resource.id : null;
-  const requestedLabel = normalizeLabel(resource.label);
-  const conflict = (active.data || []).some((entry: any) => {
-    const sameResource =
-      Boolean(safeResourceId) && entry.bookable_item_id === safeResourceId;
-    const sameLabel =
-      Boolean(requestedLabel) &&
-      [entry.bookable_item_name]
-        .map(normalizeLabel)
-        .some((label) => label === requestedLabel);
-    if (!sameResource && !sameLabel) return false;
-    return overlaps(
-      reservation.reservation_time,
-      reservation.duration_minutes || reservation.turn_time_minutes || 90,
-      entry.reservation_time,
-      entry.duration_minutes || entry.turn_time_minutes || 90,
-    );
-  });
+  const conflict = (active.data || []).some((entry: any) =>
+    reservationConflictsWithResource(reservation, entry, resource),
+  );
   return conflict
     ? "That table is already unavailable for this reservation time."
     : null;
 }
 
+export function shouldPersistBookableItemId(resource: AssignableResource) {
+  return resource.source === BOOKABLE_TABLE && isUuid(resource.id);
+}
+
+export function reservationConflictsWithResource(
+  requestedReservation: any,
+  existingReservation: any,
+  resource: AssignableResource,
+) {
+  const safeResourceId = shouldPersistBookableItemId(resource)
+    ? resource.id
+    : null;
+  const requestedLabel = normalizeLabel(resource.label);
+  const sameResource =
+    Boolean(safeResourceId) &&
+    existingReservation.bookable_item_id === safeResourceId;
+  const sameLabel =
+    Boolean(requestedLabel) &&
+    [existingReservation.bookable_item_name]
+      .map(normalizeLabel)
+      .some((label) => label === requestedLabel);
+
+  if (!sameResource && !sameLabel) return false;
+
+  return overlaps(
+    requestedReservation.reservation_time,
+    requestedReservation.duration_minutes ||
+      requestedReservation.turn_time_minutes ||
+      90,
+    existingReservation.reservation_time,
+    existingReservation.duration_minutes ||
+      existingReservation.turn_time_minutes ||
+      90,
+  );
+}
+
 export function buildAssignmentPayload(resource: AssignableResource, includeUpdatedAt: boolean) {
   const payload: Record<string, any> = {
-    bookable_item_id: isUuid(resource.id) ? resource.id : null,
+    bookable_item_id: shouldPersistBookableItemId(resource) ? resource.id : null,
     bookable_item_name: clean(resource.label) || "Selected table",
     bookable_item_type: resource.type || "table",
   };
@@ -379,7 +400,7 @@ async function updateReservationAssignment(
         reservationLocationId: context.reservationLocationId,
         reservationType: context.reservationType,
         rawResourceId: resource.id,
-        safeBookableItemId: isUuid(resource.id) ? resource.id : null,
+        safeBookableItemId: shouldPersistBookableItemId(resource) ? resource.id : null,
         resourceLabel: resource.label,
         resourceType: resource.type,
         payload: nextPayload,
@@ -616,8 +637,26 @@ export async function POST(request: NextRequest) {
           : message.includes("unavailable") || message.includes("fit")
             ? 409
             : 500;
+    const updateFailure = error?.updateFailure || null;
+    const updateError = updateFailure?.error || null;
+    const debug =
+      error?.debugId && adminLocationId && updateFailure
+        ? {
+            operation: updateFailure.operation,
+            code: updateError?.code,
+            message: updateError?.message,
+            details: updateError?.details,
+            hint: updateError?.hint,
+            payloadKeys: Object.keys(updateFailure.payload || {}),
+            payloadPreview: {
+              bookable_item_id: updateFailure.payload?.bookable_item_id,
+              bookable_item_name: updateFailure.payload?.bookable_item_name,
+              bookable_item_type: updateFailure.payload?.bookable_item_type,
+            },
+          }
+        : undefined;
     return NextResponse.json(
-      { success: false, code: error?.code, error: message, debugId: error?.debugId },
+      { success: false, code: error?.code, error: message, debugId: error?.debugId, ...(debug ? { debug } : {}) },
       { status },
     );
   }
