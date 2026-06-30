@@ -61,6 +61,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, alreadySent: true, sms: existing.data, reservation });
     }
 
+    const { data: location } = await supabaseAdmin.from("locations").select("reservation_settings").eq("id", locationId).maybeSingle();
+    if (((location?.reservation_settings as any)?.reminders || {}).tableReady === false) {
+      return NextResponse.json({ success: true, skipped: true, message: "Table ready was marked. Guest messaging is off for this location.", reservation });
+    }
+
     const locationName = clean(reservation.location_name || reservation.restaurant_name) || "this location";
     const result = await sendReservationSms({
       locationId,
