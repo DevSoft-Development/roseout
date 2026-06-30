@@ -338,6 +338,7 @@ function Sidebar({
         ["Analytics", links.analytics, BarChart3],
         ["Team Access", links.team, ShieldCheck],
         ["Settings", links.settings, Settings],
+        ["Billing", links.billing, Crown],
       ] as const)
     : [];
   return (
@@ -398,9 +399,9 @@ function Sidebar({
         ))}
       </nav>
       <div className="absolute bottom-4 left-4 right-4 space-y-3">
-        <PlanCard location={selected} />
+        <PlanCard location={selected} demoContext={demoContext} />
         <Link
-          href="/help"
+          href={withDemoParams("/help", demoContext)}
           className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-sm font-black hover:bg-white/[0.08]"
         >
           <span className="flex items-center gap-2">
@@ -993,7 +994,13 @@ function LocationMini({ location }: { location: LocationItem }) {
     </div>
   );
 }
-function PlanCard({ location }: { location: LocationItem | null }) {
+function PlanCard({
+  location,
+  demoContext,
+}: {
+  location: LocationItem | null;
+  demoContext?: DemoContext;
+}) {
   return (
     <div className="rounded-3xl border border-white/10 bg-[#121721] p-4">
       <div className="flex items-center justify-between">
@@ -1013,16 +1020,22 @@ function PlanCard({ location }: { location: LocationItem | null }) {
         Status available from billing settings.
       </p>
       <Link
-        href="/business#plans"
-        className="mt-3 block rounded-2xl bg-white px-3 py-2 text-center text-xs font-black text-black"
+        href={withDemoParams("/business#plans", demoContext)}
+        aria-disabled={demoContext?.demoMode ? "true" : undefined}
+        className={`mt-3 block rounded-2xl px-3 py-2 text-center text-xs font-black ${
+          demoContext?.demoMode
+            ? "border border-white/10 bg-white/10 text-white/45"
+            : "bg-white text-black"
+        }`}
       >
-        Manage Plan
+        {demoContext?.demoMode ? "Demo only" : "Manage Plan"}
       </Link>
     </div>
   );
 }
 function withDemoParams(href: string, demoContext?: DemoContext) {
   if (!demoContext?.demoMode) return href;
+  const [base, hash] = href.split("#");
   const params = new URLSearchParams({
     adminLocationId: demoContext.locationId,
     locationId: demoContext.locationId,
@@ -1030,7 +1043,9 @@ function withDemoParams(href: string, demoContext?: DemoContext) {
     demo: "1",
     fromDemoCenter: "1",
   });
-  return `${href}${href.includes("?") ? "&" : "?"}${params.toString()}`;
+  return `${base}${base.includes("?") ? "&" : "?"}${params.toString()}${
+    hash ? `#${hash}` : ""
+  }`;
 }
 
 function getLinks(location: LocationItem, demoContext?: DemoContext) {

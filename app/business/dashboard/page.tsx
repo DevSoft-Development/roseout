@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { BusinessGrowthProPage } from "@/components/growth-pro/BusinessGrowthProPage";
 import { parseDemoOwnerParams, type DemoSearchParams } from "@/lib/demo/owner-context";
+import { getDemoCenterOverview } from "@/lib/demo/demo-center";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,17 @@ export default async function Page({
   const params = searchParams ? await searchParams : {};
   const parsed = parseDemoOwnerParams(params);
 
-  if (parsed.demo || parsed.locationId) {
-    const locationId = parsed.locationId || "";
+  const hasDemoDashboardParam =
+    parsed.demo ||
+    Boolean(parsed.locationId) ||
+    Boolean(params.adminLocationId) ||
+    Boolean(params.locationId) ||
+    Boolean(params.type);
+
+  if (hasDemoDashboardParam) {
+    const overview =
+      !parsed.locationId && parsed.demo ? await getDemoCenterOverview() : null;
+    const locationId = parsed.locationId || overview?.location?.id || "";
     const type = parsed.type === "activity" ? "activity" : "restaurant";
     const nextParams = new URLSearchParams({
       adminLocationId: locationId,

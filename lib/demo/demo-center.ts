@@ -968,8 +968,8 @@ export function getMirrorDemoLinks(locationId: string): DemoLink[] {
     .concat([
       { label: "Admin CRM", href: `/admin/dashboard/crm/${locationId}` },
       {
-        label: "Business Dashboard",
-        href: `/business/dashboard?${context}`,
+        label: "Location Dashboard",
+        href: `/locations/dashboard?${context}`,
       },
       {
         label: "Sales Demo",
