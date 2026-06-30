@@ -871,12 +871,14 @@ export async function seedDemoReservations(locationId: string) {
     customer_name: demoGuestNames[i] || "TheOutHaven Guest",
     customer_email: "demo-customer@theouthaven.com",
     customer_phone: "212-555-0199",
+    location_type: "restaurant",
     party_size: i + 2,
     reservation_date: new Date(Date.now() + 86400000 * (i + 1))
       .toISOString()
       .slice(0, 10),
     reservation_time: `${18 + i}:00`,
     status,
+    duration_minutes: 90,
     source: "demo_center",
     is_demo: true,
     demo_key: MIRROR_DEMO_KEY,
