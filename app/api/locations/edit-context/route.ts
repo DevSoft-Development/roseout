@@ -166,6 +166,16 @@ const CANONICAL_LOCATION_EDIT_COLUMNS = new Set([
   "health_department_source",
   "health_department_source_url",
   "health_department_last_inspection_date",
+  "missing_fields",
+  "claim_status",
+  "theouthaven_score",
+  "google_regular_opening_hours",
+  "hours_backfill_status",
+  "hours_confidence",
+  "hours_source",
+  "hours_last_backfilled_at",
+  "hours_backfill_error",
+  "kitchen_closing_time",
   "updated_at",
 ]);
 
@@ -253,6 +263,9 @@ const PROFILE_SOURCE_FIELDS = [
   "publish_ready",
   "data_status",
   "photo_status",
+  "missing_fields",
+  "google_place_id",
+  "formatted_address",
 ];
 
 function withManualProfileSource(
@@ -405,6 +418,15 @@ export async function PATCH(req: Request) {
       delete locationPayload.search_document;
       delete locationPayload.semantic_search_text;
       delete locationPayload.special_hours;
+      delete locationPayload.data_status;
+      delete locationPayload.missing_fields;
+      delete locationPayload.claim_status;
+      delete locationPayload.theouthaven_score;
+      delete locationPayload.profile_managed_by;
+      delete locationPayload.profile_manual_lock;
+      delete locationPayload.profile_owner_verified_at;
+      delete locationPayload.profile_last_admin_update_at;
+      delete locationPayload.profile_field_sources;
     }
 
     withManualProfileSource(locationPayload, existingLocation.data as Record<string, unknown>, auth.access.isAdmin);
@@ -424,8 +446,9 @@ export async function PATCH(req: Request) {
           ? " Run the latest Supabase migrations and reload the PostgREST schema cache."
           : "";
 
+      console.error("Edit context update error:", error);
       return NextResponse.json(
-        { error: `${error.message}${schemaCacheHint}` },
+        { error: `We could not save this location right now.${schemaCacheHint}` },
         { status: 400 },
       );
     }

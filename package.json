@@ -36,7 +36,8 @@
     "enrich:google:locations": "tsx scripts/enrich-google-locations.ts",
     "test:create-search-analytics": "rm -rf .tmp-test/create-search-analytics && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/create-search-analytics scripts/create-search-analytics-regression.ts lib/search/enterprise/createSearchAnalytics.ts && node .tmp-test/create-search-analytics/scripts/create-search-analytics-regression.js",
     "test:location-publishability": "vitest run lib/__tests__/location-publishability.test.mts",
-    "test:public-search-intent": "rm -rf .tmp-test/public-intent && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/public-intent scripts/public-search-intent-modes-regression.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts lib/search/enterprise/types.ts && node .tmp-test/public-intent/scripts/public-search-intent-modes-regression.js"
+    "test:public-search-intent": "rm -rf .tmp-test/public-intent && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/public-intent scripts/public-search-intent-modes-regression.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts lib/search/enterprise/types.ts && node .tmp-test/public-intent/scripts/public-search-intent-modes-regression.js",
+    "test:location-editor": "node scripts/location-editor-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

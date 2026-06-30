@@ -98,17 +98,20 @@ type LocationRecord = Record<string, unknown> & {
 };
 
 const inputClass =
-  "w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-black/75 shadow-sm outline-none transition placeholder:text-black/30 focus:border-[#ff1654]/50 focus:ring-4 focus:ring-[#ff1654]/10";
+  "w-full rounded-2xl border border-white/10 bg-[#090b10] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none transition placeholder:text-white/25 focus:border-[#ff1654]/60 focus:ring-4 focus:ring-[#ff1654]/10";
 const selectClass = `${inputClass} appearance-none`;
-const labelClass = "text-xs font-black uppercase tracking-[0.18em] text-black/45";
+const labelClass = "text-xs font-black uppercase tracking-[0.18em] text-white/45";
+const secondaryButtonClass =
+  "rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-wide text-white/70 transition hover:bg-white/[0.08] hover:text-white";
 
 const navItems = [
   ["overview", "Overview"],
   ["contact", "Contact"],
   ["location-map", "Location & Map"],
   ["classification", "Classification"],
-  ["search-tags", "Search & Tags"],
+  ["search-tags", "Search Tags"],
   ["photos", "Photos"],
+  ["hours-reservations", "Hours & Reservations"],
   ["publishing", "Publishing"],
   ["ownership", "Ownership"],
   ["admin-notes", "Admin Notes"],
@@ -136,17 +139,53 @@ function getQualityStatus(score: number, readinessPercent: number): QualityStatu
   return "Incomplete";
 }
 
+
 function getQualityStatusClass(status: QualityStatus) {
   switch (status) {
     case "Excellent":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+      return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
     case "Strong":
-      return "border-blue-200 bg-blue-50 text-blue-700";
+      return "border-sky-400/30 bg-sky-400/10 text-sky-200";
     case "Needs review":
-      return "border-amber-200 bg-amber-50 text-amber-800";
+      return "border-amber-400/30 bg-amber-400/10 text-amber-200";
     case "Incomplete":
-      return "border-rose-200 bg-rose-50 text-rose-700";
+      return "border-red-400/30 bg-red-400/10 text-red-200";
   }
+}
+
+function humanizeValue(value: unknown, fallback = "Not set") {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : fallback;
+  if (typeof value === "object") return fallback;
+  return String(value).replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function visibilityLabel(form: Pick<FormState, "is_searchable" | "data_status">) {
+  const status = String(form.data_status || "").toLowerCase();
+  if (["incomplete", "needs_review", "needs review", "draft"].includes(status)) return "Needs review before public";
+  if (form.is_searchable === "false") return "Hidden from search";
+  if (form.is_searchable === "true") return "Public and searchable";
+  return "Using default visibility";
+}
+
+function managedByLabel(value: unknown) {
+  const key = String(value || "system").toLowerCase();
+  if (key === "owner") return "Owner managed";
+  if (key === "admin") return "Admin managed";
+  if (key === "system") return "System imported";
+  return humanizeValue(value);
+}
+
+function sourceSummary(sources: Record<string, unknown> | null | undefined, field: string, fallback: unknown) {
+  return managedByLabel(sources?.[field] || fallback || "system");
+}
+
+function missingFieldList(value: string | undefined) {
+  return (value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function calculateUpdatedScore(location: LocationRecord) {
@@ -500,6 +539,9 @@ export default function EditLocationPage() {
       owner_email: form.owner_email,
       owner_phone: form.owner_phone,
       claim_status: form.claim_status,
+      is_searchable: form.is_searchable === "" ? null : form.is_searchable === "true",
+      data_status: form.data_status || null,
+      missing_fields: toArray(form.missing_fields || ""),
       latitude: form.latitude === "" ? null : Number(form.latitude),
       longitude: form.longitude === "" ? null : Number(form.longitude),
       google_place_id: form.google_place_id || null,
@@ -559,8 +601,9 @@ export default function EditLocationPage() {
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
   const publicPreviewHref = `/locations/${type}/${effectiveId || locationId}`;
-  const adminDetailHref = `/admin/dashboard/locations/${type}/${effectiveId || locationId}`;
+  const adminDetailHref = `/locations/dashboard`;
   const crmHref = `/admin/dashboard/locations/${type}/${effectiveId || locationId}/crm`;
+  const reservationsHref = `/locations/${type}/${effectiveId || locationId}/reserve`;
   const hasUnsavedChanges = savedSnapshot !== "" && serializeForm(form) !== savedSnapshot;
   const isSuccess =
     message.toLowerCase().includes("success") ||
@@ -686,7 +729,7 @@ export default function EditLocationPage() {
 
   if (!type) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#0b0708] px-5 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07090d] px-5 text-white">
         <div className="max-w-lg rounded-[2rem] border border-red-400/30 bg-red-400/10 p-8 text-center shadow-2xl">
           <p className="text-sm font-black uppercase tracking-[0.25em] text-red-100">
             Invalid Link
@@ -703,9 +746,9 @@ export default function EditLocationPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#0b0708] pt-28 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#07090d] pt-28 text-white">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center shadow-2xl">
-          <div className="mx-auto mb-5 h-12 w-12 animate-pulse rounded-full bg-[#ff1654] shadow-lg shadow-[#ff1654]/30" />
+          <div className="mx-auto mb-5 h-12 w-12 animate-pulse rounded-full bg-[#e1062a] shadow-lg shadow-[#ff1654]/30" />
           <p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">
             Loading Location
           </p>
@@ -715,24 +758,34 @@ export default function EditLocationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0b0708] px-4 pb-12 pt-24 text-white md:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1560px] space-y-6">
+    <main className="min-h-screen bg-[#07090d] px-4 pb-24 pt-20 text-white md:px-6 lg:pl-[320px] lg:pr-8">
+      <EditorSidebar
+        type={type}
+        form={form}
+        mainImage={mainImage}
+        publicPreviewHref={publicPreviewHref}
+        dashboardHref="/locations/dashboard"
+        crmHref={crmHref}
+        effectiveId={effectiveId || locationId}
+      />
+      <div className="mx-auto max-w-[1500px] space-y-6">
         <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#22070d] via-[#12090b] to-[#070707] p-5 shadow-2xl md:p-7">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <button
                 type="button"
                 onClick={() => router.push(from)}
-                className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white/75 transition hover:bg-white hover:text-black"
+                className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white/75 transition hover:bg-white/[0.08] hover:text-white"
               >
                 Back to Locations
               </button>
               <p className="mt-6 text-xs font-black uppercase tracking-[0.35em] text-[#ff9bb6]">
-                TheOutHaven Admin · Location Editor
+                Locations / {type === "restaurants" ? "Restaurants" : "Activities"} / {form.name || "Location"} / Editor
               </p>
               <h1 className="mt-3 max-w-4xl truncate text-4xl font-black tracking-tight text-white md:text-5xl">
-                {form.name || "Untitled Location"}
+                Location Editor
               </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Manage public profile, search visibility, reservations, photos, and owner settings.</p>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
                 {formatFullAddress({
                   address: form.address,
@@ -757,27 +810,27 @@ export default function EditLocationPage() {
                 <span>Owner verified: {form.profile_owner_verified_at ? new Date(form.profile_owner_verified_at).toLocaleString() : "Not yet"}</span>
                 <span>Last owner update: {form.profile_last_owner_update_at ? new Date(form.profile_last_owner_update_at).toLocaleString() : "—"}</span>
                 <span>Last admin update: {form.profile_last_admin_update_at ? new Date(form.profile_last_admin_update_at).toLocaleString() : "—"}</span>
-                <span>Hours source: {String(form.profile_field_sources?.operating_hours || form.hours_source || form.profile_managed_by || "system")}</span>
-                <span>Contact source: {String(form.profile_field_sources?.phone || form.profile_field_sources?.website || form.profile_managed_by || "system")}</span>
-                <span>Photos source: {String(form.profile_field_sources?.main_image || form.profile_field_sources?.images || form.profile_managed_by || "system")}</span>
-                <span>Booking source: {String(form.profile_field_sources?.reservation_url || form.profile_field_sources?.booking_url || form.profile_managed_by || "system")}</span>
+                <span>Hours source: {sourceSummary(form.profile_field_sources, "operating_hours", form.hours_source || form.profile_managed_by)}</span>
+                <span>Contact source: {sourceSummary(form.profile_field_sources, "phone", form.profile_managed_by)}</span>
+                <span>Photos source: {sourceSummary(form.profile_field_sources, "main_image", form.profile_managed_by)}</span>
+                <span>Booking source: {sourceSummary(form.profile_field_sources, "reservation_url", form.profile_managed_by)}</span>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <a href={publicPreviewHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white hover:text-black">
+              <a href={publicPreviewHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white/[0.08] hover:text-white">
                 View Public Page
               </a>
-              <a href={crmHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white hover:text-black">
+              <a href={crmHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white/[0.08] hover:text-white">
                 Open CRM
               </a>
-              <a href={adminDetailHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white hover:text-black">
-                Legacy View
+              <a href={adminDetailHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white/[0.08] hover:text-white">
+                Open Dashboard
               </a>
               <button
                 onClick={saveLocation}
                 disabled={saving || optimizing}
-                className="rounded-full bg-[#ff1654] px-6 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#d90046] disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#ff2142] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>
@@ -785,21 +838,21 @@ export default function EditLocationPage() {
           </div>
         </section>
 
-        <div className="sticky top-[72px] z-30 rounded-full border border-white/10 bg-[#12090b]/95 p-2 shadow-2xl backdrop-blur">
+        <div className="sticky top-[72px] z-30 rounded-full border border-white/10 bg-[#090b10]/95 p-2 shadow-2xl backdrop-blur">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 px-3">
               <p className="truncate text-sm font-black text-white">Editing {form.name || "location"}</p>
-              <p className="text-xs font-bold text-white/45">{hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}</p>
+              <p className="text-xs font-bold text-white/45">{hasUnsavedChanges ? "Draft changes" : "All changes saved"}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusPill tone={hasUnsavedChanges ? "warning" : "success"}>{hasUnsavedChanges ? "Draft" : "Saved"}</StatusPill>
-              <button type="button" onClick={() => router.push(from)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white hover:text-black">
+              <button type="button" onClick={() => router.push(from)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white/[0.08] hover:text-white">
                 Cancel / Back
               </button>
               <button
                 onClick={saveLocation}
                 disabled={saving || optimizing}
-                className="rounded-full bg-[#ff1654] px-5 py-2 text-xs font-black text-white transition hover:bg-[#d90046] disabled:opacity-50"
+                className="rounded-full bg-[#e1062a] px-5 py-2 text-xs font-black text-white transition hover:bg-[#ff2142] disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>
@@ -836,7 +889,7 @@ export default function EditLocationPage() {
           <aside className="xl:sticky xl:top-[152px] xl:self-start">
             <nav className="flex gap-2 overflow-x-auto rounded-[24px] border border-white/10 bg-white/[0.06] p-3 xl:grid xl:gap-2 xl:overflow-visible">
               {navItems.map(([href, label]) => (
-                <a key={href} href={`#${href}`} className="shrink-0 rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white hover:text-black xl:w-full">
+                <a key={href} href={`#${href}`} className="shrink-0 rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white/[0.08] hover:text-white xl:w-full">
                   {label}
                 </a>
               ))}
@@ -897,10 +950,10 @@ export default function EditLocationPage() {
                 }
                 inputClassName={`mt-2 ${inputClass}`}
                 labelClassName={labelClass}
-                statusClassName="mt-2 text-xs font-bold text-black/45"
-                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl"
-                predictionButtonClassName="block w-full border-b border-black/10 px-4 py-3 text-left text-sm font-bold text-black/70 transition last:border-b-0 hover:bg-[#fff1f5]"
-                buttonClassName="mt-3 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-black text-black/65 transition hover:bg-[#ff1654] hover:text-white disabled:opacity-50"
+                statusClassName="mt-2 text-xs font-bold text-white/45"
+                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#121721] shadow-2xl"
+                predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/70 transition last:border-b-0 hover:bg-white/[0.08]"
+                buttonClassName="mt-3 rounded-full border border-white/10 bg-[#121721] px-4 py-2 text-xs font-black text-white/65 transition hover:bg-[#e1062a] hover:text-white disabled:opacity-50"
               />
               <FieldRow columns={4}>
                 <TextInput label="City" value={form.city} onChange={(v) => update("city", v)} />
@@ -934,7 +987,7 @@ export default function EditLocationPage() {
               <TextArea label="Signature Items" value={form.signature_items} onChange={(v) => update("signature_items", v)} helper="Food, drinks, amenities, or notable experiences." />
             </EditorSection>
 
-            <EditorSection id="search-tags" title="Search & Tags" description="Internal search quality controls and discovery keywords.">
+            <EditorSection id="search-tags" title="Search Tags" description="Internal search quality controls and discovery keywords.">
               <TextArea label="Search Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} helper="Comma-separated keywords used by search and recommendations." />
               <FieldRow columns={3}>
                 <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
@@ -945,42 +998,42 @@ export default function EditLocationPage() {
 
             <EditorSection id="photos" title="Photos" description="Primary image, gallery URLs, and lightweight upload/backfill tools.">
               <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-                <div className="overflow-hidden rounded-[20px] border border-black/10 bg-white shadow-sm">
+                <div className="overflow-hidden rounded-[20px] border border-white/10 bg-[#121721] shadow-sm">
                   {mainImage ? (
-                    <Image src={mainImage} alt={form.name || "Location"} width={420} height={300} className="h-40 w-full object-cover" />
+                    <Image src={mainImage} alt={form.name || "Location"} width={420} height={300} className="h-40 w-full object-cover" unoptimized />
                   ) : (
-                    <div className="flex h-40 items-center justify-center bg-black/[0.04] text-xs font-black uppercase tracking-[0.18em] text-black/35">Missing photo</div>
+                    <div className="flex h-40 items-center justify-center bg-white/[0.04] text-xs font-black uppercase tracking-[0.18em] text-white/35">Missing photo</div>
                   )}
                 </div>
                 <TextInput label="Primary Image URL" value={mainImage} onChange={setMainImage} helper="Saved to main_image and image_url for compatibility." />
               </div>
 
-              <div className="rounded-[20px] border border-black/10 bg-white p-4">
+              <div className="rounded-[20px] border border-white/10 bg-[#121721] p-4">
                 <label className={labelClass}>Upload image</label>
                 <input
                   type="file"
                   accept="image/*"
                   disabled={uploadingImage}
                   onChange={(event) => uploadGalleryImage(event.target.files?.[0] || null)}
-                  className="mt-2 block w-full rounded-2xl border border-black/10 bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-black/70 file:mr-4 file:rounded-full file:border-0 file:bg-[#ff1654] file:px-4 file:py-2 file:text-xs file:font-black file:text-white disabled:opacity-50"
+                  className="mt-2 block w-full rounded-2xl border border-white/10 bg-[#10141b] px-4 py-3 text-sm font-semibold text-white/70 file:mr-4 file:rounded-full file:border-0 file:bg-[#e1062a] file:px-4 file:py-2 file:text-xs file:font-black file:text-white disabled:opacity-50"
                 />
-                <p className="mt-2 text-xs font-semibold text-black/40">If the storage bucket is not available, paste an image URL instead.</p>
+                <p className="mt-2 text-xs font-semibold text-white/40">If the storage bucket is not available, paste an image URL instead.</p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                 <TextInput label="Add Gallery Image URL" value={newGalleryImage} onChange={setNewGalleryImage} placeholder="https://..." />
-                <button type="button" onClick={addGalleryImage} className="self-end rounded-full bg-[#ff1654] px-5 py-3 text-xs font-black uppercase tracking-wide text-white transition hover:bg-[#d90046]">Add image</button>
+                <button type="button" onClick={addGalleryImage} className="self-end rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-wide text-white transition hover:bg-[#ff2142]">Add image</button>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 {(galleryImages.length ? galleryImages : [""]).slice(0, 9).map((image, index) => (
-                  <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center text-xs font-bold text-black/30">Gallery preview</div>}
+                  <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-[#121721] shadow-sm">
+                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-28 w-full object-cover" unoptimized /> : <div className="flex h-28 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
                     <div className="space-y-2 p-3">
-                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-black/45">{image === mainImage ? "Main image" : `Photo ${index + 1}`}</div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">{image === mainImage ? "Main image" : `Photo ${index + 1}`}</div>
                       {image && (
                         <div className="flex gap-2">
-                          <button type="button" onClick={() => setMainImage(image)} className="flex-1 rounded-full border border-black/10 px-3 py-1.5 text-[10px] font-black uppercase text-black/60 hover:bg-black hover:text-white">Set main</button>
+                          <button type="button" onClick={() => setMainImage(image)} className="flex-1 rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase text-white/60 hover:bg-white/[0.08] hover:text-white">Set main</button>
                           <button type="button" onClick={() => removeGalleryImage(image)} className="flex-1 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase text-red-700 hover:bg-red-600 hover:text-white">Remove</button>
                         </div>
                       )}
@@ -990,7 +1043,7 @@ export default function EditLocationPage() {
               </div>
             </EditorSection>
 
-            <EditorSection id="publishing" title="Publishing" description="Controls that influence public visibility, reservations, and live listing readiness.">
+            <EditorSection id="hours-reservations" title="Hours & Reservations" description="Weekly schedule, short hours, and internal or external reservation controls.">
               <FieldRow columns={2}>
                 <ToggleRow title="Internal reservations" text="Enable TheOutHaven reservation operations." checked={form.internal_reservations_enabled || form.uses_internal_reservations} onChange={setInternalReservations} />
                 <ToggleRow title="External reservations" text="Allow external booking URLs to remain available." checked={form.allow_external_reservations} onChange={setAllowExternalReservations} />
@@ -1000,14 +1053,34 @@ export default function EditLocationPage() {
                 <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
               </FieldRow>
               <TextInput label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} placeholder="Mon-Fri 5pm-10pm" />
-              <LocationHoursEditor value={form.operating_hours} theme="light" status={form as Record<string, unknown>} onValidJsonChange={(value, valid) => setForm((prev) => ({ ...prev, operating_hours: value, operating_hours_valid: valid }))} />
-              <details className="rounded-2xl border border-black/10 bg-white p-4 text-sm font-bold text-black/65"><summary className="cursor-pointer">Special/Holiday Hours JSON</summary><textarea readOnly rows={5} value={form.special_hours ? JSON.stringify(form.special_hours, null, 2) : ""} className="mt-3 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 font-mono text-xs text-black outline-none" /></details>
+              <LocationHoursEditor value={form.operating_hours} theme="dark" status={form as Record<string, unknown>} onValidJsonChange={(value, valid) => setForm((prev) => ({ ...prev, operating_hours: value, operating_hours_valid: valid }))} />
+              <ReadOnlyField label="Special / Holiday Hours" value={form.special_hours ? "Special hours are configured" : "No special holiday hours configured"} />
               {type === "restaurants" ? (
                 <FieldRow columns={2}>
                   <TextInput label="Days of Operation" value={(form.days_of_operation || []).join(", ")} onChange={(v) => setForm((prev) => ({ ...prev, days_of_operation: toArray(v) }))} />
                   <TextInput label="Kitchen Closing Time" value={form.kitchen_closing_time || ""} onChange={(v) => setForm((prev) => ({ ...prev, kitchen_closing_time: v }))} />
                 </FieldRow>
               ) : null}
+              <div className="flex flex-wrap gap-3">
+                <a href={reservationsHref} className={secondaryButtonClass}>Open Reservations</a>
+                <a href={`${reservationsHref}/layout`} className={secondaryButtonClass}>Open Layout Builder</a>
+              </div>
+            </EditorSection>
+
+            <EditorSection id="publishing" title="Publishing" description="Public visibility, quality status, and readiness checklist in plain English.">
+              <FieldRow columns={2}>
+                <SelectInput label="Search visibility" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Using default visibility", true: "Searchable", false: "Hidden from search" }} />
+                <ReadOnlyField label="Public visibility" value={visibilityLabel(form)} />
+              </FieldRow>
+              <ReadOnlyField label="Data status" value={humanizeValue(form.data_status, "Needs review")} />
+              <div className="grid gap-2 sm:grid-cols-2">
+                {readiness.map(([label, complete]) => (
+                  <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <span className="text-sm font-bold text-white/65">{label}</span>
+                    <span className={complete ? "text-xs font-black text-emerald-300" : "text-xs font-black text-amber-300"}>{complete ? "Ready" : "Needs work"}</span>
+                  </div>
+                ))}
+              </div>
             </EditorSection>
 
             <EditorSection id="ownership" title="Ownership" description="Owner contact data and claim status used by admin operations.">
@@ -1020,7 +1093,7 @@ export default function EditLocationPage() {
                 <TextInput label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} />
                 <ReadOnlyField label="Claim Summary" value={form.claim_status || "Unclaimed or not connected"} />
               </FieldRow>
-              <a href={crmHref} className="inline-flex w-fit rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-black/65 transition hover:bg-black hover:text-white">Open CRM / Claim Management</a>
+              <a href={crmHref} className="inline-flex w-fit rounded-full border border-white/10 bg-[#121721] px-5 py-3 text-sm font-black text-white/65 transition hover:bg-white/[0.08] hover:text-white">Open CRM / Claim Management</a>
             </EditorSection>
 
             <EditorSection id="admin-notes" title="Admin Notes" description="Operational context and read-only quality signals for staff review.">
@@ -1029,12 +1102,17 @@ export default function EditLocationPage() {
                 <MetricCard label="Effective ID" value={effectiveId || locationId} />
                 <MetricCard label="Source" value={type === "restaurants" ? "Restaurants" : "Activities"} />
               </FieldRow>
-              <TextArea label="Data Quality Notes" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Stored in the existing missing_fields value when present." />
+              <div className="flex flex-wrap gap-2">
+                {(missingFieldList(form.missing_fields).length ? missingFieldList(form.missing_fields) : ["No missing fields reported"]).map((field) => (
+                  <StatusPill key={field} tone={field === "No missing fields reported" ? "success" : "warning"}>{humanizeValue(field)}</StatusPill>
+                ))}
+              </div>
+              <TextArea label="Data Quality Notes" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Comma-separated quality notes; shown as readable chips above." />
             </EditorSection>
           </section>
 
           <aside className="space-y-4 xl:sticky xl:top-[96px] xl:self-start">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#fffaf6] text-[#1f1713] shadow-2xl">
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#10141b] text-white shadow-2xl">
               {mainImage ? (
                 <Image
                   src={mainImage}
@@ -1042,21 +1120,22 @@ export default function EditLocationPage() {
                   width={700}
                   height={420}
                   className="h-56 w-full object-cover"
+                  unoptimized
                 />
               ) : (
-                <div className="flex h-56 items-center justify-center bg-black/[0.04] text-sm font-black uppercase tracking-[0.18em] text-black/35">
+                <div className="flex h-56 items-center justify-center bg-white/[0.04] text-sm font-black uppercase tracking-[0.18em] text-white/35">
                   No image preview
                 </div>
               )}
 
               <div className="p-5">
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-black/40">
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/40">
                   Live Summary
                 </p>
                 <h2 className="mt-2 text-2xl font-black">
                   {form.name || "Location Name"}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-black/55">
+                <p className="mt-2 text-sm leading-6 text-white/55">
                   {[form.address, form.city, form.state, form.zip_code]
                     .filter(Boolean)
                     .join(", ") || "Address will appear here"}
@@ -1069,11 +1148,11 @@ export default function EditLocationPage() {
               </div>
             </div>
 
-            <section className="rounded-[24px] border border-black/10 bg-[#fffaf6] p-5 text-[#1f1713] shadow-sm">
+            <section className="rounded-[24px] border border-white/10 bg-[#10141b] p-5 text-white shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-black text-[#1f1713]">Location Quality</h3>
-                  <p className="mt-1 text-sm font-medium leading-5 text-black/50">
+                  <h3 className="text-base font-black text-white">Location Quality</h3>
+                  <p className="mt-1 text-sm font-medium leading-5 text-white/50">
                     Operational readiness for search, publishing, and booking workflows.
                   </p>
                 </div>
@@ -1083,48 +1162,48 @@ export default function EditLocationPage() {
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-black/10 bg-white p-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40">
+                <div className="rounded-2xl border border-white/10 bg-[#121721] p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
                     Readiness
                   </p>
                   <div className="mt-2 flex items-end gap-1">
-                    <span className="text-2xl font-black text-[#1f1713]">{completedReadiness}</span>
-                    <span className="pb-1 text-xs font-bold text-black/45">of {readiness.length}</span>
+                    <span className="text-2xl font-black text-white">{completedReadiness}</span>
+                    <span className="pb-1 text-xs font-bold text-white/45">of {readiness.length}</span>
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-black/10 bg-white p-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40">
+                <div className="rounded-2xl border border-white/10 bg-[#121721] p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
                     Quality Score
                   </p>
                   <div className="mt-2 flex items-end gap-1">
-                    <span className="text-2xl font-black text-[#1f1713]">{safeScore}</span>
-                    <span className="pb-1 text-xs font-bold text-black/45">/100</span>
+                    <span className="text-2xl font-black text-white">{safeScore}</span>
+                    <span className="pb-1 text-xs font-bold text-white/45">/100</span>
                   </div>
                 </div>
               </div>
 
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-bold text-black/55">Completion</span>
-                  <span className="text-xs font-black text-black/65">{readinessPercent}%</span>
+                  <span className="text-xs font-bold text-white/55">Completion</span>
+                  <span className="text-xs font-black text-white/65">{readinessPercent}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-black/10">
+                <div className="h-2 overflow-hidden rounded-full bg-white/10">
                   <div
-                    className="h-full rounded-full bg-[#ff1654]"
+                    className="h-full rounded-full bg-[#e1062a]"
                     style={{ width: `${readinessPercent}%` }}
                   />
                 </div>
               </div>
 
-              <p className="mt-4 text-sm font-medium leading-5 text-black/50">
+              <p className="mt-4 text-sm font-medium leading-5 text-white/50">
                 This location is evaluated for listing completeness, search visibility, media, contact details, and admin approval.
               </p>
 
               <div className="mt-5 space-y-2">
                 {readiness.map(([label, complete]) => (
-                  <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3">
-                    <span className="text-sm font-bold text-black/65">{label}</span>
+                  <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#121721] px-4 py-3">
+                    <span className="text-sm font-bold text-white/65">{label}</span>
                     <span className={`h-2.5 w-2.5 rounded-full ${complete ? "bg-emerald-500" : "bg-amber-400"}`} />
                   </div>
                 ))}
@@ -1144,12 +1223,71 @@ export default function EditLocationPage() {
   );
 }
 
+
+function EditorSidebar({
+  type,
+  form,
+  mainImage,
+  publicPreviewHref,
+  dashboardHref,
+  crmHref,
+  effectiveId,
+}: {
+  type: LocationType;
+  form: FormState;
+  mainImage: string;
+  publicPreviewHref: string;
+  dashboardHref: string;
+  crmHref: string;
+  effectiveId: string;
+}) {
+  const reserveHref = `/locations/${type}/${effectiveId}/reserve`;
+  const qrHref = `/admin/dashboard/locations/${type}/${effectiveId}/qr`;
+  const menuPhotosHref = `/locations/${type}/${effectiveId}/menu`;
+  return (
+    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[300px] overflow-y-auto border-r border-white/10 bg-[#090b10] p-5 shadow-2xl lg:block">
+      <div className="rounded-[28px] border border-white/10 bg-[#10141b] p-5">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
+        <h2 className="mt-2 text-xl font-black text-white">Location Ops</h2>
+      </div>
+      <div className="mt-5 overflow-hidden rounded-[28px] border border-white/10 bg-[#10141b]">
+        {mainImage ? (
+          <Image src={mainImage} alt={form.name || "Location"} width={300} height={180} className="h-32 w-full object-cover" unoptimized />
+        ) : (
+          <div className="flex h-32 items-center justify-center bg-white/[0.04] text-xs font-black uppercase tracking-[0.16em] text-white/35">No photo</div>
+        )}
+        <div className="p-4">
+          <h3 className="truncate text-base font-black text-white">{form.name || "Untitled location"}</h3>
+          <p className="mt-1 text-xs font-bold text-white/45">{[form.city, form.state].filter(Boolean).join(", ") || "City not set"}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StatusPill tone="dark">{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
+            <StatusPill tone={form.is_searchable === "false" ? "warning" : "success"}>{visibilityLabel(form)}</StatusPill>
+          </div>
+        </div>
+      </div>
+      <nav className="mt-5 grid gap-2 rounded-[28px] border border-white/10 bg-[#10141b] p-3">
+        {navItems.map(([href, label]) => (
+          <a key={href} href={`#${href}`} className="rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white/[0.08] hover:text-white">{label}</a>
+        ))}
+      </nav>
+      <div className="mt-5 grid gap-2 rounded-[28px] border border-white/10 bg-[#10141b] p-3">
+        <a className={secondaryButtonClass} href={dashboardHref}>Back to Locations Dashboard</a>
+        <a className={secondaryButtonClass} href={publicPreviewHref}>View Public Page</a>
+        <a className={secondaryButtonClass} href={crmHref}>Open CRM</a>
+        <a className={secondaryButtonClass} href={reserveHref}>Open Reservations</a>
+        <a className={secondaryButtonClass} href={qrHref}>Open QR Tools</a>
+        <a className={secondaryButtonClass} href={menuPhotosHref}>Open Menu / Photos</a>
+      </div>
+    </aside>
+  );
+}
+
 function EditorSection({ id, title, description, children }: { id: string; title: string; description?: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-36 rounded-[24px] border border-black/10 bg-[#fffaf6] p-5 text-[#1f1713] shadow-sm md:p-6">
+    <section id={id} className="scroll-mt-36 rounded-[24px] border border-white/10 bg-[#10141b] p-5 text-white shadow-sm md:p-6">
       <div className="mb-5">
-        <h2 className="text-lg font-black text-[#1f1713]">{title}</h2>
-        {description ? <p className="mt-1 text-sm leading-6 text-black/55">{description}</p> : null}
+        <h2 className="text-lg font-black text-white">{title}</h2>
+        {description ? <p className="mt-1 text-sm leading-6 text-white/55">{description}</p> : null}
       </div>
       <div className="grid gap-4">{children}</div>
     </section>
@@ -1188,7 +1326,7 @@ function TextInput({
         placeholder={placeholder}
         className={inputClass}
       />
-      {helper ? <span className="text-xs font-semibold text-black/40">{helper}</span> : null}
+      {helper ? <span className="text-xs font-semibold text-white/40">{helper}</span> : null}
     </label>
   );
 }
@@ -1213,7 +1351,7 @@ function TextArea({
         rows={5}
         className={`${inputClass} resize-none`}
       />
-      {helper ? <span className="text-xs font-semibold text-black/40">{helper}</span> : null}
+      {helper ? <span className="text-xs font-semibold text-white/40">{helper}</span> : null}
     </label>
   );
 }
@@ -1249,7 +1387,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid gap-2">
       <span className={labelClass}>{label}</span>
-      <div className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-black/55 shadow-sm">
+      <div className="rounded-2xl border border-white/10 bg-[#121721] px-4 py-3 text-sm font-semibold text-white/55 shadow-sm">
         {value}
       </div>
     </div>
@@ -1268,7 +1406,7 @@ function ToggleRow({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-4 rounded-[20px] border border-black/10 bg-white p-4 shadow-sm transition hover:border-[#ff1654]/30">
+    <label className="flex cursor-pointer items-start gap-4 rounded-[20px] border border-white/10 bg-[#121721] p-4 shadow-sm transition hover:border-[#ff1654]/30">
       <input
         type="checkbox"
         checked={checked}
@@ -1276,8 +1414,8 @@ function ToggleRow({
         className="mt-1 h-4 w-4 accent-[#ff1654]"
       />
       <span>
-        <span className="block text-sm font-black text-[#1f1713]">{title}</span>
-        <span className="mt-1 block text-xs leading-5 text-black/45">{text}</span>
+        <span className="block text-sm font-black text-white">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-white/45">{text}</span>
       </span>
     </label>
   );
@@ -1285,7 +1423,7 @@ function ToggleRow({
 
 function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: PillTone }) {
   const tones: Record<PillTone, string> = {
-    neutral: "border-black/10 bg-black/[0.04] text-black/65",
+    neutral: "border-white/10 bg-white/[0.04] text-white/65",
     success: "border-emerald-200 bg-emerald-50 text-emerald-700",
     warning: "border-amber-200 bg-amber-50 text-amber-800",
     danger: "border-red-200 bg-red-50 text-red-700",
@@ -1301,9 +1439,9 @@ function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?
 
 function MetricCard({ label, value, dark = false }: { label: string; value: string; dark?: boolean }) {
   return (
-    <div className={dark ? "rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-white shadow-xl" : "rounded-[20px] border border-black/10 bg-white p-4 shadow-sm"}>
-      <p className={dark ? "text-[10px] font-black uppercase tracking-[0.18em] text-white/40" : "text-[10px] font-black uppercase tracking-[0.18em] text-black/40"}>{label}</p>
-      <p className={dark ? "mt-2 truncate text-xl font-black text-white" : "mt-2 truncate text-xl font-black text-[#1f1713]"}>{value || "—"}</p>
+    <div className={dark ? "rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-white shadow-xl" : "rounded-[20px] border border-white/10 bg-[#121721] p-4 shadow-sm"}>
+      <p className={dark ? "text-[10px] font-black uppercase tracking-[0.18em] text-white/40" : "text-[10px] font-black uppercase tracking-[0.18em] text-white/40"}>{label}</p>
+      <p className={dark ? "mt-2 truncate text-xl font-black text-white" : "mt-2 truncate text-xl font-black text-white"}>{value || "—"}</p>
     </div>
   );
 }
