@@ -14,6 +14,7 @@ import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
 import { formatFullAddress } from "@/lib/address-utils";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
+import { buildLocationEditorLinks } from "@/lib/location-editor-links";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
@@ -160,79 +161,6 @@ function getLogoUrl(formOrLocation: FormState) {
     ""
   );
 }
-
-function locationContextType(type: LocationType) {
-  return type === "activities" ? "activity" : "restaurant";
-}
-
-function appendLocationContext(
-  href: string,
-  {
-    type,
-    id,
-  }: {
-    type: LocationType;
-    id: string;
-  },
-) {
-  if (!id) return href;
-
-  const [baseWithQuery, hash] = href.split("#");
-  const [base, existingQuery] = baseWithQuery.split("?");
-
-  const params = new URLSearchParams(existingQuery || "");
-  params.set("adminLocationId", id);
-  params.set("locationId", id);
-  params.set("type", locationContextType(type));
-  params.set("demo", "1");
-  params.set("fromDemoCenter", "1");
-
-  return `${base}?${params.toString()}${hash ? `#${hash}` : ""}`;
-}
-
-function buildLocationEditorLinks({
-  type,
-  locationId,
-  effectiveId,
-}: {
-  type: LocationType;
-  locationId: string;
-  effectiveId: string;
-}) {
-  const id = effectiveId || locationId;
-  const ownerType = locationContextType(type);
-  const withContext = (href: string) => appendLocationContext(href, { type, id });
-
-  return {
-    dashboard: withContext("/locations/dashboard"),
-
-    publicPage: `/locations/${type}/${id}`,
-
-    crm: `/admin/dashboard/crm/${id}`,
-
-    reserveDashboard: withContext("/reserve/dashboard"),
-    reservations: withContext("/reserve/dashboard?tab=reservations"),
-    reservationLayout: withContext("/reserve/dashboard?tab=settings&section=layout"),
-
-    qrTools: withContext("/business/dashboard/qr-codes"),
-    adminQrTools: `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(id)}&type=${encodeURIComponent(ownerType)}`,
-
-    menuEditor: withContext("/business/dashboard/menu"),
-    menuViewer: `/locations/${type}/${id}/menu`,
-
-    photos: withContext("/business/dashboard/profile"),
-    analytics: withContext("/business/dashboard/analytics"),
-    vip: withContext("/business/dashboard/vip"),
-    leads: withContext("/business/dashboard/leads"),
-    reviews: withContext("/business/dashboard/reviews"),
-    marketing: withContext("/business/dashboard/marketing-studio"),
-    promotions: withContext("/business/dashboard/promotions"),
-    messaging: withContext("/business/dashboard/messaging"),
-    settings: withContext("/business/dashboard/settings"),
-    branding: withContext("/business/dashboard/branding"),
-  };
-}
-
 function normalizeLocationTypeParam(value: string): LocationType | null {
   if (value === "restaurants" || value === "restaurant") return "restaurants";
   if (value === "activities" || value === "activity" || value === "activitys") {
@@ -314,6 +242,8 @@ export default function EditLocationPage() {
   const [message, setMessage] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
+  const [canonicalId, setCanonicalId] = useState("");
+  const [sourceId, setSourceId] = useState<string | null>(null);
   const [effectiveId, setEffectiveId] = useState(locationId);
   const [newGalleryImage, setNewGalleryImage] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -393,7 +323,12 @@ export default function EditLocationPage() {
         const data = result.location;
 
         setIsImpersonating(Boolean(result.isImpersonating));
-        setEffectiveId(result.effectiveId || locationId);
+
+        const nextCanonicalId = result.canonicalId || data.canonical_location_id || null;
+        const nextSourceId = result.sourceId || data.legacy_source_id || data.source_id || null;
+        setCanonicalId(nextCanonicalId ? String(nextCanonicalId) : "");
+        setSourceId(nextSourceId ? String(nextSourceId) : null);
+        setEffectiveId(String(result.effectiveId || nextCanonicalId || nextSourceId || locationId));
 
         const nextForm: FormState = {
           name: data[nameField] || data.name || "",
@@ -580,7 +515,7 @@ export default function EditLocationPage() {
         },
         body: JSON.stringify({
           type: table,
-          id: effectiveId || locationId,
+          id: canonicalId || effectiveId || locationId,
           payload,
         }),
       });
@@ -593,7 +528,9 @@ export default function EditLocationPage() {
         return;
       }
 
-      setEffectiveId(result.effectiveId || effectiveId);
+      if (result.canonicalId) setCanonicalId(String(result.canonicalId));
+      if ("sourceId" in result) setSourceId(result.sourceId ? String(result.sourceId) : null);
+      setEffectiveId(String(result.canonicalId || result.effectiveId || result.sourceId || effectiveId));
 
       const nextForm = {
         ...form,
@@ -613,7 +550,13 @@ export default function EditLocationPage() {
   const safeScore = clampScore(form.theouthaven_score);
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
-  const links = buildLocationEditorLinks({ type: table as LocationType, locationId, effectiveId });
+  const links = buildLocationEditorLinks({
+    type: table as LocationType,
+    locationId,
+    canonicalId: canonicalId || undefined,
+    sourceId,
+    effectiveId,
+  });
   const publicPreviewHref = links.publicPage;
   const adminDetailHref = links.dashboard;
   const crmHref = links.crm;
@@ -692,7 +635,8 @@ export default function EditLocationPage() {
     setMessage("");
 
     const extension = file.name.split(".").pop() || "jpg";
-    const path = `locations/${type}/${effectiveId || locationId}/${Date.now()}.${extension}`;
+    const uploadLocationId = canonicalId || effectiveId || locationId;
+    const path = `locations/${type}/${uploadLocationId}/${Date.now()}.${extension}`;
     const { data, error } = await supabase.storage.from("location-images").upload(path, file, { upsert: true });
 
     if (error) {
@@ -817,6 +761,12 @@ export default function EditLocationPage() {
             </div>
           )}
 
+          {!links.hasCanonicalId ? (
+            <div className="rounded-[24px] border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold leading-6 text-amber-100 shadow-xl">
+              Dashboard tools need a canonical locations row. This editor loaded from the legacy restaurant/activity table, so dashboard links may not work until this location is repaired.
+            </div>
+          ) : null}
+
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
             <section id="details" className="space-y-6">
               <EditorSection id="basic-information" title="Basic Information" description="Core public identity and discovery copy.">
@@ -895,7 +845,7 @@ export default function EditLocationPage() {
               </EditorSection>
 
               <EditorSection id="admin-notes" title="Admin Notes" description="Record identifiers and quality metadata.">
-                <FieldRow columns={3}><ReadOnlyField label="Effective ID" value={effectiveId || locationId} /><ReadOnlyField label="Source Table" value={table} /><ReadOnlyField label="Quality Score" value={`${safeScore}/100`} /></FieldRow>
+                <FieldRow columns={4}><ReadOnlyField label="Canonical Location ID" value={canonicalId || "Missing canonical row"} /><ReadOnlyField label="Source ID" value={sourceId || "—"} /><ReadOnlyField label="Effective ID" value={effectiveId || "—"} /><ReadOnlyField label="Source Table" value={table} /></FieldRow><FieldRow columns={2}><ReadOnlyField label="Quality Score" value={`${safeScore}/100`} /><ReadOnlyField label="Link Status" value={canonicalId ? "Dashboard links use canonical locations.id" : "Dashboard links need canonical row repair"} /></FieldRow>
               </EditorSection>
             </section>
 
@@ -969,7 +919,7 @@ function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditor
         <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
         <h2 className="mt-2 text-xl font-black text-white">Enterprise</h2>
       </div>
-      <Link href={links.dashboard} className="mb-5 flex rounded-2xl border border-[#e1062a]/40 bg-[#e1062a]/15 px-3 py-3 text-sm font-black text-white transition hover:bg-[#e1062a]/25">
+      <Link href={links.dashboard} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={`mb-5 flex rounded-2xl border px-3 py-3 text-sm font-black text-white transition ${links.hasCanonicalId ? "border-[#e1062a]/40 bg-[#e1062a]/15 hover:bg-[#e1062a]/25" : "border-amber-300/35 bg-amber-500/15 hover:bg-amber-500/25"}`}>
         Back to Location Dashboard
       </Link>
       <nav className="space-y-6">
@@ -980,7 +930,7 @@ function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditor
               {items.map((item) => {
                 const active = item.label === "Locations";
                 return (
-                  <Link key={`${section}-${item.label}`} href={item.href} className={`rounded-2xl px-3 py-2.5 text-sm font-bold transition ${active ? "border border-[#e1062a]/40 bg-[#e1062a]/25 text-white" : "text-white/65 hover:bg-white/[0.06] hover:text-white"}`}>
+                  <Link key={`${section}-${item.label}`} href={item.href} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={`rounded-2xl px-3 py-2.5 text-sm font-bold transition ${!links.hasCanonicalId ? "border border-amber-300/25 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20" : active ? "border border-[#e1062a]/40 bg-[#e1062a]/25 text-white" : "text-white/65 hover:bg-white/[0.06] hover:text-white"}`}>
                     {item.label}
                   </Link>
                 );
@@ -1066,19 +1016,19 @@ function LocationPreview({
         </div>
         <Link href={publicPreviewHref} className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/20 transition hover:bg-[#ff2142]">View Public Page</Link>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Link href={links.dashboard} className={secondaryButtonClass}>Back to Location Dashboard</Link>
-          <Link href={links.crm} className={secondaryButtonClass}>Open CRM</Link>
-          <Link href={links.reserveDashboard} className={secondaryButtonClass}>Reserve Dashboard</Link>
-          <Link href={links.reservationLayout} className={secondaryButtonClass}>Reservation Layout</Link>
-          <Link href={links.qrTools} className={secondaryButtonClass}>QR Tools</Link>
-          <Link href={links.menuEditor} className={secondaryButtonClass}>Open Menu Editor</Link>
+          <Link href={links.dashboard} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Back to Location Dashboard</Link>
+          <Link href={links.crm} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Open CRM</Link>
+          <Link href={links.reserveDashboard} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Reserve Dashboard</Link>
+          <Link href={links.reservationLayout} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Reservation Layout</Link>
+          <Link href={links.qrTools} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>QR Tools</Link>
+          <Link href={links.menuEditor} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Open Menu Editor</Link>
           <Link href={links.menuViewer} className={secondaryButtonClass}>View Public Menu</Link>
-          <Link href={links.photos} className={secondaryButtonClass}>Manage Photos</Link>
-          <Link href={links.analytics} className={secondaryButtonClass}>Analytics</Link>
+          <Link href={links.photos} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Manage Photos</Link>
+          <Link href={links.analytics} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Analytics</Link>
         </div>
         <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Admin tools</p>
-          <Link href={links.adminQrTools} className={`${secondaryButtonClass} mt-2 inline-flex w-full justify-center`}>Admin Claim QR</Link>
+          <Link href={links.adminQrTools} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={`${secondaryButtonClass} mt-2 inline-flex w-full justify-center`}>Admin Claim QR</Link>
         </div>
       </div>
     </section>

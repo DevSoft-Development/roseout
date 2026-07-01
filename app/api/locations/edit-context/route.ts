@@ -7,7 +7,7 @@ import { profileUpdateWithSearchDocument } from "@/lib/location-profile-fields";
 
 export const dynamic = "force-dynamic";
 
-type LocationType = "restaurants" | "activities";
+export type LocationType = "restaurants" | "activities";
 
 function adminSupabase() {
   return createClient(
@@ -21,8 +21,64 @@ function validType(type: string | null): type is LocationType {
   return type === "restaurants" || type === "activities";
 }
 
+export function sourceTableVariantsForType(type: LocationType) {
+  return type === "activities"
+    ? ["activities", "activity"]
+    : ["restaurants", "restaurant"];
+}
+
 function sourceTableForType(type: LocationType) {
-  return type;
+  return sourceTableVariantsForType(type)[0];
+}
+
+async function findCanonicalLocationByIdOrSource({
+  supabase,
+  requestedType,
+  id,
+}: {
+  supabase: ReturnType<typeof adminSupabase>;
+  requestedType: LocationType;
+  id: string;
+}) {
+  const sourceVariants = sourceTableVariantsForType(requestedType);
+
+  const byId = await supabase
+    .from("locations")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (byId.data) {
+    return {
+      data: byId.data,
+      error: byId.error,
+      matchedBy: "canonical_id" as const,
+    };
+  }
+
+  const sourceOr = sourceVariants
+    .map((sourceTable) => `and(source_table.eq.${sourceTable},source_id.eq.${id})`)
+    .join(",");
+
+  const bySource = await supabase
+    .from("locations")
+    .select("*")
+    .or(sourceOr)
+    .maybeSingle();
+
+  if (bySource.data) {
+    return {
+      data: bySource.data,
+      error: bySource.error,
+      matchedBy: "source_id" as const,
+    };
+  }
+
+  return {
+    data: null,
+    error: byId.error || bySource.error,
+    matchedBy: null,
+  };
 }
 
 
@@ -61,30 +117,67 @@ async function resolveRequestedLocation({
     impersonatedLocationId &&
     validType(impersonatedLocationType || "") &&
     impersonatedLocationType === requestedType;
+
   const finalId = isLocationImpersonation ? impersonatedLocationId : requestedId;
   const supabase = adminSupabase();
-  const sourceTable = sourceTableForType(requestedType);
-  let { data, error } = await supabase
-    .from("locations")
-    .select("*")
-    .or(`id.eq.${finalId},and(source_table.eq.${sourceTable},source_id.eq.${finalId})`)
-    .maybeSingle();
 
-  if (!data) {
+  const canonical = await findCanonicalLocationByIdOrSource({
+    supabase,
+    requestedType,
+    id: finalId,
+  });
+
+  let legacyData: Record<string, unknown> | null = null;
+  let legacyError: unknown = null;
+
+  if (!canonical.data) {
     const legacyResult = await supabase
       .from(requestedType)
       .select("*")
       .eq("id", finalId)
       .maybeSingle();
 
-    if (legacyResult.data) {
-      data = legacyResult.data;
-      error = legacyResult.error;
+    legacyData = legacyResult.data as Record<string, unknown> | null;
+    legacyError = legacyResult.error;
+
+    if (legacyData?.id) {
+      const canonicalFromLegacy = await findCanonicalLocationByIdOrSource({
+        supabase,
+        requestedType,
+        id: String(legacyData.id),
+      });
+
+      if (canonicalFromLegacy.data) {
+        return {
+          data: canonicalFromLegacy.data,
+          canonicalData: canonicalFromLegacy.data,
+          legacyData,
+          error: canonicalFromLegacy.error,
+          finalId,
+          sourceTable: sourceTableForType(requestedType),
+          sourceTableVariants: sourceTableVariantsForType(requestedType),
+          supabase,
+          isLocationImpersonation: Boolean(isLocationImpersonation),
+          matchedBy: canonicalFromLegacy.matchedBy,
+        };
+      }
     }
   }
 
-  return { data, error, finalId, sourceTable, supabase, isLocationImpersonation: Boolean(isLocationImpersonation) };
+  return {
+    data: canonical.data || legacyData,
+    canonicalData: canonical.data || null,
+    legacyData,
+    error: canonical.error || legacyError,
+    finalId,
+    sourceTable: sourceTableForType(requestedType),
+    sourceTableVariants: sourceTableVariantsForType(requestedType),
+    supabase,
+    isLocationImpersonation: Boolean(isLocationImpersonation),
+    matchedBy: canonical.matchedBy,
+  };
 }
+
 
 function sanitizeLocationPayload(payload: Record<string, unknown>) {
   const copy = { ...payload };
@@ -317,7 +410,7 @@ export async function GET(req: Request) {
     const auth = await getAuthenticatedOwnerAccess();
     if (auth.response || !auth.access) return auth.response;
 
-    const { data, error, finalId, isLocationImpersonation } = await resolveRequestedLocation({
+    const { data, canonicalData, legacyData, error, finalId, isLocationImpersonation, matchedBy } = await resolveRequestedLocation({
       requestedType,
       requestedId,
       allowImpersonation: auth.access.isAdmin,
@@ -334,7 +427,14 @@ export async function GET(req: Request) {
       );
     }
 
-    const responseLocation = { ...(data as Record<string, unknown>) };
+    const resolvedData = data as Record<string, unknown>;
+    const canonicalRow = canonicalData as Record<string, unknown> | null;
+    const legacyRow = legacyData as Record<string, unknown> | null;
+    const responseLocation: Record<string, unknown> = {
+      ...resolvedData,
+      canonical_location_id: canonicalRow?.id || null,
+      legacy_source_id: legacyRow?.id || resolvedData.source_id || null,
+    };
     if (!auth.access.isAdmin) {
       delete responseLocation.review_keywords;
       delete responseLocation.search_document;
@@ -342,10 +442,22 @@ export async function GET(req: Request) {
       delete responseLocation.special_hours;
     }
 
+    const canonicalId = canonicalRow?.id ? String(canonicalRow.id) : null;
+    const sourceId = canonicalRow?.source_id
+      ? String(canonicalRow.source_id)
+      : legacyRow?.id
+        ? String(legacyRow.id)
+        : resolvedData.source_id
+          ? String(resolvedData.source_id)
+          : null;
+
     return NextResponse.json({
       location: responseLocation,
-      effectiveId: String((data as Record<string, unknown>).source_id || finalId),
-      canonicalId: (data as Record<string, unknown>).id || null,
+      canonicalId,
+      sourceId,
+      effectiveId: canonicalId || sourceId || finalId,
+      hasCanonicalLocation: Boolean(canonicalId),
+      matchedBy,
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {
@@ -393,14 +505,26 @@ export async function PATCH(req: Request) {
     const finalId = resolved.finalId;
     const supabase = resolved.supabase;
     const isLocationImpersonation = resolved.isLocationImpersonation;
-    const sourceTable = sourceTableForType(requestedType);
     const locationPayload = sanitizeCanonicalLocationPayload(payload);
 
-    const existingLocation = await supabase
-      .from("locations")
-      .select("id, source_id, profile_managed_by, profile_field_sources, profile_owner_verified_at")
-      .or(`id.eq.${finalId},and(source_table.eq.${sourceTable},source_id.eq.${finalId})`)
-      .maybeSingle();
+    const existingLocation = resolved.canonicalData?.id
+      ? await supabase
+          .from("locations")
+          .select("id, source_id, profile_managed_by, profile_field_sources, profile_owner_verified_at")
+          .eq("id", String(resolved.canonicalData.id))
+          .maybeSingle()
+      : await findCanonicalLocationByIdOrSource({
+          supabase,
+          requestedType,
+          id: finalId,
+        }).then(async (match) => {
+          if (!match.data?.id) return { data: null, error: match.error };
+          return supabase
+            .from("locations")
+            .select("id, source_id, profile_managed_by, profile_field_sources, profile_owner_verified_at")
+            .eq("id", String(match.data.id))
+            .maybeSingle();
+        });
 
     if (!existingLocation.data?.id) {
       return NextResponse.json(
@@ -453,14 +577,23 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const canonicalId = String(existingLocation.data.id);
+    const sourceId = existingLocation.data.source_id
+      ? String(existingLocation.data.source_id)
+      : resolved.legacyData?.id
+        ? String(resolved.legacyData.id)
+        : null;
+
     // locations is the canonical source of truth for admin edits.
     // Do not dual-write the full admin payload into legacy restaurants/activities.
     return NextResponse.json({
       success: true,
       savedTo: "locations",
       skippedLegacySync: true,
-      canonicalId: existingLocation.data.id,
-      effectiveId: String(existingLocation.data.source_id || finalId),
+      canonicalId,
+      sourceId,
+      effectiveId: canonicalId,
+      hasCanonicalLocation: true,
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {

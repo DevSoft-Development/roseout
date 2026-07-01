@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 const page = readFileSync('app/locations/[type]/[locationId]/edit/page.tsx', 'utf8');
 const redirect = readFileSync('app/locations/edit/[type]/[locationId]/page.tsx', 'utf8');
 const api = readFileSync('app/api/locations/edit-context/route.ts', 'utf8');
+const links = readFileSync('lib/location-editor-links.ts', 'utf8');
+const promotions = readFileSync('app/business/dashboard/promotions/page.tsx', 'utf8');
 
 const checks = [
   ['singular restaurant normalizes to restaurants', page.includes('value === "restaurants" || value === "restaurant"')],
@@ -15,6 +17,11 @@ const checks = [
   ['editor has reservation controls', page.includes('Internal reservations') && page.includes('External reservations')],
   ['editor has photos controls', page.includes('Add Gallery Image URL') && page.includes('Set main') && page.includes('Remove')],
   ['canonical edit context is preserved', api.includes('profileUpdateWithSearchDocument') && api.includes('savedTo: "locations"')],
+  ['edit context returns explicit source ID safely', api.includes('sourceId') && api.includes('effectiveId: canonicalId || sourceId || finalId') && api.includes('hasCanonicalLocation')],
+  ['edit context supports singular and plural source tables', api.includes('sourceTableVariantsForType') && api.includes('["restaurants", "restaurant"]') && api.includes('["activities", "activity"]')],
+  ['dashboard links use canonical ID helper', links.includes('const hasCanonicalId = Boolean(canonicalId)') && links.includes('const dashboardId = canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
+  ['location editor imports link helper', page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') && page.includes('canonicalId: canonicalId || undefined') && page.includes('sourceId,') && page.includes('effectiveId,')],
+  ['promotions uses Growth Pro wrapper', promotions.includes('BusinessGrowthProPage') && promotions.includes('module="promotions"') && !promotions.includes('redirect("/login")')],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);
