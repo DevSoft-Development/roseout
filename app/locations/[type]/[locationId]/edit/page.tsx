@@ -515,7 +515,7 @@ export default function EditLocationPage() {
         },
         body: JSON.stringify({
           type: table,
-          id: effectiveId || locationId,
+          id: canonicalId || effectiveId || locationId,
           payload,
         }),
       });
@@ -755,6 +755,12 @@ export default function EditLocationPage() {
             </div>
           )}
 
+          {!links.hasCanonicalId ? (
+            <div className="rounded-[24px] border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold leading-6 text-amber-100 shadow-xl">
+              Dashboard tools need a canonical locations row. This editor loaded from the legacy restaurant/activity table, so dashboard links may not work until this location is repaired.
+            </div>
+          ) : null}
+
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
             <section id="details" className="space-y-6">
               <EditorSection id="basic-information" title="Basic Information" description="Core public identity and discovery copy.">
@@ -907,7 +913,7 @@ function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditor
         <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
         <h2 className="mt-2 text-xl font-black text-white">Enterprise</h2>
       </div>
-      <Link href={links.dashboard} className="mb-5 flex rounded-2xl border border-[#e1062a]/40 bg-[#e1062a]/15 px-3 py-3 text-sm font-black text-white transition hover:bg-[#e1062a]/25">
+      <Link href={links.dashboard} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={`mb-5 flex rounded-2xl border px-3 py-3 text-sm font-black text-white transition ${links.hasCanonicalId ? "border-[#e1062a]/40 bg-[#e1062a]/15 hover:bg-[#e1062a]/25" : "border-amber-300/35 bg-amber-500/15 hover:bg-amber-500/25"}`}>
         Back to Location Dashboard
       </Link>
       <nav className="space-y-6">
@@ -918,7 +924,7 @@ function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditor
               {items.map((item) => {
                 const active = item.label === "Locations";
                 return (
-                  <Link key={`${section}-${item.label}`} href={item.href} className={`rounded-2xl px-3 py-2.5 text-sm font-bold transition ${active ? "border border-[#e1062a]/40 bg-[#e1062a]/25 text-white" : "text-white/65 hover:bg-white/[0.06] hover:text-white"}`}>
+                  <Link key={`${section}-${item.label}`} href={item.href} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={`rounded-2xl px-3 py-2.5 text-sm font-bold transition ${!links.hasCanonicalId ? "border border-amber-300/25 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20" : active ? "border border-[#e1062a]/40 bg-[#e1062a]/25 text-white" : "text-white/65 hover:bg-white/[0.06] hover:text-white"}`}>
                     {item.label}
                   </Link>
                 );
@@ -1004,19 +1010,19 @@ function LocationPreview({
         </div>
         <Link href={publicPreviewHref} className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/20 transition hover:bg-[#ff2142]">View Public Page</Link>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Link href={links.dashboard} className={secondaryButtonClass}>Back to Location Dashboard</Link>
-          <Link href={links.crm} className={secondaryButtonClass}>Open CRM</Link>
-          <Link href={links.reserveDashboard} className={secondaryButtonClass}>Reserve Dashboard</Link>
-          <Link href={links.reservationLayout} className={secondaryButtonClass}>Reservation Layout</Link>
-          <Link href={links.qrTools} className={secondaryButtonClass}>QR Tools</Link>
-          <Link href={links.menuEditor} className={secondaryButtonClass}>Open Menu Editor</Link>
+          <Link href={links.dashboard} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Back to Location Dashboard</Link>
+          <Link href={links.crm} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Open CRM</Link>
+          <Link href={links.reserveDashboard} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Reserve Dashboard</Link>
+          <Link href={links.reservationLayout} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Reservation Layout</Link>
+          <Link href={links.qrTools} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>QR Tools</Link>
+          <Link href={links.menuEditor} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Open Menu Editor</Link>
           <Link href={links.menuViewer} className={secondaryButtonClass}>View Public Menu</Link>
-          <Link href={links.photos} className={secondaryButtonClass}>Manage Photos</Link>
-          <Link href={links.analytics} className={secondaryButtonClass}>Analytics</Link>
+          <Link href={links.photos} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Manage Photos</Link>
+          <Link href={links.analytics} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={secondaryButtonClass}>Analytics</Link>
         </div>
         <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Admin tools</p>
-          <Link href={links.adminQrTools} className={`${secondaryButtonClass} mt-2 inline-flex w-full justify-center`}>Admin Claim QR</Link>
+          <Link href={links.adminQrTools} title={links.hasCanonicalId ? undefined : "Needs canonical locations.id repair"} className={`${secondaryButtonClass} mt-2 inline-flex w-full justify-center`}>Admin Claim QR</Link>
         </div>
       </div>
     </section>

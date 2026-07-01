@@ -288,11 +288,16 @@ export default function LocationDetailPage() {
     async function loadLocation() {
       setLoading(true);
 
-      const sourceTable = type === "activities" || type === "activity" ? "activities" : "restaurants";
+      const sourceTables = type === "activities" || type === "activity"
+        ? ["activities", "activity"]
+        : ["restaurants", "restaurant"];
+      const sourceOr = sourceTables
+        .map((sourceTable) => `and(source_table.eq.${sourceTable},source_id.eq.${locationId})`)
+        .join(",");
       let { data, error } = await supabase
         .from("locations")
         .select("*")
-        .or(`id.eq.${locationId},and(source_table.eq.${sourceTable},source_id.eq.${locationId})`)
+        .or(`id.eq.${locationId},${sourceOr}`)
         .maybeSingle();
 
       if (!data && !error) {
