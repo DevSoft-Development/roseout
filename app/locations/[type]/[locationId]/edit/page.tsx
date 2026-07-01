@@ -161,23 +161,75 @@ function getLogoUrl(formOrLocation: FormState) {
   );
 }
 
-function buildLocationEditorLinks({ type, locationId, effectiveId }: { type: LocationType; locationId: string; effectiveId: string }) {
+function locationContextType(type: LocationType) {
+  return type === "activities" ? "activity" : "restaurant";
+}
+
+function appendLocationContext(
+  href: string,
+  {
+    type,
+    id,
+  }: {
+    type: LocationType;
+    id: string;
+  },
+) {
+  if (!id) return href;
+
+  const [baseWithQuery, hash] = href.split("#");
+  const [base, existingQuery] = baseWithQuery.split("?");
+
+  const params = new URLSearchParams(existingQuery || "");
+  params.set("adminLocationId", id);
+  params.set("locationId", id);
+  params.set("type", locationContextType(type));
+  params.set("demo", "1");
+  params.set("fromDemoCenter", "1");
+
+  return `${base}?${params.toString()}${hash ? `#${hash}` : ""}`;
+}
+
+function buildLocationEditorLinks({
+  type,
+  locationId,
+  effectiveId,
+}: {
+  type: LocationType;
+  locationId: string;
+  effectiveId: string;
+}) {
   const id = effectiveId || locationId;
+  const ownerType = locationContextType(type);
+  const withContext = (href: string) => appendLocationContext(href, { type, id });
+
   return {
-    dashboard: "/locations/dashboard",
+    dashboard: withContext("/locations/dashboard"),
+
     publicPage: `/locations/${type}/${id}`,
+
     crm: `/admin/dashboard/crm/${id}`,
-    reservations: "/reserve/dashboard/reservations",
-    reserveDashboard: "/reserve/dashboard",
-    reservationLayout: "/reserve/dashboard/location-layout",
-    qrTools: "/business/dashboard/qr-codes",
-    adminQrTools: `/admin/dashboard/claim-qrs?type=${type}&id=${encodeURIComponent(id)}`,
-    menuEditor: "/business/dashboard/menu",
+
+    reserveDashboard: withContext("/reserve/dashboard"),
+    reservations: withContext("/reserve/dashboard?tab=reservations"),
+    reservationLayout: withContext("/reserve/dashboard?tab=settings&section=layout"),
+
+    qrTools: withContext("/business/dashboard/qr-codes"),
+    adminQrTools: `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(id)}&type=${encodeURIComponent(ownerType)}`,
+
+    menuEditor: withContext("/business/dashboard/menu"),
     menuViewer: `/locations/${type}/${id}/menu`,
-    photos: "/business/dashboard/profile",
-    analytics: "/business/dashboard/analytics",
-    settings: "/business/dashboard/settings",
-    branding: "/business/dashboard/branding",
+
+    photos: withContext("/business/dashboard/profile"),
+    analytics: withContext("/business/dashboard/analytics"),
+    vip: withContext("/business/dashboard/vip"),
+    leads: withContext("/business/dashboard/leads"),
+    reviews: withContext("/business/dashboard/reviews"),
+    marketing: withContext("/business/dashboard/marketing-studio"),
+    promotions: withContext("/business/dashboard/promotions"),
+    messaging: withContext("/business/dashboard/messaging"),
+    settings: withContext("/business/dashboard/settings"),
+    branding: withContext("/business/dashboard/branding"),
   };
 }
 
@@ -725,7 +777,7 @@ export default function EditLocationPage() {
 
   return (
     <main className="min-h-screen bg-[#050607] text-white">
-      <EditorSidebar />
+      <EditorSidebar links={links} />
       <section className="min-h-screen xl:pl-[256px]">
         <div className="sticky top-0 z-30 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
           <div className="flex flex-col gap-4 px-4 py-4 md:px-6 xl:flex-row xl:items-center xl:justify-between">
@@ -868,45 +920,45 @@ export default function EditLocationPage() {
 }
 
 
-function EditorSidebar() {
+function EditorSidebar({ links }: { links: ReturnType<typeof buildLocationEditorLinks> }) {
   const sections = [
     [
       "Primary",
-      [{ label: "Back to Location Dashboard", href: "/locations/dashboard" }],
+      [{ label: "Back to Location Dashboard", href: links.dashboard }],
     ],
     [
       "Operations",
       [
-        { label: "Locations", href: "/locations/dashboard" },
-        { label: "Menus", href: "/business/dashboard/menu" },
-        { label: "Reservations", href: "/reserve/dashboard" },
-        { label: "Customers", href: "/business/dashboard/vip" },
-        { label: "Reviews", href: "/business/dashboard/reviews" },
+        { label: "Locations", href: links.dashboard },
+        { label: "Menus", href: links.menuEditor },
+        { label: "Reservations", href: links.reserveDashboard },
+        { label: "Customers", href: links.vip },
+        { label: "Reviews", href: links.reviews },
       ],
     ],
     [
       "Marketing",
       [
-        { label: "Campaigns", href: "/business/dashboard/marketing-studio" },
-        { label: "Promotions", href: "/business/dashboard/promotions" },
-        { label: "Email", href: "/business/dashboard/messaging" },
-        { label: "SMS", href: "/business/dashboard/messaging" },
+        { label: "Campaigns", href: links.marketing },
+        { label: "Promotions", href: links.promotions },
+        { label: "Email", href: links.messaging },
+        { label: "SMS", href: links.messaging },
       ],
     ],
     [
       "Analytics",
       [
-        { label: "Reports", href: "/business/dashboard/analytics" },
-        { label: "Insights", href: "/business/dashboard/analytics" },
-        { label: "Performance", href: "/business/dashboard/analytics" },
+        { label: "Reports", href: links.analytics },
+        { label: "Insights", href: links.analytics },
+        { label: "Performance", href: links.analytics },
       ],
     ],
     [
       "Settings",
       [
-        { label: "Users", href: "/business/dashboard/settings" },
-        { label: "Roles", href: "/business/dashboard/settings" },
-        { label: "Brand Settings", href: "/business/dashboard/branding" },
+        { label: "Users", href: links.settings },
+        { label: "Roles", href: links.settings },
+        { label: "Brand Settings", href: links.branding },
       ],
     ],
   ] as const;
@@ -917,7 +969,7 @@ function EditorSidebar() {
         <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
         <h2 className="mt-2 text-xl font-black text-white">Enterprise</h2>
       </div>
-      <Link href="/locations/dashboard" className="mb-5 flex rounded-2xl border border-[#e1062a]/40 bg-[#e1062a]/15 px-3 py-3 text-sm font-black text-white transition hover:bg-[#e1062a]/25">
+      <Link href={links.dashboard} className="mb-5 flex rounded-2xl border border-[#e1062a]/40 bg-[#e1062a]/15 px-3 py-3 text-sm font-black text-white transition hover:bg-[#e1062a]/25">
         Back to Location Dashboard
       </Link>
       <nav className="space-y-6">
