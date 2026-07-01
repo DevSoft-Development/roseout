@@ -15,6 +15,8 @@ describe("buildLocationEditorLinks", () => {
       effectiveId: "rest_456",
     });
 
+    expect(links.hasCanonicalId).toBe(true);
+    expect(links.dashboardId).toBe("loc_123");
     expect(query(links.menuEditor).get("adminLocationId")).toBe("loc_123");
     expect(query(links.menuEditor).get("locationId")).toBe("loc_123");
     expect(query(links.qrTools).get("adminLocationId")).toBe("loc_123");
@@ -31,19 +33,37 @@ describe("buildLocationEditorLinks", () => {
       canonicalId: "loc_123",
     });
 
+    expect(links.hasCanonicalId).toBe(true);
     expect(query(links.analytics).get("locationId")).toBe("loc_123");
     expect(links.crm).toBe("/admin/dashboard/crm/loc_123");
     expect(links.publicPage).toBe("/locations/activities/loc_123");
   });
 
-  it("falls back safely to route location ID", () => {
+  it("marks dashboard links as repair-needed when no canonical ID exists", () => {
     const links = buildLocationEditorLinks({
       type: "restaurants",
       locationId: "route_789",
+      sourceId: "rest_456",
+      effectiveId: "rest_456",
     });
 
+    expect(links.hasCanonicalId).toBe(false);
+    expect(links.dashboardId).toBe("route_789");
     expect(query(links.settings).get("adminLocationId")).toBe("route_789");
     expect(links.crm).toBe("/admin/dashboard/crm/route_789");
     expect(links.adminQrTools).toContain("locationId=route_789");
+  });
+
+  it("keeps public links on the source ID when available", () => {
+    const links = buildLocationEditorLinks({
+      type: "restaurants",
+      locationId: "route_789",
+      canonicalId: "loc_123",
+      sourceId: "rest_456",
+      effectiveId: "loc_123",
+    });
+
+    expect(links.publicPage).toBe("/locations/restaurants/rest_456");
+    expect(links.menuViewer).toBe("/locations/restaurants/rest_456/menu");
   });
 });
