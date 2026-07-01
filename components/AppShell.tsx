@@ -11,8 +11,10 @@ const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
 
 function isLocationEditorPath(pathname: string | null) {
-  return /^\/locations\/(restaurants|restaurant|activities|activity)\/[^/]+\/edit\/?$/.test(
-    pathname || "",
+  const path = pathname || "";
+  return (
+    /^\/locations\/(restaurants|restaurant|activities|activity)\/[^/]+\/edit\/?$/.test(path) ||
+    /^\/locations\/edit\/(restaurants|restaurant|activities|activity)\/[^/]+\/?$/.test(path)
   );
 }
 

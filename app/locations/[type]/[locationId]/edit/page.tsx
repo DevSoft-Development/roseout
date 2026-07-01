@@ -13,11 +13,9 @@ import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
 import { formatFullAddress } from "@/lib/address-utils";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
-import LocationProfileEditor from "@/components/admin/LocationProfileEditor";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
-type QualityStatus = "Excellent" | "Strong" | "Needs review" | "Incomplete";
 
 type FormState = {
   name: string;
@@ -104,17 +102,13 @@ const labelClass = "text-xs font-black uppercase tracking-[0.18em] text-white/45
 const secondaryButtonClass =
   "rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-wide text-white/70 transition hover:bg-white/[0.08] hover:text-white";
 
-const navItems = [
-  ["overview", "Overview"],
-  ["contact", "Contact"],
-  ["location-map", "Location & Map"],
-  ["classification", "Classification"],
-  ["search-tags", "Search Tags"],
-  ["photos", "Photos"],
-  ["hours-reservations", "Hours & Reservations"],
-  ["publishing", "Publishing"],
-  ["ownership", "Ownership"],
-  ["admin-notes", "Admin Notes"],
+const dashboardTabs = [
+  "Details",
+  "Settings",
+  "Hours",
+  "Ordering & Delivery",
+  "Payments",
+  "Integrations",
 ];
 
 function normalizeLocationTypeParam(value: string): LocationType | null {
@@ -131,28 +125,6 @@ function hasValue(value: unknown) {
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
 
-function getQualityStatus(score: number, readinessPercent: number): QualityStatus {
-  if (score >= 90 && readinessPercent >= 85) return "Excellent";
-  if (score >= 75 && readinessPercent >= 70) return "Strong";
-  if (score >= 55) return "Needs review";
-
-  return "Incomplete";
-}
-
-
-function getQualityStatusClass(status: QualityStatus) {
-  switch (status) {
-    case "Excellent":
-      return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
-    case "Strong":
-      return "border-sky-400/30 bg-sky-400/10 text-sky-200";
-    case "Needs review":
-      return "border-amber-400/30 bg-amber-400/10 text-amber-200";
-    case "Incomplete":
-      return "border-red-400/30 bg-red-400/10 text-red-200";
-  }
-}
-
 function humanizeValue(value: unknown, fallback = "Not set") {
   if (value === null || value === undefined || value === "") return fallback;
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -161,31 +133,12 @@ function humanizeValue(value: unknown, fallback = "Not set") {
   return String(value).replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function visibilityLabel(form: Pick<FormState, "is_searchable" | "data_status">) {
-  const status = String(form.data_status || "").toLowerCase();
-  if (["incomplete", "needs_review", "needs review", "draft"].includes(status)) return "Needs review before public";
-  if (form.is_searchable === "false") return "Hidden from search";
-  if (form.is_searchable === "true") return "Public and searchable";
-  return "Using default visibility";
-}
-
 function managedByLabel(value: unknown) {
   const key = String(value || "system").toLowerCase();
   if (key === "owner") return "Owner managed";
   if (key === "admin") return "Admin managed";
   if (key === "system") return "System imported";
   return humanizeValue(value);
-}
-
-function sourceSummary(sources: Record<string, unknown> | null | undefined, field: string, fallback: unknown) {
-  return managedByLabel(sources?.[field] || fallback || "system");
-}
-
-function missingFieldList(value: string | undefined) {
-  return (value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function calculateUpdatedScore(location: LocationRecord) {
@@ -236,7 +189,6 @@ export default function EditLocationPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [optimizing, setOptimizing] = useState(false);
   const [message, setMessage] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
@@ -429,67 +381,6 @@ export default function EditLocationPage() {
       : [];
   };
 
-  const optimizeWithAI = async () => {
-    setOptimizing(true);
-    setMessage("");
-
-    try {
-      const res = await fetch("/api/locations/optimize", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type,
-          name: form.name,
-          description: form.description,
-          city: form.city,
-          neighborhood: form.neighborhood,
-          cuisine: form.cuisine,
-          activity_type: form.activity_type,
-          atmosphere: form.atmosphere,
-          best_for: form.best_for,
-          special_features: form.special_features,
-          signature_items: form.signature_items,
-          primary_tag: form.primary_tag,
-          date_style_tags: form.date_style_tags,
-          search_keywords: form.search_keywords,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMessage(data.error || "AI optimization failed.");
-        return;
-      }
-
-      setForm((prev) => ({
-        ...prev,
-        description: data.description || prev.description,
-        primary_tag: data.primary_tag || prev.primary_tag,
-        date_style_tags: Array.isArray(data.date_style_tags)
-          ? data.date_style_tags.join(", ")
-          : prev.date_style_tags,
-        best_for: Array.isArray(data.best_for)
-          ? data.best_for.join(", ")
-          : prev.best_for,
-        special_features: Array.isArray(data.special_features)
-          ? data.special_features.join(", ")
-          : prev.special_features,
-        search_keywords: Array.isArray(data.search_keywords)
-          ? data.search_keywords.join(", ")
-          : prev.search_keywords,
-      }));
-
-      setMessage("AI optimization applied. Review and save changes.");
-    } catch {
-      setMessage("AI optimization failed.");
-    } finally {
-      setOptimizing(false);
-    }
-  };
-
   const saveLocation = async () => {
     if (form.operating_hours_valid === false) {
       setMessage("Weekly Hours contains an invalid line. Fix the warning under Weekly Hours before saving.");
@@ -628,9 +519,6 @@ export default function EditLocationPage() {
   const readinessPercent = readiness.length
     ? Math.round((completedReadiness / readiness.length) * 100)
     : 0;
-  const qualityStatus = getQualityStatus(safeScore, readinessPercent);
-  const qualityStatusClass = getQualityStatusClass(qualityStatus);
-
   const setMainImage = (url: string) => {
     setForm((prev) => ({
       ...prev,
@@ -746,7 +634,7 @@ export default function EditLocationPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#07090d] pt-28 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#050607] text-white">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.06] px-10 py-8 text-center shadow-2xl">
           <div className="mx-auto mb-5 h-12 w-12 animate-pulse rounded-full bg-[#e1062a] shadow-lg shadow-[#ff1654]/30" />
           <p className="text-sm font-black uppercase tracking-[0.3em] text-white/65">
@@ -758,465 +646,113 @@ export default function EditLocationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07090d] px-4 pb-24 pt-20 text-white md:px-6 lg:pl-[320px] lg:pr-8">
-      <EditorSidebar
-        type={type}
-        form={form}
-        mainImage={mainImage}
-        publicPreviewHref={publicPreviewHref}
-        dashboardHref="/locations/dashboard"
-        crmHref={crmHref}
-        effectiveId={effectiveId || locationId}
-      />
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#22070d] via-[#12090b] to-[#070707] p-5 shadow-2xl md:p-7">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-            <div className="min-w-0">
-              <button
-                type="button"
-                onClick={() => router.push(from)}
-                className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white/75 transition hover:bg-white/[0.08] hover:text-white"
-              >
-                Back to Locations
-              </button>
-              <p className="mt-6 text-xs font-black uppercase tracking-[0.35em] text-[#ff9bb6]">
-                Locations / {type === "restaurants" ? "Restaurants" : "Activities"} / {form.name || "Location"} / Editor
-              </p>
-              <h1 className="mt-3 max-w-4xl truncate text-4xl font-black tracking-tight text-white md:text-5xl">
-                Location Editor
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Manage public profile, search visibility, reservations, photos, and owner settings.</p>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
-                {formatFullAddress({
-                  address: form.address,
-                  city: form.city,
-                  state: form.state,
-                  zip_code: form.zip_code,
-                  fallback: "",
-                }) || "Address not added"}
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <StatusPill tone="dark">{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
-                <StatusPill tone={form.claim_status ? "success" : "warning"}>{form.claim_status || "Unclaimed"}</StatusPill>
-                <StatusPill tone={form.data_status ? "success" : "neutral"}>{form.data_status || "Quality Review"}</StatusPill>
-                <StatusPill tone={form.profile_manual_lock ? "success" : "neutral"}>
-                  Profile source: {String(form.profile_managed_by || "system").replace(/_/g, " ")}
-                </StatusPill>
-                {form.profile_manual_lock ? <StatusPill tone="success">Manual lock</StatusPill> : null}
-                {isImpersonating ? <StatusPill tone="dark">Admin View</StatusPill> : null}
-              </div>
-              <div className="mt-4 grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs font-bold text-white/60 sm:grid-cols-2 lg:grid-cols-4">
-                <span>Manual lock: {form.profile_manual_lock ? "Yes" : "No"}</span>
-                <span>Owner verified: {form.profile_owner_verified_at ? new Date(form.profile_owner_verified_at).toLocaleString() : "Not yet"}</span>
-                <span>Last owner update: {form.profile_last_owner_update_at ? new Date(form.profile_last_owner_update_at).toLocaleString() : "—"}</span>
-                <span>Last admin update: {form.profile_last_admin_update_at ? new Date(form.profile_last_admin_update_at).toLocaleString() : "—"}</span>
-                <span>Hours source: {sourceSummary(form.profile_field_sources, "operating_hours", form.hours_source || form.profile_managed_by)}</span>
-                <span>Contact source: {sourceSummary(form.profile_field_sources, "phone", form.profile_managed_by)}</span>
-                <span>Photos source: {sourceSummary(form.profile_field_sources, "main_image", form.profile_managed_by)}</span>
-                <span>Booking source: {sourceSummary(form.profile_field_sources, "reservation_url", form.profile_managed_by)}</span>
+    <main className="min-h-screen bg-[#050607] text-white">
+      <EditorSidebar />
+      <div className="min-h-screen lg:pl-[292px]">
+        <div className="sticky top-0 z-30 border-b border-white/10 bg-[#050607]/95 backdrop-blur-xl">
+          <div className="flex flex-col gap-4 px-4 py-4 md:px-6 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <button className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-xl font-black text-white/80" aria-label="Open menu">☰</button>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-black uppercase tracking-[0.22em] text-white/40">
+                  Dashboard / Operations / Locations / {form.name || "Location"}
+                </p>
+                <h1 className="mt-1 text-2xl font-black tracking-tight text-white md:text-3xl">Location Editor</h1>
+                <p className="mt-1 text-sm font-semibold text-white/45">Manage profile details, settings, hours, reservations, media, and publishing controls.</p>
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-3">
-              <a href={publicPreviewHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white/[0.08] hover:text-white">
-                View Public Page
-              </a>
-              <a href={crmHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white/[0.08] hover:text-white">
-                Open CRM
-              </a>
-              <a href={adminDetailHref} className="rounded-full border border-white/10 bg-white/[0.07] px-5 py-3 text-sm font-black text-white/80 transition hover:bg-white/[0.08] hover:text-white">
-                Open Dashboard
-              </a>
-              <button
-                onClick={saveLocation}
-                disabled={saving || optimizing}
-                className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#ff2142] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => router.push(from)} className={secondaryButtonClass}>Cancel</button>
+              <a href={publicPreviewHref} className={secondaryButtonClass}>Preview</a>
+              <button onClick={saveLocation} disabled={saving} className="rounded-full bg-[#e1062a] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/25 transition hover:bg-[#ff2142] disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving..." : "Save Changes"}</button>
+              <button className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-xl font-black text-white/70" aria-label="More actions">⋯</button>
             </div>
           </div>
-        </section>
-
-        <div className="sticky top-[72px] z-30 rounded-full border border-white/10 bg-[#090b10]/95 p-2 shadow-2xl backdrop-blur">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 px-3">
-              <p className="truncate text-sm font-black text-white">Editing {form.name || "location"}</p>
-              <p className="text-xs font-bold text-white/45">{hasUnsavedChanges ? "Draft changes" : "All changes saved"}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusPill tone={hasUnsavedChanges ? "warning" : "success"}>{hasUnsavedChanges ? "Draft" : "Saved"}</StatusPill>
-              <button type="button" onClick={() => router.push(from)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white/[0.08] hover:text-white">
-                Cancel / Back
-              </button>
-              <button
-                onClick={saveLocation}
-                disabled={saving || optimizing}
-                className="rounded-full bg-[#e1062a] px-5 py-2 text-xs font-black text-white transition hover:bg-[#ff2142] disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
+          <div className="flex gap-2 overflow-x-auto px-4 pb-4 md:px-6">
+            {dashboardTabs.map((tab) => (
+              <a key={tab} href={`#${tab.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white/[0.08] hover:text-white first:border-[#ff1654]/50 first:bg-[#ff1654]/10 first:text-white">
+                {tab}
+              </a>
+            ))}
           </div>
         </div>
 
-        {message && (
-          <div
-            className={`rounded-[24px] border p-4 text-sm font-bold shadow-xl ${
-              isSuccess
-                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                : "border-red-400/30 bg-red-400/10 text-red-100"
-            }`}
-          >
-            {message}
-          </div>
-        )}
-
-
-        <LocationProfileEditor
-          table="locations"
-          id={effectiveId || locationId}
-          type={table}
-          record={form as Record<string, unknown>}
-          canEdit={!saving && !optimizing}
-          canViewAdvancedSystemData={false}
-          saveMode="owner"
-          aiHelperEnabled={true}
-          aiHelperAccessLabel="Availability depends on Admin Settings."
-        />
-
-        <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_340px]">
-          <aside className="xl:sticky xl:top-[152px] xl:self-start">
-            <nav className="flex gap-2 overflow-x-auto rounded-[24px] border border-white/10 bg-white/[0.06] p-3 xl:grid xl:gap-2 xl:overflow-visible">
-              {navItems.map(([href, label]) => (
-                <a key={href} href={`#${href}`} className="shrink-0 rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white/[0.08] hover:text-white xl:w-full">
-                  {label}
-                </a>
-              ))}
-            </nav>
-          </aside>
-
-          <section className="space-y-6">
-            <EditorSection id="overview" title="Overview" description="Core venue identity, public description, pricing, and website details.">
-              <FieldRow columns={2}>
-                <TextInput label="Location Name" value={form.name} onChange={(v) => update("name", v)} />
-                <TextInput label="Website URL" value={form.website} onChange={(v) => update("website", v)} placeholder="https://..." />
-              </FieldRow>
-              <FieldRow columns={2}>
-                {type === "restaurants" ? (
-                  <TextInput label="Cuisine / Restaurant Type" value={form.cuisine} onChange={(v) => update("cuisine", v)} placeholder="Italian, Caribbean, Steakhouse" />
-                ) : (
-                  <TextInput label="Activity Type" value={form.activity_type} onChange={(v) => update("activity_type", v)} placeholder="Bowling, Museum, Spa, Lounge" />
-                )}
-                <TextInput label="Price Tier" value={form.price_range} onChange={(v) => update("price_range", v)} placeholder="$, $$, $$$" />
-              </FieldRow>
-              <TextArea label="Description" helper="Short, operator-quality copy used for the public listing and discovery surfaces." value={form.description} onChange={(v) => update("description", v)} />
-            </EditorSection>
-
-            <EditorSection id="contact" title="Contact" description="Customer contact, booking, reservations, and outbound destination URLs.">
-              <FieldRow columns={2}>
-                <TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
-                <TextInput label="Reservation URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} placeholder="https://..." />
-              </FieldRow>
-              <FieldRow columns={2}>
-                <TextInput label="Booking URL" value={form.booking_url} onChange={(v) => update("booking_url", v)} placeholder="https://..." />
-                <SelectInput label="Reservation Source" value={form.reservation_source} onChange={(v) => update("reservation_source", v)} options={["external", "internal", "both", "none"]} />
-              </FieldRow>
-              <TextInput label="Reservation Provider" value={form.reservation_provider} onChange={(v) => update("reservation_provider", v)} placeholder="OpenTable, Resy, SevenRooms, direct" />
-              <FieldRow columns={2}>
-                <ToggleRow title="Internal reservations" text="Allow this venue to use TheOutHaven reservation tools." checked={form.internal_reservations_enabled || form.uses_internal_reservations} onChange={setInternalReservations} />
-                <ToggleRow title="External reservations" text="Keep outbound booking or reservation links enabled." checked={form.allow_external_reservations} onChange={setAllowExternalReservations} />
-              </FieldRow>
-            </EditorSection>
-
-            <EditorSection id="location-map" title="Location & Map" description="Address intelligence, Google enrichment, and coordinate quality.">
-              <GoogleAddressAutocomplete
-                label="Address"
-                value={form.address}
-                address={form.address}
-                city={form.city}
-                state={form.state}
-                zip_code={form.zip_code}
-                neighborhood={form.neighborhood}
-                latitude={form.latitude}
-                longitude={form.longitude}
-                google_place_id={form.google_place_id}
-                formatted_address={form.formatted_address}
-                isAdmin={from.startsWith("/admin")}
-                showCoordinateRepairTools={from.startsWith("/admin")}
-                onAddressChange={(value) => update("address", value)}
-                onAddressSelect={(selected: GoogleAddressFields) =>
-                  setForm((prev) => ({ ...prev, ...selected }))
-                }
-                inputClassName={`mt-2 ${inputClass}`}
-                labelClassName={labelClass}
-                statusClassName="mt-2 text-xs font-bold text-white/45"
-                dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#121721] shadow-2xl"
-                predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/70 transition last:border-b-0 hover:bg-white/[0.08]"
-                buttonClassName="mt-3 rounded-full border border-white/10 bg-[#121721] px-4 py-2 text-xs font-black text-white/65 transition hover:bg-[#e1062a] hover:text-white disabled:opacity-50"
-              />
-              <FieldRow columns={4}>
-                <TextInput label="City" value={form.city} onChange={(v) => update("city", v)} />
-                <TextInput label="State" value={form.state} onChange={(v) => update("state", v)} />
-                <TextInput label="Zip" value={form.zip_code} onChange={(v) => update("zip_code", v)} />
-                <TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} />
-              </FieldRow>
-              <TextInput label="Formatted Address" value={form.formatted_address} onChange={(v) => update("formatted_address", v)} />
-              <FieldRow columns={3}>
-                <TextInput label="Latitude" value={String(form.latitude || "")} onChange={(v) => update("latitude", v)} />
-                <TextInput label="Longitude" value={String(form.longitude || "")} onChange={(v) => update("longitude", v)} />
-                <TextInput label="Google Place ID" value={form.google_place_id} onChange={(v) => update("google_place_id", v)} />
-              </FieldRow>
-            </EditorSection>
-
-            <EditorSection id="classification" title="Classification" description="Venue taxonomy, atmosphere, feature tags, and discovery positioning.">
-              <FieldRow columns={2}>
-                <TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} placeholder="Romantic, Trendy, Cozy, Upscale" />
-                <TextInput label="Date Style Tags" value={form.date_style_tags} onChange={(v) => update("date_style_tags", v)} placeholder="Comma-separated tags" />
-              </FieldRow>
-              <FieldRow columns={2}>
-                <TextInput label="Atmosphere / Ambience" value={form.atmosphere} onChange={(v) => update("atmosphere", v)} />
-                <TextInput label="Noise Level" value={form.noise_level} onChange={(v) => update("noise_level", v)} />
-              </FieldRow>
-              <FieldRow columns={2}>
-                <TextInput label="Dress Code" value={form.dress_code} onChange={(v) => update("dress_code", v)} />
-                <TextInput label="Parking Info" value={form.parking_info} onChange={(v) => update("parking_info", v)} />
-              </FieldRow>
-              <TextArea label="Good For" value={form.best_for} onChange={(v) => update("best_for", v)} helper="Comma-separated situations, audiences, or occasions." />
-              <TextArea label="Feature Tags" value={form.special_features} onChange={(v) => update("special_features", v)} helper="Comma-separated venue features." />
-              <TextArea label="Signature Items" value={form.signature_items} onChange={(v) => update("signature_items", v)} helper="Food, drinks, amenities, or notable experiences." />
-            </EditorSection>
-
-            <EditorSection id="search-tags" title="Search Tags" description="Internal search quality controls and discovery keywords.">
-              <TextArea label="Search Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} helper="Comma-separated keywords used by search and recommendations." />
-              <FieldRow columns={3}>
-                <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
-                <TextInput label="Quality Status" value={form.data_status || ""} onChange={(v) => update("data_status", v)} />
-                <TextInput label="Missing Fields" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} />
-              </FieldRow>
-            </EditorSection>
-
-            <EditorSection id="photos" title="Photos" description="Primary image, gallery URLs, and lightweight upload/backfill tools.">
-              <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-                <div className="overflow-hidden rounded-[20px] border border-white/10 bg-[#121721] shadow-sm">
-                  {mainImage ? (
-                    <Image src={mainImage} alt={form.name || "Location"} width={420} height={300} className="h-40 w-full object-cover" unoptimized />
-                  ) : (
-                    <div className="flex h-40 items-center justify-center bg-white/[0.04] text-xs font-black uppercase tracking-[0.18em] text-white/35">Missing photo</div>
-                  )}
-                </div>
-                <TextInput label="Primary Image URL" value={mainImage} onChange={setMainImage} helper="Saved to main_image and image_url for compatibility." />
-              </div>
-
-              <div className="rounded-[20px] border border-white/10 bg-[#121721] p-4">
-                <label className={labelClass}>Upload image</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={uploadingImage}
-                  onChange={(event) => uploadGalleryImage(event.target.files?.[0] || null)}
-                  className="mt-2 block w-full rounded-2xl border border-white/10 bg-[#10141b] px-4 py-3 text-sm font-semibold text-white/70 file:mr-4 file:rounded-full file:border-0 file:bg-[#e1062a] file:px-4 file:py-2 file:text-xs file:font-black file:text-white disabled:opacity-50"
-                />
-                <p className="mt-2 text-xs font-semibold text-white/40">If the storage bucket is not available, paste an image URL instead.</p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                <TextInput label="Add Gallery Image URL" value={newGalleryImage} onChange={setNewGalleryImage} placeholder="https://..." />
-                <button type="button" onClick={addGalleryImage} className="self-end rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-wide text-white transition hover:bg-[#ff2142]">Add image</button>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                {(galleryImages.length ? galleryImages : [""]).slice(0, 9).map((image, index) => (
-                  <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-[#121721] shadow-sm">
-                    {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={180} className="h-28 w-full object-cover" unoptimized /> : <div className="flex h-28 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
-                    <div className="space-y-2 p-3">
-                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">{image === mainImage ? "Main image" : `Photo ${index + 1}`}</div>
-                      {image && (
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => setMainImage(image)} className="flex-1 rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase text-white/60 hover:bg-white/[0.08] hover:text-white">Set main</button>
-                          <button type="button" onClick={() => removeGalleryImage(image)} className="flex-1 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase text-red-700 hover:bg-red-600 hover:text-white">Remove</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </EditorSection>
-
-            <EditorSection id="hours-reservations" title="Hours & Reservations" description="Weekly schedule, short hours, and internal or external reservation controls.">
-              <FieldRow columns={2}>
-                <ToggleRow title="Internal reservations" text="Enable TheOutHaven reservation operations." checked={form.internal_reservations_enabled || form.uses_internal_reservations} onChange={setInternalReservations} />
-                <ToggleRow title="External reservations" text="Allow external booking URLs to remain available." checked={form.allow_external_reservations} onChange={setAllowExternalReservations} />
-              </FieldRow>
-              <FieldRow columns={2}>
-                <SelectInput label="Reservation Source" value={form.reservation_source} onChange={(v) => update("reservation_source", v)} options={["external", "internal", "both", "none"]} />
-                <SelectInput label="Searchable" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Use default", true: "Searchable", false: "Hidden from search" }} />
-              </FieldRow>
-              <TextInput label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} placeholder="Mon-Fri 5pm-10pm" />
-              <LocationHoursEditor value={form.operating_hours} theme="dark" status={form as Record<string, unknown>} onValidJsonChange={(value, valid) => setForm((prev) => ({ ...prev, operating_hours: value, operating_hours_valid: valid }))} />
-              <ReadOnlyField label="Special / Holiday Hours" value={form.special_hours ? "Special hours are configured" : "No special holiday hours configured"} />
-              {type === "restaurants" ? (
-                <FieldRow columns={2}>
-                  <TextInput label="Days of Operation" value={(form.days_of_operation || []).join(", ")} onChange={(v) => setForm((prev) => ({ ...prev, days_of_operation: toArray(v) }))} />
-                  <TextInput label="Kitchen Closing Time" value={form.kitchen_closing_time || ""} onChange={(v) => setForm((prev) => ({ ...prev, kitchen_closing_time: v }))} />
-                </FieldRow>
-              ) : null}
-              <div className="flex flex-wrap gap-3">
-                <a href={reservationsHref} className={secondaryButtonClass}>Open Reservations</a>
-                <a href={`${reservationsHref}/layout`} className={secondaryButtonClass}>Open Layout Builder</a>
-              </div>
-            </EditorSection>
-
-            <EditorSection id="publishing" title="Publishing" description="Public visibility, quality status, and readiness checklist in plain English.">
-              <FieldRow columns={2}>
-                <SelectInput label="Search visibility" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Using default visibility", true: "Searchable", false: "Hidden from search" }} />
-                <ReadOnlyField label="Public visibility" value={visibilityLabel(form)} />
-              </FieldRow>
-              <ReadOnlyField label="Data status" value={humanizeValue(form.data_status, "Needs review")} />
-              <div className="grid gap-2 sm:grid-cols-2">
-                {readiness.map(([label, complete]) => (
-                  <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                    <span className="text-sm font-bold text-white/65">{label}</span>
-                    <span className={complete ? "text-xs font-black text-emerald-300" : "text-xs font-black text-amber-300"}>{complete ? "Ready" : "Needs work"}</span>
-                  </div>
-                ))}
-              </div>
-            </EditorSection>
-
-            <EditorSection id="ownership" title="Ownership" description="Owner contact data and claim status used by admin operations.">
-              <FieldRow columns={3}>
-                <TextInput label="Owner Name" value={form.owner_name} onChange={(v) => update("owner_name", v)} />
-                <TextInput label="Owner Email" value={form.owner_email} onChange={(v) => update("owner_email", v)} />
-                <TextInput label="Owner Phone" value={form.owner_phone} onChange={(v) => update("owner_phone", v)} />
-              </FieldRow>
-              <FieldRow columns={2}>
-                <TextInput label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} />
-                <ReadOnlyField label="Claim Summary" value={form.claim_status || "Unclaimed or not connected"} />
-              </FieldRow>
-              <a href={crmHref} className="inline-flex w-fit rounded-full border border-white/10 bg-[#121721] px-5 py-3 text-sm font-black text-white/65 transition hover:bg-white/[0.08] hover:text-white">Open CRM / Claim Management</a>
-            </EditorSection>
-
-            <EditorSection id="admin-notes" title="Admin Notes" description="Operational context and read-only quality signals for staff review.">
-              <FieldRow columns={3}>
-                <MetricCard label="TheOutHaven Score" value={`${safeScore}/100`} />
-                <MetricCard label="Effective ID" value={effectiveId || locationId} />
-                <MetricCard label="Source" value={type === "restaurants" ? "Restaurants" : "Activities"} />
-              </FieldRow>
-              <div className="flex flex-wrap gap-2">
-                {(missingFieldList(form.missing_fields).length ? missingFieldList(form.missing_fields) : ["No missing fields reported"]).map((field) => (
-                  <StatusPill key={field} tone={field === "No missing fields reported" ? "success" : "warning"}>{humanizeValue(field)}</StatusPill>
-                ))}
-              </div>
-              <TextArea label="Data Quality Notes" value={form.missing_fields || ""} onChange={(v) => update("missing_fields", v)} helper="Comma-separated quality notes; shown as readable chips above." />
-            </EditorSection>
-          </section>
-
-          <aside className="space-y-4 xl:sticky xl:top-[96px] xl:self-start">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#10141b] text-white shadow-2xl">
-              {mainImage ? (
-                <Image
-                  src={mainImage}
-                  alt={form.name || "Location preview"}
-                  width={700}
-                  height={420}
-                  className="h-56 w-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <div className="flex h-56 items-center justify-center bg-white/[0.04] text-sm font-black uppercase tracking-[0.18em] text-white/35">
-                  No image preview
-                </div>
-              )}
-
-              <div className="p-5">
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/40">
-                  Live Summary
-                </p>
-                <h2 className="mt-2 text-2xl font-black">
-                  {form.name || "Location Name"}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-white/55">
-                  {[form.address, form.city, form.state, form.zip_code]
-                    .filter(Boolean)
-                    .join(", ") || "Address will appear here"}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <StatusPill>{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
-                  <StatusPill tone={form.claim_status ? "success" : "warning"}>{form.claim_status || "Unclaimed"}</StatusPill>
-                  <StatusPill tone={form.is_searchable === "false" ? "danger" : "success"}>{form.is_searchable === "false" ? "Not searchable" : "Searchable"}</StatusPill>
-                </div>
-              </div>
+        <div className="mx-auto max-w-[1560px] space-y-6 px-4 py-6 md:px-6">
+          {message && (
+            <div className={`rounded-[24px] border p-4 text-sm font-bold shadow-xl ${isSuccess ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-red-400/30 bg-red-400/10 text-red-100"}`}>
+              {message}
             </div>
+          )}
 
-            <section className="rounded-[24px] border border-white/10 bg-[#10141b] p-5 text-white shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-black text-white">Location Quality</h3>
-                  <p className="mt-1 text-sm font-medium leading-5 text-white/50">
-                    Operational readiness for search, publishing, and booking workflows.
-                  </p>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+            <section id="details" className="space-y-6">
+              <EditorSection id="basic-information" title="Basic Information" description="Core public identity and discovery copy.">
+                <FieldRow columns={2}>
+                  <TextInput label="Location Name" value={form.name} onChange={(v) => update("name", v)} />
+                  {type === "restaurants" ? <TextInput label="Cuisine / Restaurant Type" value={form.cuisine} onChange={(v) => update("cuisine", v)} /> : <TextInput label="Activity Type" value={form.activity_type} onChange={(v) => update("activity_type", v)} />}
+                </FieldRow>
+                <FieldRow columns={2}>
+                  <TextInput label="Price Tier" value={form.price_range} onChange={(v) => update("price_range", v)} placeholder="$, $$, $$$" />
+                  <TextInput label="Primary Tag" value={form.primary_tag} onChange={(v) => update("primary_tag", v)} />
+                </FieldRow>
+                <TextArea label="Description" value={form.description} onChange={(v) => update("description", v)} />
+                <TextArea label="Search Keywords" value={form.search_keywords} onChange={(v) => update("search_keywords", v)} helper="Comma-separated keywords." />
+              </EditorSection>
+
+              <EditorSection id="contact-information" title="Contact Information" description="Customer contact, booking, CRM, and public links.">
+                <FieldRow columns={2}>
+                  <TextInput label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
+                  <TextInput label="Website URL" value={form.website} onChange={(v) => update("website", v)} placeholder="https://..." />
+                </FieldRow>
+                <FieldRow columns={2}>
+                  <TextInput label="Reservation URL" value={form.reservation_url} onChange={(v) => update("reservation_url", v)} placeholder="https://..." />
+                  <TextInput label="Booking URL" value={form.booking_url} onChange={(v) => update("booking_url", v)} placeholder="https://..." />
+                </FieldRow>
+                <div className="flex flex-wrap gap-3">
+                  <a href={crmHref} className={secondaryButtonClass}>Open CRM</a>
+                  <a href={adminDetailHref} className={secondaryButtonClass}>Dashboard Link</a>
                 </div>
-                <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-black ${qualityStatusClass}`}>
-                  {qualityStatus}
-                </span>
-              </div>
+              </EditorSection>
 
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-[#121721] p-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
-                    Readiness
-                  </p>
-                  <div className="mt-2 flex items-end gap-1">
-                    <span className="text-2xl font-black text-white">{completedReadiness}</span>
-                    <span className="pb-1 text-xs font-bold text-white/45">of {readiness.length}</span>
-                  </div>
+              <EditorSection id="address" title="Address" description="Address intelligence, coordinates, and Google enrichment.">
+                <GoogleAddressAutocomplete label="Address" value={form.address} address={form.address} city={form.city} state={form.state} zip_code={form.zip_code} neighborhood={form.neighborhood} latitude={form.latitude} longitude={form.longitude} google_place_id={form.google_place_id} formatted_address={form.formatted_address} isAdmin={from.startsWith("/admin")} showCoordinateRepairTools={from.startsWith("/admin")} onAddressChange={(value) => update("address", value)} onAddressSelect={(selected: GoogleAddressFields) => setForm((prev) => ({ ...prev, ...selected }))} inputClassName={`mt-2 ${inputClass}`} labelClassName={labelClass} statusClassName="mt-2 text-xs font-bold text-white/45" dropdownClassName="absolute z-[999999] mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#121721] shadow-2xl" predictionButtonClassName="block w-full border-b border-white/10 px-4 py-3 text-left text-sm font-bold text-white/70 transition last:border-b-0 hover:bg-white/[0.08]" buttonClassName="mt-3 rounded-full border border-white/10 bg-[#121721] px-4 py-2 text-xs font-black text-white/65 transition hover:bg-[#e1062a] hover:text-white disabled:opacity-50" />
+                <FieldRow columns={4}><TextInput label="City" value={form.city} onChange={(v) => update("city", v)} /><TextInput label="State" value={form.state} onChange={(v) => update("state", v)} /><TextInput label="Zip" value={form.zip_code} onChange={(v) => update("zip_code", v)} /><TextInput label="Neighborhood" value={form.neighborhood} onChange={(v) => update("neighborhood", v)} /></FieldRow>
+                <FieldRow columns={3}><TextInput label="Latitude" value={String(form.latitude || "")} onChange={(v) => update("latitude", v)} /><TextInput label="Longitude" value={String(form.longitude || "")} onChange={(v) => update("longitude", v)} /><TextInput label="Google Place ID" value={form.google_place_id} onChange={(v) => update("google_place_id", v)} /></FieldRow>
+              </EditorSection>
+
+              <EditorSection id="settings" title="Hours / Settings" description="Hours, reservations, publishing, tags, ownership, and gallery management.">
+                <FieldRow columns={2}><ToggleRow title="Internal reservations" text="Enable TheOutHaven reservation operations." checked={form.internal_reservations_enabled || form.uses_internal_reservations} onChange={setInternalReservations} /><ToggleRow title="External reservations" text="Allow outbound booking links." checked={form.allow_external_reservations} onChange={setAllowExternalReservations} /></FieldRow>
+                <FieldRow columns={3}><SelectInput label="Reservation Source" value={form.reservation_source} onChange={(v) => update("reservation_source", v)} options={["external", "internal", "both", "none"]} /><SelectInput label="Search visibility" value={form.is_searchable || ""} onChange={(v) => update("is_searchable", v)} options={["", "true", "false"]} optionLabels={{ "": "Using default visibility", true: "Searchable", false: "Hidden from search" }} /><TextInput label="Quality Status" value={form.data_status || ""} onChange={(v) => update("data_status", v)} /></FieldRow>
+                <TextInput label="Hours" value={form.hours || ""} onChange={(v) => update("hours", v)} placeholder="Mon-Fri 5pm-10pm" />
+                <LocationHoursEditor value={form.operating_hours} theme="dark" status={form as Record<string, unknown>} onValidJsonChange={(value, valid) => setForm((prev) => ({ ...prev, operating_hours: value, operating_hours_valid: valid }))} />
+                <FieldRow columns={2}><TextInput label="Primary Image URL" value={mainImage} onChange={setMainImage} /><TextInput label="Add Gallery Image URL" value={newGalleryImage} onChange={setNewGalleryImage} placeholder="https://..." /></FieldRow>
+                <div className="flex flex-wrap gap-3"><button type="button" onClick={addGalleryImage} className={secondaryButtonClass}>Add Image</button><label className={`${secondaryButtonClass} cursor-pointer`}>Upload Image<input type="file" accept="image/*" disabled={uploadingImage} onChange={(event) => uploadGalleryImage(event.target.files?.[0] || null)} className="sr-only" /></label><a href={reservationsHref} className={secondaryButtonClass}>Reservations</a></div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {(galleryImages.length ? galleryImages : [""]).slice(0, 6).map((image, index) => (
+                    <div key={`${image}-${index}`} className="overflow-hidden rounded-2xl border border-white/10 bg-[#121721]">
+                      {image ? <Image src={image} alt={`Gallery ${index + 1}`} width={260} height={160} className="h-24 w-full object-cover" unoptimized /> : <div className="flex h-24 items-center justify-center text-xs font-bold text-white/30">Gallery preview</div>}
+                      {image ? <div className="grid grid-cols-2 gap-2 p-2"><button type="button" onClick={() => setMainImage(image)} className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-black uppercase text-white/60 hover:bg-white/[0.08]">Set main</button><button type="button" onClick={() => removeGalleryImage(image)} className="rounded-full border border-red-400/30 px-2 py-1 text-[10px] font-black uppercase text-red-200 hover:bg-red-500/20">Remove</button></div> : null}
+                    </div>
+                  ))}
                 </div>
-
-                <div className="rounded-2xl border border-white/10 bg-[#121721] p-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
-                    Quality Score
-                  </p>
-                  <div className="mt-2 flex items-end gap-1">
-                    <span className="text-2xl font-black text-white">{safeScore}</span>
-                    <span className="pb-1 text-xs font-bold text-white/45">/100</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-bold text-white/55">Completion</span>
-                  <span className="text-xs font-black text-white/65">{readinessPercent}%</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-[#e1062a]"
-                    style={{ width: `${readinessPercent}%` }}
-                  />
-                </div>
-              </div>
-
-              <p className="mt-4 text-sm font-medium leading-5 text-white/50">
-                This location is evaluated for listing completeness, search visibility, media, contact details, and admin approval.
-              </p>
-
-              <div className="mt-5 space-y-2">
-                {readiness.map(([label, complete]) => (
-                  <div key={label} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#121721] px-4 py-3">
-                    <span className="text-sm font-bold text-white/65">{label}</span>
-                    <span className={`h-2.5 w-2.5 rounded-full ${complete ? "bg-emerald-500" : "bg-amber-400"}`} />
-                  </div>
-                ))}
-              </div>
+                <FieldRow columns={3}><TextInput label="Owner Name" value={form.owner_name} onChange={(v) => update("owner_name", v)} /><TextInput label="Owner Email" value={form.owner_email} onChange={(v) => update("owner_email", v)} /><TextInput label="Claim Status" value={form.claim_status} onChange={(v) => update("claim_status", v)} /></FieldRow>
+              </EditorSection>
             </section>
 
-            <div className="grid grid-cols-2 gap-3">
-              <MetricCard label="Score" value={`${safeScore}`} dark />
-              <MetricCard label="Photos" value={String(galleryImages.length)} dark />
-              <MetricCard label="Tags" value={String(toArray(form.date_style_tags).length + (form.primary_tag ? 1 : 0))} dark />
-              <MetricCard label="Claim" value={form.claim_status || "Open"} dark />
-            </div>
-          </aside>
+            <aside className="space-y-6 xl:sticky xl:top-[158px] xl:self-start">
+              <LocationPreview form={form} type={type} mainImage={mainImage} publicPreviewHref={publicPreviewHref} readiness={readiness} safeScore={safeScore} readinessPercent={readinessPercent} />
+              <EditorSection id="recent-activity" title="Recent Activity" description="Operational status and latest save context.">
+                <div className="grid gap-3">
+                  <ReadOnlyField label="Save Status" value={hasUnsavedChanges ? "Draft changes pending" : "All changes saved"} />
+                  <ReadOnlyField label="Profile Source" value={managedByLabel(form.profile_managed_by)} />
+                  <ReadOnlyField label="Owner Verified" value={form.profile_owner_verified_at ? new Date(form.profile_owner_verified_at).toLocaleString() : "Not yet"} />
+                  <ReadOnlyField label="Last Owner Update" value={form.profile_last_owner_update_at ? new Date(form.profile_last_owner_update_at).toLocaleString() : "—"} />
+                  <ReadOnlyField label="Last Admin Update" value={form.profile_last_admin_update_at ? new Date(form.profile_last_admin_update_at).toLocaleString() : "—"} />
+                  {isImpersonating ? <StatusPill tone="dark">Admin View</StatusPill> : null}
+                </div>
+              </EditorSection>
+            </aside>
+          </div>
         </div>
       </div>
     </main>
@@ -1224,61 +760,108 @@ export default function EditLocationPage() {
 }
 
 
-function EditorSidebar({
-  type,
-  form,
-  mainImage,
-  publicPreviewHref,
-  dashboardHref,
-  crmHref,
-  effectiveId,
-}: {
-  type: LocationType;
-  form: FormState;
-  mainImage: string;
-  publicPreviewHref: string;
-  dashboardHref: string;
-  crmHref: string;
-  effectiveId: string;
-}) {
-  const reserveHref = `/locations/${type}/${effectiveId}/reserve`;
-  const qrHref = `/admin/dashboard/locations/${type}/${effectiveId}/qr`;
-  const menuPhotosHref = `/locations/${type}/${effectiveId}/menu`;
+function EditorSidebar() {
+  const sections = [
+    ["Dashboard", ["Dashboard"]],
+    ["Operations", ["Locations", "Menus", "Orders", "Reservations", "Customers", "Reviews"]],
+    ["Marketing", ["Campaigns", "Promotions", "Email", "SMS"]],
+    ["Analytics", ["Reports", "Insights", "Performance"]],
+    ["Settings", ["Users", "Roles", "Integrations", "Brand Settings"]],
+  ] as const;
+
   return (
-    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[300px] overflow-y-auto border-r border-white/10 bg-[#090b10] p-5 shadow-2xl lg:block">
-      <div className="rounded-[28px] border border-white/10 bg-[#10141b] p-5">
+    <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[292px] overflow-y-auto border-r border-white/10 bg-[#090b10] px-4 py-5 shadow-2xl lg:block">
+      <div className="mb-6 px-3">
         <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff1654]">TheOutHaven</p>
-        <h2 className="mt-2 text-xl font-black text-white">Location Ops</h2>
+        <h2 className="mt-2 text-xl font-black text-white">Enterprise</h2>
       </div>
-      <div className="mt-5 overflow-hidden rounded-[28px] border border-white/10 bg-[#10141b]">
-        {mainImage ? (
-          <Image src={mainImage} alt={form.name || "Location"} width={300} height={180} className="h-32 w-full object-cover" unoptimized />
-        ) : (
-          <div className="flex h-32 items-center justify-center bg-white/[0.04] text-xs font-black uppercase tracking-[0.16em] text-white/35">No photo</div>
-        )}
-        <div className="p-4">
-          <h3 className="truncate text-base font-black text-white">{form.name || "Untitled location"}</h3>
-          <p className="mt-1 text-xs font-bold text-white/45">{[form.city, form.state].filter(Boolean).join(", ") || "City not set"}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <StatusPill tone="dark">{type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"}</StatusPill>
-            <StatusPill tone={form.is_searchable === "false" ? "warning" : "success"}>{visibilityLabel(form)}</StatusPill>
+      <nav className="space-y-6">
+        {sections.map(([section, items]) => (
+          <div key={section}>
+            <p className="px-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30">{section}</p>
+            <div className="mt-2 grid gap-1">
+              {items.map((item) => {
+                const active = item === "Locations";
+                return (
+                  <a key={item} href={active ? "/locations/dashboard" : "#"} className={`rounded-2xl px-3 py-2.5 text-sm font-bold transition ${active ? "bg-[#ff1654] text-white shadow-lg shadow-[#ff1654]/20" : "text-white/55 hover:bg-white/[0.06] hover:text-white"}`}>
+                    {item}
+                  </a>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </div>
-      <nav className="mt-5 grid gap-2 rounded-[28px] border border-white/10 bg-[#10141b] p-3">
-        {navItems.map(([href, label]) => (
-          <a key={href} href={`#${href}`} className="rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-white/55 transition hover:bg-white/[0.08] hover:text-white">{label}</a>
         ))}
       </nav>
-      <div className="mt-5 grid gap-2 rounded-[28px] border border-white/10 bg-[#10141b] p-3">
-        <a className={secondaryButtonClass} href={dashboardHref}>Back to Locations Dashboard</a>
-        <a className={secondaryButtonClass} href={publicPreviewHref}>View Public Page</a>
-        <a className={secondaryButtonClass} href={crmHref}>Open CRM</a>
-        <a className={secondaryButtonClass} href={reserveHref}>Open Reservations</a>
-        <a className={secondaryButtonClass} href={qrHref}>Open QR Tools</a>
-        <a className={secondaryButtonClass} href={menuPhotosHref}>Open Menu / Photos</a>
-      </div>
     </aside>
+  );
+}
+
+function LocationPreview({
+  form,
+  type,
+  mainImage,
+  publicPreviewHref,
+  readiness,
+  safeScore,
+  readinessPercent,
+}: {
+  form: FormState;
+  type: LocationType;
+  mainImage: string;
+  publicPreviewHref: string;
+  readiness: readonly (readonly [string, boolean])[];
+  safeScore: number;
+  readinessPercent: number;
+}) {
+  const address = formatFullAddress({
+    address: form.address,
+    city: form.city,
+    state: form.state,
+    zip_code: form.zip_code,
+    fallback: "Address will appear here",
+  });
+  const statusTiles = [
+    ["Score", `${safeScore}/100`],
+    ["Ready", `${readinessPercent}%`],
+    ["Type", type === "restaurants" ? form.cuisine || "Restaurant" : form.activity_type || "Activity"],
+    ["Claim", form.claim_status || "Open"],
+    ["Search", form.is_searchable === "false" ? "Hidden" : "Live"],
+    ["Checks", `${readiness.filter(([, complete]) => complete).length}/${readiness.length}`],
+  ];
+
+  return (
+    <section id="location-preview" className="overflow-hidden rounded-[24px] border border-white/10 bg-[#10141b] text-white shadow-2xl">
+      <div className="relative">
+        {mainImage ? (
+          <Image src={mainImage} alt={form.name || "Location preview"} width={900} height={420} className="h-56 w-full object-cover" unoptimized />
+        ) : (
+          <div className="flex h-56 items-center justify-center bg-white/[0.04] text-sm font-black uppercase tracking-[0.18em] text-white/35">One main preview image</div>
+        )}
+        <div className="absolute -bottom-10 left-6 grid h-24 w-24 place-items-center overflow-hidden rounded-[24px] border-4 border-[#10141b] bg-[#171b23] shadow-2xl">
+          {mainImage ? <Image src={mainImage} alt="Location logo" width={120} height={120} className="h-full w-full object-cover" unoptimized /> : <span className="text-2xl font-black text-white/45">OH</span>}
+        </div>
+      </div>
+      <div className="px-6 pb-6 pt-14">
+        <p className="text-xs font-black uppercase tracking-[0.25em] text-[#ff9bb6]">Location Preview</p>
+        <h2 className="mt-2 text-3xl font-black tracking-tight text-white">{form.name || "Location Name"}</h2>
+        <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/55">{form.description || "Short description will appear here for guests reviewing this location."}</p>
+        <div className="mt-5 grid gap-2 text-sm font-semibold text-white/60">
+          <p>{form.phone || "Phone not set"}</p>
+          <p>{form.owner_email || "Email not set"}</p>
+          <p>{form.website || "Website not set"}</p>
+          <p>{address}</p>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {statusTiles.map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-[#121721] p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">{label}</p>
+              <p className="mt-1 truncate text-sm font-black text-white">{value}</p>
+            </div>
+          ))}
+        </div>
+        <a href={publicPreviewHref} className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/20 transition hover:bg-[#ff2142]">View Public Page</a>
+      </div>
+    </section>
   );
 }
 
@@ -1434,14 +1017,5 @@ function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?
     <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] ${tones[tone]}`}>
       {children}
     </span>
-  );
-}
-
-function MetricCard({ label, value, dark = false }: { label: string; value: string; dark?: boolean }) {
-  return (
-    <div className={dark ? "rounded-[22px] border border-white/10 bg-white/[0.06] p-4 text-white shadow-xl" : "rounded-[20px] border border-white/10 bg-[#121721] p-4 shadow-sm"}>
-      <p className={dark ? "text-[10px] font-black uppercase tracking-[0.18em] text-white/40" : "text-[10px] font-black uppercase tracking-[0.18em] text-white/40"}>{label}</p>
-      <p className={dark ? "mt-2 truncate text-xl font-black text-white" : "mt-2 truncate text-xl font-black text-white"}>{value || "—"}</p>
-    </div>
   );
 }
