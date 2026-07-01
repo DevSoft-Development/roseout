@@ -14,6 +14,7 @@ import { getLocationScore } from "@/lib/locationScore";
 import { supabase } from "@/lib/supabase";
 import { formatFullAddress } from "@/lib/address-utils";
 import LocationHoursEditor from "@/components/admin/LocationHoursEditor";
+import { buildLocationEditorLinks } from "@/lib/location-editor-links";
 
 type LocationType = "restaurants" | "activities";
 type PillTone = "neutral" | "success" | "warning" | "danger" | "dark";
@@ -160,79 +161,6 @@ function getLogoUrl(formOrLocation: FormState) {
     ""
   );
 }
-
-function locationContextType(type: LocationType) {
-  return type === "activities" ? "activity" : "restaurant";
-}
-
-function appendLocationContext(
-  href: string,
-  {
-    type,
-    id,
-  }: {
-    type: LocationType;
-    id: string;
-  },
-) {
-  if (!id) return href;
-
-  const [baseWithQuery, hash] = href.split("#");
-  const [base, existingQuery] = baseWithQuery.split("?");
-
-  const params = new URLSearchParams(existingQuery || "");
-  params.set("adminLocationId", id);
-  params.set("locationId", id);
-  params.set("type", locationContextType(type));
-  params.set("demo", "1");
-  params.set("fromDemoCenter", "1");
-
-  return `${base}?${params.toString()}${hash ? `#${hash}` : ""}`;
-}
-
-function buildLocationEditorLinks({
-  type,
-  locationId,
-  effectiveId,
-}: {
-  type: LocationType;
-  locationId: string;
-  effectiveId: string;
-}) {
-  const id = effectiveId || locationId;
-  const ownerType = locationContextType(type);
-  const withContext = (href: string) => appendLocationContext(href, { type, id });
-
-  return {
-    dashboard: withContext("/locations/dashboard"),
-
-    publicPage: `/locations/${type}/${id}`,
-
-    crm: `/admin/dashboard/crm/${id}`,
-
-    reserveDashboard: withContext("/reserve/dashboard"),
-    reservations: withContext("/reserve/dashboard?tab=reservations"),
-    reservationLayout: withContext("/reserve/dashboard?tab=settings&section=layout"),
-
-    qrTools: withContext("/business/dashboard/qr-codes"),
-    adminQrTools: `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(id)}&type=${encodeURIComponent(ownerType)}`,
-
-    menuEditor: withContext("/business/dashboard/menu"),
-    menuViewer: `/locations/${type}/${id}/menu`,
-
-    photos: withContext("/business/dashboard/profile"),
-    analytics: withContext("/business/dashboard/analytics"),
-    vip: withContext("/business/dashboard/vip"),
-    leads: withContext("/business/dashboard/leads"),
-    reviews: withContext("/business/dashboard/reviews"),
-    marketing: withContext("/business/dashboard/marketing-studio"),
-    promotions: withContext("/business/dashboard/promotions"),
-    messaging: withContext("/business/dashboard/messaging"),
-    settings: withContext("/business/dashboard/settings"),
-    branding: withContext("/business/dashboard/branding"),
-  };
-}
-
 function normalizeLocationTypeParam(value: string): LocationType | null {
   if (value === "restaurants" || value === "restaurant") return "restaurants";
   if (value === "activities" || value === "activity" || value === "activitys") {
@@ -314,6 +242,8 @@ export default function EditLocationPage() {
   const [message, setMessage] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
+  const [canonicalId, setCanonicalId] = useState(locationId);
+  const [sourceId, setSourceId] = useState<string | null>(null);
   const [effectiveId, setEffectiveId] = useState(locationId);
   const [newGalleryImage, setNewGalleryImage] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -393,7 +323,12 @@ export default function EditLocationPage() {
         const data = result.location;
 
         setIsImpersonating(Boolean(result.isImpersonating));
-        setEffectiveId(result.effectiveId || locationId);
+
+        const nextCanonicalId = result.canonicalId || data.id || locationId;
+        const nextSourceId = result.sourceId || data.source_id || null;
+        setCanonicalId(String(nextCanonicalId));
+        setSourceId(nextSourceId ? String(nextSourceId) : null);
+        setEffectiveId(String(result.effectiveId || nextSourceId || nextCanonicalId || locationId));
 
         const nextForm: FormState = {
           name: data[nameField] || data.name || "",
@@ -593,7 +528,9 @@ export default function EditLocationPage() {
         return;
       }
 
-      setEffectiveId(result.effectiveId || effectiveId);
+      if (result.canonicalId) setCanonicalId(String(result.canonicalId));
+      if ("sourceId" in result) setSourceId(result.sourceId ? String(result.sourceId) : null);
+      setEffectiveId(String(result.effectiveId || result.sourceId || result.canonicalId || effectiveId));
 
       const nextForm = {
         ...form,
@@ -613,7 +550,7 @@ export default function EditLocationPage() {
   const safeScore = clampScore(form.theouthaven_score);
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
-  const links = buildLocationEditorLinks({ type: table as LocationType, locationId, effectiveId });
+  const links = buildLocationEditorLinks({ type: table as LocationType, locationId, canonicalId, sourceId, effectiveId });
   const publicPreviewHref = links.publicPage;
   const adminDetailHref = links.dashboard;
   const crmHref = links.crm;
@@ -692,7 +629,8 @@ export default function EditLocationPage() {
     setMessage("");
 
     const extension = file.name.split(".").pop() || "jpg";
-    const path = `locations/${type}/${effectiveId || locationId}/${Date.now()}.${extension}`;
+    const uploadLocationId = canonicalId || effectiveId || locationId;
+    const path = `locations/${type}/${uploadLocationId}/${Date.now()}.${extension}`;
     const { data, error } = await supabase.storage.from("location-images").upload(path, file, { upsert: true });
 
     if (error) {
@@ -895,7 +833,7 @@ export default function EditLocationPage() {
               </EditorSection>
 
               <EditorSection id="admin-notes" title="Admin Notes" description="Record identifiers and quality metadata.">
-                <FieldRow columns={3}><ReadOnlyField label="Effective ID" value={effectiveId || locationId} /><ReadOnlyField label="Source Table" value={table} /><ReadOnlyField label="Quality Score" value={`${safeScore}/100`} /></FieldRow>
+                <FieldRow columns={4}><ReadOnlyField label="Canonical Location ID" value={canonicalId || locationId} /><ReadOnlyField label="Source ID" value={sourceId || effectiveId || "—"} /><ReadOnlyField label="Source Table" value={table} /><ReadOnlyField label="Quality Score" value={`${safeScore}/100`} /></FieldRow>
               </EditorSection>
             </section>
 
