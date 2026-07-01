@@ -42,7 +42,6 @@ export function buildLocationEditorLinks({
   sourceId?: string | null;
   effectiveId?: string;
 }) {
-  const hasCanonicalId = Boolean(canonicalId);
   const dashboardId = canonicalId || locationId;
   const publicId = sourceId || effectiveId || canonicalId || locationId;
   const ownerType = locationContextType(type);
@@ -50,7 +49,6 @@ export function buildLocationEditorLinks({
     appendLocationContext(href, { type, id: dashboardId });
 
   return {
-    hasCanonicalId,
     dashboard: withDashboardContext("/locations/dashboard"),
     publicPage: `/locations/${type}/${publicId}`,
     crm: `/admin/dashboard/crm/${dashboardId}`,

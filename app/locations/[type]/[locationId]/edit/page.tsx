@@ -242,7 +242,7 @@ export default function EditLocationPage() {
   const [message, setMessage] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
-  const [canonicalId, setCanonicalId] = useState("");
+  const [canonicalId, setCanonicalId] = useState(locationId);
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [effectiveId, setEffectiveId] = useState(locationId);
   const [newGalleryImage, setNewGalleryImage] = useState("");
@@ -324,11 +324,11 @@ export default function EditLocationPage() {
 
         setIsImpersonating(Boolean(result.isImpersonating));
 
-        const nextCanonicalId = result.canonicalId || data.canonical_location_id || null;
-        const nextSourceId = result.sourceId || data.legacy_source_id || data.source_id || null;
-        setCanonicalId(nextCanonicalId ? String(nextCanonicalId) : "");
+        const nextCanonicalId = result.canonicalId || data.id || locationId;
+        const nextSourceId = result.sourceId || data.source_id || null;
+        setCanonicalId(String(nextCanonicalId));
         setSourceId(nextSourceId ? String(nextSourceId) : null);
-        setEffectiveId(String(result.effectiveId || nextCanonicalId || nextSourceId || locationId));
+        setEffectiveId(String(result.effectiveId || nextSourceId || nextCanonicalId || locationId));
 
         const nextForm: FormState = {
           name: data[nameField] || data.name || "",
@@ -530,7 +530,7 @@ export default function EditLocationPage() {
 
       if (result.canonicalId) setCanonicalId(String(result.canonicalId));
       if ("sourceId" in result) setSourceId(result.sourceId ? String(result.sourceId) : null);
-      setEffectiveId(String(result.canonicalId || result.effectiveId || result.sourceId || effectiveId));
+      setEffectiveId(String(result.effectiveId || result.sourceId || result.canonicalId || effectiveId));
 
       const nextForm = {
         ...form,
@@ -550,13 +550,7 @@ export default function EditLocationPage() {
   const safeScore = clampScore(form.theouthaven_score);
   const mainImage = form.main_image || form.image_url || "";
   const galleryImages = Array.from(new Set([mainImage, ...(form.images || [])].filter(Boolean))) as string[];
-  const links = buildLocationEditorLinks({
-    type: table as LocationType,
-    locationId,
-    canonicalId: canonicalId || undefined,
-    sourceId,
-    effectiveId,
-  });
+  const links = buildLocationEditorLinks({ type: table as LocationType, locationId, canonicalId, sourceId, effectiveId });
   const publicPreviewHref = links.publicPage;
   const adminDetailHref = links.dashboard;
   const crmHref = links.crm;
@@ -845,7 +839,7 @@ export default function EditLocationPage() {
               </EditorSection>
 
               <EditorSection id="admin-notes" title="Admin Notes" description="Record identifiers and quality metadata.">
-                <FieldRow columns={4}><ReadOnlyField label="Canonical Location ID" value={canonicalId || "Missing canonical row"} /><ReadOnlyField label="Source ID" value={sourceId || "—"} /><ReadOnlyField label="Effective ID" value={effectiveId || "—"} /><ReadOnlyField label="Source Table" value={table} /></FieldRow><FieldRow columns={2}><ReadOnlyField label="Quality Score" value={`${safeScore}/100`} /><ReadOnlyField label="Link Status" value={canonicalId ? "Dashboard links use canonical locations.id" : "Dashboard links need canonical row repair"} /></FieldRow>
+                <FieldRow columns={4}><ReadOnlyField label="Canonical Location ID" value={canonicalId || locationId} /><ReadOnlyField label="Source ID" value={sourceId || effectiveId || "—"} /><ReadOnlyField label="Source Table" value={table} /><ReadOnlyField label="Quality Score" value={`${safeScore}/100`} /></FieldRow>
               </EditorSection>
             </section>
 

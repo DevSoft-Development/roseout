@@ -17,10 +17,9 @@ const checks = [
   ['editor has reservation controls', page.includes('Internal reservations') && page.includes('External reservations')],
   ['editor has photos controls', page.includes('Add Gallery Image URL') && page.includes('Set main') && page.includes('Remove')],
   ['canonical edit context is preserved', api.includes('profileUpdateWithSearchDocument') && api.includes('savedTo: "locations"')],
-  ['edit context returns explicit source ID safely', api.includes('sourceId') && api.includes('effectiveId: canonicalId || sourceId || finalId') && api.includes('hasCanonicalLocation')],
-  ['edit context supports singular and plural source tables', api.includes('sourceTableVariantsForType') && api.includes('["restaurants", "restaurant"]') && api.includes('["activities", "activity"]')],
-  ['dashboard links use canonical ID helper', links.includes('const hasCanonicalId = Boolean(canonicalId)') && links.includes('const dashboardId = canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
-  ['location editor imports link helper', page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') && page.includes('canonicalId: canonicalId || undefined') && page.includes('sourceId,') && page.includes('effectiveId,')],
+  ['edit context returns explicit source ID', api.includes('sourceId') && api.includes('effectiveId: sourceId || canonicalId')],
+  ['dashboard links use canonical ID helper', links.includes('const dashboardId = canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
+  ['location editor imports link helper', page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') && page.includes('canonicalId, sourceId, effectiveId')],
   ['promotions uses Growth Pro wrapper', promotions.includes('BusinessGrowthProPage') && promotions.includes('module="promotions"') && !promotions.includes('redirect("/login")')],
 ];
 

@@ -442,22 +442,16 @@ export async function GET(req: Request) {
       delete responseLocation.special_hours;
     }
 
-    const canonicalId = canonicalRow?.id ? String(canonicalRow.id) : null;
-    const sourceId = canonicalRow?.source_id
-      ? String(canonicalRow.source_id)
-      : legacyRow?.id
-        ? String(legacyRow.id)
-        : resolvedData.source_id
-          ? String(resolvedData.source_id)
-          : null;
+    const canonicalId = String((data as Record<string, unknown>).id || finalId);
+    const sourceId = (data as Record<string, unknown>).source_id
+      ? String((data as Record<string, unknown>).source_id)
+      : null;
 
     return NextResponse.json({
       location: responseLocation,
       canonicalId,
       sourceId,
-      effectiveId: canonicalId || sourceId || finalId,
-      hasCanonicalLocation: Boolean(canonicalId),
-      matchedBy,
+      effectiveId: sourceId || canonicalId,
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {
@@ -580,9 +574,7 @@ export async function PATCH(req: Request) {
     const canonicalId = String(existingLocation.data.id);
     const sourceId = existingLocation.data.source_id
       ? String(existingLocation.data.source_id)
-      : resolved.legacyData?.id
-        ? String(resolved.legacyData.id)
-        : null;
+      : null;
 
     // locations is the canonical source of truth for admin edits.
     // Do not dual-write the full admin payload into legacy restaurants/activities.
@@ -592,8 +584,7 @@ export async function PATCH(req: Request) {
       skippedLegacySync: true,
       canonicalId,
       sourceId,
-      effectiveId: canonicalId,
-      hasCanonicalLocation: true,
+      effectiveId: sourceId || canonicalId,
       isImpersonating: Boolean(isLocationImpersonation),
     });
   } catch (error) {
