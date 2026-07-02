@@ -1,0 +1,14 @@
+alter table if exists public.location_commerce_pages add column if not exists status text not null default 'draft';
+alter table if exists public.location_commerce_pages add column if not exists public_slug text;
+alter table if exists public.location_commerce_sections add column if not exists page_id uuid;
+alter table if exists public.location_commerce_sections add column if not exists title text;
+alter table if exists public.location_commerce_items add column if not exists page_id uuid;
+alter table if exists public.location_commerce_items add column if not exists price_cents integer;
+alter table if exists public.location_commerce_items add column if not exists price_label text;
+update public.location_commerce_pages set status = case when is_active then 'published' else 'draft' end where status is null;
+update public.location_commerce_sections set page_id = commerce_page_id where page_id is null;
+update public.location_commerce_sections set title = name where title is null;
+update public.location_commerce_items set page_id = commerce_page_id where page_id is null;
+create index if not exists idx_location_commerce_pages_location_status on public.location_commerce_pages(location_id,page_type,status,sort_order);
+create index if not exists idx_location_commerce_sections_page_active on public.location_commerce_sections(commerce_page_id,is_active,sort_order);
+create index if not exists idx_location_commerce_items_page_section on public.location_commerce_items(commerce_page_id,section_id,is_available,sort_order);
