@@ -107,6 +107,18 @@ export const ADMIN_PAGE_ACCESS = {
   campaignsEdit: ["superadmin", "admin", "editor"],
   campaignsSend: ["superadmin", "admin"],
 
+
+
+  careers: LEGACY_DASHBOARD_ROLES,
+  careersEdit: ["superadmin", "admin", "editor"],
+  careersJobsManage: ["superadmin", "admin", "editor"],
+  careersApplicationsManage: ["superadmin", "admin", "manager", "editor", "ambassador", "experience", "viewer"],
+  careersInterviewsManage: ["superadmin", "admin", "manager"],
+  careersOffersManage: ["superadmin", "admin"],
+  careersInternshipsManage: ["superadmin", "admin", "manager"],
+  careersTeamConversion: ["superadmin", "admin"],
+  careersMarketingReview: ["superadmin", "admin", "manager", "editor"],
+
   marketing: LEGACY_DASHBOARD_ROLES,
   marketingEdit: ["superadmin", "admin", "editor"],
   upgradeOpportunities: ["superadmin", "admin", "ambassador"],
