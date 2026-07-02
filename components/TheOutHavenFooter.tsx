@@ -69,6 +69,7 @@ export default function TheOutHavenFooter() {
             { label: "For Businesses", href: "/business" },
             { label: "Claim Listing", href: "/business/claim" },
             { label: "Apply", href: "/location/apply" },
+            { label: "Careers", href: "/careers" },
           ]}
         />
 

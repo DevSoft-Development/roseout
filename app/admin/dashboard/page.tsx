@@ -69,6 +69,12 @@ export default async function CentralDashboardPage() {
       status: "Manage Users",
     },
     {
+      title: "Careers CRM",
+      desc: "Manage jobs, applications, interviews, internships, marketing applicants, offers, and team conversion.",
+      href: "/admin/dashboard/careers",
+      status: "Hiring",
+    },
+    {
       title: "Search health",
       desc: "Validate discovery, parser output, and search QA.",
       href: "/admin/dashboard/search-health",
