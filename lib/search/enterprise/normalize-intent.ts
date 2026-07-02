@@ -316,6 +316,14 @@ export const RESTAURANT_ALLOWED_SINGLE_WORDS = new Set([
   "seafood",
   "sushi",
   "japanese",
+  "dominican",
+  "mangu",
+  "mangú",
+  "mofongo",
+  "pernil",
+  "tostones",
+  "latin",
+  "caribbean",
   "mexican",
   "italian",
   "thai",
@@ -1649,7 +1657,7 @@ export function mergeLlmIntentWithPreIntent(args: {
 
 export function restaurantSearchTerms(intent: SearchIntent) {
   if (!intent.needsRestaurant) return [];
-  const rooftopRestaurantTerms = intent.needsRestaurant && !intent.needsActivity && userAskedForRooftopRestaurant(intent.rawQuery)
+  const rooftopRestaurantTerms = intent.needsRestaurant && !intent.needsActivity && hasRooftopRestaurantFeatureLanguage(intent.rawQuery)
     ? [
         "restaurant",
         "rooftop restaurant",
@@ -1672,6 +1680,19 @@ export function restaurantSearchTerms(intent: SearchIntent) {
       ? ["birthday dinner"]
       : ["dinner", "birthday dinner", "brunch", "lunch", "breakfast"],
   );
+  const activitySideOnlyTerms = intent.needsActivity && (
+    hasTrueSequenceConnector(intent.rawQuery) || hasTrueProximityPairingConnector(intent.rawQuery)
+  )
+    ? new Set(["live music", "music", "jazz", "dancing", "dance", "nightlife", "karaoke"])
+    : new Set<string>();
+  const dominicanPrimaryQuery = /\bdominican\b/i.test(intent.rawQuery ?? "");
+  const dominicanBroadFallbackTerms = new Set([
+    "puerto rican",
+    "west indian",
+    "island food",
+    "jerk chicken",
+    "curry goat",
+  ]);
   return finalCleanTermList(stripBlockedTerms(
     stripBlockedTerms(
       uniq([
@@ -1683,7 +1704,12 @@ export function restaurantSearchTerms(intent: SearchIntent) {
       ...(intent.restaurantIntent.alternativeGroups ?? []).flat(),
       ...rooftopRestaurantTerms,
       ...broadMixedRestaurantTerms,
-      ]),
+      ]).filter((term) => {
+        const normalizedTerm = normalizeIntentTerm(term);
+        if (activitySideOnlyTerms.has(normalizedTerm)) return false;
+        if (dominicanPrimaryQuery && dominicanBroadFallbackTerms.has(normalizedTerm)) return false;
+        return true;
+      }),
       mealTermsToStrip,
     ),
     RESTAURANT_SEARCH_TERM_BLOCKLIST,
