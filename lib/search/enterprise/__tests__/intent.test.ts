@@ -1311,4 +1311,45 @@ describe("public create pairing intent contract", () => {
     expect(intent.sameVenuePreferred).toBe(true);
     expect(intent.fallbackPairAllowed).toBe(true);
   });
+
+  it("normalizes rooftop restaurant debug reason after suppressing mixed outing", async () => {
+    const parsed = await parseEnterpriseIntent(
+      "Give me a rooftop restaurant for dinner in Manhattan, not a rooftop lounge after dinner.",
+      { useLLM: true },
+    );
+
+    expect(["restaurant", "same_location_combo"]).toContain(parsed.intent.searchType);
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+    expect(parsed.intent.wantsPairing).toBe(false);
+    expect(parsed.fastPathReason).not.toBe("matched explicit mixed outing fast path");
+    expect(String(parsed.fastPathReason)).toMatch(/rooftop restaurant|same-location|suppressed/i);
+  });
+
+  it.each([
+    "Find a bar and grill with TVs and wings for the Knicks game, not just a nightlife spot.",
+    "Find a sports bar with wings where we can watch basketball, all in one place.",
+  ])("keeps sports-watch food intent same-location for %s", async (query) => {
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+
+    expect(["restaurant", "same_location_combo"]).toContain(parsed.intent.searchType);
+    expect(parsed.intent.needsRestaurant).toBe(true);
+    expect(parsed.intent.needsActivity).toBe(false);
+    expect(parsed.intent.wantsPairing).toBe(false);
+    expect(parsed.intent.restaurantIntent.foodTerms).toEqual(expect.arrayContaining(["wings", "chicken wings"]));
+    expect(parsed.intent.restaurantIntent.categoryTerms).toContain("sports bar");
+  });
+
+  it("expands Dominican cuisine with Dominican-specific primary terms", () => {
+    const intent = normalizeIntent("I want Dominican food first and then somewhere close by for drinks and music.");
+
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(true);
+    expect([
+      ...intent.restaurantIntent.cuisineTerms,
+      ...restaurantSearchTerms(intent),
+    ]).toEqual(expect.arrayContaining(["dominican restaurant", "dominican food"]));
+    expect(intent.restaurantIntent.cuisineTerms).not.toContain("curry goat");
+  });
 });
