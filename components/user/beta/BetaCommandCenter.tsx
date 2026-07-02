@@ -10,6 +10,9 @@ type Assignment = {
   beta_tasks?: any;
   real_assignment_id?: string | null;
   is_virtual_weekly_session?: boolean | null;
+  completed_steps?: unknown;
+  completed_steps_count?: number | null;
+  completed_at?: string | null;
 };
 type ResultItem = Record<string, any>;
 type PairItem = Record<string, any>;
@@ -23,6 +26,34 @@ const primary =
   "rounded-full bg-gradient-to-r from-rose-500 via-red-600 to-rose-800 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/35 transition hover:scale-[1.01] hover:shadow-rose-900/45 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100";
 const secondary =
   "rounded-full border border-white/10 bg-white/[0.055] px-4 py-2 text-xs font-black text-white shadow-sm shadow-black/20 transition hover:border-rose-200/40 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50";
+
+const stepOrder = [
+  "write_outing",
+  "review_results",
+  "choose_match",
+  "feedback",
+  "check_in",
+] as const;
+const legacyStepAliases: Record<string, (typeof stepOrder)[number]> = {
+  "1": "write_outing",
+  "2": "review_results",
+  "3": "choose_match",
+  "4": "feedback",
+  "5": "check_in",
+  search_run: "review_results",
+  selection: "choose_match",
+  checkin: "check_in",
+  "check-in": "check_in",
+  complete: "check_in",
+  final_check_in: "check_in",
+};
+const requiredFeedbackFields = [
+  "match",
+  "q2",
+  "vibe",
+  "missing",
+  "recommend",
+] as const;
 const pill =
   "inline-flex items-center rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-bold text-white/70";
 
@@ -47,6 +78,35 @@ function currentProgramWeek(weekStart: string) {
   const diff =
     Math.floor((d.getTime() - firstWeekStart.getTime()) / 604800000) + 1;
   return Math.min(4, Math.max(1, Number.isFinite(diff) ? diff : 1));
+}
+
+function normalizeCompletedSteps(value: unknown, session?: Assignment | null) {
+  const normalized = new Set<(typeof stepOrder)[number]>();
+  if (Array.isArray(value)) {
+    value.forEach((step) => {
+      const key = String(step).trim();
+      const canonical = stepOrder.includes(key as (typeof stepOrder)[number])
+        ? (key as (typeof stepOrder)[number])
+        : legacyStepAliases[key];
+      if (canonical) normalized.add(canonical);
+    });
+  }
+
+  const count = Math.min(
+    5,
+    Math.max(0, Number(session?.completed_steps_count || 0)),
+  );
+  stepOrder.slice(0, count).forEach((step) => normalized.add(step));
+
+  if (session?.status === "completed" || session?.completed_at) {
+    stepOrder.forEach((step) => normalized.add(step));
+  }
+
+  return stepOrder.filter((step) => normalized.has(step));
+}
+
+function nextStepFromCompleted(completed: readonly string[]) {
+  return Math.min(6, Math.max(1, completed.length + 1));
 }
 function resultName(r: ResultItem) {
   return (
@@ -382,7 +442,17 @@ export default function BetaCommandCenter({
   testMode?: boolean;
 }) {
   const weekNumber = currentProgramWeek(weekStart);
-  const [step, setStep] = useState(1);
+  const activeAssignment = assignments[0];
+  const initialCompletedSteps = normalizeCompletedSteps(
+    activeAssignment?.completed_steps,
+    activeAssignment,
+  );
+  const [completedStepKeys, setCompletedStepKeys] = useState<string[]>(
+    initialCompletedSteps,
+  );
+  const [step, setStep] = useState(
+    nextStepFromCompleted(initialCompletedSteps),
+  );
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
@@ -396,29 +466,38 @@ export default function BetaCommandCenter({
   const [refine, setRefine] = useState<string[]>([]);
   const [refineText, setRefineText] = useState("");
   const [feedback, setFeedback] = useState<Record<string, string>>({
-    match: "Mostly",
-    q2: "Some were",
-    vibe: "The vibe was close",
-    missing: "Nothing was missing",
+    match: "",
+    q2: "",
+    vibe: "",
+    missing: "",
+    recommend: "",
     notes: "",
   });
+  const [feedbackValidation, setFeedbackValidation] = useState<string | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const resultsSectionRef = useRef<HTMLDivElement | null>(null);
   const restaurantSectionRef = useRef<HTMLDivElement | null>(null);
   const activitySectionRef = useRef<HTMLDivElement | null>(null);
   const feedbackSectionRef = useRef<HTMLDivElement | null>(null);
   const refineSectionRef = useRef<HTMLElement | null>(null);
   const displayQuery = submittedQuery || query;
   const pairRequested = pairWords.some((w) => query.toLowerCase().includes(w));
-  const activeAssignment = assignments[0];
   const activeTestMode = Boolean(testMode || activeAssignment?.test_mode);
-  const completedSteps = Math.min(5, Math.max(0, step - 1));
+  const completedSteps = completedStepKeys.length;
+  const feedbackComplete = requiredFeedbackFields.every((key) =>
+    feedback[key]?.trim(),
+  );
   const progressPercent = Math.min(
     100,
     Math.max(0, (completedSteps / 5) * 100),
   );
-  function scrollToSection(ref: RefObject<HTMLDivElement | null>) {
+  function scrollToSection(
+    ref: RefObject<HTMLElement | HTMLDivElement | null>,
+  ) {
     window.setTimeout(() => {
       ref.current?.scrollIntoView({
         behavior: "smooth",
@@ -495,7 +574,11 @@ export default function BetaCommandCenter({
         pairs: normalized.pairs,
       });
       setRunId(savedRun.run?.id || runId);
-      setStep(Math.max(step, updated ? 4 : 2));
+      setCompletedStepKeys((current) =>
+        Array.from(new Set([...current, "write_outing", "review_results"])),
+      );
+      setStep((current) => Math.max(current, updated ? 4 : 2));
+      scrollToSection(resultsSectionRef);
       setNotice(
         updated
           ? "Updated results are ready to compare."
@@ -556,6 +639,16 @@ export default function BetaCommandCenter({
         ...flags,
       });
       setSelected(type === "none" ? { none: true } : item);
+      setCompletedStepKeys((current) =>
+        Array.from(
+          new Set([
+            ...current,
+            "write_outing",
+            "review_results",
+            "choose_match",
+          ]),
+        ),
+      );
       setStep((current) =>
         Math.max(current, weekNumber === 3 || weekNumber === 4 ? 3 : 4),
       );
@@ -614,8 +707,15 @@ export default function BetaCommandCenter({
   }
   void saveItem;
   async function submitFeedback() {
+    if (!feedbackComplete) {
+      setFeedbackValidation(
+        "Answer each question to complete your weekly check-in.",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
+    setFeedbackValidation(null);
     try {
       await persist("feedback", {
         beta_search_run_id: runId,
@@ -623,6 +723,7 @@ export default function BetaCommandCenter({
         selected_none: Boolean(selected?.none),
         feedback,
       });
+      setCompletedStepKeys([...stepOrder]);
       setStep(6);
       setNotice(
         "Weekly beta check-in complete. Thank you for helping improve TheOutHaven.",
@@ -673,7 +774,7 @@ export default function BetaCommandCenter({
         />
       </div>
 
-      <JourneyMapCard step={step} />
+      <JourneyMapCard step={step} completedSteps={completedStepKeys} />
 
       <main className="min-w-0 space-y-5 lg:space-y-6">
         {(notice || error) && (
@@ -723,7 +824,7 @@ export default function BetaCommandCenter({
         </section>
 
         {step >= 2 && (
-          <section className={card}>
+          <section ref={resultsSectionRef} className={card}>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.24em] text-rose-300">
@@ -937,9 +1038,18 @@ export default function BetaCommandCenter({
               feedback={feedback}
               setFeedback={setFeedback}
             />
+            {feedbackValidation ? (
+              <p className="mt-4 rounded-2xl border border-amber-200/20 bg-amber-400/10 p-3 text-sm font-bold text-amber-100">
+                {feedbackValidation}
+              </p>
+            ) : (
+              <p className="mt-4 text-sm font-bold text-white/55">
+                Answer each question to complete your weekly check-in.
+              </p>
+            )}
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !feedbackComplete}
               onClick={submitFeedback}
               className={`mt-4 ${primary}`}
             >
@@ -976,14 +1086,21 @@ export default function BetaCommandCenter({
     </div>
   );
 }
-function JourneyMapCard({ step }: { step: number }) {
+function JourneyMapCard({
+  step,
+  completedSteps,
+}: {
+  step: number;
+  completedSteps: string[];
+}) {
   const steps = [
-    "Write your outing",
-    "Review results",
-    "Choose match",
-    "Feedback",
-    "Check-in",
+    { key: "write_outing", label: "Write your outing" },
+    { key: "review_results", label: "Review results" },
+    { key: "choose_match", label: "Choose match" },
+    { key: "feedback", label: "Feedback" },
+    { key: "check_in", label: "Check-in" },
   ];
+  const completedSet = new Set(completedSteps);
 
   const safeStep = Math.min(5, Math.max(1, step || 1));
 
@@ -1002,10 +1119,10 @@ function JourneyMapCard({ step }: { step: number }) {
 
       <div className="mt-5 overflow-x-auto pb-1">
         <div className="flex min-w-[760px] items-center gap-3">
-          {steps.map((label, index) => {
+          {steps.map(({ key, label }, index) => {
             const currentStep = index + 1;
-            const completed = currentStep < safeStep;
-            const active = currentStep === safeStep;
+            const completed = completedSet.has(key);
+            const active = currentStep === safeStep && !completed;
 
             return (
               <div key={label} className="flex flex-1 items-center gap-3">
@@ -1425,6 +1542,20 @@ function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
           "Other",
         ]}
       />
+      <Select
+        label="Would you recommend TheOutHaven to family or friends?"
+        value={feedback.recommend}
+        onChange={(v: string) =>
+          setFeedback((f: any) => ({ ...f, recommend: v }))
+        }
+        options={[
+          "Definitely",
+          "Probably",
+          "Not sure yet",
+          "Probably not",
+          "No",
+        ]}
+      />
       <textarea
         className={input}
         value={feedback.notes}
@@ -1451,8 +1582,13 @@ function Select({ label, value, onChange, options }: any) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
+        <option value="" disabled>
+          Select an option
+        </option>
         {options.map((o: string) => (
-          <option key={o}>{o}</option>
+          <option key={o} value={o}>
+            {o}
+          </option>
         ))}
       </select>
     </label>

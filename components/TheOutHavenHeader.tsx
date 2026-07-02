@@ -162,7 +162,8 @@ export default function TheOutHavenHeader() {
       if (event.key === "Escape") setAccountDropdownOpen(false);
     }
 
-    if (accountDropdownOpen) document.addEventListener("keydown", handleKeyDown);
+    if (accountDropdownOpen)
+      document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
@@ -213,8 +214,8 @@ export default function TheOutHavenHeader() {
       <div
         className={
           scrolled
-            ? "mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6"
-            : "mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6"
+            ? "flex h-16 w-full items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6 lg:px-8"
+            : "flex h-20 w-full items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6 lg:px-8"
         }
       >
         <Link
@@ -301,9 +302,17 @@ export default function TheOutHavenHeader() {
               {accountDropdownOpen && (
                 <div className="absolute right-0 z-50 mt-3 w-72 overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/60 backdrop-blur-xl">
                   <div className="border-b border-white/10 px-4 py-3">
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Signed in as</p>
-                    <p className="mt-1 truncate text-sm font-black text-white">{displayName}</p>
-                    {user?.email ? <p className="truncate text-xs font-bold text-white/50">{user.email}</p> : null}
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">
+                      Signed in as
+                    </p>
+                    <p className="mt-1 truncate text-sm font-black text-white">
+                      {displayName}
+                    </p>
+                    {user?.email ? (
+                      <p className="truncate text-xs font-bold text-white/50">
+                        {user.email}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="py-2">
                     {[
@@ -314,18 +323,29 @@ export default function TheOutHavenHeader() {
                       ["/user/dashboard/account", "Account Settings"],
                       ["/help", "Get Help"],
                     ].map(([href, label]) => (
-                      <Link key={href} href={href} className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white/10 hover:text-white">
+                      <Link
+                        key={href}
+                        href={href}
+                        className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white/10 hover:text-white"
+                      >
                         {label}
                       </Link>
                     ))}
                     {isAdmin && (
-                      <Link href="/admin/dashboard" className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white/10 hover:text-white">
+                      <Link
+                        href="/admin/dashboard"
+                        className="block rounded-2xl px-4 py-3 text-sm font-black text-white/75 transition hover:bg-white/10 hover:text-white"
+                      >
                         Admin Dashboard
                       </Link>
                     )}
                   </div>
                   <div className="border-t border-white/10 p-2">
-                    <button type="button" onClick={handleSignOut} className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-black text-rose-200 transition hover:bg-[#e1062a]/15 hover:text-rose-100">
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="block w-full rounded-2xl px-4 py-3 text-left text-sm font-black text-rose-200 transition hover:bg-[#e1062a]/15 hover:text-rose-100"
+                    >
                       Sign Out
                     </button>
                   </div>
@@ -401,7 +421,11 @@ export default function TheOutHavenHeader() {
                   ["/user/dashboard/account", "Account Settings"],
                   ["/help", "Get Help"],
                 ].map(([href, label]) => (
-                  <Link key={href} href={href} className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">
+                  <Link
+                    key={href}
+                    href={href}
+                    className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
+                  >
                     {label}
                   </Link>
                 ))}
