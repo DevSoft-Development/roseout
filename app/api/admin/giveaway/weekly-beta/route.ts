@@ -54,15 +54,15 @@ export async function POST(req: NextRequest) {
       const settings = await getWeeklyBetaSettings();
       if (!settings.weekly_beta_enabled) return safeError("Turn on the real weekly beta task before creating real sessions.", 409);
       const result = await getOrCreateWeeklyBetaSessionsForActiveTesters();
-      return NextResponse.json({ success: true, message: `Created ${result.created}; already existed ${result.alreadyExisted}; skipped ${result.skipped}.`, ...result });
+      return NextResponse.json({ success: true, message: `Real weekly sessions ready: ${result.created} created, ${result.alreadyExisted} already existed, ${result.skipped} skipped.`, ...result });
     }
     if (action === "send_weekly_email") {
       const results = await sendWeeklyBetaEmail();
-      return NextResponse.json({ success: true, message: "Weekly beta email job completed.", total: results.length, sent: results.filter((r: any) => r.status === "sent").length });
+      return NextResponse.json({ success: true, message: "Real weekly beta email job completed for active beta testers.", total: results.length, sent: results.filter((r: any) => r.status === "sent").length });
     }
     if (action === "send_reminder") {
       const results = await sendWeeklyBetaReminder();
-      return NextResponse.json({ success: true, message: "Weekly beta reminder job completed.", total: results.length, sent: results.filter((r: any) => r.status === "sent").length });
+      return NextResponse.json({ success: true, message: "Real weekly reminder job completed for active beta testers.", total: results.length, sent: results.filter((r: any) => r.status === "sent").length });
     }
 
     const userId = currentAdminUserId(auth);
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "create_test_session") {
       const result = await createTestWeeklyBetaSession(userId);
-      return NextResponse.json({ success: true, message: "Test weekly session is ready.", session_id: result.session.id, test_url: "/user/dashboard/beta/weekly?test=1", ...result });
+      return NextResponse.json({ success: true, message: "Test weekly session is ready. It will not count toward real progress or giveaway eligibility.", session_id: result.session.id, test_url: "/user/dashboard/beta/weekly?test=1", ...result });
     }
     if (action === "send_test_email") {
       return NextResponse.json({ success: true, ...(await sendTestWeeklyBetaEmailForUser(userId, auth.adminUser?.email)) });
@@ -95,6 +95,6 @@ export async function POST(req: NextRequest) {
       hasAdminUser: Boolean(auth.adminUser?.user_id),
       error: e instanceof Error ? e.message : String(e),
     });
-    return safeError("Weekly beta action failed. Please try again.", 500);
+    return safeError(e?.message || "Weekly beta action failed. Please try again.", 500);
   }
 }

@@ -377,11 +377,15 @@ export async function getCurrentTestWeeklyBetaSessionForUser(userId: string) {
 }
 
 export async function getOrCreateCurrentTestWeeklyBetaSessionForUser(userId: string) {
+  if (!(await getWeeklyBetaE2ETestModeEnabled())) throw new Error("Turn on weekly beta test mode before creating test sessions.");
   const result = await getOrCreateWeeklyBetaSessionForUser(userId, true);
   return result.session;
 }
 
-export async function createTestWeeklyBetaSession(userId: string) { return getOrCreateWeeklyBetaSessionForUser(userId, true); }
+export async function createTestWeeklyBetaSession(userId: string) {
+  if (!(await getWeeklyBetaE2ETestModeEnabled())) throw new Error("Turn on weekly beta test mode before creating test sessions.");
+  return getOrCreateWeeklyBetaSessionForUser(userId, true);
+}
 
 export async function resetTestWeeklyBetaSession(sessionId: string) {
   const { data: session, error } = await supabaseAdmin.from("beta_test_sessions").select("id,test_mode").eq("id", sessionId).maybeSingle();
