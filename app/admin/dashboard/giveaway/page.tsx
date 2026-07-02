@@ -172,7 +172,7 @@ export default async function AdminGiveawayPage() {
         initialWeeklySessions={loaded.weeklySessions || []}
         initialOverview={loaded.overview}
         initialActiveBetaUsers={loaded.activeBetaUsers || []}
-        initialWeeklyBetaEnabled={Boolean(loaded.weeklyBetaSettings?.weekly_beta_enabled)}
+        initialWeeklySettings={loaded.weeklyBetaSettings || { weekly_beta_enabled: false, weekly_beta_e2e_test_mode_enabled: false }}
       />
     </AdminPageShell>
   );

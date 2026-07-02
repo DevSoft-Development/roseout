@@ -12,6 +12,7 @@ import {
   sendWeeklyBetaEmail,
   sendWeeklyBetaReminder,
   setWeeklyBetaEnabled,
+  setWeeklyBetaE2ETestModeEnabled,
 } from "@/lib/giveaway/betaProgram";
 
 export async function GET() {
@@ -24,11 +25,32 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireBetaAdmin();
   if (auth.error) return auth.error;
   const body = await req.json().catch(() => ({}));
-  if (typeof body.weekly_beta_enabled !== "boolean") return safeError("weekly_beta_enabled must be true or false.", 400);
+  const updatesRealWeekly = typeof body.weekly_beta_enabled === "boolean";
+  const updatesTestMode = typeof body.weekly_beta_e2e_test_mode_enabled === "boolean";
+  if (!updatesRealWeekly && !updatesTestMode) {
+    return safeError("Choose a weekly beta setting to update.", 400);
+  }
   try {
-    await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
+    if (updatesRealWeekly) {
+      await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
+    }
+    if (updatesTestMode) {
+      await setWeeklyBetaE2ETestModeEnabled(body.weekly_beta_e2e_test_mode_enabled, auth.adminUser?.user_id ?? null);
+    }
     const settings = await getWeeklyBetaSettings();
-    return NextResponse.json({ success: true, weekly_beta_enabled: settings.weekly_beta_enabled, message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off." });
+    const message = updatesTestMode
+      ? settings.weekly_beta_e2e_test_mode_enabled
+        ? "Weekly beta test mode turned on."
+        : "Weekly beta test mode turned off."
+      : settings.weekly_beta_enabled
+        ? "Weekly beta task turned on."
+        : "Weekly beta task turned off.";
+    return NextResponse.json({
+      success: true,
+      weekly_beta_enabled: settings.weekly_beta_enabled,
+      weekly_beta_e2e_test_mode_enabled: settings.weekly_beta_e2e_test_mode_enabled,
+      message,
+    });
   } catch {
     return safeError("We couldn’t update the weekly beta setting. Please try again.", 500);
   }
@@ -48,7 +70,7 @@ export async function POST(req: NextRequest) {
       if (typeof body.weekly_beta_enabled !== "boolean") return safeError("weekly_beta_enabled must be true or false.", 400);
       await setWeeklyBetaEnabled(body.weekly_beta_enabled, auth.adminUser?.user_id ?? null);
       const settings = await getWeeklyBetaSettings();
-      return NextResponse.json({ success: true, weekly_beta_enabled: settings.weekly_beta_enabled, message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off." });
+      return NextResponse.json({ success: true, weekly_beta_enabled: settings.weekly_beta_enabled, weekly_beta_e2e_test_mode_enabled: settings.weekly_beta_e2e_test_mode_enabled, message: settings.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off." });
     }
     if (action === "create_real_sessions" || action === "assign") {
       const settings = await getWeeklyBetaSettings();

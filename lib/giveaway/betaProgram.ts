@@ -6,6 +6,7 @@ import {
   getWeeklyBetaE2ETestModeEnabled,
   getCurrentWeekStart,
   setWeeklyBetaEnabled as setWeeklyBetaEnabledFlag,
+  setWeeklyBetaE2ETestModeEnabled as setWeeklyBetaE2ETestModeEnabledFlag,
   getOrCreateWeeklyBetaSessionForUser,
   getOrCreateWeeklyBetaSessionsForActiveTesters,
   createTestWeeklyBetaSession,
@@ -94,6 +95,7 @@ export async function approveBetaApplicant(applicationId: string, actor?: any) {
 export async function updateBetaAccessForUser(userId: string, status: string) { const { data, error } = await supabaseAdmin.from("beta_testers").update({ status, updated_at: new Date().toISOString() }).eq("user_id", userId).select("*"); if (error) throw error; return data ?? []; }
 export async function getWeeklyBetaSettings() { return { weekly_beta_enabled: await getWeeklyBetaEnabled(), weekly_beta_e2e_test_mode_enabled: await getWeeklyBetaE2ETestModeEnabled() }; }
 export async function setWeeklyBetaEnabled(enabled: boolean, updatedBy?: string | null) { return setWeeklyBetaEnabledFlag(enabled, updatedBy); }
+export async function setWeeklyBetaE2ETestModeEnabled(enabled: boolean, updatedBy?: string | null) { return setWeeklyBetaE2ETestModeEnabledFlag(enabled, updatedBy); }
 export { getOrCreateWeeklyBetaSessionForUser, getOrCreateWeeklyBetaSessionsForActiveTesters, createTestWeeklyBetaSession, getCurrentTestWeeklyBetaSessionForUser, getOrCreateCurrentTestWeeklyBetaSessionForUser, resetTestWeeklyBetaSession, deleteTestWeeklyBetaSession };
 export async function sendWeeklyBetaEmail() { return sendBetaRemindersForActiveTesters("weekly_tasks"); }
 export async function sendWeeklyBetaReminder() { return sendBetaRemindersForActiveTesters("midweek_reminder" as any); }
