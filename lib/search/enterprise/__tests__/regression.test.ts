@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifySearchHealthEvent } from "../searchHealthLogger";
 import { createPairingDebug, createSearchPairs } from "../pairing";
 import { activityRpcTerms, activitySearchTerms, normalizeIntent } from "../normalize-intent";
-import { filterRestaurantResults, rankRestaurantResults } from "../ranking";
+import { filterRestaurantResults, isSportsWatchComboEligible, rankRestaurantResults } from "../ranking";
 import { names, runFixturePipeline } from "./fixtures";
 
 describe("enterprise search pure fixture regressions", () => {
@@ -66,6 +66,47 @@ describe("enterprise search pure fixture regressions", () => {
 
     expect(filterRestaurantResults(records, intent).map((record) => record.id)).toEqual(["sports"]);
     expect(rankRestaurantResults(records, intent)[0]?.id).toBe("sports");
+  });
+
+
+  it("allows combo-capable activity sports bars while rejecting generic lounge-only records", () => {
+    const intent = normalizeIntent("I want a bar and grill with chicken wings where we can watch basketball, not just a lounge.");
+    const cases: Array<[string, any, string]> = [
+      [
+        "cocktail",
+        { id: "cocktail", location_type: "activity", primary_category: "cocktail lounge", description: "cocktail lounge nightlife" },
+        "reject",
+      ],
+      [
+        "cigar",
+        { id: "cigar", location_type: "activity", primary_category: "cigar lounge", description: "cigar lounge cocktails" },
+        "reject",
+      ],
+      [
+        "sports",
+        { id: "sports", location_type: "activity", primary_category: "sports bar", description: "sports bar with food, TVs, screens, wings, live basketball" },
+        "pass",
+      ],
+      [
+        "grill",
+        { id: "grill", location_type: "activity", primary_category: "bar and grill", description: "bar and grill with chicken wings and burgers" },
+        "pass",
+      ],
+      [
+        "pub",
+        { id: "pub", location_type: "activity", primary_category: "pub tavern", description: "pub showing the game with live sports and basketball" },
+        "pass",
+      ],
+    ];
+
+    for (const [label, record, expected] of cases) {
+      expect(isSportsWatchComboEligible(record, intent).status, label).toBe(expected);
+    }
+
+    const rankedIds = rankRestaurantResults(cases.map(([, record]) => record), intent).map((record) => record.id);
+    expect(rankedIds).toEqual(expect.arrayContaining(["sports", "grill", "pub"]));
+    expect(rankedIds).not.toContain("cocktail");
+    expect(rankedIds).not.toContain("cigar");
   });
 
   it.each([

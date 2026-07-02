@@ -838,6 +838,7 @@ export async function recoverEnterpriseLane(
     }
     delete (p as any).__debug_before_terms;
     delete (p as any).__debug_removed_terms;
+    delete (p as any).__debug_same_venue_balanced;
 
     const { data, error } = await supabase.rpc(
       "enterprise_search_locations",
