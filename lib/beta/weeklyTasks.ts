@@ -12,6 +12,47 @@ export function getCurrentWeekStart(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+const CANONICAL_WEEKLY_STEPS = [
+  "write_outing",
+  "review_results",
+  "choose_match",
+  "feedback",
+  "check_in",
+] as const;
+const LEGACY_WEEKLY_STEP_ALIASES: Record<
+  string,
+  (typeof CANONICAL_WEEKLY_STEPS)[number]
+> = {
+  "1": "write_outing",
+  "2": "review_results",
+  "3": "choose_match",
+  "4": "feedback",
+  "5": "check_in",
+  checkin: "check_in",
+  "check-in": "check_in",
+  complete: "check_in",
+  final_check_in: "check_in",
+};
+
+function normalizeWeeklyCompletedSteps(completedSteps: unknown, session?: any) {
+  const normalized = new Set<(typeof CANONICAL_WEEKLY_STEPS)[number]>();
+  if (Array.isArray(completedSteps)) {
+    completedSteps.forEach((step) => {
+      const key = String(step).trim();
+      const canonical = CANONICAL_WEEKLY_STEPS.includes(
+        key as (typeof CANONICAL_WEEKLY_STEPS)[number],
+      )
+        ? (key as (typeof CANONICAL_WEEKLY_STEPS)[number])
+        : LEGACY_WEEKLY_STEP_ALIASES[key];
+      if (canonical) normalized.add(canonical);
+    });
+  }
+  if (session?.status === "completed" || session?.completed_at) {
+    CANONICAL_WEEKLY_STEPS.forEach((step) => normalized.add(step));
+  }
+  return CANONICAL_WEEKLY_STEPS.filter((step) => normalized.has(step));
+}
+
 const rotating: Record<string, string[]> = {
   user: [
     "/create?betaTask=user-weekly",
@@ -134,7 +175,10 @@ export async function createStarterWeeklyTasks({
   createdBy?: string | null;
 } = {}) {
   const normalizedWeekStart = normalizeWeekStart(weekStart);
-  const dueAt = addDays(new Date(`${normalizedWeekStart}T00:00:00.000Z`), 7).toISOString();
+  const dueAt = addDays(
+    new Date(`${normalizedWeekStart}T00:00:00.000Z`),
+    7,
+  ).toISOString();
   const titles = starterWeeklyBetaTasks.map((task) => task.title);
 
   const { data: existing, error: existingError } = await supabaseAdmin
@@ -195,7 +239,8 @@ export const WEEKLY_BETA_TASK_SUBTITLE =
 function getProgramWeek(weekStart: string) {
   const firstWeekStart = new Date("2026-06-22T00:00:00.000Z");
   const current = new Date(`${weekStart}T00:00:00.000Z`);
-  const diff = Math.floor((current.getTime() - firstWeekStart.getTime()) / 604800000) + 1;
+  const diff =
+    Math.floor((current.getTime() - firstWeekStart.getTime()) / 604800000) + 1;
   return Math.min(4, Math.max(1, Number.isFinite(diff) ? diff : 1));
 }
 
@@ -261,14 +306,17 @@ export async function getOrCreateWeeklyBetaSessionForTester(testerId: string) {
 }
 
 export function weeklySessionToVirtualAssignment(session: any) {
-  const completed = Array.isArray(session?.completed_steps)
-    ? Math.min(5, session.completed_steps.length)
-    : 0;
-  const status = session?.status === "completed"
-    ? "completed"
-    : completed > 0
-      ? "in_progress"
-      : "assigned";
+  const normalizedCompletedSteps = normalizeWeeklyCompletedSteps(
+    session?.completed_steps,
+    session,
+  );
+  const completed = normalizedCompletedSteps.length;
+  const status =
+    session?.status === "completed"
+      ? "completed"
+      : completed > 0
+        ? "in_progress"
+        : "assigned";
   return {
     id: session?.id ?? "weekly-beta-session",
     real_assignment_id: null,
@@ -278,7 +326,9 @@ export function weeklySessionToVirtualAssignment(session: any) {
     week_start_date: session?.week_start_date,
     week_number: session?.week_number,
     assigned_week_start: session?.week_start_date,
+    completed_steps: normalizedCompletedSteps,
     completed_steps_count: completed,
+    completed_at: session?.completed_at ?? null,
     total_steps: 5,
     beta_tasks: {
       id: session?.id ?? "weekly-beta-session-template",
@@ -286,7 +336,10 @@ export function weeklySessionToVirtualAssignment(session: any) {
       description: WEEKLY_BETA_TASK_SUBTITLE,
       instructions: WEEKLY_BETA_TASK_SUBTITLE,
       test_url: "/user/dashboard/beta",
-      button_label: status === "assigned" ? "Start Weekly Beta Test" : "Continue Weekly Beta Test",
+      button_label:
+        status === "assigned"
+          ? "Start Weekly Beta Test"
+          : "Continue Weekly Beta Test",
       prompt_mode: "custom",
       allow_custom_prompt: true,
       custom_prompt_required: true,
@@ -295,7 +348,8 @@ export function weeklySessionToVirtualAssignment(session: any) {
 }
 
 export async function assignWeeklyBetaTasksForTester(testerId: string) {
-  const { session, weekStart } = await getOrCreateWeeklyBetaSessionForTester(testerId);
+  const { session, weekStart } =
+    await getOrCreateWeeklyBetaSessionForTester(testerId);
   return { assigned: session ? 1 : 0, weekStart, session };
 }
 
@@ -315,53 +369,137 @@ export function createInviteCode() {
 }
 
 export async function getFeatureFlagEnabled(key: string) {
-  const { data } = await supabaseAdmin.from("feature_flags").select("enabled").eq("key", key).maybeSingle();
+  const { data } = await supabaseAdmin
+    .from("feature_flags")
+    .select("enabled")
+    .eq("key", key)
+    .maybeSingle();
   return Boolean((data as any)?.enabled);
 }
 
-export async function setFeatureFlagEnabled(key: string, enabled: boolean, updatedBy?: string | null) {
+export async function setFeatureFlagEnabled(
+  key: string,
+  enabled: boolean,
+  updatedBy?: string | null,
+) {
   const now = new Date().toISOString();
-  const payload: any = { key, name: key, enabled, rollout_percentage: enabled ? 100 : 0, category: "beta", environment: "production", updated_at: now };
-  const { data, error } = await supabaseAdmin.from("feature_flags").upsert(payload, { onConflict: "key" }).select("*").maybeSingle();
+  const payload: any = {
+    key,
+    name: key,
+    enabled,
+    rollout_percentage: enabled ? 100 : 0,
+    category: "beta",
+    environment: "production",
+    updated_at: now,
+  };
+  const { data, error } = await supabaseAdmin
+    .from("feature_flags")
+    .upsert(payload, { onConflict: "key" })
+    .select("*")
+    .maybeSingle();
   if (error) throw error;
   return data;
 }
 
-export const getWeeklyBetaEnabled = () => getFeatureFlagEnabled("weekly_beta_enabled");
-export const setWeeklyBetaEnabled = (enabled: boolean, updatedBy?: string | null) => setFeatureFlagEnabled("weekly_beta_enabled", enabled, updatedBy);
-export const getWeeklyBetaE2ETestModeEnabled = () => getFeatureFlagEnabled("weekly_beta_e2e_test_mode_enabled");
-export const setWeeklyBetaE2ETestModeEnabled = (enabled: boolean, updatedBy?: string | null) => setFeatureFlagEnabled("weekly_beta_e2e_test_mode_enabled", enabled, updatedBy);
+export const getWeeklyBetaEnabled = () =>
+  getFeatureFlagEnabled("weekly_beta_enabled");
+export const setWeeklyBetaEnabled = (
+  enabled: boolean,
+  updatedBy?: string | null,
+) => setFeatureFlagEnabled("weekly_beta_enabled", enabled, updatedBy);
+export const getWeeklyBetaE2ETestModeEnabled = () =>
+  getFeatureFlagEnabled("weekly_beta_e2e_test_mode_enabled");
+export const setWeeklyBetaE2ETestModeEnabled = (
+  enabled: boolean,
+  updatedBy?: string | null,
+) =>
+  setFeatureFlagEnabled(
+    "weekly_beta_e2e_test_mode_enabled",
+    enabled,
+    updatedBy,
+  );
 
-export function getCurrentBetaWeekNumber() { return getProgramWeek(getCurrentWeekStart()); }
+export function getCurrentBetaWeekNumber() {
+  return getProgramWeek(getCurrentWeekStart());
+}
 
-export async function getOrCreateWeeklyBetaSessionForUser(userId: string, testMode = false) {
+export async function getOrCreateWeeklyBetaSessionForUser(
+  userId: string,
+  testMode = false,
+) {
   const weekStart = getCurrentWeekStart();
   const weekNumber = getProgramWeek(weekStart);
-  const { data: tester } = await supabaseAdmin.from("beta_testers").select("id,user_id,status").eq("user_id", userId).maybeSingle();
-  const query = supabaseAdmin.from("beta_test_sessions").select("*").eq("week_start_date", weekStart).eq("test_mode", testMode).eq("user_id", userId);
+  const { data: tester } = await supabaseAdmin
+    .from("beta_testers")
+    .select("id,user_id,status")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const query = supabaseAdmin
+    .from("beta_test_sessions")
+    .select("*")
+    .eq("week_start_date", weekStart)
+    .eq("test_mode", testMode)
+    .eq("user_id", userId);
   const { data: existing, error } = await query.maybeSingle();
   if (error) throw error;
-  if (existing) return { session: existing, created: false, weekStart, weekNumber };
-  const { data, error: insertError } = await supabaseAdmin.from("beta_test_sessions").insert({ user_id: userId, tester_id: tester?.id ?? null, week_number: weekNumber, week_start_date: weekStart, week_end_date: getWeekEnd(weekStart), status: "not_started", completed_steps: [], test_mode: testMode }).select("*").single();
+  if (existing)
+    return { session: existing, created: false, weekStart, weekNumber };
+  const { data, error: insertError } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .insert({
+      user_id: userId,
+      tester_id: tester?.id ?? null,
+      week_number: weekNumber,
+      week_start_date: weekStart,
+      week_end_date: getWeekEnd(weekStart),
+      status: "not_started",
+      completed_steps: [],
+      test_mode: testMode,
+    })
+    .select("*")
+    .single();
   if (insertError) throw insertError;
   return { session: data, created: true, weekStart, weekNumber };
 }
 
 export async function getOrCreateWeeklyBetaSessionsForActiveTesters() {
   const enabled = await getWeeklyBetaEnabled();
-  if (!enabled) throw new Error("Turn on the real weekly beta task before creating real sessions.");
-  const { data: testers } = await supabaseAdmin.from("beta_testers").select("id,user_id,status").in("status", ["active", "approved"]);
-  let created = 0, alreadyExisted = 0, skipped = 0; const errors: string[] = [];
+  if (!enabled)
+    throw new Error(
+      "Turn on the real weekly beta task before creating real sessions.",
+    );
+  const { data: testers } = await supabaseAdmin
+    .from("beta_testers")
+    .select("id,user_id,status")
+    .in("status", ["active", "approved"]);
+  let created = 0,
+    alreadyExisted = 0,
+    skipped = 0;
+  const errors: string[] = [];
   for (const tester of testers ?? []) {
     try {
-      if (!tester.user_id) { skipped++; continue; }
-      const res = await getOrCreateWeeklyBetaSessionForUser(tester.user_id, false);
-      if (res.created) created++; else alreadyExisted++;
-    } catch (e: any) { errors.push(e.message || "Unknown error"); }
+      if (!tester.user_id) {
+        skipped++;
+        continue;
+      }
+      const res = await getOrCreateWeeklyBetaSessionForUser(
+        tester.user_id,
+        false,
+      );
+      if (res.created) created++;
+      else alreadyExisted++;
+    } catch (e: any) {
+      errors.push(e.message || "Unknown error");
+    }
   }
-  return { created, alreadyExisted, skipped, errors, testerCount: testers?.length ?? 0 };
+  return {
+    created,
+    alreadyExisted,
+    skipped,
+    errors,
+    testerCount: testers?.length ?? 0,
+  };
 }
-
 
 export async function getCurrentTestWeeklyBetaSessionForUser(userId: string) {
   const weekStart = getCurrentWeekStart();
@@ -376,26 +514,68 @@ export async function getCurrentTestWeeklyBetaSessionForUser(userId: string) {
   return data;
 }
 
-export async function getOrCreateCurrentTestWeeklyBetaSessionForUser(userId: string) {
-  if (!(await getWeeklyBetaE2ETestModeEnabled())) throw new Error("Turn on weekly beta test mode before creating test sessions.");
+export async function getOrCreateCurrentTestWeeklyBetaSessionForUser(
+  userId: string,
+) {
+  if (!(await getWeeklyBetaE2ETestModeEnabled()))
+    throw new Error(
+      "Turn on weekly beta test mode before creating test sessions.",
+    );
   const result = await getOrCreateWeeklyBetaSessionForUser(userId, true);
   return result.session;
 }
 
 export async function createTestWeeklyBetaSession(userId: string) {
-  if (!(await getWeeklyBetaE2ETestModeEnabled())) throw new Error("Turn on weekly beta test mode before creating test sessions.");
+  if (!(await getWeeklyBetaE2ETestModeEnabled()))
+    throw new Error(
+      "Turn on weekly beta test mode before creating test sessions.",
+    );
   return getOrCreateWeeklyBetaSessionForUser(userId, true);
 }
 
 export async function resetTestWeeklyBetaSession(sessionId: string) {
-  const { data: session, error } = await supabaseAdmin.from("beta_test_sessions").select("id,test_mode").eq("id", sessionId).maybeSingle();
-  if (error || !session || !(session as any).test_mode) throw new Error("Only test-mode sessions can be reset.");
-  const { data: runs } = await supabaseAdmin.from("beta_search_runs").select("id").eq("beta_session_id", sessionId).eq("test_mode", true);
+  const { data: session, error } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .select("id,test_mode")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (error || !session || !(session as any).test_mode)
+    throw new Error("Only test-mode sessions can be reset.");
+  const { data: runs } = await supabaseAdmin
+    .from("beta_search_runs")
+    .select("id")
+    .eq("beta_session_id", sessionId)
+    .eq("test_mode", true);
   const runIds = (runs ?? []).map((r: any) => r.id);
-  if (runIds.length) await supabaseAdmin.from("beta_search_results").delete().in("beta_search_run_id", runIds).eq("test_mode", true);
-  if (runIds.length) await supabaseAdmin.from("beta_search_runs").delete().in("id", runIds).eq("test_mode", true);
-  await supabaseAdmin.from("beta_feedback").delete().eq("beta_session_id", sessionId).eq("test_mode", true);
-  const { data, error: updateError } = await supabaseAdmin.from("beta_test_sessions").update({ status: "not_started", completed_steps: [], completed_at: null, updated_at: new Date().toISOString() }).eq("id", sessionId).eq("test_mode", true).select("*").single();
+  if (runIds.length)
+    await supabaseAdmin
+      .from("beta_search_results")
+      .delete()
+      .in("beta_search_run_id", runIds)
+      .eq("test_mode", true);
+  if (runIds.length)
+    await supabaseAdmin
+      .from("beta_search_runs")
+      .delete()
+      .in("id", runIds)
+      .eq("test_mode", true);
+  await supabaseAdmin
+    .from("beta_feedback")
+    .delete()
+    .eq("beta_session_id", sessionId)
+    .eq("test_mode", true);
+  const { data, error: updateError } = await supabaseAdmin
+    .from("beta_test_sessions")
+    .update({
+      status: "not_started",
+      completed_steps: [],
+      completed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId)
+    .eq("test_mode", true)
+    .select("*")
+    .single();
   if (updateError) throw updateError;
   return data;
 }
