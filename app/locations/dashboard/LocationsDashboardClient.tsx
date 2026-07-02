@@ -39,6 +39,7 @@ import {
   type LocationVisibilityFields,
 } from "@/lib/locationVisibility";
 import { getClaimStatusText } from "@/lib/locationClaim";
+import { getBusinessMenuEditorHref, getPublicLocationHref, getPublicLocationMenuHref } from "@/lib/locations/public-location-url";
 
 const LOCATIONS_DASHBOARD_VERSION = "locations-dashboard-enterprise-2026-06-30";
 
@@ -1298,11 +1299,12 @@ function getLinks(location: LocationItem, demoContext?: DemoContext) {
   const type = locationTypePathSegment[location.location_type];
   const links = {
     dashboard: "/locations/dashboard",
-    publicPage: `/locations/${type}/${location.id}`,
+    publicPage: getPublicLocationHref(location),
+    publicMenu: getPublicLocationMenuHref(location),
     edit: `/locations/${type}/${location.id}/edit`,
     qr: "/business/dashboard/qr-codes",
     layout: "/reserve/dashboard/location-layout",
-    menu: "/business/dashboard/menu",
+    menu: getBusinessMenuEditorHref(location.id, demoContext?.demoMode ? "demo" : "location"),
     photos: "/business/dashboard/profile",
     vip: "/business/dashboard/vip",
     analytics: "/business/dashboard/analytics",
