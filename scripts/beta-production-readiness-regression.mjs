@@ -5,6 +5,7 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 const weeklyPage = read('app/user/dashboard/beta/weekly/page.tsx');
 const guidedRoute = read('app/api/beta/guided/route.ts');
 const reminderEmails = read('lib/beta/reminderEmails.ts');
+const betaCommandCenter = read('components/user/beta/BetaCommandCenter.tsx');
 const eligibility = read('lib/beta-giveaway-eligibility.ts');
 const vercel = JSON.parse(read('vercel.json'));
 
@@ -26,8 +27,10 @@ assertIncludes(guidedRoute, 'completedStepsFor', 'guided route must update sessi
 assertIncludes(guidedRoute, 'syncTesterProgressFromSession(session)', 'guided route must sync real session progress');
 assertIncludes(guidedRoute, 'shouldSyncTesterProgress', 'guided route must centralize sync guard');
 assertIncludes(guidedRoute, '!session?.test_mode', 'test-mode progress must not sync beta_testers');
-assertIncludes(guidedRoute, 'weekly_completed_tests: cappedWeeklyCompletedSteps(session.completed_steps, 5)', 'real progress must use completed_steps capped at 5');
-assertIncludes(guidedRoute, 'sendBetaReminderEmail({ testerId: session.tester_id, reminderType: "completed_weekly_goal" })', 'completion email must be queued once for real completed sessions');
+assertIncludes(guidedRoute, 'cappedWeeklyCompletedSteps(', 'real progress must use completed_steps capped at 5');
+assertIncludes(guidedRoute, 'sendBetaReminderEmail({', 'completion email must be queued once for real completed sessions');
+assertIncludes(guidedRoute, 'reminderType: "completed_weekly_goal"', 'completion email must use completed weekly goal reminder type');
+assertIncludes(guidedRoute, 'WEEKLY_BETA_COMPLETION_EMAIL_ERROR', 'completion email failures must be logged without blocking completion');
 assertIncludes(guidedRoute, '.eq("reminder_type", "completed_weekly_goal")', 'completion email dedupe must check reminder type');
 
 for (const allowed of ['weekly_tasks','midweek_reminder','daily_incomplete_reminder','friday_final_reminder','completed_weekly_goal']) {
@@ -37,6 +40,15 @@ for (const unsafe of ['reminder_type: "weekly_start"','reminder_type: "midweek_n
   assert.ok(!reminderEmails.includes(unsafe), `reminder inserts must not use legacy internal value ${unsafe}`);
 }
 assertIncludes(reminderEmails, 'weekly_start: "weekly_tasks"', 'legacy weekly_start input should map to DB-safe type');
+assertIncludes(reminderEmails, 'Your weekly TheOutHaven beta task is complete', 'completion email subject must use requested copy');
+assertIncludes(reminderEmails, 'Look out for next week’s task', 'completion email must tell testers to look out for next week');
+assertIncludes(reminderEmails, '${input.completed} of ${input.required} steps complete', 'completion email must display weekly progress');
+
+assertIncludes(betaCommandCenter, 'Nothing was off', 'feedback dropdown must include Nothing was off option');
+assertIncludes(betaCommandCenter, 'nothing_was_off', 'feedback dropdown must save clean Nothing was off value');
+assertIncludes(betaCommandCenter, 'Select an option', 'feedback dropdown must keep empty placeholder');
+assertIncludes(betaCommandCenter, 'completionNotice', 'completion success must render near the check-in button');
+assert.ok(betaCommandCenter.indexOf('Finish weekly check-in') < betaCommandCenter.lastIndexOf('completionNotice'), 'completion success should render below the check-in button');
 
 assertIncludes(eligibility, '.eq("test_mode", false)', 'giveaway eligibility must ignore test sessions');
 

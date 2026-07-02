@@ -44,7 +44,7 @@ const subjects: Record<BetaReminderType, string> = {
   midweek_reminder: "Your weekly TheOutHaven beta test is ready",
   daily_incomplete_reminder: "Your weekly TheOutHaven beta test is ready",
   friday_final_reminder: "Your weekly TheOutHaven beta test is ready",
-  completed_weekly_goal: "Thank you — you completed your weekly beta test",
+  completed_weekly_goal: "Your weekly TheOutHaven beta task is complete",
 };
 type EmailInput = { name?: string; completed: number; required?: number };
 function reminderBody(input: EmailInput) {
@@ -63,31 +63,33 @@ Completing your weekly beta test helps you become prize-ready for the $500 gift 
 
 TheOutHaven Team`;
 }
-function completedBody(name?: string) {
+function completedBody(input: { name?: string; completed: number; required: number }) {
   const dashboard = buildSiteUrl("/user/dashboard/beta");
-  return `Hi ${name || "there"},
+  return `Hi ${input.name || "there"},
 
-Thank you for completing your TheOutHaven weekly beta tasks.
+You completed this week’s TheOutHaven beta task.
 
-Your weekly beta task goal is complete for this week, and your progress has been recorded.
+Weekly progress:
+${input.completed} of ${input.required} steps complete
 
-Completing your weekly beta tasks helps you become prize-ready for the $500 gift card giveaway. Optional Instagram and TikTok follows can add bonus entries.
+Thank you for testing the outing flow and sharing feedback. Your check-in helps us improve the experience before launch.
 
-Open your beta dashboard:
+Look out for next week’s task. We’ll send it when the next weekly beta round opens.
+
+View your beta dashboard:
 ${dashboard}
-
-Thank you for helping test and improve TheOutHaven.
 
 TheOutHaven Team`;
 }
 export async function sendBetaReminderEmail({
   testerId,
   reminderType,
+  weekStart = getCurrentWeekStart(),
 }: {
   testerId: string;
   reminderType: BetaReminderType;
+  weekStart?: string;
 }) {
-  const weekStart = getCurrentWeekStart();
   if (!(await shouldSendBetaReminder(testerId, reminderType, weekStart)))
     return { status: "skipped" };
   const { data: tester } = await supabaseAdmin
@@ -97,15 +99,19 @@ export async function sendBetaReminderEmail({
     .maybeSingle();
   if (!tester?.email) return { status: "skipped" };
   const links: any[] = [];
-  const completed = Number(tester.weekly_completed_tests || 0);
+  const required = Number(tester.weekly_required_tests || 5);
+  const rawCompleted = Number(tester.weekly_completed_tests || 0);
+  const completed = reminderType === "completed_weekly_goal"
+    ? required
+    : Math.min(required, Math.max(0, rawCompleted));
   const subject = subjects[reminderType];
   const isCompleted = reminderType === "completed_weekly_goal";
   const mailBody = isCompleted
-    ? completedBody(tester.name)
+    ? completedBody({ name: tester.name, completed, required })
     : reminderBody({
         name: tester.name,
         completed,
-        required: tester.weekly_required_tests || 5,
+        required,
       });
   const inserted = await supabaseAdmin
     .from("beta_email_reminders")
@@ -116,7 +122,7 @@ export async function sendBetaReminderEmail({
       subject,
       status: "pending",
       week_start: weekStart,
-      weekly_required_tests: tester.weekly_required_tests || 5,
+      weekly_required_tests: required,
       weekly_completed_tests: completed,
       incomplete_task_count: links.length,
       task_links: links,
@@ -127,14 +133,24 @@ export async function sendBetaReminderEmail({
     to: tester.email,
     department: "support",
     subject,
-    heading: isCompleted ? "Weekly beta tasks completed" : subject,
+    heading: isCompleted ? "Weekly beta task completed" : subject,
+    preview: isCompleted
+      ? "Thanks for helping improve TheOutHaven. Look out for next week’s task."
+      : undefined,
     body: mailBody,
     cta: {
-      label: "Continue Weekly Beta Test",
+      label: isCompleted ? "View Beta Dashboard" : "Continue Weekly Beta Test",
       url: buildSiteUrl("/user/dashboard/beta"),
     },
     replyTo: "support@theouthaven.com",
   });
+  if (isCompleted && result.status === "error") {
+    console.error("WEEKLY_BETA_COMPLETION_EMAIL_SEND_FAILED", {
+      testerId,
+      weekStart,
+      error: result.error || null,
+    });
+  }
   const status =
     result.status === "error"
       ? "failed"
