@@ -477,7 +477,12 @@ export default function BetaCommandCenter({
     null,
   );
   const [busy, setBusy] = useState(false);
+  const completionSuccessMessage =
+    "Weekly beta check-in complete. Thank you for helping improve TheOutHaven.";
   const [notice, setNotice] = useState<string | null>(null);
+  const [completionNotice, setCompletionNotice] = useState<string | null>(
+    initialCompletedSteps.length >= 5 ? completionSuccessMessage : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const resultsSectionRef = useRef<HTMLDivElement | null>(null);
   const restaurantSectionRef = useRef<HTMLDivElement | null>(null);
@@ -725,9 +730,8 @@ export default function BetaCommandCenter({
       });
       setCompletedStepKeys([...stepOrder]);
       setStep(6);
-      setNotice(
-        "Weekly beta check-in complete. Thank you for helping improve TheOutHaven.",
-      );
+      setNotice(null);
+      setCompletionNotice(completionSuccessMessage);
     } catch (e: any) {
       setError(e.message || "We could not submit feedback.");
     } finally {
@@ -1057,6 +1061,11 @@ export default function BetaCommandCenter({
                 ? "Submit final feedback"
                 : "Finish weekly check-in"}
             </button>
+            {completionNotice ? (
+              <p className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100 shadow-lg shadow-black/20">
+                {completionNotice}
+              </p>
+            ) : null}
           </section>
         )}
         <section
@@ -1064,23 +1073,23 @@ export default function BetaCommandCenter({
         >
           <h2 className="text-2xl font-black">Beta Help / Tips</h2>
           <p className="mt-3 text-sm leading-6 text-white/65">
-            Use real searches you would actually use for dates, birthdays,
-            brunch, family outings, friend outings, or celebrations. If you ask
-            for dinner and something after, TheOutHaven should use the same
-            public search pipeline and show paired outings when available.
+            Complete each step in order. Start by typing the outing you want,
+            then review the matches and choose the one you like best. After
+            that, answer the feedback questions and submit your check-in.
           </p>
-          <p className="mt-2 text-xs text-white/45">
-            Saved this session:{" "}
-            {saved.length
-              ? `${saved.length} result${saved.length === 1 ? "" : "s"}`
-              : "none yet"}{" "}
-            · Selected:{" "}
-            {selected?.none
-              ? "None matched"
-              : selected
-                ? "Choice recorded"
-                : "not selected yet"}
-          </p>
+          <ul className="mt-4 grid gap-2 text-sm font-semibold leading-6 text-white/65 sm:grid-cols-2">
+            <li>Use normal wording, like you would text a friend.</li>
+            <li>Include a location, occasion, or vibe if you have one.</li>
+            <li>Pick the match that feels closest to what you wanted.</li>
+            <li>Tell us what felt helpful, confusing, missing, or off.</li>
+            <li>Your feedback helps us improve next week’s results.</li>
+          </ul>
+          {activeTestMode ? (
+            <p className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3 text-xs font-bold text-white/55">
+              Test task: this lets the team preview the weekly flow before
+              sending it to beta users.
+            </p>
+          ) : null}
         </section>
       </main>
     </div>
@@ -1536,6 +1545,7 @@ function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
           "Pairing did not make sense",
           "The places were too far apart",
           "Not enough details",
+          { label: "Nothing was off", value: "nothing_was_off" },
           "Nothing was missing",
           "Reservation or ticket link",
           "Photos or reviews",
@@ -1572,6 +1582,9 @@ function FeedbackFields({ weekNumber, mode, feedback, setFeedback }: any) {
   );
 }
 function Select({ label, value, onChange, options }: any) {
+  const normalizedOptions = options.map((option: any) =>
+    typeof option === "string" ? { label: option, value: option } : option,
+  );
   return (
     <label className="grid gap-2">
       <span className="text-xs font-black uppercase tracking-[.18em] text-white/45">
@@ -1585,9 +1598,9 @@ function Select({ label, value, onChange, options }: any) {
         <option value="" disabled>
           Select an option
         </option>
-        {options.map((o: string) => (
-          <option key={o} value={o}>
-            {o}
+        {normalizedOptions.map((o: { label: string; value: string }) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>

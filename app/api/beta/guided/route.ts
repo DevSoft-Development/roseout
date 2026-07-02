@@ -100,10 +100,20 @@ async function queueCompletedWeeklyGoalEmailOnce(
     .in("status", ["pending", "sent"])
     .limit(1);
   if (data?.length) return;
-  await sendBetaReminderEmail({
-    testerId: session.tester_id,
-    reminderType: "completed_weekly_goal",
-  });
+  try {
+    await sendBetaReminderEmail({
+      testerId: session.tester_id,
+      reminderType: "completed_weekly_goal",
+      weekStart,
+    });
+  } catch (error) {
+    console.error("WEEKLY_BETA_COMPLETION_EMAIL_ERROR", {
+      testerId: session.tester_id,
+      betaSessionId: session.id,
+      weekStart,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function resolveBetaAssignmentId(
