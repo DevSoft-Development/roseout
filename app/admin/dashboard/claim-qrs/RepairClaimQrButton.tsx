@@ -140,7 +140,7 @@ export default function RepairClaimQrButton() {
         disabled={loading}
         className="rounded-full border border-rose-300/30 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading ? "Repairing old QR codes in batches..." : "Repair old roseout QR codes"}
+        {loading ? "Repairing old QR codes in batches..." : "Repair old legacy QR codes"}
       </button>
 
       {(loading || complete || lastResult) && (

@@ -1,4 +1,5 @@
 import { getLocationImage } from "@/lib/locationImage";
+import { sanitizePublicBranding } from "@/lib/publicBranding";
 import {
   normalizePublicCardImage,
   hasPublicCardImage,
@@ -1279,7 +1280,8 @@ export async function POST(request: Request) {
       allowed: true,
       planKey: limitCheck.plan.planKey,
     });
-    const finalResponse = Response.json(response);
+    const publicResponse = sanitizePublicBranding(response);
+    const finalResponse = Response.json(publicResponse);
     if (searchIdentity.setGuestCookie && searchIdentity.guestId)
       finalResponse.headers.append(
         "Set-Cookie",

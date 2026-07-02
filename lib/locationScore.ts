@@ -1,5 +1,6 @@
 export type LocationScoreFields = {
   theouthaven_score?: number | null;
+  // Legacy DB column kept for compatibility; do not expose publicly.
   roseout_score?: number | null;
   quality_score?: number | null;
   trend_score?: number | null;
