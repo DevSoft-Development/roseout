@@ -93,7 +93,7 @@ async function run(req: Request) {
     ok: true,
     mode: "full",
     message: forceCanonicalUrl
-      ? "Claim QR fields repaired and legacy roseout URLs regenerated for TheOutHaven."
+      ? "Claim QR fields repaired and legacy URLs regenerated for TheOutHaven."
       : "Claim QR fields backfilled for restaurants, activities, and locations.",
     result,
   });

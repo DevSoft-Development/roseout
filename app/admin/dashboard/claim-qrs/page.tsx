@@ -193,7 +193,7 @@ export default async function AdminClaimQrPrintPage({
             <div>
               <h1 className="text-4xl font-black tracking-tight">{selectedLocationId ? `QR Code for ${selectedLocationName}` : "Claim QR Codes"}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                {selectedLocationId ? "Print or download the reservation QR code for this selected location." : "Print labels, audit missing claim codes, and repair any old roseout QR codes so every scan opens TheOutHaven."}
+                {selectedLocationId ? "Print or download the reservation QR code for this selected location." : "Print labels, audit missing claim codes, and repair any old legacy QR codes so every scan opens TheOutHaven."}
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-right">
