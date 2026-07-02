@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2021",
+    "moduleResolution": "node",
+    "noEmit": false,
+    "outDir": ".tmp-test/beta-guided",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": false,
+    "strict": false,
+    "baseUrl": ".",
+    "incremental": false
+  },
+  "include": [
+    "scripts/beta-guided-route-regression.ts",
+    "app/api/beta/guided/route.ts",
+    "lib/supabase-server.ts",
+    "lib/supabaseAdmin.ts",
+    "lib/env.ts",
+    "lib/beta/weeklyTasks.ts",
+    "lib/beta/reminderEmails.ts",
+    "lib/email.ts",
+    "lib/site-url.ts",
+    "types/beta.ts"
+  ]
+}

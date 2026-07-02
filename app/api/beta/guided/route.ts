@@ -165,7 +165,7 @@ function titleFor(item: any) {
     "Beta result"
   );
 }
-function completedStepsFor(action: string, existing?: unknown) {
+export function completedStepsFor(action: string, existing?: unknown) {
   const current = normalizeWeeklyCompletedSteps(existing);
   const next =
     action === "feedback"
@@ -453,6 +453,11 @@ export async function POST(req: NextRequest) {
         typeof error === "object" && error && "hint" in error
           ? (error as any).hint
           : null,
+      supabaseMessage:
+        typeof error === "object" && error && "message" in error
+          ? (error as any).message
+          : null,
+      errorName: error instanceof Error ? error.name : null,
       error: error instanceof Error ? error.message : String(error),
     });
     return NextResponse.json(
