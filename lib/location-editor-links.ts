@@ -9,9 +9,11 @@ export function appendLocationContext(
   {
     type,
     id,
+    adminContext = false,
   }: {
     type: LocationType;
     id: string;
+    adminContext?: boolean;
   },
 ) {
   if (!id) return href;
@@ -20,13 +22,18 @@ export function appendLocationContext(
   const [base, existingQuery] = baseWithQuery.split("?");
 
   const params = new URLSearchParams(existingQuery || "");
-  params.set("adminLocationId", id);
-  params.set("locationId", id);
-  params.set("type", locationContextType(type));
-  params.set("demo", "1");
-  params.set("fromDemoCenter", "1");
 
-  return `${base}?${params.toString()}${hash ? `#${hash}` : ""}`;
+  if (adminContext) {
+    params.set("adminLocationId", id);
+    params.set("locationId", id);
+    params.set("type", locationContextType(type));
+    params.set("demo", "1");
+    params.set("fromDemoCenter", "1");
+  }
+
+  const queryString = params.toString();
+
+  return `${base}${queryString ? `?${queryString}` : ""}${hash ? `#${hash}` : ""}`;
 }
 
 export function buildLocationEditorLinks({
@@ -35,19 +42,21 @@ export function buildLocationEditorLinks({
   canonicalId,
   sourceId,
   effectiveId,
+  adminContext = false,
 }: {
   type: LocationType;
   locationId: string;
   canonicalId?: string;
   sourceId?: string | null;
   effectiveId?: string;
+  adminContext?: boolean;
 }) {
   const dashboardId = canonicalId || locationId;
   const hasCanonicalId = Boolean(canonicalId);
   const publicId = sourceId || effectiveId || canonicalId || locationId;
   const ownerType = locationContextType(type);
   const withDashboardContext = (href: string) =>
-    appendLocationContext(href, { type, id: dashboardId });
+    appendLocationContext(href, { type, id: dashboardId, adminContext });
 
   return {
     hasCanonicalId,

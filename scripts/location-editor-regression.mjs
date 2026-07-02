@@ -17,9 +17,27 @@ const checks = [
   ['editor has reservation controls', page.includes('Internal reservations') && page.includes('External reservations')],
   ['editor has photos controls', page.includes('Add Gallery Image URL') && page.includes('Set main') && page.includes('Remove')],
   ['canonical edit context is preserved', api.includes('profileUpdateWithSearchDocument') && api.includes('savedTo: "locations"')],
-  ['edit context returns explicit source ID', api.includes('sourceId') && api.includes('effectiveId: sourceId || canonicalId')],
+  [
+    'edit context returns explicit canonical and source IDs',
+    api.includes('canonicalId') &&
+      api.includes('sourceId') &&
+      api.includes('effectiveId: canonicalId || sourceId || finalId') &&
+      !api.includes('canonicalId = String(data.id || finalId)')
+  ],
   ['dashboard links use canonical ID helper', links.includes('const dashboardId = canonicalId || locationId') && links.includes('withDashboardContext("/business/dashboard/menu")')],
-  ['location editor imports link helper', page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') && page.includes('canonicalId, sourceId, effectiveId')],
+  [
+    'location editor imports link helper and passes admin context',
+    page.includes('import { buildLocationEditorLinks } from "@/lib/location-editor-links"') &&
+      page.includes('canonicalId: canonicalId || undefined') &&
+      page.includes('sourceId') &&
+      page.includes('effectiveId') &&
+      page.includes('adminContext: isAdminContext')
+  ],
+  [
+    'location editor does not initialize canonicalId from route id',
+    page.includes('const [canonicalId, setCanonicalId] = useState("")') &&
+      !page.includes('const [canonicalId, setCanonicalId] = useState(locationId)')
+  ],
   ['promotions uses Growth Pro wrapper', promotions.includes('BusinessGrowthProPage') && promotions.includes('module="promotions"') && !promotions.includes('redirect("/login")')],
 ];
 

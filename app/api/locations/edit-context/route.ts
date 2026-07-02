@@ -460,6 +460,7 @@ export async function GET(req: Request) {
       hasCanonicalLocation: Boolean(canonicalId),
       matchedBy,
       isImpersonating: Boolean(isLocationImpersonation),
+      isAdmin: Boolean(auth.access.isAdmin),
     });
   } catch (error) {
     console.error("Edit context load error:", error);
@@ -596,6 +597,7 @@ export async function PATCH(req: Request) {
       effectiveId: canonicalId,
       hasCanonicalLocation: true,
       isImpersonating: Boolean(isLocationImpersonation),
+      isAdmin: Boolean(auth.access.isAdmin),
     });
   } catch (error) {
     console.error("Edit context save error:", error);

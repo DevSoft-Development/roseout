@@ -13,12 +13,14 @@ describe("buildLocationEditorLinks", () => {
       canonicalId: "loc_123",
       sourceId: "rest_456",
       effectiveId: "rest_456",
+      adminContext: true,
     });
 
     expect(links.hasCanonicalId).toBe(true);
     expect(links.dashboardId).toBe("loc_123");
     expect(query(links.menuEditor).get("adminLocationId")).toBe("loc_123");
     expect(query(links.menuEditor).get("locationId")).toBe("loc_123");
+    expect(query(links.menuEditor).get("demo")).toBe("1");
     expect(query(links.qrTools).get("adminLocationId")).toBe("loc_123");
     expect(query(links.reserveDashboard).get("adminLocationId")).toBe("loc_123");
     expect(links.crm).toBe("/admin/dashboard/crm/loc_123");
@@ -31,10 +33,16 @@ describe("buildLocationEditorLinks", () => {
       type: "activities",
       locationId: "route_789",
       canonicalId: "loc_123",
+      adminContext: false,
     });
 
     expect(links.hasCanonicalId).toBe(true);
-    expect(query(links.analytics).get("locationId")).toBe("loc_123");
+    expect(links.menuEditor).toBe("/business/dashboard/menu");
+    expect(query(links.menuEditor).has("adminLocationId")).toBe(false);
+    expect(links.qrTools).toBe("/business/dashboard/qr-codes");
+    expect(query(links.qrTools).has("demo")).toBe(false);
+    expect(links.analytics).toBe("/business/dashboard/analytics");
+    expect(query(links.analytics).has("locationId")).toBe(false);
     expect(links.crm).toBe("/admin/dashboard/crm/loc_123");
     expect(links.publicPage).toBe("/locations/activities/loc_123");
   });
@@ -45,6 +53,7 @@ describe("buildLocationEditorLinks", () => {
       locationId: "route_789",
       sourceId: "rest_456",
       effectiveId: "rest_456",
+      adminContext: true,
     });
 
     expect(links.hasCanonicalId).toBe(false);
