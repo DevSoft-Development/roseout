@@ -7,11 +7,26 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 export const dynamic = "force-dynamic";
 
 type LocationType = "restaurants" | "activities";
-type TargetType = "user" | "location_owner";
+type TargetType = "user" | "location_owner" | "admin_location";
 
 function normalizeTargetType(value: unknown, hasLocation: boolean): TargetType {
+  if (value === "admin_location") return "admin_location";
   if (value === "location_owner") return "location_owner";
   return hasLocation ? "location_owner" : "user";
+}
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 30,
+};
+
+function normalizeLocationType(value: unknown): LocationType | null {
+  if (value === "activities" || value === "activity") return "activities";
+  if (value === "restaurants" || value === "restaurant") return "restaurants";
+  return null;
 }
 
 async function logImpersonation(payload: Record<string, unknown>) {
@@ -69,13 +84,8 @@ export async function POST(req: Request) {
 
       cookieStore.delete("theouthaven_impersonate_location_id");
       cookieStore.delete("theouthaven_impersonate_location_type");
-      cookieStore.set("theouthaven_impersonate_user_id", targetUser.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 30,
-      });
+      cookieStore.delete("theouthaven_impersonate_target_type");
+      cookieStore.set("theouthaven_impersonate_user_id", targetUser.id, cookieOptions);
 
       await logImpersonation({
         admin_id: adminUser?.user_id,
@@ -93,11 +103,45 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing location impersonation target" }, { status: 400 });
     }
 
-    if (locationType !== "restaurants" && locationType !== "activities") {
+    const normalizedType = normalizeLocationType(locationType);
+
+    if (targetType === "admin_location") {
+      const { data: location } = await supabaseAdmin
+        .from("locations")
+        .select("id, location_type, type, primary_category, owner_email, owner_user_id")
+        .eq("id", locationId)
+        .maybeSingle();
+
+      if (!location) {
+        return NextResponse.json({ error: "Location not found" }, { status: 404 });
+      }
+
+      const table = normalizedType || (String(location.location_type || location.type || location.primary_category || "").toLowerCase().includes("activ") ? "activities" : "restaurants");
+
+      cookieStore.delete("theouthaven_impersonate_user_id");
+      cookieStore.set("theouthaven_impersonate_location_id", String(location.id), cookieOptions);
+      cookieStore.set("theouthaven_impersonate_location_type", table, cookieOptions);
+      cookieStore.set("theouthaven_impersonate_target_type", "admin_location", cookieOptions);
+
+      await logImpersonation({
+        admin_id: adminUser?.user_id,
+        admin_email: adminUser?.email,
+        target_user_id: null,
+        target_user_email: location.owner_email || null,
+        target_type: "admin_location",
+        location_id: location.id,
+        location_type: table,
+        action: "started_admin_location",
+      });
+
+      return NextResponse.json({ success: true, message: "Admin location mode started.", redirectTo: "/locations/dashboard" });
+    }
+
+    if (!normalizedType) {
       return NextResponse.json({ error: "Invalid location type" }, { status: 400 });
     }
 
-    const table = locationType as LocationType;
+    const table = normalizedType;
     const nameField = table === "restaurants" ? "restaurant_name" : "activity_name";
     const { data: location } = await supabaseAdmin
       .from(table)
@@ -143,20 +187,9 @@ export async function POST(req: Request) {
     }
 
     cookieStore.delete("theouthaven_impersonate_user_id");
-    cookieStore.set("theouthaven_impersonate_location_id", String(location.id), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 30,
-    });
-    cookieStore.set("theouthaven_impersonate_location_type", table, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 30,
-    });
+    cookieStore.set("theouthaven_impersonate_location_id", String(location.id), cookieOptions);
+    cookieStore.set("theouthaven_impersonate_location_type", table, cookieOptions);
+    cookieStore.set("theouthaven_impersonate_target_type", "location_owner", cookieOptions);
 
     await logImpersonation({
       admin_id: adminUser?.user_id,

@@ -10,6 +10,9 @@ export async function POST() {
   const cookieStore = await cookies();
 
   cookieStore.delete("theouthaven_impersonate_user_id");
+  cookieStore.delete("theouthaven_impersonate_location_id");
+  cookieStore.delete("theouthaven_impersonate_location_type");
+  cookieStore.delete("theouthaven_impersonate_target_type");
 
   return NextResponse.json({ success: true });
 }
