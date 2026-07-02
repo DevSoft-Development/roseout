@@ -3,23 +3,26 @@ import { sendRawBrandedEmail } from "@/lib/email";
 import { buildSiteUrl } from "@/lib/site-url";
 import { getCurrentWeekStart } from "./weeklyTasks";
 import type { BetaReminderType as PublicBetaReminderType } from "@/types/beta";
-type BetaReminderType =
-  | "weekly_start"
-  | "midweek_nudge"
-  | "daily_incomplete"
-  | "friday_final"
-  | "completed_weekly_goal";
+type BetaReminderType = PublicBetaReminderType;
+
+export const CANONICAL_BETA_REMINDER_TYPES: BetaReminderType[] = [
+  "weekly_tasks",
+  "midweek_reminder",
+  "daily_incomplete_reminder",
+  "friday_final_reminder",
+  "completed_weekly_goal",
+];
 
 const reminderTypeMap: Record<string, BetaReminderType> = {
-  weekly_tasks: "weekly_start",
-  midweek_reminder: "midweek_nudge",
-  daily_incomplete_reminder: "daily_incomplete",
-  friday_final_reminder: "friday_final",
+  weekly_tasks: "weekly_tasks",
+  midweek_reminder: "midweek_reminder",
+  daily_incomplete_reminder: "daily_incomplete_reminder",
+  friday_final_reminder: "friday_final_reminder",
   completed_weekly_goal: "completed_weekly_goal",
-  weekly_start: "weekly_start",
-  midweek_nudge: "midweek_nudge",
-  daily_incomplete: "daily_incomplete",
-  friday_final: "friday_final",
+  weekly_start: "weekly_tasks",
+  midweek_nudge: "midweek_reminder",
+  daily_incomplete: "daily_incomplete_reminder",
+  friday_final: "friday_final_reminder",
 };
 async function shouldSendBetaReminder(
   testerId: string,
@@ -37,10 +40,10 @@ async function shouldSendBetaReminder(
   return !(data && data.length);
 }
 const subjects: Record<BetaReminderType, string> = {
-  weekly_start: "Your weekly TheOutHaven beta test is ready",
-  midweek_nudge: "Your weekly TheOutHaven beta test is ready",
-  daily_incomplete: "Your weekly TheOutHaven beta test is ready",
-  friday_final: "Your weekly TheOutHaven beta test is ready",
+  weekly_tasks: "Your weekly TheOutHaven beta test is ready",
+  midweek_reminder: "Your weekly TheOutHaven beta test is ready",
+  daily_incomplete_reminder: "Your weekly TheOutHaven beta test is ready",
+  friday_final_reminder: "Your weekly TheOutHaven beta test is ready",
   completed_weekly_goal: "Thank you — you completed your weekly beta test",
 };
 type EmailInput = { name?: string; completed: number; required?: number };
@@ -152,7 +155,7 @@ export async function sendBetaReminderEmail({
 export async function sendBetaRemindersForActiveTesters(
   reminderType: PublicBetaReminderType | BetaReminderType | string,
 ) {
-  const mapped = reminderTypeMap[String(reminderType)] || "weekly_start";
+  const mapped = reminderTypeMap[String(reminderType)] || "weekly_tasks";
   const { data } = await supabaseAdmin
     .from("beta_testers")
     .select("id")

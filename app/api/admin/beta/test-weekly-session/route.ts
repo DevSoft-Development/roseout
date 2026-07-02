@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       if (!userId) return safeError("No test user found.", 400);
       return NextResponse.json({
         success: true,
-        message: "Test weekly session ready.",
+        message: "Test weekly session is ready. It will not count toward real progress or giveaway eligibility.",
         ...(await createTestWeeklyBetaSession(userId)),
       });
     }

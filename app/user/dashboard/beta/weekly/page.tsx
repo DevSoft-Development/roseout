@@ -4,6 +4,8 @@ import {
   getCurrentWeekStart,
   getOrCreateWeeklyBetaSessionForTester,
   getOrCreateWeeklyBetaSessionForUser,
+  getWeeklyBetaEnabled,
+  getWeeklyBetaE2ETestModeEnabled,
   weeklySessionToVirtualAssignment,
 } from "@/lib/beta/weeklyTasks";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -30,6 +32,10 @@ export default async function Page({
   const sp = await searchParams;
   const testMode = sp.test === "1";
   const week = getCurrentWeekStart();
+  const [weeklyBetaEnabled, weeklyBetaTestModeEnabled] = await Promise.all([
+    getWeeklyBetaEnabled(),
+    getWeeklyBetaE2ETestModeEnabled(),
+  ]);
 
   if (!testMode && !ctx.isBeta) {
     return (
@@ -49,7 +55,19 @@ export default async function Page({
 
   let session = null;
   if (testMode) {
-    const allowedToTest = ctx.isBeta || (await isWeeklyBetaTestAdmin(ctx.user.id));
+    const isTestAdmin = await isWeeklyBetaTestAdmin(ctx.user.id);
+    if (!weeklyBetaTestModeEnabled) {
+      return (
+        <UserDashboardShell isBeta={ctx.isBeta || isTestAdmin}>
+          <DashboardCard>
+            {isTestAdmin
+              ? "Weekly beta test mode is off. Enable test mode from the admin beta or giveaway controls before opening ?test=1."
+              : "Weekly beta task is not open yet."}
+          </DashboardCard>
+        </UserDashboardShell>
+      );
+    }
+    const allowedToTest = ctx.isBeta || isTestAdmin;
     if (allowedToTest) {
       const result = await getOrCreateWeeklyBetaSessionForUser(ctx.user.id, true);
       session = result.session;
@@ -71,6 +89,16 @@ export default async function Page({
       }
     }
   } else {
+    if (!weeklyBetaEnabled) {
+      return (
+        <UserDashboardShell isBeta={ctx.isBeta}>
+          <DashboardCard>
+            <h1 className="text-3xl font-black">Weekly beta task is not open yet.</h1>
+            <p className="mt-2 text-white/60">We’ll let you know when this week’s beta task is ready.</p>
+          </DashboardCard>
+        </UserDashboardShell>
+      );
+    }
     const result = await getOrCreateWeeklyBetaSessionForTester(ctx.beta.id);
     session = result.session;
   }

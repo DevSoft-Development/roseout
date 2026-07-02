@@ -67,7 +67,7 @@ async function loadGiveawayDashboardData() {
         safeLoad("weekly_beta_sessions", getWeeklyBetaSessionsForAdmin, []),
         safeLoad("beta_giveaway_overview", async () => getBetaGiveawayOverview() as Promise<Record<string, number>>, {}),
         safeLoad("active_beta_users", getActiveBetaUsersForAdmin, []),
-        safeLoad("weekly_beta_settings", getWeeklyBetaSettings, { weekly_beta_enabled: false }),
+        safeLoad("weekly_beta_settings", getWeeklyBetaSettings, { weekly_beta_enabled: false, weekly_beta_e2e_test_mode_enabled: false }),
       ]);
 
     if (entriesResult.error)

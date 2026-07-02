@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getCurrentWeekStart } from "@/lib/beta/weeklyTasks";
+import { sendBetaReminderEmail } from "@/lib/beta/reminderEmails";
+
+
+export function cappedWeeklyCompletedSteps(completedSteps: unknown, required = 5) {
+  return Math.min(required, Array.isArray(completedSteps) ? completedSteps.length : 0);
+}
+
+export function shouldSyncTesterProgress(session: any) {
+  return Boolean(session?.tester_id && !session?.test_mode);
+}
+
+async function syncTesterProgressFromSession(session: any) {
+  if (!shouldSyncTesterProgress(session)) return;
+  await supabaseAdmin
+    .from("beta_testers")
+    .update({
+      current_week_start: session.week_start_date,
+      weekly_required_tests: 5,
+      weekly_completed_tests: cappedWeeklyCompletedSteps(session.completed_steps, 5),
+      last_active_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", session.tester_id);
+}
+
+async function queueCompletedWeeklyGoalEmailOnce(previousSession: any, session: any) {
+  if (session?.test_mode || !session?.tester_id || session.status !== "completed") return;
+  if (previousSession?.status === "completed" || previousSession?.completed_at) return;
+  const weekStart = session.week_start_date || getCurrentWeekStart();
+  const { data } = await supabaseAdmin
+    .from("beta_email_reminders")
+    .select("id")
+    .eq("tester_id", session.tester_id)
+    .eq("reminder_type", "completed_weekly_goal")
+    .eq("week_start", weekStart)
+    .in("status", ["pending", "sent"])
+    .limit(1);
+  if (data?.length) return;
+  await sendBetaReminderEmail({ testerId: session.tester_id, reminderType: "completed_weekly_goal" });
+}
 
 async function resolveBetaAssignmentId(value: unknown, sessionId?: string | null) {
   const id = typeof value === "string" ? value.trim() : "";
@@ -118,6 +158,8 @@ export async function POST(req: NextRequest) {
     const update = await supabaseAdmin.from("beta_test_sessions").update({ status: body.action === "feedback" ? "completed" : "in_progress", completed_steps: completedSteps, completed_at: body.action === "feedback" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", resolved.id).eq("test_mode", Boolean(resolved.test_mode)).select("*").single();
     if (update.error) throw update.error;
     const session = update.data;
+    await syncTesterProgressFromSession(session);
+    await queueCompletedWeeklyGoalEmailOnce(resolved, session);
 
     if (body.action === "search_run") {
       betaAssignmentId = await resolveBetaAssignmentId(body.beta_assignment_id, session.id);

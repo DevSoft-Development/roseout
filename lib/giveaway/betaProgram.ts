@@ -3,6 +3,7 @@ import { repairBetaAccessForEmail, syncUserBetaAccess } from "@/lib/beta/program
 import { sendBetaRemindersForActiveTesters } from "@/lib/beta/reminderEmails";
 import {
   getWeeklyBetaEnabled,
+  getWeeklyBetaE2ETestModeEnabled,
   getCurrentWeekStart,
   setWeeklyBetaEnabled as setWeeklyBetaEnabledFlag,
   getOrCreateWeeklyBetaSessionForUser,
@@ -91,14 +92,14 @@ export async function approveBetaApplicant(applicationId: string, actor?: any) {
   return { approved: true, synced };
 }
 export async function updateBetaAccessForUser(userId: string, status: string) { const { data, error } = await supabaseAdmin.from("beta_testers").update({ status, updated_at: new Date().toISOString() }).eq("user_id", userId).select("*"); if (error) throw error; return data ?? []; }
-export async function getWeeklyBetaSettings() { return { weekly_beta_enabled: await getWeeklyBetaEnabled() }; }
+export async function getWeeklyBetaSettings() { return { weekly_beta_enabled: await getWeeklyBetaEnabled(), weekly_beta_e2e_test_mode_enabled: await getWeeklyBetaE2ETestModeEnabled() }; }
 export async function setWeeklyBetaEnabled(enabled: boolean, updatedBy?: string | null) { return setWeeklyBetaEnabledFlag(enabled, updatedBy); }
 export { getOrCreateWeeklyBetaSessionForUser, getOrCreateWeeklyBetaSessionsForActiveTesters, createTestWeeklyBetaSession, getCurrentTestWeeklyBetaSessionForUser, getOrCreateCurrentTestWeeklyBetaSessionForUser, resetTestWeeklyBetaSession, deleteTestWeeklyBetaSession };
 export async function sendWeeklyBetaEmail() { return sendBetaRemindersForActiveTesters("weekly_tasks"); }
 export async function sendWeeklyBetaReminder() { return sendBetaRemindersForActiveTesters("midweek_reminder" as any); }
 export async function sendTestWeeklyBetaEmail() { return { sent: false, message: "Use the weekly-beta API to send a test email to the current admin test session." }; }
 export async function sendTestWeeklyBetaReminder() { return { sent: false, message: "Use the weekly-beta API to send a test reminder to the current admin test session." }; }
-export async function getWeeklyBetaSessionsForAdmin() { const { data, error } = await supabaseAdmin.from("beta_test_sessions").select("*, beta_testers(email,name,full_name,status)").order("created_at", { ascending: false }).limit(500); if (error) throw error; return data ?? []; }
+export async function getWeeklyBetaSessionsForAdmin() { const { data, error } = await supabaseAdmin.from("beta_test_sessions").select("*, beta_testers(email,name,full_name,status)").order("created_at", { ascending: false }).limit(500); if (error) throw error; return (data ?? []).map((session: any) => ({ ...session, weekly_completed_tests: Array.isArray(session.completed_steps) ? Math.min(session.completed_steps.length, 5) : 0, weekly_required_tests: 5, mode_label: session.test_mode ? "Test mode" : "Real" })); }
 export async function getWeeklyBetaSessionDetail(id: string) { const { data, error } = await supabaseAdmin.from("beta_test_sessions").select("*").eq("id", id).maybeSingle(); if (error) throw error; return data; }
 export async function saveBetaSearchRun(payload: any) { const { data, error } = await supabaseAdmin.from("beta_search_runs").insert(payload).select("*").single(); if (error) throw error; return data; }
 export async function saveBetaSearchResults(rows: any[]) { const { data, error } = await supabaseAdmin.from("beta_search_results").insert(rows).select("*"); if (error) throw error; return data ?? []; }
