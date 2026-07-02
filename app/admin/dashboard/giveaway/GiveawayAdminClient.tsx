@@ -343,7 +343,7 @@ export default function GiveawayAdminClient({
   initialWeeklySessions = [],
   initialOverview = {},
   initialActiveBetaUsers = [],
-  initialWeeklyBetaEnabled = false,
+  initialWeeklySettings = { weekly_beta_enabled: false, weekly_beta_e2e_test_mode_enabled: false },
 }: {
   initialEntries: Entry[];
   initialStats: Stats;
@@ -354,7 +354,7 @@ export default function GiveawayAdminClient({
   initialWeeklySessions?: WeeklySession[];
   initialOverview?: Overview;
   initialActiveBetaUsers?: ActiveBetaUser[];
-  initialWeeklyBetaEnabled?: boolean;
+  initialWeeklySettings?: { weekly_beta_enabled?: boolean; weekly_beta_e2e_test_mode_enabled?: boolean };
 }) {
   const router = useRouter();
   const [entries, setEntries] = useState(initialEntries);
@@ -369,7 +369,8 @@ export default function GiveawayAdminClient({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState("");
-  const [weeklyBetaEnabled, setWeeklyBetaEnabled] = useState(Boolean(initialWeeklyBetaEnabled));
+  const [weeklyBetaEnabled, setWeeklyBetaEnabled] = useState(Boolean(initialWeeklySettings.weekly_beta_enabled));
+  const [weeklyBetaTestModeEnabled, setWeeklyBetaTestModeEnabled] = useState(Boolean(initialWeeklySettings.weekly_beta_e2e_test_mode_enabled));
   const [weeklySettingsSaving, setWeeklySettingsSaving] = useState(false);
   const [weeklyActionBusy, setWeeklyActionBusy] = useState("");
   const detailEntry = entries.find((entry) => entry.id === detailsId) || null;
@@ -608,7 +609,7 @@ export default function GiveawayAdminClient({
           ) / realRows.length
         ).toFixed(1)
       : "0";
-    async function saveWeeklyBetaEnabled(nextEnabled: boolean) {
+    async function saveWeeklySetting(key: "weekly_beta_enabled" | "weekly_beta_e2e_test_mode_enabled", nextEnabled: boolean) {
       setError("");
       setMessage("");
       setWeeklySettingsSaving(true);
@@ -616,17 +617,18 @@ export default function GiveawayAdminClient({
         const response = await fetch("/api/admin/giveaway/weekly-beta", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ weekly_beta_enabled: nextEnabled }),
+          body: JSON.stringify({ [key]: nextEnabled }),
         });
         const payload = await response
           .json()
           .catch(() => ({ success: false, error: "We couldn’t update the weekly beta setting. Please try again." }));
-        if (!response.ok || !payload.success || typeof payload.weekly_beta_enabled !== "boolean") {
+        if (!response.ok || !payload.success || typeof payload.weekly_beta_enabled !== "boolean" || typeof payload.weekly_beta_e2e_test_mode_enabled !== "boolean") {
           setError(payload.error || "We couldn’t update the weekly beta setting. Please try again.");
           return;
         }
         setWeeklyBetaEnabled(payload.weekly_beta_enabled);
-        setMessage(payload.message || (payload.weekly_beta_enabled ? "Weekly beta task turned on." : "Weekly beta task turned off."));
+        setWeeklyBetaTestModeEnabled(payload.weekly_beta_e2e_test_mode_enabled);
+        setMessage(payload.message || "Weekly beta controls updated.");
         router.refresh();
       } catch {
         setError("We couldn’t update the weekly beta setting. Please try again.");
@@ -636,8 +638,13 @@ export default function GiveawayAdminClient({
     }
     async function weeklyPost(url: string, body?: Record<string, unknown>) {
       const action = String(body?.action || "weekly_action");
+      const testActions = ["create_test_session", "send_test_email", "send_test_reminder", "reset_test_session", "delete_test_session"];
       if (action === "create_real_sessions" && !weeklyBetaEnabled) {
         setError("Turn on the real weekly beta task before creating real sessions.");
+        return null;
+      }
+      if (testActions.includes(action) && !weeklyBetaTestModeEnabled) {
+        setError("Turn on weekly beta test mode before creating or opening test sessions.");
         return null;
       }
       setError("");
@@ -737,14 +744,14 @@ export default function GiveawayAdminClient({
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   disabled={weeklySettingsSaving || weeklyBetaEnabled}
-                  onClick={() => saveWeeklyBetaEnabled(true)}
+                  onClick={() => saveWeeklySetting("weekly_beta_enabled", true)}
                   className={`rounded-full px-4 py-2 text-xs font-black transition disabled:cursor-not-allowed ${weeklyBetaEnabled ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"}`}
                 >
                   {weeklySettingsSaving ? "Saving…" : "On"}
                 </button>
                 <button
                   disabled={weeklySettingsSaving || !weeklyBetaEnabled}
-                  onClick={() => saveWeeklyBetaEnabled(false)}
+                  onClick={() => saveWeeklySetting("weekly_beta_enabled", false)}
                   className={`rounded-full px-4 py-2 text-xs font-black transition disabled:cursor-not-allowed ${!weeklyBetaEnabled ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"}`}
                 >
                   {weeklySettingsSaving ? "Saving…" : "Off"}
@@ -761,13 +768,41 @@ export default function GiveawayAdminClient({
               {!weeklyBetaEnabled ? <p className="mt-3 text-xs font-bold text-amber-100/80">Turn on the real weekly beta task before creating real sessions.</p> : null}
             </div>
             <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 p-4">
-              <p className="font-black">End-to-end weekly beta test</p>
-              <p className="mt-2 text-sm text-white/60">
-                Test the full weekly beta flow, including emails, search,
-                feedback, admin review, and reset, without counting anything
-                toward real beta progress, giveaway eligibility, prize entries,
-                or analytics.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-black">End-to-end weekly beta test mode</p>
+                  <p className="mt-2 text-sm text-white/60">
+                    Test the full weekly beta flow, including emails, search,
+                    feedback, admin review, and reset, without counting anything
+                    toward real beta progress, giveaway eligibility, prize entries,
+                    or analytics.
+                  </p>
+                </div>
+                <Badge tone={weeklyBetaTestModeEnabled ? "green" : "amber"}>
+                  {weeklyBetaTestModeEnabled ? "Weekly beta test mode: On" : "Weekly beta test mode: Off"}
+                </Badge>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  disabled={weeklySettingsSaving || weeklyBetaTestModeEnabled}
+                  onClick={() => saveWeeklySetting("weekly_beta_e2e_test_mode_enabled", true)}
+                  className={`rounded-full px-4 py-2 text-xs font-black transition disabled:cursor-not-allowed ${weeklyBetaTestModeEnabled ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"}`}
+                >
+                  {weeklySettingsSaving ? "Saving…" : "On"}
+                </button>
+                <button
+                  disabled={weeklySettingsSaving || !weeklyBetaTestModeEnabled}
+                  onClick={() => saveWeeklySetting("weekly_beta_e2e_test_mode_enabled", false)}
+                  className={`rounded-full px-4 py-2 text-xs font-black transition disabled:cursor-not-allowed ${!weeklyBetaTestModeEnabled ? "bg-rose-600 text-white shadow-lg shadow-rose-950/40" : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"}`}
+                >
+                  {weeklySettingsSaving ? "Saving…" : "Off"}
+                </button>
+              </div>
+              {!weeklyBetaTestModeEnabled ? (
+                <div className="mt-3 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-3 text-xs font-bold text-amber-50">
+                  Turn on weekly beta test mode before creating or opening test sessions.
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
                   ["Create Test Weekly Session", "create_test_session"],
@@ -786,7 +821,7 @@ export default function GiveawayAdminClient({
                         ? null
                         : weeklyPost("/api/admin/giveaway/weekly-beta", { action })
                     }
-                    disabled={weeklyActionBusy === action}
+                    disabled={!weeklyBetaTestModeEnabled || weeklyActionBusy === action}
                     className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {weeklyActionBusy === action ? "Working…" : label}
@@ -795,7 +830,7 @@ export default function GiveawayAdminClient({
                 <button
                   type="button"
                   onClick={openTestWeeklyTask}
-                  disabled={weeklyActionBusy === "create_test_session"}
+                  disabled={!weeklyBetaTestModeEnabled || weeklyActionBusy === "create_test_session"}
                   className="rounded-full bg-rose-600 px-3 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {weeklyActionBusy === "create_test_session" ? "Opening…" : "Open Test Weekly Task"}
