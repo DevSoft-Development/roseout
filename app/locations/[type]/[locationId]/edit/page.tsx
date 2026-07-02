@@ -242,7 +242,8 @@ export default function EditLocationPage() {
   const [message, setMessage] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [isImpersonating, setIsImpersonating] = useState(false);
-  const [canonicalId, setCanonicalId] = useState(locationId);
+  const [isAdminContext, setIsAdminContext] = useState(false);
+  const [canonicalId, setCanonicalId] = useState("");
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [effectiveId, setEffectiveId] = useState(locationId);
   const [newGalleryImage, setNewGalleryImage] = useState("");
@@ -323,6 +324,7 @@ export default function EditLocationPage() {
         const data = result.location;
 
         setIsImpersonating(Boolean(result.isImpersonating));
+        setIsAdminContext(Boolean(result.isAdmin || result.isImpersonating));
 
         const nextCanonicalId = result.canonicalId || data.canonical_location_id || null;
         const nextSourceId = result.sourceId || data.legacy_source_id || data.source_id || null;
@@ -557,6 +559,7 @@ export default function EditLocationPage() {
     canonicalId: canonicalId || undefined,
     sourceId,
     effectiveId,
+    adminContext: isAdminContext,
   });
   const publicPreviewHref = links.publicPage;
   const adminDetailHref = links.dashboard;

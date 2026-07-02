@@ -68,13 +68,23 @@ async function hasAdminSession() {
 
     if (!user?.id) return false;
 
-    const { data: adminUser } = await supabaseAdmin
-      .from("admin_users")
-      .select("role")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const [{ data: adminUser }, { data: userProfile }] = await Promise.all([
+      supabaseAdmin
+        .from("admin_users")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
 
-    return isAdminRole(normalizeRole(adminUser?.role));
+    return (
+      isAdminRole(normalizeRole(adminUser?.role)) ||
+      isAdminRole(normalizeRole(userProfile?.role))
+    );
   } catch {
     return false;
   }
