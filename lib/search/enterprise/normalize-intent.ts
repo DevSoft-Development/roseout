@@ -421,7 +421,7 @@ function applyPublicSearchMode(intent: SearchIntent): SearchIntent {
       pairingIntent: "same_location",
       pairRequested: false,
       sameVenuePreferred: true,
-      fallbackPairAllowed: true,
+      fallbackPairAllowed: false,
       sameLocationRequired: true,
       pairingPreference: resetPairingPreference(),
     } as SearchIntent;
@@ -533,6 +533,44 @@ function createSingleVenueWithSearchIntent(query: string): SearchIntent | null {
     vibe: [],
     strictness: "high",
   };
+}
+
+function createSportsWatchFoodSameVenueIntent(query: string): SearchIntent {
+  const geo = detectGeoIntent(query);
+  const meals = detectMealTerms(query);
+  return {
+    rawQuery: query,
+    searchType: "same_location_combo",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    sameLocationRequired: true,
+    sameVenuePreferred: true,
+    fallbackPairAllowed: false,
+    normalizedIntent: "same_location_combo",
+    pairingIntent: "same_location",
+    pairRequested: false,
+    restaurantIntent: {
+      ...createEmptyRestaurantIntent(),
+      mealTerms: uniq([...meals, "dinner"]),
+      foodTerms: ["wings", "chicken wings", "bar food"],
+      cuisineTerms: ["american"],
+      categoryTerms: ["sports bar", "bar and grill", "pub", "tavern"],
+      featureTerms: ["game watch", "tv", "tvs", "screens", "basketball", "knicks game", "live sports"],
+      negativeTerms: ["cigar lounge", "hookah", "cocktail lounge", "generic lounge", "nightlife"],
+    },
+    activityIntent: createEmptyActivityIntent(),
+    pairingPreference: resetPairingPreference(),
+    geo,
+    occasion: null,
+    partySize: null,
+    timeContext: meals[0] ?? "dinner",
+    budget: null,
+    vibe: [],
+    strictness: "high",
+    confidence: 0.92,
+  } as SearchIntent;
 }
 
 function venueTermsFromRawQuery(rawQuery: string) {
@@ -1081,6 +1119,9 @@ export function detectPairingPreference(
 }
 
 export function deterministicIntentFromQuery(query: string): SearchIntent {
+  if (hasSameLocationSportsWatchFoodIntent(query)) {
+    return createSportsWatchFoodSameVenueIntent(query);
+  }
   const rawActivitySignals = stripDistanceTerms(detectActivityTerms(query));
   const hasMixedPairingLanguage =
     rawActivitySignals.length > 0 ||
@@ -1546,6 +1587,9 @@ export function normalizeIntent(
       sameLocationRequired: true,
       sameVenuePreferred: true,
       fallbackPairAllowed: false,
+      normalizedIntent: "same_location_combo",
+      pairingIntent: "same_location",
+      pairRequested: false,
       restaurantIntent: {
         ...finalIntent.restaurantIntent,
         mealTerms: uniq([...(finalIntent.restaurantIntent.mealTerms ?? []), "dinner"]),

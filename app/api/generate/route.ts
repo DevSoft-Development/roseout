@@ -623,7 +623,8 @@ export async function POST(request: Request) {
             isPairAllowedForResolvedMarket(pair, resolvedMarketForGuardrail),
           )
         : normalizedPairsBeforeGuardrail;
-    const mlResultIds = [
+    const mlResultIdsByLocationId = new Map<string, any>();
+    [
       ...publicRestaurants,
       ...publicActivities,
       ...publicMatchedLocations,
@@ -645,7 +646,15 @@ export async function POST(request: Request) {
         state: item?.state || null,
       }))
       .filter((item: any) => item.location_id && item.location_type)
-      .slice(0, 25);
+      .forEach((item: any) => {
+        if (!mlResultIdsByLocationId.has(item.location_id)) {
+          mlResultIdsByLocationId.set(item.location_id, {
+            ...item,
+            rank: mlResultIdsByLocationId.size + 1,
+          });
+        }
+      });
+    const mlResultIds = Array.from(mlResultIdsByLocationId.values()).slice(0, 25);
     const mlPairIds = publicPairs
       .map((pair: any, index: number) => {
         const restaurant =

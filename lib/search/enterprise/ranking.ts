@@ -16,6 +16,7 @@ import { calculateMlBoost } from "@/lib/ml/locationRanking";
 import { calculateAdvancedMlRankingAdjustments } from "@/lib/ml/advanced/loadAdvancedMlFeatures";
 import {
   hasRelaxedActivityIntent,
+  isSportsWatchFoodSameVenueIntent,
   hasSportsWatchIntent,
 } from "./normalize-intent";
 
@@ -436,9 +437,72 @@ function isRestaurantLike(r: EnterpriseLocation) {
       fullText,
     );
 
+  const sportsWatchFoodVenue =
+    /\bsports bar\b|\bbar and grill\b|\bgastropub\b|\bpub\b|\btavern\b/.test(
+      categoryText,
+    ) &&
+    /\bwings?\b|\bchicken wings\b|\bfood\b|\bmenu\b|\bgrill\b|\bburgers?\b/.test(
+      fullText,
+    );
+
   if (isClearlyActivityOnly(r)) return false;
 
-  return strongRestaurantSignal || foodSignal || loungeWithFood;
+  return strongRestaurantSignal || foodSignal || loungeWithFood || sportsWatchFoodVenue;
+}
+
+function sportsWatchFoodEligibility(record: EnterpriseLocation) {
+  const typeText = explicitLocationType(record);
+  const categoryText = fieldText(record, [
+    "primary_category",
+    "cuisine",
+    "cuisine_type",
+    "restaurant_name",
+    "activity_name",
+    "name",
+    "google_types",
+    "tags",
+    "semantic_tags",
+    "intent_tags",
+  ]);
+  const fullText = compactRecordText(record);
+  const combined = `${typeText} ${categoryText} ${fullText}`;
+  const locationType = String((record as any).location_type ?? (record as any).source_table ?? "").toLowerCase();
+  const restaurantSignal =
+    locationType.includes("restaurant") ||
+    Boolean(record.restaurant_name || record.cuisine || record.cuisine_type) ||
+    /\brestaurant\b|\bbar and grill\b|\bgastropub\b|\bpub\b|\btavern\b|\bsports bar\b/.test(combined);
+  const foodSignal =
+    /\bwings?\b|\bchicken wings\b|\bbar food\b|\bfood\b|\bmenu\b|\bdinner\b|\bgrill\b|\bburgers?\b|\bchicken\b/.test(combined);
+  const sportsWatchSignal =
+    /\bsports bar\b|\blive sports\b|\bwatch party\b|\bgame day\b|\bknicks\b|\bbasketball\b|\btvs?\b|\bscreens?\b|\bbig screens?\b/.test(combined);
+  const disqualifyingLoungeOnly =
+    /\bcigar\b|\bcigar lounge\b|\bhookah\b|\bcocktail lounge\b|\bcocktail bar\b|\bgeneric lounge\b|\bnightlife\b/.test(combined) &&
+    !(foodSignal && sportsWatchSignal);
+  return {
+    eligible: restaurantSignal && foodSignal && sportsWatchSignal && !disqualifyingLoungeOnly,
+    restaurantSignal,
+    foodSignal,
+    sportsWatchSignal,
+    disqualifyingLoungeOnly,
+    locationType,
+    combined,
+  };
+}
+
+function sportsWatchFoodScore(record: EnterpriseLocation, intent: SearchIntent) {
+  if (!isSportsWatchFoodSameVenueIntent(intent.rawQuery)) return 0;
+  const eligibility = sportsWatchFoodEligibility(record);
+  let score = 0;
+  if (/\bsports bar\b/.test(eligibility.combined)) score += 140;
+  if (/\bbar and grill\b|\bgastropub\b/.test(eligibility.combined)) score += 100;
+  if (/\bpub\b|\btavern\b/.test(eligibility.combined)) score += 70;
+  if (/\bwings?\b|\bchicken wings\b/.test(eligibility.combined)) score += 110;
+  if (/\btvs?\b|\bscreens?\b|\bbig screens?\b/.test(eligibility.combined)) score += 90;
+  if (/\bknicks\b|\bbasketball\b|\bgame watch\b|\bwatch party\b|\blive sports\b|\bgame day\b/.test(eligibility.combined)) score += 80;
+  if (/\bfood\b|\bdinner\b|\bbar food\b|\bmenu\b/.test(eligibility.combined)) score += 45;
+  if (eligibility.locationType.includes("activity") && !eligibility.eligible) score -= 500;
+  if (eligibility.disqualifyingLoungeOnly) score -= 350;
+  return score;
 }
 
 function isActivityLike(r: EnterpriseLocation) {
@@ -1773,6 +1837,14 @@ export function explainRejection(
   if (domain === "restaurant" && !isRestaurantLike(record))
     return "not_restaurant_domain";
 
+  if (
+    domain === "restaurant" &&
+    isSportsWatchFoodSameVenueIntent(intent.rawQuery) &&
+    !sportsWatchFoodEligibility(record).eligible
+  ) {
+    return "missing_sports_watch_food_same_venue_signal";
+  }
+
   if (domain === "activity" && !isActivityLike(record))
     return "not_activity_domain";
 
@@ -1960,6 +2032,7 @@ function relevance(
     (r.distance_score ?? 0) +
     quality -
     chainPenalty(r, intent) +
+    sportsWatchFoodScore(r, intent) +
     wellnessIntentAdjustment(r, intent, domain) +
     Number(r.search_boost ?? 0) +
     ((r.ml_boost = calculateMlBoost(r.ml_score)), r.ml_boost ?? 0) +
