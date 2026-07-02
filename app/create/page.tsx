@@ -887,7 +887,7 @@ export default function CreatePage() {
     const previousAssistant = latestAssistant;
     const rawQueryBeforeNearMeStrip = cleanInput;
     const initialNearMeIntent =
-      /\b(near me|nearby|around me|close to me|by me|near my location|around my location)\b/i.test(
+      /\b(near me|around me|close to me|by me|near my location|around my location|my location|where I am|current location)\b/i.test(
         rawQueryBeforeNearMeStrip,
       );
     const initialTypedLocationIntent =

@@ -2467,6 +2467,83 @@ export async function runEnterpriseSearch(
 
         return !walkingLimitCheck.hide;
       });
+    if (
+      effectiveIntent.searchType === "mixed_outing" &&
+      effectiveIntent.wantsPairing &&
+      pairs.length === 0 &&
+      restaurants.length > 0 &&
+      activities.length > 0
+    ) {
+      const recoveryStarted = Date.now();
+      const recoveryDebug = createPairingDebug();
+      const explicitWalking = userAskedForWalking(effectiveIntent.pairingPreference);
+      const capMiles = explicitWalking
+        ? 1.5
+        : requestedMarketForResults === "LONG_ISLAND"
+          ? 12
+          : 6;
+      const recoveryIntent: SearchIntent = {
+        ...effectiveIntent,
+        pairingPreference: {
+          requiresPairing: true,
+          distanceMode: explicitWalking ? "walking" : "nearby",
+          maxPairDistanceMiles: capMiles,
+          maxPairWalkingMinutes: explicitWalking
+            ? (effectiveIntent.pairingPreference?.maxPairWalkingMinutes ?? 35)
+            : null,
+          requireWalkablePair: explicitWalking,
+        },
+      };
+      const recoveredRaw = createSearchPairs(
+        restaurants.slice(0, 12),
+        activities.slice(0, 12),
+        recoveryIntent,
+        recoveryDebug,
+      )
+        .filter((pair) => {
+          const miles = getPairDistanceMiles(pair);
+          return miles == null || miles <= capMiles;
+        })
+        .filter(
+          (pair) =>
+            hasUsableLivePhoto(pair.restaurant) &&
+            hasUsableLivePhoto(pair.activity) &&
+            (requestedMarketForResults === "LONG_ISLAND" ||
+              isPairAllowedForResolvedMarket(pair, requestedMarketForResults)),
+        )
+        .sort((a, b) => {
+          const ad = getPairDistanceMiles(a) ?? Number.POSITIVE_INFINITY;
+          const bd = getPairDistanceMiles(b) ?? Number.POSITIVE_INFINITY;
+          if (ad !== bd) return ad - bd;
+          return Number(b.score ?? 0) - Number(a.score ?? 0);
+        });
+
+      if (recoveredRaw.length > 0) {
+        pairs = (await applyPairBoosts(
+          recoveredRaw.slice(0, 3).map((pair) => ({
+            ...pair,
+            pairRecovery: true,
+            pairDistanceLabel:
+              pair.pairDistanceMiles != null
+                ? pair.pairDistanceMiles <= 3
+                  ? pair.pairDistanceLabel
+                  : `About ${pair.pairDistanceMiles.toFixed(1)} miles apart`
+                : pair.pairDistanceLabel,
+          })),
+          query,
+          requestedMarketForResults,
+          resolvedMlFlags,
+        )) as EnterprisePair[];
+      }
+
+      (debug as any).pairRecoveryAttempted = true;
+      (debug as any).pairRecoveryCapMiles = capMiles;
+      (debug as any).pairRecoveryCount = pairs.length;
+      (debug as any).pairRecoveryCandidatesEvaluated =
+        recoveryDebug.pairCandidatesEvaluated;
+      (debug as any).pairRecoveryMs = Date.now() - recoveryStarted;
+    }
+
     let fallbackPairs: EnterprisePair[] = [];
     if (sameVenuePairFallbackIntent) {
       const fallbackPairStarted = Date.now();
