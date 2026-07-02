@@ -129,12 +129,13 @@ function areaFor(r: ResultItem) {
 }
 function categoryFor(r: ResultItem) {
   return (
-    r.primary_category ||
-    r.category ||
-    r.cuisine ||
-    r.activity_type ||
-    r.type ||
-    "Recommended place"
+    formatUserFacingLabel(
+      r.primary_category ||
+        r.category ||
+        r.cuisine ||
+        r.activity_type ||
+        r.type,
+    ) || "Recommended place"
   );
 }
 function getResultKind(item: any): "restaurant" | "activity" | "unknown" {
@@ -239,12 +240,19 @@ function pairParts(p: PairItem) {
   ].filter(Boolean);
 }
 
-function titleCaseLabel(value: string) {
-  return value
+function formatUserFacingLabel(value: unknown): string {
+  const cleaned = String(value ?? "")
     .trim()
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .toLowerCase();
+
+  if (!cleaned) return "";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function titleCaseLabel(value: string) {
+  return formatUserFacingLabel(value);
 }
 
 function inferPairLabelsFromQuery(query: string) {
@@ -336,11 +344,7 @@ function inferPairLabelsFromQuery(query: string) {
 }
 
 function compactLabel(value: unknown, fallback: string) {
-  const cleaned = String(value || "")
-    .trim()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
-  return cleaned ? titleCaseLabel(cleaned) : fallback;
+  return formatUserFacingLabel(value) || fallback;
 }
 
 function formatPairedOutingReasonLabels(pair: PairItem, query: string) {
@@ -390,32 +394,41 @@ function formatPairedOutingReasonLabels(pair: PairItem, query: string) {
   return Array.from(new Set(labels.filter(Boolean))).slice(0, 3);
 }
 
-function buildMatchReason({
-  query,
-  isPair,
-  primaryLabel,
-  secondaryLabel,
-}: {
-  query: string;
-  isPair?: boolean;
-  primaryLabel?: string;
-  secondaryLabel?: string;
-}) {
-  const cleanedQuery = query.trim();
+function uniqueShortLabels(labels: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  return labels
+    .map((label) => formatUserFacingLabel(label))
+    .filter((label) => {
+      if (!label) return false;
+      const key = label.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
 
-  if (!cleanedQuery) {
-    return isPair
-      ? "This pairing gives you more than one stop so the outing feels complete."
-      : "This spot lines up with the kind of outing you were looking for.";
-  }
+function buildMatchReasonLabels(item: ResultItem, type?: string) {
+  const category =
+    item?.cuisine ||
+    item?.primary_category ||
+    item?.category ||
+    item?.activity_type ||
+    item?.type;
+  const vibe = item?.primary_tag || item?.vibe || item?.occasion || item?.style;
+  const proximity = distanceFor(item)
+    ? "Close by"
+    : item?.neighborhood
+      ? "Same area"
+      : null;
+  const fallback =
+    type === "restaurant"
+      ? "Dinner match"
+      : type === "activity"
+        ? "Activity nearby"
+        : "Good match";
 
-  if (isPair) {
-    const first = (primaryLabel || "one stop").toLowerCase();
-    const second = (secondaryLabel || "another stop").toLowerCase();
-    return `We picked this because you searched for “${cleanedQuery}.” This pairing brings together ${first} and ${second} so the outing stays close to what you asked for.`;
-  }
-
-  return `We picked this because you searched for “${cleanedQuery}.” This spot lines up with the kind of outing, location, and vibe you described.`;
+  const labels = uniqueShortLabels([category, vibe, proximity, fallback]);
+  return (labels.length ? labels : [fallback]).slice(0, 3);
 }
 
 function getChooseButtonLabel(
@@ -1084,12 +1097,6 @@ export default function BetaCommandCenter({
             <li>Tell us what felt helpful, confusing, missing, or off.</li>
             <li>Your feedback helps us improve next week’s results.</li>
           </ul>
-          {activeTestMode ? (
-            <p className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3 text-xs font-bold text-white/55">
-              Test task: this lets the team preview the weekly flow before
-              sending it to beta users.
-            </p>
-          ) : null}
         </section>
       </main>
     </div>
@@ -1268,13 +1275,33 @@ function distanceFor(item: any) {
     ? `${Math.round(miles * 10) / 10} mi`
     : null;
 }
+function addressIncludes(value: string, fragment: unknown) {
+  const cleaned = String(fragment || "")
+    .trim()
+    .toLowerCase();
+  return Boolean(cleaned && value.toLowerCase().includes(cleaned));
+}
+
 function addressFor(item: any) {
-  return (
-    item?.address ||
-    item?.formatted_address ||
-    item?.street_address ||
-    areaFor(item)
-  );
+  const formatted = String(item?.formatted_address || "").trim();
+  if (formatted) return formatted;
+
+  const base = String(item?.address || item?.street_address || "").trim();
+  const city = String(item?.city || "").trim();
+  const state = String(item?.state_code || item?.state || "").trim();
+  const neighborhood = String(
+    item?.neighborhood || item?.borough || item?.area || "",
+  ).trim();
+  const parts = [base];
+
+  if (city && !addressIncludes(base, city)) parts.push(city);
+  if (state && !addressIncludes(parts.join(", "), state)) parts.push(state);
+
+  const fullAddress = parts.filter(Boolean).join(", ");
+  if (fullAddress) return fullAddress;
+
+  const fallback = [neighborhood, city, state].filter(Boolean).join(", ");
+  return fallback || "Address not listed";
 }
 function tagsFor(item: any) {
   const tags = [
@@ -1286,7 +1313,7 @@ function tagsFor(item: any) {
     ...(Array.isArray(item?.tags) ? item.tags : []),
   ].filter(Boolean);
 
-  return Array.from(new Set(tags.map(String))).slice(0, 4);
+  return uniqueShortLabels(tags).slice(0, 4);
 }
 function ResultCard({
   result,
@@ -1301,11 +1328,12 @@ function ResultCard({
   const rating = ratingFor(result);
   const distance = distanceFor(result);
   const chips = tagsFor(result);
+  const reasonLabels = buildMatchReasonLabels(result, type);
   return (
     <article
-      className={`group flex h-full min-h-[460px] flex-col overflow-hidden rounded-[1.35rem] border bg-zinc-950/80 shadow-xl shadow-black/30 transition hover:border-[#e1062a]/55 hover:bg-[#141414] ${selected ? "border-rose-300/60 ring-2 ring-rose-500/25" : saved ? "border-amber-200/35" : "border-white/10"}`}
+      className={`group flex h-full min-h-[440px] flex-col overflow-hidden rounded-[1.35rem] border bg-zinc-950/80 shadow-xl shadow-black/30 transition hover:border-[#e1062a]/55 hover:bg-[#141414] ${selected ? "border-rose-300/60 ring-2 ring-rose-500/25" : saved ? "border-amber-200/35" : "border-white/10"}`}
     >
-      <div className="relative aspect-[16/9] w-full overflow-hidden bg-neutral-950">
+      <div className="relative h-32 w-full overflow-hidden bg-neutral-950">
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950">
           <img
             src="/toh_logo.png"
@@ -1342,33 +1370,29 @@ function ResultCard({
         </div>
       </div>
       <div className="flex flex-1 flex-col p-4">
-        <p className="line-clamp-1 text-[10px] font-black uppercase tracking-[.2em] text-[#e1062a]">
+        <p className="line-clamp-1 text-[10px] font-black tracking-[.12em] text-[#e1062a]">
           {categoryFor(result) || type || "Recommended place"}
         </p>
-        <h3 className="mt-2 line-clamp-2 text-lg font-black leading-tight text-white">
+        <h3 className="mt-2 line-clamp-2 min-h-[2.75rem] text-lg font-black leading-tight text-white">
           {resultName(result)}
         </h3>
-        <p className="mt-2 line-clamp-1 text-xs font-semibold text-white/45">
+        <p className="mt-2 line-clamp-2 min-h-8 text-xs font-semibold leading-4 text-white/50">
           {addressFor(result)}
         </p>
-        {chips.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {chips.map((chip) => (
-              <span
-                key={chip}
-                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75"
-              >
-                {chip}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="mt-4">
-          <p className="text-xs font-black text-rose-200">
-            Why this match works
-          </p>
-          <p className="mt-1.5 text-sm font-semibold leading-6 text-white/62">
-            {buildMatchReason({ query: query || "" })}
+        <div className="mt-3 flex min-h-[4.25rem] content-start flex-wrap gap-2 overflow-hidden">
+          {chips.map((chip) => (
+            <span
+              key={chip}
+              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/75"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+        <div className="mt-3 min-h-[3.5rem]">
+          <p className="text-xs font-black text-rose-200">Why it fits</p>
+          <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-5 text-white/70">
+            {reasonLabels.join(" · ")}
           </p>
         </div>
         <div className="mt-auto border-t border-white/10 pt-3">
@@ -1429,7 +1453,7 @@ function PairCard({ pair, query, onSelect, disabled, selected }: any) {
                 }}
               />
               <div className="absolute inset-0 z-[2] bg-gradient-to-t from-black/75 via-black/10 to-black/10" />
-              <span className="absolute left-2 top-2 z-[3] rounded-full border border-white/15 bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[.14em] text-white backdrop-blur">
+              <span className="absolute left-2 top-2 z-[3] rounded-full border border-white/15 bg-black/70 px-2 py-1 text-[9px] font-black tracking-[.08em] text-white backdrop-blur">
                 {label}
               </span>
             </div>
@@ -1440,14 +1464,25 @@ function PairCard({ pair, query, onSelect, disabled, selected }: any) {
         <p className="text-[9px] font-black uppercase tracking-[.18em] text-[#e1062a]">
           Recommended combo
         </p>
-        <h3 className="mt-1.5 line-clamp-2 text-base font-black leading-tight text-white">
+        <h3 className="mt-1.5 line-clamp-2 min-h-10 text-base font-black leading-tight text-white">
           {pairTitle(pair)}
         </h3>
         <p className="mt-1.5 line-clamp-1 text-xs font-bold text-rose-100">
           {parts.map((p) => resultName(p)).join(" → ")}
         </p>
-        <div className="mt-3">
-          <p className="text-[10px] font-black uppercase tracking-[.16em] text-rose-200">
+        <div className="mt-2 grid min-h-[3.4rem] gap-1 text-[11px] font-semibold leading-4 text-white/50">
+          {parts.slice(0, 2).map((part, index) => (
+            <p
+              key={`${resultName(part)}-address-${index}`}
+              className="line-clamp-1"
+            >
+              {index === 1 ? "→ " : ""}
+              {addressFor(part)}
+            </p>
+          ))}
+        </div>
+        <div className="mt-3 min-h-[3.25rem]">
+          <p className="text-[10px] font-black tracking-[.12em] text-rose-200">
             Why it fits
           </p>
           <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-white/70">
