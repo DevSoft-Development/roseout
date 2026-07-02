@@ -463,15 +463,19 @@ function isActivityVenueOnlyQuery(query: string) {
 function shouldForceActivityOnlyVenue(rawQuery: string) { return isActivityVenueOnlyQuery(rawQuery); }
 function resetPairingPreference() { return { requiresPairing: false, distanceMode: "any" as const, maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
 
+export function isSportsWatchFoodSameVenueIntent(query: string | null | undefined, terms: string[] = []) {
+  const q = normalizeIntentTerm(`${String(query ?? "")} ${terms.join(" ")}`);
+  const hasFood =
+    /\b(wings|chicken wings|bar food|burgers?|food|dinner|eat)\b/.test(q);
+  const hasSportsWatch =
+    /\b(knicks|basketball|game|watch|tvs?|screens?|sports bar|bar and grill|game day|watch party|live sports|sports viewing)\b/.test(q);
+  const hasSamePlaceOrAntiPair =
+    /\b(not (?:a )?restaurant plus (?:a )?separate activity|not separate|all at the same place|all in one place|same place|one place|not just (?:a )?lounge|not just (?:a )?nightlife spot|in one place)\b/.test(q);
+  return hasFood && hasSportsWatch && (hasSamePlaceOrAntiPair || /\b(sports bar|bar and grill|wings?[^.?!]{0,50}(?:watch|tvs?|screens?|game)|(?:watch|tvs?|screens?|game)[^.?!]{0,50}wings?)\b/.test(q));
+}
+
 function hasSameLocationSportsWatchFoodIntent(query: string | null | undefined) {
-  const q = normalizeIntentTerm(String(query ?? ""));
-  const foodOrVenue =
-    /\b(bar and grill|sports bar|bar food|wings|chicken wings|grill|pub|tavern)\b/.test(q);
-  const watchSignal =
-    /\b(with tvs?|tvs?|screens?|watch basketball|watch the game|knicks game|game day|sports viewing|watch party|live sports)\b/.test(q);
-  const samePlaceOrNotNightlife =
-    /\b(all in one place|same place|one place|not just (?:a )?nightlife spot|not (?:a )?nightlife)\b/.test(q);
-  return foodOrVenue && (watchSignal || samePlaceOrNotNightlife);
+  return isSportsWatchFoodSameVenueIntent(query);
 }
 
 function cuisineTermsFromSingleVenueFoodTerms(foodTerms: string[]) {
@@ -1547,7 +1551,7 @@ export function normalizeIntent(
         mealTerms: uniq([...(finalIntent.restaurantIntent.mealTerms ?? []), "dinner"]),
         foodTerms: uniq([...(finalIntent.restaurantIntent.foodTerms ?? []), "wings", "chicken wings", "bar food"]),
         categoryTerms: uniq([...(finalIntent.restaurantIntent.categoryTerms ?? []), "sports bar", "bar and grill"]),
-        featureTerms: uniq([...(finalIntent.restaurantIntent.featureTerms ?? []), "tv"]),
+        featureTerms: uniq([...(finalIntent.restaurantIntent.featureTerms ?? []), "game watch", "tv", "tvs", "screens", "basketball", "knicks game"]),
       },
       activityIntent: createEmptyActivityIntent(),
       pairingPreference: resetPairingPreference(),
@@ -1582,7 +1586,7 @@ export function normalizeIntent(
       pairingPreference: resetPairingPreference(),
     };
   }
-  (finalIntent as any).sameVenuePreferred = sameVenuePreferred;
+  (finalIntent as any).sameVenuePreferred = (finalIntent as any).sameVenuePreferred === true || sameVenuePreferred;
   (finalIntent as any).sequenceDetected = sequenceDetected;
   (finalIntent as any).proximityDetected = proximityDetected;
   (finalIntent as any).parserPriorityApplied = false;

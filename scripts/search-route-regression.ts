@@ -219,7 +219,44 @@ async function main() {
     assert(!parsed.intent.restaurantIntent.foodTerms.includes("rooftop"));
   }
 
+
+  {
+    const sportsWatchCases = [
+      "I want wings and a bar where I can watch the Knicks game, not a restaurant plus a separate activity.",
+      "Give me a sports bar with wings and TVs for the Knicks game, all at the same place.",
+      "I want a bar and grill with chicken wings where we can watch basketball, not just a lounge.",
+      "Find wings and a sports bar to watch the game in one place.",
+    ] as const;
+
+    for (const query of sportsWatchCases) {
+      const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+      assert.equal(parsed.intent.primaryDomain, "restaurant", `${query} primaryDomain`);
+      assert.equal(parsed.intent.needsRestaurant, true, `${query} needsRestaurant`);
+      assert.equal(parsed.intent.needsActivity, false, `${query} needsActivity`);
+      assert.equal(parsed.intent.wantsPairing, false, `${query} wantsPairing`);
+      assert.equal((parsed.intent as any).pairRequested ?? false, false, `${query} pairRequested`);
+      assert.equal((parsed.intent as any).fallbackPairAllowed ?? false, false, `${query} fallbackPairAllowed`);
+      assert.equal((parsed.intent as any).sameVenuePreferred, true, `${query} sameVenuePreferred`);
+      assert(["restaurant", "same_location_combo"].includes(parsed.intent.searchType), `${query} searchType`);
+      const restaurantTerms = restaurantSearchTerms(parsed.intent);
+      assert(restaurantTerms.includes("wings"), `${query} restaurant terms include wings`);
+      assert(restaurantTerms.some((term) => ["sports bar", "bar and grill", "game watch", "tv", "tvs", "screens"].includes(term)), `${query} restaurant terms include sports-watch venue terms`);
+      assert.deepEqual(activitySearchTerms(parsed.intent), [], `${query} activity terms are not final display terms`);
+    }
+
+    const activityOnlySportsBar = await parseEnterpriseIntent("Find a sports bar nearby.", { useLLM: true });
+    assert.equal(activityOnlySportsBar.intent.wantsPairing, false);
+    assert.equal((activityOnlySportsBar.intent as any).pairRequested ?? false, false);
+
+    const mixedOuting = await parseEnterpriseIntent("Find dinner and bowling nearby.", { useLLM: true });
+    assert.equal(mixedOuting.intent.searchType, "mixed_outing");
+    assert.equal(mixedOuting.intent.needsRestaurant, true);
+    assert.equal(mixedOuting.intent.needsActivity, true);
+    assert.equal(mixedOuting.intent.wantsPairing, true);
+  }
+
   const { runEnterpriseSearch } = await import("../lib/search/enterprise/index");
+
 
   for (const query of ["group dinner and drinks", "group dinner with cocktails"] as const) {
     const mock = createMockSupabase();

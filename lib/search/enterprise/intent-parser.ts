@@ -5,6 +5,7 @@ import {
   mergeLlmIntentWithPreIntent,
   normalizeIntent,
   hasNoClubIntent,
+  isSportsWatchFoodSameVenueIntent,
 } from "./normalize-intent";
 import {
   detectActivityTerms,
@@ -773,15 +774,23 @@ function sportsWatchFoodTermsFromQuery(rawQuery: string) {
   const terms: string[] = [];
   if (/\bwings|chicken wings\b/.test(q)) terms.push("wings", "chicken wings");
   if (/\bbar food\b/.test(q)) terms.push("bar food");
-  if (/\bbar and grill|grill\b/.test(q)) terms.push("bar and grill");
-  if (/\bsports bar\b/.test(q)) terms.push("sports bar");
+  if (/\b(?:burger|burgers)\b/.test(q)) terms.push("burger");
+  if (/\b(?:food|eat|dinner)\b/.test(q)) terms.push("bar food");
+  return uniqueTerms(terms);
+}
+
+function sportsWatchRestaurantFeatureTermsFromQuery(rawQuery: string) {
+  const q = String(rawQuery || "").toLowerCase();
+  const terms = ["sports bar", "bar and grill", "bar food", "game watch", "tvs", "tv", "screens"];
+  if (/\b(knicks|basketball|nba)\b/.test(q)) terms.push("basketball", "knicks game");
   return uniqueTerms(terms);
 }
 
 function createSportsWatchFastPathIntent(rawQuery: string) {
   const activityTerms = sportsWatchActivityTermsFromQuery(rawQuery);
   const foodTerms = sportsWatchFoodTermsFromQuery(rawQuery);
-  const sameLocationFood = /\bnot (?:a )?restaurant plus (?:a )?separate activity|not .*separate activity|wings and a bar where i can watch\b/i.test(rawQuery);
+  const sameLocationFood = isSportsWatchFoodSameVenueIntent(rawQuery, [...activityTerms, ...foodTerms]);
+  const restaurantFeatureTerms = sportsWatchRestaurantFeatureTermsFromQuery(rawQuery);
 
   const intent: Partial<SearchIntent> = {
     rawQuery,
@@ -791,21 +800,22 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
     needsActivity: !sameLocationFood,
     wantsPairing: false,
     sameLocationRequired: sameLocationFood,
+    sameVenuePreferred: sameLocationFood,
     restaurantIntent: {
       mealTerms: sameLocationFood ? ["dinner"] : [],
       foodTerms,
       cuisineTerms: [],
       categoryTerms: sameLocationFood ? ["sports bar", "bar and grill"] : [],
       vibeTerms: [],
-      featureTerms: sameLocationFood ? ["tv", "bar food"] : [],
+      featureTerms: sameLocationFood ? restaurantFeatureTerms : [],
       negativeTerms: [],
       alternativeGroups: [],
     },
     activityIntent: {
-      activityTerms,
-      categoryTerms: ["sports bar"],
+      activityTerms: sameLocationFood ? [] : activityTerms,
+      categoryTerms: sameLocationFood ? [] : ["sports bar"],
       vibeTerms: [],
-      featureTerms: ["tv"],
+      featureTerms: sameLocationFood ? [] : ["tv"],
       negativeTerms: [],
       alternativeGroups: [],
     },
@@ -819,6 +829,8 @@ function createSportsWatchFastPathIntent(rawQuery: string) {
     geo: emptyGeoIntent(),
     vibe: rawQuery.toLowerCase().includes("best") ? ["best"] : [],
     strictness: "high",
+    fallbackPairAllowed: false,
+    pairRequested: false,
   };
 
   return intent;
