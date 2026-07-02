@@ -2,9 +2,71 @@ import { describe, expect, it } from "vitest";
 import { classifySearchHealthEvent } from "../searchHealthLogger";
 import { createPairingDebug, createSearchPairs } from "../pairing";
 import { activityRpcTerms, activitySearchTerms, normalizeIntent } from "../normalize-intent";
+import { filterRestaurantResults, rankRestaurantResults } from "../ranking";
 import { names, runFixturePipeline } from "./fixtures";
 
 describe("enterprise search pure fixture regressions", () => {
+  it("treats sports-watch food prompts as same-location restaurant/combo searches", () => {
+    for (const query of [
+      "Give me a sports bar with wings and TVs for the Knicks game, all at the same place.",
+      "I want wings and a bar where I can watch the Knicks game, not a restaurant plus a separate activity.",
+      "I want a bar and grill with chicken wings where we can watch basketball, not just a lounge.",
+    ]) {
+      const intent = normalizeIntent(query);
+      expect(["restaurant", "same_location_combo"]).toContain(intent.searchType);
+      expect(intent.primaryDomain).toBe("restaurant");
+      expect(intent.needsRestaurant).toBe(true);
+      expect(intent.needsActivity).toBe(false);
+      expect(intent.wantsPairing).toBe(false);
+      expect((intent as any).sameVenuePreferred).toBe(true);
+      expect((intent as any).fallbackPairAllowed).toBe(false);
+      expect(["same_location_combo", "restaurant_only"]).toContain((intent as any).normalizedIntent);
+    }
+
+    const nearby = normalizeIntent("Find a sports bar nearby.");
+    expect(nearby.searchType).not.toBe("mixed_outing");
+    expect(nearby.wantsPairing).toBe(false);
+
+    const dinnerBowling = normalizeIntent("Find dinner and bowling nearby.");
+    expect(["mixed_outing", "paired_outing"]).toContain(dinnerBowling.searchType);
+    expect(dinnerBowling.needsRestaurant).toBe(true);
+    expect(dinnerBowling.needsActivity).toBe(true);
+    expect(dinnerBowling.wantsPairing).toBe(true);
+  });
+
+  it("rejects activity-only lounges for sports-watch food restaurant/combo results", () => {
+    const intent = normalizeIntent("Give me a sports bar with wings and TVs for the Knicks game, all at the same place.");
+    const records: any[] = [
+      {
+        id: "sports",
+        name: "Knicks Sports Bar & Grill",
+        restaurant_name: "Knicks Sports Bar & Grill",
+        location_type: "restaurant",
+        primary_category: "sports bar",
+        cuisine: "american",
+        description: "Sports bar and grill with chicken wings, TVs, screens, bar food, and basketball watch parties.",
+      },
+      {
+        id: "cigar",
+        name: "Club Macanudo",
+        activity_name: "Club Macanudo",
+        location_type: "activity",
+        primary_category: "cigar lounge",
+        description: "Cigar lounge with cocktails.",
+      },
+      {
+        id: "lounge",
+        name: "Ascent Lounge",
+        activity_name: "Ascent Lounge",
+        location_type: "activity",
+        primary_category: "cocktail lounge",
+        description: "Upscale cocktail lounge and nightlife.",
+      },
+    ];
+
+    expect(filterRestaurantResults(records, intent).map((record) => record.id)).toEqual(["sports"]);
+    expect(rankRestaurantResults(records, intent)[0]?.id).toBe("sports");
+  });
 
   it.each([
     "brunch and something fun in Brooklyn",

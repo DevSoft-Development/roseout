@@ -90,6 +90,29 @@ function cleanMetadata(metadata: JsonRecord | null | undefined) {
   return next;
 }
 
+function resolvedInferredSearchMode(args: SearchEventLoggerArgs, fallback: string) {
+  const meta = args.metadata ?? {};
+  const normalizedIntent = meta.normalizedIntent ?? {};
+  const sameVenuePreferred =
+    safeBool(normalizedIntent.sameVenuePreferred) ??
+    safeBool(meta.sameVenuePreferred) ??
+    safeBool(meta.debugParity?.sameVenuePreferred);
+  const needsActivity =
+    intentBool(args, "needsActivity") ??
+    safeBool(normalizedIntent.needsActivity);
+  const searchType =
+    safeText(args.searchType, 100) ??
+    safeText(meta.searchType, 100) ??
+    safeText(normalizedIntent.searchType, 100);
+
+  if (sameVenuePreferred === true && needsActivity === false) {
+    return searchType === "same_location_combo" ? "same_location_combo" : "restaurant";
+  }
+  if (searchType === "same_location_combo") return "same_location_combo";
+  if (searchType === "restaurant") return "restaurant";
+  return fallback;
+}
+
 export async function logSearchEvent(
   args: SearchEventLoggerArgs,
 ): Promise<{ ok: boolean; error?: unknown }> {
@@ -112,6 +135,7 @@ export async function logSearchEvent(
       restaurantCount + activityCount + pairCount;
 
     const mlIntent = classifySearchIntent(args.rawQuery || args.normalizedQuery || "");
+    const inferredSearchMode = resolvedInferredSearchMode(args, mlIntent.inferredSearchMode);
 
     const row = {
       source: safeText(args.source, 100) ?? "search",
@@ -188,7 +212,7 @@ export async function logSearchEvent(
       no_results_reason: safeText(args.noResultsReason, 250),
       no_pairs_reason: safeText(args.noPairsReason, 250),
 
-      metadata: cleanMetadata({ ...(args.metadata ?? {}), primary_intent: mlIntent.primaryIntent, secondary_intents: mlIntent.secondaryIntents, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: mlIntent.inferredSearchMode }),
+      metadata: cleanMetadata({ ...(args.metadata ?? {}), primary_intent: mlIntent.primaryIntent, secondary_intents: mlIntent.secondaryIntents, all_intents: mlIntent.allIntents, intent_confidence: mlIntent.confidence, inferred_search_mode: inferredSearchMode }),
     };
 
     const { error } = await supabaseAdmin.from("search_events").insert(row);
