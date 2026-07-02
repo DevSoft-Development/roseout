@@ -5,6 +5,8 @@ const redirect = readFileSync('app/locations/edit/[type]/[locationId]/page.tsx',
 const api = readFileSync('app/api/locations/edit-context/route.ts', 'utf8');
 const links = readFileSync('lib/location-editor-links.ts', 'utf8');
 const promotions = readFileSync('app/business/dashboard/promotions/page.tsx', 'utf8');
+const impersonate = readFileSync('app/api/admin/impersonate/route.ts', 'utf8');
+const stopImpersonation = readFileSync('app/api/admin/stop-impersonation/route.ts', 'utf8');
 
 const checks = [
   ['singular restaurant normalizes to restaurants', page.includes('value === "restaurants" || value === "restaurant"')],
@@ -39,6 +41,19 @@ const checks = [
       !page.includes('const [canonicalId, setCanonicalId] = useState(locationId)')
   ],
   ['promotions uses Growth Pro wrapper', promotions.includes('BusinessGrowthProPage') && promotions.includes('module="promotions"') && !promotions.includes('redirect("/login")')],
+  [
+    'admin location impersonation does not require owner user',
+    impersonate.includes('\"admin_location\"') &&
+      impersonate.includes('.from("locations")') &&
+      impersonate.includes('target_user_id: null') &&
+      impersonate.includes('Admin location mode started')
+  ],
+  [
+    'stop impersonation clears location mode cookies',
+    stopImpersonation.includes('theouthaven_impersonate_location_id') &&
+      stopImpersonation.includes('theouthaven_impersonate_location_type') &&
+      stopImpersonation.includes('theouthaven_impersonate_target_type')
+  ],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);

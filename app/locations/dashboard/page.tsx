@@ -437,6 +437,7 @@ export default async function DashboardPage({
   )?.value;
 
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
+  const impersonationTargetType = cookieStore.get("theouthaven_impersonate_target_type")?.value;
 
   const supabase = adminSupabase();
   const authSupabase = await createAuthClient();
@@ -459,7 +460,9 @@ export default async function DashboardPage({
       const locationData = data as Record<string, any>;
 
       locations = [toDashboardLocation(locationData)];
-      impersonationLabel = `Viewing as ${locations[0].display_name}`;
+      impersonationLabel = impersonationTargetType === "admin_location"
+        ? `Admin location mode — ${locations[0].display_name}`
+        : `Viewing as ${locations[0].display_name}`;
     }
   } else if (impersonatedUserId) {
     const { data: ownedLocations } = await supabase

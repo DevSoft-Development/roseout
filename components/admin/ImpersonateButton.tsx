@@ -8,7 +8,7 @@ type ImpersonateButtonProps = {
   label?: string;
   locationId?: string;
   locationType?: "restaurants" | "activities";
-  targetType?: "user" | "location_owner";
+  targetType?: "user" | "location_owner" | "admin_location";
   userId?: string;
 };
 
@@ -27,7 +27,9 @@ export default function ImpersonateButton({
     if (disabled || loading) return;
 
     const confirmed = window.confirm(
-      "You are about to log in as this account. This action will be recorded in the admin audit log.",
+      targetType === "admin_location"
+        ? "You are about to open this location in admin location mode. This action will be recorded in the admin audit log."
+        : "You are about to log in as this account. This action will be recorded in the admin audit log.",
     );
     if (!confirmed) return;
 
