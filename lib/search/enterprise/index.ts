@@ -1140,6 +1140,22 @@ function areaLabel(intent: SearchIntent) {
     "that area"
   );
 }
+
+function mixedOutingMealLabel(intent: SearchIntent) {
+  const terms = [
+    ...(intent.restaurantIntent?.mealTerms ?? []),
+    ...(intent.restaurantIntent?.foodTerms ?? []),
+    intent.rawQuery,
+  ]
+    .map((term) => String(term ?? "").toLowerCase())
+    .join(" ");
+  if (/\bbrunch\b/.test(terms)) return "brunch";
+  if (/\bbreakfast\b/.test(terms)) return "breakfast";
+  if (/\blunch\b/.test(terms)) return "lunch";
+  if (/\bdinner\b/.test(terms)) return "dinner";
+  return "food";
+}
+
 function replyFor(
   restaurants: EnterpriseLocation[],
   activities: EnterpriseLocation[],
@@ -1159,7 +1175,7 @@ function replyFor(
         : "walkable";
     if (pairs.length)
       return constrained
-        ? `I found ${walkableWord} dinner + activity pairings near ${areaLabel(intent)}.`
+        ? `I found ${walkableWord} ${mixedOutingMealLabel(intent)} + activity pairings near ${areaLabel(intent)}.`
         : "Found restaurant and activity options that match your outing.";
     if (restaurants.length && activities.length) {
       const maxWalkingMinutes = intent.pairingPreference?.maxPairWalkingMinutes;
@@ -1677,7 +1693,9 @@ export async function runEnterpriseSearch(
     const shouldAttemptSameVenuePairFallback =
       (Boolean((effectiveIntent as any).sameVenuePreferred) ||
         detectSingleVenueWithIntent(effectiveIntent.rawQuery).matched) &&
+      effectiveIntent.needsActivity === true &&
       !effectiveIntent.wantsPairing &&
+      Boolean((effectiveIntent as any).fallbackPairAllowed) &&
       sameVenueTermsBeforeRanking.expandedSecondaryAttributeTerms.length > 0;
     let sameVenuePairFallbackIntent: SearchIntent | null = null;
     if (shouldAttemptSameVenuePairFallback) {
@@ -2545,7 +2563,7 @@ export async function runEnterpriseSearch(
     }
 
     let fallbackPairs: EnterprisePair[] = [];
-    if (sameVenuePairFallbackIntent) {
+    if (sameVenuePairFallbackIntent && effectiveIntent.needsActivity === true) {
       const fallbackPairStarted = Date.now();
       const fallbackPairingDebug = createPairingDebug();
       const fallbackRestaurants = (
@@ -2690,6 +2708,8 @@ export async function runEnterpriseSearch(
               ? "activity_cards"
               : "empty";
     const fallbackPairsUsedAsPrimary =
+      effectiveIntent.needsActivity === true &&
+      !((effectiveIntent as any).sameLocationRequired) &&
       Boolean((debug as any).sameVenueFallbackToPairingUsed) &&
       Number((debug as any).sameVenueStrongMatchCount ?? 0) === 0 &&
       fallbackPairs.length > 0;

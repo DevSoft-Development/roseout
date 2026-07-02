@@ -1753,6 +1753,26 @@ export function normalizeFastPathReason(
   originalReason: string | null | undefined,
 ): string | null {
   if (!originalReason) return null;
+  const finalSearchType = finalIntent?.searchType;
+  const needsActivity = finalIntent?.needsActivity === true;
+  const q = String(finalIntent?.rawQuery ?? "").toLowerCase();
+  const suppressedSeparateMixed =
+    /\b(not (?:a )?(?:separate|rooftop lounge|rooftop bar|nightlife spot|nightlife)|same place|one place|all in one place|not just (?:a )?nightlife spot)\b/.test(q);
+  if (
+    originalReason === "matched explicit mixed outing fast path" &&
+    !needsActivity &&
+    (finalSearchType === "restaurant" || finalSearchType === "same_location_combo")
+  ) {
+    if (/\brooftop\b/.test(q) && /\brestaurant|dinner|dining|brunch|lunch\b/.test(q)) {
+      return suppressedSeparateMixed
+        ? "mixed outing suppressed because user requested rooftop restaurant, not a separate rooftop lounge"
+        : "matched rooftop restaurant same-location intent";
+    }
+    if (suppressedSeparateMixed) {
+      return "mixed outing suppressed because user requested same-location restaurant intent";
+    }
+    return "matched restaurant same-location intent";
+  }
   if (
     originalReason === "matched restaurant-only fast path" &&
     finalIntent?.searchType === "mixed_outing"

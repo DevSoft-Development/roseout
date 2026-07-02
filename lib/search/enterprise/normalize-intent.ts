@@ -455,6 +455,17 @@ function isActivityVenueOnlyQuery(query: string) {
 function shouldForceActivityOnlyVenue(rawQuery: string) { return isActivityVenueOnlyQuery(rawQuery); }
 function resetPairingPreference() { return { requiresPairing: false, distanceMode: "any" as const, maxPairDistanceMiles: null, maxPairWalkingMinutes: null, requireWalkablePair: false }; }
 
+function hasSameLocationSportsWatchFoodIntent(query: string | null | undefined) {
+  const q = normalizeIntentTerm(String(query ?? ""));
+  const foodOrVenue =
+    /\b(bar and grill|sports bar|bar food|wings|chicken wings|grill|pub|tavern)\b/.test(q);
+  const watchSignal =
+    /\b(with tvs?|tvs?|screens?|watch basketball|watch the game|knicks game|game day|sports viewing|watch party|live sports)\b/.test(q);
+  const samePlaceOrNotNightlife =
+    /\b(all in one place|same place|one place|not just (?:a )?nightlife spot|not (?:a )?nightlife)\b/.test(q);
+  return foodOrVenue && (watchSignal || samePlaceOrNotNightlife);
+}
+
 function cuisineTermsFromSingleVenueFoodTerms(foodTerms: string[]) {
   return uniq(
     foodTerms.filter((term) =>
@@ -1494,7 +1505,7 @@ export function normalizeIntent(
     return applyPublicSearchMode(guarded);
   }
   const qForFinalOverrides = normalizeIntentTerm(query);
-  if (/\brooftop (?:dinner|restaurant|dining)|(?:dinner|restaurant|dining) spot (?:with |in |on )?(?:a )?rooftop|not (?:a )?separate|same place|one place\b/.test(qForFinalOverrides) && /\brooftop\b/.test(qForFinalOverrides) && /\b(dinner|restaurant|dining|brunch|lunch)\b/.test(qForFinalOverrides)) {
+  if (/\brooftop (?:dinner|restaurant|dining)|(?:dinner|restaurant|dining) spot (?:with |in |on )?(?:a )?rooftop|not (?:a )?(?:separate|rooftop lounge|rooftop bar)|same place|one place\b/.test(qForFinalOverrides) && /\brooftop\b/.test(qForFinalOverrides) && /\b(dinner|restaurant|dining|brunch|lunch)\b/.test(qForFinalOverrides)) {
     finalIntent = {
       ...finalIntent,
       searchType: "restaurant",
@@ -1503,9 +1514,16 @@ export function normalizeIntent(
       needsActivity: false,
       wantsPairing: false,
       activityIntent: createEmptyActivityIntent(),
+      fallbackPairAllowed: false,
       pairingPreference: resetPairingPreference(),
     };
-  } else if (/\bwings and a bar where i can watch|not .*separate activity|bar with wings to watch|sports bar with wings|game day wings\b/.test(qForFinalOverrides)) {
+    (finalIntent as any).sameVenuePreferred = true;
+    (finalIntent as any).sameLocationRequired = true;
+    (finalIntent as any).sameVenueReason = "rooftop_restaurant_same_location";
+    (finalIntent as any).parserPriorityReason = /\bnot (?:a )?(?:separate|rooftop lounge|rooftop bar)\b/.test(qForFinalOverrides)
+      ? "mixed_outing_suppressed_not_separate_rooftop_lounge"
+      : "matched_rooftop_restaurant_same_location";
+  } else if (hasSameLocationSportsWatchFoodIntent(qForFinalOverrides) || /\bwings and a bar where i can watch|not .*separate activity|bar with wings to watch|sports bar with wings|game day wings\b/.test(qForFinalOverrides)) {
     finalIntent = {
       ...finalIntent,
       searchType: "same_location_combo",
@@ -1514,6 +1532,8 @@ export function normalizeIntent(
       needsActivity: false,
       wantsPairing: false,
       sameLocationRequired: true,
+      sameVenuePreferred: true,
+      fallbackPairAllowed: false,
       restaurantIntent: {
         ...finalIntent.restaurantIntent,
         mealTerms: uniq([...(finalIntent.restaurantIntent.mealTerms ?? []), "dinner"]),
@@ -1521,8 +1541,11 @@ export function normalizeIntent(
         categoryTerms: uniq([...(finalIntent.restaurantIntent.categoryTerms ?? []), "sports bar", "bar and grill"]),
         featureTerms: uniq([...(finalIntent.restaurantIntent.featureTerms ?? []), "tv"]),
       },
+      activityIntent: createEmptyActivityIntent(),
       pairingPreference: resetPairingPreference(),
     } as SearchIntent;
+    (finalIntent as any).sameVenueReason = "sports_watch_food_same_location";
+    (finalIntent as any).parserPriorityReason = "matched sports-watch food-and-TV same-location fast path";
   } else if (/\b(?:live jazz|jazz|live music)\b/.test(qForFinalOverrides) && /\bnearby|close by|near each other|walking distance\b/.test(qForFinalOverrides) && /\b(dinner|restaurant|food|eat|seafood)\b/.test(qForFinalOverrides)) {
     finalIntent = {
       ...finalIntent,
