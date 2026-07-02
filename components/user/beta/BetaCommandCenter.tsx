@@ -130,7 +130,7 @@ function normalizeResults(data: any) {
   const matched = Array.isArray(data?.matched_locations)
     ? data.matched_locations
     : [];
-  const pairs = Array.isArray(data?.pairs) ? data.pairs.slice(0, 3) : [];
+  const pairs = Array.isArray(data?.pairs) ? data.pairs.slice(0, 8) : [];
 
   const fallbackSource = cards.length ? cards : matched;
 
@@ -275,6 +275,61 @@ function inferPairLabelsFromQuery(query: string) {
   return ["Restaurant", "Activity"] as const;
 }
 
+function compactLabel(value: unknown, fallback: string) {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  return cleaned ? titleCaseLabel(cleaned) : fallback;
+}
+
+function formatPairedOutingReasonLabels(pair: PairItem, query: string) {
+  const parts = pairParts(pair);
+  const [inferredRestaurant, inferredActivity] = inferPairLabelsFromQuery(
+    query || "",
+  );
+  const restaurant = parts[0] || pair.restaurant || pair.primary || {};
+  const activity = parts[1] || pair.activity || pair.secondary || {};
+  const labels = [
+    `${compactLabel(
+      restaurant.cuisine || restaurant.primary_category || restaurant.category,
+      inferredRestaurant,
+    )} dinner`,
+    compactLabel(
+      activity.activity_type || activity.primary_category || activity.category,
+      inferredActivity,
+    ),
+  ];
+
+  const distanceText = String(
+    pair.distance_text || pair.travel_fit || pair.proximity || "",
+  ).toLowerCase();
+  const requestedWalk = query.toLowerCase().includes("walk");
+  const isBookable = Boolean(
+    pair.reservation_available ||
+    restaurant.reservation_available ||
+    restaurant.booking_url ||
+    restaurant.reserve_url,
+  );
+
+  if (requestedWalk || distanceText.includes("walk")) {
+    labels.push("Walkable");
+  } else if (
+    distanceText.includes("same") ||
+    distanceText.includes("near") ||
+    distanceText.includes("close") ||
+    pair.pair_distance_miles
+  ) {
+    labels.push("Same area");
+  } else if (isBookable) {
+    labels.push("Bookable");
+  } else {
+    labels.push("Closest match");
+  }
+
+  return Array.from(new Set(labels.filter(Boolean))).slice(0, 3);
+}
+
 function buildMatchReason({
   query,
   isPair,
@@ -308,10 +363,10 @@ function getChooseButtonLabel(
   selected?: boolean,
 ) {
   if (selected) return "Selected";
-  if (kind === "pair") return "Choose This Pairing";
-  if (kind === "restaurant") return "Choose This Restaurant";
-  if (kind === "activity") return "Choose This Activity";
-  return "Choose This Outing";
+  if (kind === "pair") return "Select outing";
+  if (kind === "restaurant") return "Select restaurant";
+  if (kind === "activity") return "Select activity";
+  return "Select outing";
 }
 
 export default function BetaCommandCenter({
@@ -453,6 +508,7 @@ export default function BetaCommandCenter({
     }
   }
   function itemIdentity(item: any) {
+    const parts = pairParts(item || {});
     return String(
       item?.id ||
         item?.pair_id ||
@@ -461,7 +517,8 @@ export default function BetaCommandCenter({
         item?.google_place_id ||
         item?.name ||
         item?.title ||
-        "",
+        item?.pair_title ||
+        (parts.length ? parts.map((part) => resultName(part)).join("+") : ""),
     );
   }
   function isSameItem(a: any, b: any) {
@@ -578,7 +635,7 @@ export default function BetaCommandCenter({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-6 px-4 pb-16 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 pb-16 sm:px-6 lg:px-8">
       <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/30 sm:p-8">
         <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,#e1062a33,transparent_60%)]" />
         <div className="relative max-w-2xl">
@@ -1046,7 +1103,9 @@ const BetaResultSection = forwardRef<HTMLDivElement, any>(
         <h3 className="text-xl font-black text-white">{title}</h3>
         <p className="mt-1 text-sm text-white/55">{subtitle}</p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">{children}</div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {children}
+      </div>
     </div>
   ),
 );
@@ -1191,7 +1250,7 @@ function ResultCard({
             type="button"
             disabled={disabled}
             onClick={onSelect}
-            className={secondary}
+            className={`${secondary} min-h-11 w-full justify-center`}
           >
             {getChooseButtonLabel(
               type === "restaurant" || type === "activity" ? type : "single",
@@ -1203,27 +1262,24 @@ function ResultCard({
     </article>
   );
 }
-function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
+function PairCard({ pair, query, onSelect, disabled, selected }: any) {
   const parts = pairParts(pair);
   const [primaryDisplayLabel, secondaryDisplayLabel] = inferPairLabelsFromQuery(
     query || "",
   );
-  const distance =
-    pair.distance_text ||
-    pair.travel_fit ||
-    (pair.pair_distance_miles ? `${pair.pair_distance_miles} mi apart` : null);
+  const reasonLabels = formatPairedOutingReasonLabels(pair, query || "");
   return (
     <article
-      className={`group flex h-full min-h-[500px] flex-col overflow-hidden rounded-[1.35rem] border bg-zinc-950/80 p-3 shadow-xl shadow-black/30 transition hover:border-[#e1062a]/55 hover:bg-[#141414] ${selected ? "border-rose-300/60 ring-2 ring-rose-500/25" : saved ? "border-amber-200/35" : "border-white/10"}`}
+      className={`group flex h-full min-h-0 flex-col overflow-hidden rounded-[1.15rem] border bg-zinc-950/80 p-2.5 shadow-xl shadow-black/25 transition hover:border-[#e1062a]/45 hover:bg-[#141414] ${selected ? "border-rose-300/70 ring-2 ring-rose-500/30" : "border-white/10"}`}
     >
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid h-[118px] grid-cols-2 gap-2 sm:h-[126px] xl:h-[118px]">
         {parts.slice(0, 2).map((part, index) => {
           const label =
             index === 0 ? primaryDisplayLabel : secondaryDisplayLabel;
           return (
             <div
               key={`${label}-${index}`}
-              className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl bg-neutral-950"
+              className="relative h-full w-full overflow-hidden rounded-xl bg-neutral-950"
             >
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <img
@@ -1254,32 +1310,22 @@ function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
           );
         })}
       </div>
-      <div className="flex flex-1 flex-col p-2 pt-4">
-        <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#e1062a]">
+      <div className="flex flex-1 flex-col p-2 pt-3">
+        <p className="text-[9px] font-black uppercase tracking-[.18em] text-[#e1062a]">
           Recommended combo
         </p>
-        <h3 className="mt-2 line-clamp-2 text-lg font-black leading-tight text-white">
+        <h3 className="mt-1.5 line-clamp-2 text-base font-black leading-tight text-white">
           {pairTitle(pair)}
         </h3>
-        <p className="mt-2 line-clamp-2 text-xs font-bold text-rose-100">
-          {parts.map((p) => `${resultName(p)} (${categoryFor(p)})`).join(" → ")}
+        <p className="mt-1.5 line-clamp-1 text-xs font-bold text-rose-100">
+          {parts.map((p) => resultName(p)).join(" → ")}
         </p>
-        {distance && (
-          <p className="mt-3 w-fit rounded-full border border-[#e1062a]/35 bg-[#e1062a]/15 px-3 py-1 text-[11px] font-black text-red-50">
-            {distance}
+        <div className="mt-3">
+          <p className="text-[10px] font-black uppercase tracking-[.16em] text-rose-200">
+            Why it fits
           </p>
-        )}
-        <div className="mt-4">
-          <p className="text-xs font-black text-rose-200">
-            Why this pairing works
-          </p>
-          <p className="mt-1.5 text-sm font-semibold leading-6 text-white/62">
-            {buildMatchReason({
-              query: query || "",
-              isPair: true,
-              primaryLabel: primaryDisplayLabel,
-              secondaryLabel: secondaryDisplayLabel,
-            })}
+          <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-white/70">
+            {reasonLabels.join(" · ")}
           </p>
         </div>
         <div className="mt-auto border-t border-white/10 pt-3">
@@ -1287,7 +1333,7 @@ function PairCard({ pair, query, onSelect, disabled, selected, saved }: any) {
             type="button"
             disabled={disabled}
             onClick={onSelect}
-            className={secondary}
+            className={`${secondary} min-h-11 w-full justify-center`}
           >
             {getChooseButtonLabel("pair", selected)}
           </button>
