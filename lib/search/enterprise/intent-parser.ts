@@ -767,23 +767,36 @@ function createExplicitMixedFastPathIntent(rawQuery: string) {
   } satisfies Partial<SearchIntent>;
 }
 
+function sportsWatchFoodTermsFromQuery(rawQuery: string) {
+  const q = String(rawQuery || "").toLowerCase();
+  const terms: string[] = [];
+  if (/\bwings|chicken wings\b/.test(q)) terms.push("wings", "chicken wings");
+  if (/\bbar food\b/.test(q)) terms.push("bar food");
+  if (/\bbar and grill|grill\b/.test(q)) terms.push("bar and grill");
+  if (/\bsports bar\b/.test(q)) terms.push("sports bar");
+  return uniqueTerms(terms);
+}
+
 function createSportsWatchFastPathIntent(rawQuery: string) {
   const activityTerms = sportsWatchActivityTermsFromQuery(rawQuery);
+  const foodTerms = sportsWatchFoodTermsFromQuery(rawQuery);
+  const sameLocationFood = /\bnot (?:a )?restaurant plus (?:a )?separate activity|not .*separate activity|wings and a bar where i can watch\b/i.test(rawQuery);
 
   const intent: Partial<SearchIntent> = {
     rawQuery,
-    searchType: "activity",
-    primaryDomain: "activity",
-    needsRestaurant: false,
-    needsActivity: true,
+    searchType: sameLocationFood ? "same_location_combo" : "activity",
+    primaryDomain: sameLocationFood ? "restaurant" : "activity",
+    needsRestaurant: sameLocationFood,
+    needsActivity: !sameLocationFood,
     wantsPairing: false,
+    sameLocationRequired: sameLocationFood,
     restaurantIntent: {
-      mealTerms: [],
-      foodTerms: [],
+      mealTerms: sameLocationFood ? ["dinner"] : [],
+      foodTerms,
       cuisineTerms: [],
-      categoryTerms: [],
+      categoryTerms: sameLocationFood ? ["sports bar", "bar and grill"] : [],
       vibeTerms: [],
-      featureTerms: [],
+      featureTerms: sameLocationFood ? ["tv", "bar food"] : [],
       negativeTerms: [],
       alternativeGroups: [],
     },
@@ -1735,6 +1748,26 @@ function shouldUseFallbackIntentModel(args: {
   return complex && !args.hasUsablePreIntent;
 }
 
+export function normalizeFastPathReason(
+  finalIntent: SearchIntent | Partial<SearchIntent> | null | undefined,
+  originalReason: string | null | undefined,
+): string | null {
+  if (!originalReason) return null;
+  if (
+    originalReason === "matched restaurant-only fast path" &&
+    finalIntent?.searchType === "mixed_outing"
+  ) {
+    return "restaurant fast path upgraded to mixed outing because after/nearby activity intent was detected";
+  }
+  if (
+    originalReason === "matched sports-watch activity fast path" &&
+    finalIntent?.searchType === "same_location_combo"
+  ) {
+    return "matched sports-watch food-and-TV same-location fast path";
+  }
+  return originalReason;
+}
+
 export async function parseEnterpriseIntent(
   query: string,
   options?: {
@@ -1791,6 +1824,11 @@ export async function parseEnterpriseIntent(
   debug.preIntentMatched = Boolean(preIntent);
   debug.preIntentSource = preIntent ? "fast_path" : null;
   debug.preIntentReason = fastPathResult.reason ?? null;
+  const setFinalFastPathReason = (intentValue: SearchIntent | Partial<SearchIntent> | null | undefined) => {
+    const reason = normalizeFastPathReason(intentValue, fastPathResult.reason);
+    debug.fastPathReason = reason;
+    return reason;
+  };
 
   const highConfidenceFastPathReasons = new Set([
     "matched sports-watch activity fast path",
@@ -1834,7 +1872,7 @@ export async function parseEnterpriseIntent(
       llmError: undefined,
       intentParserSource: "fast_path",
       fastPathMatched: true,
-      fastPathReason: fastPathResult.reason,
+      fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(normalized, selectedSearchLane)),
       usedLlm: false,
       debug,
     };
@@ -1853,7 +1891,7 @@ export async function parseEnterpriseIntent(
       llmError: undefined,
       intentParserSource: debug.intentParserSource,
       fastPathMatched: Boolean(preIntent),
-      fastPathReason: fastPathResult.reason,
+      fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(intent, selectedSearchLane)),
       usedLlm: false,
       debug,
     };
@@ -1879,7 +1917,7 @@ export async function parseEnterpriseIntent(
       llmIntentRaw: null,
       intentParserSource: "cache",
       fastPathMatched: Boolean(preIntent),
-      fastPathReason: fastPathResult.reason,
+      fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(cached.intent, selectedSearchLane)),
       usedLlm: debug.llmEnhancementUsed,
       debug,
     };
@@ -1933,7 +1971,7 @@ export async function parseEnterpriseIntent(
       llmIntentRaw,
       intentParserSource: debug.intentParserSource,
       fastPathMatched: Boolean(preIntent),
-      fastPathReason: fastPathResult.reason,
+      fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(normalized, selectedSearchLane)),
       usedLlm: true,
       debug,
     };
@@ -1964,7 +2002,7 @@ export async function parseEnterpriseIntent(
         llmError: debug.llmError,
         intentParserSource: debug.intentParserSource,
         fastPathMatched: true,
-        fastPathReason: fastPathResult.reason,
+        fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(normalizedPreIntent, selectedSearchLane)),
         usedLlm: false,
         debug,
       };
@@ -2017,7 +2055,7 @@ export async function parseEnterpriseIntent(
         llmIntentRaw,
         intentParserSource: "llm_fallback_model",
         fastPathMatched: Boolean(preIntent),
-        fastPathReason: fastPathResult.reason,
+        fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(normalized, selectedSearchLane)),
         usedLlm: true,
         debug,
       };
@@ -2046,7 +2084,7 @@ export async function parseEnterpriseIntent(
     llmError: debug.llmError,
     intentParserSource: debug.intentParserSource,
     fastPathMatched: Boolean(preIntent),
-    fastPathReason: fastPathResult.reason,
+    fastPathReason: setFinalFastPathReason(applyExplicitSearchLane(deterministicIntent, selectedSearchLane)),
     usedLlm: false,
     debug,
   };

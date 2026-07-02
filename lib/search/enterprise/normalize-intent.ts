@@ -1493,7 +1493,64 @@ export function normalizeIntent(
     (guarded as any).needsActivityAfterSameVenueGuard = false;
     return applyPublicSearchMode(guarded);
   }
+  const qForFinalOverrides = normalizeIntentTerm(query);
+  if (/\brooftop (?:dinner|restaurant|dining)|(?:dinner|restaurant|dining) spot (?:with |in |on )?(?:a )?rooftop|not (?:a )?separate|same place|one place\b/.test(qForFinalOverrides) && /\brooftop\b/.test(qForFinalOverrides) && /\b(dinner|restaurant|dining|brunch|lunch)\b/.test(qForFinalOverrides)) {
+    finalIntent = {
+      ...finalIntent,
+      searchType: "restaurant",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      activityIntent: createEmptyActivityIntent(),
+      pairingPreference: resetPairingPreference(),
+    };
+  } else if (/\bwings and a bar where i can watch|not .*separate activity|bar with wings to watch|sports bar with wings|game day wings\b/.test(qForFinalOverrides)) {
+    finalIntent = {
+      ...finalIntent,
+      searchType: "same_location_combo",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      sameLocationRequired: true,
+      restaurantIntent: {
+        ...finalIntent.restaurantIntent,
+        mealTerms: uniq([...(finalIntent.restaurantIntent.mealTerms ?? []), "dinner"]),
+        foodTerms: uniq([...(finalIntent.restaurantIntent.foodTerms ?? []), "wings", "chicken wings", "bar food"]),
+        categoryTerms: uniq([...(finalIntent.restaurantIntent.categoryTerms ?? []), "sports bar", "bar and grill"]),
+        featureTerms: uniq([...(finalIntent.restaurantIntent.featureTerms ?? []), "tv"]),
+      },
+      pairingPreference: resetPairingPreference(),
+    } as SearchIntent;
+  } else if (/\b(?:live jazz|jazz|live music)\b/.test(qForFinalOverrides) && /\bnearby|close by|near each other|walking distance\b/.test(qForFinalOverrides) && /\b(dinner|restaurant|food|eat|seafood)\b/.test(qForFinalOverrides)) {
+    finalIntent = {
+      ...finalIntent,
+      searchType: "mixed_outing",
+      primaryDomain: "mixed",
+      needsRestaurant: true,
+      needsActivity: true,
+      wantsPairing: true,
+      activityIntent: {
+        ...finalIntent.activityIntent,
+        activityTerms: uniq([...(finalIntent.activityIntent.activityTerms ?? []), "live jazz", "jazz", "live music"]),
+      },
+      pairingPreference: detectPairingPreference(query, true),
+    };
+  }
   finalIntent = applyPublicSearchMode(finalIntent);
+  if (/\brooftop (?:dinner|restaurant|dining)|not (?:a )?separate rooftop bar|not (?:a )?separate\b/.test(qForFinalOverrides) && /\brooftop\b/.test(qForFinalOverrides) && /\b(dinner|restaurant|dining|brunch|lunch)\b/.test(qForFinalOverrides)) {
+    finalIntent = {
+      ...finalIntent,
+      searchType: "restaurant",
+      primaryDomain: "restaurant",
+      needsRestaurant: true,
+      needsActivity: false,
+      wantsPairing: false,
+      activityIntent: createEmptyActivityIntent(),
+      pairingPreference: resetPairingPreference(),
+    };
+  }
   (finalIntent as any).sameVenuePreferred = sameVenuePreferred;
   (finalIntent as any).sequenceDetected = sequenceDetected;
   (finalIntent as any).proximityDetected = proximityDetected;
@@ -1586,7 +1643,12 @@ export function restaurantSearchTerms(intent: SearchIntent) {
         "roof deck",
       ]
     : [];
-  const mealTermsToStrip = new Set(["dinner", "birthday dinner", "brunch", "lunch", "breakfast"]);
+  const broadMixedRestaurantTerms = broadRestaurantFallbackTerms(intent);
+  const mealTermsToStrip = new Set(
+    broadMixedRestaurantTerms.length > 0
+      ? ["birthday dinner"]
+      : ["dinner", "birthday dinner", "brunch", "lunch", "breakfast"],
+  );
   return finalCleanTermList(stripBlockedTerms(
     stripBlockedTerms(
       uniq([
@@ -1597,11 +1659,29 @@ export function restaurantSearchTerms(intent: SearchIntent) {
       ...intent.restaurantIntent.featureTerms,
       ...(intent.restaurantIntent.alternativeGroups ?? []).flat(),
       ...rooftopRestaurantTerms,
+      ...broadMixedRestaurantTerms,
       ]),
       mealTermsToStrip,
     ),
     RESTAURANT_SEARCH_TERM_BLOCKLIST,
   ), RESTAURANT_ALLOWED_SINGLE_WORDS);
+}
+
+export function broadRestaurantFallbackTerms(intent: SearchIntent) {
+  if (intent.searchType !== "mixed_outing" || !intent.needsRestaurant) return [];
+  const q = normalizeIntentTerm(intent.rawQuery ?? "");
+  const terms: string[] = [];
+  if (/\bbrunch|spot for brunch\b/.test(q)) terms.push("brunch", "breakfast", "restaurant", "food");
+  if (/\bbreakfast\b/.test(q)) terms.push("breakfast", "restaurant", "food");
+  if (/\blunch\b/.test(q)) terms.push("lunch", "restaurant", "food");
+  if (/\bdinner|girls night dinner|birthday dinner|casual date night|romantic dinner|eat first\b/.test(q)) terms.push("dinner", "restaurant", "food");
+  if (/\brestaurant|food|eat|eats|dining\b/.test(q)) terms.push("restaurant", "food", "dining");
+  if (/\bgirls night\b/.test(q)) terms.push("dinner", "restaurant", "social");
+  if (/\bwings|chicken wings|bar food|sports bar|bar and grill\b/.test(q)) terms.push("wings", "chicken wings", "bar food", "sports bar", "bar and grill");
+  if (terms.length === 0 && intent.restaurantIntent.mealTerms.length === 0 && intent.restaurantIntent.foodTerms.length === 0 && intent.restaurantIntent.cuisineTerms.length === 0) {
+    terms.push("restaurant", "food", "dinner");
+  }
+  return uniq(terms);
 }
 
 function shouldAddGenericActivityFallback(
