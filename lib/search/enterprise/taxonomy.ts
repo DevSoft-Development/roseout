@@ -13,11 +13,11 @@ export const FOOD_SYNONYMS: Record<string, string[]> = {
   sushi: ["sushi", "sashimi", "omakase", "nigiri", "maki", "rolls", "japanese sushi", "japanese", "izakaya"],
   italian: ["italian", "pasta", "pizza", "trattoria", "osteria", "ristorante", "italian restaurant"],
   mexican: ["mexican", "tacos", "taco", "burritos", "birria", "tequila", "taqueria", "tex-mex"],
-  caribbean: ["caribbean", "west indian", "island food", "jamaican", "jerk chicken", "oxtail", "curry goat", "roti", "doubles", "patties", "trinidadian", "haitian", "cuban", "mofongo", "pernil", "tostones"],
-  dominican: ["dominican", "dominican restaurant", "dominican food", "mofongo", "mangu", "pernil", "tostones", "latin", "caribbean"],
+  caribbean: ["caribbean", "west indian", "island food", "jamaican", "jerk chicken", "oxtail", "curry goat", "roti", "doubles", "patties", "trinidadian", "haitian", "cuban"],
+  dominican: ["dominican", "dominican restaurant", "dominican food", "mangu", "mangú", "mofongo", "pernil", "tostones", "latin", "caribbean"],
   "puerto rican": ["puerto rican", "boricua", "mofongo", "pernil", "tostones"],
   jamaican: ["jamaican", "jerk chicken", "curry goat", "oxtail"],
-  american: ["american", "new american", "southern", "soul food"], latin: ["latin", "latin american", "colombian", "peruvian", "brazilian", "argentinian", "dominican", "cuban", "puerto rican"], mediterranean: ["mediterranean", "greek", "turkish", "lebanese", "middle eastern", "israeli", "moroccan"], french: ["french"], spanish: ["spanish", "tapas"], portuguese: ["portuguese"], german: ["german"], irish: ["irish"], british: ["british"], indian: ["indian"], pakistani: ["pakistani"], bangladeshi: ["bangladeshi"], nepalese: ["nepalese"], thai: ["thai"], vietnamese: ["vietnamese"], chinese: ["chinese", "cantonese", "szechuan", "sichuan", "shanghainese", "taiwanese", "dim sum", "hot pot"], korean: ["korean"], japanese: ["japanese", "ramen", "izakaya", "teppanyaki", "hibachi"], filipino: ["filipino"], indonesian: ["indonesian"], malaysian: ["malaysian"], singaporean: ["singaporean"], african: ["african", "nigerian", "ethiopian", "senegalese", "ghanaian", "south african"], vegan: ["vegan", "plant-based"], vegetarian: ["vegetarian"], "gluten-free": ["gluten-free"], kosher: ["kosher"], halal: ["halal"], bbq: ["bbq", "barbecue"], burger: ["burger"], chicken: ["chicken", "wings", "fried chicken"], bakery: ["bakery"], cafe: ["cafe"], "wine bar": ["wine bar"], "cocktail bar": ["cocktail bar"], lounge: ["lounge restaurant"]
+  american: ["american", "new american", "southern", "soul food"], latin: ["latin", "latin american", "colombian", "peruvian", "brazilian", "argentinian", "cuban", "puerto rican"], mediterranean: ["mediterranean", "greek", "turkish", "lebanese", "middle eastern", "israeli", "moroccan"], french: ["french"], spanish: ["spanish", "tapas"], portuguese: ["portuguese"], german: ["german"], irish: ["irish"], british: ["british"], indian: ["indian"], pakistani: ["pakistani"], bangladeshi: ["bangladeshi"], nepalese: ["nepalese"], thai: ["thai"], vietnamese: ["vietnamese"], chinese: ["chinese", "cantonese", "szechuan", "sichuan", "shanghainese", "taiwanese", "dim sum", "hot pot"], korean: ["korean"], japanese: ["japanese", "ramen", "izakaya", "teppanyaki", "hibachi"], filipino: ["filipino"], indonesian: ["indonesian"], malaysian: ["malaysian"], singaporean: ["singaporean"], african: ["african", "nigerian", "ethiopian", "senegalese", "ghanaian", "south african"], vegan: ["vegan", "plant-based"], vegetarian: ["vegetarian"], "gluten-free": ["gluten-free"], kosher: ["kosher"], halal: ["halal"], bbq: ["bbq", "barbecue"], burger: ["burger"], chicken: ["chicken", "wings", "fried chicken"], bakery: ["bakery"], cafe: ["cafe"], "wine bar": ["wine bar"], "cocktail bar": ["cocktail bar"], lounge: ["lounge restaurant"]
 };
 
 
@@ -90,6 +90,7 @@ export const ACTIVITY_SYNONYMS: Record<string, string[]> = {
   karaoke: ["karaoke", "karaoke bar", "private karaoke", "karaoke lounge", "sing along"],
   hookah: ["hookah", "hookah lounge", "hookah bar", "shisha"],
   "live music": ["live music", "concert", "jazz club"],
+  dancing: ["dancing", "dance", "dance club", "nightlife", "music"],
   museum: ["museum", "exhibit", "exhibition", "cultural center"],
   lounge: ["lounge", "bar", "cocktail bar"],
   rooftop: [
@@ -294,6 +295,8 @@ export function uniqueIntentTerms(items: string[]) {
 export function hasExplicitTwoStopLanguage(query: string): boolean {
   const q = String(query || "").toLowerCase().replaceAll("_", " ").replaceAll("-", " ").replace(/\s+/g, " ").trim();
   return /\b(after|afterward|afterwards|before|then|followed by|next|second stop|separate spots|nearby|close by|close to|near each other|walking distance|walkable|around the corner|apart)\b/.test(q)
+    || /\b(?:pairs?|two places?|two spots?)\b[^.?!]{0,60}\b(?:close together|near each other|nearby|close by|walkable|walking distance)\b/.test(q)
+    || /\b(?:close together|near each other|nearby|close by|walkable|walking distance)\b[^.?!]{0,60}\b(?:pairs?|two places?|two spots?)\b/.test(q)
     || /\bwithin\s+\d+\s*(?:minutes?|mins?|miles?|mi)\b/.test(q)
     || /\b\d+\s*(?:minute|min)\s+walk\b/.test(q)
     || /\bnear\s+(?:a|the)\s+hookah\b/.test(q)
@@ -317,7 +320,8 @@ export function hasTrueSequenceConnector(q: string): boolean {
 
 export function hasTrueProximityPairingConnector(q: string): boolean {
   const text = String(q || "").toLowerCase();
-  return /\b(near a|near the|nearby a|close to|walking distance to|within walking distance of|around the corner from|next to)\b/.test(text);
+  return /\b(near a|near the|nearby a|nearby|close to|close together|walking distance to|within walking distance of|around the corner from|next to)\b/.test(text)
+    || /\b(?:pairs?|two places?|two spots?)\b[^.?!]{0,60}\b(?:close together|near each other|nearby|close by|walkable|walking distance)\b/.test(text);
 }
 
 export function hasSingleVenueWithConnector(q: string): boolean {

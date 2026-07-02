@@ -1352,4 +1352,79 @@ describe("public create pairing intent contract", () => {
     ]).toEqual(expect.arrayContaining(["dominican restaurant", "dominican food"]));
     expect(intent.restaurantIntent.cuisineTerms).not.toContain("curry goat");
   });
+
+  it("treats Dominican food and dancing nearby as a paired mixed outing", async () => {
+    const query = "Find Dominican food and dancing nearby, but make sure the first place is actually for dinner.";
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.primaryDomain).toBe("mixed");
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(true);
+    expect([
+      ...intent.restaurantIntent.foodTerms,
+      ...intent.restaurantIntent.cuisineTerms,
+      ...restaurantSearchTerms(intent),
+    ]).toEqual(expect.arrayContaining(["dominican", "dominican restaurant", "dominican food"]));
+    expect(intent.restaurantIntent.cuisineTerms).not.toContain("curry goat");
+    expect([
+      ...intent.activityIntent.activityTerms,
+      ...intent.activityIntent.categoryTerms,
+    ]).toEqual(expect.arrayContaining(["dancing"]));
+    expect(parsed.fastPathReason).toMatch(/mixed outing/i);
+  });
+
+  it("treats sushi and karaoke close pairs as a paired mixed outing", async () => {
+    const query = "Give me sushi and karaoke in Flushing, but only show pairs that are close together.";
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.primaryDomain).toBe("mixed");
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(true);
+    expect(intent.sameLocationRequired).toBe(false);
+    expect(intent.restaurantIntent.foodTerms).toEqual(expect.arrayContaining(["sushi"]));
+    expect(intent.activityIntent.activityTerms).toEqual(expect.arrayContaining(["karaoke"]));
+  });
+
+  it.each([
+    "Find one place for sushi and karaoke in Flushing.",
+    "Find a sushi restaurant with karaoke inside.",
+  ])("preserves explicit same-location sushi and karaoke requests for %s", async (query) => {
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+
+    expect(["same_location_combo", "restaurant"]).toContain(intent.searchType);
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(false);
+    expect(intent.sameLocationRequired ?? intent.searchType === "restaurant").toBeTruthy();
+  });
+
+  it("keeps rooftop dinner restaurant-only with rooftop dining terms", async () => {
+    const query = "Find me a rooftop dinner spot in Brooklyn, but I don’t want a separate rooftop bar after.";
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+    const terms = restaurantSearchTerms(intent);
+
+    expect(["restaurant", "same_location_combo"]).toContain(intent.searchType);
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(false);
+    expect(intent.wantsPairing).toBe(false);
+    expect(terms).toEqual(expect.arrayContaining(["rooftop restaurant", "rooftop dining", "outdoor seating", "terrace", "roof deck", "skyline views", "views"]));
+  });
+
+  it("keeps nearby live music on the activity lane for soul food outings", async () => {
+    const query = "I want soul food first and then somewhere nearby with live music that isn’t across town.";
+    const parsed = await parseEnterpriseIntent(query, { useLLM: true });
+    const intent = parsed.intent;
+
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.needsRestaurant).toBe(true);
+    expect(intent.needsActivity).toBe(true);
+    expect(restaurantSearchTerms(intent)).toEqual(expect.arrayContaining(["soul food"]));
+    expect(restaurantSearchTerms(intent)).not.toContain("live music");
+    expect(intent.activityIntent.activityTerms).toEqual(expect.arrayContaining(["live music"]));
+  });
 });

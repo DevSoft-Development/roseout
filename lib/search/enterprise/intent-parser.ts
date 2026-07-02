@@ -479,7 +479,7 @@ function hasMealOrRestaurantTerm(query: string) {
 
 function hasActivityVenueOrActivityTerm(query: string) {
   const q = String(query || "").toLowerCase();
-  return /\b(activity|activities|activity after|things to do|something to do|something fun|something unique|something open|open after midnight|after midnight|plans|last-minute plans|outing|friend outing|girls night|double date|karaoke|comedy|comedy club|comedy show|bowling|arcade|museum|museum date|hookah|hookah lounge|lounge|lounge vibe|cocktail bar|wine bar|bar with|bar showing|sports bar|sports lounge|rooftop|rooftop vibe|rooftop bar|rooftop lounge|rooftop drinks|drinks after|dessert after|paint and sip|sip and paint|mini golf|live jazz|jazz|live music|pool hall|billiards|game day|watch party)\b/.test(q);
+  return /\b(activity|activities|activity after|things to do|something to do|something fun|something unique|something open|open after midnight|after midnight|plans|last-minute plans|outing|friend outing|girls night|double date|karaoke|comedy|comedy club|comedy show|bowling|arcade|museum|museum date|hookah|hookah lounge|lounge|lounge vibe|cocktail bar|wine bar|bar with|bar showing|sports bar|sports lounge|rooftop|rooftop vibe|rooftop bar|rooftop lounge|rooftop drinks|drinks after|dessert after|paint and sip|sip and paint|mini golf|live jazz|jazz|live music|dancing|dance club|dance|pool hall|billiards|game day|watch party)\b/.test(q);
 }
 
 function connectorIsRestaurantFeature(query: string) {
@@ -515,7 +515,8 @@ function hasExplicitMixedOutingIntent(query: string) {
   if (singleVenueWith.matched) return false;
   if (connectorIsRestaurantFeature(q)) return false;
   const withoutNearMe = q.replace(/\bnear me\b/g, "");
-  const hasSequenceOrProximity = /\b(after|afterward|afterwards|followed by|before|then|next|later|second stop|first|near a|near an|near the|nearby a|close to|walking distance to|within walking distance of|around the corner from|next to)\b/.test(withoutNearMe);
+  const hasSequenceOrProximity = /\b(after|afterward|afterwards|followed by|before|then|next|later|second stop|first|near a|near an|near the|nearby|nearby a|close to|close together|walking distance to|within walking distance of|around the corner from|next to)\b/.test(withoutNearMe) ||
+    /\b(?:pairs?|two places?|two spots?)\b[^.?!]{0,60}\b(?:close together|near each other|nearby|close by|walkable|walking distance)\b/.test(withoutNearMe);
   const hasConnector = hasSequenceOrProximity || /\band\b/.test(withoutNearMe);
   return hasConnector && hasMealOrRestaurantTerm(q) && hasActivityVenueOrActivityTerm(q);
 }
@@ -1041,7 +1042,8 @@ function createRestaurantOnlyFastPathIntent(rawQuery: string) {
     { pattern: /\b(?:japanese|ramen|udon|yakitori)\b/, cuisine: ["japanese"], food: ["japanese", "ramen", "udon", "yakitori"] },
     { pattern: /\b(?:thai|pad thai|drunken noodles?|tom yum)\b/, cuisine: ["thai"], food: ["thai", "pad thai", "drunken noodles", "tom yum"] },
     { pattern: /\b(?:indian|curry|biryani|tandoori)\b/, cuisine: ["indian"], food: ["indian", "curry", "biryani", "tandoori"] },
-    { pattern: /\b(?:caribbean|jamaican|haitian|dominican|oxtail|jerk chicken)\b/, cuisine: ["caribbean"], food: ["caribbean", "jamaican", "haitian", "dominican", "oxtail", "jerk chicken"] },
+    { pattern: /\b(?:dominican|mangu|mangú|mofongo|pernil|tostones)\b/, cuisine: ["dominican"], food: ["dominican", "dominican restaurant", "dominican food", "mangu", "mangú", "mofongo", "pernil", "tostones", "latin", "caribbean"] },
+    { pattern: /\b(?:caribbean|jamaican|haitian|oxtail|jerk chicken)\b/, cuisine: ["caribbean"], food: ["caribbean", "jamaican", "haitian", "oxtail", "jerk chicken"] },
     { pattern: /\b(?:latin|spanish|peruvian|colombian|puerto rican|cuban)\b/, cuisine: ["latin"], food: ["latin", "spanish", "peruvian", "colombian", "puerto rican", "cuban"] },
     { pattern: /\b(?:korean|korean bbq|bbq|barbecue)\b/, cuisine: ["korean", "bbq"], food: ["korean", "korean bbq", "bbq", "barbecue"] },
     { pattern: /\b(?:mediterranean|greek|turkish|middle eastern|falafel|kebab)\b/, cuisine: ["mediterranean"], food: ["mediterranean", "greek", "turkish", "middle eastern", "falafel", "kebab"] },
@@ -1110,6 +1112,18 @@ function createEnterpriseIntentFastPathResult(
       intent: createDateNightMixedFastPathIntent(rawQuery),
       reason: "matched date-night mixed outing fast path",
       confidence: 0.92,
+    };
+  }
+
+  const forcedPairFastPath =
+    /\b(?:pairs?|two places?|two spots?)\b[^.?!]{0,60}\b(?:close together|near each other|nearby|close by|walkable|walking distance)\b/.test(query) ||
+    /\bdominican\b[^.?!]{0,80}\b(?:dancing|dance|nightlife|music)\b/.test(query) ||
+    /\b(?:dancing|dance|nightlife|music)\b[^.?!]{0,80}\bdominican\b/.test(query);
+  if (forcedPairFastPath && hasExplicitMixedOutingIntent(query)) {
+    return {
+      intent: createExplicitMixedFastPathIntent(rawQuery),
+      reason: "matched explicit mixed outing fast path",
+      confidence: 0.9,
     };
   }
 
